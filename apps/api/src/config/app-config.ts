@@ -23,7 +23,7 @@ type AppConfig = {
 
 export function getAppConfig(): AppConfig {
   return {
-    port: Number(process.env.PORT ?? 3001),
+    port: Number(process.env.PORT ?? 4000),
     nodeEnv: process.env.NODE_ENV ?? "development",
     databaseUrl: process.env.DATABASE_URL ?? "",
     uploads: {

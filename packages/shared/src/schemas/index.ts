@@ -5,3 +5,4 @@ export * from "./common";
 export * from "./employees";
 export * from "./employee-devices";
 export * from "./reports";
+export * from "./weekly-day-offs";

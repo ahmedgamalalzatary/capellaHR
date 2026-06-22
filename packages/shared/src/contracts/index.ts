@@ -16,3 +16,8 @@ export type {
   EmployeeDeviceSetupLinkCreateInput
 } from "../types/employee-devices";
 export type { MonthlyAttendanceSummaryFilterInput } from "../types/reports";
+export type {
+  WeeklyDayOffAssignmentCreateInput,
+  WeeklyDayOffAssignmentListFilterInput,
+  WeeklyDayOffAssignmentUpdateInput
+} from "../types/weekly-day-offs";

@@ -10,7 +10,8 @@ describe("shared schemas", () => {
       employeeDeviceSetupLinkCreateSchema: expect.any(z.ZodType),
       branchCreateSchema: expect.any(z.ZodType),
       attendanceActionSchema: expect.any(z.ZodType),
-      monthlyAttendanceSummaryFilterSchema: expect.any(z.ZodType)
+      monthlyAttendanceSummaryFilterSchema: expect.any(z.ZodType),
+      weeklyDayOffAssignmentCreateSchema: expect.any(z.ZodType)
     });
   });
 
@@ -66,5 +67,13 @@ describe("shared schemas", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts iso dates for weekly day off assignments", () => {
+    const result = schemas.weeklyDayOffAssignmentCreateSchema.parse({
+      dayOffDate: "2026-06-27"
+    });
+
+    expect(result.dayOffDate).toBe("2026-06-27");
   });
 });

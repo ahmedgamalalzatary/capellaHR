@@ -4,6 +4,7 @@ import type { createAuthService } from "../modules/auth/service";
 import type { createBranchService } from "../modules/branches/service";
 import type { createEmployeeDeviceService } from "../modules/employee-devices/service";
 import type { createEmployeeService } from "../modules/employees/service";
+import type { createWeeklyDayOffService } from "../modules/weekly-day-offs/service";
 import { registerAuditLogsRoutes } from "../modules/audit-logs/routes";
 import { registerAttendanceRoutes } from "../modules/attendance/routes";
 import { registerAuthRoutes } from "../modules/auth/routes";
@@ -12,6 +13,7 @@ import { registerEmployeeDevicesRoutes } from "../modules/employee-devices/route
 import { registerEmployeesRoutes } from "../modules/employees/routes";
 import { registerMonthLocksRoutes } from "../modules/month-locks/routes";
 import { registerReportsRoutes } from "../modules/reports/routes";
+import { registerWeeklyDayOffRoutes } from "../modules/weekly-day-offs/routes";
 
 type RegisterAppRoutesOptions = {
   attendanceService?: ReturnType<typeof createAttendanceService>;
@@ -19,6 +21,7 @@ type RegisterAppRoutesOptions = {
   branchService?: ReturnType<typeof createBranchService>;
   employeeDeviceService?: ReturnType<typeof createEmployeeDeviceService>;
   employeeService?: ReturnType<typeof createEmployeeService>;
+  weeklyDayOffService?: ReturnType<typeof createWeeklyDayOffService>;
 };
 
 export function registerAppRoutes(app: Express, options: RegisterAppRoutesOptions = {}) {
@@ -40,6 +43,10 @@ export function registerAppRoutes(app: Express, options: RegisterAppRoutesOption
   registerAttendanceRoutes(app, {
     authService: options.authService,
     attendanceService: options.attendanceService
+  });
+  registerWeeklyDayOffRoutes(app, {
+    authService: options.authService,
+    weeklyDayOffService: options.weeklyDayOffService
   });
   registerReportsRoutes(app);
   registerAuditLogsRoutes(app);
