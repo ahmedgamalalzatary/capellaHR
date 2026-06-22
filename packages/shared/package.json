@@ -1,0 +1,19 @@
+{
+  "name": "@capella/shared",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --project tsconfig.json --watch",
+    "lint": "echo \"No lint configured yet\"",
+    "test": "echo \"No tests configured yet\"",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

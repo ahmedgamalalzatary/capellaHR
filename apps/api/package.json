@@ -1,0 +1,20 @@
+{
+  "name": "@capella/api",
+  "private": true,
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "lint": "echo \"No lint configured yet\"",
+    "test": "echo \"No tests configured yet\"",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5.2.1",
+    "multer": "^2.2.0",
+    "mysql2": "^3.22.5",
+    "zod": "^4.4.3"
+  }
+}

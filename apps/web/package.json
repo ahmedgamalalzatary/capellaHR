@@ -1,0 +1,22 @@
+{
+  "name": "@capella/web",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "next lint",
+    "test": "echo \"No tests configured yet\"",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "next": "^16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.9"
+  }
+}
