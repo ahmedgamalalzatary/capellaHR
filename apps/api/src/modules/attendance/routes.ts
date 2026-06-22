@@ -1,7 +1,15 @@
 import type { Express, NextFunction, Request, Response } from "express";
-import { attendanceActionSchema } from "@capella/shared";
+import {
+  adminAttendanceCreateSchema,
+  adminAttendanceDeleteSchema,
+  adminAttendanceUpdateSchema,
+  attendanceActionSchema,
+  attendanceListFilterSchema
+} from "@capella/shared";
+import { z } from "zod";
 import { getAppConfig } from "../../config/app-config";
 import { createDatabaseClient } from "../../db";
+import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
 import { type createAuthService } from "../auth/service";
 import { getAuthService } from "../auth/runtime";
 import { createDrizzleAttendanceRepository } from "./repository";
@@ -25,6 +33,12 @@ export function registerAttendanceRoutes(
 ) {
   const employeeSessionMiddleware = requireEmployeeSession({
     authService: options.authService
+  });
+  const adminSessionMiddleware = requireAdminSession({
+    authService: options.authService
+  });
+  const sessionIdParamsSchema = z.object({
+    sessionId: z.coerce.number().int().positive()
   });
 
   app.get("/attendance/me", employeeSessionMiddleware, async (_request: Request, response: Response) => {
@@ -83,6 +97,92 @@ export function registerAttendanceRoutes(
     response.status(200).json({
       attendance: result
     });
+  });
+
+  app.get("/admin/attendance", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const parsed = attendanceListFilterSchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      sendValidationError(response, parsed.error.flatten());
+      return;
+    }
+
+    const attendanceService = options.attendanceService ?? getAttendanceService();
+    const sessions = await attendanceService.listAdminAttendance(parsed.data);
+
+    response.status(200).json({ sessions });
+  });
+
+  app.post("/admin/attendance", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const parsed = adminAttendanceCreateSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      sendValidationError(response, parsed.error.flatten());
+      return;
+    }
+
+    const attendanceService = options.attendanceService ?? getAttendanceService();
+    const admin = getAuthenticatedAdmin(response);
+    const result = await attendanceService.createAdminAttendance(parsed.data, admin.id);
+
+    if ("error" in result) {
+      sendAdminAttendanceError(response, result.error.code, result.error.message, result.error.details);
+      return;
+    }
+
+    response.status(201).json({ session: result });
+  });
+
+  app.patch("/admin/attendance/:sessionId", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const params = sessionIdParamsSchema.safeParse(request.params);
+    const body = adminAttendanceUpdateSchema.safeParse(request.body);
+
+    if (!params.success) {
+      sendValidationError(response, params.error.flatten());
+      return;
+    }
+
+    if (!body.success) {
+      sendValidationError(response, body.error.flatten());
+      return;
+    }
+
+    const attendanceService = options.attendanceService ?? getAttendanceService();
+    const admin = getAuthenticatedAdmin(response);
+    const result = await attendanceService.updateAdminAttendance(params.data.sessionId, body.data, admin.id);
+
+    if ("error" in result) {
+      sendAdminAttendanceError(response, result.error.code, result.error.message, result.error.details);
+      return;
+    }
+
+    response.status(200).json({ session: result });
+  });
+
+  app.delete("/admin/attendance/:sessionId", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const params = sessionIdParamsSchema.safeParse(request.params);
+    const body = adminAttendanceDeleteSchema.safeParse(request.body);
+
+    if (!params.success) {
+      sendValidationError(response, params.error.flatten());
+      return;
+    }
+
+    if (!body.success) {
+      sendValidationError(response, body.error.flatten());
+      return;
+    }
+
+    const attendanceService = options.attendanceService ?? getAttendanceService();
+    const admin = getAuthenticatedAdmin(response);
+    const result = await attendanceService.deleteAdminAttendance(params.data.sessionId, body.data.reason, admin.id);
+
+    if (result && "error" in result) {
+      sendAdminAttendanceError(response, result.error.code, result.error.message, result.error.details);
+      return;
+    }
+
+    response.status(204).send();
   });
 }
 
@@ -187,6 +287,23 @@ function sendServiceError(
   details: Record<string, unknown>
 ) {
   const status = code === "EMPLOYEE_NOT_FOUND" ? 404 : 409;
+
+  response.status(status).json({
+    error: {
+      code,
+      message,
+      details
+    }
+  });
+}
+
+function sendAdminAttendanceError(
+  response: Response,
+  code: string,
+  message: string,
+  details: Record<string, unknown>
+) {
+  const status = code === "EMPLOYEE_NOT_FOUND" || code === "ATTENDANCE_NOT_FOUND" ? 404 : 409;
 
   response.status(status).json({
     error: {

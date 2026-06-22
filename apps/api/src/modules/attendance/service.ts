@@ -1,12 +1,19 @@
-import type { AttendanceActionInput } from "@capella/shared";
 import type {
+  AdminAttendanceCreateInput,
+  AdminAttendanceUpdateInput,
+  AttendanceActionInput,
+  AttendanceListFilterInput
+} from "@capella/shared";
+import type {
+  AdminAttendanceRecord,
   AttendanceBlockedAttemptRecord,
   AttendanceSessionRecord
 } from "./repository";
-export type { AttendanceBlockedAttemptRecord, AttendanceSessionRecord } from "./repository";
+export type { AdminAttendanceRecord, AttendanceBlockedAttemptRecord, AttendanceSessionRecord } from "./repository";
 
 export type EmployeeAttendanceRecord = {
   id: number;
+  fullName: string;
   branchId: number | null;
   softDeletedAt: Date | null;
 };
@@ -35,7 +42,10 @@ type AttendanceErrorResult = {
       | "EMPLOYEE_BRANCH_NOT_ASSIGNED"
       | "BRANCH_NOT_READY"
       | "ATTENDANCE_ACTION_OUT_OF_ORDER"
-      | "OVERNIGHT_ATTENDANCE_NOT_ALLOWED";
+      | "OVERNIGHT_ATTENDANCE_NOT_ALLOWED"
+      | "ATTENDANCE_NOT_FOUND"
+      | "ATTENDANCE_DATE_CONFLICT"
+      | "MONTH_LOCKED";
     message: string;
     details: Record<string, unknown>;
   };
@@ -77,6 +87,24 @@ export type AttendanceRepository = {
   hasWeeklyDayOff(employeeId: number, dateKey: string): Promise<boolean>;
   hasPermissionAbsence(employeeId: number, dateKey: string): Promise<boolean>;
   isMonthLocked(monthKey: string): Promise<boolean>;
+  listAdminAttendance(filters: AttendanceListFilterInput): Promise<AdminAttendanceRecord[]>;
+  findAdminAttendanceById(sessionId: number): Promise<AdminAttendanceRecord | null>;
+  createAdminAttendance(input: {
+    employeeId: number;
+    branchId: number;
+    checkInAtUtc: Date;
+    checkOutAtUtc: Date | null;
+    reason: string;
+    adminId: number;
+  }): Promise<AdminAttendanceRecord>;
+  updateAdminAttendance(sessionId: number, input: {
+    branchId: number;
+    checkInAtUtc: Date;
+    checkOutAtUtc: Date | null;
+    reason: string;
+    adminId: number;
+  }): Promise<AdminAttendanceRecord | null>;
+  deleteAdminAttendance(sessionId: number): Promise<boolean>;
 };
 
 type CreateAttendanceServiceOptions = {
@@ -222,6 +250,106 @@ export function createAttendanceService(options: CreateAttendanceServiceOptions)
       );
 
       return buildAttendanceState(employeeId, completedSessions, null, now);
+    },
+
+    async listAdminAttendance(filters: AttendanceListFilterInput) {
+      return options.repository.listAdminAttendance(filters);
+    },
+
+    async createAdminAttendance(input: AdminAttendanceCreateInput, adminId: number) {
+      const employee = await options.repository.findEmployeeById(input.employeeId);
+
+      if (!employee || employee.softDeletedAt !== null) {
+        return createEmployeeNotFoundError();
+      }
+
+      const validation = await validateAdminAttendanceMutation(
+        options.repository,
+        employee.id,
+        new Date(input.checkInAt),
+        input.checkOutAt ? new Date(input.checkOutAt) : null
+      );
+
+      if (validation) {
+        return validation;
+      }
+
+      return options.repository.createAdminAttendance({
+        employeeId: input.employeeId,
+        branchId: input.branchId,
+        checkInAtUtc: new Date(input.checkInAt),
+        checkOutAtUtc: input.checkOutAt ? new Date(input.checkOutAt) : null,
+        reason: input.reason,
+        adminId
+      });
+    },
+
+    async updateAdminAttendance(sessionId: number, input: AdminAttendanceUpdateInput, adminId: number) {
+      const existing = await options.repository.findAdminAttendanceById(sessionId);
+
+      if (!existing) {
+        return {
+          error: {
+            code: "ATTENDANCE_NOT_FOUND",
+            message: "Attendance record not found",
+            details: {}
+          }
+        } satisfies AttendanceErrorResult;
+      }
+
+      const validation = await validateAdminAttendanceMutation(
+        options.repository,
+        existing.employeeId,
+        new Date(input.checkInAt),
+        input.checkOutAt ? new Date(input.checkOutAt) : null
+      );
+
+      if (validation) {
+        return validation;
+      }
+
+      return (await options.repository.updateAdminAttendance(sessionId, {
+        branchId: input.branchId,
+        checkInAtUtc: new Date(input.checkInAt),
+        checkOutAtUtc: input.checkOutAt ? new Date(input.checkOutAt) : null,
+        reason: input.reason,
+        adminId
+      })) ?? {
+        error: {
+          code: "ATTENDANCE_NOT_FOUND",
+          message: "Attendance record not found",
+          details: {}
+        }
+      } satisfies AttendanceErrorResult;
+    },
+
+    async deleteAdminAttendance(sessionId: number, reason: string, adminId: number) {
+      void reason;
+      void adminId;
+      const existing = await options.repository.findAdminAttendanceById(sessionId);
+
+      if (!existing) {
+        return {
+          error: {
+            code: "ATTENDANCE_NOT_FOUND",
+            message: "Attendance record not found",
+            details: {}
+          }
+        } satisfies AttendanceErrorResult;
+      }
+
+      if (await options.repository.isMonthLocked(getCairoDateKey(existing.checkInAtUtc).slice(0, 7))) {
+        return {
+          error: {
+            code: "MONTH_LOCKED",
+            message: "The month is locked",
+            details: {}
+          }
+        } satisfies AttendanceErrorResult;
+      }
+
+      await options.repository.deleteAdminAttendance(sessionId);
+      return null;
     }
   };
 }
@@ -362,6 +490,62 @@ function createEmployeeNotFoundError(): AttendanceErrorResult {
       details: {}
     }
   };
+}
+
+async function validateAdminAttendanceMutation(
+  repository: AttendanceRepository,
+  employeeId: number,
+  checkInAtUtc: Date,
+  checkOutAtUtc: Date | null
+) {
+  if (checkOutAtUtc && getCairoDateKey(checkInAtUtc) !== getCairoDateKey(checkOutAtUtc)) {
+    return {
+      error: {
+        code: "OVERNIGHT_ATTENDANCE_NOT_ALLOWED",
+        message: "Attendance check-out must happen on the same Cairo date",
+        details: {}
+      }
+    } satisfies AttendanceErrorResult;
+  }
+
+  const dateKey = getCairoDateKey(checkInAtUtc);
+  const monthKey = dateKey.slice(0, 7);
+
+  if (await repository.isMonthLocked(monthKey)) {
+    return {
+      error: {
+        code: "MONTH_LOCKED",
+        message: "The month is locked",
+        details: {}
+      }
+    } satisfies AttendanceErrorResult;
+  }
+
+  if (await repository.hasWeeklyDayOff(employeeId, dateKey)) {
+    return {
+      error: {
+        code: "ATTENDANCE_DATE_CONFLICT",
+        message: "Attendance conflicts with existing day classification",
+        details: {
+          conflictType: "weekly_day_off"
+        }
+      }
+    } satisfies AttendanceErrorResult;
+  }
+
+  if (await repository.hasPermissionAbsence(employeeId, dateKey)) {
+    return {
+      error: {
+        code: "ATTENDANCE_DATE_CONFLICT",
+        message: "Attendance conflicts with existing day classification",
+        details: {
+          conflictType: "permission_absence"
+        }
+      }
+    } satisfies AttendanceErrorResult;
+  }
+
+  return null;
 }
 
 function createBranchPolicySnapshot(branch: BranchPolicyRecord): Record<string, unknown> {

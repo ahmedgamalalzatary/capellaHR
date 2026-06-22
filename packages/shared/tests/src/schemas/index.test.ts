@@ -10,6 +10,7 @@ describe("shared schemas", () => {
       employeeDeviceSetupLinkCreateSchema: expect.any(z.ZodType),
       branchCreateSchema: expect.any(z.ZodType),
       attendanceActionSchema: expect.any(z.ZodType),
+      adminAttendanceCreateSchema: expect.any(z.ZodType),
       monthlyAttendanceSummaryFilterSchema: expect.any(z.ZodType),
       weeklyDayOffAssignmentCreateSchema: expect.any(z.ZodType),
       permissionAbsenceCreateSchema: expect.any(z.ZodType)
@@ -84,5 +85,18 @@ describe("shared schemas", () => {
     });
 
     expect(result.absenceDate).toBe("2026-06-29");
+  });
+
+  it("accepts admin attendance creation payloads with reason and optional check-out", () => {
+    const result = schemas.adminAttendanceCreateSchema.parse({
+      employeeId: 1,
+      branchId: 1,
+      checkInAt: "2026-06-22T08:00:00.000Z",
+      checkOutAt: "2026-06-22T16:00:00.000Z",
+      reason: "manual correction"
+    });
+
+    expect(result.checkInAt).toBe("2026-06-22T08:00:00.000Z");
+    expect(result.checkOutAt).toBe("2026-06-22T16:00:00.000Z");
   });
 });

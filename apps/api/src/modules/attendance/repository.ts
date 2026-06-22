@@ -1,4 +1,5 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, like, lte } from "drizzle-orm";
+import type { AttendanceListFilterInput } from "@capella/shared";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import {
   attendanceBlockedAttempts,
@@ -25,6 +26,16 @@ export type AttendanceSessionRecord = {
   checkInIpAddress: string;
   deviceId: string;
   branchPolicySnapshot: Record<string, unknown>;
+  adminReason?: string | null;
+  createdByAdminId?: number | null;
+  updatedByAdminId?: number | null;
+};
+
+export type AdminAttendanceRecord = AttendanceSessionRecord & {
+  employeeName: string;
+  adminReason: string | null;
+  createdByAdminId: number | null;
+  updatedByAdminId: number | null;
 };
 
 export type AttendanceBlockedAttemptRecord = {
@@ -45,6 +56,10 @@ type CreateDrizzleAttendanceRepositoryOptions = {
   db: MySql2Database<DatabaseSchema>;
 };
 
+function formatDateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
 function mapAttendanceSessionRecord(
   row: typeof attendanceSessions.$inferSelect
 ): AttendanceSessionRecord {
@@ -59,7 +74,10 @@ function mapAttendanceSessionRecord(
     checkInLongitude: Number(row.checkInLongitude),
     checkInIpAddress: row.checkInIpAddress,
     deviceId: row.deviceId,
-    branchPolicySnapshot: (row.branchPolicySnapshot as Record<string, unknown>) ?? {}
+    branchPolicySnapshot: (row.branchPolicySnapshot as Record<string, unknown>) ?? {},
+    adminReason: row.adminReason ?? null,
+    createdByAdminId: row.createdByAdminId ?? null,
+    updatedByAdminId: row.updatedByAdminId ?? null
   };
 }
 
@@ -89,6 +107,7 @@ export function createDrizzleAttendanceRepository(
       const rows = await options.db
         .select({
           id: employees.id,
+          fullName: employees.fullName,
           branchId: employees.branchId,
           softDeletedAt: employees.softDeletedAt
         })
@@ -98,6 +117,7 @@ export function createDrizzleAttendanceRepository(
 
       return rows[0] ? {
         id: rows[0].id,
+        fullName: rows[0].fullName,
         branchId: rows[0].branchId ?? null,
         softDeletedAt: rows[0].softDeletedAt ?? null
       } : null;
@@ -262,35 +282,21 @@ export function createDrizzleAttendanceRepository(
     },
 
     async hasWeeklyDayOff(employeeId: number, dateKey: string) {
-      const dayOffDate = parseDateKey(dateKey);
       const rows = await options.db
-        .select({ id: weeklyDayOffAssignments.id })
+        .select({ dayOffDate: weeklyDayOffAssignments.dayOffDate })
         .from(weeklyDayOffAssignments)
-        .where(
-          and(
-            eq(weeklyDayOffAssignments.employeeId, employeeId),
-            eq(weeklyDayOffAssignments.dayOffDate, dayOffDate)
-          )
-        )
-        .limit(1);
+        .where(eq(weeklyDayOffAssignments.employeeId, employeeId));
 
-      return Boolean(rows[0]);
+      return rows.some((row) => formatDateOnly(row.dayOffDate) === dateKey);
     },
 
     async hasPermissionAbsence(employeeId: number, dateKey: string) {
-      const absenceDate = parseDateKey(dateKey);
       const rows = await options.db
-        .select({ id: permissionAbsences.id })
+        .select({ absenceDate: permissionAbsences.absenceDate })
         .from(permissionAbsences)
-        .where(
-          and(
-            eq(permissionAbsences.employeeId, employeeId),
-            eq(permissionAbsences.absenceDate, absenceDate)
-          )
-        )
-        .limit(1);
+        .where(eq(permissionAbsences.employeeId, employeeId));
 
-      return Boolean(rows[0]);
+      return rows.some((row) => formatDateOnly(row.absenceDate) === dateKey);
     },
 
     async isMonthLocked(monthKey: string) {
@@ -301,10 +307,134 @@ export function createDrizzleAttendanceRepository(
         .limit(1);
 
       return Boolean(rows[0]);
+    },
+
+    async listAdminAttendance(filters: AttendanceListFilterInput) {
+      const conditions = [];
+
+      if (filters.employeeName) {
+        conditions.push(like(employees.fullName, `%${filters.employeeName}%`));
+      }
+
+      if (filters.branchId) {
+        conditions.push(eq(attendanceSessions.branchId, filters.branchId));
+      }
+
+      if (filters.status) {
+        conditions.push(eq(attendanceSessions.status, filters.status));
+      }
+
+      if (filters.dateFrom) {
+        conditions.push(gte(attendanceSessions.checkInAtUtc, new Date(`${filters.dateFrom}T00:00:00.000Z`)));
+      }
+
+      if (filters.dateTo) {
+        conditions.push(lte(attendanceSessions.checkInAtUtc, new Date(`${filters.dateTo}T23:59:59.999Z`)));
+      }
+
+      const rows = await options.db
+        .select({
+          session: attendanceSessions,
+          employeeName: employees.fullName
+        })
+        .from(attendanceSessions)
+        .innerJoin(employees, eq(attendanceSessions.employeeId, employees.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(
+          filters.sortBy === "employee_name"
+            ? (filters.sortDirection === "asc" ? asc(employees.fullName) : desc(employees.fullName))
+            : (filters.sortDirection === "asc" ? asc(attendanceSessions.checkInAtUtc) : desc(attendanceSessions.checkInAtUtc))
+        );
+
+      return rows.map(({ session, employeeName }) => ({
+        ...mapAttendanceSessionRecord(session),
+        employeeName,
+        adminReason: session.adminReason ?? null,
+        createdByAdminId: session.createdByAdminId ?? null,
+        updatedByAdminId: session.updatedByAdminId ?? null
+      } satisfies AdminAttendanceRecord));
+    },
+
+    async findAdminAttendanceById(sessionId: number) {
+      const rows = await options.db
+        .select({
+          session: attendanceSessions,
+          employeeName: employees.fullName
+        })
+        .from(attendanceSessions)
+        .innerJoin(employees, eq(attendanceSessions.employeeId, employees.id))
+        .where(eq(attendanceSessions.id, sessionId))
+        .limit(1);
+
+      const row = rows[0];
+
+      if (!row) {
+        return null;
+      }
+
+      return {
+        ...mapAttendanceSessionRecord(row.session),
+        employeeName: row.employeeName,
+        adminReason: row.session.adminReason ?? null,
+        createdByAdminId: row.session.createdByAdminId ?? null,
+        updatedByAdminId: row.session.updatedByAdminId ?? null
+      } satisfies AdminAttendanceRecord;
+    },
+
+    async createAdminAttendance(input: {
+      employeeId: number;
+      branchId: number;
+      checkInAtUtc: Date;
+      checkOutAtUtc: Date | null;
+      reason: string;
+      adminId: number;
+    }) {
+      const result = await options.db.insert(attendanceSessions).values({
+        employeeId: input.employeeId,
+        branchId: input.branchId,
+        status: input.checkOutAtUtc ? "completed" : "open",
+        checkInAtUtc: input.checkInAtUtc,
+        checkOutAtUtc: input.checkOutAtUtc,
+        checkInLatitude: "0.0000000",
+        checkInLongitude: "0.0000000",
+        checkInIpAddress: "",
+        deviceId: "admin",
+        branchPolicySnapshot: {},
+        adminReason: input.reason,
+        createdByAdminId: input.adminId
+      });
+
+      return (await this.findAdminAttendanceById(Number(result[0].insertId)))!;
+    },
+
+    async updateAdminAttendance(sessionId: number, input: {
+      branchId: number;
+      checkInAtUtc: Date;
+      checkOutAtUtc: Date | null;
+      reason: string;
+      adminId: number;
+    }) {
+      await options.db
+        .update(attendanceSessions)
+        .set({
+          branchId: input.branchId,
+          status: input.checkOutAtUtc ? "completed" : "open",
+          checkInAtUtc: input.checkInAtUtc,
+          checkOutAtUtc: input.checkOutAtUtc,
+          adminReason: input.reason,
+          updatedByAdminId: input.adminId
+        })
+        .where(eq(attendanceSessions.id, sessionId));
+
+      return this.findAdminAttendanceById(sessionId);
+    },
+
+    async deleteAdminAttendance(sessionId: number) {
+      const result = await options.db
+        .delete(attendanceSessions)
+        .where(eq(attendanceSessions.id, sessionId));
+
+      return result[0].affectedRows > 0;
     }
   };
-}
-
-function parseDateKey(dateKey: string) {
-  return new Date(`${dateKey}T00:00:00.000Z`);
 }

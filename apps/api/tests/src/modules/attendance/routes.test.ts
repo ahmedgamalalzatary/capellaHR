@@ -5,6 +5,7 @@ import { createAuthService, createPasswordHash } from "../../../../src/modules/a
 import { createAttendanceService } from "../../../../src/modules/attendance/service";
 import type {
   AttendanceBlockedAttemptRecord,
+  AdminAttendanceRecord,
   AttendanceRepository,
   AttendanceSessionRecord,
   BranchPolicyRecord,
@@ -121,6 +122,108 @@ class InMemoryAttendanceRepository implements AttendanceRepository {
   async isMonthLocked() {
     return false;
   }
+
+  async listAdminAttendance() {
+    return this.sessions.map<AdminAttendanceRecord>((session) => ({
+      ...session,
+      employeeName: this.employees.get(session.employeeId)?.fullName ?? "Unknown",
+      adminReason: session.adminReason ?? null,
+      createdByAdminId: session.createdByAdminId ?? null,
+      updatedByAdminId: session.updatedByAdminId ?? null
+    }));
+  }
+
+  async findAdminAttendanceById(sessionId: number) {
+    const session = this.sessions.find((item) => item.id === sessionId) ?? null;
+
+    if (!session) {
+      return null;
+    }
+
+    return {
+      ...session,
+      employeeName: this.employees.get(session.employeeId)?.fullName ?? "Unknown",
+      adminReason: session.adminReason ?? null,
+      createdByAdminId: session.createdByAdminId ?? null,
+      updatedByAdminId: session.updatedByAdminId ?? null
+    };
+  }
+
+  async createAdminAttendance(input: {
+    employeeId: number;
+    branchId: number;
+    checkInAtUtc: Date;
+    checkOutAtUtc: Date | null;
+    reason: string;
+    adminId: number;
+  }) {
+    const session: AttendanceSessionRecord = {
+      id: this.nextSessionId++,
+      employeeId: input.employeeId,
+      branchId: input.branchId,
+      status: input.checkOutAtUtc ? "completed" : "open",
+      checkInAtUtc: input.checkInAtUtc,
+      checkOutAtUtc: input.checkOutAtUtc,
+      checkInLatitude: 0,
+      checkInLongitude: 0,
+      checkInIpAddress: "",
+      deviceId: "admin",
+      branchPolicySnapshot: {},
+      adminReason: input.reason,
+      createdByAdminId: input.adminId,
+      updatedByAdminId: null
+    };
+
+    this.sessions.push(session);
+
+    return {
+      ...session,
+      employeeName: this.employees.get(input.employeeId)?.fullName ?? "Unknown",
+      adminReason: input.reason,
+      createdByAdminId: input.adminId,
+      updatedByAdminId: null
+    };
+  }
+
+  async updateAdminAttendance(sessionId: number, input: {
+    branchId: number;
+    checkInAtUtc: Date;
+    checkOutAtUtc: Date | null;
+    reason: string;
+    adminId: number;
+  }) {
+    const session = this.sessions.find((item) => item.id === sessionId) ?? null;
+
+    if (!session) {
+      return null;
+    }
+
+    session.branchId = input.branchId;
+    session.checkInAtUtc = input.checkInAtUtc;
+    session.checkOutAtUtc = input.checkOutAtUtc;
+    session.status = input.checkOutAtUtc ? "completed" : "open";
+    session.adminReason = input.reason;
+    session.updatedByAdminId = input.adminId;
+
+    return {
+      ...session,
+      employeeName: this.employees.get(session.employeeId)?.fullName ?? "Unknown",
+      adminReason: input.reason,
+      createdByAdminId: session.createdByAdminId ?? null,
+      updatedByAdminId: input.adminId
+    };
+  }
+
+  async deleteAdminAttendance(sessionId: number) {
+    const index = this.sessions.findIndex((item) => item.id === sessionId);
+
+    if (index === -1) {
+      return false;
+    }
+
+    this.sessions.splice(index, 1);
+    return true;
+  }
 }
 
 describe("attendance routes", () => {
@@ -236,6 +339,147 @@ describe("attendance routes", () => {
     });
     expect(response.body.attendance.currentAction).toBe("check_in");
   });
+
+  it("returns forbidden on admin attendance routes for employee sessions", async () => {
+    const app = createApp({
+      authService: createEmployeeAuthService(),
+      attendanceService: createAttendanceService({
+        repository: createBaseRepository()
+      })
+    });
+    const employeeCookie = await signInEmployee(app);
+
+    const response = await request(app).get("/admin/attendance").set("Cookie", employeeCookie);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("lists admin attendance for admin sessions", async () => {
+    const repository = createBaseRepository();
+    repository.sessions.push({
+      id: 1,
+      employeeId: 2,
+      branchId: 1,
+      status: "completed",
+      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
+      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
+      checkInLatitude: 0,
+      checkInLongitude: 0,
+      checkInIpAddress: "",
+      deviceId: "admin",
+      branchPolicySnapshot: {},
+      adminReason: "manual correction",
+      createdByAdminId: 1,
+      updatedByAdminId: null
+    });
+    const app = createApp({
+      authService: createEmployeeAuthService(),
+      attendanceService: createAttendanceService({ repository })
+    });
+    const adminCookie = await signInAdmin(app);
+
+    const response = await request(app).get("/admin/attendance").set("Cookie", adminCookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.sessions).toHaveLength(1);
+    expect(response.body.sessions[0].employeeName).toBe("Test Employee");
+  });
+
+  it("creates admin attendance with a required reason", async () => {
+    const app = createApp({
+      authService: createEmployeeAuthService(),
+      attendanceService: createAttendanceService({
+        repository: createBaseRepository()
+      })
+    });
+    const adminCookie = await signInAdmin(app);
+
+    const response = await request(app)
+      .post("/admin/attendance")
+      .set("Cookie", adminCookie)
+      .send({
+        employeeId: 2,
+        branchId: 1,
+        checkInAt: "2026-06-22T08:00:00.000Z",
+        checkOutAt: "2026-06-22T16:00:00.000Z",
+        reason: "manual correction"
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.session.status).toBe("completed");
+  });
+
+  it("updates admin attendance", async () => {
+    const repository = createBaseRepository();
+    repository.sessions.push({
+      id: 1,
+      employeeId: 2,
+      branchId: 1,
+      status: "completed",
+      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
+      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
+      checkInLatitude: 0,
+      checkInLongitude: 0,
+      checkInIpAddress: "",
+      deviceId: "admin",
+      branchPolicySnapshot: {},
+      adminReason: "before",
+      createdByAdminId: 1,
+      updatedByAdminId: null
+    });
+    const app = createApp({
+      authService: createEmployeeAuthService(),
+      attendanceService: createAttendanceService({ repository })
+    });
+    const adminCookie = await signInAdmin(app);
+
+    const response = await request(app)
+      .patch("/admin/attendance/1")
+      .set("Cookie", adminCookie)
+      .send({
+        branchId: 1,
+        checkInAt: "2026-06-22T09:00:00.000Z",
+        checkOutAt: "2026-06-22T17:00:00.000Z",
+        reason: "manual correction"
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.session.adminReason).toBe("manual correction");
+  });
+
+  it("deletes admin attendance", async () => {
+    const repository = createBaseRepository();
+    repository.sessions.push({
+      id: 1,
+      employeeId: 2,
+      branchId: 1,
+      status: "completed",
+      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
+      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
+      checkInLatitude: 0,
+      checkInLongitude: 0,
+      checkInIpAddress: "",
+      deviceId: "admin",
+      branchPolicySnapshot: {},
+      adminReason: "manual correction",
+      createdByAdminId: 1,
+      updatedByAdminId: null
+    });
+    const app = createApp({
+      authService: createEmployeeAuthService(),
+      attendanceService: createAttendanceService({ repository })
+    });
+    const adminCookie = await signInAdmin(app);
+
+    const response = await request(app)
+      .delete("/admin/attendance/1")
+      .set("Cookie", adminCookie)
+      .send({
+        reason: "remove duplicate"
+      });
+
+    expect(response.status).toBe(204);
+  });
 });
 
 function createBaseRepository() {
@@ -243,6 +487,7 @@ function createBaseRepository() {
 
   repository.employees.set(2, {
     id: 2,
+    fullName: "Test Employee",
     branchId: 1,
     softDeletedAt: null
   });
