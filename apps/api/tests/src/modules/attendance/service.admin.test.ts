@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAttendanceService } from "../../../../src/modules/attendance/service";
-import { createBaseRepository } from "./attendance-service.fixtures";
+import { createBaseRepository, InMemoryAuditLogService } from "./attendance-service.fixtures";
 
 describe("attendance service (admin)", () => {
   it("lists admin attendance with employee-name filtering and employee-name sorting", async () => {
@@ -57,7 +57,8 @@ describe("attendance service (admin)", () => {
 
   it("creates admin attendance without employee device or gps validation", async () => {
     const repository = createBaseRepository();
-    const service = createAttendanceService({ repository });
+    const auditLogService = new InMemoryAuditLogService();
+    const service = createAttendanceService({ repository, auditLogService });
 
     const result = await service.createAdminAttendance({
       employeeId: 1,
@@ -75,6 +76,12 @@ describe("attendance service (admin)", () => {
     expect(result.status).toBe("completed");
     expect(result.adminReason).toBe("manual correction");
     expect(repository.sessions).toHaveLength(1);
+    expect(auditLogService.logs).toHaveLength(1);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "create",
+      entityType: "attendance",
+      reason: "manual correction"
+    });
   });
 
   it("blocks admin attendance creation when the date conflicts with a permission absence", async () => {

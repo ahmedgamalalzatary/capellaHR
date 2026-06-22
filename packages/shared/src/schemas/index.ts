@@ -1,6 +1,7 @@
 export * from "./auth";
 export * from "./branches";
 export * from "./attendance";
+export * from "./audit-logs";
 export * from "./common";
 export * from "./employees";
 export * from "./employee-devices";

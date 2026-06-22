@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { getAppConfig } from "../../config/app-config";
 import { createDatabaseClient } from "../../db";
+import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
+import { createAuditLogService } from "../audit-logs/service";
 import { type createAuthService } from "../auth/service";
 import { getAuthService } from "../auth/runtime";
 import { createDrizzleAttendanceRepository } from "./repository";
@@ -84,9 +86,16 @@ export function getAttendanceService() {
   const repository = createDrizzleAttendanceRepository({
     db: databaseClient.db
   });
+  const auditLogRepository = createDrizzleAuditLogRepository({
+    db: databaseClient.db
+  });
+  const auditLogService = createAuditLogService({
+    repository: auditLogRepository
+  });
 
   attendanceService = createAttendanceService({
-    repository
+    repository,
+    auditLogService
   });
 
   return attendanceService;
