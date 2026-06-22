@@ -16,3 +16,12 @@ export const branchUpdateSchema = branchCreateSchema.partial();
 export const branchSearchSchema = z.object({
   search: z.string().trim().optional()
 });
+
+export const branchSetupLinkCreateSchema = z.object({
+  deviceLabel: z.string().trim().min(1).max(255).optional()
+});
+
+export const branchSetupCompletionSchema = z.object({
+  deviceLabel: z.string().trim().min(1).max(255).optional(),
+  browserFingerprint: z.string().trim().min(1).max(255)
+});

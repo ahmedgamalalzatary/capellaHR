@@ -10,6 +10,7 @@ describe("shared schemas", () => {
       employeeDeviceSetupLinkCreateSchema: expect.any(z.ZodType),
       monthLockCreateSchema: expect.any(z.ZodType),
       branchCreateSchema: expect.any(z.ZodType),
+      branchSetupLinkCreateSchema: expect.any(z.ZodType),
       attendanceActionSchema: expect.any(z.ZodType),
       auditLogListFilterSchema: expect.any(z.ZodType),
       adminAttendanceCreateSchema: expect.any(z.ZodType),

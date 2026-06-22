@@ -1,5 +1,11 @@
 import type { Express, Request, Response } from "express";
-import { branchCreateSchema, branchSearchSchema, branchUpdateSchema } from "@capella/shared";
+import {
+  branchCreateSchema,
+  branchSearchSchema,
+  branchSetupCompletionSchema,
+  branchSetupLinkCreateSchema,
+  branchUpdateSchema
+} from "@capella/shared";
 import { z } from "zod";
 import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
 import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
@@ -95,6 +101,96 @@ export function registerBranchesRoutes(app: Express, options: RegisterBranchesRo
     }
 
     response.status(200).json({ branch: result });
+  });
+
+  app.get("/branches/:branchId/device", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const parsed = branchIdParamsSchema.safeParse(request.params);
+
+    if (!parsed.success) {
+      sendValidationError(response, parsed.error.flatten());
+      return;
+    }
+
+    const branchService = options.branchService ?? getBranchService();
+    const result = await branchService.getBranchDevice(parsed.data.branchId);
+
+    if ("error" in result) {
+      response.status(404).json(result);
+      return;
+    }
+
+    response.status(200).json({ branchDevice: result });
+  });
+
+  app.post("/branches/:branchId/setup-links", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const params = branchIdParamsSchema.safeParse(request.params);
+    const body = branchSetupLinkCreateSchema.safeParse(request.body);
+
+    if (!params.success) {
+      sendValidationError(response, params.error.flatten());
+      return;
+    }
+
+    if (!body.success) {
+      sendValidationError(response, body.error.flatten());
+      return;
+    }
+
+    const branchService = options.branchService ?? getBranchService();
+    const admin = getAuthenticatedAdmin(response);
+    const result = await branchService.createSetupLink(params.data.branchId, body.data, admin.id);
+
+    if ("error" in result) {
+      response.status(404).json(result);
+      return;
+    }
+
+    response.status(201).json({ branchDevice: result });
+  });
+
+  app.post("/branch-setup/:token/complete", async (request: Request, response: Response) => {
+    const params = z.object({ token: z.string().trim().min(1) }).safeParse(request.params);
+    const body = branchSetupCompletionSchema.safeParse(request.body);
+
+    if (!params.success) {
+      sendValidationError(response, params.error.flatten());
+      return;
+    }
+
+    if (!body.success) {
+      sendValidationError(response, body.error.flatten());
+      return;
+    }
+
+    const branchService = options.branchService ?? getBranchService();
+    const result = await branchService.completeSetup(params.data.token, body.data);
+
+    if ("error" in result) {
+      response.status(result.error.code === "BRANCH_SETUP_EXPIRED" ? 410 : 404).json(result);
+      return;
+    }
+
+    response.status(200).json({ branchDevice: result });
+  });
+
+  app.delete("/branches/:branchId/setup-links", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const parsed = branchIdParamsSchema.safeParse(request.params);
+
+    if (!parsed.success) {
+      sendValidationError(response, parsed.error.flatten());
+      return;
+    }
+
+    const branchService = options.branchService ?? getBranchService();
+    const admin = getAuthenticatedAdmin(response);
+    const result = await branchService.revokeSetupLink(parsed.data.branchId, admin.id);
+
+    if ("error" in result) {
+      response.status(404).json(result);
+      return;
+    }
+
+    response.status(200).json(result);
   });
 }
 

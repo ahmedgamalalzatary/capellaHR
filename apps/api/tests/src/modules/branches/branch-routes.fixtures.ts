@@ -4,7 +4,13 @@ import { createInMemoryAuthRepository } from "../../../../src/modules/auth/repos
 import { createAuthService, createPasswordHash } from "../../../../src/modules/auth/service";
 import type { BranchRecord } from "../../../../src/modules/branches/repository";
 import type { BranchRepository } from "../../../../src/modules/branches/service";
-import type { BranchCreateInput, BranchSearchInput, BranchUpdateInput } from "@capella/shared";
+import type {
+  BranchCreateInput,
+  BranchSearchInput,
+  BranchSetupCompletionInput,
+  BranchSetupLinkCreateInput,
+  BranchUpdateInput
+} from "@capella/shared";
 
 export class InMemoryBranchRepository implements BranchRepository {
   branches: BranchRecord[] = [
@@ -20,6 +26,30 @@ export class InMemoryBranchRepository implements BranchRepository {
       setupStatus: "completed" as const
     }
   ];
+  setupLinks: Array<{
+    id: number;
+    branchId: number;
+    token: string;
+    deviceLabel: string | null;
+    status: "active" | "used" | "revoked" | "expired";
+    expiresAt: Date;
+    usedAt: Date | null;
+    revokedAt: Date | null;
+    createdByAdminId: number;
+  }> = [];
+  deviceRegistrations: Array<{
+    id: number;
+    branchId: number;
+    deviceToken: string;
+    deviceLabel: string | null;
+    browserFingerprint: string | null;
+    status: "pending" | "active" | "revoked" | "replaced";
+    registeredAt: Date | null;
+    revokedAt: Date | null;
+    replacedAt: Date | null;
+  }> = [];
+  nextSetupLinkId = 1;
+  nextRegistrationId = 1;
 
   async createBranch(input: BranchCreateInput) {
     const branch = {
@@ -55,6 +85,95 @@ export class InMemoryBranchRepository implements BranchRepository {
 
     Object.assign(branch, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)));
     return branch;
+  }
+
+  async findActiveRegistration(branchId: number) {
+    return this.deviceRegistrations.find((item) => item.branchId === branchId && item.status === "active") ?? null;
+  }
+
+  async findPendingSetupLink(branchId: number) {
+    return this.setupLinks.find((item) => item.branchId === branchId && item.status === "active") ?? null;
+  }
+
+  async createSetupLink(input: {
+    branchId: number;
+    token: string;
+    deviceLabel?: string;
+    expiresAt: Date;
+    createdByAdminId: number;
+  }) {
+    const link = {
+      id: this.nextSetupLinkId++,
+      branchId: input.branchId,
+      token: input.token,
+      deviceLabel: input.deviceLabel ?? null,
+      status: "active" as const,
+      expiresAt: input.expiresAt,
+      usedAt: null,
+      revokedAt: null,
+      createdByAdminId: input.createdByAdminId
+    };
+    this.setupLinks.push(link);
+    return link;
+  }
+
+  async findPendingSetupLinkByToken(token: string) {
+    return this.setupLinks.find((item) => item.token === token && item.status === "active") ?? null;
+  }
+
+  async revokePendingSetupLinks(branchId: number, revokedAt: Date) {
+    this.setupLinks.forEach((item) => {
+      if (item.branchId === branchId && item.status === "active") {
+        item.status = "revoked";
+        item.revokedAt = revokedAt;
+      }
+    });
+  }
+
+  async activateSetupLink(token: string, input: {
+    deviceLabel?: string;
+    browserFingerprint: string;
+    registeredAt: Date;
+  }) {
+    const link = this.setupLinks.find((item) => item.token === token && item.status === "active") ?? null;
+
+    if (!link) {
+      return null;
+    }
+
+    link.status = "used";
+    link.usedAt = input.registeredAt;
+
+    const registration = {
+      id: this.nextRegistrationId++,
+      branchId: link.branchId,
+      deviceToken: token,
+      deviceLabel: input.deviceLabel ?? link.deviceLabel,
+      browserFingerprint: input.browserFingerprint,
+      status: "active" as const,
+      registeredAt: input.registeredAt,
+      revokedAt: null,
+      replacedAt: null
+    };
+    this.deviceRegistrations.push(registration);
+
+    const branch = this.branches.find((item) => item.id === link.branchId);
+    if (branch) {
+      branch.setupStatus = "completed";
+      branch.registeredDeviceToken = token;
+    }
+
+    return registration;
+  }
+
+  async replaceActiveRegistrations(branchId: number, keepRegistrationId: number, replacedAt: Date) {
+    this.deviceRegistrations.forEach((item) => {
+      if (item.branchId === branchId && item.status === "active" && item.id !== keepRegistrationId) {
+        item.status = "replaced";
+        item.revokedAt = replacedAt;
+        item.replacedAt = replacedAt;
+      }
+    });
   }
 }
 
@@ -164,4 +283,40 @@ export function validPayload(): BranchCreateInput {
     allowedIpCidr: "192.168.10.0/24",
     setupStatus: "setup_pending"
   };
+}
+
+export function validBranchSetupLinkInput(): BranchSetupLinkCreateInput {
+  return {
+    deviceLabel: "Reception iPad"
+  };
+}
+
+export function validBranchSetupCompletionInput(): BranchSetupCompletionInput {
+  return {
+    browserFingerprint: "branch-browser"
+  };
+}
+
+export function assertBranchDeviceState(
+  value: Awaited<ReturnType<ReturnType<typeof import("../../../../src/modules/branches/service").createBranchService>["createSetupLink"]>>
+    | Awaited<ReturnType<ReturnType<typeof import("../../../../src/modules/branches/service").createBranchService>["completeSetup"]>>
+): asserts value is {
+  branch: BranchRecord;
+  activeDevice: {
+    id: number;
+    deviceToken: string;
+    deviceLabel: string | null;
+    browserFingerprint: string | null;
+    registeredAt: Date | null;
+  } | null;
+  pendingSetup: {
+    id: number;
+    token: string;
+    deviceLabel: string | null;
+    expiresAt: Date;
+  } | null;
+} {
+  if ("error" in value) {
+    throw new Error("Expected branch device state");
+  }
 }
