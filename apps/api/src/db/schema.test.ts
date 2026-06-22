@@ -5,7 +5,9 @@ describe("database schema", () => {
   it("exports the core identity tables", () => {
     expect(schema).toMatchObject({
       admins: expect.anything(),
+      adminSessions: expect.anything(),
       employees: expect.anything(),
+      employeeSessions: expect.anything(),
       branches: expect.anything()
     });
   });

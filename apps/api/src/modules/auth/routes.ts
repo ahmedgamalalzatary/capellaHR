@@ -15,8 +15,8 @@ type RegisterAuthRoutesOptions = {
 };
 
 export function registerAuthRoutes(app: Express, options: RegisterAuthRoutesOptions = {}) {
-  const authService = options.authService ?? getAuthService();
   const config = getAppConfig();
+  const resolveAuthService = async () => options.authService ?? getAuthService();
 
   app.post("/auth/sign-in", async (request: Request, response: Response) => {
     const parsed = signInSchema.safeParse(request.body);
@@ -32,6 +32,7 @@ export function registerAuthRoutes(app: Express, options: RegisterAuthRoutesOpti
       return;
     }
 
+    const authService = await resolveAuthService();
     const result = await authService.signInEmployee(parsed.data);
 
     if ("error" in result) {
@@ -66,6 +67,7 @@ export function registerAuthRoutes(app: Express, options: RegisterAuthRoutesOpti
       return;
     }
 
+    const authService = await resolveAuthService();
     const result = await authService.signInAdmin(parsed.data);
 
     if ("error" in result) {
@@ -87,6 +89,7 @@ export function registerAuthRoutes(app: Express, options: RegisterAuthRoutesOpti
   });
 
   app.get("/auth/me", async (request: Request, response: Response) => {
+    const authService = await resolveAuthService();
     const sessionToken = request.cookies?.[config.auth.cookieName];
 
     if (typeof sessionToken !== "string" || sessionToken.length === 0) {
@@ -117,6 +120,7 @@ export function registerAuthRoutes(app: Express, options: RegisterAuthRoutesOpti
   });
 
   app.post("/auth/sign-out", async (request: Request, response: Response) => {
+    const authService = await resolveAuthService();
     const sessionToken = request.cookies?.[config.auth.cookieName];
 
     if (typeof sessionToken === "string" && sessionToken.length > 0) {

@@ -7,7 +7,7 @@
     "db:generate": "pnpm --filter @capella/api db:generate",
     "db:migrate": "pnpm --filter @capella/api db:migrate",
     "db:push": "pnpm --filter @capella/api db:push",
-    "db:studio": "pnpm --filter @capella/api db:studio",
+    "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
@@ -17,6 +17,8 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/node": "^26.0.0",
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
     "eslint": "9.39.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",

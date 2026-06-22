@@ -1,18 +1,35 @@
 import { getAppConfig } from "../../config/app-config";
-import { createInMemoryAuthRepository } from "./repository";
+import { createDatabaseClient } from "../../db";
+import {
+  createDrizzleAuthRepository,
+  syncBootstrapAdmin
+} from "./repository";
 import { createAuthService } from "./service";
 
-const config = getAppConfig();
-const repository = createInMemoryAuthRepository({
-  bootstrapAdmin: config.auth.bootstrapAdmin
-});
+let authServicePromise: Promise<ReturnType<typeof createAuthService>> | null = null;
 
-const authService = createAuthService({
-  repository,
-  adminSessionTtlHours: config.auth.adminSessionTtlHours,
-  employeeSessionTtlHours: 12
-});
+export async function getAuthService() {
+  if (authServicePromise) {
+    return authServicePromise;
+  }
 
-export function getAuthService() {
-  return authService;
+  authServicePromise = (async () => {
+    const config = getAppConfig();
+    const databaseClient = createDatabaseClient({
+      databaseUrl: config.databaseUrl
+    });
+    const repository = createDrizzleAuthRepository({
+      db: databaseClient.db
+    });
+
+    await syncBootstrapAdmin(repository, config.auth.bootstrapAdmin);
+
+    return createAuthService({
+      repository,
+      adminSessionTtlHours: config.auth.adminSessionTtlHours,
+      employeeSessionTtlHours: 12
+    });
+  })();
+
+  return authServicePromise;
 }

@@ -3,6 +3,7 @@ import "dotenv/config";
 export type AppConfig = {
   port: number;
   nodeEnv: string;
+  databaseUrl: string;
   auth: {
     cookieName: string;
     cookieSecure: boolean;
@@ -19,6 +20,7 @@ export function getAppConfig(): AppConfig {
   return {
     port: Number(process.env.PORT ?? 3001),
     nodeEnv: process.env.NODE_ENV ?? "development",
+    databaseUrl: process.env.DATABASE_URL ?? "",
     auth: {
       cookieName: "capella_session",
       cookieSecure: process.env.COOKIE_SECURE === "true",
