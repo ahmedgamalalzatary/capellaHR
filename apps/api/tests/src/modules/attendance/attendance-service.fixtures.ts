@@ -10,7 +10,7 @@ import type {
   EmployeeAttendanceRecord
 } from "../../../../src/modules/attendance/service";
 
-export class InMemoryAttendanceRepository implements AttendanceRepository {
+class InMemoryAttendanceRepository implements AttendanceRepository {
   employees = new Map<number, EmployeeAttendanceRecord>();
   branches = new Map<number, BranchPolicyRecord>();
   activeDeviceFingerprints = new Map<number, string>();
@@ -187,7 +187,17 @@ export class InMemoryAttendanceRepository implements AttendanceRepository {
       return sortDirection === "asc" ? comparison : -comparison;
     });
 
-    return rows;
+    const offset = (filters.page - 1) * filters.pageSize;
+
+    return {
+      items: rows.slice(offset, offset + filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: rows.length,
+        totalPages: Math.max(1, Math.ceil(rows.length / filters.pageSize))
+      }
+    };
   }
 
   async findAdminAttendanceById(sessionId: number) {

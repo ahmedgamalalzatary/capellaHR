@@ -4,7 +4,15 @@ import type { AuditLogRecord } from "./types";
 export type { AuditLogRecord } from "./types";
 
 export type AuditLogRepository = {
-  listAuditLogs(filters: AuditLogListFilterInput): Promise<AuditLogRecord[]>;
+  listAuditLogs(filters: AuditLogListFilterInput): Promise<{
+    items: AuditLogRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }>;
   createAuditLog(input: {
     adminId: number;
     actionType: string;

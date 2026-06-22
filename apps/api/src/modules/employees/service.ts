@@ -6,7 +6,6 @@ import { createEmployeeReadService } from "./employee-read.service";
 import { createEmployeeBranchAssignmentService } from "./employee-branch-assignment.service";
 import { createEmployeeWriteService } from "./employee-write.service";
 import { createEmployeeFileService } from "./employee-file.service";
-export type { EmployeeBranchAssignmentRecord } from "./employee-branch-assignment.repository";
 
 export type EmployeeRepository = {
   findBranchSetupStatus(branchId: number): Promise<"completed" | "setup_pending" | null>;
@@ -22,7 +21,15 @@ export type EmployeeRepository = {
     currentMonthlySalary: string;
     createdByAdminId: number;
   }): Promise<EmployeeRecord | EmployeeConflictResult>;
-  listEmployees(filters: EmployeeListFilterInput): Promise<EmployeeRecord[]>;
+  listEmployees(filters: EmployeeListFilterInput): Promise<{
+    items: EmployeeRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }>;
   findEmployeeById(employeeId: number): Promise<EmployeeRecord | null>;
   updateEmployee(employeeId: number, input: {
     fullName?: string;

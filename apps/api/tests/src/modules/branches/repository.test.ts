@@ -62,7 +62,7 @@ describe("drizzle branch repository", () => {
     expect(loaded).toEqual(created);
   });
 
-  it("lists branches by name search", async () => {
+  it("lists branches by name search with pagination metadata", async () => {
     const repository = createDrizzleBranchRepository({
       db: databaseClient.db
     });
@@ -89,11 +89,19 @@ describe("drizzle branch repository", () => {
     ]);
 
     const result = await repository.listBranches({
+      page: 1,
+      pageSize: 10,
       search: "nasr"
     });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.name).toBe("Nasr City");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.name).toBe("Nasr City");
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
+    });
   });
 
   it("updates a branch", async () => {

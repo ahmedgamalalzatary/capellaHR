@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { egyptianPhoneSchema, emailSchema } from "./common";
+import { egyptianPhoneSchema, emailSchema, paginationSchema } from "./common";
 
 export const employeeCreateSchema = z.object({
   fullName: z.string().trim().min(1),
@@ -17,7 +17,7 @@ export const employeeUpdateSchema = employeeCreateSchema.partial().extend({
   password: z.string().min(8).optional()
 });
 
-export const employeeListFilterSchema = z.object({
+export const employeeListFilterSchema = paginationSchema.extend({
   search: z.string().trim().optional(),
   branchId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "soft_deleted"]).optional()

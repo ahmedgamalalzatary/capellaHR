@@ -12,8 +12,16 @@ export class InMemoryAuditLogService {
     after?: null | Record<string, unknown>;
   }> = [];
 
-  async listAuditLogs() {
-    return [] satisfies AuditLogRecord[];
+  async listAuditLogs(filters: { page: number; pageSize: number }) {
+    return {
+      items: [] satisfies AuditLogRecord[],
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: 0,
+        totalPages: 1
+      }
+    };
   }
 
   async recordAuditLog(input: {

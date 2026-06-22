@@ -47,13 +47,21 @@ describe("attendance service (admin)", () => {
     const service = createAttendanceService({ repository });
 
     const result = await service.listAdminAttendance({
+      page: 1,
+      pageSize: 10,
       employeeName: "mina",
       sortBy: "employee_name",
       sortDirection: "asc"
     });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.employeeName).toBe("Mina Adel");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.employeeName).toBe("Mina Adel");
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
+    });
   });
 
   it("creates admin attendance without employee device or gps validation", async () => {

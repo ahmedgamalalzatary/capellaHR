@@ -13,7 +13,7 @@ export type RegisterAttendanceRoutesOptions = {
   attendanceService?: ReturnType<typeof createAttendanceServiceFactory>;
 };
 
-export type EmployeeActor = {
+type EmployeeActor = {
   id: number;
   role: "employee";
   name: string;

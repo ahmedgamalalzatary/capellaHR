@@ -69,7 +69,18 @@ export class InMemoryBranchRepository implements BranchRepository {
   }
 
   async listBranches(filters: BranchSearchInput) {
-    return this.branches.filter((branch) => !filters.search || branch.name.toLowerCase().includes(filters.search.toLowerCase()));
+    const filtered = this.branches.filter((branch) => !filters.search || branch.name.toLowerCase().includes(filters.search.toLowerCase()));
+    const offset = (filters.page - 1) * filters.pageSize;
+
+    return {
+      items: filtered.slice(offset, offset + filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: filtered.length,
+        totalPages: Math.max(1, Math.ceil(filtered.length / filters.pageSize))
+      }
+    };
   }
 
   async findBranchById(branchId: number) {

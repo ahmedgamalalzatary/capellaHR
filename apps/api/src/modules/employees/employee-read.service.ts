@@ -8,7 +8,10 @@ export function createEmployeeReadService(repository: EmployeeRepository) {
     async listEmployees(filters: EmployeeListFilterInput) {
       const employees = await repository.listEmployees(filters);
 
-      return employees.map(toEmployeeResponse);
+      return {
+        items: employees.items.map(toEmployeeResponse),
+        pagination: employees.pagination
+      };
     },
 
     async getEmployeeById(employeeId: number) {

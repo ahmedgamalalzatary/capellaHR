@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import type { AttendanceListFilterInput } from "@capella/shared";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import { attendanceSessions, employees } from "../../db";
@@ -13,6 +13,8 @@ type DatabaseSchema = typeof import("../../db/schema");
 type Db = MySql2Database<DatabaseSchema>;
 
 export async function listAdminAttendance(db: Db, filters: AttendanceListFilterInput) {
+  const where = buildAdminAttendanceWhere(filters);
+  const offset = (filters.page - 1) * filters.pageSize;
   const rows = await db
     .select({
       session: attendanceSessions,
@@ -20,10 +22,26 @@ export async function listAdminAttendance(db: Db, filters: AttendanceListFilterI
     })
     .from(attendanceSessions)
     .innerJoin(employees, eq(attendanceSessions.employeeId, employees.id))
-    .where(buildAdminAttendanceWhere(filters))
-    .orderBy(buildAdminAttendanceOrderBy(filters));
+    .where(where)
+    .orderBy(buildAdminAttendanceOrderBy(filters))
+    .limit(filters.pageSize)
+    .offset(offset);
+  const totalRows = await db
+    .select({ value: count() })
+    .from(attendanceSessions)
+    .innerJoin(employees, eq(attendanceSessions.employeeId, employees.id))
+    .where(where);
+  const total = Number(totalRows[0]?.value ?? 0);
 
-  return rows.map(({ session, employeeName }) => mapAdminAttendanceRow(session, employeeName));
+  return {
+    items: rows.map(({ session, employeeName }) => mapAdminAttendanceRow(session, employeeName)),
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / filters.pageSize))
+    }
+  };
 }
 
 export async function findAdminAttendanceById(db: Db, sessionId: number): Promise<AdminAttendanceRecord | null> {

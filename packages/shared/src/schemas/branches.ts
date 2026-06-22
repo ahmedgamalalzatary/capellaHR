@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { branchSetupStatusSchema } from "./common";
+import { branchSetupStatusSchema, paginationSchema } from "./common";
 
 export const branchCreateSchema = z.object({
   name: z.string().trim().min(1),
@@ -13,7 +13,7 @@ export const branchCreateSchema = z.object({
 
 export const branchUpdateSchema = branchCreateSchema.partial();
 
-export const branchSearchSchema = z.object({
+export const branchSearchSchema = paginationSchema.extend({
   search: z.string().trim().optional()
 });
 

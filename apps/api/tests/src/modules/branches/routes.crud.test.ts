@@ -47,12 +47,25 @@ describe("branch routes (crud)", () => {
     const adminCookie = await signInAdmin(app);
 
     const response = await request(app).get("/branches").set("Cookie", adminCookie).query({
+      page: "1",
+      pageSize: "10",
       search: "nasr"
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.branches).toHaveLength(1);
-    expect(response.body.branches[0]?.name).toBe("Nasr City");
+    expect(response.body.branches).toEqual({
+      items: [
+        expect.objectContaining({
+          name: "Nasr City"
+        })
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 10,
+        total: 1,
+        totalPages: 1
+      }
+    });
   });
 
   it("gets a single branch by id", async () => {

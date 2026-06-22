@@ -41,7 +41,7 @@ describe("drizzle employee repository (query)", () => {
     expect(rows[0]?.softDeletedAt).toBeInstanceOf(Date);
   });
 
-  it("lists employees filtered by search, branch, and status", async () => {
+  it("lists employees filtered by search, branch, and status with pagination metadata", async () => {
     const repository = createDrizzleEmployeeRepository({
       db: databaseClient.db
     });
@@ -99,19 +99,96 @@ describe("drizzle employee repository (query)", () => {
     await repository.softDeleteEmployee(softDeleted.id);
 
     const activeRows = await repository.listEmployees({
+      page: 1,
+      pageSize: 10,
       search: "Mina",
       branchId: 1,
       status: "active"
     });
     const softDeletedRows = await repository.listEmployees({
+      page: 1,
+      pageSize: 10,
       status: "soft_deleted"
     });
 
-    expect(activeRows).toHaveLength(1);
-    expect(activeRows[0]?.fullName).toBe("Mina Adel");
-    expect(softDeletedRows).toHaveLength(1);
-    expect(softDeletedRows[0]?.fullName).toBe("Sara Nabil");
-    expect(softDeletedRows[0]?.softDeletedAt).toBeInstanceOf(Date);
+    expect(activeRows.items).toHaveLength(1);
+    expect(activeRows.items[0]?.fullName).toBe("Mina Adel");
+    expect(activeRows.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
+    });
+    expect(softDeletedRows.items).toHaveLength(1);
+    expect(softDeletedRows.items[0]?.fullName).toBe("Sara Nabil");
+    expect(softDeletedRows.items[0]?.softDeletedAt).toBeInstanceOf(Date);
+    expect(softDeletedRows.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
+    });
+  });
+
+  it("applies offset pagination for employees", async () => {
+    const repository = createDrizzleEmployeeRepository({
+      db: databaseClient.db
+    });
+
+    await seedNasrCityBranch(databaseClient.db);
+
+    await repository.createEmployee({
+      fullName: "A Employee",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550101",
+      whatsappPhone: "01055550102",
+      email: "employee-a@capella.eg",
+      branchId: 1,
+      age: 20,
+      address: "Cairo",
+      currentMonthlySalary: "1000.00",
+      createdByAdminId: 1
+    });
+
+    await repository.createEmployee({
+      fullName: "B Employee",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550103",
+      whatsappPhone: "01055550104",
+      email: "employee-b@capella.eg",
+      branchId: 1,
+      age: 21,
+      address: "Cairo",
+      currentMonthlySalary: "1000.00",
+      createdByAdminId: 1
+    });
+
+    await repository.createEmployee({
+      fullName: "C Employee",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550105",
+      whatsappPhone: "01055550106",
+      email: "employee-c@capella.eg",
+      branchId: 1,
+      age: 22,
+      address: "Cairo",
+      currentMonthlySalary: "1000.00",
+      createdByAdminId: 1
+    });
+
+    const pageTwo = await repository.listEmployees({
+      page: 2,
+      pageSize: 2
+    });
+
+    expect(pageTwo.items).toHaveLength(1);
+    expect(pageTwo.items[0]?.fullName).toBe("C Employee");
+    expect(pageTwo.pagination).toEqual({
+      page: 2,
+      pageSize: 2,
+      total: 3,
+      totalPages: 2
+    });
   });
 
   it("loads an employee by id", async () => {

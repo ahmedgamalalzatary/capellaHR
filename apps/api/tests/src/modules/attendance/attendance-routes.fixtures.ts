@@ -10,7 +10,7 @@ import type {
   EmployeeAttendanceRecord
 } from "../../../../src/modules/attendance/service";
 
-export class InMemoryAttendanceRepository implements AttendanceRepository {
+class InMemoryAttendanceRepository implements AttendanceRepository {
   employees = new Map<number, EmployeeAttendanceRecord>();
   branches = new Map<number, BranchPolicyRecord>();
   activeDeviceFingerprints = new Map<number, string>();
@@ -121,14 +121,26 @@ export class InMemoryAttendanceRepository implements AttendanceRepository {
     return false;
   }
 
-  async listAdminAttendance() {
-    return this.sessions.map<AdminAttendanceRecord>((session) => ({
+  async listAdminAttendance(filters: { page: number; pageSize: number }) {
+    const rows = this.sessions.map<AdminAttendanceRecord>((session) => ({
       ...session,
       employeeName: this.employees.get(session.employeeId)?.fullName ?? "Unknown",
       adminReason: session.adminReason ?? null,
       createdByAdminId: session.createdByAdminId ?? null,
       updatedByAdminId: session.updatedByAdminId ?? null
     }));
+
+    const offset = (filters.page - 1) * filters.pageSize;
+
+    return {
+      items: rows.slice(offset, offset + filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: rows.length,
+        totalPages: Math.max(1, Math.ceil(rows.length / filters.pageSize))
+      }
+    };
   }
 
   async findAdminAttendanceById(sessionId: number) {

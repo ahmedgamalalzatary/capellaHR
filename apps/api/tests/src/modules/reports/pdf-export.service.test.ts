@@ -21,6 +21,8 @@ describe("reports pdf export service", () => {
   it("exports the current filtered employee list as a pdf document", async () => {
     const renderer = new InMemoryPdfRenderer();
     const filters: EmployeeListFilterInput = {
+      page: 1,
+      pageSize: 10,
       search: "Mina",
       branchId: 2,
       status: "active"
@@ -31,25 +33,27 @@ describe("reports pdf export service", () => {
         async listEmployees(receivedFilters: EmployeeListFilterInput) {
           expect(receivedFilters).toEqual(filters);
 
-          return [
-            {
-              id: 1,
-              fullName: "Mina Adel",
-              primaryPhone: "01012345678",
-              whatsappPhone: "01012345678",
-              email: "mina@capella.eg",
-              branchId: 2,
-              age: 28,
-              address: "Nasr City",
-              currentMonthlySalary: "6500",
-              softDeletedAt: null
-            }
-          ];
+          return {
+            items: [
+              {
+                id: 1,
+                fullName: "Mina Adel",
+                primaryPhone: "01012345678",
+                whatsappPhone: "01012345678",
+                email: "mina@capella.eg",
+                branchId: 2,
+                age: 28,
+                address: "Nasr City",
+                currentMonthlySalary: "6500",
+                softDeletedAt: null
+              }
+            ]
+          };
         }
       },
       attendanceService: {
         async listAdminAttendance() {
-          return [];
+          return { items: [] };
         }
       },
       reportsService: {
@@ -77,6 +81,8 @@ describe("reports pdf export service", () => {
   it("exports the current filtered attendance list as a pdf document", async () => {
     const renderer = new InMemoryPdfRenderer();
     const filters: AttendanceListFilterInput = {
+      page: 1,
+      pageSize: 10,
       branchId: 2,
       status: "completed",
       sortBy: "check_in_at",
@@ -86,24 +92,26 @@ describe("reports pdf export service", () => {
       renderer,
       employeeService: {
         async listEmployees() {
-          return [];
+          return { items: [] };
         }
       },
       attendanceService: {
         async listAdminAttendance(receivedFilters: AttendanceListFilterInput) {
           expect(receivedFilters).toEqual(filters);
 
-          return [
-            createAttendanceRecord({
-              id: 10,
-              employeeId: 1,
-              employeeName: "Mina Adel",
-              branchId: 2,
-              status: "completed",
-              checkInAtUtc: new Date("2026-06-12T05:00:00.000Z"),
-              checkOutAtUtc: new Date("2026-06-12T14:00:00.000Z")
-            })
-          ];
+          return {
+            items: [
+              createAttendanceRecord({
+                id: 10,
+                employeeId: 1,
+                employeeName: "Mina Adel",
+                branchId: 2,
+                status: "completed",
+                checkInAtUtc: new Date("2026-06-12T05:00:00.000Z"),
+                checkOutAtUtc: new Date("2026-06-12T14:00:00.000Z")
+              })
+            ]
+          };
         }
       },
       reportsService: {
@@ -148,12 +156,12 @@ describe("reports pdf export service", () => {
       renderer,
       employeeService: {
         async listEmployees() {
-          return [];
+          return { items: [] };
         }
       },
       attendanceService: {
         async listAdminAttendance() {
-          return [];
+          return { items: [] };
         }
       },
       reportsService: {

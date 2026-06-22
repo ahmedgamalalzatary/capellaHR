@@ -85,7 +85,7 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
   }
 
   async listEmployees(filters: EmployeeListFilterInput) {
-    return this.employees.filter((employee) => {
+    const filtered = this.employees.filter((employee) => {
       if (filters.search && !employee.fullName.toLowerCase().includes(filters.search.toLowerCase())) {
         return false;
       }
@@ -104,6 +104,20 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
 
       return true;
     });
+
+    const page = filters.page;
+    const pageSize = filters.pageSize;
+    const offset = (page - 1) * pageSize;
+
+    return {
+      items: filtered.slice(offset, offset + pageSize),
+      pagination: {
+        page,
+        pageSize,
+        total: filtered.length,
+        totalPages: Math.max(1, Math.ceil(filtered.length / pageSize))
+      }
+    };
   }
 
   async findEmployeeById(employeeId: number) {
@@ -281,7 +295,7 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
   }
 }
 
-export function createConflict(field: EmployeeConflictField): EmployeeConflictResult {
+function createConflict(field: EmployeeConflictField): EmployeeConflictResult {
   return {
     error: {
       code: "EMPLOYEE_CONFLICT",

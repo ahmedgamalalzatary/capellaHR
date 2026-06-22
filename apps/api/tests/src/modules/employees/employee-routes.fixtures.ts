@@ -34,22 +34,32 @@ export function createStubEmployeeService(branchSetupStatus: "completed" | "setu
           softDeletedAt: null
         };
       },
-      async listEmployees() {
-        return [
-          {
-            id: 1,
-            fullName: "Mina Adel",
-            passwordHash: "plain:secret123",
-            primaryPhone: "01012345678",
-            whatsappPhone: "01012345679",
-            email: "mina@capella.eg",
-            branchId: 1,
-            age: 28,
-            address: "Cairo",
-            currentMonthlySalary: "10000",
-            softDeletedAt: null
+      async listEmployees(filters) {
+        void filters;
+
+        return {
+          items: [
+            {
+              id: 1,
+              fullName: "Mina Adel",
+              passwordHash: "plain:secret123",
+              primaryPhone: "01012345678",
+              whatsappPhone: "01012345679",
+              email: "mina@capella.eg",
+              branchId: 1,
+              age: 28,
+              address: "Cairo",
+              currentMonthlySalary: "10000",
+              softDeletedAt: null
+            }
+          ],
+          pagination: {
+            page: filters.page,
+            pageSize: filters.pageSize,
+            total: 1,
+            totalPages: 1
           }
-        ];
+        };
       },
       async findEmployeeById(employeeId) {
         if (employeeId !== 1) {
@@ -376,7 +386,7 @@ export async function signInAdmin(app: ReturnType<typeof createApp>, credentials
   return response.headers["set-cookie"];
 }
 
-export class InMemoryEmployeeFileStorage implements EmployeeFileStorage {
+class InMemoryEmployeeFileStorage implements EmployeeFileStorage {
   async saveEmployeeFile(employeeId: number, file: EmployeeFileInput) {
     return {
       storagePath: `employees/${employeeId}/${file.fileType}/saved.jpg`,

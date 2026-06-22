@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, like, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, like, type SQL } from "drizzle-orm";
 import type { EmployeeListFilterInput } from "@capella/shared";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import { branches, employees } from "../../db";
@@ -38,12 +38,30 @@ export async function listEmployees(db: Db, filters: EmployeeListFilterInput) {
     conditions.push(isNotNull(employees.softDeletedAt));
   }
 
-  const query = db.select().from(employees).orderBy(asc(employees.fullName));
-  const rows = conditions.length === 0
-    ? await query
-    : await query.where(and(...conditions));
+  const where = conditions.length === 0 ? undefined : and(...conditions);
+  const offset = (filters.page - 1) * filters.pageSize;
+  const rows = await db
+    .select()
+    .from(employees)
+    .where(where)
+    .orderBy(asc(employees.fullName))
+    .limit(filters.pageSize)
+    .offset(offset);
+  const totalRows = await db
+    .select({ value: count() })
+    .from(employees)
+    .where(where);
+  const total = Number(totalRows[0]?.value ?? 0);
 
-  return rows.map(mapEmployeeRecord);
+  return {
+    items: rows.map(mapEmployeeRecord),
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / filters.pageSize))
+    }
+  };
 }
 
 export async function findEmployeeById(db: Db, employeeId: number) {

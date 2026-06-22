@@ -19,7 +19,15 @@ type BranchErrorResult = {
 
 export type BranchRepository = {
   createBranch(input: BranchCreateInput): Promise<BranchRecord>;
-  listBranches(filters: BranchSearchInput): Promise<BranchRecord[]>;
+  listBranches(filters: BranchSearchInput): Promise<{
+    items: BranchRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }>;
   findBranchById(branchId: number): Promise<BranchRecord | null>;
   updateBranch(branchId: number, input: BranchUpdateInput): Promise<BranchRecord | null>;
   findActiveRegistration(branchId: number): Promise<BranchDeviceRegistrationRecord | null>;

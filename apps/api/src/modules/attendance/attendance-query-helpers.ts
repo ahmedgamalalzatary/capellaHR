@@ -6,7 +6,7 @@ import {
   mapAttendanceSessionRecord
 } from "./attendance-mappers";
 
-export function buildAdminAttendanceConditions(filters: AttendanceListFilterInput): SQL[] {
+function buildAdminAttendanceConditions(filters: AttendanceListFilterInput): SQL[] {
   const conditions: SQL[] = [];
 
   if (filters.employeeName) {

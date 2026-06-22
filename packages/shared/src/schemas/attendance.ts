@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attendanceActionTypeSchema, attendanceSessionStatusSchema } from "./common";
+import { attendanceActionTypeSchema, attendanceSessionStatusSchema, paginationSchema } from "./common";
 
 const isoDateSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/);
 const isoDateTimeSchema = z.string().trim().datetime({ offset: true });
@@ -13,7 +13,7 @@ export const attendanceActionSchema = z.object({
   deviceId: z.string().trim().min(1)
 });
 
-export const attendanceListFilterSchema = z.object({
+export const attendanceListFilterSchema = paginationSchema.extend({
   employeeName: z.string().trim().optional(),
   branchId: z.coerce.number().int().positive().optional(),
   status: attendanceSessionStatusSchema.optional(),

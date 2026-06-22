@@ -11,7 +11,7 @@ class InMemoryAuditLogRepository implements AuditLogRepository {
   nextId = 1;
 
   async listAuditLogs(filters: AuditLogListFilterInput) {
-    return this.logs.filter((log) => {
+    const filtered = this.logs.filter((log) => {
       if (filters.entityType && log.entityType !== filters.entityType) {
         return false;
       }
@@ -34,6 +34,18 @@ class InMemoryAuditLogRepository implements AuditLogRepository {
 
       return true;
     });
+
+    const offset = (filters.page - 1) * filters.pageSize;
+
+    return {
+      items: filtered.slice(offset, offset + filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: filtered.length,
+        totalPages: Math.max(1, Math.ceil(filtered.length / filters.pageSize))
+      }
+    };
   }
 
   async createAuditLog(input: {
@@ -114,11 +126,19 @@ describe("audit log service", () => {
     const service = createAuditLogService({ repository });
 
     const result = await service.listAuditLogs({
+      page: 1,
+      pageSize: 10,
       entityType: "attendance",
       actionType: "create"
     });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]?.entityId).toBe("42");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.entityId).toBe("42");
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
+    });
   });
 });

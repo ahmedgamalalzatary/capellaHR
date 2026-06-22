@@ -16,12 +16,12 @@ describe("reports pdf export routes", () => {
         },
         employeeService: {
           async listEmployees() {
-            return [];
+            return { items: [] };
           }
         },
         attendanceService: {
           async listAdminAttendance() {
-            return [];
+            return { items: [] };
           }
         },
         reportsService: {
@@ -48,25 +48,27 @@ describe("reports pdf export routes", () => {
         },
         employeeService: {
           async listEmployees() {
-            return [
-              {
-                id: 1,
-                fullName: "Mina Adel",
-                primaryPhone: "01012345678",
-                whatsappPhone: "01012345678",
-                email: null,
-                branchId: 2,
-                age: 28,
-                address: "Nasr City",
-                currentMonthlySalary: "6500",
-                softDeletedAt: null
-              }
-            ];
+            return {
+              items: [
+                {
+                  id: 1,
+                  fullName: "Mina Adel",
+                  primaryPhone: "01012345678",
+                  whatsappPhone: "01012345678",
+                  email: null,
+                  branchId: 2,
+                  age: 28,
+                  address: "Nasr City",
+                  currentMonthlySalary: "6500",
+                  softDeletedAt: null
+                }
+              ]
+            };
           }
         },
         attendanceService: {
           async listAdminAttendance() {
-            return [];
+            return { items: [] };
           }
         },
         reportsService: {

@@ -65,7 +65,15 @@ export type AttendanceRepository = {
   hasWeeklyDayOff(employeeId: number, dateKey: string): Promise<boolean>;
   hasPermissionAbsence(employeeId: number, dateKey: string): Promise<boolean>;
   isMonthLocked(monthKey: string): Promise<boolean>;
-  listAdminAttendance(filters: AttendanceListFilterInput): Promise<AdminAttendanceRecord[]>;
+  listAdminAttendance(filters: AttendanceListFilterInput): Promise<{
+    items: AdminAttendanceRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }>;
   findAdminAttendanceById(sessionId: number): Promise<AdminAttendanceRecord | null>;
   createAdminAttendance(input: {
     employeeId: number;

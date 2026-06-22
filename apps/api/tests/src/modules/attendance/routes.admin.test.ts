@@ -48,11 +48,25 @@ describe("attendance routes (admin)", () => {
     });
     const adminCookie = await signInAdmin(app);
 
-    const response = await request(app).get("/admin/attendance").set("Cookie", adminCookie);
+    const response = await request(app).get("/admin/attendance").set("Cookie", adminCookie).query({
+      page: "1",
+      pageSize: "10"
+    });
 
     expect(response.status).toBe(200);
-    expect(response.body.sessions).toHaveLength(1);
-    expect(response.body.sessions[0].employeeName).toBe("Test Employee");
+    expect(response.body.sessions).toEqual({
+      items: [
+        expect.objectContaining({
+          employeeName: "Test Employee"
+        })
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 10,
+        total: 1,
+        totalPages: 1
+      }
+    });
   });
 
   it("creates admin attendance with a required reason", async () => {

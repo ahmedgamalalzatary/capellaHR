@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import type { AuditLogListFilterInput } from "@capella/shared";
 import { auditLogs } from "../../db";
@@ -54,13 +54,30 @@ export function createDrizzleAuditLogRepository(options: CreateDrizzleAuditLogRe
         )!);
       }
 
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const offset = (filters.page - 1) * filters.pageSize;
       const rows = await options.db
         .select()
         .from(auditLogs)
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(auditLogs.occurredAtUtc));
+        .where(where)
+        .orderBy(desc(auditLogs.occurredAtUtc))
+        .limit(filters.pageSize)
+        .offset(offset);
+      const totalRows = await options.db
+        .select({ value: count() })
+        .from(auditLogs)
+        .where(where);
+      const total = Number(totalRows[0]?.value ?? 0);
 
-      return rows.map(mapAuditLogRecord);
+      return {
+        items: rows.map(mapAuditLogRecord),
+        pagination: {
+          page: filters.page,
+          pageSize: filters.pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / filters.pageSize))
+        }
+      };
     },
 
     async createAuditLog(input: {

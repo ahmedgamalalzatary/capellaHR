@@ -12,8 +12,16 @@ import type {
 class InMemoryAuditLogRepository implements AuditLogRepository {
   logs: AuditLogRecord[] = [];
 
-  async listAuditLogs() {
-    return this.logs;
+  async listAuditLogs(filters: { page: number; pageSize: number }) {
+    return {
+      items: this.logs.slice(0, filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: this.logs.length,
+        totalPages: Math.max(1, Math.ceil(this.logs.length / filters.pageSize))
+      }
+    };
   }
 
   async createAuditLog() {
@@ -70,10 +78,22 @@ describe("audit log routes", () => {
     const response = await request(app)
       .get("/audit-logs")
       .set("Cookie", cookieHeader)
-      .query({ entityType: "attendance" });
+      .query({ page: "1", pageSize: "10", entityType: "attendance" });
 
     expect(response.status).toBe(200);
-    expect(response.body.auditLogs).toHaveLength(1);
+    expect(response.body.auditLogs).toEqual({
+      items: [
+        expect.objectContaining({
+          entityType: "attendance"
+        })
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 10,
+        total: 1,
+        totalPages: 1
+      }
+    });
   });
 });
 

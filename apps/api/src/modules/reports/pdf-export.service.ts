@@ -10,11 +10,15 @@ import type { MonthlyAttendanceSummaryRow } from "./service";
 import type { PdfDocumentDefinition, PdfExportResult, PdfRenderer } from "./pdf-types";
 
 type EmployeeExportService = {
-  listEmployees(filters: EmployeeListFilterInput): Promise<EmployeeResponse[]>;
+  listEmployees(filters: EmployeeListFilterInput): Promise<{
+    items: EmployeeResponse[];
+  }>;
 };
 
 type AttendanceExportService = {
-  listAdminAttendance(filters: AttendanceListFilterInput): Promise<AdminAttendanceRecord[]>;
+  listAdminAttendance(filters: AttendanceListFilterInput): Promise<{
+    items: AdminAttendanceRecord[];
+  }>;
 };
 
 type SummaryExportService = {
@@ -38,7 +42,7 @@ export function createPdfExportService(options: CreatePdfExportServiceOptions) {
         title: "كشف الموظفين",
         subtitle: "التصفية الحالية",
         columns: ["الاسم", "الهاتف", "واتساب", "الفرع", "الحالة"],
-        rows: employees.map((employee) => [
+        rows: employees.items.map((employee) => [
           employee.fullName,
           employee.primaryPhone,
           employee.whatsappPhone,
@@ -60,7 +64,7 @@ export function createPdfExportService(options: CreatePdfExportServiceOptions) {
         title: "كشف الحضور",
         subtitle: "التصفية الحالية",
         columns: ["الموظف", "الفرع", "الحالة", "دخول", "خروج"],
-        rows: sessions.map((session) => [
+        rows: sessions.items.map((session) => [
           session.employeeName,
           String(session.branchId),
           session.status === "completed" ? "مكتمل" : "مفتوح",

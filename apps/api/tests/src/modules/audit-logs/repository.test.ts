@@ -60,8 +60,16 @@ describe("audit log repository", () => {
     expect(created.entityType).toBe("attendance");
 
     const rows = await repository.listAuditLogs({
+      page: 1,
+      pageSize: 10,
       entityType: "attendance"
     });
-    expect(rows).toHaveLength(1);
+    expect(rows.items).toHaveLength(1);
+    expect(rows.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
+    });
   });
 });

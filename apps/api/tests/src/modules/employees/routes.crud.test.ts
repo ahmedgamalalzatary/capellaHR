@@ -164,6 +164,8 @@ describe("employee routes (crud)", () => {
     const cookieHeader = await signInAdmin(app);
 
     const response = await request(app).get("/employees").set("Cookie", cookieHeader).query({
+      page: "1",
+      pageSize: "10",
       search: "Mina",
       branchId: "1",
       status: "active"
@@ -171,20 +173,28 @@ describe("employee routes (crud)", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      employees: [
-        {
-          id: 1,
-          fullName: "Mina Adel",
-          primaryPhone: "01012345678",
-          whatsappPhone: "01012345679",
-          email: "mina@capella.eg",
-          branchId: 1,
-          age: 28,
-          address: "Cairo",
-          currentMonthlySalary: "10000",
-          softDeletedAt: null
+      employees: {
+        items: [
+          {
+            id: 1,
+            fullName: "Mina Adel",
+            primaryPhone: "01012345678",
+            whatsappPhone: "01012345679",
+            email: "mina@capella.eg",
+            branchId: 1,
+            age: 28,
+            address: "Cairo",
+            currentMonthlySalary: "10000",
+            softDeletedAt: null
+          }
+        ],
+        pagination: {
+          page: 1,
+          pageSize: 10,
+          total: 1,
+          totalPages: 1
         }
-      ]
+      }
     });
   });
 

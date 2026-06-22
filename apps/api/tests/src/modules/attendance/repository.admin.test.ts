@@ -13,7 +13,7 @@ import { setupAttendanceRepositoryTest } from "./attendance-repository.fixtures"
 const databaseClient = setupAttendanceRepositoryTest();
 
 describe("attendance repository (admin)", () => {
-  it("lists admin attendance with filters and sort order", async () => {
+  it("lists admin attendance with filters, sort order, and pagination metadata", async () => {
     await databaseClient.db.insert(employees).values({
       id: 2,
       fullName: "Ahmed Gamal",
@@ -62,17 +62,25 @@ describe("attendance repository (admin)", () => {
     });
 
     const rows = await repository.listAdminAttendance({
+      page: 1,
+      pageSize: 10,
       employeeName: "ahmed",
       sortBy: "employee_name",
       sortDirection: "asc"
     });
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
+    expect(rows.items).toHaveLength(1);
+    expect(rows.items[0]).toMatchObject({
       employeeId: 2,
       employeeName: "Ahmed Gamal",
       status: "open",
       adminReason: "missing checkout"
+    });
+    expect(rows.pagination).toEqual({
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1
     });
   });
 

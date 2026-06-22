@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, like, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, like, type SQL } from "drizzle-orm";
 import type {
   BranchCreateInput,
   BranchSearchInput,
@@ -119,11 +119,25 @@ export function createDrizzleBranchRepository(options: CreateDrizzleBranchReposi
         whereClauses.push(like(branches.name, `%${filters.search}%`));
       }
 
+      const where = whereClauses[0];
+      const offset = (filters.page - 1) * filters.pageSize;
       const rows = await options.db.select().from(branches)
-        .where(whereClauses[0])
-        .orderBy(asc(branches.name));
+        .where(where)
+        .orderBy(asc(branches.name))
+        .limit(filters.pageSize)
+        .offset(offset);
+      const totalRows = await options.db.select({ value: count() }).from(branches).where(where);
+      const total = Number(totalRows[0]?.value ?? 0);
 
-      return rows.map(mapBranchRecord);
+      return {
+        items: rows.map(mapBranchRecord),
+        pagination: {
+          page: filters.page,
+          pageSize: filters.pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / filters.pageSize))
+        }
+      };
     },
 
     async findBranchById(branchId: number) {

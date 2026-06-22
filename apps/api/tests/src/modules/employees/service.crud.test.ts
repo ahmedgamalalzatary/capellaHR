@@ -134,23 +134,33 @@ describe("employee service (crud)", () => {
     });
 
     const result = await service.listEmployees({
+      page: 1,
+      pageSize: 10,
       status: "soft_deleted"
     });
 
-    expect(result).toEqual([
-      {
-        id: 2,
-        fullName: "Sara Nabil",
-        primaryPhone: "01012345670",
-        whatsappPhone: "01012345671",
-        email: "sara@capella.eg",
-        branchId: 2,
-        age: 27,
-        address: "Giza",
-        currentMonthlySalary: "9000",
-        softDeletedAt: new Date("2026-06-22T10:00:00.000Z")
+    expect(result).toEqual({
+      items: [
+        {
+          id: 2,
+          fullName: "Sara Nabil",
+          primaryPhone: "01012345670",
+          whatsappPhone: "01012345671",
+          email: "sara@capella.eg",
+          branchId: 2,
+          age: 27,
+          address: "Giza",
+          currentMonthlySalary: "9000",
+          softDeletedAt: new Date("2026-06-22T10:00:00.000Z")
+        }
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 10,
+        total: 1,
+        totalPages: 1
       }
-    ]);
+    });
   });
 
   it("returns not found when loading a missing employee by id", async () => {

@@ -6,7 +6,6 @@ import * as writeRepo from "./employee-write.repository";
 import * as fileRepo from "./employee-file.repository";
 
 export type { EmployeeConflictField, EmployeeConflictResult } from "./employee-conflict-mapper";
-export type { EmployeeBranchAssignmentRecord } from "./employee-branch-assignment.repository";
 export type { EmployeeFileRecord, EmployeeRecord } from "./employee-mappers";
 
 type DatabaseSchema = typeof import("../../db/schema");
