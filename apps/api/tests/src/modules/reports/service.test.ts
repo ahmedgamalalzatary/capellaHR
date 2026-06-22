@@ -8,19 +8,26 @@ class InMemoryReportsRepository implements ReportsRepository {
     branchId: number | null;
     branchName: string | null;
   }> = [];
-  attendanceDates = new Map<number, string[]>();
+  attendanceDates = new Map<number, Array<{
+    date: string;
+    branchId: number | null;
+    branchName: string | null;
+  }>>();
   weeklyDayOffDates = new Map<number, string[]>();
   permissionAbsenceDates = new Map<number, string[]>();
+  branchAssignments = new Map<number, Array<{
+    branchId: number;
+    branchName: string;
+    effectiveFrom: string;
+    effectiveTo: null | string;
+  }>>();
 
-  async listEmployees(filters: { employeeId?: number; branchId?: number }) {
-    return this.employees.filter((employee) =>
-      (!filters.employeeId || employee.id === filters.employeeId)
-      && (!filters.branchId || employee.branchId === filters.branchId)
-    );
+  async listEmployees(filters: { employeeId?: number }) {
+    return this.employees.filter((employee) => !filters.employeeId || employee.id === filters.employeeId);
   }
 
   async listCompletedAttendanceDates(employeeId: number, month: string) {
-    return (this.attendanceDates.get(employeeId) ?? []).filter((date) => date.startsWith(month));
+    return (this.attendanceDates.get(employeeId) ?? []).filter((entry) => entry.date.startsWith(month));
   }
 
   async listWeeklyDayOffDates(employeeId: number, month: string) {
@@ -29,6 +36,10 @@ class InMemoryReportsRepository implements ReportsRepository {
 
   async listPermissionAbsenceDates(employeeId: number, month: string) {
     return (this.permissionAbsenceDates.get(employeeId) ?? []).filter((date) => date.startsWith(month));
+  }
+
+  async listBranchAssignments(employeeId: number) {
+    return this.branchAssignments.get(employeeId) ?? [];
   }
 }
 
@@ -43,22 +54,22 @@ describe("reports service", () => {
         branchName: "Nasr City"
       }
     ];
+    repository.branchAssignments.set(1, [
+      {
+        branchId: 2,
+        branchName: "Nasr City",
+        effectiveFrom: "2026-01-01T00:00:00.000Z",
+        effectiveTo: null
+      }
+    ]);
     repository.attendanceDates.set(1, [
-      "2026-06-01",
-      "2026-06-01",
-      "2026-06-02",
-      "2026-06-15"
+      { date: "2026-06-01", branchId: 2, branchName: "Nasr City" },
+      { date: "2026-06-01", branchId: 2, branchName: "Nasr City" },
+      { date: "2026-06-02", branchId: 2, branchName: "Nasr City" },
+      { date: "2026-06-15", branchId: 2, branchName: "Nasr City" }
     ]);
-    repository.weeklyDayOffDates.set(1, [
-      "2026-06-06",
-      "2026-06-13",
-      "2026-06-20",
-      "2026-06-27"
-    ]);
-    repository.permissionAbsenceDates.set(1, [
-      "2026-06-10",
-      "2026-06-11"
-    ]);
+    repository.weeklyDayOffDates.set(1, ["2026-06-06", "2026-06-13", "2026-06-20", "2026-06-27"]);
+    repository.permissionAbsenceDates.set(1, ["2026-06-10", "2026-06-11"]);
     const service = createReportsService({ repository });
 
     const result = await service.getMonthlyAttendanceSummary({
@@ -90,9 +101,18 @@ describe("reports service", () => {
         branchName: "Nasr City"
       }
     ];
-    // 2026-06-10 is shared between attendance and a permission absence,
-    // and 2026-06-06 is shared between attendance and a weekly day off.
-    repository.attendanceDates.set(1, ["2026-06-06", "2026-06-10"]);
+    repository.branchAssignments.set(1, [
+      {
+        branchId: 2,
+        branchName: "Nasr City",
+        effectiveFrom: "2026-01-01T00:00:00.000Z",
+        effectiveTo: null
+      }
+    ]);
+    repository.attendanceDates.set(1, [
+      { date: "2026-06-06", branchId: 2, branchName: "Nasr City" },
+      { date: "2026-06-10", branchId: 2, branchName: "Nasr City" }
+    ]);
     repository.weeklyDayOffDates.set(1, ["2026-06-06"]);
     repository.permissionAbsenceDates.set(1, ["2026-06-10"]);
     const service = createReportsService({ repository });
@@ -101,44 +121,113 @@ describe("reports service", () => {
       month: "2026-06"
     });
 
-    // Only 2 distinct calendar days are covered, so 30 - 2 = 28 remain absent.
     expect(result[0]?.absenceWithoutPermission).toBe(28);
   });
 
-  it("filters the summary by employee and branch", async () => {
+  it("filters the summary by historical branch", async () => {
     const repository = new InMemoryReportsRepository();
     repository.employees = [
       {
         id: 1,
         fullName: "Mina Adel",
-        branchId: 2,
-        branchName: "Nasr City"
-      },
-      {
-        id: 2,
-        fullName: "Sara Nabil",
         branchId: 3,
         branchName: "Maadi"
       }
     ];
+    repository.branchAssignments.set(1, [
+      {
+        branchId: 2,
+        branchName: "Nasr City",
+        effectiveFrom: "2026-06-01T00:00:00.000Z",
+        effectiveTo: "2026-06-16T00:00:00.000Z"
+      },
+      {
+        branchId: 3,
+        branchName: "Maadi",
+        effectiveFrom: "2026-06-16T00:00:00.000Z",
+        effectiveTo: null
+      }
+    ]);
     const service = createReportsService({ repository });
 
     const result = await service.getMonthlyAttendanceSummary({
       month: "2026-06",
-      branchId: 3
+      branchId: 2
     });
 
     expect(result).toEqual<MonthlyAttendanceSummaryRow[]>([
       {
-        employeeId: 2,
-        employeeName: "Sara Nabil",
-        branchId: 3,
-        branchName: "Maadi",
+        employeeId: 1,
+        employeeName: "Mina Adel",
+        branchId: 2,
+        branchName: "Nasr City",
         month: "2026-06",
         attendanceDays: 0,
         weeklyDaysOff: 0,
         absenceWithPermission: 0,
-        absenceWithoutPermission: 30
+        absenceWithoutPermission: 15
+      }
+    ]);
+  });
+
+  it("splits monthly summary rows by historical branch assignment", async () => {
+    const repository = new InMemoryReportsRepository();
+    repository.employees = [
+      {
+        id: 1,
+        fullName: "Mina Adel",
+        branchId: 3,
+        branchName: "Maadi"
+      }
+    ];
+    repository.branchAssignments.set(1, [
+      {
+        branchId: 2,
+        branchName: "Nasr City",
+        effectiveFrom: "2026-06-01T00:00:00.000Z",
+        effectiveTo: "2026-06-16T00:00:00.000Z"
+      },
+      {
+        branchId: 3,
+        branchName: "Maadi",
+        effectiveFrom: "2026-06-16T00:00:00.000Z",
+        effectiveTo: null
+      }
+    ]);
+    repository.attendanceDates.set(1, [
+      { date: "2026-06-02", branchId: 2, branchName: "Nasr City" },
+      { date: "2026-06-18", branchId: 3, branchName: "Maadi" }
+    ]);
+    repository.weeklyDayOffDates.set(1, ["2026-06-06", "2026-06-20"]);
+    repository.permissionAbsenceDates.set(1, ["2026-06-10", "2026-06-25"]);
+    const service = createReportsService({ repository });
+
+    const result = await service.getMonthlyAttendanceSummary({
+      month: "2026-06"
+    });
+
+    expect(result).toEqual<MonthlyAttendanceSummaryRow[]>([
+      {
+        employeeId: 1,
+        employeeName: "Mina Adel",
+        branchId: 2,
+        branchName: "Nasr City",
+        month: "2026-06",
+        attendanceDays: 1,
+        weeklyDaysOff: 1,
+        absenceWithPermission: 1,
+        absenceWithoutPermission: 12
+      },
+      {
+        employeeId: 1,
+        employeeName: "Mina Adel",
+        branchId: 3,
+        branchName: "Maadi",
+        month: "2026-06",
+        attendanceDays: 1,
+        weeklyDaysOff: 1,
+        absenceWithPermission: 1,
+        absenceWithoutPermission: 12
       }
     ]);
   });

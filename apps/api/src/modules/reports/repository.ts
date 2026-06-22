@@ -1,8 +1,9 @@
-import { and, eq, gte, lt } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, or } from "drizzle-orm";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import {
   attendanceSessions,
   branches,
+  employeeBranchAssignments,
   employees,
   permissionAbsences,
   weeklyDayOffAssignments
@@ -40,17 +41,7 @@ function formatDateOnly(value: Date) {
 
 export function createDrizzleReportsRepository(options: CreateDrizzleReportsRepositoryOptions) {
   return {
-    async listEmployees(filters: { employeeId?: number; branchId?: number }) {
-      const conditions = [];
-
-      if (filters.employeeId) {
-        conditions.push(eq(employees.id, filters.employeeId));
-      }
-
-      if (filters.branchId) {
-        conditions.push(eq(employees.branchId, filters.branchId));
-      }
-
+    async listEmployees(filters: { employeeId?: number }) {
       const rows = await options.db
         .select({
           id: employees.id,
@@ -60,7 +51,7 @@ export function createDrizzleReportsRepository(options: CreateDrizzleReportsRepo
         })
         .from(employees)
         .leftJoin(branches, eq(branches.id, employees.branchId))
-        .where(conditions.length > 0 ? and(...conditions) : undefined);
+        .where(filters.employeeId ? eq(employees.id, filters.employeeId) : undefined);
 
       return rows;
     },
@@ -69,9 +60,12 @@ export function createDrizzleReportsRepository(options: CreateDrizzleReportsRepo
       const { start, end } = getMonthRange(month);
       const rows = await options.db
         .select({
-          checkInAtUtc: attendanceSessions.checkInAtUtc
+          checkInAtUtc: attendanceSessions.checkInAtUtc,
+          branchId: attendanceSessions.branchId,
+          branchName: branches.name
         })
         .from(attendanceSessions)
+        .innerJoin(branches, eq(branches.id, attendanceSessions.branchId))
         .where(
           and(
             eq(attendanceSessions.employeeId, employeeId),
@@ -79,9 +73,14 @@ export function createDrizzleReportsRepository(options: CreateDrizzleReportsRepo
             gte(attendanceSessions.checkInAtUtc, start),
             lt(attendanceSessions.checkInAtUtc, end)
           )
-        );
+        )
+        .orderBy(attendanceSessions.checkInAtUtc);
 
-      return rows.map((row) => formatDateOnly(row.checkInAtUtc));
+      return rows.map((row) => ({
+        date: formatDateOnly(row.checkInAtUtc),
+        branchId: row.branchId,
+        branchName: row.branchName
+      }));
     },
 
     async listWeeklyDayOffDates(employeeId: number, month: string) {
@@ -118,6 +117,35 @@ export function createDrizzleReportsRepository(options: CreateDrizzleReportsRepo
         );
 
       return rows.map((row) => formatDateOnly(row.absenceDate));
+    },
+
+    async listBranchAssignments(employeeId: number, month: string) {
+      const { start, end } = getMonthRange(month);
+      const rows = await options.db
+        .select({
+          branchId: employeeBranchAssignments.branchId,
+          branchName: branches.name,
+          effectiveFrom: employeeBranchAssignments.effectiveFrom,
+          effectiveTo: employeeBranchAssignments.effectiveTo
+        })
+        .from(employeeBranchAssignments)
+        .innerJoin(branches, eq(branches.id, employeeBranchAssignments.branchId))
+        .where(and(
+          eq(employeeBranchAssignments.employeeId, employeeId),
+          lt(employeeBranchAssignments.effectiveFrom, end),
+          or(
+            isNull(employeeBranchAssignments.effectiveTo),
+            gte(employeeBranchAssignments.effectiveTo, start)
+          )
+        ))
+        .orderBy(employeeBranchAssignments.effectiveFrom);
+
+      return rows.map((row) => ({
+        branchId: row.branchId,
+        branchName: row.branchName,
+        effectiveFrom: row.effectiveFrom.toISOString(),
+        effectiveTo: row.effectiveTo ? row.effectiveTo.toISOString() : null
+      }));
     }
   };
 }

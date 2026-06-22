@@ -11,22 +11,42 @@ class InMemoryReportsRepository implements ReportsRepository {
       {
         id: 1,
         fullName: "Mina Adel",
-        branchId: 2,
-        branchName: "Nasr City"
+        branchId: 3,
+        branchName: "Maadi"
       }
     ];
   }
 
   async listCompletedAttendanceDates() {
-    return ["2026-06-01", "2026-06-15"];
+    return [
+      { date: "2026-06-02", branchId: 2, branchName: "Nasr City" },
+      { date: "2026-06-18", branchId: 3, branchName: "Maadi" }
+    ];
   }
 
   async listWeeklyDayOffDates() {
-    return ["2026-06-06", "2026-06-13", "2026-06-20", "2026-06-27"];
+    return ["2026-06-06", "2026-06-20"];
   }
 
   async listPermissionAbsenceDates() {
-    return ["2026-06-10"];
+    return ["2026-06-10", "2026-06-25"];
+  }
+
+  async listBranchAssignments() {
+    return [
+      {
+        branchId: 2,
+        branchName: "Nasr City",
+        effectiveFrom: "2026-06-01T00:00:00.000Z",
+        effectiveTo: "2026-06-16T00:00:00.000Z"
+      },
+      {
+        branchId: 3,
+        branchName: "Maadi",
+        effectiveFrom: "2026-06-16T00:00:00.000Z",
+        effectiveTo: null
+      }
+    ];
   }
 }
 
@@ -65,10 +85,21 @@ describe("reports routes", () => {
         branchId: 2,
         branchName: "Nasr City",
         month: "2026-06",
-        attendanceDays: 2,
-        weeklyDaysOff: 4,
+        attendanceDays: 1,
+        weeklyDaysOff: 1,
         absenceWithPermission: 1,
-        absenceWithoutPermission: 23
+        absenceWithoutPermission: 12
+      },
+      {
+        employeeId: 1,
+        employeeName: "Mina Adel",
+        branchId: 3,
+        branchName: "Maadi",
+        month: "2026-06",
+        attendanceDays: 1,
+        weeklyDaysOff: 1,
+        absenceWithPermission: 1,
+        absenceWithoutPermission: 12
       }
     ]);
   });
