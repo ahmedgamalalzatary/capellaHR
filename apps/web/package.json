@@ -4,10 +4,10 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "lint": "pnpm exec eslint .",
+    "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest --passWithNoTests",
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "next typegen && tsc --project tsconfig.json"
   },
   "dependencies": {
     "next": "^16.2.9",

@@ -28,9 +28,9 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "dev": "tsc --project tsconfig.build.json --watch",
-    "lint": "pnpm exec eslint .",
-    "test": "vitest run --passWithNoTests src",
-    "test:watch": "vitest --passWithNoTests src",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests src tests",
+    "test:watch": "vitest --passWithNoTests src tests",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
