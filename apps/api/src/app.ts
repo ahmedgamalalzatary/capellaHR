@@ -7,6 +7,7 @@ import type { createEmployeeDeviceService } from "./modules/employee-devices/ser
 import type { createEmployeeService } from "./modules/employees/service";
 import type { createPermissionAbsenceService } from "./modules/permission-absences/service";
 import type { createMonthLockService } from "./modules/month-locks/service";
+import type { createPdfExportService } from "./modules/reports/pdf-export.service";
 import type { createReportsService } from "./modules/reports/service";
 import type { createWeeklyDayOffService } from "./modules/weekly-day-offs/service";
 import { registerNotFoundHandler } from "./http/not-found-handler";
@@ -23,6 +24,7 @@ type CreateAppOptions = {
   employeeService?: ReturnType<typeof createEmployeeService>;
   permissionAbsenceService?: ReturnType<typeof createPermissionAbsenceService>;
   monthLockService?: ReturnType<typeof createMonthLockService>;
+  pdfExportService?: ReturnType<typeof createPdfExportService>;
   reportsService?: ReturnType<typeof createReportsService>;
   weeklyDayOffService?: ReturnType<typeof createWeeklyDayOffService>;
 };
@@ -41,6 +43,7 @@ export function createApp(options: CreateAppOptions = {}) {
     employeeService: options.employeeService,
     permissionAbsenceService: options.permissionAbsenceService,
     monthLockService: options.monthLockService,
+    pdfExportService: options.pdfExportService,
     reportsService: options.reportsService,
     weeklyDayOffService: options.weeklyDayOffService
   });

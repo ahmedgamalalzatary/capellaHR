@@ -7,6 +7,7 @@ import type { createEmployeeDeviceService } from "../modules/employee-devices/se
 import type { createEmployeeService } from "../modules/employees/service";
 import type { createPermissionAbsenceService } from "../modules/permission-absences/service";
 import type { createMonthLockService } from "../modules/month-locks/service";
+import type { createPdfExportService } from "../modules/reports/pdf-export.service";
 import type { createReportsService } from "../modules/reports/service";
 import type { createWeeklyDayOffService } from "../modules/weekly-day-offs/service";
 import { registerAuditLogsRoutes } from "../modules/audit-logs/routes";
@@ -29,6 +30,7 @@ type RegisterAppRoutesOptions = {
   employeeService?: ReturnType<typeof createEmployeeService>;
   permissionAbsenceService?: ReturnType<typeof createPermissionAbsenceService>;
   monthLockService?: ReturnType<typeof createMonthLockService>;
+  pdfExportService?: ReturnType<typeof createPdfExportService>;
   reportsService?: ReturnType<typeof createReportsService>;
   weeklyDayOffService?: ReturnType<typeof createWeeklyDayOffService>;
 };
@@ -63,6 +65,9 @@ export function registerAppRoutes(app: Express, options: RegisterAppRoutesOption
   });
   registerReportsRoutes(app, {
     authService: options.authService,
+    attendanceService: options.attendanceService,
+    employeeService: options.employeeService,
+    pdfExportService: options.pdfExportService,
     reportsService: options.reportsService
   });
   registerAuditLogsRoutes(app, {
