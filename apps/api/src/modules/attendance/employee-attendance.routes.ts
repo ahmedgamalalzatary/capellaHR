@@ -1,5 +1,5 @@
 import type { Express, RequestHandler, Request, Response } from "express";
-import { attendanceActionSchema } from "@capella/shared";
+import { attendanceActionSchema, employeeAttendanceHistoryFilterSchema } from "@capella/shared";
 import {
   type RegisterAttendanceRoutesOptions,
   getAttendanceService,
@@ -26,6 +26,23 @@ export function registerEmployeeAttendanceRoutes(
 
     response.status(200).json({
       attendance: result
+    });
+  });
+
+  app.get("/attendance/history", employeeSessionMiddleware, async (request: Request, response: Response) => {
+    const parsed = employeeAttendanceHistoryFilterSchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      sendValidationError(response, parsed.error.flatten());
+      return;
+    }
+
+    const attendanceService = options.attendanceService ?? getAttendanceService();
+    const employee = getAuthenticatedEmployee(response);
+    const sessions = await attendanceService.listEmployeeAttendanceHistory(employee.id, parsed.data);
+
+    response.status(200).json({
+      sessions
     });
   });
 

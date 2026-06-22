@@ -1,9 +1,10 @@
-import type { AttendanceActionInput } from "@capella/shared";
+import type { AttendanceActionInput, EmployeeAttendanceHistoryFilterInput } from "@capella/shared";
 import { type AttendanceErrorResult, createActionOutOfOrderError } from "./attendance-errors";
 import {
   type AttendanceBlockedResult,
   type AttendanceRepository,
   type AttendanceState,
+  buildAttendancePagination,
   buildAttendanceState,
   createBranchPolicySnapshot,
   getCairoDateKey
@@ -25,6 +26,31 @@ export function createEmployeeAttendanceService(repository: AttendanceRepository
         context.openSession,
         context.now
       );
+    },
+
+    async listEmployeeAttendanceHistory(
+      employeeId: number,
+      filters: EmployeeAttendanceHistoryFilterInput
+    ) {
+      const employee = await repository.findEmployeeById(employeeId);
+
+      if (!employee) {
+        return {
+          items: [],
+          pagination: {
+            page: filters.page,
+            pageSize: filters.pageSize,
+            total: 0,
+            totalPages: 1
+          }
+        };
+      }
+
+      return repository.listEmployeeAttendanceHistory({
+        employeeId,
+        page: filters.page,
+        pageSize: filters.pageSize
+      });
     },
 
     async recordEmployeeAction(

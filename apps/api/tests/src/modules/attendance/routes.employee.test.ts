@@ -68,6 +68,85 @@ describe("attendance routes (employee)", () => {
     expect(response.body.attendance.todaySessions).toHaveLength(1);
   });
 
+  it("returns the employee attendance history with pagination", async () => {
+    const repository = createBaseRepository();
+    repository.sessions.push(
+      {
+        id: 1,
+        employeeId: 2,
+        branchId: 1,
+        status: "completed",
+        checkInAtUtc: new Date("2026-06-21T06:00:00.000Z"),
+        checkOutAtUtc: new Date("2026-06-21T14:00:00.000Z"),
+        checkInLatitude: 30.04442,
+        checkInLongitude: 31.235712,
+        checkInIpAddress: "192.168.1.42",
+        deviceId: "personal-device-1",
+        branchPolicySnapshot: {
+          allowedIpCidr: "192.168.1.0/24"
+        }
+      },
+      {
+        id: 2,
+        employeeId: 2,
+        branchId: 1,
+        status: "open",
+        checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
+        checkOutAtUtc: null,
+        checkInLatitude: 30.04442,
+        checkInLongitude: 31.235712,
+        checkInIpAddress: "192.168.1.42",
+        deviceId: "personal-device-1",
+        branchPolicySnapshot: {
+          allowedIpCidr: "192.168.1.0/24"
+        }
+      }
+    );
+
+    const app = createApp({
+      authService: createEmployeeAuthService(),
+      attendanceService: createAttendanceService({ repository })
+    });
+    const employeeCookie = await signInEmployee(app);
+
+    const response = await request(app)
+      .get("/attendance/history")
+      .set("Cookie", employeeCookie)
+      .query({
+        page: "1",
+        pageSize: "1"
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      sessions: {
+        items: [
+          {
+            id: 2,
+            employeeId: 2,
+            branchId: 1,
+            status: "open",
+            checkInAtUtc: "2026-06-22T06:00:00.000Z",
+            checkOutAtUtc: null,
+            checkInLatitude: 30.04442,
+            checkInLongitude: 31.235712,
+            checkInIpAddress: "192.168.1.42",
+            deviceId: "personal-device-1",
+            branchPolicySnapshot: {
+              allowedIpCidr: "192.168.1.0/24"
+            }
+          }
+        ],
+        pagination: {
+          page: 1,
+          pageSize: 1,
+          total: 2,
+          totalPages: 2
+        }
+      }
+    });
+  });
+
   it("records an employee check-in", async () => {
     const app = createApp({
       authService: createEmployeeAuthService(),

@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 import type { AttendanceActionInput, AttendanceListFilterInput } from "@capella/shared";
 import { createAttendanceService } from "../../../../src/modules/attendance/service";
+import { buildAttendancePagination } from "../../../../src/modules/attendance/attendance-utils";
 import type {
   AttendanceBlockedAttemptRecord,
   AdminAttendanceRecord,
@@ -44,6 +45,13 @@ class InMemoryAttendanceRepository implements AttendanceRepository {
     return this.sessions
       .filter((session) => session.employeeId === employeeId)
       .sort((left, right) => left.checkInAtUtc.getTime() - right.checkInAtUtc.getTime());
+  }
+
+  async listEmployeeAttendanceHistory(filters: { employeeId: number; page: number; pageSize: number }) {
+    return buildAttendancePagination(
+      this.sessions.filter((session) => session.employeeId === filters.employeeId),
+      filters
+    );
   }
 
   async createSession(input: {

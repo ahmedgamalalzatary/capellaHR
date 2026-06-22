@@ -330,21 +330,21 @@ export function createEmployeeAuthService() {
         }
 
         return {
-          id: 2,
-          fullName: "Test Employee",
+          id: 1,
+          fullName: "Mina Adel",
           primaryPhone: "01012345678",
           passwordHash: createPasswordHash("secret123"),
           softDeletedAt: null
         };
       },
       async findEmployeeById(id: number) {
-        if (id !== 2) {
+        if (id !== 1) {
           return null;
         }
 
         return {
-          id: 2,
-          fullName: "Test Employee",
+          id: 1,
+          fullName: "Mina Adel",
           primaryPhone: "01012345678",
           passwordHash: createPasswordHash("secret123"),
           softDeletedAt: null

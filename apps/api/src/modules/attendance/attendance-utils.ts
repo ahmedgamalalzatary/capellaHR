@@ -3,7 +3,7 @@ import type {
   AttendanceBlockedAttemptRecord,
   AttendanceSessionRecord
 } from "./repository";
-import type { AttendanceListFilterInput } from "@capella/shared";
+import type { AttendanceListFilterInput, EmployeeAttendanceHistoryFilterInput } from "@capella/shared";
 
 export type EmployeeAttendanceRecord = {
   id: number;
@@ -39,6 +39,19 @@ export type AttendanceRepository = {
   findActiveEmployeeDeviceFingerprint(employeeId: number): Promise<string | null>;
   findOpenSession(employeeId: number): Promise<AttendanceSessionRecord | null>;
   listEmployeeSessions(employeeId: number): Promise<AttendanceSessionRecord[]>;
+  listEmployeeAttendanceHistory(filters: {
+    employeeId: number;
+    page: number;
+    pageSize: number;
+  }): Promise<{
+    items: AttendanceSessionRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }>;
   createSession(input: {
     employeeId: number;
     branchId: number;
@@ -93,6 +106,26 @@ export type AttendanceRepository = {
   deleteAdminAttendance(sessionId: number): Promise<boolean>;
   applyPendingBranchAssignment(employeeId: number, occurredAtUtc: Date): Promise<boolean>;
 };
+
+export function buildAttendancePagination(
+  sessions: AttendanceSessionRecord[],
+  filters: EmployeeAttendanceHistoryFilterInput
+) {
+  const sortedSessions = sessions
+    .slice()
+    .sort((left, right) => right.checkInAtUtc.getTime() - left.checkInAtUtc.getTime());
+  const offset = (filters.page - 1) * filters.pageSize;
+
+  return {
+    items: sortedSessions.slice(offset, offset + filters.pageSize),
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total: sortedSessions.length,
+      totalPages: Math.max(1, Math.ceil(sortedSessions.length / filters.pageSize))
+    }
+  };
+}
 
 export function buildAttendanceState(
   employeeId: number,

@@ -23,6 +23,8 @@ export const attendanceListFilterSchema = paginationSchema.extend({
   sortDirection: sortDirectionSchema.optional()
 });
 
+export const employeeAttendanceHistoryFilterSchema = paginationSchema;
+
 export const adminAttendanceCreateSchema = z.object({
   employeeId: z.coerce.number().int().positive(),
   branchId: z.coerce.number().int().positive(),

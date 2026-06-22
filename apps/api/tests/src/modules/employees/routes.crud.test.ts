@@ -224,6 +224,37 @@ describe("employee routes (crud)", () => {
     });
   });
 
+  it("returns the authenticated employee profile for employee sessions", async () => {
+    const authService = createEmployeeAuthService();
+    const app = createApp({
+      authService,
+      employeeService: createStubEmployeeService("completed").service
+    });
+    const signInResponse = await request(app).post("/auth/sign-in").send({
+      phone: "01012345678",
+      password: "secret123"
+    });
+    const cookieHeader = signInResponse.headers["set-cookie"];
+
+    const response = await request(app).get("/employees/me").set("Cookie", cookieHeader);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      employee: {
+        id: 1,
+        fullName: "Mina Adel",
+        primaryPhone: "01012345678",
+        whatsappPhone: "01012345679",
+        email: "mina@capella.eg",
+        branchId: 1,
+        age: 28,
+        address: "Cairo",
+        currentMonthlySalary: "10000",
+        softDeletedAt: null
+      }
+    });
+  });
+
   it("returns not found for a missing employee id", async () => {
     const app = createApp({
       authService: createAdminAuthService(),

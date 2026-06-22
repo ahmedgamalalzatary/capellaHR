@@ -1,6 +1,7 @@
 import request from "supertest";
 import { createApp } from "../../../../src/app";
 import { createAuthService, createPasswordHash } from "../../../../src/modules/auth/service";
+import { buildAttendancePagination } from "../../../../src/modules/attendance/attendance-utils";
 import type {
   AttendanceBlockedAttemptRecord,
   AdminAttendanceRecord,
@@ -37,6 +38,13 @@ class InMemoryAttendanceRepository implements AttendanceRepository {
 
   async listEmployeeSessions(employeeId: number) {
     return this.sessions.filter((session) => session.employeeId === employeeId);
+  }
+
+  async listEmployeeAttendanceHistory(filters: { employeeId: number; page: number; pageSize: number }) {
+    return buildAttendancePagination(
+      this.sessions.filter((session) => session.employeeId === filters.employeeId),
+      filters
+    );
   }
 
   async createSession(input: {

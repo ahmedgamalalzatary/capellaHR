@@ -27,6 +27,8 @@ export function createDrizzleAttendanceRepository(
       employeeRepo.findActiveEmployeeDeviceFingerprint(db, employeeId),
     findOpenSession: (employeeId: number) => employeeRepo.findOpenSession(db, employeeId),
     listEmployeeSessions: (employeeId: number) => employeeRepo.listEmployeeSessions(db, employeeId),
+    listEmployeeAttendanceHistory: (filters: { employeeId: number; page: number; pageSize: number }) =>
+      employeeRepo.listEmployeeAttendanceHistory(db, filters),
     createSession: (input: Parameters<typeof employeeRepo.createSession>[1]) =>
       employeeRepo.createSession(db, input),
     completeSession: (sessionId: number, checkOutAtUtc: Date) =>

@@ -112,6 +112,32 @@ export async function listEmployeeSessions(db: Db, employeeId: number) {
   return rows.map(mapAttendanceSessionRecord);
 }
 
+export async function listEmployeeAttendanceHistory(
+  db: Db,
+  filters: {
+    employeeId: number;
+    page: number;
+    pageSize: number;
+  }
+) {
+  const rows = await db
+    .select()
+    .from(attendanceSessions)
+    .where(eq(attendanceSessions.employeeId, filters.employeeId))
+    .orderBy(desc(attendanceSessions.checkInAtUtc));
+  const offset = (filters.page - 1) * filters.pageSize;
+
+  return {
+    items: rows.slice(offset, offset + filters.pageSize).map(mapAttendanceSessionRecord),
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total: rows.length,
+      totalPages: Math.max(1, Math.ceil(rows.length / filters.pageSize))
+    }
+  };
+}
+
 export async function createSession(db: Db, input: {
   employeeId: number;
   branchId: number;
