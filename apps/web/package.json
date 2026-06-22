@@ -4,8 +4,9 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
-    "lint": "next lint",
-    "test": "echo \"No tests configured yet\"",
+    "lint": "pnpm exec eslint .",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest --passWithNoTests",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {

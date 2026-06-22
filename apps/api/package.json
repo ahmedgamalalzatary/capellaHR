@@ -3,9 +3,11 @@
   "private": true,
   "scripts": {
     "build": "tsc --project tsconfig.json",
+    "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "dev": "tsx watch src/index.ts",
-    "lint": "echo \"No lint configured yet\"",
-    "test": "echo \"No tests configured yet\"",
+    "lint": "pnpm exec eslint .",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest --passWithNoTests",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
@@ -16,5 +18,12 @@
     "multer": "^2.2.0",
     "mysql2": "^3.22.5",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.22.4"
   }
 }

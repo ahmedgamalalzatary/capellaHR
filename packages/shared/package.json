@@ -9,8 +9,9 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "dev": "tsc --project tsconfig.json --watch",
-    "lint": "echo \"No lint configured yet\"",
-    "test": "echo \"No tests configured yet\"",
+    "lint": "pnpm exec eslint .",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest --passWithNoTests",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
