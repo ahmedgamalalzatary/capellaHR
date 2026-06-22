@@ -11,4 +11,8 @@ export type {
   EmployeeListFilterInput,
   EmployeeUpdateInput
 } from "../types/employees";
+export type {
+  EmployeeDeviceSetupCompletionInput,
+  EmployeeDeviceSetupLinkCreateInput
+} from "../types/employee-devices";
 export type { MonthlyAttendanceSummaryFilterInput } from "../types/reports";

@@ -7,6 +7,7 @@ describe("shared schemas", () => {
     expect(schemas).toMatchObject({
       signInSchema: expect.any(z.ZodType),
       employeeCreateSchema: expect.any(z.ZodType),
+      employeeDeviceSetupLinkCreateSchema: expect.any(z.ZodType),
       branchCreateSchema: expect.any(z.ZodType),
       attendanceActionSchema: expect.any(z.ZodType),
       monthlyAttendanceSummaryFilterSchema: expect.any(z.ZodType)
@@ -57,5 +58,13 @@ describe("shared schemas", () => {
     });
 
     expect(result.setupStatus).toBe("setup_pending");
+  });
+
+  it("requires a browser fingerprint when completing employee device setup", () => {
+    const result = schemas.employeeDeviceSetupCompletionSchema.safeParse({
+      deviceLabel: "Samsung A55"
+    });
+
+    expect(result.success).toBe(false);
   });
 });
