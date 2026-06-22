@@ -3,6 +3,7 @@ import type {
   PermissionAbsenceListFilterInput,
   PermissionAbsenceUpdateInput
 } from "@capella/shared";
+import type { createAuditLogService } from "../audit-logs/service";
 import type { PermissionAbsenceRecord } from "./repository";
 export type { PermissionAbsenceRecord } from "./repository";
 
@@ -37,6 +38,7 @@ export type PermissionAbsenceRepository = {
 
 type CreatePermissionAbsenceServiceOptions = {
   repository: PermissionAbsenceRepository;
+  auditLogService?: ReturnType<typeof createAuditLogService>;
 };
 
 export function createPermissionAbsenceService(options: CreatePermissionAbsenceServiceOptions) {
@@ -72,11 +74,22 @@ export function createPermissionAbsenceService(options: CreatePermissionAbsenceS
         return validation;
       }
 
-      return options.repository.createAbsence({
+      const absence = await options.repository.createAbsence({
         employeeId: employee.id,
         absenceDate: input.absenceDate,
         createdByAdminId
       });
+
+      await options.auditLogService?.recordAuditLog({
+        adminId: createdByAdminId,
+        actionType: "create",
+        entityType: "permission_absence",
+        entityId: String(absence.id),
+        before: null,
+        after: absence as unknown as Record<string, unknown>
+      });
+
+      return absence;
     },
 
     async updateAbsence(
@@ -110,6 +123,17 @@ export function createPermissionAbsenceService(options: CreatePermissionAbsenceS
         absenceDate: input.absenceDate,
         updatedByAdminId
       });
+
+      if (absence) {
+        await options.auditLogService?.recordAuditLog({
+          adminId: updatedByAdminId,
+          actionType: "update",
+          entityType: "permission_absence",
+          entityId: String(absence.id),
+          before: existing as unknown as Record<string, unknown>,
+          after: absence as unknown as Record<string, unknown>
+        });
+      }
 
       return absence ?? {
         error: {

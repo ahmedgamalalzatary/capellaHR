@@ -17,7 +17,18 @@ class InMemoryAuditLogRepository implements AuditLogRepository {
   }
 
   async createAuditLog() {
-    throw new Error("not needed in route test");
+    return {
+      id: 0,
+      adminId: 0,
+      actionType: "create",
+      entityType: "attendance",
+      entityId: "0",
+      entityDisplayName: null,
+      reason: null,
+      before: null,
+      after: null,
+      occurredAtUtc: new Date().toISOString()
+    };
   }
 }
 

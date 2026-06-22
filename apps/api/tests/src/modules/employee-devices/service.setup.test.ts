@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmployeeDeviceService } from "../../../../src/modules/employee-devices/service";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
 import {
   InMemoryEmployeeDeviceRepository,
   assertEmployeeDeviceState
@@ -7,8 +8,10 @@ import {
 
 describe("employee device service (setup link)", () => {
   it("creates a one-hour setup link", async () => {
+    const auditLogService = new InMemoryAuditLogService();
     const service = createEmployeeDeviceService({
-      repository: new InMemoryEmployeeDeviceRepository()
+      repository: new InMemoryEmployeeDeviceRepository(),
+      auditLogService
     });
 
     const result = await service.createSetupLink(1, {
@@ -25,6 +28,11 @@ describe("employee device service (setup link)", () => {
       activeDevice: null
     });
     expect(result.pendingSetup?.expiresAt).toBeInstanceOf(Date);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "setup_link_create",
+      entityType: "employee_device",
+      entityId: "1"
+    });
   });
 
   it("replaces an older pending setup link when generating a new one", async () => {

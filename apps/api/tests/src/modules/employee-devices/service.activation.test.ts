@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmployeeDeviceService } from "../../../../src/modules/employee-devices/service";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
 import {
   InMemoryEmployeeDeviceRepository,
   assertEmployeeDeviceState
@@ -108,8 +109,10 @@ describe("employee device service (activation & revocation)", () => {
       }
     );
 
+    const auditLogService = new InMemoryAuditLogService();
     const service = createEmployeeDeviceService({
-      repository
+      repository,
+      auditLogService
     });
     const result = await service.revokeDeviceAccess(1, 1);
 
@@ -117,5 +120,10 @@ describe("employee device service (activation & revocation)", () => {
       success: true
     });
     expect(repository.registrations.map((registration) => registration.status)).toEqual(["revoked", "revoked"]);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "revoke",
+      entityType: "employee_device",
+      entityId: "1"
+    });
   });
 });

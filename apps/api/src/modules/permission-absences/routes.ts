@@ -8,6 +8,8 @@ import { z } from "zod";
 import { getAppConfig } from "../../config/app-config";
 import { createDatabaseClient } from "../../db";
 import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
+import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
+import { createAuditLogService } from "../audit-logs/service";
 import type { createAuthService } from "../auth/service";
 import { createDrizzlePermissionAbsenceRepository } from "./repository";
 import {
@@ -134,9 +136,15 @@ function getPermissionAbsenceService() {
   const repository = createDrizzlePermissionAbsenceRepository({
     db: databaseClient.db
   });
+  const auditLogService = createAuditLogService({
+    repository: createDrizzleAuditLogRepository({
+      db: databaseClient.db
+    })
+  });
 
   permissionAbsenceService = createPermissionAbsenceService({
-    repository
+    repository,
+    auditLogService
   });
 
   return permissionAbsenceService;

@@ -8,6 +8,8 @@ import { z } from "zod";
 import { getAppConfig } from "../../config/app-config";
 import { createDatabaseClient } from "../../db";
 import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
+import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
+import { createAuditLogService } from "../audit-logs/service";
 import type { createAuthService } from "../auth/service";
 import { createDrizzleWeeklyDayOffRepository } from "./repository";
 import {
@@ -126,9 +128,15 @@ function getWeeklyDayOffService() {
   const repository = createDrizzleWeeklyDayOffRepository({
     db: databaseClient.db
   });
+  const auditLogService = createAuditLogService({
+    repository: createDrizzleAuditLogRepository({
+      db: databaseClient.db
+    })
+  });
 
   weeklyDayOffService = createWeeklyDayOffService({
-    repository
+    repository,
+    auditLogService
   });
 
   return weeklyDayOffService;

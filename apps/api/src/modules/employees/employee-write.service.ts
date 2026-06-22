@@ -1,4 +1,5 @@
 import type { EmployeeCreateInput, EmployeeUpdateInput } from "@capella/shared";
+import type { createAuditLogService } from "../audit-logs/service";
 import { createPasswordHash } from "../auth/service";
 import {
   createBranchNotAssignableError,
@@ -10,7 +11,11 @@ import { toEmployeeResponse } from "./employee-mappers";
 import type { EmployeeFileInput, EmployeeFileStorage, EmployeeFileType } from "./file-storage";
 import type { EmployeeRepository } from "./service";
 
-export function createEmployeeWriteService(repository: EmployeeRepository, fileStorage: EmployeeFileStorage) {
+export function createEmployeeWriteService(
+  repository: EmployeeRepository,
+  fileStorage: EmployeeFileStorage,
+  auditLogService?: ReturnType<typeof createAuditLogService>
+) {
   return {
     async createEmployee(input: EmployeeCreateInput, files: EmployeeFileInput[], createdByAdminId: number) {
       const missingFileTypes = getMissingEmployeeFileTypes(files);
@@ -51,10 +56,28 @@ export function createEmployeeWriteService(repository: EmployeeRepository, fileS
         fileSizeBytes: file.fileSizeBytes
       })));
 
-      return toEmployeeResponse(employee);
+      const response = toEmployeeResponse(employee);
+
+      await auditLogService?.recordAuditLog({
+        adminId: createdByAdminId,
+        actionType: "create",
+        entityType: "employee",
+        entityId: String(employee.id),
+        entityDisplayName: employee.fullName,
+        before: null,
+        after: response as unknown as Record<string, unknown>
+      });
+
+      return response;
     },
 
     async updateEmployee(employeeId: number, input: EmployeeUpdateInput, updatedByAdminId: number) {
+      const existing = await repository.findEmployeeById(employeeId);
+
+      if (!existing) {
+        return createEmployeeNotFoundError();
+      }
+
       if (typeof input.branchId === "number") {
         const branchSetupStatus = await repository.findBranchSetupStatus(input.branchId);
 
@@ -83,15 +106,45 @@ export function createEmployeeWriteService(repository: EmployeeRepository, fileS
         return createEmployeeConflictError(employee.error.field);
       }
 
-      return toEmployeeResponse(employee);
+      const response = toEmployeeResponse(employee);
+
+      await auditLogService?.recordAuditLog({
+        adminId: updatedByAdminId,
+        actionType: "update",
+        entityType: "employee",
+        entityId: String(employee.id),
+        entityDisplayName: employee.fullName,
+        before: toEmployeeResponse(existing) as unknown as Record<string, unknown>,
+        after: response as unknown as Record<string, unknown>
+      });
+
+      return response;
     },
 
-    async deleteEmployee(employeeId: number) {
+    async deleteEmployee(employeeId: number, deletedByAdminId?: number) {
+      const existing = await repository.findEmployeeById(employeeId);
+
+      if (!existing) {
+        return createEmployeeNotFoundError();
+      }
+
       const deleted = await repository.softDeleteEmployee(employeeId);
 
       if (!deleted) {
         return createEmployeeNotFoundError();
       }
+
+      const after = await repository.findEmployeeById(employeeId);
+
+      await auditLogService?.recordAuditLog({
+        adminId: deletedByAdminId ?? 0,
+        actionType: "soft_delete",
+        entityType: "employee",
+        entityId: String(existing.id),
+        entityDisplayName: existing.fullName,
+        before: toEmployeeResponse(existing) as unknown as Record<string, unknown>,
+        after: after ? toEmployeeResponse(after) as unknown as Record<string, unknown> : null
+      });
 
       return {
         success: true

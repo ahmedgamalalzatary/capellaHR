@@ -154,7 +154,7 @@ export async function signInEmployee(app: ReturnType<typeof createApp>) {
   return response.headers["set-cookie"];
 }
 
-export function validPayload() {
+export function validPayload(): BranchCreateInput {
   return {
     name: "Heliopolis",
     address: "Cairo",

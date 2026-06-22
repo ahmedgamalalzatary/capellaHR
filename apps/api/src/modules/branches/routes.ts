@@ -2,6 +2,8 @@ import type { Express, Request, Response } from "express";
 import { branchCreateSchema, branchSearchSchema, branchUpdateSchema } from "@capella/shared";
 import { z } from "zod";
 import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
+import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
+import { createAuditLogService } from "../audit-logs/service";
 import type { createAuthService } from "../auth/service";
 import { createDatabaseClient } from "../../db";
 import { getAppConfig } from "../../config/app-config";
@@ -110,9 +112,15 @@ function getBranchService() {
   const repository = createDrizzleBranchRepository({
     db: databaseClient.db
   });
+  const auditLogService = createAuditLogService({
+    repository: createDrizzleAuditLogRepository({
+      db: databaseClient.db
+    })
+  });
 
   branchService = createBranchService({
-    repository
+    repository,
+    auditLogService
   });
 
   return branchService;

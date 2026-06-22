@@ -7,6 +7,8 @@ import { z } from "zod";
 import { createDatabaseClient } from "../../db";
 import { getAppConfig } from "../../config/app-config";
 import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
+import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
+import { createAuditLogService } from "../audit-logs/service";
 import type { createAuthService } from "../auth/service";
 import { createDrizzleEmployeeDeviceRepository } from "./repository";
 import {
@@ -146,10 +148,17 @@ function getEmployeeDeviceService() {
     databaseUrl: config.databaseUrl
   });
 
+  const auditLogService = createAuditLogService({
+    repository: createDrizzleAuditLogRepository({
+      db: databaseClient.db
+    })
+  });
+
   employeeDeviceService = createEmployeeDeviceService({
     repository: createDrizzleEmployeeDeviceRepository({
       db: databaseClient.db
-    })
+    }),
+    auditLogService
   });
 
   return employeeDeviceService;

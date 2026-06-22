@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WeeklyDayOffAssignmentCreateInput } from "@capella/shared";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
 import { createWeeklyDayOffService } from "../../../../src/modules/weekly-day-offs/service";
 import type {
   WeeklyDayOffAssignmentRecord,
@@ -78,13 +79,19 @@ class InMemoryWeeklyDayOffRepository implements WeeklyDayOffRepository {
 describe("weekly day off service", () => {
   it("assigns a weekly day off using the saturday week start", async () => {
     const repository = new InMemoryWeeklyDayOffRepository();
-    const service = createWeeklyDayOffService({ repository });
+    const auditLogService = new InMemoryAuditLogService();
+    const service = createWeeklyDayOffService({ repository, auditLogService });
 
     const result = await service.createAssignment(1, validCreateInput("2026-06-29"), 9);
 
     assertAssignment(result);
     expect(result.weekStartDate).toBe("2026-06-27");
     expect(result.assignedByAdminId).toBe(9);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "create",
+      entityType: "weekly_day_off",
+      entityId: "1"
+    });
   });
 
   it("requires an override reason when assigning a second day off in the same week", async () => {
@@ -181,7 +188,8 @@ describe("weekly day off service", () => {
       overrideReason: null,
       assignedByAdminId: 1
     });
-    const service = createWeeklyDayOffService({ repository });
+    const auditLogService = new InMemoryAuditLogService();
+    const service = createWeeklyDayOffService({ repository, auditLogService });
 
     const result = await service.updateAssignment(2, {
       dayOffDate: "2026-07-03",
@@ -191,6 +199,12 @@ describe("weekly day off service", () => {
     assertAssignment(result);
     expect(result.weekStartDate).toBe("2026-06-27");
     expect(result.overrideReason).toBe("Schedule override");
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "update",
+      entityType: "weekly_day_off",
+      entityId: "2",
+      reason: "Schedule override"
+    });
   });
 });
 

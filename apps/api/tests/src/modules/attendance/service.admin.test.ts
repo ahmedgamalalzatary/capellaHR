@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAttendanceService } from "../../../../src/modules/attendance/service";
-import { createBaseRepository, InMemoryAuditLogService } from "./attendance-service.fixtures";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
+import { createBaseRepository } from "./attendance-service.fixtures";
 
 describe("attendance service (admin)", () => {
   it("lists admin attendance with employee-name filtering and employee-name sorting", async () => {

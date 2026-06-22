@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import multer from "multer";
 import { z } from "zod";
+import { createDrizzleAuditLogRepository } from "../audit-logs/repository";
+import { createAuditLogService } from "../audit-logs/service";
 import type { createAuthService } from "../auth/service";
 import { createLocalEmployeeFileStorage, type EmployeeFileInput, type EmployeeFileType } from "./file-storage";
 import { createDrizzleEmployeeRepository } from "./repository";
@@ -55,10 +57,16 @@ export function getEmployeeService() {
   const repository = createDrizzleEmployeeRepository({
     db: databaseClient.db
   });
+  const auditLogService = createAuditLogService({
+    repository: createDrizzleAuditLogRepository({
+      db: databaseClient.db
+    })
+  });
 
   employeeService = createEmployeeService({
     repository,
-    fileStorage: createLocalEmployeeFileStorage()
+    fileStorage: createLocalEmployeeFileStorage(),
+    auditLogService
   });
 
   return employeeService;

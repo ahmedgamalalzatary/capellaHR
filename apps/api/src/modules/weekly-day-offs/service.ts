@@ -3,6 +3,7 @@ import type {
   WeeklyDayOffAssignmentListFilterInput,
   WeeklyDayOffAssignmentUpdateInput
 } from "@capella/shared";
+import type { createAuditLogService } from "../audit-logs/service";
 import type { WeeklyDayOffAssignmentRecord } from "./repository";
 export type { WeeklyDayOffAssignmentRecord } from "./repository";
 
@@ -41,6 +42,7 @@ export type WeeklyDayOffRepository = {
 
 type CreateWeeklyDayOffServiceOptions = {
   repository: WeeklyDayOffRepository;
+  auditLogService?: ReturnType<typeof createAuditLogService>;
 };
 
 export function createWeeklyDayOffService(options: CreateWeeklyDayOffServiceOptions) {
@@ -77,13 +79,25 @@ export function createWeeklyDayOffService(options: CreateWeeklyDayOffServiceOpti
         return validation;
       }
 
-      return options.repository.createAssignment({
+      const assignment = await options.repository.createAssignment({
         employeeId: employee.id,
         weekStartDate: getWeekStartDate(input.dayOffDate),
         dayOffDate: input.dayOffDate,
         overrideReason: input.overrideReason,
         assignedByAdminId
       });
+
+      await options.auditLogService?.recordAuditLog({
+        adminId: assignedByAdminId,
+        actionType: "create",
+        entityType: "weekly_day_off",
+        entityId: String(assignment.id),
+        reason: input.overrideReason ?? null,
+        before: null,
+        after: assignment as unknown as Record<string, unknown>
+      });
+
+      return assignment;
     },
 
     async updateAssignment(
@@ -91,7 +105,6 @@ export function createWeeklyDayOffService(options: CreateWeeklyDayOffServiceOpti
       input: WeeklyDayOffAssignmentUpdateInput,
       updatedByAdminId: number
     ) {
-      void updatedByAdminId;
       const existing = await options.repository.findAssignmentById(assignmentId);
 
       if (!existing) {
@@ -121,6 +134,18 @@ export function createWeeklyDayOffService(options: CreateWeeklyDayOffServiceOpti
         dayOffDate: input.dayOffDate,
         overrideReason: input.overrideReason
       });
+
+      if (assignment) {
+        await options.auditLogService?.recordAuditLog({
+          adminId: updatedByAdminId,
+          actionType: "update",
+          entityType: "weekly_day_off",
+          entityId: String(assignment.id),
+          reason: input.overrideReason ?? null,
+          before: existing as unknown as Record<string, unknown>,
+          after: assignment as unknown as Record<string, unknown>
+        });
+      }
 
       return assignment ?? {
         error: {

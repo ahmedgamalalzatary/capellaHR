@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PermissionAbsenceCreateInput } from "@capella/shared";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
 import { createPermissionAbsenceService } from "../../../../src/modules/permission-absences/service";
 import type {
   PermissionAbsenceRecord,
@@ -72,13 +73,19 @@ class InMemoryPermissionAbsenceRepository implements PermissionAbsenceRepository
 describe("permission absence service", () => {
   it("creates a generic permission absence for an employee", async () => {
     const repository = new InMemoryPermissionAbsenceRepository();
-    const service = createPermissionAbsenceService({ repository });
+    const auditLogService = new InMemoryAuditLogService();
+    const service = createPermissionAbsenceService({ repository, auditLogService });
 
     const result = await service.createAbsence(1, validCreateInput("2026-06-29"), 9);
 
     assertAbsence(result);
     expect(result.permissionType).toBe("generic");
     expect(result.createdByAdminId).toBe(9);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "create",
+      entityType: "permission_absence",
+      entityId: "1"
+    });
   });
 
   it("blocks creation when attendance already exists on that date", async () => {
@@ -140,13 +147,19 @@ describe("permission absence service", () => {
       createdByAdminId: 1,
       updatedByAdminId: null
     });
-    const service = createPermissionAbsenceService({ repository });
+    const auditLogService = new InMemoryAuditLogService();
+    const service = createPermissionAbsenceService({ repository, auditLogService });
 
     const result = await service.updateAbsence(1, { absenceDate: "2026-06-30" }, 9);
 
     assertAbsence(result);
     expect(result.absenceDate).toBe("2026-06-30");
     expect(result.updatedByAdminId).toBe(9);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "update",
+      entityType: "permission_absence",
+      entityId: "1"
+    });
   });
 });
 

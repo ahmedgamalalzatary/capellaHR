@@ -1,4 +1,5 @@
 import type { BranchCreateInput, BranchSearchInput, BranchUpdateInput } from "@capella/shared";
+import type { createAuditLogService } from "../audit-logs/service";
 import type { BranchRecord } from "./repository";
 
 type BranchErrorResult = {
@@ -18,13 +19,25 @@ export type BranchRepository = {
 
 type CreateBranchServiceOptions = {
   repository: BranchRepository;
+  auditLogService?: ReturnType<typeof createAuditLogService>;
 };
 
 export function createBranchService(options: CreateBranchServiceOptions) {
   return {
     async createBranch(input: BranchCreateInput, createdByAdminId: number) {
-      void createdByAdminId;
-      return options.repository.createBranch(input);
+      const branch = await options.repository.createBranch(input);
+
+      await options.auditLogService?.recordAuditLog({
+        adminId: createdByAdminId,
+        actionType: "create",
+        entityType: "branch",
+        entityId: String(branch.id),
+        entityDisplayName: branch.name,
+        before: null,
+        after: branch as unknown as Record<string, unknown>
+      });
+
+      return branch;
     },
 
     async listBranches(filters: BranchSearchInput) {
@@ -42,13 +55,27 @@ export function createBranchService(options: CreateBranchServiceOptions) {
     },
 
     async updateBranch(branchId: number, input: BranchUpdateInput, updatedByAdminId: number) {
-      void updatedByAdminId;
+      const existing = await options.repository.findBranchById(branchId);
+
+      if (!existing) {
+        return createBranchNotFoundError();
+      }
 
       const branch = await options.repository.updateBranch(branchId, input);
 
       if (!branch) {
         return createBranchNotFoundError();
       }
+
+      await options.auditLogService?.recordAuditLog({
+        adminId: updatedByAdminId,
+        actionType: "update",
+        entityType: "branch",
+        entityId: String(branch.id),
+        entityDisplayName: branch.name,
+        before: existing as unknown as Record<string, unknown>,
+        after: branch as unknown as Record<string, unknown>
+      });
 
       return branch;
     }

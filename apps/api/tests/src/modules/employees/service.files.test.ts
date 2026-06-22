@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmployeeService } from "../../../../src/modules/employees/service";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
 import {
   InMemoryEmployeeFileStorage,
   InMemoryEmployeeRepository,
@@ -88,9 +89,11 @@ describe("employee service (files)", () => {
       }
     ];
     const storage = new InMemoryEmployeeFileStorage();
+    const auditLogService = new InMemoryAuditLogService();
     const service = createEmployeeService({
       repository,
-      fileStorage: storage
+      fileStorage: storage,
+      auditLogService
     });
 
     const result = await service.replaceEmployeeFile(1, "personal_photo", createUploadedFile("personal_photo"), 1);
@@ -106,5 +109,10 @@ describe("employee service (files)", () => {
     });
     expect(repository.employeeFiles[0]?.replacedAt).toBeInstanceOf(Date);
     expect(storage.savedFiles).toHaveLength(1);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "update",
+      entityType: "employee",
+      entityId: "1"
+    });
   });
 });

@@ -3,6 +3,7 @@ import type {
   EmployeeDeviceSetupCompletionInput,
   EmployeeDeviceSetupLinkCreateInput
 } from "@capella/shared";
+import type { createAuditLogService } from "../audit-logs/service";
 import type { EmployeeDeviceRegistrationRecord } from "./repository";
 
 type EmployeeDeviceState = {
@@ -55,6 +56,7 @@ export type EmployeeDeviceRepository = {
 
 type CreateEmployeeDeviceServiceOptions = {
   repository: EmployeeDeviceRepository;
+  auditLogService?: ReturnType<typeof createAuditLogService>;
 };
 
 export function createEmployeeDeviceService(options: CreateEmployeeDeviceServiceOptions) {
@@ -78,13 +80,17 @@ export function createEmployeeDeviceService(options: CreateEmployeeDeviceService
       input: EmployeeDeviceSetupLinkCreateInput,
       createdByAdminId: number
     ) {
-      void createdByAdminId;
-
       const employee = await options.repository.findEmployeeById(employeeId);
 
       if (!employee) {
         return createEmployeeNotFoundError();
       }
+
+      const beforeState = buildEmployeeDeviceState(
+        employee.id,
+        await options.repository.findActiveRegistration(employee.id),
+        await options.repository.findPendingRegistration(employee.id)
+      );
 
       await options.repository.revokePendingRegistrations(employee.id, new Date());
 
@@ -95,11 +101,22 @@ export function createEmployeeDeviceService(options: CreateEmployeeDeviceService
         expiresAt: new Date(Date.now() + 60 * 60 * 1000)
       });
 
-      return buildEmployeeDeviceState(
+      const state = buildEmployeeDeviceState(
         employee.id,
         await options.repository.findActiveRegistration(employee.id),
         pending
       );
+
+      await options.auditLogService?.recordAuditLog({
+        adminId: createdByAdminId,
+        actionType: "setup_link_create",
+        entityType: "employee_device",
+        entityId: String(employee.id),
+        before: employeeDeviceStateToAuditPayload(beforeState),
+        after: employeeDeviceStateToAuditPayload(state)
+      });
+
+      return state;
     },
 
     async completeSetup(
@@ -137,20 +154,55 @@ export function createEmployeeDeviceService(options: CreateEmployeeDeviceService
     },
 
     async revokeDeviceAccess(employeeId: number, revokedByAdminId: number) {
-      void revokedByAdminId;
-
       const employee = await options.repository.findEmployeeById(employeeId);
 
       if (!employee) {
         return createEmployeeNotFoundError();
       }
 
+      const beforeState = buildEmployeeDeviceState(
+        employee.id,
+        await options.repository.findActiveRegistration(employee.id),
+        await options.repository.findPendingRegistration(employee.id)
+      );
+
       const revoked = await options.repository.revokeDeviceAccess(employeeId, new Date());
+
+      const afterState = buildEmployeeDeviceState(
+        employee.id,
+        await options.repository.findActiveRegistration(employee.id),
+        await options.repository.findPendingRegistration(employee.id)
+      );
+
+      await options.auditLogService?.recordAuditLog({
+        adminId: revokedByAdminId,
+        actionType: "revoke",
+        entityType: "employee_device",
+        entityId: String(employee.id),
+        before: employeeDeviceStateToAuditPayload(beforeState),
+        after: employeeDeviceStateToAuditPayload(afterState)
+      });
 
       return {
         success: revoked
       } as const;
     }
+  };
+}
+
+function employeeDeviceStateToAuditPayload(state: EmployeeDeviceState) {
+  return {
+    employeeId: state.employeeId,
+    activeDevice: state.activeDevice ? {
+      id: state.activeDevice.id,
+      deviceLabel: state.activeDevice.deviceLabel,
+      browserFingerprint: state.activeDevice.browserFingerprint
+    } : null,
+    pendingSetup: state.pendingSetup ? {
+      id: state.pendingSetup.id,
+      deviceLabel: state.pendingSetup.deviceLabel,
+      expiresAt: state.pendingSetup.expiresAt.toISOString()
+    } : null
   };
 }
 

@@ -109,7 +109,8 @@ export function registerEmployeeCrudRoutes(
     }
 
     const employeeService = options.employeeService ?? getEmployeeService();
-    const result = await employeeService.deleteEmployee(parsed.data.employeeId);
+    const admin = getAuthenticatedAdmin(response);
+    const result = await employeeService.deleteEmployee(parsed.data.employeeId, admin.id);
 
     if ("error" in result) {
       response.status(404).json(result);

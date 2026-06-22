@@ -1,4 +1,5 @@
 import type { EmployeeListFilterInput } from "@capella/shared";
+import type { createAuditLogService } from "../audit-logs/service";
 import type { EmployeeConflictResult, EmployeeFileRecord, EmployeeRecord } from "./repository";
 import type { EmployeeFileInput, EmployeeFileStorage, EmployeeFileType } from "./file-storage";
 import { createEmployeeReadService } from "./employee-read.service";
@@ -51,13 +52,14 @@ export type EmployeeRepository = {
 type CreateEmployeeServiceOptions = {
   repository: EmployeeRepository;
   fileStorage: EmployeeFileStorage;
+  auditLogService?: ReturnType<typeof createAuditLogService>;
 };
 
 export function createEmployeeService(options: CreateEmployeeServiceOptions) {
   return {
     ...createEmployeeReadService(options.repository),
-    ...createEmployeeWriteService(options.repository, options.fileStorage),
-    ...createEmployeeFileService(options.repository, options.fileStorage)
+    ...createEmployeeWriteService(options.repository, options.fileStorage, options.auditLogService),
+    ...createEmployeeFileService(options.repository, options.fileStorage, options.auditLogService)
   };
 }
 

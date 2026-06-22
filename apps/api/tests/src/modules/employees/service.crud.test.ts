@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmployeeService } from "../../../../src/modules/employees/service";
+import { InMemoryAuditLogService } from "../audit-logs/audit-log-test.fixtures";
 import {
   InMemoryEmployeeFileStorage,
   InMemoryEmployeeRepository,
@@ -56,9 +57,11 @@ describe("employee service (crud)", () => {
   it("hashes the password and creates an employee for completed branches", async () => {
     const repository = new InMemoryEmployeeRepository();
     const storage = new InMemoryEmployeeFileStorage();
+    const auditLogService = new InMemoryAuditLogService();
     const service = createEmployeeService({
       repository,
-      fileStorage: storage
+      fileStorage: storage,
+      auditLogService
     });
 
     const result = await service.createEmployee(createInput(), createRequiredFiles(), 1);
@@ -80,6 +83,11 @@ describe("employee service (crud)", () => {
     });
     expect(repository.employeeFiles).toHaveLength(3);
     expect(storage.savedFiles).toHaveLength(3);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "create",
+      entityType: "employee",
+      entityId: "1"
+    });
   });
 
   it("maps duplicate employee fields into a conflict error during creation", async () => {
@@ -165,9 +173,11 @@ describe("employee service (crud)", () => {
 
   it("updates an employee and re-hashes the password when provided", async () => {
     const repository = new InMemoryEmployeeRepository();
+    const auditLogService = new InMemoryAuditLogService();
     const service = createEmployeeService({
       repository,
-      fileStorage: new InMemoryEmployeeFileStorage()
+      fileStorage: new InMemoryEmployeeFileStorage(),
+      auditLogService
     });
 
     const result = await service.updateEmployee(1, {
@@ -188,6 +198,11 @@ describe("employee service (crud)", () => {
       softDeletedAt: null
     });
     expect(repository.employees[0]?.passwordHash).toMatch(/^scrypt\$/);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "update",
+      entityType: "employee",
+      entityId: "1"
+    });
   });
 
   it("rejects employee updates when the target branch is not assignable", async () => {
@@ -256,9 +271,11 @@ describe("employee service (crud)", () => {
 
   it("soft deletes an employee", async () => {
     const repository = new InMemoryEmployeeRepository();
+    const auditLogService = new InMemoryAuditLogService();
     const service = createEmployeeService({
       repository,
-      fileStorage: new InMemoryEmployeeFileStorage()
+      fileStorage: new InMemoryEmployeeFileStorage(),
+      auditLogService
     });
 
     const result = await service.deleteEmployee(1);
@@ -267,6 +284,11 @@ describe("employee service (crud)", () => {
       success: true
     });
     expect(repository.employees[0]?.softDeletedAt).toBeInstanceOf(Date);
+    expect(auditLogService.logs[0]).toMatchObject({
+      actionType: "soft_delete",
+      entityType: "employee",
+      entityId: "1"
+    });
   });
 
   it("returns not found when deleting a missing employee", async () => {
