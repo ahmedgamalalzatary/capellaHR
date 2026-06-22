@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { EmployeeCreateInput, EmployeeListFilterInput } from "@capella/shared";
 import { createEmployeeService, type EmployeeRepository } from "./service";
-import type { EmployeeConflictField, EmployeeConflictResult, EmployeeRecord } from "./repository";
+import type { EmployeeConflictField, EmployeeConflictResult, EmployeeFileRecord, EmployeeRecord } from "./repository";
+import type {
+  EmployeeFileInput,
+  EmployeeFileType,
+  EmployeeFileStorage
+} from "./service";
 
 class InMemoryEmployeeRepository implements EmployeeRepository {
   branchSetupStatus: "completed" | "setup_pending" | null = "completed";
@@ -23,6 +28,7 @@ class InMemoryEmployeeRepository implements EmployeeRepository {
   ];
   nextCreateError: "primary_phone" | "whatsapp_phone" | "email" | null = null;
   nextUpdateError: "primary_phone" | "whatsapp_phone" | "email" | null = null;
+  employeeFiles: EmployeeFileRecord[] = [];
 
   async findBranchSetupStatus() {
     return this.branchSetupStatus;
@@ -128,6 +134,74 @@ class InMemoryEmployeeRepository implements EmployeeRepository {
     existing.softDeletedAt = new Date();
     return true;
   }
+
+  async insertEmployeeFiles(
+    employeeId: number,
+    files: Array<{
+      fileType: EmployeeFileType;
+      storagePath: string;
+      mimeType: string;
+      fileSizeBytes: number;
+    }>
+  ) {
+    const nextFiles = files.map((file, index) => ({
+      id: this.employeeFiles.length + index + 1,
+      employeeId,
+      fileType: file.fileType,
+      storagePath: file.storagePath,
+      mimeType: file.mimeType,
+      fileSizeBytes: file.fileSizeBytes,
+      replacedAt: null
+    }));
+
+    this.employeeFiles.push(...nextFiles);
+
+    return nextFiles;
+  }
+
+  async listEmployeeFiles(employeeId: number) {
+    return this.employeeFiles.filter((file) => file.employeeId === employeeId && file.replacedAt === null);
+  }
+
+  async findEmployeeFileById(employeeId: number, fileId: number) {
+    return this.employeeFiles.find((file) => file.employeeId === employeeId && file.id === fileId) ?? null;
+  }
+
+  async replaceEmployeeFile(
+    employeeId: number,
+    fileType: EmployeeFileType,
+    file: {
+      storagePath: string;
+      mimeType: string;
+      fileSizeBytes: number;
+    }
+  ) {
+    const activeFile = this.employeeFiles.find((entry) => (
+      entry.employeeId === employeeId &&
+      entry.fileType === fileType &&
+      entry.replacedAt === null
+    ));
+
+    if (!activeFile) {
+      return null;
+    }
+
+    activeFile.replacedAt = new Date("2026-06-22T12:00:00.000Z");
+
+    const nextFile = {
+      id: this.employeeFiles.length + 1,
+      employeeId,
+      fileType,
+      storagePath: file.storagePath,
+      mimeType: file.mimeType,
+      fileSizeBytes: file.fileSizeBytes,
+      replacedAt: null
+    };
+
+    this.employeeFiles.push(nextFile);
+
+    return nextFile;
+  }
 }
 
 function createConflict(field: EmployeeConflictField): EmployeeConflictResult {
@@ -140,15 +214,40 @@ function createConflict(field: EmployeeConflictField): EmployeeConflictResult {
 }
 
 describe("employee service", () => {
+  it("rejects employee creation when the required files are missing", async () => {
+    const repository = new InMemoryEmployeeRepository();
+    const storage = new InMemoryEmployeeFileStorage();
+    const service = createEmployeeService({
+      repository,
+      fileStorage: storage
+    });
+
+    const result = await service.createEmployee(createInput(), [
+      createUploadedFile("personal_photo")
+    ], 1);
+
+    expect(result).toEqual({
+      error: {
+        code: "MISSING_EMPLOYEE_FILES",
+        message: "Employee files are required",
+        details: {
+          missingFileTypes: ["id_front", "id_back"]
+        }
+      }
+    });
+  });
+
   it("rejects employee creation for setup pending branches", async () => {
     const repository = new InMemoryEmployeeRepository();
     repository.branchSetupStatus = "setup_pending";
+    const storage = new InMemoryEmployeeFileStorage();
 
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: storage
     });
 
-    const result = await service.createEmployee(createInput(), 1);
+    const result = await service.createEmployee(createInput(), createRequiredFiles(), 1);
 
     expect(result).toEqual({
       error: {
@@ -161,11 +260,13 @@ describe("employee service", () => {
 
   it("hashes the password and creates an employee for completed branches", async () => {
     const repository = new InMemoryEmployeeRepository();
+    const storage = new InMemoryEmployeeFileStorage();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: storage
     });
 
-    const result = await service.createEmployee(createInput(), 1);
+    const result = await service.createEmployee(createInput(), createRequiredFiles(), 1);
 
     expect(result).toEqual({
       id: 1,
@@ -182,16 +283,20 @@ describe("employee service", () => {
     expect(repository.createdEmployee).toMatchObject({
       passwordHash: expect.stringMatching(/^scrypt\$/)
     });
+    expect(repository.employeeFiles).toHaveLength(3);
+    expect(storage.savedFiles).toHaveLength(3);
   });
 
   it("maps duplicate employee fields into a conflict error during creation", async () => {
     const repository = new InMemoryEmployeeRepository();
     repository.nextCreateError = "primary_phone";
+    const storage = new InMemoryEmployeeFileStorage();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: storage
     });
 
-    const result = await service.createEmployee(createInput(), 1);
+    const result = await service.createEmployee(createInput(), createRequiredFiles(), 1);
 
     expect(result).toEqual({
       error: {
@@ -221,7 +326,8 @@ describe("employee service", () => {
     });
 
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.listEmployees({
@@ -247,7 +353,8 @@ describe("employee service", () => {
   it("returns not found when loading a missing employee by id", async () => {
     const repository = new InMemoryEmployeeRepository();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.getEmployeeById(99);
@@ -264,7 +371,8 @@ describe("employee service", () => {
   it("updates an employee and re-hashes the password when provided", async () => {
     const repository = new InMemoryEmployeeRepository();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.updateEmployee(1, {
@@ -291,7 +399,8 @@ describe("employee service", () => {
     const repository = new InMemoryEmployeeRepository();
     repository.branchSetupStatus = "setup_pending";
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.updateEmployee(1, {
@@ -310,7 +419,8 @@ describe("employee service", () => {
   it("returns not found when updating a missing employee", async () => {
     const repository = new InMemoryEmployeeRepository();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.updateEmployee(99, {
@@ -330,7 +440,8 @@ describe("employee service", () => {
     const repository = new InMemoryEmployeeRepository();
     repository.nextUpdateError = "email";
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.updateEmployee(1, {
@@ -351,7 +462,8 @@ describe("employee service", () => {
   it("soft deletes an employee", async () => {
     const repository = new InMemoryEmployeeRepository();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.deleteEmployee(1);
@@ -365,7 +477,8 @@ describe("employee service", () => {
   it("returns not found when deleting a missing employee", async () => {
     const repository = new InMemoryEmployeeRepository();
     const service = createEmployeeService({
-      repository
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
     });
 
     const result = await service.deleteEmployee(99);
@@ -377,6 +490,107 @@ describe("employee service", () => {
         details: {}
       }
     });
+  });
+
+  it("lists the current employee files", async () => {
+    const repository = new InMemoryEmployeeRepository();
+    repository.employeeFiles = [
+      {
+        id: 1,
+        employeeId: 1,
+        fileType: "personal_photo",
+        storagePath: "employees/1/personal_photo/one.jpg",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 128,
+        replacedAt: null
+      }
+    ];
+    const service = createEmployeeService({
+      repository,
+      fileStorage: new InMemoryEmployeeFileStorage()
+    });
+
+    const result = await service.listEmployeeFiles(1);
+
+    expect(result).toEqual({
+      files: [
+        {
+          id: 1,
+          fileType: "personal_photo",
+          mimeType: "image/jpeg",
+          fileSizeBytes: 128,
+          replacedAt: null
+        }
+      ]
+    });
+  });
+
+  it("loads an employee file for download", async () => {
+    const repository = new InMemoryEmployeeRepository();
+    repository.employeeFiles = [
+      {
+        id: 1,
+        employeeId: 1,
+        fileType: "personal_photo",
+        storagePath: "employees/1/personal_photo/one.jpg",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 128,
+        replacedAt: null
+      }
+    ];
+    const storage = new InMemoryEmployeeFileStorage();
+    storage.fileContents.set("employees/1/personal_photo/one.jpg", Buffer.from("file-bytes"));
+    const service = createEmployeeService({
+      repository,
+      fileStorage: storage
+    });
+
+    const result = await service.getEmployeeFile(1, 1);
+
+    expect(result).toEqual({
+      file: {
+        id: 1,
+        fileType: "personal_photo",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 128,
+        replacedAt: null
+      },
+      content: Buffer.from("file-bytes")
+    });
+  });
+
+  it("replaces an employee file and preserves history", async () => {
+    const repository = new InMemoryEmployeeRepository();
+    repository.employeeFiles = [
+      {
+        id: 1,
+        employeeId: 1,
+        fileType: "personal_photo",
+        storagePath: "employees/1/personal_photo/one.jpg",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 128,
+        replacedAt: null
+      }
+    ];
+    const storage = new InMemoryEmployeeFileStorage();
+    const service = createEmployeeService({
+      repository,
+      fileStorage: storage
+    });
+
+    const result = await service.replaceEmployeeFile(1, "personal_photo", createUploadedFile("personal_photo"), 1);
+
+    expect(result).toEqual({
+      file: {
+        id: 2,
+        fileType: "personal_photo",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 12,
+        replacedAt: null
+      }
+    });
+    expect(repository.employeeFiles[0]?.replacedAt).toBeInstanceOf(Date);
+    expect(storage.savedFiles).toHaveLength(1);
   });
 });
 
@@ -391,5 +605,55 @@ function createInput(): EmployeeCreateInput {
     age: 28,
     address: "Cairo",
     currentMonthlySalary: "10000"
+  };
+}
+
+class InMemoryEmployeeFileStorage implements EmployeeFileStorage {
+  savedFiles: Array<{ employeeId: number; fileType: EmployeeFileType; mimeType: string }> = [];
+  fileContents = new Map<string, Buffer>();
+
+  async saveEmployeeFile(employeeId: number, file: EmployeeFileInput) {
+    this.savedFiles.push({
+      employeeId,
+      fileType: file.fileType,
+      mimeType: file.mimeType
+    });
+
+    const storagePath = `employees/${employeeId}/${file.fileType}/${this.savedFiles.length}.jpg`;
+    this.fileContents.set(storagePath, file.buffer);
+
+    return {
+      storagePath,
+      mimeType: file.mimeType,
+      fileSizeBytes: file.sizeBytes
+    };
+  }
+
+  async readEmployeeFile(storagePath: string) {
+    const content = this.fileContents.get(storagePath);
+
+    if (!content) {
+      throw new Error("missing test file");
+    }
+
+    return content;
+  }
+}
+
+function createRequiredFiles(): [EmployeeFileInput, EmployeeFileInput, EmployeeFileInput] {
+  return [
+    createUploadedFile("personal_photo"),
+    createUploadedFile("id_front"),
+    createUploadedFile("id_back")
+  ];
+}
+
+function createUploadedFile(fileType: EmployeeFileType): EmployeeFileInput {
+  return {
+    fileType,
+    originalName: `${fileType}.jpg`,
+    mimeType: "image/jpeg",
+    sizeBytes: 12,
+    buffer: Buffer.from("hello-world!")
   };
 }

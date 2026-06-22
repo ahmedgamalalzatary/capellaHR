@@ -1,11 +1,13 @@
 import type { EmployeeCreateInput, EmployeeListFilterInput, EmployeeUpdateInput } from "@capella/shared";
 import { createPasswordHash } from "../auth/service";
-import type { EmployeeConflictResult, EmployeeRecord } from "./repository";
+import type { EmployeeConflictResult, EmployeeFileRecord, EmployeeRecord } from "./repository";
+import type { EmployeeFileInput, EmployeeFileStorage, EmployeeFileType } from "./file-storage";
 
 type EmployeeResponse = Omit<EmployeeRecord, "passwordHash">;
+type EmployeeFileResponse = Omit<EmployeeFileRecord, "employeeId" | "storagePath">;
 type EmployeeErrorResult = {
   error: {
-    code: "BRANCH_NOT_ASSIGNABLE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_CONFLICT";
+    code: "BRANCH_NOT_ASSIGNABLE" | "EMPLOYEE_NOT_FOUND" | "EMPLOYEE_CONFLICT" | "MISSING_EMPLOYEE_FILES" | "EMPLOYEE_FILE_NOT_FOUND";
     message: string;
     details: Record<string, unknown>;
   };
@@ -38,16 +40,36 @@ export type EmployeeRepository = {
     address?: string;
     currentMonthlySalary?: string;
   }, updatedByAdminId: number): Promise<EmployeeRecord | EmployeeConflictResult | null>;
+  insertEmployeeFiles(employeeId: number, files: Array<{
+    fileType: EmployeeFileType;
+    storagePath: string;
+    mimeType: string;
+    fileSizeBytes: number;
+  }>): Promise<EmployeeFileRecord[]>;
+  listEmployeeFiles(employeeId: number): Promise<EmployeeFileRecord[]>;
+  findEmployeeFileById(employeeId: number, fileId: number): Promise<EmployeeFileRecord | null>;
+  replaceEmployeeFile(employeeId: number, fileType: EmployeeFileType, file: {
+    storagePath: string;
+    mimeType: string;
+    fileSizeBytes: number;
+  }): Promise<EmployeeFileRecord | null>;
   softDeleteEmployee(employeeId: number): Promise<boolean>;
 };
 
 type CreateEmployeeServiceOptions = {
   repository: EmployeeRepository;
+  fileStorage: EmployeeFileStorage;
 };
 
 export function createEmployeeService(options: CreateEmployeeServiceOptions) {
   return {
-    async createEmployee(input: EmployeeCreateInput, createdByAdminId: number) {
+    async createEmployee(input: EmployeeCreateInput, files: EmployeeFileInput[], createdByAdminId: number) {
+      const missingFileTypes = getMissingEmployeeFileTypes(files);
+
+      if (missingFileTypes.length > 0) {
+        return createMissingEmployeeFilesError(missingFileTypes);
+      }
+
       const branchSetupStatus = await options.repository.findBranchSetupStatus(input.branchId);
 
       if (branchSetupStatus !== "completed") {
@@ -70,6 +92,15 @@ export function createEmployeeService(options: CreateEmployeeServiceOptions) {
       if ("error" in employee) {
         return createEmployeeConflictError(employee.error.field);
       }
+
+      const storedFiles = await Promise.all(files.map((file) => options.fileStorage.saveEmployeeFile(employee.id, file)));
+
+      await options.repository.insertEmployeeFiles(employee.id, storedFiles.map((file, index) => ({
+        fileType: files[index]!.fileType,
+        storagePath: file.storagePath,
+        mimeType: file.mimeType,
+        fileSizeBytes: file.fileSizeBytes
+      })));
 
       return toEmployeeResponse(employee);
     },
@@ -132,6 +163,47 @@ export function createEmployeeService(options: CreateEmployeeServiceOptions) {
       return {
         success: true
       } as const;
+    },
+
+    async listEmployeeFiles(employeeId: number) {
+      const files = await options.repository.listEmployeeFiles(employeeId);
+
+      return {
+        files: files.map(toEmployeeFileResponse)
+      };
+    },
+
+    async getEmployeeFile(employeeId: number, fileId: number) {
+      const file = await options.repository.findEmployeeFileById(employeeId, fileId);
+
+      if (!file) {
+        return createEmployeeFileNotFoundError();
+      }
+
+      return {
+        file: toEmployeeFileResponse(file),
+        content: await options.fileStorage.readEmployeeFile(file.storagePath)
+      };
+    },
+
+    async replaceEmployeeFile(
+      employeeId: number,
+      fileType: EmployeeFileType,
+      file: EmployeeFileInput,
+      updatedByAdminId: number
+    ) {
+      void updatedByAdminId;
+
+      const storedFile = await options.fileStorage.saveEmployeeFile(employeeId, file);
+      const replacedFile = await options.repository.replaceEmployeeFile(employeeId, fileType, storedFile);
+
+      if (!replacedFile) {
+        return createEmployeeFileNotFoundError();
+      }
+
+      return {
+        file: toEmployeeFileResponse(replacedFile)
+      };
     }
   };
 }
@@ -148,6 +220,16 @@ function toEmployeeResponse(employee: EmployeeRecord): EmployeeResponse {
     address: employee.address,
     currentMonthlySalary: employee.currentMonthlySalary,
     softDeletedAt: employee.softDeletedAt
+  };
+}
+
+function toEmployeeFileResponse(file: EmployeeFileRecord): EmployeeFileResponse {
+  return {
+    id: file.id,
+    fileType: file.fileType,
+    mimeType: file.mimeType,
+    fileSizeBytes: file.fileSizeBytes,
+    replacedAt: file.replacedAt
   };
 }
 
@@ -182,3 +264,34 @@ function createEmployeeConflictError(field: "primary_phone" | "whatsapp_phone" |
     }
   };
 }
+
+function createMissingEmployeeFilesError(missingFileTypes: EmployeeFileType[]): EmployeeErrorResult {
+  return {
+    error: {
+      code: "MISSING_EMPLOYEE_FILES",
+      message: "Employee files are required",
+      details: {
+        missingFileTypes
+      }
+    }
+  };
+}
+
+function createEmployeeFileNotFoundError(): EmployeeErrorResult {
+  return {
+    error: {
+      code: "EMPLOYEE_FILE_NOT_FOUND",
+      message: "Employee file not found",
+      details: {}
+    }
+  };
+}
+
+function getMissingEmployeeFileTypes(files: EmployeeFileInput[]): EmployeeFileType[] {
+  const requiredFileTypes: EmployeeFileType[] = ["personal_photo", "id_front", "id_back"];
+  const providedTypes = new Set(files.map((file) => file.fileType));
+
+  return requiredFileTypes.filter((fileType) => !providedTypes.has(fileType));
+}
+
+export type { EmployeeFileInput, EmployeeFileStorage, EmployeeFileType };

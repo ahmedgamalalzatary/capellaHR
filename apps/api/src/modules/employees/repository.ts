@@ -1,7 +1,7 @@
 import { and, asc, eq, isNotNull, isNull, like, type SQL } from "drizzle-orm";
 import type { EmployeeListFilterInput } from "@capella/shared";
 import type { MySql2Database } from "drizzle-orm/mysql2";
-import { branches, employees, salaryHistory } from "../../db";
+import { branches, employeeFiles, employees, salaryHistory } from "../../db";
 
 type DatabaseSchema = typeof import("../../db/schema");
 export type EmployeeConflictField = "primary_phone" | "whatsapp_phone" | "email";
@@ -24,6 +24,16 @@ export type EmployeeRecord = {
   address: string;
   currentMonthlySalary: string;
   softDeletedAt: Date | null;
+};
+
+export type EmployeeFileRecord = {
+  id: number;
+  employeeId: number;
+  fileType: "personal_photo" | "id_front" | "id_back";
+  storagePath: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  replacedAt: Date | null;
 };
 
 type CreateEmployeeInput = {
@@ -58,6 +68,18 @@ function mapEmployeeRecord(row: typeof employees.$inferSelect): EmployeeRecord {
     address: row.address,
     currentMonthlySalary: String(row.currentMonthlySalary),
     softDeletedAt: row.softDeletedAt ?? null
+  };
+}
+
+function mapEmployeeFileRecord(row: typeof employeeFiles.$inferSelect): EmployeeFileRecord {
+  return {
+    id: row.id,
+    employeeId: row.employeeId,
+    fileType: row.fileType,
+    storagePath: row.storagePath,
+    mimeType: row.mimeType,
+    fileSizeBytes: row.fileSizeBytes,
+    replacedAt: row.replacedAt ?? null
   };
 }
 
@@ -161,10 +183,8 @@ export function createDrizzleEmployeeRepository(options: CreateDrizzleEmployeeRe
           throw new Error("Failed to load employee after create");
         }
 
-        const employeeId = insertedRows[0].id;
-
         await options.db.insert(salaryHistory).values({
-          employeeId,
+          employeeId: insertedRows[0].id,
           amount: input.currentMonthlySalary,
           effectiveAt: new Date(),
           changedByAdminId: input.createdByAdminId
@@ -220,7 +240,7 @@ export function createDrizzleEmployeeRepository(options: CreateDrizzleEmployeeRe
         String(existingRows[0].currentMonthlySalary) !== String(input.currentMonthlySalary)
       ) {
         await options.db.insert(salaryHistory).values({
-          employeeId,
+          employeeId: existingRows[0].id,
           amount: input.currentMonthlySalary,
           effectiveAt: new Date(),
           changedByAdminId: updatedByAdminId
@@ -275,6 +295,108 @@ export function createDrizzleEmployeeRepository(options: CreateDrizzleEmployeeRe
         .limit(1);
 
       return rows[0] ? mapEmployeeRecord(rows[0]) : null;
+    },
+
+    async insertEmployeeFiles(employeeId: number, files: Array<{
+      fileType: "personal_photo" | "id_front" | "id_back";
+      storagePath: string;
+      mimeType: string;
+      fileSizeBytes: number;
+    }>) {
+      if (files.length === 0) {
+        return [];
+      }
+
+      await options.db.insert(employeeFiles).values(
+        files.map((file) => ({
+          employeeId,
+          fileType: file.fileType,
+          storagePath: file.storagePath,
+          mimeType: file.mimeType,
+          fileSizeBytes: file.fileSizeBytes
+        }))
+      );
+
+      const rows = await options.db
+        .select()
+        .from(employeeFiles)
+        .where(eq(employeeFiles.employeeId, employeeId));
+
+      return rows
+        .filter((row) => files.some((file) => file.storagePath === row.storagePath))
+        .map(mapEmployeeFileRecord);
+    },
+
+    async listEmployeeFiles(employeeId: number) {
+      const rows = await options.db
+        .select()
+        .from(employeeFiles)
+        .where(and(
+          eq(employeeFiles.employeeId, employeeId),
+          isNull(employeeFiles.replacedAt)
+        ))
+        .orderBy(asc(employeeFiles.id));
+
+      return rows.map(mapEmployeeFileRecord);
+    },
+
+    async findEmployeeFileById(employeeId: number, fileId: number) {
+      const rows = await options.db
+        .select()
+        .from(employeeFiles)
+        .where(and(
+          eq(employeeFiles.employeeId, employeeId),
+          eq(employeeFiles.id, fileId)
+        ))
+        .limit(1);
+
+      return rows[0] ? mapEmployeeFileRecord(rows[0]) : null;
+    },
+
+    async replaceEmployeeFile(employeeId: number, fileType: "personal_photo" | "id_front" | "id_back", file: {
+      storagePath: string;
+      mimeType: string;
+      fileSizeBytes: number;
+    }) {
+      const activeRows = await options.db
+        .select()
+        .from(employeeFiles)
+        .where(and(
+          eq(employeeFiles.employeeId, employeeId),
+          eq(employeeFiles.fileType, fileType),
+          isNull(employeeFiles.replacedAt)
+        ))
+        .limit(1);
+
+      if (!activeRows[0]) {
+        return null;
+      }
+
+      await options.db
+        .update(employeeFiles)
+        .set({
+          replacedAt: new Date()
+        })
+        .where(eq(employeeFiles.id, activeRows[0].id));
+
+      await options.db.insert(employeeFiles).values({
+        employeeId,
+        fileType,
+        storagePath: file.storagePath,
+        mimeType: file.mimeType,
+        fileSizeBytes: file.fileSizeBytes
+      });
+
+      const rows = await options.db
+        .select()
+        .from(employeeFiles)
+        .where(and(
+          eq(employeeFiles.employeeId, employeeId),
+          eq(employeeFiles.storagePath, file.storagePath)
+        ))
+        .limit(1);
+
+      return rows[0] ? mapEmployeeFileRecord(rows[0]) : null;
     },
 
     async softDeleteEmployee(employeeId: number) {

@@ -7,8 +7,8 @@ export const employeeCreateSchema = z.object({
   primaryPhone: egyptianPhoneSchema,
   whatsappPhone: egyptianPhoneSchema,
   email: emailSchema.optional(),
-  branchId: z.number().int().positive(),
-  age: z.number(),
+  branchId: z.coerce.number().int().positive(),
+  age: z.coerce.number(),
   address: z.string().trim().min(1),
   currentMonthlySalary: z.union([z.string(), z.number()]).transform((value) => String(value))
 });
