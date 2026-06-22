@@ -12,7 +12,7 @@ export type EmployeeFileInput = {
   buffer: Buffer;
 };
 
-export type StoredEmployeeFile = {
+type StoredEmployeeFile = {
   storagePath: string;
   mimeType: string;
   fileSizeBytes: number;

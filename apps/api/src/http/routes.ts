@@ -20,6 +20,7 @@ export function registerAppRoutes(app: Express, options: RegisterAppRoutesOption
     authService: options.authService
   });
   registerEmployeesRoutes(app, {
+    authService: options.authService,
     employeeService: options.employeeService
   });
   registerBranchesRoutes(app);

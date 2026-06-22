@@ -2,6 +2,8 @@ import type { Express, Request, Response } from "express";
 import { employeeCreateSchema, employeeListFilterSchema, employeeUpdateSchema } from "@capella/shared";
 import multer from "multer";
 import { z } from "zod";
+import { getAuthenticatedAdmin, requireAdminSession } from "../auth/admin-session";
+import type { createAuthService } from "../auth/service";
 import { createLocalEmployeeFileStorage, type EmployeeFileInput, type EmployeeFileType } from "./file-storage";
 import { createDrizzleEmployeeRepository } from "./repository";
 import { createEmployeeService, type createEmployeeService as createEmployeeServiceFactory } from "./service";
@@ -10,10 +12,14 @@ import { getAppConfig } from "../../config/app-config";
 
 type RegisterEmployeesRoutesOptions = {
   employeeService?: ReturnType<typeof createEmployeeServiceFactory>;
+  authService?: ReturnType<typeof createAuthService>;
 };
 
 export function registerEmployeesRoutes(app: Express, options: RegisterEmployeesRoutesOptions = {}) {
   const config = getAppConfig();
+  const adminSessionMiddleware = requireAdminSession({
+    authService: options.authService
+  });
   const employeeIdParamsSchema = z.object({
     employeeId: z.coerce.number().int().positive()
   });
@@ -36,7 +42,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     }
   });
 
-  app.post("/employees", upload.fields([
+  app.post("/employees", adminSessionMiddleware, upload.fields([
     { name: "personalPhoto", maxCount: 1 },
     { name: "idFront", maxCount: 1 },
     { name: "idBack", maxCount: 1 }
@@ -49,7 +55,8 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     }
 
     const employeeService = options.employeeService ?? getEmployeeService();
-    const result = await employeeService.createEmployee(parsed.data, getCreateEmployeeFiles(request), 1);
+    const admin = getAuthenticatedAdmin(response);
+    const result = await employeeService.createEmployee(parsed.data, getCreateEmployeeFiles(request), admin.id);
 
     if ("error" in result) {
       response.status(result.error.code === "MISSING_EMPLOYEE_FILES" ? 400 : 409).json(result);
@@ -61,7 +68,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     });
   });
 
-  app.get("/employees", async (request: Request, response: Response) => {
+  app.get("/employees", adminSessionMiddleware, async (request: Request, response: Response) => {
     const parsed = employeeListFilterSchema.safeParse(request.query);
 
     if (!parsed.success) {
@@ -75,7 +82,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     response.status(200).json({ employees });
   });
 
-  app.get("/employees/:employeeId", async (request: Request, response: Response) => {
+  app.get("/employees/:employeeId", adminSessionMiddleware, async (request: Request, response: Response) => {
     const parsed = employeeIdParamsSchema.safeParse(request.params);
 
     if (!parsed.success) {
@@ -96,7 +103,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     });
   });
 
-  app.patch("/employees/:employeeId", async (request: Request, response: Response) => {
+  app.patch("/employees/:employeeId", adminSessionMiddleware, async (request: Request, response: Response) => {
     const params = employeeIdParamsSchema.safeParse(request.params);
     const body = employeeUpdateSchema.safeParse(request.body);
 
@@ -111,7 +118,8 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     }
 
     const employeeService = options.employeeService ?? getEmployeeService();
-    const result = await employeeService.updateEmployee(params.data.employeeId, body.data, 1);
+    const admin = getAuthenticatedAdmin(response);
+    const result = await employeeService.updateEmployee(params.data.employeeId, body.data, admin.id);
 
     if ("error" in result) {
       response.status(result.error.code === "EMPLOYEE_NOT_FOUND" ? 404 : 409).json(result);
@@ -123,7 +131,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     });
   });
 
-  app.delete("/employees/:employeeId", async (request: Request, response: Response) => {
+  app.delete("/employees/:employeeId", adminSessionMiddleware, async (request: Request, response: Response) => {
     const parsed = employeeIdParamsSchema.safeParse(request.params);
 
     if (!parsed.success) {
@@ -142,7 +150,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     response.status(204).send();
   });
 
-  app.get("/employees/:employeeId/files", async (request: Request, response: Response) => {
+  app.get("/employees/:employeeId/files", adminSessionMiddleware, async (request: Request, response: Response) => {
     const parsed = employeeIdParamsSchema.safeParse(request.params);
 
     if (!parsed.success) {
@@ -156,7 +164,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     response.status(200).json(result);
   });
 
-  app.get("/employees/:employeeId/files/:fileId", async (request: Request, response: Response) => {
+  app.get("/employees/:employeeId/files/:fileId", adminSessionMiddleware, async (request: Request, response: Response) => {
     const parsed = z.object({
       employeeId: z.coerce.number().int().positive(),
       fileId: z.coerce.number().int().positive()
@@ -179,7 +187,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     response.status(200).send(result.content);
   });
 
-  app.put("/employees/:employeeId/files/:fileType", upload.single("file"), async (request: Request, response: Response) => {
+  app.put("/employees/:employeeId/files/:fileType", adminSessionMiddleware, upload.single("file"), async (request: Request, response: Response) => {
     const parsed = employeeFileTypeParamsSchema.safeParse(request.params);
 
     if (!parsed.success) {
@@ -201,6 +209,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
     }
 
     const employeeService = options.employeeService ?? getEmployeeService();
+    const admin = getAuthenticatedAdmin(response);
     const uploadedFile = mapUploadedFile(parsed.data.fileType, request.file);
 
     if (!uploadedFile) {
@@ -220,7 +229,7 @@ export function registerEmployeesRoutes(app: Express, options: RegisterEmployees
       parsed.data.employeeId,
       parsed.data.fileType,
       uploadedFile,
-      1
+      admin.id
     );
 
     if ("error" in result) {

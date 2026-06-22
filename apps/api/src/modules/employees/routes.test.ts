@@ -1,18 +1,26 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../app";
+import { createInMemoryAuthRepository } from "../auth/repository";
+import { createAuthService, createPasswordHash } from "../auth/service";
 import { createEmployeeService } from "./service";
 import type { EmployeeFileInput, EmployeeFileStorage } from "./service";
 
 function createStubEmployeeService(branchSetupStatus: "completed" | "setup_pending") {
   const fileStorage = new InMemoryEmployeeFileStorage();
+  const state = {
+    lastCreatedByAdminId: null as number | null,
+    lastUpdatedByAdminId: null as number | null,
+    lastReplacedByAdminId: null as number | null
+  };
 
-  return createEmployeeService({
+  const service = createEmployeeService({
     repository: {
       async findBranchSetupStatus() {
         return branchSetupStatus;
       },
       async createEmployee(input) {
+        state.lastCreatedByAdminId = input.createdByAdminId;
         return {
           id: 1,
           fullName: input.fullName,
@@ -63,10 +71,12 @@ function createStubEmployeeService(branchSetupStatus: "completed" | "setup_pendi
           softDeletedAt: null
         };
       },
-      async updateEmployee(employeeId, input) {
+      async updateEmployee(employeeId, input, updatedByAdminId) {
         if (employeeId !== 1) {
           return null;
         }
+
+        state.lastUpdatedByAdminId = updatedByAdminId;
 
         if (input.email === "duplicate@capella.eg") {
           return {
@@ -155,16 +165,66 @@ function createStubEmployeeService(branchSetupStatus: "completed" | "setup_pendi
     },
     fileStorage
   });
+
+  return {
+    service,
+    state
+  };
 }
 
 describe("employee routes", () => {
+  it("returns unauthorized for employee routes without an admin session", async () => {
+    const app = createApp({
+      employeeService: createStubEmployeeService("completed").service
+    });
+
+    const response = await request(app).get("/employees");
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Authentication required",
+        details: {}
+      }
+    });
+  });
+
+  it("returns forbidden for employee routes with an employee session", async () => {
+    const authService = createEmployeeAuthService();
+    const app = createApp({
+      authService,
+      employeeService: createStubEmployeeService("completed").service
+    });
+
+    const signInResponse = await request(app).post("/auth/sign-in").send({
+      phone: "01012345678",
+      password: "secret123"
+    });
+    const cookieHeader = signInResponse.headers["set-cookie"];
+
+    const response = await request(app).get("/employees").set("Cookie", cookieHeader);
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      error: {
+        code: "FORBIDDEN",
+        message: "Admin access required",
+        details: {}
+      }
+    });
+  });
+
   it("rejects invalid employee creation payloads with the project error shape", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
     const response = await request(app)
       .post("/employees")
+      .set("Cookie", cookieHeader)
       .field("fullName", "")
       .field("password", "short");
 
@@ -180,11 +240,13 @@ describe("employee routes", () => {
 
   it("rejects employee creation for setup pending branches", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("setup_pending")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("setup_pending").service
     });
+    const cookieHeader = await signInAdmin(app);
 
     const response = await attachRequiredFiles(
-      buildMultipartEmployeeRequest(request(app).post("/employees"), validPayload())
+      buildMultipartEmployeeRequest(request(app).post("/employees").set("Cookie", cookieHeader), validPayload())
     );
 
     expect(response.status).toBe(409);
@@ -198,12 +260,18 @@ describe("employee routes", () => {
   });
 
   it("creates an employee for completed branches", async () => {
+    const employeeService = createStubEmployeeService("completed");
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createCustomAdminAuthService(7),
+      employeeService: employeeService.service
+    });
+    const cookieHeader = await signInAdmin(app, {
+      email: "admin7@capella.eg",
+      password: "admin1234"
     });
 
     const response = await attachRequiredFiles(
-      buildMultipartEmployeeRequest(request(app).post("/employees"), validPayload())
+      buildMultipartEmployeeRequest(request(app).post("/employees").set("Cookie", cookieHeader), validPayload())
     );
 
     expect(response.status).toBe(201);
@@ -221,15 +289,18 @@ describe("employee routes", () => {
         softDeletedAt: null
       }
     });
+    expect(employeeService.state.lastCreatedByAdminId).toBe(7);
   });
 
   it("rejects employee creation when the required files are missing", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
     const response = await buildMultipartEmployeeRequest(
-      request(app).post("/employees"),
+      request(app).post("/employees").set("Cookie", cookieHeader),
       validPayload()
     ).attach("personalPhoto", Buffer.from("photo"), "photo.jpg");
 
@@ -247,10 +318,12 @@ describe("employee routes", () => {
 
   it("lists employees using the shared query filter contract", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).get("/employees").query({
+    const response = await request(app).get("/employees").set("Cookie", cookieHeader).query({
       search: "Mina",
       branchId: "1",
       status: "active"
@@ -277,10 +350,12 @@ describe("employee routes", () => {
 
   it("returns a single employee by id", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).get("/employees/1");
+    const response = await request(app).get("/employees/1").set("Cookie", cookieHeader);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
@@ -301,10 +376,12 @@ describe("employee routes", () => {
 
   it("returns not found for a missing employee id", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).get("/employees/999");
+    const response = await request(app).get("/employees/999").set("Cookie", cookieHeader);
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
@@ -317,11 +394,14 @@ describe("employee routes", () => {
   });
 
   it("updates an employee", async () => {
+    const employeeService = createStubEmployeeService("completed");
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: employeeService.service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).patch("/employees/1").send({
+    const response = await request(app).patch("/employees/1").set("Cookie", cookieHeader).send({
       fullName: "Updated Mina",
       currentMonthlySalary: "12000"
     });
@@ -341,14 +421,17 @@ describe("employee routes", () => {
         softDeletedAt: null
       }
     });
+    expect(employeeService.state.lastUpdatedByAdminId).toBe(1);
   });
 
   it("returns validation errors for invalid employee updates", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).patch("/employees/1").send({
+    const response = await request(app).patch("/employees/1").set("Cookie", cookieHeader).send({
       password: "short"
     });
 
@@ -364,10 +447,12 @@ describe("employee routes", () => {
 
   it("returns conflict errors for duplicate employee updates", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).patch("/employees/1").send({
+    const response = await request(app).patch("/employees/1").set("Cookie", cookieHeader).send({
       email: "duplicate@capella.eg"
     });
 
@@ -385,10 +470,12 @@ describe("employee routes", () => {
 
   it("soft deletes an employee", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).delete("/employees/1");
+    const response = await request(app).delete("/employees/1").set("Cookie", cookieHeader);
 
     expect(response.status).toBe(204);
     expect(response.text).toBe("");
@@ -396,10 +483,12 @@ describe("employee routes", () => {
 
   it("lists the current employee files", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).get("/employees/1/files");
+    const response = await request(app).get("/employees/1/files").set("Cookie", cookieHeader);
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
@@ -417,10 +506,12 @@ describe("employee routes", () => {
 
   it("downloads an employee file", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
-    const response = await request(app).get("/employees/1/files/1");
+    const response = await request(app).get("/employees/1/files/1").set("Cookie", cookieHeader);
 
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("image/jpeg");
@@ -429,11 +520,14 @@ describe("employee routes", () => {
 
   it("replaces an employee file", async () => {
     const app = createApp({
-      employeeService: createStubEmployeeService("completed")
+      authService: createAdminAuthService(),
+      employeeService: createStubEmployeeService("completed").service
     });
+    const cookieHeader = await signInAdmin(app);
 
     const response = await request(app)
       .put("/employees/1/files/personal_photo")
+      .set("Cookie", cookieHeader)
       .attach("file", Buffer.from("replacement"), "replacement.jpg");
 
     expect(response.status).toBe(200);
@@ -461,6 +555,167 @@ function validPayload() {
     address: "Cairo",
     currentMonthlySalary: "10000"
   };
+}
+
+function createAdminAuthService() {
+  return createAuthService({
+    repository: createInMemoryAuthRepository({
+      bootstrapAdmin: {
+        name: "Capella Admin",
+        email: "admin@capella.eg",
+        password: "admin1234"
+      }
+    }),
+    adminSessionTtlHours: 8,
+    employeeSessionTtlHours: 12
+  });
+}
+
+function createCustomAdminAuthService(adminId: number) {
+  const sessions = new Map<string, {
+    tokenHash: string;
+    actorId: number;
+    actorRole: "admin" | "employee";
+    expiresAt: Date;
+    revokedAt: Date | null;
+  }>();
+
+  return createAuthService({
+    repository: {
+      async findAdminByEmail(email: string) {
+        if (email !== "admin7@capella.eg") {
+          return null;
+        }
+
+        return {
+          id: adminId,
+          name: "Capella Admin 7",
+          email: "admin7@capella.eg",
+          passwordHash: createPasswordHash("admin1234")
+        };
+      },
+      async findAdminById(id: number) {
+        if (id !== adminId) {
+          return null;
+        }
+
+        return {
+          id,
+          name: "Capella Admin 7",
+          email: "admin7@capella.eg",
+          passwordHash: createPasswordHash("admin1234")
+        };
+      },
+      async findEmployeeByPhone() {
+        return null;
+      },
+      async findEmployeeById() {
+        return null;
+      },
+      async insertSession(session) {
+        sessions.set(session.tokenHash, session);
+      },
+      async findSessionByTokenHash(tokenHash) {
+        return sessions.get(tokenHash) ?? null;
+      },
+      async revokeSessionByTokenHash(tokenHash, revokedAt) {
+        const session = sessions.get(tokenHash);
+
+        if (!session) {
+          return false;
+        }
+
+        sessions.set(tokenHash, {
+          ...session,
+          revokedAt
+        });
+
+        return true;
+      },
+      async revokeActiveSessionsForActor() {}
+    },
+    adminSessionTtlHours: 8,
+    employeeSessionTtlHours: 12
+  });
+}
+
+function createEmployeeAuthService() {
+  const sessions = new Map<string, {
+    tokenHash: string;
+    actorId: number;
+    actorRole: "admin" | "employee";
+    expiresAt: Date;
+    revokedAt: Date | null;
+  }>();
+
+  return createAuthService({
+    repository: {
+      async findAdminByEmail() {
+        return null;
+      },
+      async findAdminById() {
+        return null;
+      },
+      async findEmployeeByPhone(phone: string) {
+        if (phone !== "01012345678") {
+          return null;
+        }
+
+        return {
+          id: 2,
+          fullName: "Test Employee",
+          primaryPhone: "01012345678",
+          passwordHash: createPasswordHash("secret123"),
+          softDeletedAt: null
+        };
+      },
+      async findEmployeeById(id: number) {
+        if (id !== 2) {
+          return null;
+        }
+
+        return {
+          id: 2,
+          fullName: "Test Employee",
+          primaryPhone: "01012345678",
+          passwordHash: createPasswordHash("secret123"),
+          softDeletedAt: null
+        };
+      },
+      async insertSession(session) {
+        sessions.set(session.tokenHash, session);
+      },
+      async findSessionByTokenHash(tokenHash) {
+        return sessions.get(tokenHash) ?? null;
+      },
+      async revokeSessionByTokenHash(tokenHash, revokedAt) {
+        const session = sessions.get(tokenHash);
+
+        if (!session) {
+          return false;
+        }
+
+        sessions.set(tokenHash, {
+          ...session,
+          revokedAt
+        });
+
+        return true;
+      },
+      async revokeActiveSessionsForActor() {}
+    },
+    adminSessionTtlHours: 8,
+    employeeSessionTtlHours: 12
+  });
+}
+
+async function signInAdmin(app: ReturnType<typeof createApp>, credentials?: { email: string; password: string }) {
+  const response = await request(app).post("/auth/admin/sign-in").send({
+    email: credentials?.email ?? "admin@capella.eg",
+    password: credentials?.password ?? "admin1234"
+  });
+
+  return response.headers["set-cookie"];
 }
 
 class InMemoryEmployeeFileStorage implements EmployeeFileStorage {
