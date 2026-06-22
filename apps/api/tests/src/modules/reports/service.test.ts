@@ -80,6 +80,31 @@ describe("reports service", () => {
     ]);
   });
 
+  it("counts each calendar day once when records overlap", async () => {
+    const repository = new InMemoryReportsRepository();
+    repository.employees = [
+      {
+        id: 1,
+        fullName: "Mina Adel",
+        branchId: 2,
+        branchName: "Nasr City"
+      }
+    ];
+    // 2026-06-10 is shared between attendance and a permission absence,
+    // and 2026-06-06 is shared between attendance and a weekly day off.
+    repository.attendanceDates.set(1, ["2026-06-06", "2026-06-10"]);
+    repository.weeklyDayOffDates.set(1, ["2026-06-06"]);
+    repository.permissionAbsenceDates.set(1, ["2026-06-10"]);
+    const service = createReportsService({ repository });
+
+    const result = await service.getMonthlyAttendanceSummary({
+      month: "2026-06"
+    });
+
+    // Only 2 distinct calendar days are covered, so 30 - 2 = 28 remain absent.
+    expect(result[0]?.absenceWithoutPermission).toBe(28);
+  });
+
   it("filters the summary by employee and branch", async () => {
     const repository = new InMemoryReportsRepository();
     repository.employees = [

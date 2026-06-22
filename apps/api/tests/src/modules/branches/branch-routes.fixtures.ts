@@ -1,14 +1,12 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
 import { createApp } from "../../../../src/app";
 import { createInMemoryAuthRepository } from "../../../../src/modules/auth/repository";
 import { createAuthService, createPasswordHash } from "../../../../src/modules/auth/service";
 import type { BranchRecord } from "../../../../src/modules/branches/repository";
-import { createBranchService } from "../../../../src/modules/branches/service";
 import type { BranchRepository } from "../../../../src/modules/branches/service";
 import type { BranchCreateInput, BranchSearchInput, BranchUpdateInput } from "@capella/shared";
 
-class InMemoryBranchRepository implements BranchRepository {
+export class InMemoryBranchRepository implements BranchRepository {
   branches: BranchRecord[] = [
     {
       id: 1,
@@ -60,132 +58,7 @@ class InMemoryBranchRepository implements BranchRepository {
   }
 }
 
-describe("branch routes", () => {
-  it("returns unauthorized without an admin session", async () => {
-    const app = createApp({
-      authService: createAdminAuthService(),
-      branchService: createBranchService({
-        repository: new InMemoryBranchRepository()
-      })
-    });
-
-    const response = await request(app).get("/branches");
-
-    expect(response.status).toBe(401);
-    expect(response.body).toEqual({
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Authentication required",
-        details: {}
-      }
-    });
-  });
-
-  it("returns forbidden for employee sessions", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      branchService: createBranchService({
-        repository: new InMemoryBranchRepository()
-      })
-    });
-    const employeeCookie = await signInEmployee(app);
-
-    const response = await request(app).get("/branches").set("Cookie", employeeCookie);
-
-    expect(response.status).toBe(403);
-    expect(response.body).toEqual({
-      error: {
-        code: "FORBIDDEN",
-        message: "Admin access required",
-        details: {}
-      }
-    });
-  });
-
-  it("creates a branch for authenticated admins", async () => {
-    const app = createApp({
-      authService: createAdminAuthService(),
-      branchService: createBranchService({
-        repository: new InMemoryBranchRepository()
-      })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app).post("/branches").set("Cookie", adminCookie).send(validPayload());
-
-    expect(response.status).toBe(201);
-    expect(response.body).toEqual({
-      branch: {
-        id: 2,
-        name: "Heliopolis",
-        address: "Cairo",
-        gpsLatitude: "30.1000000",
-        gpsLongitude: "31.3000000",
-        gpsRadiusMeters: 150,
-        allowedIpCidr: "192.168.10.0/24",
-        registeredDeviceToken: null,
-        setupStatus: "setup_pending"
-      }
-    });
-  });
-
-  it("lists branches using the shared query contract", async () => {
-    const app = createApp({
-      authService: createAdminAuthService(),
-      branchService: createBranchService({
-        repository: new InMemoryBranchRepository()
-      })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app).get("/branches").set("Cookie", adminCookie).query({
-      search: "nasr"
-    });
-
-    expect(response.status).toBe(200);
-    expect(response.body.branches).toHaveLength(1);
-    expect(response.body.branches[0]?.name).toBe("Nasr City");
-  });
-
-  it("gets a single branch by id", async () => {
-    const app = createApp({
-      authService: createAdminAuthService(),
-      branchService: createBranchService({
-        repository: new InMemoryBranchRepository()
-      })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app).get("/branches/1").set("Cookie", adminCookie);
-
-    expect(response.status).toBe(200);
-    expect(response.body.branch.name).toBe("Nasr City");
-  });
-
-  it("updates a branch", async () => {
-    const app = createApp({
-      authService: createAdminAuthService(),
-      branchService: createBranchService({
-        repository: new InMemoryBranchRepository()
-      })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app)
-      .patch("/branches/1")
-      .set("Cookie", adminCookie)
-      .send({
-        name: "Nasr City Updated",
-        setupStatus: "completed"
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body.branch.name).toBe("Nasr City Updated");
-    expect(response.body.branch.setupStatus).toBe("completed");
-  });
-});
-
-function createAdminAuthService() {
+export function createAdminAuthService() {
   return createAuthService({
     repository: createInMemoryAuthRepository({
       bootstrapAdmin: {
@@ -199,7 +72,7 @@ function createAdminAuthService() {
   });
 }
 
-function createEmployeeAuthService() {
+export function createEmployeeAuthService() {
   const sessions = new Map();
 
   return createAuthService({
@@ -263,7 +136,7 @@ function createEmployeeAuthService() {
   });
 }
 
-async function signInAdmin(app: ReturnType<typeof createApp>) {
+export async function signInAdmin(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/admin/sign-in").send({
     email: "admin@capella.eg",
     password: "admin1234"
@@ -272,7 +145,7 @@ async function signInAdmin(app: ReturnType<typeof createApp>) {
   return response.headers["set-cookie"];
 }
 
-async function signInEmployee(app: ReturnType<typeof createApp>) {
+export async function signInEmployee(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/sign-in").send({
     phone: "01012345678",
     password: "secret123"
@@ -281,7 +154,7 @@ async function signInEmployee(app: ReturnType<typeof createApp>) {
   return response.headers["set-cookie"];
 }
 
-function validPayload() {
+export function validPayload() {
   return {
     name: "Heliopolis",
     address: "Cairo",

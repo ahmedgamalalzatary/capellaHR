@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { expect } from "vitest";
 import type { AttendanceActionInput, AttendanceListFilterInput } from "@capella/shared";
 import { createAttendanceService } from "../../../../src/modules/attendance/service";
 import type {
@@ -10,7 +10,7 @@ import type {
   EmployeeAttendanceRecord
 } from "../../../../src/modules/attendance/service";
 
-class InMemoryAttendanceRepository implements AttendanceRepository {
+export class InMemoryAttendanceRepository implements AttendanceRepository {
   employees = new Map<number, EmployeeAttendanceRecord>();
   branches = new Map<number, BranchPolicyRecord>();
   activeDeviceFingerprints = new Map<number, string>();
@@ -292,271 +292,7 @@ class InMemoryAttendanceRepository implements AttendanceRepository {
   }
 }
 
-describe("attendance service", () => {
-  it("creates an open attendance session when check-in passes device, gps, and ip validation", async () => {
-    const repository = createBaseRepository();
-    const service = createAttendanceService({ repository });
-
-    const result = await service.recordEmployeeAction(1, validAction("check_in"), {
-      ipAddress: "192.168.1.42",
-      occurredAtUtc: new Date("2026-06-22T06:00:00.000Z")
-    });
-
-    assertAttendanceState(result);
-    expect(result.currentAction).toBe("check_out");
-    expect(result.openSession?.status).toBe("open");
-    expect(result.todaySessions).toHaveLength(1);
-  });
-
-  it("stores a blocked attempt when attendance validation fails", async () => {
-    const repository = createBaseRepository();
-    const service = createAttendanceService({ repository });
-
-    const result = await service.recordEmployeeAction(1, {
-      action: "check_in",
-      latitude: 29.0,
-      longitude: 31.0,
-      deviceId: "unknown-device"
-    }, {
-      ipAddress: "10.0.0.10",
-      occurredAtUtc: new Date("2026-06-22T06:00:00.000Z")
-    });
-
-    assertBlockedAttemptResult(result);
-    expect(result.blockedAttempt.failureReasons).toEqual([
-      "device_not_allowed",
-      "gps_out_of_range",
-      "ip_not_allowed"
-    ]);
-    expect(repository.blockedAttempts).toHaveLength(1);
-    expect(result.currentAction).toBe("check_in");
-  });
-
-  it("completes the open attendance session on check-out within the same Cairo day", async () => {
-    const repository = createBaseRepository();
-    const service = createAttendanceService({ repository });
-    const checkIn = await service.recordEmployeeAction(1, validAction("check_in"), {
-      ipAddress: "192.168.1.42",
-      occurredAtUtc: new Date("2026-06-22T06:00:00.000Z")
-    });
-    assertAttendanceState(checkIn);
-
-    const checkOut = await service.recordEmployeeAction(1, validAction("check_out"), {
-      ipAddress: "192.168.1.42",
-      occurredAtUtc: new Date("2026-06-22T12:00:00.000Z")
-    });
-
-    assertAttendanceState(checkOut);
-    expect(checkOut.currentAction).toBe("check_in");
-    expect(checkOut.openSession).toBeNull();
-    expect(checkOut.todaySessions[0]?.status).toBe("completed");
-    expect(checkOut.todaySessions[0]?.checkOutAtUtc).toEqual(new Date("2026-06-22T12:00:00.000Z"));
-  });
-
-  it("rejects a second check-in while a session is still open", async () => {
-    const repository = createBaseRepository();
-    const service = createAttendanceService({ repository });
-    await service.recordEmployeeAction(1, validAction("check_in"), {
-      ipAddress: "192.168.1.42",
-      occurredAtUtc: new Date("2026-06-22T06:00:00.000Z")
-    });
-
-    const result = await service.recordEmployeeAction(1, validAction("check_in"), {
-      ipAddress: "192.168.1.42",
-      occurredAtUtc: new Date("2026-06-22T07:00:00.000Z")
-    });
-
-    expect(result).toEqual({
-      error: {
-        code: "ATTENDANCE_ACTION_OUT_OF_ORDER",
-        message: "Employee already has an open attendance session",
-        details: {}
-      }
-    });
-  });
-
-  it("blocks attendance on a weekly day off", async () => {
-    const repository = createBaseRepository();
-    repository.weeklyDayOffDates.add("1:2026-06-22");
-    const service = createAttendanceService({ repository });
-
-    const result = await service.recordEmployeeAction(1, validAction("check_in"), {
-      ipAddress: "192.168.1.42",
-      occurredAtUtc: new Date("2026-06-22T06:00:00.000Z")
-    });
-
-    assertBlockedAttemptResult(result);
-    expect(result.blockedAttempt.failureReasons).toEqual(["weekly_day_off"]);
-  });
-
-  it("lists admin attendance with employee-name filtering and employee-name sorting", async () => {
-    const repository = createBaseRepository();
-    repository.employees.set(2, {
-      id: 2,
-      fullName: "Mina Adel",
-      branchId: 1,
-      softDeletedAt: null
-    });
-    repository.sessions.push({
-      id: 1,
-      employeeId: 2,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-20T06:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-20T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "manual correction",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    repository.sessions.push({
-      id: 2,
-      employeeId: 1,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-21T06:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-21T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "manual correction",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    const service = createAttendanceService({ repository });
-
-    const result = await service.listAdminAttendance({
-      employeeName: "mina",
-      sortBy: "employee_name",
-      sortDirection: "asc"
-    });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]?.employeeName).toBe("Mina Adel");
-  });
-
-  it("creates admin attendance without employee device or gps validation", async () => {
-    const repository = createBaseRepository();
-    const service = createAttendanceService({ repository });
-
-    const result = await service.createAdminAttendance({
-      employeeId: 1,
-      branchId: 1,
-      checkInAt: "2026-06-22T08:00:00.000Z",
-      checkOutAt: "2026-06-22T16:00:00.000Z",
-      reason: "manual correction"
-    }, 1);
-
-    expect("error" in result).toBe(false);
-    if ("error" in result) {
-      return;
-    }
-
-    expect(result.status).toBe("completed");
-    expect(result.adminReason).toBe("manual correction");
-    expect(repository.sessions).toHaveLength(1);
-  });
-
-  it("blocks admin attendance creation when the date conflicts with a permission absence", async () => {
-    const repository = createBaseRepository();
-    repository.permissionAbsenceDates.add("1:2026-06-22");
-    const service = createAttendanceService({ repository });
-
-    const result = await service.createAdminAttendance({
-      employeeId: 1,
-      branchId: 1,
-      checkInAt: "2026-06-22T08:00:00.000Z",
-      checkOutAt: "2026-06-22T16:00:00.000Z",
-      reason: "manual correction"
-    }, 1);
-
-    expect(result).toEqual({
-      error: {
-        code: "ATTENDANCE_DATE_CONFLICT",
-        message: "Attendance conflicts with existing day classification",
-        details: {
-          conflictType: "permission_absence"
-        }
-      }
-    });
-  });
-
-  it("updates admin attendance and preserves same-Cairo-day enforcement", async () => {
-    const repository = createBaseRepository();
-    repository.sessions.push({
-      id: 1,
-      employeeId: 1,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-22T08:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "before",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    const service = createAttendanceService({ repository });
-
-    const result = await service.updateAdminAttendance(1, {
-      branchId: 1,
-      checkInAt: "2026-06-22T09:00:00.000Z",
-      checkOutAt: "2026-06-23T00:30:00.000Z",
-      reason: "manual correction"
-    }, 1);
-
-    expect(result).toEqual({
-      error: {
-        code: "OVERNIGHT_ATTENDANCE_NOT_ALLOWED",
-        message: "Attendance check-out must happen on the same Cairo date",
-        details: {}
-      }
-    });
-  });
-
-  it("deletes admin attendance records with month-lock enforcement", async () => {
-    const repository = createBaseRepository();
-    repository.lockedMonths.add("2026-06");
-    repository.sessions.push({
-      id: 1,
-      employeeId: 1,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-22T08:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "manual correction",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    const service = createAttendanceService({ repository });
-
-    const result = await service.deleteAdminAttendance(1, "remove duplicate", 1);
-
-    expect(result).toEqual({
-      error: {
-        code: "MONTH_LOCKED",
-        message: "The month is locked",
-        details: {}
-      }
-    });
-  });
-});
-
-function createBaseRepository() {
+export function createBaseRepository() {
   const repository = new InMemoryAttendanceRepository();
 
   repository.employees.set(1, {
@@ -579,7 +315,7 @@ function createBaseRepository() {
   return repository;
 }
 
-function validAction(action: AttendanceActionInput["action"]): AttendanceActionInput {
+export function validAction(action: AttendanceActionInput["action"]): AttendanceActionInput {
   return {
     action,
     latitude: 30.04442,
@@ -588,7 +324,7 @@ function validAction(action: AttendanceActionInput["action"]): AttendanceActionI
   };
 }
 
-function assertAttendanceState(
+export function assertAttendanceState(
   value: Awaited<ReturnType<ReturnType<typeof createAttendanceService>["recordEmployeeAction"]>>
 ): asserts value is {
   employeeId: number;
@@ -599,7 +335,7 @@ function assertAttendanceState(
   expect("error" in value || "blockedAttempt" in value).toBe(false);
 }
 
-function assertBlockedAttemptResult(
+export function assertBlockedAttemptResult(
   value: Awaited<ReturnType<ReturnType<typeof createAttendanceService>["recordEmployeeAction"]>>
 ): asserts value is {
   employeeId: number;

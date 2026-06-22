@@ -1,440 +1,51 @@
-import { and, asc, desc, eq, gte, like, lte } from "drizzle-orm";
 import type { AttendanceListFilterInput } from "@capella/shared";
 import type { MySql2Database } from "drizzle-orm/mysql2";
-import {
-  attendanceBlockedAttempts,
-  attendanceSessions,
-  branches,
-  employeeDeviceRegistrations,
-  employees,
-  monthLocks,
-  permissionAbsences,
-  weeklyDayOffAssignments
-} from "../../db";
+import * as adminRepo from "./admin-attendance.repository";
+import * as employeeRepo from "./employee-attendance.repository";
+
+export type {
+  AdminAttendanceRecord,
+  AttendanceBlockedAttemptRecord,
+  AttendanceSessionRecord
+} from "./attendance-mappers";
 
 type DatabaseSchema = typeof import("../../db/schema");
-
-export type AttendanceSessionRecord = {
-  id: number;
-  employeeId: number;
-  branchId: number;
-  status: "open" | "completed";
-  checkInAtUtc: Date;
-  checkOutAtUtc: Date | null;
-  checkInLatitude: number;
-  checkInLongitude: number;
-  checkInIpAddress: string;
-  deviceId: string;
-  branchPolicySnapshot: Record<string, unknown>;
-  adminReason?: string | null;
-  createdByAdminId?: number | null;
-  updatedByAdminId?: number | null;
-};
-
-export type AdminAttendanceRecord = AttendanceSessionRecord & {
-  employeeName: string;
-  adminReason: string | null;
-  createdByAdminId: number | null;
-  updatedByAdminId: number | null;
-};
-
-export type AttendanceBlockedAttemptRecord = {
-  id: number;
-  employeeId: number;
-  branchId: number | null;
-  attemptedAction: "check_in" | "check_out";
-  failureReasons: string[];
-  latitude: number;
-  longitude: number;
-  ipAddress: string;
-  deviceId: string;
-  branchPolicySnapshot: Record<string, unknown>;
-  occurredAtUtc: Date;
-};
 
 type CreateDrizzleAttendanceRepositoryOptions = {
   db: MySql2Database<DatabaseSchema>;
 };
 
-function formatDateOnly(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
-function mapAttendanceSessionRecord(
-  row: typeof attendanceSessions.$inferSelect
-): AttendanceSessionRecord {
-  return {
-    id: row.id,
-    employeeId: row.employeeId,
-    branchId: row.branchId,
-    status: row.status,
-    checkInAtUtc: row.checkInAtUtc,
-    checkOutAtUtc: row.checkOutAtUtc ?? null,
-    checkInLatitude: Number(row.checkInLatitude),
-    checkInLongitude: Number(row.checkInLongitude),
-    checkInIpAddress: row.checkInIpAddress,
-    deviceId: row.deviceId,
-    branchPolicySnapshot: (row.branchPolicySnapshot as Record<string, unknown>) ?? {},
-    adminReason: row.adminReason ?? null,
-    createdByAdminId: row.createdByAdminId ?? null,
-    updatedByAdminId: row.updatedByAdminId ?? null
-  };
-}
-
-function mapBlockedAttemptRecord(
-  row: typeof attendanceBlockedAttempts.$inferSelect
-): AttendanceBlockedAttemptRecord {
-  return {
-    id: row.id,
-    employeeId: row.employeeId,
-    branchId: row.branchId ?? null,
-    attemptedAction: row.attemptedAction,
-    failureReasons: Array.isArray(row.failureReasons) ? row.failureReasons as string[] : [],
-    latitude: row.latitude === null ? 0 : Number(row.latitude),
-    longitude: row.longitude === null ? 0 : Number(row.longitude),
-    ipAddress: row.ipAddress ?? "",
-    deviceId: row.deviceId ?? "",
-    branchPolicySnapshot: (row.branchPolicySnapshot as Record<string, unknown>) ?? {},
-    occurredAtUtc: row.occurredAtUtc
-  };
-}
-
 export function createDrizzleAttendanceRepository(
   options: CreateDrizzleAttendanceRepositoryOptions
 ) {
+  const { db } = options;
+
   return {
-    async findEmployeeById(employeeId: number) {
-      const rows = await options.db
-        .select({
-          id: employees.id,
-          fullName: employees.fullName,
-          branchId: employees.branchId,
-          softDeletedAt: employees.softDeletedAt
-        })
-        .from(employees)
-        .where(eq(employees.id, employeeId))
-        .limit(1);
-
-      return rows[0] ? {
-        id: rows[0].id,
-        fullName: rows[0].fullName,
-        branchId: rows[0].branchId ?? null,
-        softDeletedAt: rows[0].softDeletedAt ?? null
-      } : null;
-    },
-
-    async findBranchById(branchId: number) {
-      const rows = await options.db
-        .select({
-          id: branches.id,
-          setupStatus: branches.setupStatus,
-          gpsLatitude: branches.gpsLatitude,
-          gpsLongitude: branches.gpsLongitude,
-          gpsRadiusMeters: branches.gpsRadiusMeters,
-          allowedIpCidr: branches.allowedIpCidr,
-          registeredDeviceToken: branches.registeredDeviceToken
-        })
-        .from(branches)
-        .where(eq(branches.id, branchId))
-        .limit(1);
-
-      return rows[0] ? {
-        id: rows[0].id,
-        setupStatus: rows[0].setupStatus,
-        gpsLatitude: rows[0].gpsLatitude,
-        gpsLongitude: rows[0].gpsLongitude,
-        gpsRadiusMeters: rows[0].gpsRadiusMeters,
-        allowedIpCidr: rows[0].allowedIpCidr,
-        registeredDeviceToken: rows[0].registeredDeviceToken ?? null
-      } : null;
-    },
-
-    async findActiveEmployeeDeviceFingerprint(employeeId: number) {
-      const rows = await options.db
-        .select({
-          browserFingerprint: employeeDeviceRegistrations.browserFingerprint
-        })
-        .from(employeeDeviceRegistrations)
-        .where(
-          and(
-            eq(employeeDeviceRegistrations.employeeId, employeeId),
-            eq(employeeDeviceRegistrations.status, "active")
-          )
-        )
-        .orderBy(desc(employeeDeviceRegistrations.id))
-        .limit(1);
-
-      return rows[0]?.browserFingerprint ?? null;
-    },
-
-    async findOpenSession(employeeId: number) {
-      const rows = await options.db
-        .select()
-        .from(attendanceSessions)
-        .where(
-          and(
-            eq(attendanceSessions.employeeId, employeeId),
-            eq(attendanceSessions.status, "open")
-          )
-        )
-        .orderBy(desc(attendanceSessions.id))
-        .limit(1);
-
-      return rows[0] ? mapAttendanceSessionRecord(rows[0]) : null;
-    },
-
-    async listEmployeeSessions(employeeId: number) {
-      const rows = await options.db
-        .select()
-        .from(attendanceSessions)
-        .where(eq(attendanceSessions.employeeId, employeeId))
-        .orderBy(attendanceSessions.checkInAtUtc);
-
-      return rows.map(mapAttendanceSessionRecord);
-    },
-
-    async createSession(input: {
-      employeeId: number;
-      branchId: number;
-      checkInAtUtc: Date;
-      checkInLatitude: number;
-      checkInLongitude: number;
-      checkInIpAddress: string;
-      deviceId: string;
-      branchPolicySnapshot: Record<string, unknown>;
-    }) {
-      const result = await options.db.insert(attendanceSessions).values({
-        employeeId: input.employeeId,
-        branchId: input.branchId,
-        status: "open",
-        checkInAtUtc: input.checkInAtUtc,
-        checkInLatitude: input.checkInLatitude.toFixed(7),
-        checkInLongitude: input.checkInLongitude.toFixed(7),
-        checkInIpAddress: input.checkInIpAddress,
-        deviceId: input.deviceId,
-        branchPolicySnapshot: input.branchPolicySnapshot
-      });
-
-      const rows = await options.db
-        .select()
-        .from(attendanceSessions)
-        .where(eq(attendanceSessions.id, Number(result[0].insertId)))
-        .limit(1);
-
-      return mapAttendanceSessionRecord(rows[0]!);
-    },
-
-    async completeSession(sessionId: number, checkOutAtUtc: Date) {
-      await options.db
-        .update(attendanceSessions)
-        .set({
-          status: "completed",
-          checkOutAtUtc
-        })
-        .where(
-          and(
-            eq(attendanceSessions.id, sessionId),
-            eq(attendanceSessions.status, "open")
-          )
-        );
-
-      const rows = await options.db
-        .select()
-        .from(attendanceSessions)
-        .where(eq(attendanceSessions.id, sessionId))
-        .limit(1);
-
-      return rows[0] ? mapAttendanceSessionRecord(rows[0]) : null;
-    },
-
-    async createBlockedAttempt(input: {
-      employeeId: number;
-      branchId: number | null;
-      attemptedAction: "check_in" | "check_out";
-      failureReasons: string[];
-      latitude: number;
-      longitude: number;
-      ipAddress: string;
-      deviceId: string;
-      branchPolicySnapshot: Record<string, unknown>;
-      occurredAtUtc: Date;
-    }) {
-      const result = await options.db.insert(attendanceBlockedAttempts).values({
-        employeeId: input.employeeId,
-        branchId: input.branchId,
-        attemptedAction: input.attemptedAction,
-        failureReasons: input.failureReasons,
-        latitude: input.latitude.toFixed(7),
-        longitude: input.longitude.toFixed(7),
-        ipAddress: input.ipAddress,
-        deviceId: input.deviceId,
-        branchPolicySnapshot: input.branchPolicySnapshot,
-        occurredAtUtc: input.occurredAtUtc
-      });
-
-      const rows = await options.db
-        .select()
-        .from(attendanceBlockedAttempts)
-        .where(eq(attendanceBlockedAttempts.id, Number(result[0].insertId)))
-        .limit(1);
-
-      return mapBlockedAttemptRecord(rows[0]!);
-    },
-
-    async hasWeeklyDayOff(employeeId: number, dateKey: string) {
-      const rows = await options.db
-        .select({ dayOffDate: weeklyDayOffAssignments.dayOffDate })
-        .from(weeklyDayOffAssignments)
-        .where(eq(weeklyDayOffAssignments.employeeId, employeeId));
-
-      return rows.some((row) => formatDateOnly(row.dayOffDate) === dateKey);
-    },
-
-    async hasPermissionAbsence(employeeId: number, dateKey: string) {
-      const rows = await options.db
-        .select({ absenceDate: permissionAbsences.absenceDate })
-        .from(permissionAbsences)
-        .where(eq(permissionAbsences.employeeId, employeeId));
-
-      return rows.some((row) => formatDateOnly(row.absenceDate) === dateKey);
-    },
-
-    async isMonthLocked(monthKey: string) {
-      const rows = await options.db
-        .select({ id: monthLocks.id })
-        .from(monthLocks)
-        .where(eq(monthLocks.monthKey, monthKey))
-        .limit(1);
-
-      return Boolean(rows[0]);
-    },
-
-    async listAdminAttendance(filters: AttendanceListFilterInput) {
-      const conditions = [];
-
-      if (filters.employeeName) {
-        conditions.push(like(employees.fullName, `%${filters.employeeName}%`));
-      }
-
-      if (filters.branchId) {
-        conditions.push(eq(attendanceSessions.branchId, filters.branchId));
-      }
-
-      if (filters.status) {
-        conditions.push(eq(attendanceSessions.status, filters.status));
-      }
-
-      if (filters.dateFrom) {
-        conditions.push(gte(attendanceSessions.checkInAtUtc, new Date(`${filters.dateFrom}T00:00:00.000Z`)));
-      }
-
-      if (filters.dateTo) {
-        conditions.push(lte(attendanceSessions.checkInAtUtc, new Date(`${filters.dateTo}T23:59:59.999Z`)));
-      }
-
-      const rows = await options.db
-        .select({
-          session: attendanceSessions,
-          employeeName: employees.fullName
-        })
-        .from(attendanceSessions)
-        .innerJoin(employees, eq(attendanceSessions.employeeId, employees.id))
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(
-          filters.sortBy === "employee_name"
-            ? (filters.sortDirection === "asc" ? asc(employees.fullName) : desc(employees.fullName))
-            : (filters.sortDirection === "asc" ? asc(attendanceSessions.checkInAtUtc) : desc(attendanceSessions.checkInAtUtc))
-        );
-
-      return rows.map(({ session, employeeName }) => ({
-        ...mapAttendanceSessionRecord(session),
-        employeeName,
-        adminReason: session.adminReason ?? null,
-        createdByAdminId: session.createdByAdminId ?? null,
-        updatedByAdminId: session.updatedByAdminId ?? null
-      } satisfies AdminAttendanceRecord));
-    },
-
-    async findAdminAttendanceById(sessionId: number) {
-      const rows = await options.db
-        .select({
-          session: attendanceSessions,
-          employeeName: employees.fullName
-        })
-        .from(attendanceSessions)
-        .innerJoin(employees, eq(attendanceSessions.employeeId, employees.id))
-        .where(eq(attendanceSessions.id, sessionId))
-        .limit(1);
-
-      const row = rows[0];
-
-      if (!row) {
-        return null;
-      }
-
-      return {
-        ...mapAttendanceSessionRecord(row.session),
-        employeeName: row.employeeName,
-        adminReason: row.session.adminReason ?? null,
-        createdByAdminId: row.session.createdByAdminId ?? null,
-        updatedByAdminId: row.session.updatedByAdminId ?? null
-      } satisfies AdminAttendanceRecord;
-    },
-
-    async createAdminAttendance(input: {
-      employeeId: number;
-      branchId: number;
-      checkInAtUtc: Date;
-      checkOutAtUtc: Date | null;
-      reason: string;
-      adminId: number;
-    }) {
-      const result = await options.db.insert(attendanceSessions).values({
-        employeeId: input.employeeId,
-        branchId: input.branchId,
-        status: input.checkOutAtUtc ? "completed" : "open",
-        checkInAtUtc: input.checkInAtUtc,
-        checkOutAtUtc: input.checkOutAtUtc,
-        checkInLatitude: "0.0000000",
-        checkInLongitude: "0.0000000",
-        checkInIpAddress: "",
-        deviceId: "admin",
-        branchPolicySnapshot: {},
-        adminReason: input.reason,
-        createdByAdminId: input.adminId
-      });
-
-      return (await this.findAdminAttendanceById(Number(result[0].insertId)))!;
-    },
-
-    async updateAdminAttendance(sessionId: number, input: {
-      branchId: number;
-      checkInAtUtc: Date;
-      checkOutAtUtc: Date | null;
-      reason: string;
-      adminId: number;
-    }) {
-      await options.db
-        .update(attendanceSessions)
-        .set({
-          branchId: input.branchId,
-          status: input.checkOutAtUtc ? "completed" : "open",
-          checkInAtUtc: input.checkInAtUtc,
-          checkOutAtUtc: input.checkOutAtUtc,
-          adminReason: input.reason,
-          updatedByAdminId: input.adminId
-        })
-        .where(eq(attendanceSessions.id, sessionId));
-
-      return this.findAdminAttendanceById(sessionId);
-    },
-
-    async deleteAdminAttendance(sessionId: number) {
-      const result = await options.db
-        .delete(attendanceSessions)
-        .where(eq(attendanceSessions.id, sessionId));
-
-      return result[0].affectedRows > 0;
-    }
+    findEmployeeById: (employeeId: number) => employeeRepo.findEmployeeById(db, employeeId),
+    findBranchById: (branchId: number) => employeeRepo.findBranchById(db, branchId),
+    findActiveEmployeeDeviceFingerprint: (employeeId: number) =>
+      employeeRepo.findActiveEmployeeDeviceFingerprint(db, employeeId),
+    findOpenSession: (employeeId: number) => employeeRepo.findOpenSession(db, employeeId),
+    listEmployeeSessions: (employeeId: number) => employeeRepo.listEmployeeSessions(db, employeeId),
+    createSession: (input: Parameters<typeof employeeRepo.createSession>[1]) =>
+      employeeRepo.createSession(db, input),
+    completeSession: (sessionId: number, checkOutAtUtc: Date) =>
+      employeeRepo.completeSession(db, sessionId, checkOutAtUtc),
+    createBlockedAttempt: (input: Parameters<typeof employeeRepo.createBlockedAttempt>[1]) =>
+      employeeRepo.createBlockedAttempt(db, input),
+    hasWeeklyDayOff: (employeeId: number, dateKey: string) =>
+      employeeRepo.hasWeeklyDayOff(db, employeeId, dateKey),
+    hasPermissionAbsence: (employeeId: number, dateKey: string) =>
+      employeeRepo.hasPermissionAbsence(db, employeeId, dateKey),
+    isMonthLocked: (monthKey: string) => employeeRepo.isMonthLocked(db, monthKey),
+    listAdminAttendance: (filters: AttendanceListFilterInput) =>
+      adminRepo.listAdminAttendance(db, filters),
+    findAdminAttendanceById: (sessionId: number) =>
+      adminRepo.findAdminAttendanceById(db, sessionId),
+    createAdminAttendance: (input: Parameters<typeof adminRepo.createAdminAttendance>[1]) =>
+      adminRepo.createAdminAttendance(db, input),
+    updateAdminAttendance: (sessionId: number, input: Parameters<typeof adminRepo.updateAdminAttendance>[2]) =>
+      adminRepo.updateAdminAttendance(db, sessionId, input),
+    deleteAdminAttendance: (sessionId: number) => adminRepo.deleteAdminAttendance(db, sessionId)
   };
 }

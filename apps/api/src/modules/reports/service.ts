@@ -52,6 +52,11 @@ export function createReportsService(options: CreateReportsServiceOptions) {
           const distinctAttendanceDays = new Set(attendanceDates).size;
           const distinctWeeklyDaysOff = new Set(weeklyDayOffDates).size;
           const distinctPermissionAbsences = new Set(permissionAbsenceDates).size;
+          const coveredDays = new Set([
+            ...attendanceDates,
+            ...weeklyDayOffDates,
+            ...permissionAbsenceDates
+          ]).size;
           const daysInMonth = getDaysInMonth(filters.month);
 
           return {
@@ -63,8 +68,7 @@ export function createReportsService(options: CreateReportsServiceOptions) {
             attendanceDays: distinctAttendanceDays,
             weeklyDaysOff: distinctWeeklyDaysOff,
             absenceWithPermission: distinctPermissionAbsences,
-            absenceWithoutPermission:
-              daysInMonth - distinctAttendanceDays - distinctWeeklyDaysOff - distinctPermissionAbsences
+            absenceWithoutPermission: daysInMonth - coveredDays
           } satisfies MonthlyAttendanceSummaryRow;
         })
       );

@@ -15,9 +15,19 @@ type CreateDrizzleReportsRepositoryOptions = {
 };
 
 function getMonthRange(month: string) {
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    throw new Error(`Invalid month "${month}": expected format YYYY-MM`);
+  }
+
   const [yearText, monthText] = month.split("-");
   const year = Number(yearText);
-  const monthIndex = Number(monthText) - 1;
+  const monthNumber = Number(monthText);
+
+  if (!Number.isInteger(year) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+    throw new Error(`Invalid month "${month}": month must be between 01 and 12`);
+  }
+
+  const monthIndex = monthNumber - 1;
   const start = new Date(Date.UTC(year, monthIndex, 1));
   const end = new Date(Date.UTC(year, monthIndex + 1, 1));
 

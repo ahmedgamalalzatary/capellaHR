@@ -1,8 +1,6 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
 import { createApp } from "../../../../src/app";
 import { createAuthService, createPasswordHash } from "../../../../src/modules/auth/service";
-import { createAttendanceService } from "../../../../src/modules/attendance/service";
 import type {
   AttendanceBlockedAttemptRecord,
   AdminAttendanceRecord,
@@ -12,7 +10,7 @@ import type {
   EmployeeAttendanceRecord
 } from "../../../../src/modules/attendance/service";
 
-class InMemoryAttendanceRepository implements AttendanceRepository {
+export class InMemoryAttendanceRepository implements AttendanceRepository {
   employees = new Map<number, EmployeeAttendanceRecord>();
   branches = new Map<number, BranchPolicyRecord>();
   activeDeviceFingerprints = new Map<number, string>();
@@ -226,263 +224,7 @@ class InMemoryAttendanceRepository implements AttendanceRepository {
   }
 }
 
-describe("attendance routes", () => {
-  it("returns unauthorized on employee attendance routes without a session", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({
-        repository: createBaseRepository()
-      })
-    });
-
-    const response = await request(app).get("/attendance/me");
-
-    expect(response.status).toBe(401);
-  });
-
-  it("returns forbidden on employee attendance routes for admin sessions", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({
-        repository: createBaseRepository()
-      })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app).get("/attendance/me").set("Cookie", adminCookie);
-
-    expect(response.status).toBe(403);
-  });
-
-  it("returns the current employee attendance state", async () => {
-    const repository = createBaseRepository();
-    repository.sessions.push({
-      id: 1,
-      employeeId: 2,
-      branchId: 1,
-      status: "open",
-      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
-      checkOutAtUtc: null,
-      checkInLatitude: 30.04442,
-      checkInLongitude: 31.235712,
-      checkInIpAddress: "192.168.1.42",
-      deviceId: "personal-device-1",
-      branchPolicySnapshot: {
-        allowedIpCidr: "192.168.1.0/24"
-      }
-    });
-
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({ repository })
-    });
-    const employeeCookie = await signInEmployee(app);
-
-    const response = await request(app).get("/attendance/me").set("Cookie", employeeCookie);
-
-    expect(response.status).toBe(200);
-    expect(response.body.attendance.currentAction).toBe("check_out");
-    expect(response.body.attendance.todaySessions).toHaveLength(1);
-  });
-
-  it("records an employee check-in", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({
-        repository: createBaseRepository()
-      })
-    });
-    const employeeCookie = await signInEmployee(app);
-
-    const response = await request(app)
-      .post("/attendance/action")
-      .set("Cookie", employeeCookie)
-      .set("X-Forwarded-For", "192.168.1.42")
-      .send({
-        action: "check_in",
-        latitude: 30.04442,
-        longitude: 31.235712,
-        deviceId: "personal-device-1"
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body.attendance.currentAction).toBe("check_out");
-  });
-
-  it("returns blocked validation attempts without losing the attendance state payload", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({
-        repository: createBaseRepository()
-      })
-    });
-    const employeeCookie = await signInEmployee(app);
-
-    const response = await request(app)
-      .post("/attendance/action")
-      .set("Cookie", employeeCookie)
-      .set("X-Forwarded-For", "10.0.0.10")
-      .send({
-        action: "check_in",
-        latitude: 29,
-        longitude: 31,
-        deviceId: "unknown-device"
-      });
-
-    expect(response.status).toBe(422);
-    expect(response.body.error).toEqual({
-      code: "ATTENDANCE_VALIDATION_FAILED",
-      message: "Attendance validation failed",
-      details: {
-        failureReasons: ["device_not_allowed", "gps_out_of_range", "ip_not_allowed"]
-      }
-    });
-    expect(response.body.attendance.currentAction).toBe("check_in");
-  });
-
-  it("returns forbidden on admin attendance routes for employee sessions", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({
-        repository: createBaseRepository()
-      })
-    });
-    const employeeCookie = await signInEmployee(app);
-
-    const response = await request(app).get("/admin/attendance").set("Cookie", employeeCookie);
-
-    expect(response.status).toBe(403);
-  });
-
-  it("lists admin attendance for admin sessions", async () => {
-    const repository = createBaseRepository();
-    repository.sessions.push({
-      id: 1,
-      employeeId: 2,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "manual correction",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({ repository })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app).get("/admin/attendance").set("Cookie", adminCookie);
-
-    expect(response.status).toBe(200);
-    expect(response.body.sessions).toHaveLength(1);
-    expect(response.body.sessions[0].employeeName).toBe("Test Employee");
-  });
-
-  it("creates admin attendance with a required reason", async () => {
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({
-        repository: createBaseRepository()
-      })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app)
-      .post("/admin/attendance")
-      .set("Cookie", adminCookie)
-      .send({
-        employeeId: 2,
-        branchId: 1,
-        checkInAt: "2026-06-22T08:00:00.000Z",
-        checkOutAt: "2026-06-22T16:00:00.000Z",
-        reason: "manual correction"
-      });
-
-    expect(response.status).toBe(201);
-    expect(response.body.session.status).toBe("completed");
-  });
-
-  it("updates admin attendance", async () => {
-    const repository = createBaseRepository();
-    repository.sessions.push({
-      id: 1,
-      employeeId: 2,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "before",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({ repository })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app)
-      .patch("/admin/attendance/1")
-      .set("Cookie", adminCookie)
-      .send({
-        branchId: 1,
-        checkInAt: "2026-06-22T09:00:00.000Z",
-        checkOutAt: "2026-06-22T17:00:00.000Z",
-        reason: "manual correction"
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body.session.adminReason).toBe("manual correction");
-  });
-
-  it("deletes admin attendance", async () => {
-    const repository = createBaseRepository();
-    repository.sessions.push({
-      id: 1,
-      employeeId: 2,
-      branchId: 1,
-      status: "completed",
-      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
-      checkOutAtUtc: new Date("2026-06-22T12:00:00.000Z"),
-      checkInLatitude: 0,
-      checkInLongitude: 0,
-      checkInIpAddress: "",
-      deviceId: "admin",
-      branchPolicySnapshot: {},
-      adminReason: "manual correction",
-      createdByAdminId: 1,
-      updatedByAdminId: null
-    });
-    const app = createApp({
-      authService: createEmployeeAuthService(),
-      attendanceService: createAttendanceService({ repository })
-    });
-    const adminCookie = await signInAdmin(app);
-
-    const response = await request(app)
-      .delete("/admin/attendance/1")
-      .set("Cookie", adminCookie)
-      .send({
-        reason: "remove duplicate"
-      });
-
-    expect(response.status).toBe(204);
-  });
-});
-
-function createBaseRepository() {
+export function createBaseRepository() {
   const repository = new InMemoryAttendanceRepository();
 
   repository.employees.set(2, {
@@ -505,7 +247,7 @@ function createBaseRepository() {
   return repository;
 }
 
-function createEmployeeAuthService() {
+export function createEmployeeAuthService() {
   const sessions = new Map<string, {
     tokenHash: string;
     actorId: number;
@@ -593,7 +335,7 @@ function createEmployeeAuthService() {
   });
 }
 
-async function signInEmployee(app: ReturnType<typeof createApp>) {
+export async function signInEmployee(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/sign-in").send({
     phone: "01012345678",
     password: "secret123"
@@ -602,7 +344,7 @@ async function signInEmployee(app: ReturnType<typeof createApp>) {
   return response.headers["set-cookie"];
 }
 
-async function signInAdmin(app: ReturnType<typeof createApp>) {
+export async function signInAdmin(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/admin/sign-in").send({
     email: "admin@capella.eg",
     password: "admin1234"

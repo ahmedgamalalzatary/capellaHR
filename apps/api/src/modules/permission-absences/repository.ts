@@ -125,7 +125,11 @@ export function createDrizzlePermissionAbsenceRepository(
         .where(eq(permissionAbsences.id, Number(result[0].insertId)))
         .limit(1);
 
-      return mapAbsenceRecord(rows[0]!);
+      if (!rows[0]) {
+        throw new Error("Failed to load permission absence after create");
+      }
+
+      return mapAbsenceRecord(rows[0]);
     },
 
     async updateAbsence(absenceId: number, input: {

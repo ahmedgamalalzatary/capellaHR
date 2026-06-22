@@ -17,8 +17,14 @@ loadEnv({
   override: true
 });
 
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required to run this test (set it in .env.test)");
+}
+
 const databaseClient = createDatabaseClient({
-  databaseUrl: process.env.DATABASE_URL ?? ""
+  databaseUrl
 });
 
 beforeAll(async () => {
