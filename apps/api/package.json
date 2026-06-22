@@ -2,16 +2,16 @@
   "name": "@capella/api",
   "private": true,
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.build.json",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
     "db:push": "drizzle-kit push --config drizzle.config.ts",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "dev": "tsx watch src/index.ts",
-    "lint": "pnpm exec eslint .",
-    "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest --passWithNoTests",
-    "typecheck": "tsc --project tsconfig.json"
+    "lint": "pnpm exec eslint src drizzle.config.ts",
+    "test": "vitest run --passWithNoTests src",
+    "test:watch": "vitest --passWithNoTests src",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

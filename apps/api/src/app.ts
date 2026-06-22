@@ -1,4 +1,5 @@
 import express from "express";
+import { registerNotFoundHandler } from "./http/not-found-handler.js";
 import { registerHealthRoutes } from "./http/health-routes.js";
 import { registerAppMiddleware } from "./http/middleware/index.js";
 import { registerAppRoutes } from "./http/routes.js";
@@ -9,6 +10,7 @@ export function createApp() {
   registerAppMiddleware(app);
   registerHealthRoutes(app);
   registerAppRoutes(app);
+  registerNotFoundHandler(app);
 
   return app;
 }

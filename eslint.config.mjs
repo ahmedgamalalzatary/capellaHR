@@ -13,7 +13,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["apps/api/**/*.ts", "packages/shared/**/*.ts"],
+    files: ["apps/api/src/**/*.ts", "packages/shared/**/*.ts"],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -25,9 +25,6 @@ export default tseslint.config(
     files: ["apps/api/drizzle.config.ts"],
     languageOptions: {
       parserOptions: {
-        projectService: {
-          allowDefaultProject: ["apps/api/drizzle.config.ts"]
-        },
         tsconfigRootDir: import.meta.dirname
       }
     }

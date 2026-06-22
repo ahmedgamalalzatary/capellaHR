@@ -1,3 +1,5 @@
 import type { Express } from "express";
 
-export function registerReportsRoutes(_app: Express) {}
+export function registerReportsRoutes(app: Express) {
+  void app;
+}
