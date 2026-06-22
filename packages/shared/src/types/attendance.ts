@@ -1,6 +1,6 @@
 import type { z } from "zod";
-import type { attendanceActionSchema, attendanceListFilterSchema } from "../schemas/attendance.js";
-import type { attendanceActionTypeSchema, attendanceSessionStatusSchema } from "../schemas/common.js";
+import type { attendanceActionSchema, attendanceListFilterSchema } from "../schemas/attendance";
+import type { attendanceActionTypeSchema, attendanceSessionStatusSchema } from "../schemas/common";
 
 export type AttendanceActionType = z.infer<typeof attendanceActionTypeSchema>;
 export type AttendanceSessionStatus = z.infer<typeof attendanceSessionStatusSchema>;

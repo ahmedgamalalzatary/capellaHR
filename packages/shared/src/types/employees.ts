@@ -3,7 +3,7 @@ import type {
   employeeCreateSchema,
   employeeListFilterSchema,
   employeeUpdateSchema
-} from "../schemas/employees.js";
+} from "../schemas/employees";
 
 export type EmployeeCreateInput = z.infer<typeof employeeCreateSchema>;
 export type EmployeeUpdateInput = z.infer<typeof employeeUpdateSchema>;

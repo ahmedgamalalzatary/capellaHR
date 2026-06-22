@@ -1,8 +1,8 @@
 import express from "express";
-import { registerNotFoundHandler } from "./http/not-found-handler.js";
-import { registerHealthRoutes } from "./http/health-routes.js";
-import { registerAppMiddleware } from "./http/middleware/index.js";
-import { registerAppRoutes } from "./http/routes.js";
+import { registerNotFoundHandler } from "./http/not-found-handler";
+import { registerHealthRoutes } from "./http/health-routes";
+import { registerAppMiddleware } from "./http/middleware/index";
+import { registerAppRoutes } from "./http/routes";
 
 export function createApp() {
   const app = express();

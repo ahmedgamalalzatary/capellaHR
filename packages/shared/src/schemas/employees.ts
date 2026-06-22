@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { egyptianPhoneSchema, emailSchema } from "./common.js";
+import { egyptianPhoneSchema, emailSchema } from "./common";
 
 export const employeeCreateSchema = z.object({
   fullName: z.string().trim().min(1),

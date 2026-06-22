@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import * as schemas from "./index.js";
+import * as schemas from "./index";
 
 describe("shared schemas", () => {
   it("exports domain schema modules", () => {

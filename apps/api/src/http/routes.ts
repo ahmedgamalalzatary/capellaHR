@@ -1,12 +1,12 @@
 import type { Express } from "express";
-import { registerAuditLogsRoutes } from "../modules/audit-logs/routes.js";
-import { registerAttendanceRoutes } from "../modules/attendance/routes.js";
-import { registerAuthRoutes } from "../modules/auth/routes.js";
-import { registerBranchesRoutes } from "../modules/branches/routes.js";
-import { registerEmployeeDevicesRoutes } from "../modules/employee-devices/routes.js";
-import { registerEmployeesRoutes } from "../modules/employees/routes.js";
-import { registerMonthLocksRoutes } from "../modules/month-locks/routes.js";
-import { registerReportsRoutes } from "../modules/reports/routes.js";
+import { registerAuditLogsRoutes } from "../modules/audit-logs/routes";
+import { registerAttendanceRoutes } from "../modules/attendance/routes";
+import { registerAuthRoutes } from "../modules/auth/routes";
+import { registerBranchesRoutes } from "../modules/branches/routes";
+import { registerEmployeeDevicesRoutes } from "../modules/employee-devices/routes";
+import { registerEmployeesRoutes } from "../modules/employees/routes";
+import { registerMonthLocksRoutes } from "../modules/month-locks/routes";
+import { registerReportsRoutes } from "../modules/reports/routes";
 
 export function registerAppRoutes(app: Express) {
   registerAuthRoutes(app);

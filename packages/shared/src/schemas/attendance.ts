@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { attendanceActionTypeSchema, attendanceSessionStatusSchema } from "./common.js";
+import { attendanceActionTypeSchema, attendanceSessionStatusSchema } from "./common";
 
 export const attendanceActionSchema = z.object({
   action: attendanceActionTypeSchema,

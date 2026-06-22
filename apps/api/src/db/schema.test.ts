@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import * as schema from "./schema.js";
+import * as schema from "./schema";
 
 describe("database schema", () => {
   it("exports the core identity tables", () => {

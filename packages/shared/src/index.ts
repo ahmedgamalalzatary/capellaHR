@@ -1,3 +1,3 @@
-export * from "./contracts/index.js";
-export * from "./schemas/index.js";
-export * from "./types/index.js";
+export * from "./contracts/index";
+export * from "./schemas/index";
+export * from "./types/index";

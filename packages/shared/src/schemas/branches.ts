@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { branchSetupStatusSchema } from "./common.js";
+import { branchSetupStatusSchema } from "./common";
 
 export const branchCreateSchema = z.object({
   name: z.string().trim().min(1),
