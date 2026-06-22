@@ -9,6 +9,7 @@
     "db:push": "pnpm --filter @capella/api db:push",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "dev": "pnpm -r --parallel dev",
+    "knip": "pnpm dlx knip",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "test:watch": "pnpm -r test:watch",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/node": "^26.0.0",
+    "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "eslint": "9.39.4",
