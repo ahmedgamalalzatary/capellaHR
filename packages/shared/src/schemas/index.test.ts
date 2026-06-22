@@ -11,7 +11,8 @@ describe("shared schemas", () => {
       branchCreateSchema: expect.any(z.ZodType),
       attendanceActionSchema: expect.any(z.ZodType),
       monthlyAttendanceSummaryFilterSchema: expect.any(z.ZodType),
-      weeklyDayOffAssignmentCreateSchema: expect.any(z.ZodType)
+      weeklyDayOffAssignmentCreateSchema: expect.any(z.ZodType),
+      permissionAbsenceCreateSchema: expect.any(z.ZodType)
     });
   });
 
@@ -75,5 +76,13 @@ describe("shared schemas", () => {
     });
 
     expect(result.dayOffDate).toBe("2026-06-27");
+  });
+
+  it("accepts iso dates for permission absences", () => {
+    const result = schemas.permissionAbsenceCreateSchema.parse({
+      absenceDate: "2026-06-29"
+    });
+
+    expect(result.absenceDate).toBe("2026-06-29");
   });
 });

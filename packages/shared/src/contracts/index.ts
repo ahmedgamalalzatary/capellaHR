@@ -17,6 +17,11 @@ export type {
 } from "../types/employee-devices";
 export type { MonthlyAttendanceSummaryFilterInput } from "../types/reports";
 export type {
+  PermissionAbsenceCreateInput,
+  PermissionAbsenceListFilterInput,
+  PermissionAbsenceUpdateInput
+} from "../types/permission-absences";
+export type {
   WeeklyDayOffAssignmentCreateInput,
   WeeklyDayOffAssignmentListFilterInput,
   WeeklyDayOffAssignmentUpdateInput
