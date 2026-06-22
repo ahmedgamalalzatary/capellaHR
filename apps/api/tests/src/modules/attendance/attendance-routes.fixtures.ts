@@ -222,6 +222,10 @@ export class InMemoryAttendanceRepository implements AttendanceRepository {
     this.sessions.splice(index, 1);
     return true;
   }
+
+  async applyPendingBranchAssignment() {
+    return false;
+  }
 }
 
 export function createBaseRepository() {

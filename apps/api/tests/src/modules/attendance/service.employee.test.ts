@@ -49,6 +49,10 @@ describe("attendance service (employee actions)", () => {
 
   it("completes the open attendance session on check-out within the same Cairo day", async () => {
     const repository = createBaseRepository();
+    repository.pendingBranchAssignments.set(1, {
+      branchId: 2,
+      effectiveFrom: new Date("2026-06-22T10:00:00.000Z")
+    });
     const service = createAttendanceService({ repository });
     const checkIn = await service.recordEmployeeAction(1, validAction("check_in"), {
       ipAddress: "192.168.1.42",
@@ -66,6 +70,7 @@ describe("attendance service (employee actions)", () => {
     expect(checkOut.openSession).toBeNull();
     expect(checkOut.todaySessions[0]?.status).toBe("completed");
     expect(checkOut.todaySessions[0]?.checkOutAtUtc).toEqual(new Date("2026-06-22T12:00:00.000Z"));
+    expect(repository.employees.get(1)?.branchId).toBe(2);
   });
 
   it("rejects a second check-in while a session is still open", async () => {

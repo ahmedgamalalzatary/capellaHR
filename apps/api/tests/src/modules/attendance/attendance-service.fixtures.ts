@@ -22,6 +22,7 @@ export class InMemoryAttendanceRepository implements AttendanceRepository {
   nextSessionId = 1;
   nextBlockedAttemptId = 1;
   adminDeletedSessionIds: number[] = [];
+  pendingBranchAssignments = new Map<number, { branchId: number; effectiveFrom: Date }>();
 
   async findEmployeeById(employeeId: number) {
     return this.employees.get(employeeId) ?? null;
@@ -288,6 +289,24 @@ export class InMemoryAttendanceRepository implements AttendanceRepository {
 
     this.sessions.splice(index, 1);
     this.adminDeletedSessionIds.push(sessionId);
+    return true;
+  }
+
+  async applyPendingBranchAssignment(employeeId: number, occurredAtUtc: Date) {
+    const pending = this.pendingBranchAssignments.get(employeeId);
+
+    if (!pending || pending.effectiveFrom.getTime() > occurredAtUtc.getTime()) {
+      return false;
+    }
+
+    const employee = this.employees.get(employeeId);
+
+    if (!employee) {
+      return false;
+    }
+
+    employee.branchId = pending.branchId;
+    this.pendingBranchAssignments.delete(employeeId);
     return true;
   }
 }

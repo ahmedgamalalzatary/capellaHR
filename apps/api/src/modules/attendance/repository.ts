@@ -46,6 +46,8 @@ export function createDrizzleAttendanceRepository(
       adminRepo.createAdminAttendance(db, input),
     updateAdminAttendance: (sessionId: number, input: Parameters<typeof adminRepo.updateAdminAttendance>[2]) =>
       adminRepo.updateAdminAttendance(db, sessionId, input),
-    deleteAdminAttendance: (sessionId: number) => adminRepo.deleteAdminAttendance(db, sessionId)
+    deleteAdminAttendance: (sessionId: number) => adminRepo.deleteAdminAttendance(db, sessionId),
+    applyPendingBranchAssignment: (employeeId: number, occurredAtUtc: Date) =>
+      employeeRepo.applyPendingBranchAssignment(db, employeeId, occurredAtUtc)
   };
 }

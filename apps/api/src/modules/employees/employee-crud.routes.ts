@@ -1,5 +1,10 @@
 import type { Express, RequestHandler, Request, Response } from "express";
-import { employeeCreateSchema, employeeListFilterSchema, employeeUpdateSchema } from "@capella/shared";
+import {
+  employeeBranchAssignmentCreateSchema,
+  employeeCreateSchema,
+  employeeListFilterSchema,
+  employeeUpdateSchema
+} from "@capella/shared";
 import { getAuthenticatedAdmin } from "../auth/admin-session";
 import {
   type RegisterEmployeesRoutesOptions,
@@ -118,5 +123,50 @@ export function registerEmployeeCrudRoutes(
     }
 
     response.status(204).send();
+  });
+
+  app.get("/employees/:employeeId/branch-assignments", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const parsed = employeeIdParamsSchema.safeParse(request.params);
+
+    if (!parsed.success) {
+      sendValidationError(response, parsed.error.flatten());
+      return;
+    }
+
+    const employeeService = options.employeeService ?? getEmployeeService();
+    const result = await employeeService.listEmployeeBranchAssignments(parsed.data.employeeId);
+
+    if ("error" in result) {
+      response.status(404).json(result);
+      return;
+    }
+
+    response.status(200).json({ assignments: result });
+  });
+
+  app.post("/employees/:employeeId/branch-assignments", adminSessionMiddleware, async (request: Request, response: Response) => {
+    const params = employeeIdParamsSchema.safeParse(request.params);
+    const body = employeeBranchAssignmentCreateSchema.safeParse(request.body);
+
+    if (!params.success) {
+      sendValidationError(response, params.error.flatten());
+      return;
+    }
+
+    if (!body.success) {
+      sendValidationError(response, body.error.flatten());
+      return;
+    }
+
+    const employeeService = options.employeeService ?? getEmployeeService();
+    const admin = getAuthenticatedAdmin(response);
+    const result = await employeeService.assignEmployeeBranch(params.data.employeeId, body.data, admin.id);
+
+    if ("error" in result) {
+      response.status(result.error.code === "EMPLOYEE_NOT_FOUND" ? 404 : 409).json(result);
+      return;
+    }
+
+    response.status(201).json({ assignment: result });
   });
 }

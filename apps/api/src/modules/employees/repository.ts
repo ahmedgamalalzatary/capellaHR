@@ -1,10 +1,12 @@
 import type { EmployeeListFilterInput } from "@capella/shared";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import * as readRepo from "./employee-read.repository";
+import * as assignmentRepo from "./employee-branch-assignment.repository";
 import * as writeRepo from "./employee-write.repository";
 import * as fileRepo from "./employee-file.repository";
 
 export type { EmployeeConflictField, EmployeeConflictResult } from "./employee-conflict-mapper";
+export type { EmployeeBranchAssignmentRecord } from "./employee-branch-assignment.repository";
 export type { EmployeeFileRecord, EmployeeRecord } from "./employee-mappers";
 
 type DatabaseSchema = typeof import("../../db/schema");
@@ -33,6 +35,14 @@ export function createDrizzleEmployeeRepository(options: CreateDrizzleEmployeeRe
       employeeId: number,
       fileType: Parameters<typeof fileRepo.replaceEmployeeFile>[2],
       file: Parameters<typeof fileRepo.replaceEmployeeFile>[3]
-    ) => fileRepo.replaceEmployeeFile(db, employeeId, fileType, file)
+    ) => fileRepo.replaceEmployeeFile(db, employeeId, fileType, file),
+    listEmployeeBranchAssignments: (employeeId: number) =>
+      assignmentRepo.listEmployeeBranchAssignments(db, employeeId),
+    findOpenAttendanceSession: (employeeId: number) =>
+      assignmentRepo.findOpenAttendanceSession(db, employeeId),
+    createBranchAssignment: (input: Parameters<typeof assignmentRepo.createBranchAssignment>[1]) =>
+      assignmentRepo.createBranchAssignment(db, input),
+    applyPendingBranchAssignment: (employeeId: number, occurredAtUtc: Date) =>
+      assignmentRepo.applyPendingBranchAssignment(db, employeeId, occurredAtUtc)
   };
 }

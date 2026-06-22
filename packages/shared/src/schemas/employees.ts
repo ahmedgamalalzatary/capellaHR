@@ -22,3 +22,8 @@ export const employeeListFilterSchema = z.object({
   branchId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "soft_deleted"]).optional()
 });
+
+export const employeeBranchAssignmentCreateSchema = z.object({
+  branchId: z.coerce.number().int().positive(),
+  effectiveFrom: z.string().datetime()
+});

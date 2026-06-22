@@ -83,6 +83,7 @@ export type AttendanceRepository = {
     adminId: number;
   }): Promise<AdminAttendanceRecord | null>;
   deleteAdminAttendance(sessionId: number): Promise<boolean>;
+  applyPendingBranchAssignment(employeeId: number, occurredAtUtc: Date): Promise<boolean>;
 };
 
 export function buildAttendanceState(

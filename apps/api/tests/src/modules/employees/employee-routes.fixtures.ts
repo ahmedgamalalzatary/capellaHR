@@ -160,6 +160,36 @@ export function createStubEmployeeService(branchSetupStatus: "completed" | "setu
           fileSizeBytes: file.fileSizeBytes,
           replacedAt: null
         };
+      },
+      async listEmployeeBranchAssignments(employeeId) {
+        if (employeeId !== 1) {
+          return [];
+        }
+
+        return [{
+          id: 1,
+          employeeId: 1,
+          branchId: 1,
+          effectiveFrom: "2026-06-01T00:00:00.000Z",
+          effectiveTo: null,
+          assignedByAdminId: 1
+        }];
+      },
+      async findOpenAttendanceSession() {
+        return null;
+      },
+      async createBranchAssignment(input) {
+        return {
+          id: 2,
+          employeeId: input.employeeId,
+          branchId: input.branchId,
+          effectiveFrom: input.effectiveFrom.toISOString(),
+          effectiveTo: null,
+          assignedByAdminId: 7
+        };
+      },
+      async applyPendingBranchAssignment() {
+        return false;
       }
     },
     fileStorage

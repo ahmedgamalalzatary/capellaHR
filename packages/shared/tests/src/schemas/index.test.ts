@@ -7,6 +7,7 @@ describe("shared schemas", () => {
     expect(schemas).toMatchObject({
       signInSchema: expect.any(z.ZodType),
       employeeCreateSchema: expect.any(z.ZodType),
+      employeeBranchAssignmentCreateSchema: expect.any(z.ZodType),
       employeeDeviceSetupLinkCreateSchema: expect.any(z.ZodType),
       monthLockCreateSchema: expect.any(z.ZodType),
       branchCreateSchema: expect.any(z.ZodType),

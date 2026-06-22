@@ -5,6 +5,7 @@ import {
   attendanceSessions,
   branches,
   employeeDeviceRegistrations,
+  employeeBranchAssignments,
   employees,
   monthLocks,
   permissionAbsences,
@@ -225,4 +226,29 @@ export async function isMonthLocked(db: Db, monthKey: string) {
     .limit(1);
 
   return Boolean(rows[0]);
+}
+
+export async function applyPendingBranchAssignment(db: Db, employeeId: number, occurredAtUtc: Date) {
+  const rows = await db
+    .select()
+    .from(employeeBranchAssignments)
+    .where(
+      and(
+        eq(employeeBranchAssignments.employeeId, employeeId),
+        eq(employeeBranchAssignments.effectiveTo, null as never)
+      )
+    )
+    .orderBy(desc(employeeBranchAssignments.effectiveFrom));
+
+  const dueAssignment = rows.find((row) => row.effectiveFrom.getTime() <= occurredAtUtc.getTime());
+
+  if (!dueAssignment) {
+    return false;
+  }
+
+  await db.update(employees).set({
+    branchId: dueAssignment.branchId
+  }).where(eq(employees.id, employeeId));
+
+  return true;
 }

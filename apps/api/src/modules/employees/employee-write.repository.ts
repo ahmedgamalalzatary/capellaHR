@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { MySql2Database } from "drizzle-orm/mysql2";
-import { employees, salaryHistory } from "../../db";
+import { employeeBranchAssignments, employees, salaryHistory } from "../../db";
 import { type EmployeeConflictResult, mapDuplicateKeyError } from "./employee-conflict-mapper";
 import { type EmployeeRecord, mapEmployeeRecord } from "./employee-mappers";
 
@@ -51,6 +51,13 @@ export async function createEmployee(db: Db, input: CreateEmployeeInput): Promis
       amount: input.currentMonthlySalary,
       effectiveAt: new Date(),
       changedByAdminId: input.createdByAdminId
+    });
+
+    await db.insert(employeeBranchAssignments).values({
+      employeeId: insertedRows[0].id,
+      branchId: input.branchId,
+      effectiveFrom: new Date(),
+      assignedByAdminId: input.createdByAdminId
     });
 
     return mapEmployeeRecord(insertedRows[0]);

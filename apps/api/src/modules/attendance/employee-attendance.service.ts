@@ -130,6 +130,8 @@ export function createEmployeeAttendanceService(repository: AttendanceRepository
         session.id === completedSession.id ? completedSession : session
       );
 
+      await repository.applyPendingBranchAssignment(employeeId, now);
+
       return buildAttendanceState(employeeId, completedSessions, null, now);
     }
   };

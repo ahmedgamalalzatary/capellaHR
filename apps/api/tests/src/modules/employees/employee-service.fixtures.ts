@@ -28,6 +28,24 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
   nextCreateError: "primary_phone" | "whatsapp_phone" | "email" | null = null;
   nextUpdateError: "primary_phone" | "whatsapp_phone" | "email" | null = null;
   employeeFiles: EmployeeFileRecord[] = [];
+  branchAssignments: Array<{
+    id: number;
+    employeeId: number;
+    branchId: number;
+    effectiveFrom: string;
+    effectiveTo: null | string;
+    assignedByAdminId: number;
+  }> = [
+    {
+      id: 1,
+      employeeId: 1,
+      branchId: 1,
+      effectiveFrom: "2026-06-01T00:00:00.000Z",
+      effectiveTo: null,
+      assignedByAdminId: 1
+    }
+  ];
+  openSessionEmployeeIds = new Set<number>();
 
   async findBranchSetupStatus() {
     return this.branchSetupStatus;
@@ -131,6 +149,66 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
     }
 
     existing.softDeletedAt = new Date();
+    return true;
+  }
+
+  async listEmployeeBranchAssignments(employeeId: number) {
+    return this.branchAssignments.filter((assignment) => assignment.employeeId === employeeId);
+  }
+
+  async findOpenAttendanceSession(employeeId: number) {
+    return this.openSessionEmployeeIds.has(employeeId) ? { id: 1 } : null;
+  }
+
+  async createBranchAssignment(input: {
+    employeeId: number;
+    branchId: number;
+    effectiveFrom: Date;
+    assignedByAdminId: number;
+    applyImmediately: boolean;
+  }) {
+    const assignment = {
+      id: this.branchAssignments.length + 1,
+      employeeId: input.employeeId,
+      branchId: input.branchId,
+      effectiveFrom: input.effectiveFrom.toISOString(),
+      effectiveTo: null,
+      assignedByAdminId: input.assignedByAdminId
+    };
+
+    this.branchAssignments.push(assignment);
+
+    if (input.applyImmediately) {
+      const employee = this.employees.find((item) => item.id === input.employeeId);
+
+      if (employee) {
+        employee.branchId = input.branchId;
+      }
+    }
+
+    return assignment;
+  }
+
+  async applyPendingBranchAssignment(employeeId: number, occurredAtUtc: Date) {
+    const dueAssignment = this.branchAssignments
+      .filter((assignment) => (
+        assignment.employeeId === employeeId &&
+        assignment.effectiveTo === null &&
+        new Date(assignment.effectiveFrom).getTime() <= occurredAtUtc.getTime()
+      ))
+      .sort((left, right) => new Date(right.effectiveFrom).getTime() - new Date(left.effectiveFrom).getTime())[0];
+
+    if (!dueAssignment) {
+      return false;
+    }
+
+    const employee = this.employees.find((item) => item.id === employeeId);
+
+    if (!employee) {
+      return false;
+    }
+
+    employee.branchId = dueAssignment.branchId;
     return true;
   }
 
