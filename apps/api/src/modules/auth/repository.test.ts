@@ -3,15 +3,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { createDatabaseClient } from "../../db/client";
-import {
-  adminSessions,
-  admins,
-  branches,
-  employeeFiles,
-  employeeSessions,
-  employees,
-  salaryHistory
-} from "../../db/schema";
+import { adminSessions, employeeSessions, employees } from "../../db/schema";
+import { resetTestDatabase } from "../../test/reset-database";
 import {
   createDrizzleAuthRepository,
   syncBootstrapAdmin
@@ -32,13 +25,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await databaseClient.db.delete(adminSessions);
-  await databaseClient.db.delete(employeeSessions);
-  await databaseClient.db.delete(employeeFiles);
-  await databaseClient.db.delete(salaryHistory);
-  await databaseClient.db.delete(employees);
-  await databaseClient.db.delete(branches);
-  await databaseClient.db.delete(admins);
+  await resetTestDatabase(databaseClient.db);
 });
 
 afterAll(async () => {
@@ -122,7 +109,7 @@ describe("drizzle auth repository", () => {
       db: databaseClient.db
     });
 
-    const insertedEmployee = await databaseClient.db.insert(employees).values({
+    await databaseClient.db.insert(employees).values({
       fullName: "Mina Adel",
       passwordHash: "plain:secret123",
       primaryPhone: "01012345678",
@@ -133,11 +120,14 @@ describe("drizzle auth repository", () => {
       currentMonthlySalary: "10000.00"
     });
 
-    const employeeId = Number(insertedEmployee[0].insertId);
     const employee = await repository.findEmployeeByPhone("01012345678");
 
+    if (!employee) {
+      throw new Error("expected employee to exist");
+    }
+
     expect(employee).toEqual({
-      id: employeeId,
+      id: employee.id,
       fullName: "Mina Adel",
       primaryPhone: "01012345678",
       passwordHash: "plain:secret123",
@@ -146,7 +136,7 @@ describe("drizzle auth repository", () => {
 
     await repository.insertSession({
       tokenHash: "employee-token-hash",
-      actorId: employeeId,
+      actorId: employee.id,
       actorRole: "employee",
       expiresAt: new Date("2030-01-01T00:00:00.000Z"),
       revokedAt: null
@@ -154,7 +144,7 @@ describe("drizzle auth repository", () => {
 
     await repository.revokeActiveSessionsForActor(
       "employee",
-      employeeId,
+      employee.id,
       new Date("2029-12-31T00:00:00.000Z")
     );
 

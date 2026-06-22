@@ -3,16 +3,9 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { createDatabaseClient } from "../../db/client";
-import {
-  adminSessions,
-  admins,
-  branches,
-  employeeFiles,
-  employeeSessions,
-  employees,
-  salaryHistory
-} from "../../db/schema";
-import { createDrizzleEmployeeRepository } from "./repository";
+import { admins, branches, employees, salaryHistory } from "../../db/schema";
+import { resetTestDatabase } from "../../test/reset-database";
+import { createDrizzleEmployeeRepository, type EmployeeRecord } from "./repository";
 
 loadEnv({
   path: resolve(process.cwd(), "../../.env.test"),
@@ -29,13 +22,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await databaseClient.db.delete(adminSessions);
-  await databaseClient.db.delete(employeeSessions);
-  await databaseClient.db.delete(employeeFiles);
-  await databaseClient.db.delete(salaryHistory);
-  await databaseClient.db.delete(employees);
-  await databaseClient.db.delete(branches);
-  await databaseClient.db.delete(admins);
+  await resetTestDatabase(databaseClient.db);
   await databaseClient.db.insert(admins).values({
     id: 1,
     name: "Capella Admin Test",
@@ -54,7 +41,8 @@ describe("drizzle employee repository", () => {
       db: databaseClient.db
     });
 
-    const branchResult = await databaseClient.db.insert(branches).values({
+    await databaseClient.db.insert(branches).values({
+      id: 1,
       name: "Nasr City",
       address: "Cairo",
       gpsLatitude: "30.0500000",
@@ -64,7 +52,7 @@ describe("drizzle employee repository", () => {
       setupStatus: "completed"
     });
 
-    const branchId = Number(branchResult[0].insertId);
+    const branchId = 1;
     const employee = await repository.createEmployee({
       fullName: "Mina Adel",
       passwordHash: "plain:secret123",
@@ -77,6 +65,7 @@ describe("drizzle employee repository", () => {
       currentMonthlySalary: "10000.00",
       createdByAdminId: 1
     });
+    assertEmployeeRecord(employee);
 
     expect(employee).toEqual({
       id: expect.any(Number),
@@ -129,12 +118,14 @@ describe("drizzle employee repository", () => {
       currentMonthlySalary: "10000.00",
       createdByAdminId: 1
     });
+    assertEmployeeRecord(created);
 
     const updated = await repository.updateEmployee(created.id, {
       currentMonthlySalary: "12000.00"
     }, 1);
+    assertEmployeeRecord(updated);
 
-    expect(updated?.currentMonthlySalary).toBe("12000.00");
+    expect(updated.currentMonthlySalary).toBe("12000.00");
 
     const salaryRows = await databaseClient.db
       .select()
@@ -173,6 +164,7 @@ describe("drizzle employee repository", () => {
       currentMonthlySalary: "10000.00",
       createdByAdminId: 1
     });
+    assertEmployeeRecord(created);
 
     const deleted = await repository.softDeleteEmployee(created.id);
 
@@ -182,4 +174,229 @@ describe("drizzle employee repository", () => {
 
     expect(rows[0]?.softDeletedAt).toBeInstanceOf(Date);
   });
+
+  it("lists employees filtered by search, branch, and status", async () => {
+    const repository = createDrizzleEmployeeRepository({
+      db: databaseClient.db
+    });
+
+    await databaseClient.db.insert(branches).values([
+      {
+        id: 1,
+        name: "Nasr City",
+        address: "Cairo",
+        gpsLatitude: "30.0500000",
+        gpsLongitude: "31.2500000",
+        gpsRadiusMeters: 100,
+        allowedIpCidr: "192.168.1.0/24",
+        setupStatus: "completed"
+      },
+      {
+        id: 2,
+        name: "Heliopolis",
+        address: "Cairo",
+        gpsLatitude: "30.0600000",
+        gpsLongitude: "31.2600000",
+        gpsRadiusMeters: 100,
+        allowedIpCidr: "192.168.2.0/24",
+        setupStatus: "completed"
+      }
+    ]);
+
+    await repository.createEmployee({
+      fullName: "Mina Adel",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550007",
+      whatsappPhone: "01055550008",
+      email: "mina-employees-4@capella.eg",
+      branchId: 1,
+      age: 28,
+      address: "Cairo",
+      currentMonthlySalary: "10000.00",
+      createdByAdminId: 1
+    });
+
+    const softDeleted = await repository.createEmployee({
+      fullName: "Sara Nabil",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550009",
+      whatsappPhone: "01055550010",
+      email: "sara-employees-1@capella.eg",
+      branchId: 2,
+      age: 27,
+      address: "Giza",
+      currentMonthlySalary: "9000.00",
+      createdByAdminId: 1
+    });
+    assertEmployeeRecord(softDeleted);
+
+    await repository.softDeleteEmployee(softDeleted.id);
+
+    const activeRows = await repository.listEmployees({
+      search: "Mina",
+      branchId: 1,
+      status: "active"
+    });
+    const softDeletedRows = await repository.listEmployees({
+      status: "soft_deleted"
+    });
+
+    expect(activeRows).toHaveLength(1);
+    expect(activeRows[0]?.fullName).toBe("Mina Adel");
+    expect(softDeletedRows).toHaveLength(1);
+    expect(softDeletedRows[0]?.fullName).toBe("Sara Nabil");
+    expect(softDeletedRows[0]?.softDeletedAt).toBeInstanceOf(Date);
+  });
+
+  it("loads an employee by id", async () => {
+    const repository = createDrizzleEmployeeRepository({
+      db: databaseClient.db
+    });
+
+    await databaseClient.db.insert(branches).values({
+      id: 1,
+      name: "Nasr City",
+      address: "Cairo",
+      gpsLatitude: "30.0500000",
+      gpsLongitude: "31.2500000",
+      gpsRadiusMeters: 100,
+      allowedIpCidr: "192.168.1.0/24",
+      setupStatus: "completed"
+    });
+
+    const created = await repository.createEmployee({
+      fullName: "Mina Adel",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550011",
+      whatsappPhone: "01055550012",
+      email: "mina-employees-5@capella.eg",
+      branchId: 1,
+      age: 28,
+      address: "Cairo",
+      currentMonthlySalary: "10000.00",
+      createdByAdminId: 1
+    });
+    assertEmployeeRecord(created);
+
+    const employee = await repository.findEmployeeById(created.id);
+
+    expect(employee).toEqual(created);
+  });
+
+  it("maps duplicate employee fields on create into a repository conflict", async () => {
+    const repository = createDrizzleEmployeeRepository({
+      db: databaseClient.db
+    });
+
+    await databaseClient.db.insert(branches).values({
+      id: 1,
+      name: "Nasr City",
+      address: "Cairo",
+      gpsLatitude: "30.0500000",
+      gpsLongitude: "31.2500000",
+      gpsRadiusMeters: 100,
+      allowedIpCidr: "192.168.1.0/24",
+      setupStatus: "completed"
+    });
+
+    await repository.createEmployee({
+      fullName: "Mina Adel",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550013",
+      whatsappPhone: "01055550014",
+      email: "mina-employees-6@capella.eg",
+      branchId: 1,
+      age: 28,
+      address: "Cairo",
+      currentMonthlySalary: "10000.00",
+      createdByAdminId: 1
+    });
+
+    const result = await repository.createEmployee({
+      fullName: "Other Mina",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550013",
+      whatsappPhone: "01055550015",
+      email: "mina-employees-7@capella.eg",
+      branchId: 1,
+      age: 29,
+      address: "Alex",
+      currentMonthlySalary: "11000.00",
+      createdByAdminId: 1
+    });
+
+    expect(result).toEqual({
+      error: {
+        code: "EMPLOYEE_CONFLICT",
+        field: "primary_phone"
+      }
+    });
+  });
+
+  it("maps duplicate employee fields on update into a repository conflict", async () => {
+    const repository = createDrizzleEmployeeRepository({
+      db: databaseClient.db
+    });
+
+    await databaseClient.db.insert(branches).values({
+      id: 1,
+      name: "Nasr City",
+      address: "Cairo",
+      gpsLatitude: "30.0500000",
+      gpsLongitude: "31.2500000",
+      gpsRadiusMeters: 100,
+      allowedIpCidr: "192.168.1.0/24",
+      setupStatus: "completed"
+    });
+
+    await repository.createEmployee({
+      fullName: "Mina Adel",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550016",
+      whatsappPhone: "01055550017",
+      email: "mina-employees-8@capella.eg",
+      branchId: 1,
+      age: 28,
+      address: "Cairo",
+      currentMonthlySalary: "10000.00",
+      createdByAdminId: 1
+    });
+
+    const created = await repository.createEmployee({
+      fullName: "Sara Nabil",
+      passwordHash: "plain:secret123",
+      primaryPhone: "01055550018",
+      whatsappPhone: "01055550019",
+      email: "sara-employees-2@capella.eg",
+      branchId: 1,
+      age: 27,
+      address: "Giza",
+      currentMonthlySalary: "9000.00",
+      createdByAdminId: 1
+    });
+    assertEmployeeRecord(created);
+
+    const result = await repository.updateEmployee(created.id, {
+      email: "mina-employees-8@capella.eg"
+    }, 1);
+
+    expect(result).toEqual({
+      error: {
+        code: "EMPLOYEE_CONFLICT",
+        field: "email"
+      }
+    });
+  });
 });
+
+function assertEmployeeRecord(
+  value: EmployeeRecord | { error: { code: "EMPLOYEE_CONFLICT"; field: "primary_phone" | "whatsapp_phone" | "email" } } | null
+): asserts value is EmployeeRecord {
+  expect(value).not.toBeNull();
+
+  if (!value) {
+    throw new Error("expected employee record");
+  }
+
+  expect("error" in value).toBe(false);
+}

@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-export type AppConfig = {
+type AppConfig = {
   port: number;
   nodeEnv: string;
   databaseUrl: string;
