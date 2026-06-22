@@ -4,6 +4,9 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @capella/api db:generate",
+    "db:migrate": "pnpm --filter @capella/api db:migrate",
+    "db:push": "pnpm --filter @capella/api db:push",
     "db:studio": "pnpm --filter @capella/api db:studio",
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r lint",
