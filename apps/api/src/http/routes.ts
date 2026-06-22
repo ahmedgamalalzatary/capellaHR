@@ -5,6 +5,7 @@ import type { createBranchService } from "../modules/branches/service";
 import type { createEmployeeDeviceService } from "../modules/employee-devices/service";
 import type { createEmployeeService } from "../modules/employees/service";
 import type { createPermissionAbsenceService } from "../modules/permission-absences/service";
+import type { createReportsService } from "../modules/reports/service";
 import type { createWeeklyDayOffService } from "../modules/weekly-day-offs/service";
 import { registerAuditLogsRoutes } from "../modules/audit-logs/routes";
 import { registerAttendanceRoutes } from "../modules/attendance/routes";
@@ -24,6 +25,7 @@ type RegisterAppRoutesOptions = {
   employeeDeviceService?: ReturnType<typeof createEmployeeDeviceService>;
   employeeService?: ReturnType<typeof createEmployeeService>;
   permissionAbsenceService?: ReturnType<typeof createPermissionAbsenceService>;
+  reportsService?: ReturnType<typeof createReportsService>;
   weeklyDayOffService?: ReturnType<typeof createWeeklyDayOffService>;
 };
 
@@ -55,7 +57,10 @@ export function registerAppRoutes(app: Express, options: RegisterAppRoutesOption
     authService: options.authService,
     permissionAbsenceService: options.permissionAbsenceService
   });
-  registerReportsRoutes(app);
+  registerReportsRoutes(app, {
+    authService: options.authService,
+    reportsService: options.reportsService
+  });
   registerAuditLogsRoutes(app);
   registerMonthLocksRoutes(app);
 }

@@ -5,6 +5,7 @@ import type { createBranchService } from "./modules/branches/service";
 import type { createEmployeeDeviceService } from "./modules/employee-devices/service";
 import type { createEmployeeService } from "./modules/employees/service";
 import type { createPermissionAbsenceService } from "./modules/permission-absences/service";
+import type { createReportsService } from "./modules/reports/service";
 import type { createWeeklyDayOffService } from "./modules/weekly-day-offs/service";
 import { registerNotFoundHandler } from "./http/not-found-handler";
 import { registerHealthRoutes } from "./http/health-routes";
@@ -18,6 +19,7 @@ type CreateAppOptions = {
   employeeDeviceService?: ReturnType<typeof createEmployeeDeviceService>;
   employeeService?: ReturnType<typeof createEmployeeService>;
   permissionAbsenceService?: ReturnType<typeof createPermissionAbsenceService>;
+  reportsService?: ReturnType<typeof createReportsService>;
   weeklyDayOffService?: ReturnType<typeof createWeeklyDayOffService>;
 };
 
@@ -33,6 +35,7 @@ export function createApp(options: CreateAppOptions = {}) {
     employeeDeviceService: options.employeeDeviceService,
     employeeService: options.employeeService,
     permissionAbsenceService: options.permissionAbsenceService,
+    reportsService: options.reportsService,
     weeklyDayOffService: options.weeklyDayOffService
   });
   registerNotFoundHandler(app);
