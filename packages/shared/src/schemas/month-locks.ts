@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const monthKeySchema = z.string().regex(/^\d{4}-\d{2}$/);
+const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
 
 export const monthLockCreateSchema = z.object({
   monthKey: monthKeySchema,

@@ -124,4 +124,14 @@ describe("month lock repository", () => {
 
     await expect(repository.hasOpenSessions("2026-06")).resolves.toBe(true);
   });
+
+  it("rejects malformed month keys", async () => {
+    const repository = createDrizzleMonthLockRepository({
+      db: databaseClient.db
+    });
+
+    await expect(repository.hasOpenSessions("2026-6")).rejects.toThrow(
+      "Invalid month key format"
+    );
+  });
 });

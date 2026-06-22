@@ -278,7 +278,7 @@ describe("employee service (crud)", () => {
       auditLogService
     });
 
-    const result = await service.deleteEmployee(1);
+    const result = await service.deleteEmployee(1, 1);
 
     expect(result).toEqual({
       success: true

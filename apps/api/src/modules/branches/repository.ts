@@ -69,7 +69,7 @@ function mapSetupLinkRecord(row: typeof branchSetupLinks.$inferSelect): BranchSe
     id: row.id,
     branchId: row.branchId,
     token: row.token,
-    deviceLabel: null,
+    deviceLabel: row.deviceLabel ?? null,
     status: row.status,
     expiresAt: row.expiresAt,
     usedAt: row.usedAt ?? null,
@@ -85,7 +85,7 @@ function mapBranchDeviceRegistrationRecord(
     id: row.id,
     branchId: row.branchId,
     deviceToken: row.deviceToken,
-    deviceLabel: null,
+    deviceLabel: row.deviceLabel ?? null,
     browserFingerprint: row.browserFingerprint ?? null,
     status: row.status,
     registeredAt: row.registeredAt ?? null,
@@ -181,14 +181,13 @@ export function createDrizzleBranchRepository(options: CreateDrizzleBranchReposi
       const result = await options.db.insert(branchSetupLinks).values({
         branchId: input.branchId,
         token: input.token,
+        deviceLabel: input.deviceLabel ?? null,
         expiresAt: input.expiresAt,
         createdByAdminId: input.createdByAdminId
       });
 
       const rows = await options.db.select().from(branchSetupLinks).where(eq(branchSetupLinks.id, Number(result[0].insertId))).limit(1);
-      const record = mapSetupLinkRecord(rows[0]!);
-      record.deviceLabel = input.deviceLabel ?? null;
-      return record;
+      return mapSetupLinkRecord(rows[0]!);
     },
 
     async findPendingSetupLinkByToken(token: string) {
@@ -219,36 +218,53 @@ export function createDrizzleBranchRepository(options: CreateDrizzleBranchReposi
       browserFingerprint: string;
       registeredAt: Date;
     }) {
-      const setupLink = await this.findPendingSetupLinkByToken(token);
+      return options.db.transaction(async (tx) => {
+        const setupLinkRows = await tx.select().from(branchSetupLinks).where(
+          and(
+            eq(branchSetupLinks.token, token),
+            eq(branchSetupLinks.status, "active")
+          )
+        ).limit(1);
+        const setupLink = setupLinkRows[0];
 
-      if (!setupLink) {
-        return null;
-      }
+        if (!setupLink) {
+          return null;
+        }
 
-      await options.db.update(branchSetupLinks).set({
-        status: "used",
-        usedAt: input.registeredAt
-      }).where(eq(branchSetupLinks.id, setupLink.id));
+        const updateResult = await tx.update(branchSetupLinks).set({
+          status: "used",
+          usedAt: input.registeredAt
+        }).where(
+          and(
+            eq(branchSetupLinks.id, setupLink.id),
+            eq(branchSetupLinks.status, "active")
+          )
+        );
 
-      const result = await options.db.insert(branchDeviceRegistrations).values({
-        branchId: setupLink.branchId,
-        deviceToken: token,
-        browserFingerprint: input.browserFingerprint,
-        status: "active",
-        registeredAt: input.registeredAt
+        if (updateResult[0].affectedRows === 0) {
+          return null;
+        }
+
+        const result = await tx.insert(branchDeviceRegistrations).values({
+          branchId: setupLink.branchId,
+          deviceToken: token,
+          deviceLabel: input.deviceLabel ?? setupLink.deviceLabel ?? null,
+          browserFingerprint: input.browserFingerprint,
+          status: "active",
+          registeredAt: input.registeredAt
+        });
+
+        await tx.update(branches).set({
+          setupStatus: "completed",
+          registeredDeviceToken: token
+        }).where(eq(branches.id, setupLink.branchId));
+
+        const rows = await tx.select().from(branchDeviceRegistrations).where(
+          eq(branchDeviceRegistrations.id, Number(result[0].insertId))
+        ).limit(1);
+
+        return rows[0] ? mapBranchDeviceRegistrationRecord(rows[0]) : null;
       });
-
-      await options.db.update(branches).set({
-        setupStatus: "completed",
-        registeredDeviceToken: token
-      }).where(eq(branches.id, setupLink.branchId));
-
-      const rows = await options.db.select().from(branchDeviceRegistrations).where(
-        eq(branchDeviceRegistrations.id, Number(result[0].insertId))
-      ).limit(1);
-      const record = mapBranchDeviceRegistrationRecord(rows[0]!);
-      record.deviceLabel = input.deviceLabel ?? null;
-      return record;
     },
 
     async replaceActiveRegistrations(branchId: number, keepRegistrationId: number, replacedAt: Date) {

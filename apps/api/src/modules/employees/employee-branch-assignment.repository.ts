@@ -83,7 +83,11 @@ export async function createBranchAssignment(db: Db, input: {
     .where(eq(employeeBranchAssignments.id, Number(result[0].insertId)))
     .limit(1);
 
-  return mapEmployeeBranchAssignmentRecord(rows[0]!);
+  if (!rows[0]) {
+    throw new Error("Failed to load branch assignment after create");
+  }
+
+  return mapEmployeeBranchAssignmentRecord(rows[0]);
 }
 
 export async function applyPendingBranchAssignment(db: Db, employeeId: number, occurredAtUtc: Date) {

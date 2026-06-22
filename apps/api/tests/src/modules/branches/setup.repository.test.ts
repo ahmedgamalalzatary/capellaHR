@@ -62,7 +62,8 @@ describe("branch setup repository", () => {
 
     expect(created.token).toBe("setup-token");
     await expect(repository.findPendingSetupLinkByToken("setup-token")).resolves.toMatchObject({
-      token: "setup-token"
+      token: "setup-token",
+      deviceLabel: "Reception iPad"
     });
   });
 
@@ -83,6 +84,10 @@ describe("branch setup repository", () => {
     });
 
     expect(device?.browserFingerprint).toBe("branch-browser");
+    await expect(repository.findActiveRegistration(1)).resolves.toMatchObject({
+      deviceLabel: "Reception iPad",
+      browserFingerprint: "branch-browser"
+    });
     await expect(repository.findBranchById(1)).resolves.toMatchObject({
       setupStatus: "completed",
       registeredDeviceToken: expect.any(String)

@@ -44,8 +44,17 @@ export function createDrizzleMonthLockRepository(
     },
 
     async hasOpenSessions(monthKey: string) {
+      if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+        throw new Error("Invalid month key format");
+      }
+
       const monthStart = new Date(`${monthKey}-01T00:00:00.000Z`);
       const [year, month] = monthKey.split("-").map(Number);
+
+      if (Number.isNaN(year) || Number.isNaN(month)) {
+        throw new Error("Invalid month key format");
+      }
+
       const nextMonthStart = new Date(Date.UTC(year!, month!, 1));
       const rows = await options.db
         .select({ id: attendanceSessions.id })
