@@ -22,6 +22,17 @@ export default tseslint.config(
     }
   },
   {
+    files: ["apps/api/drizzle.config.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: {
+          allowDefaultProject: ["apps/api/drizzle.config.ts"]
+        },
+        tsconfigRootDir: import.meta.dirname
+      }
+    }
+  },
+  {
     files: ["apps/web/**/*.{ts,tsx}"]
   }
 );
