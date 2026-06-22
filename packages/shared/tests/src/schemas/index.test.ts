@@ -8,6 +8,7 @@ describe("shared schemas", () => {
       signInSchema: expect.any(z.ZodType),
       employeeCreateSchema: expect.any(z.ZodType),
       employeeDeviceSetupLinkCreateSchema: expect.any(z.ZodType),
+      monthLockCreateSchema: expect.any(z.ZodType),
       branchCreateSchema: expect.any(z.ZodType),
       attendanceActionSchema: expect.any(z.ZodType),
       adminAttendanceCreateSchema: expect.any(z.ZodType),

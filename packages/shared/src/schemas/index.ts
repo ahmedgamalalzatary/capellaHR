@@ -4,6 +4,7 @@ export * from "./attendance";
 export * from "./common";
 export * from "./employees";
 export * from "./employee-devices";
+export * from "./month-locks";
 export * from "./permission-absences";
 export * from "./reports";
 export * from "./weekly-day-offs";
