@@ -3,7 +3,15 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resolve } from "node:path";
 import { createDatabaseClient } from "../../db/client";
-import { adminSessions, admins, employeeSessions, employees } from "../../db/schema";
+import {
+  adminSessions,
+  admins,
+  branches,
+  employeeFiles,
+  employeeSessions,
+  employees,
+  salaryHistory
+} from "../../db/schema";
 import {
   createDrizzleAuthRepository,
   syncBootstrapAdmin
@@ -26,7 +34,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   await databaseClient.db.delete(adminSessions);
   await databaseClient.db.delete(employeeSessions);
+  await databaseClient.db.delete(employeeFiles);
+  await databaseClient.db.delete(salaryHistory);
   await databaseClient.db.delete(employees);
+  await databaseClient.db.delete(branches);
   await databaseClient.db.delete(admins);
 });
 

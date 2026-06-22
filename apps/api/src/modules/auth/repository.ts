@@ -322,12 +322,6 @@ type BootstrapAdminInput = {
 
 export async function syncBootstrapAdmin(repository: AuthRepository, input: BootstrapAdminInput) {
   const email = input.email.trim().toLowerCase();
-  const existingAdmin = await repository.findAdminByEmail(email);
-
-  if (existingAdmin) {
-    return existingAdmin;
-  }
-
   if (!("db" in repository)) {
     throw new Error("Bootstrap admin sync requires a database-backed auth repository");
   }
@@ -339,6 +333,11 @@ export async function syncBootstrapAdmin(repository: AuthRepository, input: Boot
     name: input.name,
     email,
     passwordHash
+  }).onDuplicateKeyUpdate({
+    set: {
+      name: input.name,
+      passwordHash
+    }
   });
 
   const admin = await repository.findAdminByEmail(email);

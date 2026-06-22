@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import type { createAuthService } from "../modules/auth/service";
+import type { createEmployeeService } from "../modules/employees/service";
 import { registerAuditLogsRoutes } from "../modules/audit-logs/routes";
 import { registerAttendanceRoutes } from "../modules/attendance/routes";
 import { registerAuthRoutes } from "../modules/auth/routes";
@@ -11,13 +12,16 @@ import { registerReportsRoutes } from "../modules/reports/routes";
 
 type RegisterAppRoutesOptions = {
   authService?: ReturnType<typeof createAuthService>;
+  employeeService?: ReturnType<typeof createEmployeeService>;
 };
 
 export function registerAppRoutes(app: Express, options: RegisterAppRoutesOptions = {}) {
   registerAuthRoutes(app, {
     authService: options.authService
   });
-  registerEmployeesRoutes(app);
+  registerEmployeesRoutes(app, {
+    employeeService: options.employeeService
+  });
   registerBranchesRoutes(app);
   registerEmployeeDevicesRoutes(app);
   registerAttendanceRoutes(app);
