@@ -27,7 +27,7 @@ describe("shared schemas", () => {
       password: "secret123",
       primaryPhone: "+201012345678",
       whatsappPhone: "201112345678",
-      email: "employee@capella.eg",
+      email: "employee.test@capella.invalid",
       branchId: 1,
       age: 25,
       address: "Cairo",

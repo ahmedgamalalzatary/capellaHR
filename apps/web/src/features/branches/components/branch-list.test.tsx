@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { renderWithProviders, screen } from "@/test/utils";
+import { renderWithProviders, screen, userEvent } from "@/test/utils";
 import { apiUrl } from "@/test/msw/handlers";
 import { server } from "@/test/msw/server";
 
@@ -59,5 +59,28 @@ describe("BranchList", () => {
     renderWithProviders(<BranchList />);
 
     expect(await screen.findByText("تعذّر تحميل الفروع")).toBeInTheDocument();
+  });
+
+  it("loads the next page when pagination controls are used", async () => {
+    server.use(
+      http.get(apiUrl("/branches"), ({ request }) => {
+        const url = new URL(request.url);
+        const page = Number(url.searchParams.get("page") ?? "1");
+
+        return HttpResponse.json({
+          branches: {
+            items: [{ ...branch, id: page, name: `فرع ${page}` }],
+            pagination: { page, pageSize: 20, total: 40, totalPages: 2 }
+          }
+        });
+      })
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<BranchList />);
+
+    expect(await screen.findByText("فرع 1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "الصفحة التالية" }));
+    expect(await screen.findByText("فرع 2")).toBeInTheDocument();
   });
 });

@@ -21,7 +21,7 @@ function createEmployeeAuthService() {
           id: 2,
           fullName: "Test Employee",
           primaryPhone: "01012345678",
-          passwordHash: createPasswordHash("secret123"),
+          passwordHash: createPasswordHash("test-employee-pass-123"),
           softDeletedAt: null
         };
       },
@@ -34,7 +34,7 @@ function createEmployeeAuthService() {
           id: 2,
           fullName: "Test Employee",
           primaryPhone: "01012345678",
-          passwordHash: createPasswordHash("secret123"),
+          passwordHash: createPasswordHash("test-employee-pass-123"),
           softDeletedAt: null
         };
       },
@@ -78,7 +78,7 @@ describe("auth routes", () => {
 
     const response = await request(app).post("/auth/sign-in").send({
       phone: "01012345678",
-      password: "secret123"
+      password: "test-employee-pass-123"
     });
 
     expect(response.status).toBe(200);

@@ -28,7 +28,7 @@ export function corsMiddleware(request: Request, response: Response, next: NextF
   if (origin && normalizedOrigin && allowedOrigins.includes(normalizedOrigin)) {
     response.setHeader("Access-Control-Allow-Origin", normalizedOrigin);
     response.setHeader("Access-Control-Allow-Credentials", "true");
-    response.setHeader("Vary", "Origin");
+    response.appendHeader("Vary", "Origin");
   }
 
   if (request.method === "OPTIONS") {

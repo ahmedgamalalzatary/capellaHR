@@ -49,7 +49,7 @@ describe("employeeSignInFormSchema", () => {
 describe("adminSignInFormSchema", () => {
   it("accepts a valid email and password", () => {
     const result = adminSignInFormSchema.safeParse({
-      email: "admin@capella.eg",
+      email: "admin.test@capella.invalid",
       password: "secret12"
     });
 
@@ -58,13 +58,13 @@ describe("adminSignInFormSchema", () => {
 
   it("trims and lowercases the email", () => {
     const result = adminSignInFormSchema.safeParse({
-      email: "  ADMIN@Capella.EG  ",
+      email: "  ADMIN.TEST@Capella.INVALID  ",
       password: "secret12"
     });
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.email).toBe("admin@capella.eg");
+      expect(result.data.email).toBe("admin.test@capella.invalid");
     }
   });
 

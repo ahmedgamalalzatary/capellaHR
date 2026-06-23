@@ -63,4 +63,9 @@ describe("branchFormSchema", () => {
     const result = branchFormSchema.safeParse({ ...validInput, allowedIpCidr: "" });
     expect(result.success).toBe(false);
   });
+
+  it("rejects an invalid allowed IP CIDR format", () => {
+    const result = branchFormSchema.safeParse({ ...validInput, allowedIpCidr: "not-a-cidr" });
+    expect(result.success).toBe(false);
+  });
 });

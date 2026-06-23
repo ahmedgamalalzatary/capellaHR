@@ -71,7 +71,7 @@ describe("employee service (crud)", () => {
       fullName: "Mina Adel",
       primaryPhone: "01012345678",
       whatsappPhone: "01012345679",
-      email: "mina@capella.eg",
+      email: "employee.test@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -117,10 +117,10 @@ describe("employee service (crud)", () => {
     repository.employees.push({
       id: 2,
       fullName: "Sara Nabil",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01012345670",
       whatsappPhone: "01012345671",
-      email: "sara@capella.eg",
+      email: "sara@capella.invalid",
       branchId: 2,
       age: 27,
       address: "Giza",
@@ -146,7 +146,7 @@ describe("employee service (crud)", () => {
           fullName: "Sara Nabil",
           primaryPhone: "01012345670",
           whatsappPhone: "01012345671",
-          email: "sara@capella.eg",
+          email: "sara@capella.invalid",
           branchId: 2,
           age: 27,
           address: "Giza",
@@ -200,7 +200,7 @@ describe("employee service (crud)", () => {
       fullName: "Mina Adel",
       primaryPhone: "01012345678",
       whatsappPhone: "01012345679",
-      email: "mina@capella.eg",
+      email: "employee.test@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -265,7 +265,7 @@ describe("employee service (crud)", () => {
     });
 
     const result = await service.updateEmployee(1, {
-      email: "duplicate@capella.eg"
+      email: "duplicate@capella.invalid"
     }, 1);
 
     expect(result).toEqual({

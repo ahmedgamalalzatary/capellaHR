@@ -193,8 +193,8 @@ export function createAdminAuthService() {
     repository: createInMemoryAuthRepository({
       bootstrapAdmin: {
         name: "Capella Admin",
-        email: "admin@capella.eg",
-        password: "admin1234"
+        email: "admin.test@capella.invalid",
+        password: "test-admin-pass-123"
       }
     }),
     adminSessionTtlHours: 8,
@@ -222,7 +222,7 @@ export function createEmployeeAuthService() {
           id: 2,
           fullName: "Test Employee",
           primaryPhone: "01012345678",
-          passwordHash: createPasswordHash("secret123"),
+          passwordHash: createPasswordHash("test-employee-pass-123"),
           softDeletedAt: null
         };
       },
@@ -235,7 +235,7 @@ export function createEmployeeAuthService() {
           id: 2,
           fullName: "Test Employee",
           primaryPhone: "01012345678",
-          passwordHash: createPasswordHash("secret123"),
+          passwordHash: createPasswordHash("test-employee-pass-123"),
           softDeletedAt: null
         };
       },
@@ -268,8 +268,8 @@ export function createEmployeeAuthService() {
 
 export async function signInAdmin(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/admin/sign-in").send({
-    email: "admin@capella.eg",
-    password: "admin1234"
+    email: "admin.test@capella.invalid",
+    password: "test-admin-pass-123"
   });
 
   return response.headers["set-cookie"];
@@ -278,7 +278,7 @@ export async function signInAdmin(app: ReturnType<typeof createApp>) {
 export async function signInEmployee(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/sign-in").send({
     phone: "01012345678",
-    password: "secret123"
+    password: "test-employee-pass-123"
   });
 
   return response.headers["set-cookie"];

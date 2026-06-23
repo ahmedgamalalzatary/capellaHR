@@ -14,10 +14,10 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
     {
       id: 1,
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01012345678",
       whatsappPhone: "01012345679",
-      email: "mina@capella.eg",
+      email: "employee.test@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -307,10 +307,10 @@ function createConflict(field: EmployeeConflictField): EmployeeConflictResult {
 export function createInput(): EmployeeCreateInput {
   return {
     fullName: "Mina Adel",
-    password: "secret123",
+    password: "test-employee-pass-123",
     primaryPhone: "01012345678",
     whatsappPhone: "01012345679",
-    email: "mina@capella.eg",
+    email: "employee.test@capella.invalid",
     branchId: 1,
     age: 28,
     address: "Cairo",

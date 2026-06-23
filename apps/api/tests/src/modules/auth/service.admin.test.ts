@@ -8,8 +8,8 @@ describe("auth service (admin)", () => {
     repository.admin = {
       id: 1,
       name: "Capella Admin",
-      email: "admin@capella.eg",
-      passwordHash: "plain:admin1234"
+      email: "admin.test@capella.invalid",
+      passwordHash: "plain:test-admin-pass-123"
     };
 
     const service = createAuthService({
@@ -18,8 +18,8 @@ describe("auth service (admin)", () => {
     });
 
     const result = await service.signInAdmin({
-      email: "admin@capella.eg",
-      password: "admin1234"
+      email: "admin.test@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
     expect(result).toEqual({
@@ -28,7 +28,7 @@ describe("auth service (admin)", () => {
         id: 1,
         role: "admin",
         name: "Capella Admin",
-        email: "admin@capella.eg"
+        email: "admin.test@capella.invalid"
       },
       expiresAt: expect.any(Date)
     });
@@ -47,8 +47,8 @@ describe("auth service (admin)", () => {
     repository.admin = {
       id: 1,
       name: "Capella Admin",
-      email: "admin@capella.eg",
-      passwordHash: "plain:admin1234"
+      email: "admin.test@capella.invalid",
+      passwordHash: "plain:test-admin-pass-123"
     };
 
     const service = createAuthService({
@@ -57,7 +57,7 @@ describe("auth service (admin)", () => {
     });
 
     const result = await service.signInAdmin({
-      email: "admin@capella.eg",
+      email: "admin.test@capella.invalid",
       password: "wrong-password"
     });
 
@@ -76,8 +76,8 @@ describe("auth service (admin)", () => {
     repository.admin = {
       id: 1,
       name: "Capella Admin",
-      email: "admin@capella.eg",
-      passwordHash: "plain:admin1234"
+      email: "admin.test@capella.invalid",
+      passwordHash: "plain:test-admin-pass-123"
     };
 
     const service = createAuthService({
@@ -86,8 +86,8 @@ describe("auth service (admin)", () => {
     });
 
     const signedIn = await service.signInAdmin({
-      email: "admin@capella.eg",
-      password: "admin1234"
+      email: "admin.test@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
     if ("error" in signedIn) {
@@ -100,7 +100,7 @@ describe("auth service (admin)", () => {
       id: 1,
       role: "admin",
       name: "Capella Admin",
-      email: "admin@capella.eg"
+      email: "admin.test@capella.invalid"
     });
   });
 
@@ -109,8 +109,8 @@ describe("auth service (admin)", () => {
     repository.admin = {
       id: 1,
       name: "Capella Admin",
-      email: "admin@capella.eg",
-      passwordHash: "plain:admin1234"
+      email: "admin.test@capella.invalid",
+      passwordHash: "plain:test-admin-pass-123"
     };
 
     const service = createAuthService({
@@ -119,8 +119,8 @@ describe("auth service (admin)", () => {
     });
 
     const signedIn = await service.signInAdmin({
-      email: "admin@capella.eg",
-      password: "admin1234"
+      email: "admin.test@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
     if ("error" in signedIn) {

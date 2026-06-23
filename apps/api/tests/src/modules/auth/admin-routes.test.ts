@@ -9,8 +9,8 @@ function createAdminAuthService() {
     repository: createInMemoryAuthRepository({
       bootstrapAdmin: {
         name: "Capella Admin",
-        email: "admin@capella.eg",
-        password: "admin1234"
+        email: "admin.test@capella.invalid",
+        password: "test-admin-pass-123"
       }
     }),
     adminSessionTtlHours: 8,
@@ -25,8 +25,8 @@ describe("admin auth routes", () => {
     });
 
     const signInResponse = await request(app).post("/auth/admin/sign-in").send({
-      email: "admin@capella.eg",
-      password: "admin1234"
+      email: "admin.test@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
     expect(signInResponse.status).toBe(200);
@@ -35,7 +35,7 @@ describe("admin auth routes", () => {
         id: expect.any(Number),
         role: "admin",
         name: "Capella Admin",
-        email: "admin@capella.eg"
+        email: "admin.test@capella.invalid"
       }
     });
 
@@ -53,7 +53,7 @@ describe("admin auth routes", () => {
         id: expect.any(Number),
         role: "admin",
         name: "Capella Admin",
-        email: "admin@capella.eg"
+        email: "admin.test@capella.invalid"
       }
     });
 

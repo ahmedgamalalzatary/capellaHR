@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const ipv4OctetPattern = "(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+const cidrPattern = new RegExp(
+  `^${ipv4OctetPattern}(\\.${ipv4OctetPattern}){3}\\/(3[0-2]|[12]?\\d)$`
+);
+
 /**
  * Form schema for creating/editing a branch, with Arabic user-facing messages.
  * Mirrors backend validation (apps/api branchCreateSchema): name, address,
@@ -21,7 +26,11 @@ export const branchFormSchema = z.object({
     .number({ message: "نطاق الموقع غير صحيح" })
     .int("نطاق الموقع يجب أن يكون رقمًا صحيحًا")
     .positive("نطاق الموقع يجب أن يكون أكبر من صفر"),
-  allowedIpCidr: z.string().trim().min(1, "نطاق الـ IP المسموح به مطلوب")
+  allowedIpCidr: z
+    .string()
+    .trim()
+    .min(1, "نطاق الـ IP المسموح به مطلوب")
+    .regex(cidrPattern, "نطاق الـ IP المسموح به غير صالح")
 });
 
 export type BranchFormValues = z.infer<typeof branchFormSchema>;

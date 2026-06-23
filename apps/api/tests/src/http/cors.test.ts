@@ -1,6 +1,8 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import express from "express";
 import { createApp } from "../../../src/app";
+import { corsMiddleware } from "../../../src/http/middleware/cors";
 
 const ORIGINAL = process.env.CORS_ALLOWED_ORIGINS;
 
@@ -55,5 +57,22 @@ describe("CORS", () => {
 
     expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
     expect(response.headers["access-control-allow-credentials"]).toBe("true");
+  });
+
+  it("appends Origin to an existing Vary header", async () => {
+    const app = express();
+    app.use((_, response, next) => {
+      response.setHeader("Vary", "Accept-Encoding");
+      next();
+    });
+    app.use(corsMiddleware);
+    app.get("/health", (_request, response) => {
+      response.status(200).json({ ok: true });
+    });
+
+    const response = await request(app).get("/health").set("Origin", "http://localhost:3000");
+
+    expect(response.headers.vary).toContain("Accept-Encoding");
+    expect(response.headers.vary).toContain("Origin");
   });
 });

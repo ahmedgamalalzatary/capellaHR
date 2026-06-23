@@ -31,8 +31,8 @@ beforeEach(async () => {
   await databaseClient.db.insert(admins).values({
     id: 1,
     name: "Capella Admin Test",
-    email: "employee-devices-admin-test@capella.eg",
-    passwordHash: "plain:admin1234"
+    email: "employee-devices-admin-test@capella.invalid",
+    passwordHash: "plain:test-admin-pass-123"
   });
   await databaseClient.db.insert(branches).values({
     id: 1,
@@ -47,10 +47,10 @@ beforeEach(async () => {
   await databaseClient.db.insert(employees).values({
     id: 1,
     fullName: "Mina Adel",
-    passwordHash: "plain:secret123",
+    passwordHash: "plain:test-employee-pass-123",
     primaryPhone: "01070000001",
     whatsappPhone: "01070000002",
-    email: "mina-employee-devices@capella.eg",
+    email: "mina-employee-devices@capella.invalid",
     branchId: 1,
     age: 28,
     address: "Cairo",

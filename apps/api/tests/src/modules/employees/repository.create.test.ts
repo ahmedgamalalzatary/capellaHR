@@ -21,10 +21,10 @@ describe("drizzle employee repository (create)", () => {
     const branchId = 1;
     const employee = await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550001",
       whatsappPhone: "01055550002",
-      email: "mina-employees-1@capella.eg",
+      email: "mina-employees-1@capella.invalid",
       branchId,
       age: 28,
       address: "Cairo",
@@ -36,10 +36,10 @@ describe("drizzle employee repository (create)", () => {
     expect(employee).toEqual({
       id: expect.any(Number),
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550001",
       whatsappPhone: "01055550002",
-      email: "mina-employees-1@capella.eg",
+      email: "mina-employees-1@capella.invalid",
       branchId,
       age: 28,
       address: "Cairo",
@@ -65,10 +65,10 @@ describe("drizzle employee repository (create)", () => {
 
     await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550013",
       whatsappPhone: "01055550014",
-      email: "mina-employees-6@capella.eg",
+      email: "mina-employees-6@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -78,10 +78,10 @@ describe("drizzle employee repository (create)", () => {
 
     const result = await repository.createEmployee({
       fullName: "Other Mina",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550013",
       whatsappPhone: "01055550015",
-      email: "mina-employees-7@capella.eg",
+      email: "mina-employees-7@capella.invalid",
       branchId: 1,
       age: 29,
       address: "Alex",

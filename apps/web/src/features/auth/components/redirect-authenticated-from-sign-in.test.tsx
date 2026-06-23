@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 
 import { RedirectAuthenticatedFromSignIn } from "@/features/auth/components/redirect-authenticated-from-sign-in";
 
-const adminActor = { id: 1, role: "admin", name: "مدير", email: "admin@capella.eg" };
+const adminActor = { id: 1, role: "admin", name: "مدير", email: "admin.test@capella.invalid" };
 const employeeActor = { id: 1, role: "employee", name: "موظف", phone: "01012345678" };
 
 afterEach(() => {

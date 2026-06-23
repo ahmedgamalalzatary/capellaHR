@@ -39,7 +39,7 @@ describe("employee routes (crud)", () => {
 
     const signInResponse = await request(app).post("/auth/sign-in").send({
       phone: "01012345678",
-      password: "secret123"
+      password: "test-employee-pass-123"
     });
     const cookieHeader = signInResponse.headers["set-cookie"];
 
@@ -106,8 +106,8 @@ describe("employee routes (crud)", () => {
       employeeService: employeeService.service
     });
     const cookieHeader = await signInAdmin(app, {
-      email: "admin7@capella.eg",
-      password: "admin1234"
+      email: "admin7@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
     const response = await attachRequiredFiles(
@@ -121,7 +121,7 @@ describe("employee routes (crud)", () => {
         fullName: "Mina Adel",
         primaryPhone: "01012345678",
         whatsappPhone: "01012345679",
-        email: "mina@capella.eg",
+        email: "employee.test@capella.invalid",
         branchId: 1,
         age: 28,
         address: "Cairo",
@@ -180,7 +180,7 @@ describe("employee routes (crud)", () => {
             fullName: "Mina Adel",
             primaryPhone: "01012345678",
             whatsappPhone: "01012345679",
-            email: "mina@capella.eg",
+            email: "employee.test@capella.invalid",
             branchId: 1,
             age: 28,
             address: "Cairo",
@@ -214,7 +214,7 @@ describe("employee routes (crud)", () => {
         fullName: "Mina Adel",
         primaryPhone: "01012345678",
         whatsappPhone: "01012345679",
-        email: "mina@capella.eg",
+        email: "employee.test@capella.invalid",
         branchId: 1,
         age: 28,
         address: "Cairo",
@@ -232,7 +232,7 @@ describe("employee routes (crud)", () => {
     });
     const signInResponse = await request(app).post("/auth/sign-in").send({
       phone: "01012345678",
-      password: "secret123"
+      password: "test-employee-pass-123"
     });
     const cookieHeader = signInResponse.headers["set-cookie"];
 
@@ -245,7 +245,7 @@ describe("employee routes (crud)", () => {
         fullName: "Mina Adel",
         primaryPhone: "01012345678",
         whatsappPhone: "01012345679",
-        email: "mina@capella.eg",
+        email: "employee.test@capella.invalid",
         branchId: 1,
         age: 28,
         address: "Cairo",
@@ -294,7 +294,7 @@ describe("employee routes (crud)", () => {
         fullName: "Updated Mina",
         primaryPhone: "01012345678",
         whatsappPhone: "01012345679",
-        email: "mina@capella.eg",
+        email: "employee.test@capella.invalid",
         branchId: 1,
         age: 28,
         address: "Cairo",
@@ -334,7 +334,7 @@ describe("employee routes (crud)", () => {
     const cookieHeader = await signInAdmin(app);
 
     const response = await request(app).patch("/employees/1").set("Cookie", cookieHeader).send({
-      email: "duplicate@capella.eg"
+      email: "duplicate@capella.invalid"
     });
 
     expect(response.status).toBe(409);

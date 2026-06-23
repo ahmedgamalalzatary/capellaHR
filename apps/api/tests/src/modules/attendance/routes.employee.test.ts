@@ -10,17 +10,70 @@ import {
 } from "./attendance-routes.fixtures";
 
 function buildTodayUtcDate(hour: number) {
-  const cairoDate = new Intl.DateTimeFormat("en-CA", {
+  const cairoDateParts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Africa/Cairo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).format(new Date());
+  }).formatToParts(new Date());
 
-  return new Date(`${cairoDate}T${String(hour).padStart(2, "0")}:00:00.000Z`);
+  const cairoDate = Object.fromEntries(cairoDateParts.map((part) => [part.type, part.value]));
+  const utcGuess = new Date(
+    Date.UTC(
+      Number(cairoDate.year),
+      Number(cairoDate.month) - 1,
+      Number(cairoDate.day),
+      hour
+    )
+  );
+  const offsetMatch = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Cairo",
+    timeZoneName: "longOffset"
+  })
+    .formatToParts(utcGuess)
+    .find((part) => part.type === "timeZoneName")
+    ?.value.match(/GMT([+-])(\d{2}):(\d{2})/);
+
+  if (!offsetMatch) {
+    throw new Error("Could not determine Africa/Cairo offset");
+  }
+
+  const [, sign, hours, minutes] = offsetMatch;
+  const offsetMinutes = Number(hours) * 60 + Number(minutes);
+  const direction = sign === "+" ? 1 : -1;
+
+  return new Date(utcGuess.getTime() - direction * offsetMinutes * 60_000);
 }
 
 describe("attendance routes (employee)", () => {
+  it("builds a date that preserves the requested Cairo hour", () => {
+    const date = buildTodayUtcDate(6);
+    const cairoParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date);
+
+    const cairoValues = Object.fromEntries(cairoParts.map((part) => [part.type, part.value]));
+    const todayInCairo = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date());
+    const todayValues = Object.fromEntries(todayInCairo.map((part) => [part.type, part.value]));
+
+    expect(cairoValues.year).toBe(todayValues.year);
+    expect(cairoValues.month).toBe(todayValues.month);
+    expect(cairoValues.day).toBe(todayValues.day);
+    expect(cairoValues.hour).toBe("06");
+    expect(cairoValues.minute).toBe("00");
+  });
+
   it("returns unauthorized on employee attendance routes without a session", async () => {
     const app = createApp({
       authService: createEmployeeAuthService(),

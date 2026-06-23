@@ -9,7 +9,7 @@ describe("auth service (employee)", () => {
       id: 7,
       fullName: "Mina Adel",
       primaryPhone: "01012345678",
-      passwordHash: createPasswordHash("secret123"),
+      passwordHash: createPasswordHash("test-employee-pass-123"),
       softDeletedAt: null
     };
 
@@ -21,7 +21,7 @@ describe("auth service (employee)", () => {
 
     const firstSignIn = await service.signInEmployee({
       phone: "01012345678",
-      password: "secret123"
+      password: "test-employee-pass-123"
     });
 
     if ("error" in firstSignIn) {
@@ -30,7 +30,7 @@ describe("auth service (employee)", () => {
 
     const secondSignIn = await service.signInEmployee({
       phone: "01012345678",
-      password: "secret123"
+      password: "test-employee-pass-123"
     });
 
     if ("error" in secondSignIn) {

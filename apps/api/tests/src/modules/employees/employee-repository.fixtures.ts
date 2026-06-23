@@ -15,7 +15,12 @@ loadEnv({
 type DatabaseSchema = typeof import("../../../../src/db/schema");
 
 export function setupEmployeeRepositoryTest() {
-  const databaseUrl = process.env.DATABASE_URL ?? "";
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required to run this test (set it in .env.test)");
+  }
+
   const databaseClient = createDatabaseClient({
     databaseUrl
   });
@@ -29,8 +34,8 @@ export function setupEmployeeRepositoryTest() {
     await databaseClient.db.insert(admins).values({
       id: 1,
       name: "Capella Admin Test",
-      email: "employees-admin-test@capella.eg",
-      passwordHash: "plain:admin1234"
+      email: "employees-admin-test@capella.invalid",
+      passwordHash: "plain:test-admin-pass-123"
     });
   });
 

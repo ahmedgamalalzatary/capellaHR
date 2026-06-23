@@ -15,6 +15,10 @@ export async function getAuthService() {
 
   authServicePromise = (async () => {
     const config = getAppConfig();
+    if (!config.auth.bootstrapAdmin) {
+      throw new Error("ADMIN_EMAIL and ADMIN_PASSWORD must be set to enable bootstrap admin auth");
+    }
+
     const databaseClient = createDatabaseClient({
       databaseUrl: config.databaseUrl
     });

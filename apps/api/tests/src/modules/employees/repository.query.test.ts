@@ -20,10 +20,10 @@ describe("drizzle employee repository (query)", () => {
 
     const created = await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550005",
       whatsappPhone: "01055550006",
-      email: "mina-employees-3@capella.eg",
+      email: "mina-employees-3@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -71,10 +71,10 @@ describe("drizzle employee repository (query)", () => {
 
     await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550007",
       whatsappPhone: "01055550008",
-      email: "mina-employees-4@capella.eg",
+      email: "mina-employees-4@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -84,10 +84,10 @@ describe("drizzle employee repository (query)", () => {
 
     const softDeleted = await repository.createEmployee({
       fullName: "Sara Nabil",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550009",
       whatsappPhone: "01055550010",
-      email: "sara-employees-1@capella.eg",
+      email: "sara-employees-1@capella.invalid",
       branchId: 2,
       age: 27,
       address: "Giza",
@@ -139,10 +139,10 @@ describe("drizzle employee repository (query)", () => {
 
     await repository.createEmployee({
       fullName: "A Employee",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550101",
       whatsappPhone: "01055550102",
-      email: "employee-a@capella.eg",
+      email: "employee-a@capella.invalid",
       branchId: 1,
       age: 20,
       address: "Cairo",
@@ -152,10 +152,10 @@ describe("drizzle employee repository (query)", () => {
 
     await repository.createEmployee({
       fullName: "B Employee",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550103",
       whatsappPhone: "01055550104",
-      email: "employee-b@capella.eg",
+      email: "employee-b@capella.invalid",
       branchId: 1,
       age: 21,
       address: "Cairo",
@@ -165,10 +165,10 @@ describe("drizzle employee repository (query)", () => {
 
     await repository.createEmployee({
       fullName: "C Employee",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550105",
       whatsappPhone: "01055550106",
-      email: "employee-c@capella.eg",
+      email: "employee-c@capella.invalid",
       branchId: 1,
       age: 22,
       address: "Cairo",
@@ -200,10 +200,10 @@ describe("drizzle employee repository (query)", () => {
 
     const created = await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550011",
       whatsappPhone: "01055550012",
-      email: "mina-employees-5@capella.eg",
+      email: "mina-employees-5@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",

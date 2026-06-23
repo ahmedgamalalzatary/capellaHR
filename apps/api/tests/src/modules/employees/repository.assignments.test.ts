@@ -17,10 +17,10 @@ describe("drizzle employee repository (branch assignments)", () => {
 
     const employee = await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550101",
       whatsappPhone: "01055550102",
-      email: "mina-assignments-1@capella.eg",
+      email: "mina-assignments-1@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -43,10 +43,10 @@ describe("drizzle employee repository (branch assignments)", () => {
     await databaseClient.db.insert(employees).values({
       id: 1,
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550103",
       whatsappPhone: "01055550104",
-      email: "mina-assignments-2@capella.eg",
+      email: "mina-assignments-2@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -81,10 +81,10 @@ describe("drizzle employee repository (branch assignments)", () => {
     await databaseClient.db.insert(employees).values({
       id: 1,
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550105",
       whatsappPhone: "01055550106",
-      email: "mina-assignments-3@capella.eg",
+      email: "mina-assignments-3@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",

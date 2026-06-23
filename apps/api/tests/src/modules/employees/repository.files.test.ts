@@ -21,10 +21,10 @@ describe("drizzle employee repository (files)", () => {
 
     const employee = await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550020",
       whatsappPhone: "01055550021",
-      email: "mina-employees-9@capella.eg",
+      email: "mina-employees-9@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",
@@ -83,10 +83,10 @@ describe("drizzle employee repository (files)", () => {
 
     const employee = await repository.createEmployee({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01055550022",
       whatsappPhone: "01055550023",
-      email: "mina-employees-10@capella.eg",
+      email: "mina-employees-10@capella.invalid",
       branchId: 1,
       age: 28,
       address: "Cairo",

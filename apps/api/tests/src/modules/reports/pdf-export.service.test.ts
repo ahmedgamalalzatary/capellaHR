@@ -40,7 +40,7 @@ describe("reports pdf export service", () => {
                 fullName: "Mina Adel",
                 primaryPhone: "01012345678",
                 whatsappPhone: "01012345678",
-                email: "mina@capella.eg",
+                email: "employee.test@capella.invalid",
                 branchId: 2,
                 age: 28,
                 address: "Nasr City",

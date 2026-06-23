@@ -21,7 +21,7 @@ type AppConfig = {
       name: string;
       email: string;
       password: string;
-    };
+    } | null;
   };
 };
 
@@ -44,6 +44,17 @@ function normalizeOrigin(value: string): string {
 }
 
 export function getAppConfig(): AppConfig {
+  const adminEmail = process.env.ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  const bootstrapAdmin =
+    adminEmail && adminPassword
+      ? {
+          name: process.env.ADMIN_NAME?.trim() || "Capella Admin",
+          email: adminEmail,
+          password: adminPassword
+        }
+      : null;
+
   return {
     port: Number(process.env.PORT ?? 4000),
     nodeEnv: process.env.NODE_ENV ?? "development",
@@ -66,11 +77,7 @@ export function getAppConfig(): AppConfig {
       cookieName: "capella_session",
       cookieSecure: process.env.COOKIE_SECURE === "true",
       adminSessionTtlHours: 8,
-      bootstrapAdmin: {
-        name: process.env.ADMIN_NAME ?? "Capella Admin",
-        email: process.env.ADMIN_EMAIL ?? "admin@capella.eg",
-        password: process.env.ADMIN_PASSWORD ?? "admin1234"
-      }
+      bootstrapAdmin
     }
   };
 }

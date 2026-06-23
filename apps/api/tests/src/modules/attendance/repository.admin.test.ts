@@ -17,10 +17,10 @@ describe("attendance repository (admin)", () => {
     await databaseClient.db.insert(employees).values({
       id: 2,
       fullName: "Ahmed Gamal",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01012345670",
       whatsappPhone: "01012345671",
-      email: "ahmed@capella.eg",
+      email: "ahmed@capella.invalid",
       branchId: 1,
       age: 30,
       address: "Giza",

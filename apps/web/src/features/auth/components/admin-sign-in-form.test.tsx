@@ -16,7 +16,7 @@ afterEach(() => {
   replace.mockReset();
 });
 
-const adminActor = { id: 1, role: "admin", name: "مدير", email: "admin@capella.eg" };
+const adminActor = { id: 1, role: "admin", name: "مدير", email: "admin.test@capella.invalid" };
 
 describe("AdminSignInForm", () => {
   it("shows a validation error and does not submit on an invalid email", async () => {
@@ -38,7 +38,7 @@ describe("AdminSignInForm", () => {
     const user = userEvent.setup();
     renderWithProviders(<AdminSignInForm />);
 
-    await user.type(screen.getByLabelText("البريد الإلكتروني"), "admin@capella.eg");
+    await user.type(screen.getByLabelText("البريد الإلكتروني"), "admin.test@capella.invalid");
     await user.type(screen.getByLabelText("كلمة المرور"), "secret12");
     await user.click(screen.getByRole("button", { name: "تسجيل الدخول" }));
 

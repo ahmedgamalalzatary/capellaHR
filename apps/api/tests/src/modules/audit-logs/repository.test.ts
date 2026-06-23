@@ -30,8 +30,8 @@ beforeEach(async () => {
   await databaseClient.db.insert(admins).values({
     id: 1,
     name: "Capella Admin",
-    email: "admin@capella.eg",
-    passwordHash: "plain:admin1234"
+    email: "admin.test@capella.invalid",
+    passwordHash: "plain:test-admin-pass-123"
   });
 });
 

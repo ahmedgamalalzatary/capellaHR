@@ -19,8 +19,14 @@ loadEnv({
   override: true
 });
 
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required to run this test (set it in .env.test)");
+}
+
 const databaseClient = createDatabaseClient({
-  databaseUrl: process.env.DATABASE_URL ?? ""
+  databaseUrl
 });
 
 beforeAll(async () => {
@@ -32,8 +38,8 @@ beforeEach(async () => {
   await databaseClient.db.insert(admins).values({
     id: 1,
     name: "Capella Admin",
-    email: "admin@capella.eg",
-    passwordHash: "plain:admin1234"
+    email: "admin.test@capella.invalid",
+    passwordHash: "plain:test-admin-pass-123"
   });
   await databaseClient.db.insert(branches).values([
     {
@@ -60,10 +66,10 @@ beforeEach(async () => {
   await databaseClient.db.insert(employees).values({
     id: 1,
     fullName: "Mina Adel",
-    passwordHash: "plain:secret123",
+    passwordHash: "plain:test-employee-pass-123",
     primaryPhone: "01012345678",
     whatsappPhone: "01012345679",
-    email: "mina@capella.eg",
+    email: "employee.test@capella.invalid",
     branchId: 2,
     age: 28,
     address: "Cairo",

@@ -171,8 +171,8 @@ function createAdminAuthService() {
     repository: createInMemoryAuthRepository({
       bootstrapAdmin: {
         name: "Capella Admin",
-        email: "admin@capella.eg",
-        password: "admin1234"
+        email: "admin.test@capella.invalid",
+        password: "test-admin-pass-123"
       }
     }),
     adminSessionTtlHours: 8,
@@ -182,8 +182,8 @@ function createAdminAuthService() {
 
 async function signInAdmin(app: ReturnType<typeof createApp>) {
   const response = await request(app).post("/auth/admin/sign-in").send({
-    email: "admin@capella.eg",
-    password: "admin1234"
+    email: "admin.test@capella.invalid",
+    password: "test-admin-pass-123"
   });
 
   return response.headers["set-cookie"];

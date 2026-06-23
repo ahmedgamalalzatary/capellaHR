@@ -45,16 +45,16 @@ describe("drizzle auth repository", () => {
 
     await syncBootstrapAdmin(repository, {
       name: "Capella Admin Test",
-      email: "admin-test@capella.eg",
-      password: "admin1234"
+      email: "admin-test@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
-    const admin = await repository.findAdminByEmail("admin-test@capella.eg");
+    const admin = await repository.findAdminByEmail("admin-test@capella.invalid");
 
     expect(admin).toEqual({
       id: expect.any(Number),
       name: "Capella Admin Test",
-      email: "admin-test@capella.eg",
+      email: "admin-test@capella.invalid",
       passwordHash: expect.any(String)
     });
   });
@@ -66,11 +66,11 @@ describe("drizzle auth repository", () => {
 
     await syncBootstrapAdmin(repository, {
       name: "Capella Admin Test",
-      email: "admin-test@capella.eg",
-      password: "admin1234"
+      email: "admin-test@capella.invalid",
+      password: "test-admin-pass-123"
     });
 
-    const admin = await repository.findAdminByEmail("admin-test@capella.eg");
+    const admin = await repository.findAdminByEmail("admin-test@capella.invalid");
 
     if (!admin) {
       throw new Error("expected bootstrap admin to exist");
@@ -116,10 +116,10 @@ describe("drizzle auth repository", () => {
 
     await databaseClient.db.insert(employees).values({
       fullName: "Mina Adel",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       primaryPhone: "01012345678",
       whatsappPhone: "01012345679",
-      email: "mina@capella.eg",
+      email: "employee.test@capella.invalid",
       age: 28,
       address: "Cairo",
       currentMonthlySalary: "10000.00"
@@ -135,7 +135,7 @@ describe("drizzle auth repository", () => {
       id: employee.id,
       fullName: "Mina Adel",
       primaryPhone: "01012345678",
-      passwordHash: "plain:secret123",
+      passwordHash: "plain:test-employee-pass-123",
       softDeletedAt: null
     });
 

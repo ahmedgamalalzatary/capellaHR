@@ -7,7 +7,7 @@ import { apiUrl } from "@/test/msw/handlers";
 import { server } from "@/test/msw/server";
 
 const employeeActor = { id: 1, role: "employee", name: "موظف", phone: "01012345678" };
-const adminActor = { id: 1, role: "admin", name: "مدير", email: "admin@capella.eg" };
+const adminActor = { id: 1, role: "admin", name: "مدير", email: "admin.test@capella.invalid" };
 
 describe("authApi.signIn", () => {
   it("POSTs credentials to /auth/sign-in and returns the actor", async () => {
@@ -47,7 +47,7 @@ describe("authApi.adminSignIn", () => {
       http.post(apiUrl("/auth/admin/sign-in"), () => HttpResponse.json({ actor: adminActor }))
     );
 
-    const result = await authApi.adminSignIn({ email: "admin@capella.eg", password: "secret12" });
+    const result = await authApi.adminSignIn({ email: "admin.test@capella.invalid", password: "secret12" });
 
     expect(result.actor).toEqual(adminActor);
   });

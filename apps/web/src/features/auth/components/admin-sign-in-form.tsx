@@ -57,7 +57,7 @@ export function AdminSignInForm() {
                   type="email"
                   dir="ltr"
                   autoComplete="username"
-                  placeholder="admin@capella.eg"
+                  placeholder="admin.test@capella.invalid"
                   {...field}
                 />
               </FormControl>
