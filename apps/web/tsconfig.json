@@ -6,6 +6,12 @@
     "allowJs": false,
     "incremental": true,
     "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@capella/shared": ["../../packages/shared/src/index.ts"],
+      "@capella/shared/*": ["../../packages/shared/src/*"]
+    },
     "plugins": [
       {
         "name": "next"
