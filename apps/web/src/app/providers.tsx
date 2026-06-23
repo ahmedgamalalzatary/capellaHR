@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useState, type ReactNode } from "react";
 
+import { Toaster } from "@/shared/components/ui/sonner";
 import { createQueryClient } from "@/shared/lib/query-client";
 
 /**
@@ -17,6 +18,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
+      <Toaster position="top-left" richColors />
       {process.env.NODE_ENV === "development" ? (
         <ReactQueryDevtools initialIsOpen={false} />
       ) : null}

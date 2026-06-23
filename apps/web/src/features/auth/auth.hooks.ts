@@ -2,15 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "@/shared/lib/api-client";
 import { authApi } from "@/features/auth/auth.api";
-
-export const authKeys = {
-  me: ["auth", "me"] as const
-};
+import { authKeys } from "@/features/auth/auth.keys";
+import type { Actor } from "@/features/auth/auth.types";
 
 /** Current authenticated actor. Returns `null` (not an error) when signed out. */
 export function useCurrentUser() {
-  return useQuery({
-    queryKey: authKeys.me,
+  return useQuery<Actor | null>({
+    queryKey: authKeys.me(),
     queryFn: async () => {
       try {
         const { actor } = await authApi.me();
@@ -30,7 +28,17 @@ export function useSignIn() {
   return useMutation({
     mutationFn: authApi.signIn,
     onSuccess: ({ actor }) => {
-      queryClient.setQueryData(authKeys.me, actor);
+      queryClient.setQueryData(authKeys.me(), actor);
+    }
+  });
+}
+
+export function useAdminSignIn() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.adminSignIn,
+    onSuccess: ({ actor }) => {
+      queryClient.setQueryData(authKeys.me(), actor);
     }
   });
 }
@@ -40,8 +48,7 @@ export function useSignOut() {
   return useMutation({
     mutationFn: authApi.signOut,
     onSuccess: () => {
-      queryClient.setQueryData(authKeys.me, null);
-      queryClient.invalidateQueries();
+      queryClient.setQueryData(authKeys.me(), null);
     }
   });
 }
