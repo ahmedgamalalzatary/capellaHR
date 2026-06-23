@@ -39,7 +39,13 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
 };
 
 function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
-  const url = new URL(path.replace(/^\//, ""), `${env.apiUrl}/`);
+  const normalizedPath = path.replace(/^\//, "");
+  const normalizedBase = env.apiUrl.endsWith("/") ? env.apiUrl : `${env.apiUrl}/`;
+  const base =
+    typeof window !== "undefined" && normalizedBase.startsWith("/")
+      ? new URL(normalizedBase, window.location.origin).toString()
+      : normalizedBase;
+  const url = new URL(normalizedPath, base);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== null) {
