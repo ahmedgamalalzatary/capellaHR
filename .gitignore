@@ -10,7 +10,7 @@ coverage/
 .env
 .env.*
 !.env.example
-
+*.d.ts
 apps/api/uploads/
 
 .DS_Store
