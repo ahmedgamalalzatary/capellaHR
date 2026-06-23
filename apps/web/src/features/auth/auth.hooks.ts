@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError } from "@/lib/api-client";
-import { authApi } from "@/features/auth/api";
+import { ApiError } from "@/shared/lib/api-client";
+import { authApi } from "@/features/auth/auth.api";
 
 export const authKeys = {
   me: ["auth", "me"] as const

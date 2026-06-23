@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { Providers } from "@/app/providers";
-import "@/styles/globals.css";
+import "@/shared/styles/globals.css";
 
 export const metadata: Metadata = {
   title: "Capella HR",

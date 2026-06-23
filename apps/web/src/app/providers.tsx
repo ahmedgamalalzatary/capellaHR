@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useState, type ReactNode } from "react";
 
-import { createQueryClient } from "@/lib/query-client";
+import { createQueryClient } from "@/shared/lib/query-client";
 
 /**
  * Client-side providers. The QueryClient is created once per browser session

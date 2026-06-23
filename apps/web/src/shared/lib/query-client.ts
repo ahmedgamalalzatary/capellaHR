@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 
-import { ApiError } from "@/lib/api-client";
+import { ApiError } from "@/shared/lib/api-client";
 
 /**
  * Creates a configured QueryClient. A factory (not a singleton) so the server

@@ -1,6 +1,6 @@
 import type { SignInInput } from "@capella/shared/contracts";
 
-import { api } from "@/lib/api-client";
+import { api } from "@/shared/lib/api-client";
 
 /**
  * Actor returned by the API on sign-in and `GET /auth/me`. Mirrors the backend

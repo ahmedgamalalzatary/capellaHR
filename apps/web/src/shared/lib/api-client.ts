@@ -1,4 +1,4 @@
-import { env } from "@/config/env";
+import { env } from "@/shared/config/env";
 
 /**
  * Error thrown for any non-2xx API response. Carries the HTTP status and the
