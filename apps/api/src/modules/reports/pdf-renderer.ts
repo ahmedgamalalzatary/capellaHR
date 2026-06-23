@@ -39,6 +39,24 @@ export function createPlaywrightPdfRenderer(): PdfRenderer {
   };
 }
 
+export async function cleanupPlaywrightPdfRenderer() {
+  if (browserHolder.pendingBrowser) {
+    try {
+      browserHolder.browser = await browserHolder.pendingBrowser;
+    } finally {
+      browserHolder.pendingBrowser = null;
+    }
+  }
+
+  if (!browserHolder.browser) {
+    return;
+  }
+
+  await browserHolder.browser.close();
+  browserHolder.browser = null;
+  browserHolder.pendingBrowser = null;
+}
+
 async function getBrowser() {
   if (browserHolder.browser) {
     return browserHolder.browser;

@@ -14,17 +14,19 @@ describe("employee routes (branch assignments)", () => {
       employeeService: createStubEmployeeService("completed").service
     });
     const adminCookie = await signInAdmin(app);
+    const effectiveFrom = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
     const response = await request(app)
       .post("/employees/1/branch-assignments")
       .set("Cookie", adminCookie)
       .send({
         branchId: 2,
-        effectiveFrom: "2026-06-23T10:00:00.000Z"
+        effectiveFrom
       });
 
     expect(response.status).toBe(201);
     expect(response.body.assignment.branchId).toBe(2);
+    expect(response.body.assignment.effectiveFrom).toBe(effectiveFrom);
   });
 
   it("lists employee branch assignments for admins", async () => {

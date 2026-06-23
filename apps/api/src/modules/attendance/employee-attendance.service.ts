@@ -4,7 +4,6 @@ import {
   type AttendanceBlockedResult,
   type AttendanceRepository,
   type AttendanceState,
-  buildAttendancePagination,
   buildAttendanceState,
   createBranchPolicySnapshot,
   getCairoDateKey

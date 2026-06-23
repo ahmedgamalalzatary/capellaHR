@@ -99,4 +99,64 @@ describe("attendance repository (employee data)", () => {
     );
     expect(persisted[0]?.attemptedAction).toBe("check_in");
   });
+
+  it("lists employee attendance history using pagination metadata", async () => {
+    await databaseClient.db.insert(attendanceSessions).values([
+      {
+        employeeId: 1,
+        branchId: 1,
+        status: "completed",
+        checkInAtUtc: new Date("2026-06-20T06:00:00.000Z"),
+        checkOutAtUtc: new Date("2026-06-20T14:00:00.000Z"),
+        checkInLatitude: "30.0444200",
+        checkInLongitude: "31.2357120",
+        checkInIpAddress: "192.168.1.42",
+        deviceId: "personal-device-1",
+        branchPolicySnapshot: {}
+      },
+      {
+        employeeId: 1,
+        branchId: 1,
+        status: "completed",
+        checkInAtUtc: new Date("2026-06-21T06:00:00.000Z"),
+        checkOutAtUtc: new Date("2026-06-21T14:00:00.000Z"),
+        checkInLatitude: "30.0444200",
+        checkInLongitude: "31.2357120",
+        checkInIpAddress: "192.168.1.42",
+        deviceId: "personal-device-1",
+        branchPolicySnapshot: {}
+      },
+      {
+        employeeId: 1,
+        branchId: 1,
+        status: "open",
+        checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
+        checkOutAtUtc: null,
+        checkInLatitude: "30.0444200",
+        checkInLongitude: "31.2357120",
+        checkInIpAddress: "192.168.1.42",
+        deviceId: "personal-device-1",
+        branchPolicySnapshot: {}
+      }
+    ]);
+
+    const repository = createDrizzleAttendanceRepository({
+      db: databaseClient.db
+    });
+
+    const result = await repository.listEmployeeAttendanceHistory({
+      employeeId: 1,
+      page: 2,
+      pageSize: 1
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.checkInAtUtc).toEqual(new Date("2026-06-21T06:00:00.000Z"));
+    expect(result.pagination).toEqual({
+      page: 2,
+      pageSize: 1,
+      total: 3,
+      totalPages: 3
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import {
   attendanceBlockedAttempts,
@@ -120,20 +120,27 @@ export async function listEmployeeAttendanceHistory(
     pageSize: number;
   }
 ) {
+  const offset = (filters.page - 1) * filters.pageSize;
   const rows = await db
     .select()
     .from(attendanceSessions)
     .where(eq(attendanceSessions.employeeId, filters.employeeId))
-    .orderBy(desc(attendanceSessions.checkInAtUtc));
-  const offset = (filters.page - 1) * filters.pageSize;
+    .orderBy(desc(attendanceSessions.checkInAtUtc))
+    .limit(filters.pageSize)
+    .offset(offset);
+  const totalRows = await db
+    .select({ value: count() })
+    .from(attendanceSessions)
+    .where(eq(attendanceSessions.employeeId, filters.employeeId));
+  const total = Number(totalRows[0]?.value ?? 0);
 
   return {
-    items: rows.slice(offset, offset + filters.pageSize).map(mapAttendanceSessionRecord),
+    items: rows.map(mapAttendanceSessionRecord),
     pagination: {
       page: filters.page,
       pageSize: filters.pageSize,
-      total: rows.length,
-      totalPages: Math.max(1, Math.ceil(rows.length / filters.pageSize))
+      total,
+      totalPages: Math.max(1, Math.ceil(total / filters.pageSize))
     }
   };
 }

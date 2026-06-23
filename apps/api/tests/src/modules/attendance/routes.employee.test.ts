@@ -9,6 +9,17 @@ import {
   signInEmployee
 } from "./attendance-routes.fixtures";
 
+function buildTodayUtcDate(hour: number) {
+  const cairoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+
+  return new Date(`${cairoDate}T${String(hour).padStart(2, "0")}:00:00.000Z`);
+}
+
 describe("attendance routes (employee)", () => {
   it("returns unauthorized on employee attendance routes without a session", async () => {
     const app = createApp({
@@ -44,7 +55,7 @@ describe("attendance routes (employee)", () => {
       employeeId: 2,
       branchId: 1,
       status: "open",
-      checkInAtUtc: new Date("2026-06-22T06:00:00.000Z"),
+      checkInAtUtc: buildTodayUtcDate(6),
       checkOutAtUtc: null,
       checkInLatitude: 30.04442,
       checkInLongitude: 31.235712,
