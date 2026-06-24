@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
@@ -16,9 +17,59 @@ import {
 import { Input } from "@/shared/components/ui/input";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { ApiError } from "@/shared/lib/api-client";
+import { networkApi } from "@/features/network/network.api";
 import { useCreateBranch, useUpdateBranch } from "@/features/branches/branches.hooks";
 import { branchFormSchema, type BranchFormValues } from "@/features/branches/branches.schemas";
 import type { Branch } from "@/features/branches/branches.types";
+
+const DEFAULT_GPS_RADIUS_METERS = 100;
+const GEOLOCATION_TIMEOUT_MS = 10000;
+const ipv4Pattern =
+  /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+/** Promisified `navigator.geolocation.getCurrentPosition`; rejects when unavailable or denied. */
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is not available"));
+      return;
+    }
+
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error("Geolocation timed out"));
+    }, GEOLOCATION_TIMEOUT_MS);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(position);
+      },
+      (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timeoutId);
+        reject(error);
+      },
+      { enableHighAccuracy: true, timeout: GEOLOCATION_TIMEOUT_MS, maximumAge: 0 }
+    );
+  });
+}
+
+function normalizeIpv4(value: string) {
+  const normalized = value.replace("::ffff:", "").trim();
+  return ipv4Pattern.test(normalized) ? normalized : null;
+}
 
 type BranchFormProps = {
   /** When provided, the form edits this branch; otherwise it creates a new one. */
@@ -43,12 +94,52 @@ export function BranchForm({ branch, onSuccess }: BranchFormProps) {
   const updateBranch = useUpdateBranch();
   const isPending = createBranch.isPending || updateBranch.isPending;
 
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+  const [isDetectingIp, setIsDetectingIp] = useState(false);
+
   const form = useForm<BranchFormValues>({
     // `z.coerce` makes the schema's input/output types differ; cast the
     // resolver to the output type so RHF's generics line up.
     resolver: zodResolver(branchFormSchema) as Resolver<BranchFormValues>,
     defaultValues: toDefaults(branch)
   });
+
+  async function handleDetectLocation() {
+    setIsDetectingLocation(true);
+    try {
+      const position = await getCurrentPosition();
+      form.setValue("gpsLatitude", position.coords.latitude, { shouldValidate: true });
+      form.setValue("gpsLongitude", position.coords.longitude, { shouldValidate: true });
+      if (!form.getValues("gpsRadiusMeters")) {
+        form.setValue("gpsRadiusMeters", DEFAULT_GPS_RADIUS_METERS, { shouldValidate: true });
+      }
+      toast.success("تم الكشف عن الموقع تلقائيًا");
+    } catch {
+      toast.error("تعذّر الكشف عن الموقع، أدخله يدويًا");
+    } finally {
+      setIsDetectingLocation(false);
+    }
+  }
+
+  async function handleDetectIp() {
+    setIsDetectingIp(true);
+    try {
+      const { ip } = await networkApi.whoami();
+      const normalizedIp = normalizeIpv4(ip);
+
+      if (!normalizedIp) {
+        toast.error("تعذّر الكشف عن IPv4 صالح، أدخل نطاق الـ IP يدويًا");
+        return;
+      }
+
+      form.setValue("allowedIpCidr", `${normalizedIp}/32`, { shouldValidate: true });
+      toast.success("تم الكشف عن الـ IP تلقائيًا");
+    } catch {
+      toast.error("تعذّر الكشف عن الـ IP، أدخله يدويًا");
+    } finally {
+      setIsDetectingIp(false);
+    }
+  }
 
   function onSubmit(values: BranchFormValues) {
     const onError = (error: unknown) => {
@@ -101,6 +192,25 @@ export function BranchForm({ branch, onSuccess }: BranchFormProps) {
             </FormItem>
           )}
         />
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDetectLocation}
+            disabled={isDetectingLocation}
+          >
+            {isDetectingLocation ? "جارٍ كشف الموقع..." : "كشف الموقع"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDetectIp}
+            disabled={isDetectingIp}
+          >
+            {isDetectingIp ? "جارٍ كشف الـ IP..." : "كشف الـ IP"}
+          </Button>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField

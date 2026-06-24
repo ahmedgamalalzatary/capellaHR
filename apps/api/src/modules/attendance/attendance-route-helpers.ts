@@ -101,15 +101,7 @@ export function getAttendanceService() {
   return attendanceService;
 }
 
-export function getRequestIpAddress(request: Request) {
-  const forwardedFor = request.headers["x-forwarded-for"];
-
-  if (typeof forwardedFor === "string" && forwardedFor.length > 0) {
-    return forwardedFor.split(",")[0]!.trim();
-  }
-
-  return request.ip || request.socket.remoteAddress || "";
-}
+export { getRequestIpAddress } from "../../http/request-ip";
 
 export function sendValidationError(response: Response, details: Record<string, unknown>) {
   response.status(400).json({

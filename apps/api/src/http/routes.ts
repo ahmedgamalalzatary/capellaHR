@@ -20,6 +20,7 @@ import { registerMonthLocksRoutes } from "../modules/month-locks/routes";
 import { registerPermissionAbsenceRoutes } from "../modules/permission-absences/routes";
 import { registerReportsRoutes } from "../modules/reports/routes";
 import { registerWeeklyDayOffRoutes } from "../modules/weekly-day-offs/routes";
+import { registerNetworkRoutes } from "../modules/network/routes";
 
 type RegisterAppRoutesOptions = {
   attendanceService?: ReturnType<typeof createAttendanceService>;
@@ -77,5 +78,8 @@ export function registerAppRoutes(app: Express, options: RegisterAppRoutesOption
   registerMonthLocksRoutes(app, {
     authService: options.authService,
     monthLockService: options.monthLockService
+  });
+  registerNetworkRoutes(app, {
+    authService: options.authService
   });
 }
