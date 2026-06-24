@@ -37,4 +37,24 @@ describe("api-client buildUrl behavior", () => {
       })
     );
   });
+
+  it("fails fast on the server when NEXT_PUBLIC_API_URL is relative", async () => {
+    const originalWindow = globalThis.window;
+    vi.doMock("@/shared/config/env", () => ({
+      env: {
+        apiUrl: "/api"
+      }
+    }));
+    vi.stubGlobal("window", undefined);
+
+    try {
+      const { api } = await import("./api-client");
+
+      await expect(api.get("/branches")).rejects.toThrow(
+        "Relative NEXT_PUBLIC_API_URL values require a browser origin"
+      );
+    } finally {
+      vi.stubGlobal("window", originalWindow);
+    }
+  });
 });

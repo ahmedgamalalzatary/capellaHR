@@ -42,6 +42,7 @@ export function BranchList() {
 
   return (
     <div className="space-y-4">
+      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
       <Table>
         <TableHeader>
           <TableRow>
@@ -69,6 +70,7 @@ export function BranchList() {
           ))}
         </TableBody>
       </Table>
+      </div>
       {pagination.totalPages > 1 ? (
         <div className="flex items-center justify-between gap-3">
           <Button

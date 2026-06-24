@@ -7,7 +7,7 @@ const QUICK_LINKS = ADMIN_NAV_ITEMS.filter((item) => item.href !== "/dashboard")
 
 export default function DashboardPage() {
   return (
-    <main className="space-y-6 p-8">
+    <main className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div>
         <h1 className="text-2xl font-bold">لوحة التحكم</h1>
         <p className="mt-1 text-muted-foreground">مرحبًا بك في نظام كابيلا لإدارة الموارد البشرية.</p>

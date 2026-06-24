@@ -33,7 +33,12 @@ export function AdminSidebar() {
   return (
     <Sidebar side="right" collapsible="icon">
       <SidebarHeader className="px-3 py-4">
-        <span className="text-lg font-bold">كابيلا</span>
+        <div className="flex flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
+          <span className="text-lg font-bold leading-none">كابيلا</span>
+          <span className="text-xs text-sidebar-foreground/60">
+            نظام إدارة الموارد البشرية
+          </span>
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

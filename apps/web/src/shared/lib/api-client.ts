@@ -41,8 +41,14 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
 function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
   const normalizedPath = path.replace(/^\//, "");
   const normalizedBase = env.apiUrl.endsWith("/") ? env.apiUrl : `${env.apiUrl}/`;
+  const isRelativeBase = normalizedBase.startsWith("/");
+
+  if (isRelativeBase && typeof window === "undefined") {
+    throw new Error("Relative NEXT_PUBLIC_API_URL values require a browser origin");
+  }
+
   const base =
-    typeof window !== "undefined" && normalizedBase.startsWith("/")
+    isRelativeBase && typeof window !== "undefined"
       ? new URL(normalizedBase, window.location.origin).toString()
       : normalizedBase;
   const url = new URL(normalizedPath, base);
