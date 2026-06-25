@@ -16,7 +16,7 @@ services:
       retries: 12
 
   migrate:
-    image: capella-hr-api:latest
+    image: capella-hr-api-migrate:latest
     build:
       context: .
       dockerfile: Dockerfile.api
