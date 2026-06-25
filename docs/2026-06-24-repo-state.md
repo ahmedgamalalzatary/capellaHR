@@ -252,6 +252,10 @@ Reason for `Partially Done`:
 - Backend is substantial.
 - Frontend implementation is effectively absent.
 
+Known backend gap (flagged 2026-06-25):
+
+- `DELETE /employees/:employeeId` performs a soft delete, and the list filter exposes `status=soft_deleted`, but there is **no backend route to restore/un-delete a soft-deleted employee**. The frontend can hide an employee but cannot bring one back. Soft-deleted employees will be shown read-only in the UI until a restore endpoint is added.
+
 ### 5. Employee Device Enrollment
 
 Status: `Partially Done`

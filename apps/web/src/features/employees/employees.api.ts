@@ -1,0 +1,93 @@
+import { api } from "@/shared/lib/api-client";
+import type {
+  Employee,
+  EmployeeBranchAssignmentListResponse,
+  EmployeeBranchAssignmentResponse,
+  EmployeeCreatePayload,
+  EmployeeFileListResponse,
+  EmployeeFileResponse,
+  EmployeeFileType,
+  EmployeeListFilters,
+  EmployeeListResponse,
+  EmployeeResponse,
+  EmployeeUpdatePayload
+} from "@/features/employees/employees.types";
+
+/** Input for creating a future/now branch assignment (`effectiveFrom` is ISO). */
+export type EmployeeAssignmentInput = {
+  branchId: number;
+  effectiveFrom: string;
+};
+
+/** Serialize a create payload into multipart form-data the API expects. */
+function toCreateFormData(payload: EmployeeCreatePayload): FormData {
+  const form = new FormData();
+
+  form.set("fullName", payload.fullName);
+  form.set("password", payload.password);
+  form.set("primaryPhone", payload.primaryPhone);
+  form.set("whatsappPhone", payload.whatsappPhone);
+  if (payload.email !== undefined && payload.email !== "") {
+    form.set("email", payload.email);
+  }
+  form.set("branchId", String(payload.branchId));
+  form.set("age", String(payload.age));
+  form.set("currentMonthlySalary", payload.currentMonthlySalary);
+  form.set("address", payload.address);
+  form.set("personalPhoto", payload.personalPhoto);
+  form.set("idFront", payload.idFront);
+  form.set("idBack", payload.idBack);
+
+  return form;
+}
+
+export const employeesApi = {
+  /** Paginated, filterable list of employees. */
+  list: (filters?: EmployeeListFilters) =>
+    api.get<EmployeeListResponse>("/employees", { query: filters }),
+
+  /** Single employee by id; throws ApiError(404) when missing. */
+  get: (employeeId: number) => api.get<EmployeeResponse>(`/employees/${employeeId}`),
+
+  /** Create an employee (multipart: text fields + three image files). */
+  create: (payload: EmployeeCreatePayload) =>
+    api.post<EmployeeResponse>("/employees", { formData: toCreateFormData(payload) }),
+
+  /** Update an employee's text fields (JSON, partial). */
+  update: (employeeId: number, input: EmployeeUpdatePayload) =>
+    api.patch<EmployeeResponse>(`/employees/${employeeId}`, { json: input }),
+
+  /** Soft-delete an employee. Resolves to void (the API replies 204 No Content). */
+  remove: async (employeeId: number): Promise<void> => {
+    await api.delete<null>(`/employees/${employeeId}`);
+  },
+
+  /** List an employee's stored file metadata. */
+  listFiles: (employeeId: number) =>
+    api.get<EmployeeFileListResponse>(`/employees/${employeeId}/files`),
+
+  /** Replace one of an employee's files (multipart, single `file` field). */
+  replaceFile: (employeeId: number, fileType: EmployeeFileType, file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    return api.put<EmployeeFileResponse>(`/employees/${employeeId}/files/${fileType}`, {
+      formData: form
+    });
+  },
+
+  /** Fetch a file's binary content (private, authenticated) as a Blob. */
+  fetchFileBlob: (employeeId: number, fileId: number) =>
+    api.getBlob(`/employees/${employeeId}/files/${fileId}`),
+
+  /** List an employee's historical branch assignments. */
+  listAssignments: (employeeId: number) =>
+    api.get<EmployeeBranchAssignmentListResponse>(`/employees/${employeeId}/branch-assignments`),
+
+  /** Assign the employee to a branch effective now or in the future. */
+  createAssignment: (employeeId: number, input: EmployeeAssignmentInput) =>
+    api.post<EmployeeBranchAssignmentResponse>(`/employees/${employeeId}/branch-assignments`, {
+      json: input
+    })
+};
+
+export type { Employee };

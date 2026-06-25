@@ -1,0 +1,100 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  employeesApi,
+  type EmployeeAssignmentInput
+} from "@/features/employees/employees.api";
+import { employeeKeys } from "@/features/employees/employees.keys";
+import type {
+  EmployeeCreatePayload,
+  EmployeeFileType,
+  EmployeeListFilters,
+  EmployeeUpdatePayload
+} from "@/features/employees/employees.types";
+
+export function useEmployees(filters?: EmployeeListFilters) {
+  return useQuery({
+    queryKey: employeeKeys.list(filters),
+    queryFn: () => employeesApi.list(filters)
+  });
+}
+
+export function useEmployee(employeeId: number, enabled = true) {
+  return useQuery({
+    queryKey: employeeKeys.detail(employeeId),
+    queryFn: () => employeesApi.get(employeeId),
+    enabled: enabled && Number.isInteger(employeeId) && employeeId > 0
+  });
+}
+
+export function useCreateEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: EmployeeCreatePayload) => employeesApi.create(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
+    }
+  });
+}
+
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, input }: { employeeId: number; input: EmployeeUpdatePayload }) =>
+      employeesApi.update(employeeId, input),
+    onSuccess: (_data, { employeeId }) => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
+    }
+  });
+}
+
+export function useDeleteEmployee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (employeeId: number) => employeesApi.remove(employeeId),
+    onSuccess: (_data, employeeId) => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
+    }
+  });
+}
+
+export function useEmployeeFiles(employeeId: number) {
+  return useQuery({
+    queryKey: employeeKeys.files(employeeId),
+    queryFn: () => employeesApi.listFiles(employeeId),
+    enabled: Number.isInteger(employeeId) && employeeId > 0
+  });
+}
+
+export function useReplaceEmployeeFile(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fileType, file }: { fileType: EmployeeFileType; file: File }) =>
+      employeesApi.replaceFile(employeeId, fileType, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.files(employeeId) });
+    }
+  });
+}
+
+export function useEmployeeAssignments(employeeId: number) {
+  return useQuery({
+    queryKey: employeeKeys.assignments(employeeId),
+    queryFn: () => employeesApi.listAssignments(employeeId),
+    enabled: Number.isInteger(employeeId) && employeeId > 0
+  });
+}
+
+export function useCreateEmployeeAssignment(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EmployeeAssignmentInput) =>
+      employeesApi.createAssignment(employeeId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.assignments(employeeId) });
+      queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
+    }
+  });
+}

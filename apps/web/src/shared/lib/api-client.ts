@@ -38,6 +38,14 @@ export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   query?: Record<string, string | number | boolean | undefined | null>;
 };
 
+type ApiGetBlobOptions = Pick<
+  RequestInit,
+  "cache" | "credentials" | "headers" | "integrity" | "keepalive" | "mode" | "redirect" | "referrer" | "referrerPolicy" | "signal" | "window"
+> & {
+  /** Query-string params; `undefined`/`null` values are skipped. */
+  query?: ApiRequestOptions["query"];
+};
+
 function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
   const normalizedPath = path.replace(/^\//, "");
   const normalizedBase = env.apiUrl.endsWith("/") ? env.apiUrl : `${env.apiUrl}/`;
@@ -102,10 +110,59 @@ export async function apiFetch<TResponse>(
   return payload as TResponse;
 }
 
+/**
+ * GET a binary resource (e.g. a private employee image) as a `Blob`. Sends
+ * cookies like the rest of the client and throws `ApiError` on non-2xx so
+ * callers can branch on auth/not-found the same way they do for JSON.
+ */
+export async function apiFetchBlob(
+  path: string,
+  options: ApiGetBlobOptions = {}
+): Promise<Blob> {
+  const {
+    cache,
+    credentials,
+    headers,
+    integrity,
+    keepalive,
+    mode,
+    query,
+    redirect,
+    referrer,
+    referrerPolicy,
+    signal,
+    window
+  } = options;
+
+  const response = await fetch(buildUrl(path, query), {
+    cache,
+    credentials: credentials ?? "include",
+    headers: new Headers(headers),
+    integrity,
+    keepalive,
+    method: "GET",
+    mode,
+    redirect,
+    referrer,
+    referrerPolicy,
+    signal,
+    window
+  });
+
+  if (!response.ok) {
+    const isJson = response.headers.get("content-type")?.includes("application/json");
+    const payload = isJson ? await response.json().catch(() => null) : null;
+    throw new ApiError(response.status, extractMessage(response.status, payload), payload);
+  }
+
+  return response.blob();
+}
+
 /** Convenience helpers mirroring the HTTP verbs the API uses. */
 export const api = {
   get: <T>(path: string, options?: ApiRequestOptions) =>
     apiFetch<T>(path, { ...options, method: "GET" }),
+  getBlob: (path: string, options?: ApiGetBlobOptions) => apiFetchBlob(path, options),
   post: <T>(path: string, options?: ApiRequestOptions) =>
     apiFetch<T>(path, { ...options, method: "POST" }),
   patch: <T>(path: string, options?: ApiRequestOptions) =>
