@@ -64,18 +64,14 @@ WEB_HOST_PORT=3020
 NEXT_PUBLIC_API_URL=http://localhost:4020
 CORS_ALLOWED_ORIGINS=http://localhost:3020
 
-JWT_ACCESS_SECRET=<secret>
-JWT_REFRESH_SECRET=<secret>
-JWT_ACCESS_TTL=15m
-JWT_REFRESH_TTL=30d
 COOKIE_SECURE=false
 
 ADMIN_NAME=Capella Admin
 ADMIN_EMAIL=admin@capella.eg
 ADMIN_PASSWORD=<secret>
 
-UPLOAD_MAX_BYTES=52428800
-UPLOAD_ALLOWED_MIME_TYPES=image/png,image/jpeg,image/webp,video/mp4,video/webm
+UPLOAD_MAX_BYTES=10485760
+UPLOAD_ALLOWED_MIME_TYPES=image/png,image/jpeg
 ```
 
 Production notes:
@@ -83,6 +79,8 @@ Production notes:
 - local Docker should keep `NEXT_PUBLIC_API_URL=http://localhost:4020`
 - behind a reverse proxy, set `NEXT_PUBLIC_API_URL` to the public API path or URL that the browser can reach
 - set `CORS_ALLOWED_ORIGINS` to the public web origin
+- auth uses the HTTP-only `capella_session` cookie with server-side session tables; no JWT environment variables are required
+- employee uploads are limited to JPEG/PNG images and capped at 10 MB by the API upload middleware
 - if production is same-origin behind Nginx, rebuild the `web` image after changing `NEXT_PUBLIC_API_URL` because `NEXT_PUBLIC_*` values are baked in at build time
 - for this deployment, use `https://capellaegy.com` as the public origin
 - recommended production browser API value: `NEXT_PUBLIC_API_URL=/api`

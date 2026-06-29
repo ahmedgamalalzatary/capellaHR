@@ -1,6 +1,6 @@
 # Capella HR Repo State
 
-Date: 2026-06-24
+Date: 2026-06-29
 
 ## Purpose
 
@@ -51,8 +51,8 @@ Notes:
 Short version:
 
 - Backend coverage is broad.
-- Frontend coverage is still narrow.
-- Only authentication and branch management are meaningfully implemented front-to-back today.
+- Frontend coverage is still narrower than backend coverage, but it now includes the core admin employee workflow.
+- Authentication, branch management, and admin employee management are meaningfully implemented front-to-back today.
 - Most HR business features already exist in the backend, but are not yet exposed in the frontend.
 
 ## Recommended Delivery Order
@@ -206,7 +206,7 @@ Missing:
 
 ### 4. Employee Management
 
-Status: `Partially Done`
+Status: `Mostly Done`
 
 #### Backend
 
@@ -233,24 +233,34 @@ Evidence:
 Implemented:
 
 - Admin navigation link to `/employees`
+- Employee list page with search/status/branch filters and pagination
+- Employee create page and form
+- Employee detail/edit page
+- Soft-delete action from the employee detail page
+- Read-only display for soft-deleted employees
+- Employee file viewing and replacement UI
+- Employee branch assignment history and assignment form
+- Feature API/hooks/query keys/schemas/types/components
 
 Evidence:
 
 - [apps/web/src/shared/components/layout/admin-nav.ts](/D:/Documents/work/capella/HR/apps/web/src/shared/components/layout/admin-nav.ts:17)
+- [apps/web/src/app/(admin)/employees/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/employees/page.tsx:1)
+- [apps/web/src/app/(admin)/employees/new/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/employees/new/page.tsx:1)
+- [apps/web/src/app/(admin)/employees/[employeeId]/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/employees/[employeeId]/page.tsx:1)
+- [apps/web/src/features/employees/employees.api.ts](/D:/Documents/work/capella/HR/apps/web/src/features/employees/employees.api.ts:1)
+- [apps/web/src/features/employees/components/employee-files-section.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/employees/components/employee-files-section.tsx:1)
+- [apps/web/src/features/employees/components/employee-branch-assignments-section.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/employees/components/employee-branch-assignments-section.tsx:1)
 
 Missing:
 
-- Employee list page
-- Employee create/edit flows
-- Employee profile/details page
-- Employee branch assignment UI
-- Employee file upload/download UI
 - Employee self/profile UI if needed on the employee side
+- Restore/un-delete flow for soft-deleted employees
 
-Reason for `Partially Done`:
+Reason for `Mostly Done`:
 
-- Backend is substantial.
-- Frontend implementation is effectively absent.
+- Backend and admin frontend coverage are substantial.
+- The remaining gap is restore/un-delete support and any employee-facing profile screen.
 
 Known backend gap (flagged 2026-06-25):
 
@@ -573,17 +583,18 @@ Implemented frontend feature folders:
 
 - `auth`
 - `branches`
+- `employees`
 - `network`
 
 Evidence:
 
 - [apps/web/src/features/auth](/D:/Documents/work/capella/HR/apps/web/src/features/auth/auth.api.ts:1)
 - [apps/web/src/features/branches](/D:/Documents/work/capella/HR/apps/web/src/features/branches/branches.api.ts:1)
+- [apps/web/src/features/employees](/D:/Documents/work/capella/HR/apps/web/src/features/employees/employees.api.ts:1)
 - [apps/web/src/features/network](/D:/Documents/work/capella/HR/apps/web/src/features/network/network.api.ts:1)
 
 Not yet represented as frontend feature modules in this pass:
 
-- `employees`
 - `attendance`
 - `employee-devices`
 - `weekly-day-offs`
@@ -628,7 +639,6 @@ Interpretation:
 
 These areas appear missing from the web app as user-facing product capabilities:
 
-- Employee management UI
 - Employee device setup UI
 - Attendance UI
 - Weekly day-off UI
