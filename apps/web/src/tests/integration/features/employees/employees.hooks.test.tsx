@@ -122,17 +122,20 @@ describe("useUpdateEmployee", () => {
 });
 
 describe("useDeleteEmployee", () => {
-  it("invalidates list and detail caches on success", async () => {
+  it("invalidates the list and removes scoped caches on success", async () => {
     server.use(http.delete(apiUrl("/employees/1"), () => new HttpResponse(null, { status: 204 })));
     const { queryClient, wrapper } = makeWrapper();
-    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const removeSpy = vi.spyOn(queryClient, "removeQueries");
 
     const { result } = renderHook(() => useDeleteEmployee(), { wrapper });
     result.current.mutate(1);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(spy).toHaveBeenCalledWith({ queryKey: employeeKeys.lists() });
-    expect(spy).toHaveBeenCalledWith({ queryKey: employeeKeys.detail(1) });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: employeeKeys.lists() });
+    expect(removeSpy).toHaveBeenCalledWith({ queryKey: employeeKeys.detail(1), exact: true });
+    expect(removeSpy).toHaveBeenCalledWith({ queryKey: employeeKeys.files(1), exact: true });
+    expect(removeSpy).toHaveBeenCalledWith({ queryKey: employeeKeys.assignments(1), exact: true });
   });
 });
 

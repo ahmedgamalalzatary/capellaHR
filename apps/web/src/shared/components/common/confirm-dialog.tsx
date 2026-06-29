@@ -39,9 +39,28 @@ export function ConfirmDialog({
   isConfirming = false,
   onConfirm
 }: ConfirmDialogProps) {
+  function handleOpenChange(nextOpen: boolean) {
+    if (isConfirming && !nextOpen) {
+      return;
+    }
+    onOpenChange(nextOpen);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        showCloseButton={!isConfirming}
+        onEscapeKeyDown={(event) => {
+          if (isConfirming) {
+            event.preventDefault();
+          }
+        }}
+        onPointerDownOutside={(event) => {
+          if (isConfirming) {
+            event.preventDefault();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

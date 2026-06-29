@@ -11,7 +11,7 @@ import {
   SelectValue
 } from "@/shared/components/ui/select";
 import { useDebounce } from "@/shared/hooks/use-debounce";
-import { useBranches } from "@/features/branches/branches.hooks";
+import { useAllBranches } from "@/features/branches/branches.hooks";
 import { EMPLOYEE_STATUS_LABELS } from "@/features/employees/employees.labels";
 import type { EmployeeListFilters, EmployeeStatus } from "@/features/employees/employees.types";
 
@@ -26,13 +26,17 @@ type EmployeeFiltersProps = {
 
 /** Search + branch + status filter bar for the employee list. */
 export function EmployeeFilters({ filters, onChange }: EmployeeFiltersProps) {
-  const branchesQuery = useBranches({ pageSize: 100 });
-  const completedBranches = (branchesQuery.data?.branches.items ?? []).filter(
+  const branchesQuery = useAllBranches();
+  const completedBranches = (branchesQuery.data?.branches ?? []).filter(
     (branch) => branch.setupStatus === "completed"
   );
 
   const [searchInput, setSearchInput] = useState(filters.search ?? "");
   const debouncedSearch = useDebounce(searchInput, 300);
+
+  useEffect(() => {
+    setSearchInput(filters.search ?? "");
+  }, [filters.search]);
 
   useEffect(() => {
     const current = filters.search ?? "";

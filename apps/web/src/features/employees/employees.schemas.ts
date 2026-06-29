@@ -27,6 +27,11 @@ const imageFileField = z
   .refine((file) => file.size <= MAX_IMAGE_BYTES, "حجم الملف يجب ألا يتجاوز 10 ميجابايت");
 
 const passwordField = z.string().min(8, "كلمة المرور يجب ألا تقل عن 8 أحرف");
+const optionalEmailField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.union([z.literal(""), z.email("البريد الإلكتروني غير صالح")]));
 
 /**
  * Text fields shared by the create and edit employee forms. Numeric fields are
@@ -37,7 +42,7 @@ const employeeBaseFields = {
   fullName: z.string().trim().min(1, "الاسم الكامل مطلوب"),
   primaryPhone: egyptianPhoneField("رقم الهاتف غير صالح"),
   whatsappPhone: egyptianPhoneField("رقم واتساب غير صالح"),
-  email: z.union([z.literal(""), z.email("البريد الإلكتروني غير صالح").trim().toLowerCase()]),
+  email: optionalEmailField,
   age: z.coerce
     .number({ message: "العمر غير صالح" })
     .int("العمر يجب أن يكون رقمًا صحيحًا")

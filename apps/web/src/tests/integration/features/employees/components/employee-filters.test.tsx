@@ -44,11 +44,15 @@ function mockBranches() {
 describe("EmployeeFilters", () => {
   it("renders the search box with the current search value", () => {
     mockBranches();
-    renderWithProviders(
+    const { rerender } = renderWithProviders(
       <EmployeeFilters filters={{ page: 1, search: "أحمد" }} onChange={vi.fn()} />
     );
 
     expect(screen.getByPlaceholderText("ابحث بالاسم")).toHaveValue("أحمد");
+
+    rerender(<EmployeeFilters filters={{ page: 1, search: "منى" }} onChange={vi.fn()} />);
+
+    expect(screen.getByPlaceholderText("ابحث بالاسم")).toHaveValue("منى");
   });
 
   it("debounces search input and resets to page 1", async () => {

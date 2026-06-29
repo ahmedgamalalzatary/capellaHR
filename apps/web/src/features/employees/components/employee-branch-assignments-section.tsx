@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/shared/components/ui/select";
-import { useBranches } from "@/features/branches/branches.hooks";
+import { useAllBranches } from "@/features/branches/branches.hooks";
 import {
   useCreateEmployeeAssignment,
   useEmployeeAssignments
@@ -26,6 +26,10 @@ function formatDate(iso: string) {
   return format(new Date(iso), "d MMMM yyyy", { locale: ar });
 }
 
+function todayInputValue() {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
 /** Branch assignment history plus a form to assign a new (now/future) branch. */
 export function EmployeeBranchAssignmentsSection({
   employeeId,
@@ -35,14 +39,14 @@ export function EmployeeBranchAssignmentsSection({
   readOnly?: boolean;
 }) {
   const assignmentsQuery = useEmployeeAssignments(employeeId);
-  const branchesQuery = useBranches({ pageSize: 100 });
+  const branchesQuery = useAllBranches();
   const createAssignment = useCreateEmployeeAssignment(employeeId);
 
-  const completedBranches = (branchesQuery.data?.branches.items ?? []).filter(
+  const completedBranches = (branchesQuery.data?.branches ?? []).filter(
     (branch) => branch.setupStatus === "completed"
   );
   const branchNameById = new Map(
-    (branchesQuery.data?.branches.items ?? []).map((branch) => [branch.id, branch.name])
+    (branchesQuery.data?.branches ?? []).map((branch) => [branch.id, branch.name])
   );
 
   const [branchId, setBranchId] = useState<string>("");
@@ -53,6 +57,10 @@ export function EmployeeBranchAssignmentsSection({
     setFormError(null);
     if (!branchId || !effectiveDate) {
       setFormError("اختر الفرع وتاريخ التعيين");
+      return;
+    }
+    if (effectiveDate < todayInputValue()) {
+      setFormError("تاريخ التعيين يجب أن يكون اليوم أو في المستقبل");
       return;
     }
 
@@ -132,6 +140,7 @@ export function EmployeeBranchAssignmentsSection({
               id="assignment-date"
               type="date"
               dir="ltr"
+              min={todayInputValue()}
               value={effectiveDate}
               onChange={(event) => setEffectiveDate(event.target.value)}
             />

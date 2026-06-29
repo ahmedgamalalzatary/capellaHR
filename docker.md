@@ -48,7 +48,10 @@ Container-internal ports stay:
 
 ## Required Environment Values
 
-Keep these aligned in `.env.docker` and `.env.production`:
+Use separate values for local Docker and production. Do not copy localhost URLs or
+`COOKIE_SECURE=false` into `.env.production`.
+
+Local Docker `.env.docker` example:
 
 ```env
 MYSQL_ROOT_PASSWORD=<secret>
@@ -74,11 +77,38 @@ UPLOAD_MAX_BYTES=10485760
 UPLOAD_ALLOWED_MIME_TYPES=image/png,image/jpeg
 ```
 
+Production `.env.production` example:
+
+```env
+MYSQL_ROOT_PASSWORD=<secret>
+MYSQL_DATABASE=capella_hr
+MYSQL_USER=capella
+MYSQL_PASSWORD=<secret>
+
+DATABASE_URL=mysql://capella:<secret>@db:3306/capella_hr
+
+API_HOST_PORT=4020
+WEB_HOST_PORT=3020
+
+NEXT_PUBLIC_API_URL=/api
+CORS_ALLOWED_ORIGINS=https://capellaegy.com
+
+COOKIE_SECURE=true
+
+ADMIN_NAME=Capella Admin
+ADMIN_EMAIL=admin@capella.eg
+ADMIN_PASSWORD=<secret>
+
+UPLOAD_MAX_BYTES=10485760
+UPLOAD_ALLOWED_MIME_TYPES=image/png,image/jpeg
+```
+
 Production notes:
 
 - local Docker should keep `NEXT_PUBLIC_API_URL=http://localhost:4020`
 - behind a reverse proxy, set `NEXT_PUBLIC_API_URL` to the public API path or URL that the browser can reach
 - set `CORS_ALLOWED_ORIGINS` to the public web origin
+- set `COOKIE_SECURE=true` when serving over HTTPS; the Compose fallback disables Secure cookies for local HTTP
 - auth uses the HTTP-only `capella_session` cookie with server-side session tables; no JWT environment variables are required
 - employee uploads are limited to JPEG/PNG images and capped at 10 MB by the API upload middleware
 - if production is same-origin behind Nginx, rebuild the `web` image after changing `NEXT_PUBLIC_API_URL` because `NEXT_PUBLIC_*` values are baked in at build time

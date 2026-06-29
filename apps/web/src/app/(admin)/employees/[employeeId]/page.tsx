@@ -7,7 +7,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Separator } from "@/shared/components/ui/separator";
 import { ConfirmDialog } from "@/shared/components/common/confirm-dialog";
-import { useBranches } from "@/features/branches/branches.hooks";
+import { useAllBranches } from "@/features/branches/branches.hooks";
 import { useDeleteEmployee, useEmployee } from "@/features/employees/employees.hooks";
 import { EMPLOYEE_STATUS_LABELS } from "@/features/employees/employees.labels";
 import { EmployeeForm } from "@/features/employees/components/employee-form";
@@ -31,7 +31,7 @@ export default function EmployeeDetailPage() {
   const isValidId = Number.isInteger(employeeId) && employeeId > 0;
 
   const { data, isPending, isError } = useEmployee(isValidId ? employeeId : 1, isValidId);
-  const branchesQuery = useBranches({ pageSize: 100 });
+  const branchesQuery = useAllBranches();
   const deleteEmployee = useDeleteEmployee();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -64,8 +64,8 @@ export default function EmployeeDetailPage() {
   const branchName =
     (employee.branchId === null
       ? null
-      : branchesQuery.data?.branches.items.find((branch) => branch.id === employee.branchId)
-          ?.name) ?? "—";
+      : branchesQuery.data?.branches.find((branch) => branch.id === employee.branchId)?.name) ??
+    "—";
 
   function handleDelete() {
     deleteEmployee.mutate(employee.id, {

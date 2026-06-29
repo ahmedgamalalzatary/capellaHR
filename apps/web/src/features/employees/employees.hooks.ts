@@ -55,7 +55,9 @@ export function useDeleteEmployee() {
     mutationFn: (employeeId: number) => employeesApi.remove(employeeId),
     onSuccess: (_data, employeeId) => {
       queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
+      queryClient.removeQueries({ queryKey: employeeKeys.detail(employeeId), exact: true });
+      queryClient.removeQueries({ queryKey: employeeKeys.files(employeeId), exact: true });
+      queryClient.removeQueries({ queryKey: employeeKeys.assignments(employeeId), exact: true });
     }
   });
 }

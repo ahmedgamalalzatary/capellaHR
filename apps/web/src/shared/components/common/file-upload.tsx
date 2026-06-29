@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { cn } from "@/shared/lib/utils";
 import { Input } from "@/shared/components/ui/input";
@@ -30,11 +30,15 @@ export function FileUpload({
   error
 }: FileUploadProps) {
   const id = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!value) {
       setObjectUrl(null);
+      if (inputRef.current) {
+        inputRef.current.value = "";
+      }
       return;
     }
 
@@ -61,11 +65,16 @@ export function FileUpload({
       ) : null}
 
       <Input
+        ref={inputRef}
         id={id}
         type="file"
         accept={accept}
         aria-invalid={!!error}
-        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
+        onChange={(event) => {
+          const selected = event.target.files?.[0] ?? null;
+          event.target.value = "";
+          onChange(selected);
+        }}
       />
 
       {value ? <p className="text-xs text-muted-foreground">{value.name}</p> : null}

@@ -8,8 +8,8 @@ import { server } from "@/test/msw/server";
 import { EmployeeFilesSection } from "@/features/employees/components/employee-files-section";
 
 beforeEach(() => {
-  URL.createObjectURL = vi.fn(() => "blob:mock");
-  URL.revokeObjectURL = vi.fn();
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -70,5 +70,6 @@ describe("EmployeeFilesSection", () => {
     await userEvent.setup().upload(input, new File(["x"], "front.png", { type: "image/png" }));
 
     await waitFor(() => expect(putFileType).toBe("id_front"));
+    expect(input).toHaveValue("");
   });
 });

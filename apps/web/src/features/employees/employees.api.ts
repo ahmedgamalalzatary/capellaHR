@@ -41,6 +41,12 @@ function toCreateFormData(payload: EmployeeCreatePayload): FormData {
   return form;
 }
 
+function normalizeUpdatePayload(input: EmployeeUpdatePayload): EmployeeUpdatePayload {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== "")
+  ) as EmployeeUpdatePayload;
+}
+
 export const employeesApi = {
   /** Paginated, filterable list of employees. */
   list: (filters?: EmployeeListFilters) =>
@@ -55,7 +61,9 @@ export const employeesApi = {
 
   /** Update an employee's text fields (JSON, partial). */
   update: (employeeId: number, input: EmployeeUpdatePayload) =>
-    api.patch<EmployeeResponse>(`/employees/${employeeId}`, { json: input }),
+    api.patch<EmployeeResponse>(`/employees/${employeeId}`, {
+      json: normalizeUpdatePayload(input)
+    }),
 
   /** Soft-delete an employee. Resolves to void (the API replies 204 No Content). */
   remove: async (employeeId: number): Promise<void> => {

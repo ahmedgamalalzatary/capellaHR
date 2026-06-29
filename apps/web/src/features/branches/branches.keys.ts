@@ -5,6 +5,7 @@ export const branchKeys = {
   all: ["branches"] as const,
   lists: () => [...branchKeys.all, "list"] as const,
   list: (filters?: Partial<BranchSearchInput>) => [...branchKeys.lists(), filters ?? {}] as const,
+  allList: () => [...branchKeys.lists(), "all"] as const,
   details: () => [...branchKeys.all, "detail"] as const,
   detail: (branchId: number) => [...branchKeys.details(), branchId] as const,
   device: (branchId: number) => [...branchKeys.detail(branchId), "device"] as const

@@ -24,7 +24,7 @@ import {
   SelectValue
 } from "@/shared/components/ui/select";
 import { FileUpload } from "@/shared/components/common/file-upload";
-import { useBranches } from "@/features/branches/branches.hooks";
+import { useAllBranches } from "@/features/branches/branches.hooks";
 import { useCreateEmployee, useUpdateEmployee } from "@/features/employees/employees.hooks";
 import { employeeErrorMessage } from "@/features/employees/employee-error-message";
 import {
@@ -69,8 +69,8 @@ function FormError({ message }: { message: string | null }) {
 function CreateEmployeeForm({ onSuccess }: { onSuccess?: (employee: Employee) => void }) {
   const createEmployee = useCreateEmployee();
   const [formError, setFormError] = useState<string | null>(null);
-  const branchesQuery = useBranches({ pageSize: 100 });
-  const completedBranches = (branchesQuery.data?.branches.items ?? []).filter(
+  const branchesQuery = useAllBranches();
+  const completedBranches = (branchesQuery.data?.branches ?? []).filter(
     (branch) => branch.setupStatus === "completed"
   );
 

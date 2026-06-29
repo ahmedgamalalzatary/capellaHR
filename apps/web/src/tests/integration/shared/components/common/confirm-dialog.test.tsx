@@ -75,4 +75,25 @@ describe("ConfirmDialog", () => {
 
     expect(screen.getByRole("button", { name: "حذف" })).toBeDisabled();
   });
+
+  it("does not request close from dialog interactions while confirming", async () => {
+    const onOpenChange = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ConfirmDialog
+        open
+        onOpenChange={onOpenChange}
+        title="حذف الموظف"
+        description="هل أنت متأكد؟"
+        confirmLabel="حذف"
+        isConfirming
+        onConfirm={vi.fn()}
+      />
+    );
+
+    await user.keyboard("{Escape}");
+
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "إغلاق" })).not.toBeInTheDocument();
+  });
 });

@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow
 } from "@/shared/components/ui/table";
-import { useBranches } from "@/features/branches/branches.hooks";
+import { useAllBranches } from "@/features/branches/branches.hooks";
 import { useEmployees } from "@/features/employees/employees.hooks";
 import { EMPLOYEE_STATUS_LABELS } from "@/features/employees/employees.labels";
 import type { Employee, EmployeeListFilters } from "@/features/employees/employees.types";
@@ -25,10 +25,10 @@ type EmployeeListProps = {
 /** Admin table of employees for the current filters, with paging controls. */
 export function EmployeeList({ filters, onPageChange }: EmployeeListProps) {
   const { data, isPending, isError } = useEmployees(filters);
-  const branchesQuery = useBranches({ pageSize: 100 });
+  const branchesQuery = useAllBranches();
 
   const branchNameById = new Map(
-    (branchesQuery.data?.branches.items ?? []).map((branch) => [branch.id, branch.name])
+    (branchesQuery.data?.branches ?? []).map((branch) => [branch.id, branch.name])
   );
 
   if (isPending) {

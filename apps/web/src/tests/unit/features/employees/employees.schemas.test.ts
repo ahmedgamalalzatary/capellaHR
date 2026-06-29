@@ -68,6 +68,27 @@ describe("employeeCreateFormSchema", () => {
     expect(employeeCreateFormSchema.safeParse({ ...validCreate, email: "" }).success).toBe(true);
   });
 
+  it("normalizes a padded email before validating it", () => {
+    const result = employeeCreateFormSchema.safeParse({
+      ...validCreate,
+      email: "  USER@Example.COM  "
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.email).toBe("user@example.com");
+    }
+  });
+
+  it("treats a whitespace-only email as empty", () => {
+    const result = employeeCreateFormSchema.safeParse({ ...validCreate, email: "   " });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.email).toBe("");
+    }
+  });
+
   it("rejects a malformed email", () => {
     expect(employeeCreateFormSchema.safeParse({ ...validCreate, email: "not-an-email" }).success).toBe(
       false

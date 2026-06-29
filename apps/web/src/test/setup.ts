@@ -20,6 +20,14 @@ if (!window.matchMedia) {
     }) as unknown as MediaQueryList;
 }
 
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // MSW lifecycle: error on any unhandled request so missing mocks are obvious.
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());

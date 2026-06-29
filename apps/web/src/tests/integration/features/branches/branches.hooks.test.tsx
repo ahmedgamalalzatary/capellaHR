@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   useBranch,
+  useAllBranches,
   useBranches,
   useCreateBranch,
   useUpdateBranch
@@ -50,6 +51,37 @@ describe("useBranches", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.branches.items).toHaveLength(1);
+  });
+});
+
+describe("useAllBranches", () => {
+  it("fetches every branch page", async () => {
+    server.use(
+      http.get(apiUrl("/branches"), ({ request }) => {
+        const page = new URL(request.url).searchParams.get("page");
+        if (page === "2") {
+          return HttpResponse.json({
+            branches: {
+              items: [{ ...branch, id: 2, name: "فرع مدينة نصر" }],
+              pagination: { page: 2, pageSize: 100, total: 2, totalPages: 2 }
+            }
+          });
+        }
+
+        return HttpResponse.json({
+          branches: {
+            items: [branch],
+            pagination: { page: 1, pageSize: 100, total: 2, totalPages: 2 }
+          }
+        });
+      })
+    );
+    const { wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useAllBranches(), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.branches.map((item) => item.id)).toEqual([1, 2]);
   });
 });
 

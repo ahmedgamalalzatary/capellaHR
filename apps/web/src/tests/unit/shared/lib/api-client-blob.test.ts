@@ -39,6 +39,7 @@ describe("api.getBlob", () => {
   it("ignores GET-unsafe request options", async () => {
     let method: string | null = null;
     let body = "";
+    let downloadQuery: string | null = null;
     const unsafeOptions = {
       method: "POST",
       body: "x",
@@ -47,6 +48,7 @@ describe("api.getBlob", () => {
     server.use(
       http.get(apiUrl("/employees/1/files/7"), async ({ request }) => {
         method = request.method;
+        downloadQuery = new URL(request.url).searchParams.get("download");
         body = await request.text();
         return HttpResponse.arrayBuffer(new Uint8Array([7]).buffer, {
           headers: { "Content-Type": "image/png" }
@@ -59,5 +61,6 @@ describe("api.getBlob", () => {
     expect(blob.size).toBe(1);
     expect(method).toBe("GET");
     expect(body).toBe("");
+    expect(downloadQuery).toBe("true");
   });
 });

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders, screen, userEvent, waitFor } from "@/test/utils";
 import { apiUrl } from "@/test/msw/handlers";
@@ -7,11 +7,23 @@ import { server } from "@/test/msw/server";
 
 import { EmployeeBranchAssignmentsSection } from "@/features/employees/components/employee-branch-assignments-section";
 
+const originalScrollIntoView = Element.prototype.scrollIntoView;
+const originalHasPointerCapture = Element.prototype.hasPointerCapture;
+const originalSetPointerCapture = Element.prototype.setPointerCapture;
+const originalReleasePointerCapture = Element.prototype.releasePointerCapture;
+
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
   Element.prototype.hasPointerCapture = vi.fn(() => false);
   Element.prototype.setPointerCapture = vi.fn();
   Element.prototype.releasePointerCapture = vi.fn();
+});
+
+afterAll(() => {
+  Element.prototype.scrollIntoView = originalScrollIntoView;
+  Element.prototype.hasPointerCapture = originalHasPointerCapture;
+  Element.prototype.setPointerCapture = originalSetPointerCapture;
+  Element.prototype.releasePointerCapture = originalReleasePointerCapture;
 });
 
 const branch = {
@@ -118,7 +130,7 @@ describe("EmployeeBranchAssignmentsSection", () => {
     expect(body.effectiveFrom).toBe("2026-08-01T00:00:00.000Z");
   });
 
-  it("shows a mapped message when the backend rejects a past date", async () => {
+  it("rejects a past assignment date before submitting", async () => {
     mockBranches();
     mockAssignments([]);
     server.use(

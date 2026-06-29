@@ -159,6 +159,20 @@ describe("employeesApi.update", () => {
     expect(receivedBody).toEqual({ fullName: "محدث" });
     expect(result.employee.fullName).toBe("محدث");
   });
+
+  it("omits empty-string unchanged sentinels from update JSON", async () => {
+    let receivedBody: unknown;
+    server.use(
+      http.patch(apiUrl("/employees/1"), async ({ request }) => {
+        receivedBody = await request.json();
+        return HttpResponse.json({ employee });
+      })
+    );
+
+    await employeesApi.update(1, { fullName: "أحمد جمال", email: "", password: "" });
+
+    expect(receivedBody).toEqual({ fullName: "أحمد جمال" });
+  });
 });
 
 describe("employeesApi.remove", () => {
