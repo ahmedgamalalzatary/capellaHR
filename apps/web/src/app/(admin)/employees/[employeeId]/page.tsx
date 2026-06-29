@@ -13,6 +13,7 @@ import { EMPLOYEE_STATUS_LABELS } from "@/features/employees/employees.labels";
 import { EmployeeForm } from "@/features/employees/components/employee-form";
 import { EmployeeProfileSummary } from "@/features/employees/components/employee-profile-summary";
 import { EmployeeFilesSection } from "@/features/employees/components/employee-files-section";
+import { EmployeeDeviceSection } from "@/features/employees/components/employee-device-section";
 import { EmployeeBranchAssignmentsSection } from "@/features/employees/components/employee-branch-assignments-section";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -101,6 +102,12 @@ export default function EmployeeDetailPage() {
 
       <Section title="الملفات">
         <EmployeeFilesSection employeeId={employee.id} readOnly={isDeleted} />
+      </Section>
+
+      <Separator />
+
+      <Section title="جهاز الحضور">
+        <EmployeeDeviceSection employeeId={employee.id} readOnly={isDeleted} />
       </Section>
 
       <Separator />

@@ -43,6 +43,22 @@ export type EmployeeBranchAssignment = {
   assignedByAdminId: number;
 };
 
+export type EmployeeDeviceState = {
+  employeeId: number;
+  activeDevice: {
+    id: number;
+    deviceLabel: string | null;
+    browserFingerprint: string;
+    registeredAt: string;
+  } | null;
+  pendingSetup: {
+    id: number;
+    deviceToken: string;
+    deviceLabel: string | null;
+    expiresAt: string;
+  } | null;
+};
+
 export type EmployeeListResponse = {
   employees: {
     items: Employee[];
@@ -68,6 +84,23 @@ export type EmployeeBranchAssignmentListResponse = {
 
 export type EmployeeBranchAssignmentResponse = {
   assignment: EmployeeBranchAssignment;
+};
+
+export type EmployeeDeviceResponse = {
+  employeeDevice: EmployeeDeviceState;
+};
+
+export type EmployeeDeviceSetupLinkInput = {
+  deviceLabel?: string;
+};
+
+export type EmployeeDeviceSetupCompletionInput = {
+  deviceLabel?: string;
+  browserFingerprint: string;
+};
+
+export type EmployeeDeviceRevokeResponse = {
+  success: boolean;
 };
 
 /** Filters accepted by the employee list endpoint (`GET /employees`). */

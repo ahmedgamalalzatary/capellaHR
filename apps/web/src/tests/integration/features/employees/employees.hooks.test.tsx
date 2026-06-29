@@ -11,7 +11,11 @@ import {
   useEmployee,
   useEmployeeAssignments,
   useEmployeeFiles,
+  useEmployeeDevice,
+  useCompleteEmployeeDeviceSetup,
+  useCreateEmployeeDeviceSetupLink,
   useEmployees,
+  useRevokeEmployeeDevice,
   useReplaceEmployeeFile,
   useUpdateEmployee
 } from "@/features/employees/employees.hooks";
@@ -218,5 +222,78 @@ describe("useCreateEmployeeAssignment", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(spy).toHaveBeenCalledWith({ queryKey: employeeKeys.assignments(1) });
     expect(spy).toHaveBeenCalledWith({ queryKey: employeeKeys.detail(1) });
+  });
+});
+
+describe("employee device hooks", () => {
+  it("fetches employee device state and disables invalid ids", async () => {
+    server.use(
+      http.get(apiUrl("/employees/1/device"), () =>
+        HttpResponse.json({ employeeDevice: { employeeId: 1, activeDevice: null, pendingSetup: null } })
+      )
+    );
+    const { wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useEmployeeDevice(1), { wrapper });
+    await waitFor(() => expect(result.current.data?.employeeDevice.employeeId).toBe(1));
+
+    const disabled = renderHook(() => useEmployeeDevice(0), { wrapper });
+    expect(disabled.result.current.fetchStatus).toBe("idle");
+  });
+
+  it("invalidates employee device state after creating a setup link", async () => {
+    server.use(
+      http.post(apiUrl("/employees/1/device/setup-links"), () =>
+        HttpResponse.json(
+          { employeeDevice: { employeeId: 1, activeDevice: null, pendingSetup: null } },
+          { status: 201 }
+        )
+      )
+    );
+    const { queryClient, wrapper } = makeWrapper();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useCreateEmployeeDeviceSetupLink(1), { wrapper });
+    result.current.mutate({ deviceLabel: "هاتف أحمد" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith({ queryKey: employeeKeys.device(1) });
+  });
+
+  it("invalidates employee device state after revoking access", async () => {
+    server.use(http.delete(apiUrl("/employees/1/device"), () => HttpResponse.json({ success: true })));
+    const { queryClient, wrapper } = makeWrapper();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useRevokeEmployeeDevice(1), { wrapper });
+    result.current.mutate();
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).toHaveBeenCalledWith({ queryKey: employeeKeys.device(1) });
+  });
+
+  it("completes employee device setup by token", async () => {
+    server.use(
+      http.post(apiUrl("/employee-device-setup/token-1/complete"), () =>
+        HttpResponse.json({
+          employeeDevice: {
+            employeeId: 1,
+            activeDevice: {
+              id: 12,
+              deviceLabel: "هاتف أحمد",
+              browserFingerprint: "fp",
+              registeredAt: "2026-06-29T21:00:00.000Z"
+            },
+            pendingSetup: null
+          }
+        })
+      )
+    );
+    const { wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useCompleteEmployeeDeviceSetup("token-1"), { wrapper });
+    result.current.mutate({ browserFingerprint: "fp" });
+
+    await waitFor(() => expect(result.current.data?.employeeDevice.activeDevice?.id).toBe(12));
   });
 });

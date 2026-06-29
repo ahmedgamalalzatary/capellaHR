@@ -7,6 +7,8 @@ import {
 import { employeeKeys } from "@/features/employees/employees.keys";
 import type {
   EmployeeCreatePayload,
+  EmployeeDeviceSetupCompletionInput,
+  EmployeeDeviceSetupLinkInput,
   EmployeeFileType,
   EmployeeListFilters,
   EmployeeUpdatePayload
@@ -58,6 +60,7 @@ export function useDeleteEmployee() {
       queryClient.removeQueries({ queryKey: employeeKeys.detail(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.files(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.assignments(employeeId), exact: true });
+      queryClient.removeQueries({ queryKey: employeeKeys.device(employeeId), exact: true });
     }
   });
 }
@@ -98,5 +101,41 @@ export function useCreateEmployeeAssignment(employeeId: number) {
       queryClient.invalidateQueries({ queryKey: employeeKeys.assignments(employeeId) });
       queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
     }
+  });
+}
+
+export function useEmployeeDevice(employeeId: number) {
+  return useQuery({
+    queryKey: employeeKeys.device(employeeId),
+    queryFn: () => employeesApi.getDevice(employeeId),
+    enabled: Number.isInteger(employeeId) && employeeId > 0
+  });
+}
+
+export function useCreateEmployeeDeviceSetupLink(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EmployeeDeviceSetupLinkInput) =>
+      employeesApi.createDeviceSetupLink(employeeId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.device(employeeId) });
+    }
+  });
+}
+
+export function useRevokeEmployeeDevice(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => employeesApi.revokeDevice(employeeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.device(employeeId) });
+    }
+  });
+}
+
+export function useCompleteEmployeeDeviceSetup(deviceToken: string) {
+  return useMutation({
+    mutationFn: (input: EmployeeDeviceSetupCompletionInput) =>
+      employeesApi.completeDeviceSetup(deviceToken, input)
   });
 }

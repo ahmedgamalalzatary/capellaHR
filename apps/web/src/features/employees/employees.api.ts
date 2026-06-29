@@ -4,6 +4,10 @@ import type {
   EmployeeBranchAssignmentListResponse,
   EmployeeBranchAssignmentResponse,
   EmployeeCreatePayload,
+  EmployeeDeviceResponse,
+  EmployeeDeviceRevokeResponse,
+  EmployeeDeviceSetupCompletionInput,
+  EmployeeDeviceSetupLinkInput,
   EmployeeFileListResponse,
   EmployeeFileResponse,
   EmployeeFileType,
@@ -94,6 +98,26 @@ export const employeesApi = {
   /** Assign the employee to a branch effective now or in the future. */
   createAssignment: (employeeId: number, input: EmployeeAssignmentInput) =>
     api.post<EmployeeBranchAssignmentResponse>(`/employees/${employeeId}/branch-assignments`, {
+      json: input
+    }),
+
+  /** Current trusted-device state for one employee. */
+  getDevice: (employeeId: number) =>
+    api.get<EmployeeDeviceResponse>(`/employees/${employeeId}/device`),
+
+  /** Create a one-hour setup link that the employee opens on their device. */
+  createDeviceSetupLink: (employeeId: number, input: EmployeeDeviceSetupLinkInput) =>
+    api.post<EmployeeDeviceResponse>(`/employees/${employeeId}/device/setup-links`, {
+      json: input
+    }),
+
+  /** Revoke active and pending device access for one employee. */
+  revokeDevice: (employeeId: number) =>
+    api.delete<EmployeeDeviceRevokeResponse>(`/employees/${employeeId}/device`),
+
+  /** Public setup completion endpoint called from the employee's device. */
+  completeDeviceSetup: (deviceToken: string, input: EmployeeDeviceSetupCompletionInput) =>
+    api.post<EmployeeDeviceResponse>(`/employee-device-setup/${deviceToken}/complete`, {
       json: input
     })
 };

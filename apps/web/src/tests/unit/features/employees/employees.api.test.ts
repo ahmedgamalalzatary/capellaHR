@@ -286,3 +286,92 @@ describe("employeesApi branch assignments", () => {
     expect(result.assignment.branchId).toBe(7);
   });
 });
+
+describe("employeesApi employee devices", () => {
+  it("GETs the current employee device state", async () => {
+    server.use(
+      http.get(apiUrl("/employees/1/device"), () =>
+        HttpResponse.json({
+          employeeDevice: {
+            employeeId: 1,
+            activeDevice: null,
+            pendingSetup: null
+          }
+        })
+      )
+    );
+
+    const result = await employeesApi.getDevice(1);
+
+    expect(result.employeeDevice.employeeId).toBe(1);
+  });
+
+  it("POSTs a setup link request with an optional device label", async () => {
+    let receivedBody: unknown;
+    server.use(
+      http.post(apiUrl("/employees/1/device/setup-links"), async ({ request }) => {
+        receivedBody = await request.json();
+        return HttpResponse.json(
+          {
+            employeeDevice: {
+              employeeId: 1,
+              activeDevice: null,
+              pendingSetup: {
+                id: 10,
+                deviceToken: "token-1",
+                deviceLabel: "هاتف أحمد",
+                expiresAt: "2026-06-29T22:00:00.000Z"
+              }
+            }
+          },
+          { status: 201 }
+        );
+      })
+    );
+
+    const result = await employeesApi.createDeviceSetupLink(1, { deviceLabel: "هاتف أحمد" });
+
+    expect(receivedBody).toEqual({ deviceLabel: "هاتف أحمد" });
+    expect(result.employeeDevice.pendingSetup?.deviceToken).toBe("token-1");
+  });
+
+  it("DELETEs employee device access", async () => {
+    server.use(
+      http.delete(apiUrl("/employees/1/device"), () => HttpResponse.json({ success: true }))
+    );
+
+    await expect(employeesApi.revokeDevice(1)).resolves.toEqual({ success: true });
+  });
+
+  it("completes employee device setup from the public token route", async () => {
+    let receivedBody: unknown;
+    server.use(
+      http.post(apiUrl("/employee-device-setup/token-1/complete"), async ({ request }) => {
+        receivedBody = await request.json();
+        return HttpResponse.json({
+          employeeDevice: {
+            employeeId: 1,
+            activeDevice: {
+              id: 12,
+              deviceLabel: "هاتف أحمد",
+              browserFingerprint: "fingerprint-1",
+              registeredAt: "2026-06-29T21:00:00.000Z"
+            },
+            pendingSetup: null
+          }
+        });
+      })
+    );
+
+    const result = await employeesApi.completeDeviceSetup("token-1", {
+      deviceLabel: "هاتف أحمد",
+      browserFingerprint: "fingerprint-1"
+    });
+
+    expect(receivedBody).toEqual({
+      deviceLabel: "هاتف أحمد",
+      browserFingerprint: "fingerprint-1"
+    });
+    expect(result.employeeDevice.activeDevice?.id).toBe(12);
+  });
+});

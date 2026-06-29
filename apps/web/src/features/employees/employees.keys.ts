@@ -9,5 +9,6 @@ export const employeeKeys = {
   detail: (employeeId: number) => [...employeeKeys.details(), employeeId] as const,
   files: (employeeId: number) => [...employeeKeys.detail(employeeId), "files"] as const,
   assignments: (employeeId: number) =>
-    [...employeeKeys.detail(employeeId), "assignments"] as const
+    [...employeeKeys.detail(employeeId), "assignments"] as const,
+  device: (employeeId: number) => [...employeeKeys.detail(employeeId), "device"] as const
 };
