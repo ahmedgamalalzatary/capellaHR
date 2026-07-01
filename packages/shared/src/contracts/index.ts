@@ -18,6 +18,10 @@ export type {
 } from "../types/employee-devices";
 export type { MonthlyAttendanceSummaryFilterInput } from "../types/reports";
 export type {
+  MonthLockCreateInput,
+  MonthLockListFilterInput
+} from "../types/month-locks";
+export type {
   PermissionAbsenceCreateInput,
   PermissionAbsenceListFilterInput,
   PermissionAbsenceUpdateInput

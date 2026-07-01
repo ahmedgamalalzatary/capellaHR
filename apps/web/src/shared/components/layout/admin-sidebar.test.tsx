@@ -51,6 +51,7 @@ describe("AdminSidebar", () => {
     expect(screen.getByRole("link", { name: /الموظفون/ })).toHaveAttribute("href", "/employees");
     expect(screen.getByRole("link", { name: /التقارير/ })).toHaveAttribute("href", "/admin/reports");
     expect(screen.getByRole("link", { name: /سجل التدقيق/ })).toHaveAttribute("href", "/admin/audit-logs");
+    expect(screen.getByRole("link", { name: /أقفال الشهور/ })).toHaveAttribute("href", "/admin/month-locks");
   });
 
   it("marks the active section's link as current", () => {

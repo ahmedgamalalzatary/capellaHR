@@ -3,6 +3,7 @@ import {
   CalendarClock,
   FileText,
   LayoutDashboard,
+  LockKeyhole,
   ScrollText,
   Users,
   type LucideIcon
@@ -25,7 +26,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { title: "الموظفون", href: "/employees", icon: Users },
   { title: "الحضور", href: "/admin/attendance", icon: CalendarClock },
   { title: "التقارير", href: "/admin/reports", icon: FileText },
-  { title: "سجل التدقيق", href: "/admin/audit-logs", icon: ScrollText }
+  { title: "سجل التدقيق", href: "/admin/audit-logs", icon: ScrollText },
+  { title: "أقفال الشهور", href: "/admin/month-locks", icon: LockKeyhole }
 ];
 
 /** Whether `pathname` belongs to the section rooted at `href`. */

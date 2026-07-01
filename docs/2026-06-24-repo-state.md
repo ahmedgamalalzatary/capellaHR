@@ -547,7 +547,7 @@ Missing:
 
 ### 12. Month Locks
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -564,13 +564,22 @@ Evidence:
 
 Implemented:
 
-- No frontend feature found.
+- Admin month-lock route and management dashboard
+- Sidebar navigation entry
+- Month-lock list and month filter
+- Create-lock form with optional notes
+- Conflict/error feedback for duplicate locks, open sessions, and non-completed months
+- Operational visibility explaining that locked months block attendance edits, weekly day-off changes, permission absences, and employee attendance actions
+
+Evidence:
+
+- [apps/web/src/app/(admin)/admin/month-locks/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/admin/month-locks/page.tsx:1)
+- [apps/web/src/features/month-locks/components/admin-month-locks-dashboard.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/month-locks/components/admin-month-locks-dashboard.tsx:1)
+- [apps/web/src/tests/integration/features/month-locks/admin-month-locks-page.test.tsx](/D:/Documents/work/capella/HR/apps/web/src/tests/integration/features/month-locks/admin-month-locks-page.test.tsx:1)
 
 Missing:
 
-- Month-lock management UI
-- Operational rules visibility around what a lock affects
-- Integration with reports/attendance admin flows
+- Cross-page locked-month badges in reports/attendance, if required later
 
 ### 13. Dashboard
 
@@ -633,6 +642,7 @@ Implemented frontend feature folders:
 - `attendance`
 - `audit-logs`
 - `employees`
+- `month-locks`
 - `network`
 - `reports`
 
@@ -643,12 +653,13 @@ Evidence:
 - [apps/web/src/features/branches](/D:/Documents/work/capella/HR/apps/web/src/features/branches/branches.api.ts:1)
 - [apps/web/src/features/attendance](/D:/Documents/work/capella/HR/apps/web/src/features/attendance/attendance.api.ts:1)
 - [apps/web/src/features/employees](/D:/Documents/work/capella/HR/apps/web/src/features/employees/employees.api.ts:1)
+- [apps/web/src/features/month-locks](/D:/Documents/work/capella/HR/apps/web/src/features/month-locks/month-locks.api.ts:1)
 - [apps/web/src/features/network](/D:/Documents/work/capella/HR/apps/web/src/features/network/network.api.ts:1)
 - [apps/web/src/features/reports](/D:/Documents/work/capella/HR/apps/web/src/features/reports/reports.api.ts:1)
 
 Not yet represented as frontend feature modules in this pass:
 
-- `month-locks`
+- None identified in the current feature list.
 
 Interpretation:
 
@@ -686,7 +697,7 @@ Interpretation:
 
 These areas appear missing from the web app as user-facing product capabilities:
 
-- Month lock UI
+- None identified in the current feature list.
 
 These areas appear missing or not validated in this pass at repo level:
 
