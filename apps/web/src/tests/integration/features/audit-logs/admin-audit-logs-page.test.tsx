@@ -1,0 +1,98 @@
+import { http, HttpResponse } from "msw";
+import { describe, expect, it, vi } from "vitest";
+
+import AdminAuditLogsPage from "@/app/(admin)/admin/audit-logs/page";
+import { apiUrl } from "@/test/msw/handlers";
+import { server } from "@/test/msw/server";
+import { renderWithProviders, screen, userEvent, waitFor } from "@/test/utils";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/admin/audit-logs",
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams()
+}));
+
+function auditLogsResponse(page = 1) {
+  return {
+    auditLogs: {
+      items: [
+        {
+          id: 12,
+          adminId: 3,
+          actionType: "employee.update",
+          entityType: "employee",
+          entityId: "7",
+          entityDisplayName: "سارة محمود",
+          reason: "تصحيح بيانات الموظف",
+          before: { status: "active" },
+          after: { status: "soft_deleted" },
+          occurredAtUtc: "2026-06-30T10:15:00.000Z"
+        }
+      ],
+      pagination: {
+        page,
+        pageSize: 20,
+        total: 24,
+        totalPages: 2
+      }
+    }
+  };
+}
+
+describe("AdminAuditLogsPage", () => {
+  it("renders audit logs with actor, action, entity, reason, and timestamp", async () => {
+    server.use(
+      http.get(apiUrl("/audit-logs"), ({ request }) => {
+        const url = new URL(request.url);
+        expect(url.searchParams.get("page")).toBe("1");
+        expect(url.searchParams.get("pageSize")).toBe("20");
+
+        return HttpResponse.json(auditLogsResponse());
+      })
+    );
+
+    renderWithProviders(<AdminAuditLogsPage />);
+
+    expect(await screen.findByRole("heading", { name: "سجل التدقيق" })).toBeInTheDocument();
+    expect(await screen.findByText("مدير #3")).toBeInTheDocument();
+    expect(screen.getByText("employee.update")).toBeInTheDocument();
+    expect(screen.getByText("employee")).toBeInTheDocument();
+    expect(screen.getByText("سارة محمود")).toBeInTheDocument();
+    expect(screen.getByText("تصحيح بيانات الموظف")).toBeInTheDocument();
+    expect(screen.getByText("الصفحة 1 من 2")).toBeInTheDocument();
+  });
+
+  it("applies supported audit-log filters and paginates results", async () => {
+    const seenQueries: string[] = [];
+
+    server.use(
+      http.get(apiUrl("/audit-logs"), ({ request }) => {
+        const url = new URL(request.url);
+        seenQueries.push(url.search);
+
+        return HttpResponse.json(auditLogsResponse(Number(url.searchParams.get("page") ?? 1)));
+      })
+    );
+
+    renderWithProviders(<AdminAuditLogsPage />);
+
+    await screen.findByText("سارة محمود");
+    await userEvent.setup().type(screen.getByLabelText("بحث"), "سارة");
+    await userEvent.setup().type(screen.getByLabelText("نوع الكيان"), "employee");
+    await userEvent.setup().type(screen.getByLabelText("نوع الإجراء"), "employee.update");
+    await userEvent.setup().type(screen.getByLabelText("من تاريخ"), "2026-06-01");
+    await userEvent.setup().type(screen.getByLabelText("إلى تاريخ"), "2026-06-30");
+    await userEvent.setup().click(screen.getByRole("button", { name: "تطبيق الفلاتر" }));
+
+    await waitFor(() => expect(seenQueries.at(-1)).toContain("search=%D8%B3%D8%A7%D8%B1%D8%A9"));
+    expect(seenQueries.at(-1)).toContain("entityType=employee");
+    expect(seenQueries.at(-1)).toContain("actionType=employee.update");
+    expect(seenQueries.at(-1)).toContain("dateFrom=2026-06-01");
+    expect(seenQueries.at(-1)).toContain("dateTo=2026-06-30");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "الصفحة التالية" }));
+
+    await waitFor(() => expect(seenQueries.at(-1)).toContain("page=2"));
+    expect(seenQueries.at(-1)).toContain("entityType=employee");
+  });
+});

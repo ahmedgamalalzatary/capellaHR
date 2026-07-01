@@ -514,7 +514,7 @@ Missing:
 
 ### 11. Audit Logs
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -530,13 +530,20 @@ Evidence:
 
 Implemented:
 
-- No frontend feature found.
+- Admin audit-log page
+- Audit-log filters by search, entity type, action type, and date range
+- Paginated audit-log table with actor, action, entity, reason, timestamp, and before/after payload visibility
+- Admin navigation link to `/admin/audit-logs`
+
+Evidence:
+
+- [apps/web/src/app/(admin)/admin/audit-logs/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/admin/audit-logs/page.tsx:1)
+- [apps/web/src/features/audit-logs/components/admin-audit-logs-dashboard.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/audit-logs/components/admin-audit-logs-dashboard.tsx:1)
+- [apps/web/src/tests/integration/features/audit-logs/admin-audit-logs-page.test.tsx](/D:/Documents/work/capella/HR/apps/web/src/tests/integration/features/audit-logs/admin-audit-logs-page.test.tsx:1)
 
 Missing:
 
-- Audit log page
-- Filtering/search UX
-- Actor/action/date visibility
+- Advanced before/after diff visualization, if required later
 
 ### 12. Month Locks
 
@@ -624,6 +631,7 @@ Implemented frontend feature folders:
 - `auth`
 - `branches`
 - `attendance`
+- `audit-logs`
 - `employees`
 - `network`
 - `reports`
@@ -631,6 +639,7 @@ Implemented frontend feature folders:
 Evidence:
 
 - [apps/web/src/features/auth](/D:/Documents/work/capella/HR/apps/web/src/features/auth/auth.api.ts:1)
+- [apps/web/src/features/audit-logs](/D:/Documents/work/capella/HR/apps/web/src/features/audit-logs/audit-logs.api.ts:1)
 - [apps/web/src/features/branches](/D:/Documents/work/capella/HR/apps/web/src/features/branches/branches.api.ts:1)
 - [apps/web/src/features/attendance](/D:/Documents/work/capella/HR/apps/web/src/features/attendance/attendance.api.ts:1)
 - [apps/web/src/features/employees](/D:/Documents/work/capella/HR/apps/web/src/features/employees/employees.api.ts:1)
@@ -639,7 +648,6 @@ Evidence:
 
 Not yet represented as frontend feature modules in this pass:
 
-- `audit-logs`
 - `month-locks`
 
 Interpretation:
@@ -678,7 +686,6 @@ Interpretation:
 
 These areas appear missing from the web app as user-facing product capabilities:
 
-- Audit log UI
 - Month lock UI
 
 These areas appear missing or not validated in this pass at repo level:
