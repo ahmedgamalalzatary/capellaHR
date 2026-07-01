@@ -1,6 +1,6 @@
 # Capella HR Repo State
 
-Date: 2026-06-29
+Date: 2026-07-01
 
 ## Purpose
 
@@ -312,7 +312,7 @@ Reason for `Mostly Done`:
 
 ### 6. Employee Attendance
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -341,26 +341,23 @@ Evidence:
 
 - [apps/web/src/app/(employee)/attendance/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(employee)/attendance/page.tsx:1)
 
-Current frontend state:
+Implemented:
 
-- The page is still a placeholder.
-
-Missing:
-
-- Check-in/check-out UI
-- Fetch and display current attendance state
+- Employee check-in/check-out UI
+- Current attendance-state loading
 - Attendance history UI
-- Browser geolocation capture for attendance
-- Device-aware attendance flow
-- Handling/display of validation failures:
+- Browser geolocation capture for attendance actions
+- Device fingerprint submission
+- Validation-failure display for:
   - `device_not_allowed`
   - `gps_out_of_range`
   - `ip_not_allowed`
+- Unknown/error current-state handling disables submission until server state is available
 
-Reason for `Partially Done`:
+Reason for `Done`:
 
 - Backend core logic exists.
-- The employee-facing product flow is not yet built.
+- The employee-facing product flow is implemented and covered by frontend tests.
 
 ### 7. Admin Attendance Management
 
@@ -477,7 +474,7 @@ Missing:
 
 ### 10. Reports and PDF Exports
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -496,14 +493,24 @@ Evidence:
 
 Implemented:
 
-- No reports screens found.
+- Admin reports page
+- Monthly attendance summary filters by month, employee ID, and branch ID
+- Summary totals and table UI
+- PDF export actions for:
+  - employee list
+  - attendance list
+  - monthly attendance summary
+
+Evidence:
+
+- [apps/web/src/app/(admin)/admin/reports/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/admin/reports/page.tsx:1)
+- [apps/web/src/features/reports/components/admin-reports-dashboard.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/reports/components/admin-reports-dashboard.tsx:1)
+- [apps/web/src/tests/integration/features/reports/admin-reports-page.test.tsx](/D:/Documents/work/capella/HR/apps/web/src/tests/integration/features/reports/admin-reports-page.test.tsx:1)
 
 Missing:
 
-- Reports dashboard/list UI
-- Filter forms
-- Export triggers/download UX
-- Summary visualization/tables
+- Advanced visualizations beyond summary totals/table
+- Named saved report presets, if required later
 
 ### 11. Audit Logs
 
@@ -616,23 +623,22 @@ Implemented frontend feature folders:
 
 - `auth`
 - `branches`
+- `attendance`
 - `employees`
 - `network`
+- `reports`
 
 Evidence:
 
 - [apps/web/src/features/auth](/D:/Documents/work/capella/HR/apps/web/src/features/auth/auth.api.ts:1)
 - [apps/web/src/features/branches](/D:/Documents/work/capella/HR/apps/web/src/features/branches/branches.api.ts:1)
+- [apps/web/src/features/attendance](/D:/Documents/work/capella/HR/apps/web/src/features/attendance/attendance.api.ts:1)
 - [apps/web/src/features/employees](/D:/Documents/work/capella/HR/apps/web/src/features/employees/employees.api.ts:1)
 - [apps/web/src/features/network](/D:/Documents/work/capella/HR/apps/web/src/features/network/network.api.ts:1)
+- [apps/web/src/features/reports](/D:/Documents/work/capella/HR/apps/web/src/features/reports/reports.api.ts:1)
 
 Not yet represented as frontend feature modules in this pass:
 
-- `attendance`
-- `employee-devices`
-- `weekly-day-offs`
-- `permission-absences`
-- `reports`
 - `audit-logs`
 - `month-locks`
 
@@ -672,9 +678,6 @@ Interpretation:
 
 These areas appear missing from the web app as user-facing product capabilities:
 
-- Employee device setup UI
-- Attendance UI
-- Reports UI
 - Audit log UI
 - Month lock UI
 

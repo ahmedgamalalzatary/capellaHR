@@ -12,12 +12,14 @@ import type { PdfDocumentDefinition, PdfExportResult, PdfRenderer } from "./pdf-
 type EmployeeExportService = {
   listEmployees(filters: EmployeeListFilterInput): Promise<{
     items: EmployeeResponse[];
+    pagination?: { totalPages: number };
   }>;
 };
 
 type AttendanceExportService = {
   listAdminAttendance(filters: AttendanceListFilterInput): Promise<{
     items: AdminAttendanceRecord[];
+    pagination?: { totalPages: number };
   }>;
 };
 
@@ -37,12 +39,14 @@ export { type PdfDocumentDefinition, type PdfExportResult, type PdfRenderer } fr
 export function createPdfExportService(options: CreatePdfExportServiceOptions) {
   return {
     async exportEmployeeListPdf(filters: EmployeeListFilterInput): Promise<PdfExportResult> {
-      const employees = await options.employeeService.listEmployees(filters);
+      const employees = await listAllPages(filters, (pageFilters) =>
+        options.employeeService.listEmployees(pageFilters)
+      );
       const document: PdfDocumentDefinition = {
         title: "كشف الموظفين",
         subtitle: "التصفية الحالية",
         columns: ["الاسم", "الهاتف", "واتساب", "الفرع", "الحالة"],
-        rows: employees.items.map((employee) => [
+        rows: employees.map((employee) => [
           employee.fullName,
           employee.primaryPhone,
           employee.whatsappPhone,
@@ -59,12 +63,14 @@ export function createPdfExportService(options: CreatePdfExportServiceOptions) {
     },
 
     async exportAttendanceListPdf(filters: AttendanceListFilterInput): Promise<PdfExportResult> {
-      const sessions = await options.attendanceService.listAdminAttendance(filters);
+      const sessions = await listAllPages(filters, (pageFilters) =>
+        options.attendanceService.listAdminAttendance(pageFilters)
+      );
       const document: PdfDocumentDefinition = {
         title: "كشف الحضور",
         subtitle: "التصفية الحالية",
         columns: ["الموظف", "الفرع", "الحالة", "دخول", "خروج"],
-        rows: sessions.items.map((session) => [
+        rows: sessions.map((session) => [
           session.employeeName,
           String(session.branchId),
           session.status === "completed" ? "مكتمل" : "مفتوح",
@@ -103,6 +109,23 @@ export function createPdfExportService(options: CreatePdfExportServiceOptions) {
       };
     }
   };
+}
+
+async function listAllPages<TFilters extends { page: number; pageSize: number }, TItem>(
+  filters: TFilters,
+  loadPage: (filters: TFilters) => Promise<{ items: TItem[]; pagination?: { totalPages: number } }>
+) {
+  const pageSize = 100;
+  const firstPage = await loadPage({ ...filters, page: 1, pageSize });
+  const items = [...firstPage.items];
+  const totalPages = firstPage.pagination?.totalPages ?? 1;
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await loadPage({ ...filters, page, pageSize });
+    items.push(...nextPage.items);
+  }
+
+  return items;
 }
 
 function formatDateTime(value: Date) {

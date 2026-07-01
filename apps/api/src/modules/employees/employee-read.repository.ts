@@ -26,6 +26,10 @@ export async function listEmployees(db: Db, filters: EmployeeListFilterInput) {
     conditions.push(like(employees.fullName, `%${filters.search}%`));
   }
 
+  if (typeof filters.employeeId === "number") {
+    conditions.push(eq(employees.id, filters.employeeId));
+  }
+
   if (typeof filters.branchId === "number") {
     conditions.push(eq(employees.branchId, filters.branchId));
   }

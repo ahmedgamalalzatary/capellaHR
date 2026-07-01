@@ -18,6 +18,7 @@ export const employeeUpdateSchema = employeeCreateSchema.partial().extend({
 });
 
 export const employeeListFilterSchema = paginationSchema.extend({
+  employeeId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().optional(),
   branchId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "soft_deleted"]).optional()

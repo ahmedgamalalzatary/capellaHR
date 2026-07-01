@@ -31,7 +31,11 @@ describe("reports pdf export service", () => {
       renderer,
       employeeService: {
         async listEmployees(receivedFilters: EmployeeListFilterInput) {
-          expect(receivedFilters).toEqual(filters);
+          expect(receivedFilters).toEqual({
+            ...filters,
+            page: 1,
+            pageSize: 100
+          });
 
           return {
             items: [
@@ -78,6 +82,65 @@ describe("reports pdf export service", () => {
     ]);
   });
 
+  it("exports all employee pages using the current filters", async () => {
+    const renderer = new InMemoryPdfRenderer();
+    const receivedPages: EmployeeListFilterInput[] = [];
+    const service = createPdfExportService({
+      renderer,
+      employeeService: {
+        async listEmployees(receivedFilters: EmployeeListFilterInput) {
+          receivedPages.push(receivedFilters);
+
+          return {
+            items: [
+              {
+                id: receivedFilters.page,
+                fullName: `Employee ${receivedFilters.page}`,
+                primaryPhone: "01012345678",
+                whatsappPhone: "01012345678",
+                email: null,
+                branchId: 2,
+                age: 28,
+                address: "Nasr City",
+                currentMonthlySalary: "6500",
+                softDeletedAt: null
+              }
+            ],
+            pagination: {
+              page: receivedFilters.page,
+              pageSize: receivedFilters.pageSize,
+              total: 2,
+              totalPages: 2
+            }
+          };
+        }
+      },
+      attendanceService: {
+        async listAdminAttendance() {
+          return { items: [] };
+        }
+      },
+      reportsService: {
+        async getMonthlyAttendanceSummary() {
+          return [];
+        }
+      }
+    });
+
+    await service.exportEmployeeListPdf({
+      page: 1,
+      pageSize: 20,
+      branchId: 2,
+      employeeId: 7
+    });
+
+    expect(receivedPages).toEqual([
+      { page: 1, pageSize: 100, branchId: 2, employeeId: 7 },
+      { page: 2, pageSize: 100, branchId: 2, employeeId: 7 }
+    ]);
+    expect(renderer.documents[0]?.rows).toHaveLength(2);
+  });
+
   it("exports the current filtered attendance list as a pdf document", async () => {
     const renderer = new InMemoryPdfRenderer();
     const filters: AttendanceListFilterInput = {
@@ -97,7 +160,11 @@ describe("reports pdf export service", () => {
       },
       attendanceService: {
         async listAdminAttendance(receivedFilters: AttendanceListFilterInput) {
-          expect(receivedFilters).toEqual(filters);
+          expect(receivedFilters).toEqual({
+            ...filters,
+            page: 1,
+            pageSize: 100
+          });
 
           return {
             items: [
@@ -131,6 +198,75 @@ describe("reports pdf export service", () => {
       columns: ["الموظف", "الفرع", "الحالة", "دخول", "خروج"]
     });
     expect(renderer.documents[0]?.rows).toHaveLength(1);
+  });
+
+  it("exports all attendance pages using the current filters", async () => {
+    const renderer = new InMemoryPdfRenderer();
+    const receivedPages: AttendanceListFilterInput[] = [];
+    const service = createPdfExportService({
+      renderer,
+      employeeService: {
+        async listEmployees() {
+          return { items: [] };
+        }
+      },
+      attendanceService: {
+        async listAdminAttendance(receivedFilters: AttendanceListFilterInput) {
+          receivedPages.push(receivedFilters);
+
+          return {
+            items: [
+              createAttendanceRecord({
+                id: receivedFilters.page,
+                employeeId: 7,
+                employeeName: "Mina Adel",
+                branchId: 2
+              })
+            ],
+            pagination: {
+              page: receivedFilters.page,
+              pageSize: receivedFilters.pageSize,
+              total: 2,
+              totalPages: 2
+            }
+          };
+        }
+      },
+      reportsService: {
+        async getMonthlyAttendanceSummary() {
+          return [];
+        }
+      }
+    });
+
+    await service.exportAttendanceListPdf({
+      page: 1,
+      pageSize: 20,
+      branchId: 2,
+      employeeId: 7,
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31"
+    });
+
+    expect(receivedPages).toEqual([
+      {
+        page: 1,
+        pageSize: 100,
+        branchId: 2,
+        employeeId: 7,
+        dateFrom: "2026-07-01",
+        dateTo: "2026-07-31"
+      },
+      {
+        page: 2,
+        pageSize: 100,
+        branchId: 2,
+        employeeId: 7,
+        dateFrom: "2026-07-01",
+        dateTo: "2026-07-31"
+      }
+    ]);
+    expect(renderer.documents[0]?.rows).toHaveLength(2);
   });
 
   it("exports the monthly summary as a pdf document", async () => {

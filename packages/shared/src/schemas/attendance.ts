@@ -14,6 +14,7 @@ export const attendanceActionSchema = z.object({
 });
 
 export const attendanceListFilterSchema = paginationSchema.extend({
+  employeeId: z.coerce.number().int().positive().optional(),
   employeeName: z.string().trim().optional(),
   branchId: z.coerce.number().int().positive().optional(),
   status: attendanceSessionStatusSchema.optional(),

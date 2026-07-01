@@ -13,6 +13,10 @@ function buildAdminAttendanceConditions(filters: AttendanceListFilterInput): SQL
     conditions.push(like(employees.fullName, `%${filters.employeeName}%`));
   }
 
+  if (filters.employeeId) {
+    conditions.push(eq(attendanceSessions.employeeId, filters.employeeId));
+  }
+
   if (filters.branchId) {
     conditions.push(eq(attendanceSessions.branchId, filters.branchId));
   }
