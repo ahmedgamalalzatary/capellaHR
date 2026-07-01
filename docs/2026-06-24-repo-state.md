@@ -438,7 +438,7 @@ Evidence:
 
 ### 9. Permission Absences
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -456,13 +456,24 @@ Evidence:
 
 Implemented:
 
-- No frontend feature found.
+- Employee detail permission-absence section
+- List existing permission absences
+- Create permission absences
+- Update permission absences
+- Backend conflict/error messages surfaced in Arabic
+- Controls hidden for soft-deleted employees via read-only employee detail state
+
+Evidence:
+
+- [apps/web/src/features/employees/components/employee-permission-absences-section.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/employees/components/employee-permission-absences-section.tsx:1)
+- [apps/web/src/app/(admin)/employees/[employeeId]/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/employees/[employeeId]/page.tsx:1)
+- [apps/web/src/tests/integration/features/employees/employee-detail-permission-absences.test.tsx](/D:/Documents/work/capella/HR/apps/web/src/tests/integration/features/employees/employee-detail-permission-absences.test.tsx:1)
 
 Missing:
 
-- Admin absence management UI
 - Employee-facing visibility if required
 - Cross-linking with attendance/history/reporting flows
+- Delete UI is not implemented because no permission-absence delete endpoint exists in the current backend contract.
 
 ### 10. Reports and PDF Exports
 
@@ -663,8 +674,6 @@ These areas appear missing from the web app as user-facing product capabilities:
 
 - Employee device setup UI
 - Attendance UI
-- Weekly day-off UI
-- Permission absence UI
 - Reports UI
 - Audit log UI
 - Month lock UI

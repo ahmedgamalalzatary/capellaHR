@@ -11,6 +11,7 @@ import type {
   EmployeeDeviceSetupLinkInput,
   EmployeeFileType,
   EmployeeListFilters,
+  EmployeePermissionAbsenceInput,
   EmployeeWeeklyDayOffAssignmentInput,
   EmployeeUpdatePayload
 } from "@/features/employees/employees.types";
@@ -62,6 +63,10 @@ export function useDeleteEmployee() {
       queryClient.removeQueries({ queryKey: employeeKeys.files(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.assignments(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.weeklyDayOffs(employeeId), exact: true });
+      queryClient.removeQueries({
+        queryKey: employeeKeys.permissionAbsences(employeeId),
+        exact: true
+      });
       queryClient.removeQueries({ queryKey: employeeKeys.device(employeeId), exact: true });
     }
   });
@@ -137,6 +142,41 @@ export function useUpdateEmployeeWeeklyDayOff(employeeId: number) {
     }) => employeesApi.updateWeeklyDayOff(assignmentId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: employeeKeys.weeklyDayOffs(employeeId) });
+    }
+  });
+}
+
+export function useEmployeePermissionAbsences(employeeId: number) {
+  return useQuery({
+    queryKey: employeeKeys.permissionAbsences(employeeId),
+    queryFn: () => employeesApi.listPermissionAbsences(employeeId),
+    enabled: Number.isInteger(employeeId) && employeeId > 0
+  });
+}
+
+export function useCreateEmployeePermissionAbsence(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EmployeePermissionAbsenceInput) =>
+      employeesApi.createPermissionAbsence(employeeId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.permissionAbsences(employeeId) });
+    }
+  });
+}
+
+export function useUpdateEmployeePermissionAbsence(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      absenceId,
+      input
+    }: {
+      absenceId: number;
+      input: EmployeePermissionAbsenceInput;
+    }) => employeesApi.updatePermissionAbsence(absenceId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.permissionAbsences(employeeId) });
     }
   });
 }

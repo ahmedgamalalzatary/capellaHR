@@ -12,5 +12,7 @@ export const employeeKeys = {
     [...employeeKeys.detail(employeeId), "assignments"] as const,
   weeklyDayOffs: (employeeId: number) =>
     [...employeeKeys.detail(employeeId), "weekly-day-offs"] as const,
+  permissionAbsences: (employeeId: number) =>
+    [...employeeKeys.detail(employeeId), "permission-absences"] as const,
   device: (employeeId: number) => [...employeeKeys.detail(employeeId), "device"] as const
 };

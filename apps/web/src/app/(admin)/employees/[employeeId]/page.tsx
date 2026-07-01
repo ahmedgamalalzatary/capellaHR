@@ -16,6 +16,7 @@ import { EmployeeFilesSection } from "@/features/employees/components/employee-f
 import { EmployeeDeviceSection } from "@/features/employees/components/employee-device-section";
 import { EmployeeBranchAssignmentsSection } from "@/features/employees/components/employee-branch-assignments-section";
 import { EmployeeWeeklyDayOffsSection } from "@/features/employees/components/employee-weekly-day-offs-section";
+import { EmployeePermissionAbsencesSection } from "@/features/employees/components/employee-permission-absences-section";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -121,6 +122,12 @@ export default function EmployeeDetailPage() {
 
       <Section title="أيام الراحة الأسبوعية">
         <EmployeeWeeklyDayOffsSection employeeId={employee.id} readOnly={isDeleted} />
+      </Section>
+
+      <Separator />
+
+      <Section title="غيابات بإذن">
+        <EmployeePermissionAbsencesSection employeeId={employee.id} readOnly={isDeleted} />
       </Section>
 
       <ConfirmDialog

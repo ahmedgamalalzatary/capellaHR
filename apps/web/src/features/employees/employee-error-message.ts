@@ -15,7 +15,9 @@ const CODE_MESSAGES: Record<string, string> = {
   WEEKLY_DAY_OFF_ATTENDANCE_CONFLICT: "لا يمكن تسجيل يوم راحة في يوم به حضور",
   WEEKLY_DAY_OFF_NOT_FOUND: "يوم الراحة غير موجود",
   WEEKLY_DAY_OFF_OVERRIDE_REASON_REQUIRED:
-    "سبب التجاوز مطلوب عند تسجيل أكثر من يوم راحة في نفس الأسبوع"
+    "سبب التجاوز مطلوب عند تسجيل أكثر من يوم راحة في نفس الأسبوع",
+  PERMISSION_ABSENCE_ATTENDANCE_CONFLICT: "لا يمكن تسجيل غياب بإذن في يوم به حضور",
+  PERMISSION_ABSENCE_NOT_FOUND: "الغياب بإذن غير موجود"
 };
 
 type ErrorPayload = {

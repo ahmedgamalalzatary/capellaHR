@@ -71,10 +71,10 @@ vi.mock("@/features/employees/components/employee-branch-assignments-section", (
 
 import EmployeeDetailPage from "@/app/(admin)/employees/[employeeId]/page";
 
-describe("EmployeeDetailPage weekly day-offs", () => {
-  it("shows the weekly day-offs section for active employees", () => {
+describe("EmployeeDetailPage permission absences", () => {
+  it("shows the permission absences section for active employees", () => {
     renderWithProviders(<EmployeeDetailPage />);
 
-    expect(screen.getByRole("heading", { name: "أيام الراحة الأسبوعية" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "غيابات بإذن" })).toBeInTheDocument();
   });
 });

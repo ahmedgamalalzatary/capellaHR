@@ -53,6 +53,9 @@ function mockEmployeeDetailDependencies() {
     ),
     http.get(apiUrl("/employees/1/branch-assignments"), () =>
       HttpResponse.json({ assignments: [] })
+    ),
+    http.get(apiUrl("/employees/1/permission-absences"), () =>
+      HttpResponse.json({ absences: [] })
     )
   );
 }

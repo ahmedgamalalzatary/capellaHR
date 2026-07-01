@@ -53,6 +53,16 @@ export type EmployeeWeeklyDayOffAssignment = {
   assignedByAdminId: number;
 };
 
+/** One permission absence record for an employee. */
+export type EmployeePermissionAbsence = {
+  id: number;
+  employeeId: number;
+  absenceDate: string;
+  permissionType: "generic";
+  createdByAdminId: number;
+  updatedByAdminId: number | null;
+};
+
 export type EmployeeDeviceState = {
   employeeId: number;
   activeDevice: {
@@ -104,6 +114,14 @@ export type EmployeeWeeklyDayOffAssignmentResponse = {
   assignment: EmployeeWeeklyDayOffAssignment;
 };
 
+export type EmployeePermissionAbsenceListResponse = {
+  absences: EmployeePermissionAbsence[];
+};
+
+export type EmployeePermissionAbsenceResponse = {
+  absence: EmployeePermissionAbsence;
+};
+
 export type EmployeeDeviceResponse = {
   employeeDevice: EmployeeDeviceState;
 };
@@ -111,6 +129,10 @@ export type EmployeeDeviceResponse = {
 export type EmployeeWeeklyDayOffAssignmentInput = {
   dayOffDate: string;
   overrideReason?: string | null;
+};
+
+export type EmployeePermissionAbsenceInput = {
+  absenceDate: string;
 };
 
 export type EmployeeDeviceSetupLinkInput = {

@@ -13,6 +13,9 @@ import type {
   EmployeeFileType,
   EmployeeListFilters,
   EmployeeListResponse,
+  EmployeePermissionAbsenceInput,
+  EmployeePermissionAbsenceListResponse,
+  EmployeePermissionAbsenceResponse,
   EmployeeResponse,
   EmployeeWeeklyDayOffAssignmentInput,
   EmployeeWeeklyDayOffAssignmentListResponse,
@@ -120,6 +123,25 @@ export const employeesApi = {
   /** Update one weekly day-off assignment. */
   updateWeeklyDayOff: (assignmentId: number, input: EmployeeWeeklyDayOffAssignmentInput) =>
     api.patch<EmployeeWeeklyDayOffAssignmentResponse>(`/weekly-day-offs/${assignmentId}`, {
+      json: input
+    }),
+
+  /** List an employee's permission absences. */
+  listPermissionAbsences: (employeeId: number) =>
+    api.get<EmployeePermissionAbsenceListResponse>(
+      `/employees/${employeeId}/permission-absences`
+    ),
+
+  /** Add one permission absence to the employee. */
+  createPermissionAbsence: (employeeId: number, input: EmployeePermissionAbsenceInput) =>
+    api.post<EmployeePermissionAbsenceResponse>(
+      `/employees/${employeeId}/permission-absences`,
+      { json: input }
+    ),
+
+  /** Update one permission absence record. */
+  updatePermissionAbsence: (absenceId: number, input: EmployeePermissionAbsenceInput) =>
+    api.patch<EmployeePermissionAbsenceResponse>(`/permission-absences/${absenceId}`, {
       json: input
     }),
 
