@@ -268,7 +268,7 @@ Known backend gap (flagged 2026-06-25):
 
 ### 5. Employee Device Enrollment
 
-Status: `Partially Done`
+Status: `Mostly Done`
 
 #### Backend
 
@@ -287,18 +287,28 @@ Evidence:
 
 Implemented:
 
-- No dedicated frontend feature found in this pass.
+- Admin employee detail UI to view active/pending employee device state.
+- Admin UI to create a one-hour employee device setup link.
+- Admin UI to revoke active/pending employee device access.
+- Public employee device setup completion page opened from the generated setup link.
+
+Evidence:
+
+- [apps/web/src/features/employees/components/employee-device-section.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/employees/components/employee-device-section.tsx:1)
+- [apps/web/src/features/employees/components/employee-device-setup-form.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/employees/components/employee-device-setup-form.tsx:1)
+- [apps/web/src/app/employee-device-setup/[deviceToken]/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/employee-device-setup/[deviceToken]/page.tsx:1)
 
 Missing:
 
-- Admin UI to generate/setup/revoke employee devices
-- Employee UI/device completion flow if intended to happen in web
-- Visibility of device state in employee/admin screens
+- No separate top-level employee-device feature folder; device UI currently lives under the employee feature.
+- Setup completion captures a browser fingerprint, but deeper real-device/browser compatibility validation still needs E2E/manual coverage.
+- Operational polish can still be added around expired/revoked links and device replacement visibility.
 
-Reason for `Partially Done`:
+Reason for `Mostly Done`:
 
 - Backend flow exists.
-- Web flow is not implemented.
+- Core admin setup/revoke UI and public setup completion UI exist.
+- Remaining work is mostly polish, coverage, and feature-boundary cleanup rather than basic implementation.
 
 ### 6. Employee Attendance
 

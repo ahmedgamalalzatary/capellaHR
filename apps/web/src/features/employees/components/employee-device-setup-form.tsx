@@ -7,21 +7,8 @@ import { ApiError } from "@/shared/lib/api-client";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
+import { createBrowserFingerprint } from "@/features/attendance/browser-fingerprint";
 import { useCompleteEmployeeDeviceSetup } from "@/features/employees/employees.hooks";
-
-function createBrowserFingerprint() {
-  const screenSize =
-    typeof window === "undefined" || !window.screen
-      ? "unknown-screen"
-      : `${window.screen.width}x${window.screen.height}x${window.screen.colorDepth}`;
-
-  return [
-    navigator.userAgent,
-    navigator.language,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-    screenSize
-  ].join("|");
-}
 
 function getSetupErrorMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 410) {
