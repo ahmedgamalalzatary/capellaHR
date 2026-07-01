@@ -34,6 +34,11 @@ type CreatePdfExportServiceOptions = {
   reportsService: SummaryExportService;
 };
 
+const PDF_EXPORT_PAGE_SIZE = 100;
+const PDF_EXPORT_MAX_ROWS = 5000;
+const PDF_EXPORT_MAX_PAGES = Math.ceil(PDF_EXPORT_MAX_ROWS / PDF_EXPORT_PAGE_SIZE);
+const PDF_EXPORT_PAGE_BATCH_SIZE = 5;
+
 export { type PdfDocumentDefinition, type PdfExportResult, type PdfRenderer } from "./pdf-types";
 
 export function createPdfExportService(options: CreatePdfExportServiceOptions) {
@@ -115,14 +120,26 @@ async function listAllPages<TFilters extends { page: number; pageSize: number },
   filters: TFilters,
   loadPage: (filters: TFilters) => Promise<{ items: TItem[]; pagination?: { totalPages: number } }>
 ) {
-  const pageSize = 100;
+  const pageSize = PDF_EXPORT_PAGE_SIZE;
   const firstPage = await loadPage({ ...filters, page: 1, pageSize });
   const items = [...firstPage.items];
   const totalPages = firstPage.pagination?.totalPages ?? 1;
 
-  for (let page = 2; page <= totalPages; page += 1) {
-    const nextPage = await loadPage({ ...filters, page, pageSize });
-    items.push(...nextPage.items);
+  if (totalPages > PDF_EXPORT_MAX_PAGES) {
+    throw new Error(`PDF export is limited to ${PDF_EXPORT_MAX_ROWS} rows`);
+  }
+
+  for (let page = 2; page <= totalPages; page += PDF_EXPORT_PAGE_BATCH_SIZE) {
+    const pages = Array.from(
+      { length: Math.min(PDF_EXPORT_PAGE_BATCH_SIZE, totalPages - page + 1) },
+      (_, index) => page + index
+    );
+    const nextPages = await Promise.all(
+      pages.map((pageNumber) => loadPage({ ...filters, page: pageNumber, pageSize }))
+    );
+    for (const nextPage of nextPages) {
+      items.push(...nextPage.items);
+    }
   }
 
   return items;

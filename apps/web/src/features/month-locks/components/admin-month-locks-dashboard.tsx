@@ -29,6 +29,8 @@ import {
 } from "@/features/month-locks/month-locks.hooks";
 import type { MonthLockFilters } from "@/features/month-locks/month-locks.types";
 
+const PAGE_SIZE = 10;
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("ar-EG", {
     dateStyle: "medium",
@@ -44,18 +46,18 @@ function trimOrUndefined(value: string) {
 
 function monthLockErrorMessage(error: unknown) {
   if (error instanceof ApiError) {
-    if (error.status === 409) {
-      if (error.message === "Month lock already exists") {
-        return "هذا الشهر مقفل بالفعل.";
-      }
+    const code = getApiErrorCode(error);
 
-      if (error.message === "Open attendance sessions must be resolved before locking the month") {
-        return "يجب إغلاق جلسات الحضور المفتوحة قبل قفل الشهر.";
-      }
+    if (code === "MONTH_LOCK_ALREADY_EXISTS") {
+      return "هذا الشهر مقفل بالفعل.";
+    }
 
-      if (error.message === "Only completed past months can be locked") {
-        return "يمكن قفل الشهور المكتملة السابقة فقط.";
-      }
+    if (code === "MONTH_LOCK_HAS_OPEN_SESSIONS") {
+      return "يجب إغلاق جلسات الحضور المفتوحة قبل قفل الشهر.";
+    }
+
+    if (code === "MONTH_LOCK_NOT_ALLOWED") {
+      return "يمكن قفل الشهور المكتملة السابقة فقط.";
     }
 
     return error.message;
@@ -64,9 +66,21 @@ function monthLockErrorMessage(error: unknown) {
   return "تعذّر قفل الشهر.";
 }
 
+function getApiErrorCode(error: ApiError) {
+  if (error.payload && typeof error.payload === "object") {
+    const payload = error.payload as { error?: { code?: unknown } };
+    return typeof payload.error?.code === "string" ? payload.error.code : undefined;
+  }
+
+  return undefined;
+}
+
 export function AdminMonthLocksDashboard() {
   const [filterMonth, setFilterMonth] = useState("");
-  const [filters, setFilters] = useState<MonthLockFilters>({});
+  const [filters, setFilters] = useState<MonthLockFilters>({
+    page: 1,
+    pageSize: PAGE_SIZE
+  });
   const [monthKey, setMonthKey] = useState("");
   const [notes, setNotes] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -74,12 +88,22 @@ export function AdminMonthLocksDashboard() {
 
   const monthLocksQuery = useMonthLocks(filters);
   const createMonthLock = useCreateMonthLock();
-  const monthLocks = monthLocksQuery.data?.monthLocks ?? [];
+  const monthLocks = monthLocksQuery.data?.monthLocks.items ?? [];
+  const pagination = monthLocksQuery.data?.monthLocks.pagination;
 
   function applyFilter() {
     setFilters({
+      page: 1,
+      pageSize: PAGE_SIZE,
       monthKey: trimOrUndefined(filterMonth)
     });
+  }
+
+  function goToPage(page: number) {
+    setFilters((current) => ({
+      ...current,
+      page
+    }));
   }
 
   async function submitMonthLock() {
@@ -238,6 +262,30 @@ export function AdminMonthLocksDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {pagination && pagination.totalPages > 1 ? (
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => goToPage(Math.max(1, pagination.page - 1))}
+            disabled={pagination.page <= 1}
+          >
+            الصفحة السابقة
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            الصفحة {pagination.page} من {pagination.totalPages}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => goToPage(Math.min(pagination.totalPages, pagination.page + 1))}
+            disabled={pagination.page >= pagination.totalPages}
+          >
+            الصفحة التالية
+          </Button>
+        </div>
+      ) : null}
     </main>
   );
 }

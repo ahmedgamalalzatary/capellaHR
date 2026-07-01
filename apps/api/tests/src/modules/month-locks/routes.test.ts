@@ -13,8 +13,17 @@ class InMemoryMonthLockRepository implements MonthLockRepository {
   locks: MonthLockRecord[] = [];
   nextId = 1;
 
-  async listMonthLocks(filters: { monthKey?: string }) {
-    return this.locks.filter((lock) => !filters.monthKey || lock.monthKey === filters.monthKey);
+  async listMonthLocks(filters: { monthKey?: string; page: number; pageSize: number }) {
+    const filtered = this.locks.filter((lock) => !filters.monthKey || lock.monthKey === filters.monthKey);
+    return {
+      items: filtered.slice((filters.page - 1) * filters.pageSize, filters.page * filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: filtered.length,
+        totalPages: Math.max(1, Math.ceil(filtered.length / filters.pageSize))
+      }
+    };
   }
 
   async findMonthLockByMonthKey(monthKey: string) {
@@ -78,10 +87,26 @@ describe("month lock routes", () => {
     const response = await request(app)
       .get("/month-locks")
       .set("Cookie", cookieHeader)
-      .query({ monthKey: "2026-06" });
+      .query({ monthKey: "2026-06", page: "1", pageSize: "10" });
 
     expect(response.status).toBe(200);
-    expect(response.body.monthLocks).toHaveLength(1);
+    expect(response.body.monthLocks).toEqual({
+      items: [
+        {
+          id: 1,
+          monthKey: "2026-06",
+          lockedAt: "2026-07-01T00:00:00.000Z",
+          lockedByAdminId: 1,
+          notes: "Closed"
+        }
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 10,
+        total: 1,
+        totalPages: 1
+      }
+    });
   });
 
   it("creates a month lock for admins", async () => {

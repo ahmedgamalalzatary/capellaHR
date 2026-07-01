@@ -1,4 +1,4 @@
-import { and, eq, gte, lt } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt } from "drizzle-orm";
 import type { MySql2Database } from "drizzle-orm/mysql2";
 import { attendanceSessions, monthLocks } from "../../db";
 import type { MonthLockListFilterInput } from "@capella/shared";
@@ -25,12 +25,30 @@ export function createDrizzleMonthLockRepository(
 ) {
   return {
     async listMonthLocks(filters: MonthLockListFilterInput) {
-      const rows = await options.db.select().from(monthLocks);
+      const where = filters.monthKey ? eq(monthLocks.monthKey, filters.monthKey) : undefined;
+      const offset = (filters.page - 1) * filters.pageSize;
+      const rows = await options.db
+        .select()
+        .from(monthLocks)
+        .where(where)
+        .orderBy(desc(monthLocks.monthKey))
+        .limit(filters.pageSize)
+        .offset(offset);
+      const totalRows = await options.db
+        .select({ value: count() })
+        .from(monthLocks)
+        .where(where);
+      const total = Number(totalRows[0]?.value ?? 0);
 
-      return rows
-        .map(toMonthLockRecord)
-        .filter((lock) => !filters.monthKey || lock.monthKey === filters.monthKey)
-        .sort((left, right) => right.monthKey.localeCompare(left.monthKey));
+      return {
+        items: rows.map(toMonthLockRecord),
+        pagination: {
+          page: filters.page,
+          pageSize: filters.pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / filters.pageSize))
+        }
+      };
     },
 
     async findMonthLockByMonthKey(monthKey: string) {

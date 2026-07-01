@@ -141,6 +141,57 @@ describe("reports pdf export service", () => {
     expect(renderer.documents[0]?.rows).toHaveLength(2);
   });
 
+  it("fails fast when employee pdf export exceeds the page cap", async () => {
+    const renderer = new InMemoryPdfRenderer();
+    const service = createPdfExportService({
+      renderer,
+      employeeService: {
+        async listEmployees(receivedFilters: EmployeeListFilterInput) {
+          return {
+            items: [
+              {
+                id: receivedFilters.page,
+                fullName: `Employee ${receivedFilters.page}`,
+                primaryPhone: "01012345678",
+                whatsappPhone: "01012345678",
+                email: null,
+                branchId: 2,
+                age: 28,
+                address: "Nasr City",
+                currentMonthlySalary: "6500",
+                softDeletedAt: null
+              }
+            ],
+            pagination: {
+              page: receivedFilters.page,
+              pageSize: receivedFilters.pageSize,
+              total: 5100,
+              totalPages: 51
+            }
+          };
+        }
+      },
+      attendanceService: {
+        async listAdminAttendance() {
+          return { items: [] };
+        }
+      },
+      reportsService: {
+        async getMonthlyAttendanceSummary() {
+          return [];
+        }
+      }
+    });
+
+    await expect(
+      service.exportEmployeeListPdf({
+        page: 1,
+        pageSize: 20
+      })
+    ).rejects.toThrow("PDF export is limited to 5000 rows");
+    expect(renderer.documents).toHaveLength(0);
+  });
+
   it("exports the current filtered attendance list as a pdf document", async () => {
     const renderer = new InMemoryPdfRenderer();
     const filters: AttendanceListFilterInput = {

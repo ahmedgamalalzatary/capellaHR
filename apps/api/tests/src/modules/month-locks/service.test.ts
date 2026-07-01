@@ -15,7 +15,16 @@ class InMemoryMonthLockRepository implements MonthLockRepository {
   nextId = 1;
 
   async listMonthLocks(filters: MonthLockListFilterInput) {
-    return this.locks.filter((lock) => !filters.monthKey || lock.monthKey === filters.monthKey);
+    const filtered = this.locks.filter((lock) => !filters.monthKey || lock.monthKey === filters.monthKey);
+    return {
+      items: filtered.slice((filters.page - 1) * filters.pageSize, filters.page * filters.pageSize),
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: filtered.length,
+        totalPages: Math.max(1, Math.ceil(filtered.length / filters.pageSize))
+      }
+    };
   }
 
   async findMonthLockByMonthKey(monthKey: string) {
@@ -117,6 +126,48 @@ describe("month lock service", () => {
         code: "MONTH_LOCK_ALREADY_EXISTS",
         message: "Month lock already exists",
         details: {}
+      }
+    });
+  });
+
+  it("lists month locks with pagination metadata", async () => {
+    const repository = new InMemoryMonthLockRepository();
+    repository.locks.push(
+      {
+        id: 1,
+        monthKey: "2026-06",
+        lockedAt: "2026-07-01T00:00:00.000Z",
+        lockedByAdminId: 1,
+        notes: null
+      },
+      {
+        id: 2,
+        monthKey: "2026-05",
+        lockedAt: "2026-06-01T00:00:00.000Z",
+        lockedByAdminId: 1,
+        notes: null
+      }
+    );
+    const service = createMonthLockService({
+      repository,
+      now: () => new Date("2026-07-15T10:00:00.000Z")
+    });
+
+    await expect(service.listMonthLocks({ page: 2, pageSize: 1 })).resolves.toEqual({
+      items: [
+        {
+          id: 2,
+          monthKey: "2026-05",
+          lockedAt: "2026-06-01T00:00:00.000Z",
+          lockedByAdminId: 1,
+          notes: null
+        }
+      ],
+      pagination: {
+        page: 2,
+        pageSize: 1,
+        total: 2,
+        totalPages: 2
       }
     });
   });

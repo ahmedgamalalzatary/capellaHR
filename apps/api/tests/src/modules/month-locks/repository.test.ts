@@ -85,8 +85,43 @@ describe("month lock repository", () => {
       notes: "Closed"
     });
 
-    const rows = await repository.listMonthLocks({});
-    expect(rows).toHaveLength(1);
+    const rows = await repository.listMonthLocks({ page: 1, pageSize: 20 });
+    expect(rows.items).toHaveLength(1);
+    expect(rows.pagination).toMatchObject({
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      totalPages: 1
+    });
+  });
+
+  it("paginates month locks", async () => {
+    const repository = createDrizzleMonthLockRepository({
+      db: databaseClient.db
+    });
+    await databaseClient.db.insert(monthLocks).values([
+      {
+        monthKey: "2026-06",
+        lockedAt: new Date("2026-07-01T00:00:00.000Z"),
+        lockedByAdminId: 1
+      },
+      {
+        monthKey: "2026-05",
+        lockedAt: new Date("2026-06-01T00:00:00.000Z"),
+        lockedByAdminId: 1
+      }
+    ]);
+
+    const rows = await repository.listMonthLocks({ page: 2, pageSize: 1 });
+
+    expect(rows.items).toHaveLength(1);
+    expect(rows.items[0]?.monthKey).toBe("2026-05");
+    expect(rows.pagination).toEqual({
+      page: 2,
+      pageSize: 1,
+      total: 2,
+      totalPages: 2
+    });
   });
 
   it("finds existing month locks by month key", async () => {

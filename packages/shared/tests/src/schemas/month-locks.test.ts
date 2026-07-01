@@ -16,4 +16,13 @@ describe("month lock schemas", () => {
     expect(result.monthKey).toBe("2026-06");
     expect(result.notes).toBe("Month closed after attendance review");
   });
+
+  it("defaults month lock list pagination", () => {
+    const result = schemas.monthLockListFilterSchema.parse({});
+
+    expect(result).toEqual({
+      page: 1,
+      pageSize: 20
+    });
+  });
 });

@@ -24,8 +24,8 @@ function auditLogsResponse(page = 1) {
           entityId: "7",
           entityDisplayName: "سارة محمود",
           reason: "تصحيح بيانات الموظف",
-          before: { status: "active" },
-          after: { status: "soft_deleted" },
+          before: { status: page === 1 ? "active" : "pending" },
+          after: { status: page === 1 ? "soft_deleted" : "active" },
           occurredAtUtc: "2026-06-30T10:15:00.000Z"
         }
       ],
@@ -59,16 +59,28 @@ describe("AdminAuditLogsPage", () => {
     expect(screen.getByText("employee")).toBeInTheDocument();
     expect(screen.getByText("سارة محمود")).toBeInTheDocument();
     expect(screen.getByText("تصحيح بيانات الموظف")).toBeInTheDocument();
+    expect(screen.getByText('{"status":"active"}').closest("td")).toHaveAttribute(
+      "title",
+      '{"status":"active"}'
+    );
+    expect(screen.getByText('{"status":"soft_deleted"}').closest("td")).toHaveAttribute(
+      "title",
+      '{"status":"soft_deleted"}'
+    );
     expect(screen.getByText("الصفحة 1 من 2")).toBeInTheDocument();
   });
 
-  it("applies supported audit-log filters and paginates results", async () => {
+  it("applies supported audit-log filters and keeps previous rows visible while paginating", async () => {
     const seenQueries: string[] = [];
 
     server.use(
-      http.get(apiUrl("/audit-logs"), ({ request }) => {
+      http.get(apiUrl("/audit-logs"), async ({ request }) => {
         const url = new URL(request.url);
         seenQueries.push(url.search);
+
+        if (url.searchParams.get("page") === "2") {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
 
         return HttpResponse.json(auditLogsResponse(Number(url.searchParams.get("page") ?? 1)));
       })
@@ -92,7 +104,11 @@ describe("AdminAuditLogsPage", () => {
 
     await userEvent.setup().click(screen.getByRole("button", { name: "الصفحة التالية" }));
 
+    expect(screen.getByText('{"status":"active"}')).toBeInTheDocument();
+    expect(screen.queryByText("جارٍ تحميل سجل التدقيق...")).not.toBeInTheDocument();
+
     await waitFor(() => expect(seenQueries.at(-1)).toContain("page=2"));
+    expect(await screen.findByText('{"status":"pending"}')).toBeInTheDocument();
     expect(seenQueries.at(-1)).toContain("entityType=employee");
   });
 });

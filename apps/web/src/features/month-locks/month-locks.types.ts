@@ -12,7 +12,15 @@ export type MonthLockRecord = {
 };
 
 export type MonthLocksResponse = {
-  monthLocks: MonthLockRecord[];
+  monthLocks: {
+    items: MonthLockRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  };
 };
 
 export type MonthLockResponse = {

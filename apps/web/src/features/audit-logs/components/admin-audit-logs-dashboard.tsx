@@ -169,28 +169,33 @@ export function AdminAuditLogsDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {auditLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell>{formatDateTime(log.occurredAtUtc)}</TableCell>
-                    <TableCell>مدير #{log.adminId}</TableCell>
-                    <TableCell className="font-medium">{log.actionType}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <p>{log.entityType}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {log.entityDisplayName ?? log.entityId}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>{log.reason ?? "—"}</TableCell>
-                    <TableCell className="max-w-48 truncate text-muted-foreground">
-                      {compactObject(log.before)}
-                    </TableCell>
-                    <TableCell className="max-w-48 truncate text-muted-foreground">
-                      {compactObject(log.after)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {auditLogs.map((log) => {
+                  const before = compactObject(log.before);
+                  const after = compactObject(log.after);
+
+                  return (
+                    <TableRow key={log.id}>
+                      <TableCell>{formatDateTime(log.occurredAtUtc)}</TableCell>
+                      <TableCell>مدير #{log.adminId}</TableCell>
+                      <TableCell className="font-medium">{log.actionType}</TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <p>{log.entityType}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {log.entityDisplayName ?? log.entityId}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{log.reason ?? "—"}</TableCell>
+                      <TableCell className="max-w-48 truncate text-muted-foreground" title={before}>
+                        {before}
+                      </TableCell>
+                      <TableCell className="max-w-48 truncate text-muted-foreground" title={after}>
+                        {after}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

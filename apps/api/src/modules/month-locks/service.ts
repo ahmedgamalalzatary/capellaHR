@@ -15,7 +15,15 @@ type MonthLockErrorResult = {
 export type { MonthLockRecord } from "./types";
 
 export type MonthLockRepository = {
-  listMonthLocks(filters: MonthLockListFilterInput): Promise<MonthLockRecord[]>;
+  listMonthLocks(filters: MonthLockListFilterInput): Promise<{
+    items: MonthLockRecord[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
+  }>;
   findMonthLockByMonthKey(monthKey: string): Promise<MonthLockRecord | null>;
   hasOpenSessions(monthKey: string): Promise<boolean>;
   createMonthLock(input: {
