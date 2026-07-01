@@ -36,7 +36,7 @@ export type WeeklyDayOffRepository = {
   updateAssignment(assignmentId: number, input: {
     weekStartDate: string;
     dayOffDate: string;
-    overrideReason?: string;
+    overrideReason?: string | null;
   }): Promise<WeeklyDayOffAssignmentRecord | null>;
 };
 
@@ -162,7 +162,7 @@ async function validateWeeklyDayOffMutation(
   repository: WeeklyDayOffRepository,
   employeeId: number,
   dayOffDate: string,
-  overrideReason?: string,
+  overrideReason?: string | null,
   excludeAssignmentId?: number
 ) {
   if (await repository.isMonthLocked(dayOffDate.slice(0, 7))) {

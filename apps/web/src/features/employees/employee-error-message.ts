@@ -10,7 +10,12 @@ const CODE_MESSAGES: Record<string, string> = {
   BRANCH_NOT_ASSIGNABLE: "لا يمكن تعيين الموظف لفرع غير مكتمل",
   MISSING_EMPLOYEE_FILES: "جميع صور الموظف مطلوبة",
   EMPLOYEE_BRANCH_ASSIGNMENT_PAST_DATE: "تاريخ التعيين يجب أن يكون اليوم أو في المستقبل",
-  EMPLOYEE_NOT_FOUND: "الموظف غير موجود"
+  EMPLOYEE_NOT_FOUND: "الموظف غير موجود",
+  MONTH_LOCKED: "لا يمكن تعديل شهر مغلق",
+  WEEKLY_DAY_OFF_ATTENDANCE_CONFLICT: "لا يمكن تسجيل يوم راحة في يوم به حضور",
+  WEEKLY_DAY_OFF_NOT_FOUND: "يوم الراحة غير موجود",
+  WEEKLY_DAY_OFF_OVERRIDE_REASON_REQUIRED:
+    "سبب التجاوز مطلوب عند تسجيل أكثر من يوم راحة في نفس الأسبوع"
 };
 
 type ErrorPayload = {

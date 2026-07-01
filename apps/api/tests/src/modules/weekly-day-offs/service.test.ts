@@ -60,7 +60,7 @@ class InMemoryWeeklyDayOffRepository implements WeeklyDayOffRepository {
   async updateAssignment(assignmentId: number, input: {
     weekStartDate: string;
     dayOffDate: string;
-    overrideReason?: string;
+    overrideReason?: string | null;
   }) {
     const assignment = this.assignments.find((item) => item.id === assignmentId) ?? null;
 

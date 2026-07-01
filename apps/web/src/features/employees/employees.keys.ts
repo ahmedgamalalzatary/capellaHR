@@ -10,5 +10,7 @@ export const employeeKeys = {
   files: (employeeId: number) => [...employeeKeys.detail(employeeId), "files"] as const,
   assignments: (employeeId: number) =>
     [...employeeKeys.detail(employeeId), "assignments"] as const,
+  weeklyDayOffs: (employeeId: number) =>
+    [...employeeKeys.detail(employeeId), "weekly-day-offs"] as const,
   device: (employeeId: number) => [...employeeKeys.detail(employeeId), "device"] as const
 };

@@ -133,7 +133,7 @@ export function createDrizzleWeeklyDayOffRepository(
     async updateAssignment(assignmentId: number, input: {
       weekStartDate: string;
       dayOffDate: string;
-      overrideReason?: string;
+      overrideReason?: string | null;
     }) {
       await options.db
         .update(weeklyDayOffAssignments)

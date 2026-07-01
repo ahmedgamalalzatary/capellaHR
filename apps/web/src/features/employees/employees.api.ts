@@ -14,6 +14,9 @@ import type {
   EmployeeListFilters,
   EmployeeListResponse,
   EmployeeResponse,
+  EmployeeWeeklyDayOffAssignmentInput,
+  EmployeeWeeklyDayOffAssignmentListResponse,
+  EmployeeWeeklyDayOffAssignmentResponse,
   EmployeeUpdatePayload
 } from "@/features/employees/employees.types";
 
@@ -98,6 +101,25 @@ export const employeesApi = {
   /** Assign the employee to a branch effective now or in the future. */
   createAssignment: (employeeId: number, input: EmployeeAssignmentInput) =>
     api.post<EmployeeBranchAssignmentResponse>(`/employees/${employeeId}/branch-assignments`, {
+      json: input
+    }),
+
+  /** List an employee's weekly day-off assignments. */
+  listWeeklyDayOffs: (employeeId: number) =>
+    api.get<EmployeeWeeklyDayOffAssignmentListResponse>(
+      `/employees/${employeeId}/weekly-day-offs`
+    ),
+
+  /** Assign one weekly day off to the employee. */
+  createWeeklyDayOff: (employeeId: number, input: EmployeeWeeklyDayOffAssignmentInput) =>
+    api.post<EmployeeWeeklyDayOffAssignmentResponse>(
+      `/employees/${employeeId}/weekly-day-offs`,
+      { json: input }
+    ),
+
+  /** Update one weekly day-off assignment. */
+  updateWeeklyDayOff: (assignmentId: number, input: EmployeeWeeklyDayOffAssignmentInput) =>
+    api.patch<EmployeeWeeklyDayOffAssignmentResponse>(`/weekly-day-offs/${assignmentId}`, {
       json: input
     }),
 

@@ -9,7 +9,7 @@ export const weeklyDayOffAssignmentCreateSchema = z.object({
 
 export const weeklyDayOffAssignmentUpdateSchema = z.object({
   dayOffDate: isoDateSchema,
-  overrideReason: z.string().trim().min(1).max(1000).optional()
+  overrideReason: z.string().trim().min(1).max(1000).nullable().optional()
 });
 
 export const weeklyDayOffAssignmentListFilterSchema = z.object({

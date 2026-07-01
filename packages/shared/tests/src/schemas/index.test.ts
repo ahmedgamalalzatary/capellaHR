@@ -83,6 +83,15 @@ describe("shared schemas", () => {
     expect(result.dayOffDate).toBe("2026-06-27");
   });
 
+  it("accepts null override reason when updating weekly day off assignments", () => {
+    const result = schemas.weeklyDayOffAssignmentUpdateSchema.parse({
+      dayOffDate: "2026-06-27",
+      overrideReason: null
+    });
+
+    expect(result.overrideReason).toBeNull();
+  });
+
   it("accepts iso dates for permission absences", () => {
     const result = schemas.permissionAbsenceCreateSchema.parse({
       absenceDate: "2026-06-29"

@@ -11,6 +11,7 @@ import type {
   EmployeeDeviceSetupLinkInput,
   EmployeeFileType,
   EmployeeListFilters,
+  EmployeeWeeklyDayOffAssignmentInput,
   EmployeeUpdatePayload
 } from "@/features/employees/employees.types";
 
@@ -60,6 +61,7 @@ export function useDeleteEmployee() {
       queryClient.removeQueries({ queryKey: employeeKeys.detail(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.files(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.assignments(employeeId), exact: true });
+      queryClient.removeQueries({ queryKey: employeeKeys.weeklyDayOffs(employeeId), exact: true });
       queryClient.removeQueries({ queryKey: employeeKeys.device(employeeId), exact: true });
     }
   });
@@ -100,6 +102,41 @@ export function useCreateEmployeeAssignment(employeeId: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: employeeKeys.assignments(employeeId) });
       queryClient.invalidateQueries({ queryKey: employeeKeys.detail(employeeId) });
+    }
+  });
+}
+
+export function useEmployeeWeeklyDayOffs(employeeId: number) {
+  return useQuery({
+    queryKey: employeeKeys.weeklyDayOffs(employeeId),
+    queryFn: () => employeesApi.listWeeklyDayOffs(employeeId),
+    enabled: Number.isInteger(employeeId) && employeeId > 0
+  });
+}
+
+export function useCreateEmployeeWeeklyDayOff(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EmployeeWeeklyDayOffAssignmentInput) =>
+      employeesApi.createWeeklyDayOff(employeeId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.weeklyDayOffs(employeeId) });
+    }
+  });
+}
+
+export function useUpdateEmployeeWeeklyDayOff(employeeId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      assignmentId,
+      input
+    }: {
+      assignmentId: number;
+      input: EmployeeWeeklyDayOffAssignmentInput;
+    }) => employeesApi.updateWeeklyDayOff(assignmentId, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.weeklyDayOffs(employeeId) });
     }
   });
 }

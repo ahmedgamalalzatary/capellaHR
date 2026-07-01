@@ -43,6 +43,16 @@ export type EmployeeBranchAssignment = {
   assignedByAdminId: number;
 };
 
+/** One weekly day-off assignment for an employee. */
+export type EmployeeWeeklyDayOffAssignment = {
+  id: number;
+  employeeId: number;
+  weekStartDate: string;
+  dayOffDate: string;
+  overrideReason: string | null;
+  assignedByAdminId: number;
+};
+
 export type EmployeeDeviceState = {
   employeeId: number;
   activeDevice: {
@@ -86,8 +96,21 @@ export type EmployeeBranchAssignmentResponse = {
   assignment: EmployeeBranchAssignment;
 };
 
+export type EmployeeWeeklyDayOffAssignmentListResponse = {
+  assignments: EmployeeWeeklyDayOffAssignment[];
+};
+
+export type EmployeeWeeklyDayOffAssignmentResponse = {
+  assignment: EmployeeWeeklyDayOffAssignment;
+};
+
 export type EmployeeDeviceResponse = {
   employeeDevice: EmployeeDeviceState;
+};
+
+export type EmployeeWeeklyDayOffAssignmentInput = {
+  dayOffDate: string;
+  overrideReason?: string | null;
 };
 
 export type EmployeeDeviceSetupLinkInput = {

@@ -64,7 +64,7 @@ class InMemoryWeeklyDayOffRepository implements WeeklyDayOffRepository {
   async updateAssignment(assignmentId: number, input: {
     weekStartDate: string;
     dayOffDate: string;
-    overrideReason?: string;
+    overrideReason?: string | null;
   }) {
     const assignment = this.assignments.find((item) => item.id === assignmentId) ?? null;
 
@@ -163,6 +163,33 @@ describe("weekly day off routes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.assignment.dayOffDate).toBe("2026-06-30");
+  });
+
+  it("clears an existing weekly day off override reason", async () => {
+    const repository = new InMemoryWeeklyDayOffRepository();
+    repository.assignments.push({
+      id: 1,
+      employeeId: 1,
+      weekStartDate: "2026-06-27",
+      dayOffDate: "2026-06-29",
+      overrideReason: "Schedule override",
+      assignedByAdminId: 1
+    });
+    const app = createApp({
+      authService: createAdminAuthService(),
+      weeklyDayOffService: createWeeklyDayOffService({
+        repository
+      })
+    });
+    const cookieHeader = await signInAdmin(app);
+
+    const response = await request(app)
+      .patch("/weekly-day-offs/1")
+      .set("Cookie", cookieHeader)
+      .send({ dayOffDate: "2026-06-29", overrideReason: null });
+
+    expect(response.status).toBe(200);
+    expect(response.body.assignment.overrideReason).toBeNull();
   });
 });
 

@@ -364,7 +364,7 @@ Reason for `Partially Done`:
 
 ### 7. Admin Attendance Management
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -383,22 +383,29 @@ Evidence:
 
 Implemented:
 
-- No dedicated admin attendance screens found in this pass.
-
-Missing:
-
 - Admin attendance list/filter UI
+- Manual attendance creation UI
 - Manual attendance editing UI
-- Session correction/deletion flow
+- Session correction/deletion flow with required admin reason
+- Cairo timezone-safe attendance datetime round-trip handling
 
-Reason for `Partially Done`:
+Evidence:
+
+- [apps/web/src/app/(admin)/admin/attendance/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/admin/attendance/page.tsx:1)
+- [apps/web/src/features/attendance/components/admin-attendance-list.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/attendance/components/admin-attendance-list.tsx:1)
+- [apps/web/src/features/attendance/components/admin-attendance-form-dialog.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/attendance/components/admin-attendance-form-dialog.tsx:1)
+- [apps/web/src/features/attendance/components/admin-attendance-delete-dialog.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/attendance/components/admin-attendance-delete-dialog.tsx:1)
+- [apps/web/src/tests/integration/features/attendance/admin-attendance-page.test.tsx](/D:/Documents/work/capella/HR/apps/web/src/tests/integration/features/attendance/admin-attendance-page.test.tsx:1)
+
+Reason for `Done`:
 
 - Admin APIs exist.
-- No frontend feature exists yet.
+- Admin frontend workflow exists for list, filter, create, update, and delete.
+- Integration coverage exercises the main workflow and timezone round-trip behavior.
 
 ### 8. Weekly Day-Offs
 
-Status: `Partially Done`
+Status: `Done`
 
 #### Backend
 
@@ -416,13 +423,18 @@ Evidence:
 
 Implemented:
 
-- No frontend feature found.
+- Employee detail weekly day-off section
+- List existing weekly day-off assignments
+- Create weekly day-off assignments
+- Update weekly day-off assignments
+- Backend conflict/error messages surfaced in Arabic
+- Controls hidden for soft-deleted employees via read-only employee detail state
 
-Missing:
+Evidence:
 
-- Employee schedule/day-off management UI
-- Admin assignment UI
-- Visibility inside employee profile or attendance context
+- [apps/web/src/features/employees/components/employee-weekly-day-offs-section.tsx](/D:/Documents/work/capella/HR/apps/web/src/features/employees/components/employee-weekly-day-offs-section.tsx:1)
+- [apps/web/src/app/(admin)/employees/[employeeId]/page.tsx](/D:/Documents/work/capella/HR/apps/web/src/app/(admin)/employees/[employeeId]/page.tsx:1)
+- [apps/web/src/tests/integration/features/employees/employee-detail-weekly-day-offs.test.tsx](/D:/Documents/work/capella/HR/apps/web/src/tests/integration/features/employees/employee-detail-weekly-day-offs.test.tsx:1)
 
 ### 9. Permission Absences
 
