@@ -6,6 +6,15 @@ import type { BranchRepository } from './branches-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
 
+const isReferencedRowError = (error: unknown) => {
+  if (typeof error !== 'object' || error === null) return false;
+  const hasReferencedCode = (value: object) => (Reflect.get(value, 'code') as unknown) === 'ER_ROW_IS_REFERENCED_2'
+    || (Reflect.get(value, 'errno') as unknown) === 1451;
+  const cause = Reflect.get(error, 'cause') as unknown;
+  return hasReferencedCode(error)
+    || (typeof cause === 'object' && cause !== null && hasReferencedCode(cause));
+};
+
 export const createDrizzleBranchRepository = (database: Database, now: () => Date = () => new Date()): BranchRepository => ({
   async create(input) {
     const createdAt = now();
@@ -34,7 +43,13 @@ export const createDrizzleBranchRepository = (database: Database, now: () => Dat
     const branch = await this.findById(id);
     if (!branch) return 'not_found';
     if (branch.hasEverBeenReferenced) return 'referenced';
-    const result = await database.delete(branches).where(and(eq(branches.id, id), eq(branches.hasEverBeenReferenced, false)));
+    let result;
+    try {
+      result = await database.delete(branches).where(and(eq(branches.id, id), eq(branches.hasEverBeenReferenced, false)));
+    } catch (error) {
+      if (isReferencedRowError(error)) return 'referenced';
+      throw error;
+    }
     return result[0].affectedRows === 1 ? 'deleted' : 'referenced';
   },
   async markReferenced(id) {

@@ -76,6 +76,48 @@ describe('api client error contract', () => {
     await expect(api.get('/auth/session')).resolves.toEqual({ actor: { type: 'admin' } });
   });
 
+  test('getPage keeps both items and pagination meta from list envelopes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          data: [{ id: 1, name: 'القاهرة' }],
+          meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+        }),
+      ),
+    );
+
+    await expect(api.getPage('/branches')).resolves.toEqual({
+      items: [{ id: 1, name: 'القاهرة' }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+  });
+
+  test('multipart form posts do not force a JSON content type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { data: { id: 5 } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const form = new FormData();
+    form.append('fullName', 'أحمد');
+    await expect(api.postForm('/employees', form)).resolves.toEqual({ id: 5 });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.body).toBe(form);
+    expect(new Headers(init.headers).has('Content-Type')).toBe(false);
+  });
+
+  test('patchForm sends multipart updates without a JSON content type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { data: { id: 5 } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const form = new FormData();
+    await expect(api.patchForm('/employees/5', form)).resolves.toEqual({ id: 5 });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.method).toBe('PATCH');
+    expect(new Headers(init.headers).has('Content-Type')).toBe(false);
+  });
+
   test('returns undefined for 204 responses', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
 

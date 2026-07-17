@@ -1,0 +1,76 @@
+import { normalizeEgyptianMobile } from '@capella/shared';
+import { z } from 'zod';
+
+const REQUIRED = 'هذا الحقل مطلوب';
+const INVALID_NUMBER = 'أدخل رقمًا صالحًا';
+const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+
+const requiredNumber = (message = INVALID_NUMBER) =>
+  z.preprocess(
+    (value) => (value === '' || value === null ? undefined : value),
+    z.coerce.number({ message }).finite(message),
+  );
+
+/** Egyptian mobile: accepts spacing, dashes, Arabic-Indic digits, and +20. */
+const egyptianPhone = z.string().transform((value, context) => {
+  const normalized = normalizeEgyptianMobile(value);
+  if (!normalized) {
+    context.addIssue({ code: 'custom', message: 'رقم الهاتف المصري غير صالح' });
+    return z.NEVER;
+  }
+  return normalized;
+});
+
+const pin = z.string().regex(/^\d{4}$/, 'أدخل رقمًا سريًا من 4 أرقام');
+
+/** Positive EGP amount with at most two decimals, kept as a string for the API. */
+const salary = z
+  .string()
+  .trim()
+  .regex(/^\d{1,10}(?:\.\d{1,2})?$/, 'أدخل مبلغًا صالحًا بالجنيه')
+  .refine((value) => Number(value) > 0, 'أدخل مبلغًا أكبر من صفر');
+
+const imageFile = z
+  .custom<File>((value) => value instanceof File, REQUIRED)
+  .refine((file) => file.type.startsWith('image/'), 'اختر ملف صورة صالحًا')
+  .refine((file) => file.size <= MAX_IMAGE_BYTES, 'حجم الصورة يتجاوز 16 ميجابايت');
+
+const editableFields = {
+  fullName: z.string().trim().min(1, REQUIRED)
+    .refine((value) => [...value].length <= 255, 'الاسم طويل جدًا'),
+  personalPhone: egyptianPhone,
+  whatsappPhone: egyptianPhone,
+  age: requiredNumber().pipe(z.number().int(INVALID_NUMBER).positive(INVALID_NUMBER)),
+  address: z.string().trim().min(1, REQUIRED)
+    .refine((value) => [...value].length <= 1000, 'العنوان طويل جدًا'),
+  shiftDurationMinutes: requiredNumber('أدخل مدة الوردية بالدقائق').pipe(
+    z.number().int('أدخل مدة الوردية بالدقائق').positive('أدخل مدة الوردية بالدقائق')
+      .max(720, 'الحد الأقصى للوردية 12 ساعة'),
+  ),
+};
+
+/**
+ * Client-side mirror of the contracts' create/update employee schemas, with
+ * Arabic messages, coercion for text inputs, and the three required images.
+ */
+export const employeeCreateFormSchema = z.object({
+  ...editableFields,
+  pin,
+  branchId: requiredNumber('اختر الفرع').pipe(z.number().int('اختر الفرع').positive('اختر الفرع')),
+  monthlyBaseSalary: salary,
+  personal: imageFile,
+  idFront: imageFile,
+  idBack: imageFile,
+});
+
+/** Branch and salary are immutable after creation; pin and images are optional. */
+export const employeeUpdateFormSchema = z.object({
+  ...editableFields,
+  pin: z.preprocess((value) => (value === '' || value === null ? undefined : value), pin.optional()),
+  personal: imageFile.optional(),
+  idFront: imageFile.optional(),
+  idBack: imageFile.optional(),
+});
+
+export type EmployeeCreateFormValues = z.infer<typeof employeeCreateFormSchema>;
+export type EmployeeUpdateFormValues = z.infer<typeof employeeUpdateFormSchema>;

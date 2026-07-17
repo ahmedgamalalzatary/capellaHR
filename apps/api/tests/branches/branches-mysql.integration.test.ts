@@ -32,4 +32,14 @@ describe('MySQL-backed branches', () => {
     expect(await module.service.markReferenced(created.id)).toBe(true);
     await expect(module.service.remove(created.id)).rejects.toMatchObject({ code: 'BRANCH_REFERENCED' });
   });
+
+  it('reports a cancelled device pairing reference as a branch conflict', async () => {
+    const created = await module.service.create(input);
+    await database.insert(devicePairingRequests).values({
+      assignmentType: 'branch', branchId: created.id, employeeId: null,
+      tokenHash: 'a'.repeat(64), status: 'cancelled', createdAt: new Date(), cancelledAt: new Date(),
+    });
+
+    await expect(module.service.remove(created.id)).rejects.toMatchObject({ code: 'BRANCH_REFERENCED' });
+  });
 });

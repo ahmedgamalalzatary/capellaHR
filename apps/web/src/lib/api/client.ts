@@ -40,14 +40,17 @@ const GENERIC_ERROR: ApiErrorBody = {
   message: 'حدث خطأ غير متوقع. حاول مرة أخرى.',
 };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       credentials: 'include',
       ...init,
       headers: {
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        // FormData bodies must let the browser set the multipart boundary.
+        ...(init?.body && !(init.body instanceof FormData)
+          ? { 'Content-Type': 'application/json' }
+          : {}),
         ...init?.headers,
       },
     });
@@ -71,6 +74,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, body);
   }
 
+  return response;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await requestRaw(path, init);
+
   if (response.status === 204) {
     return undefined as T;
   }
@@ -79,8 +88,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return envelope.data;
 }
 
+export interface PageMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+/** List envelopes carry `meta` beside `data`; keep both. */
+async function requestPage<T>(path: string): Promise<{ items: T[]; meta: PageMeta }> {
+  const response = await requestRaw(path);
+  const parsed = (await response.json()) as { data: T[]; meta: PageMeta };
+  return { items: parsed.data, meta: parsed.meta };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
+  getPage: <T>(path: string) => requestPage<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? null : JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>
@@ -91,4 +115,6 @@ export const api = {
   /** multipart uploads (employee images) — browser sets the boundary header */
   postForm: <T>(path: string, form: FormData) =>
     request<T>(path, { method: 'POST', body: form }),
+  patchForm: <T>(path: string, form: FormData) =>
+    request<T>(path, { method: 'PATCH', body: form }),
 };
