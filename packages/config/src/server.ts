@@ -7,7 +7,9 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   ADMIN_EMAIL: z.string().email(),
-  ADMIN_PASSWORD_HASH: z.string().startsWith('$argon2'),
+  ADMIN_PASSWORD: z.string().min(1),
 });
 
-export const env = schema.parse(process.env);
+export const parseServerEnv = (input: NodeJS.ProcessEnv) => schema.parse(input);
+
+export const env = parseServerEnv(process.env);

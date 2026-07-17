@@ -344,6 +344,9 @@ importers:
       '@capella/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
       eslint:
         specifier: ^9.31.0
         version: 9.39.5(jiti@2.7.0)
@@ -365,6 +368,9 @@ importers:
       '@capella/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
       eslint:
         specifier: ^9.31.0
         version: 9.39.5(jiti@2.7.0)

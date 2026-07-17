@@ -9,6 +9,13 @@ import {
   varchar,
 } from 'drizzle-orm/mysql-core';
 
+export const adminCredentials = mysqlTable('admin_credentials', {
+  id: int('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
+});
+
 export const authSessions = mysqlTable('auth_sessions', {
   id: varchar('id', { length: 36 }).primaryKey(),
   tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),

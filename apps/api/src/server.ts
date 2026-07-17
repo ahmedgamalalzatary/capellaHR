@@ -7,8 +7,8 @@ import { createAuthModule } from './modules/auth/index.js';
 const database = createDatabase(env.DATABASE_URL);
 const auth = createAuthModule({
   database,
-  admin: { email: env.ADMIN_EMAIL, passwordHash: env.ADMIN_PASSWORD_HASH },
 });
+await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD });
 
 createApp({
   authService: auth.service,

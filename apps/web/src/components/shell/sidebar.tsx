@@ -11,7 +11,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed inset-y-0 end-0 z-30 flex w-64 flex-col border-s border-line bg-paper">
+    <aside className="fixed inset-y-0 start-0 z-30 flex w-64 flex-col border-e border-line bg-paper">
       <div className="flex h-14 items-center border-b border-line px-5">
         <span className="text-lg font-bold tracking-tight">كابيلا</span>
         <span className="ms-2 text-[12px] text-muted">الموارد البشرية</span>

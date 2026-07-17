@@ -60,7 +60,13 @@ const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boole
     sessions,
     attempts,
     service: createAuthService({
-      admin: { email: 'admin@capella.test', passwordHash: adminHash },
+      adminCredentials: {
+        async findByEmail(email: string) {
+          return email.toLowerCase() === 'admin@capella.test'
+            ? { email: 'admin@capella.test', passwordHash: adminHash }
+            : null;
+        },
+      },
       sessions,
       attempts,
       employees: {

@@ -1,4 +1,6 @@
 import type { createDatabase } from '@capella/database';
+import { adminCredentials } from '@capella/database/schema';
+import { hash } from 'argon2';
 
 import { createDrizzleAuthRepositories } from './auth-repositories.js';
 import {
@@ -22,14 +24,13 @@ const unavailableAttendance: AuthServiceDependencies['attendance'] = {
 
 export const createAuthModule = (dependencies: {
   database: Database;
-  admin: AuthServiceDependencies['admin'];
   employees?: AuthServiceDependencies['employees'];
   personalDevices?: AuthServiceDependencies['personalDevices'];
   attendance?: AuthServiceDependencies['attendance'];
 }) => {
   const repositories = createDrizzleAuthRepositories(dependencies.database);
   const service = createAuthService({
-    admin: dependencies.admin,
+    adminCredentials: repositories.adminCredentials,
     sessions: repositories.sessions,
     attempts: repositories.attempts,
     employees: dependencies.employees ?? unavailableEmployees,
@@ -37,5 +38,23 @@ export const createAuthModule = (dependencies: {
     attendance: dependencies.attendance ?? unavailableAttendance,
   });
 
-  return { service, repositories };
+  return {
+    service,
+    repositories,
+    async initializeAdmin(admin: { email: string; password: string }) {
+      const passwordHash = await hash(admin.password);
+      await dependencies.database.insert(adminCredentials).values({
+        id: 1,
+        email: admin.email.toLowerCase(),
+        passwordHash,
+        updatedAt: new Date(),
+      }).onDuplicateKeyUpdate({
+        set: {
+          email: admin.email.toLowerCase(),
+          passwordHash,
+          updatedAt: new Date(),
+        },
+      });
+    },
+  };
 };

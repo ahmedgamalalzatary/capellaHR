@@ -28,6 +28,10 @@ export interface AttemptRepository {
   }): Promise<void>;
 }
 
+export interface AdminCredentialRepository {
+  findByEmail(email: string): Promise<{ email: string; passwordHash: string } | null>;
+}
+
 export interface EmployeeIdentity {
   id: number;
   code: number;
@@ -37,7 +41,7 @@ export interface EmployeeIdentity {
 }
 
 export interface AuthServiceDependencies {
-  admin: { email: string; passwordHash: string };
+  adminCredentials: AdminCredentialRepository;
   sessions: SessionRepository;
   attempts: AttemptRepository;
   employees: { findByCode(code: number): Promise<EmployeeIdentity | null> };
@@ -82,8 +86,8 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
 
   return {
     async loginAdmin(email: string, password: string) {
-      const valid = email.toLowerCase() === dependencies.admin.email.toLowerCase()
-        && await safelyVerifyHash(dependencies.admin.passwordHash, password);
+      const credential = await dependencies.adminCredentials.findByEmail(email);
+      const valid = credential !== null && await safelyVerifyHash(credential.passwordHash, password);
       await dependencies.attempts.record({
         actorType: 'admin', identifier: email, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS',
       });

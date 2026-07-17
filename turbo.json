@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "ui": "tui",
+  "ui": "stream",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -15,14 +15,19 @@
       "dependsOn": ["^lint"]
     },
     "test": {
-      "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "dependsOn": ["^build"]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"]
     },
     "clean": {
       "cache": false
-    }
+    },
+    "@capella/shared#build": { "dependsOn": ["^build"], "outputs": [] },
+    "@capella/contracts#build": { "dependsOn": ["^build"], "outputs": [] },
+    "@capella/testing#build": { "dependsOn": ["^build"], "outputs": [] },
+    "@capella/ui#build": { "dependsOn": ["^build"], "outputs": [] },
+    "@capella/config#build": { "dependsOn": ["^build"], "outputs": [] },
+    "@capella/database#build": { "dependsOn": ["^build"], "outputs": [] }
   }
 }

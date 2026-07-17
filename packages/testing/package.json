@@ -2,7 +2,10 @@
   "name": "@capella/testing",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./setup": "./src/setup.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./setup": "./src/setup.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
@@ -13,6 +16,7 @@
   "devDependencies": {
     "@capella/eslint-config": "workspace:*",
     "@capella/typescript-config": "workspace:*",
+    "@types/node": "^24.13.3",
     "eslint": "^9.31.0",
     "rimraf": "^6.0.1",
     "typescript": "catalog:",
