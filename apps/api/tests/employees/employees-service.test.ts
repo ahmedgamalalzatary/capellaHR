@@ -16,7 +16,7 @@ const input = {
 
 const repository = (): EmployeeRepository => ({
   create: vi.fn(async (value) => ({ id: 1, employeeCode: 1, credentialVersion: 1, ...value, pinHash: value.pinHash, deletedAt: null, createdAt: new Date(), updatedAt: new Date() })),
-  findActiveById: vi.fn(), findIdentityByCode: vi.fn(), list: vi.fn(), update: vi.fn(), softDelete: vi.fn(),
+  findActiveById: vi.fn(), findIdentityByCode: vi.fn(), list: vi.fn(), update: vi.fn(), softDeleteIfAttendanceClosed: vi.fn(),
   findPhoneOwner: vi.fn(), branchExists: vi.fn(async () => true),
 });
 
@@ -27,18 +27,20 @@ describe('employee service', () => {
     const stored = vi.mocked(repo.create).mock.calls[0]![0];
     expect(await verify(stored.pinHash, '1234')).toBe(true);
     expect(employee).not.toHaveProperty('pinHash');
+    expect(employee).not.toHaveProperty('pin');
     expect(employee.fullName).toBe('أحمد');
   });
 
-  it('rejects a number owned by another employee across either phone field', async () => {
+  it.each(['personalPhone', 'whatsappPhone'] as const)('rejects a conflicting %s', async (field) => {
     const repo = repository();
-    vi.mocked(repo.findPhoneOwner).mockResolvedValue({ id: 9 });
+    vi.mocked(repo.findPhoneOwner).mockImplementation(async (phone) => phone === input[field] ? { id: 9 } : null);
     await expect(createEmployeeService(repo).create(input)).rejects.toMatchObject({ code: 'EMPLOYEE_PHONE_EXISTS' });
+    expect(repo.findPhoneOwner).toHaveBeenCalledWith(input[field]);
   });
 
   it('rejects an unknown branch', async () => {
     const repo = repository(); vi.mocked(repo.branchExists).mockResolvedValue(false);
-    await expect(createEmployeeService(repo).create(input)).rejects.toEqual(expect.any(EmployeeError));
+    await expect(createEmployeeService(repo).create(input)).rejects.toMatchObject({ code: 'EMPLOYEE_BRANCH_NOT_FOUND' } satisfies Partial<EmployeeError>);
   });
 
   it('requests atomic session revocation with a changed PIN', async () => {
@@ -53,5 +55,20 @@ describe('employee service', () => {
   it('fails closed when attendance state is unavailable for deletion', async () => {
     const repo = repository(); vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1 } as never);
     await expect(createEmployeeService(repo).remove(1)).rejects.toMatchObject({ code: 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' });
+  });
+
+  it('checks attendance and soft deletes through one atomic repository operation', async () => {
+    const repo = repository();
+    const attendance = { hasOpenSession: vi.fn(async () => false) };
+    vi.mocked(repo.softDeleteIfAttendanceClosed).mockResolvedValue('deleted');
+
+    await createEmployeeService(repo, attendance).remove(1);
+
+    expect(repo.softDeleteIfAttendanceClosed).toHaveBeenCalledWith(1, true, expect.any(Function));
+    const atomicAttendanceCheck = vi.mocked(repo.softDeleteIfAttendanceClosed).mock.calls[0]![2];
+    const context = { transaction: true };
+    await atomicAttendanceCheck(1, context);
+    expect(attendance.hasOpenSession).toHaveBeenCalledWith(1, context);
+    expect(repo.findActiveById).not.toHaveBeenCalled();
   });
 });

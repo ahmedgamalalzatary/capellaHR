@@ -192,4 +192,13 @@ describe('authentication service', () => {
     expect(sessions.rows).toHaveLength(0);
     expect(attempts.rows).toEqual([expect.objectContaining({ succeeded: false, reason: 'INVALID_CREDENTIALS' })]);
   });
+
+  it('does not record infrastructure failures as invalid credentials', async () => {
+    const { service, sessions, attempts } = makeService();
+    const failure = new Error('database unavailable');
+    sessions.createEmployeeIfCurrent = async () => { throw failure; };
+
+    await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: { id: 'valid-proof' } })).rejects.toBe(failure);
+    expect(attempts.rows).toHaveLength(0);
+  });
 });

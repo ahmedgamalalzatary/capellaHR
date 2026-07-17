@@ -133,7 +133,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       const employeeId = identity!.id;
       let token: string;
       try { token = await createSession('employee', employeeId, identity!.credentialVersion); }
-      catch (error) { await recordAttempt(false, 'INVALID_CREDENTIALS'); throw error; }
+      catch (error) { if (error instanceof AuthError) await recordAttempt(false, 'INVALID_CREDENTIALS'); throw error; }
       await recordAttempt(true, null);
       return {
         token,

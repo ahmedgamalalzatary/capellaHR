@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { AdminShell } from '../src/components/shell/admin-shell';
 
@@ -20,12 +20,47 @@ function renderShell() {
   );
 }
 
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', vi.fn(() => ({
+    matches: false, media: '(min-width: 64rem)', onchange: null,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+  })));
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe('AdminShell', () => {
+  test('closes the mobile drawer and releases the focus trap at the desktop breakpoint', () => {
+    let desktop = false;
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: desktop,
+      media: '(min-width: 64rem)',
+      onchange: null,
+      addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+      addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+    })));
+    renderShell();
+    fireEvent.click(screen.getByRole('button', { name: 'فتح القائمة' }));
+    const sidebar = screen.getByRole('complementary');
+    const last = Array.from(sidebar.querySelectorAll<HTMLElement>('a[href]')).at(-1)!;
+    last.focus();
+
+    desktop = true;
+    act(() => {
+      for (const listener of listeners) listener({ matches: true } as MediaQueryListEvent);
+    });
+
+    expect(sidebar.dataset['state']).toBe('closed');
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(last);
+  });
+
   test('renders a closed mobile sidebar with a menu toggle', () => {
     renderShell();
     const toggle = screen.getByRole('button', { name: 'فتح القائمة' });

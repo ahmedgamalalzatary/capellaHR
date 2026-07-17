@@ -54,13 +54,15 @@ export const createDrizzleEmployeeRepository = (database: Database, now: () => D
       return { record, replacedImages };
     });
   },
-  async softDelete(id, revokeSessions) {
+  async softDeleteIfAttendanceClosed(id, revokeSessions, hasOpenSession) {
     return database.transaction(async (tx) => {
-      await tx.select({ id: employees.id }).from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1);
+      const current = await tx.select({ id: employees.id }).from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1);
+      if (!current[0]) return 'not_found';
+      if (await hasOpenSession(id, tx)) return 'checked_in';
       const at = now(); const result = await tx.update(employees).set({ deletedAt: at, credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
-      if (result[0].affectedRows !== 1) return false;
+      if (result[0].affectedRows !== 1) return 'not_found';
       if (revokeSessions) await tx.update(authSessions).set({ revokedAt: at }).where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
-      return true;
+      return 'deleted';
     });
   },
 });

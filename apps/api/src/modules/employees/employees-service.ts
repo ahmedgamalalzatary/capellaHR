@@ -5,6 +5,8 @@ export type ImageMetadata = { storagePath: string; originalName: string; mimeTyp
 export type EmployeeImages = Record<ImageKind, ImageMetadata>;
 export type EmployeeRecord = Omit<CreateEmployeeFields, 'pin'> & { id: number; employeeCode: number; pinHash: string; credentialVersion: number; images: EmployeeImages; deletedAt: Date | null; createdAt: Date; updatedAt: Date };
 export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion'>;
+export type EmployeeTransactionContext = unknown;
+export type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
 export interface EmployeeRepository {
   create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord>;
   findActiveById(id: number): Promise<EmployeeRecord | null>;
@@ -13,12 +15,12 @@ export interface EmployeeRepository {
   branchExists(id: number): Promise<boolean>;
   list(query: ListEmployeesQuery): Promise<{ items: EmployeeRecord[]; total: number }>;
   update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'branchId' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean): Promise<{ record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | null>;
-  softDelete(id: number, revokeSessions: boolean): Promise<boolean>;
+  softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<EmployeeDeleteResult>;
 }
 export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number): Promise<boolean> }) => ({
+export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }) => ({
   async create(input: CreateEmployeeFields & { images: EmployeeImages }) {
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
@@ -39,6 +41,11 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
     if (!stored) throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
     return { employee: expose(stored.record), replacedImages: stored.replacedImages };
   },
-  async remove(id: number) { await this.get(id); if (!attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور'); if (await attendance.hasOpenSession(id)) throw new EmployeeError('EMPLOYEE_CHECKED_IN', 'يجب تسجيل خروج الموظف أولاً'); if (!await repository.softDelete(id, true)) throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود'); },
+  async remove(id: number) {
+    if (!attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
+    const result = await repository.softDeleteIfAttendanceClosed(id, true, (employeeId, context) => attendance.hasOpenSession(employeeId, context));
+    if (result === 'checked_in') throw new EmployeeError('EMPLOYEE_CHECKED_IN', 'يجب تسجيل خروج الموظف أولاً');
+    if (result === 'not_found') throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
+  },
 });
 export type EmployeeService = ReturnType<typeof createEmployeeService>;
