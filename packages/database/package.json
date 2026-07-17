@@ -1,0 +1,30 @@
+{
+  "name": "@capella/database",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./schema": "./src/schema/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx src/seed/index.ts",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist coverage"
+  },
+  "dependencies": { "mysql2": "^3.14.2", "drizzle-orm": "^0.44.3" },
+  "devDependencies": {
+    "@capella/eslint-config": "workspace:*",
+    "@capella/typescript-config": "workspace:*",
+    "@types/node": "^24.0.14",
+    "drizzle-kit": "^0.31.4",
+    "eslint": "^9.31.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

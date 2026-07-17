@@ -1,0 +1,37 @@
+{
+  "name": "@capella/web",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf .next coverage"
+  },
+  "dependencies": {
+    "@capella/config": "workspace:*",
+    "@capella/contracts": "workspace:*",
+    "@capella/shared": "workspace:*",
+    "@capella/ui": "workspace:*",
+    "next": "^15.4.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@capella/eslint-config": "workspace:*",
+    "@capella/testing": "workspace:*",
+    "@capella/typescript-config": "workspace:*",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.0.14",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "eslint": "^9.31.0",
+    "eslint-config-next": "^15.4.2",
+    "jsdom": "^26.1.0",
+    "rimraf": "^6.0.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

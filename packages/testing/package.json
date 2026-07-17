@@ -1,0 +1,21 @@
+{
+  "name": "@capella/testing",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./setup": "./src/setup.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist coverage"
+  },
+  "devDependencies": {
+    "@capella/eslint-config": "workspace:*",
+    "@capella/typescript-config": "workspace:*",
+    "eslint": "^9.31.0",
+    "rimraf": "^6.0.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

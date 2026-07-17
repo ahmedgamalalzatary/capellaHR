@@ -1,0 +1,23 @@
+{
+  "name": "@capella/config",
+  "private": true,
+  "type": "module",
+  "exports": { "./server": "./src/server.ts", "./client": "./src/client.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist coverage"
+  },
+  "dependencies": { "zod": "catalog:" },
+  "devDependencies": {
+    "@capella/eslint-config": "workspace:*",
+    "@capella/typescript-config": "workspace:*",
+    "@types/node": "^24.0.14",
+    "eslint": "^9.31.0",
+    "rimraf": "^6.0.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
