@@ -62,6 +62,35 @@ describe('AdminShell', () => {
     }
   });
 
+  test('moves focus into the drawer on open and restores it to the toggle on close, repeatedly', () => {
+    renderShell();
+    const toggle = screen.getByRole('button', { name: 'فتح القائمة' });
+    const sidebar = screen.getByRole('complementary');
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      toggle.focus();
+      fireEvent.click(toggle);
+      expect(sidebar.contains(document.activeElement)).toBe(true);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(document.activeElement).toBe(toggle);
+    }
+  });
+
+  test('wraps Tab focus inside the open drawer', () => {
+    renderShell();
+    const toggle = screen.getByRole('button', { name: 'فتح القائمة' });
+    toggle.focus();
+    fireEvent.click(toggle);
+    const sidebar = screen.getByRole('complementary');
+    const links = Array.from(sidebar.querySelectorAll<HTMLElement>('a[href]'));
+    const first = links[0]!;
+    const last = links[links.length - 1]!;
+    last.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
   test('closes the sidebar on Escape', () => {
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'فتح القائمة' }));

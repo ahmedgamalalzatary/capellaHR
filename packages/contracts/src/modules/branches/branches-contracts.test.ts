@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createBranchSchema, listBranchesQuerySchema, updateBranchSchema } from './index.js';
+import { branchIdParamsSchema, createBranchSchema, listBranchesQuerySchema, updateBranchSchema } from './index.js';
 
 const branch = {
   name: '  Cairo  ',
@@ -28,6 +28,20 @@ describe('branch contracts', () => {
     expect(expandingName.length).toBe(255);
     expect(createBranchSchema.safeParse({ ...branch, name: expandingName }).success).toBe(false);
     expect(updateBranchSchema.safeParse({ name: expandingName }).success).toBe(false);
+  });
+
+  it('measures name and location limits in code points, matching VARCHAR character semantics', () => {
+    // U+1E900 is an astral character: 2 UTF-16 units but 1 character in MySQL utf8mb4.
+    const astral = '𞤀';
+    expect(createBranchSchema.safeParse({ ...branch, name: astral.repeat(255) }).success).toBe(true);
+    expect(createBranchSchema.safeParse({ ...branch, name: astral.repeat(256) }).success).toBe(false);
+    expect(createBranchSchema.safeParse({ ...branch, location: astral.repeat(1000) }).success).toBe(true);
+    expect(createBranchSchema.safeParse({ ...branch, location: astral.repeat(1001) }).success).toBe(false);
+  });
+
+  it('caps coerced branch ids at the signed 32-bit INT range', () => {
+    expect(branchIdParamsSchema.parse({ id: '2147483647' })).toEqual({ id: 2147483647 });
+    expect(branchIdParamsSchema.safeParse({ id: '2147483648' }).success).toBe(false);
   });
 
   it('requires a full GPS reading when any coordinate is updated', () => {

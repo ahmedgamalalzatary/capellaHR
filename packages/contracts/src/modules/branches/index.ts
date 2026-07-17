@@ -6,22 +6,30 @@ const gpsReading = {
   gpsAccuracyMeters: z.number().finite().nonnegative(),
 };
 
+// MySQL VARCHAR limits count characters (code points), not UTF-16 units.
+const codePoints = (value: string) => [...value].length;
+
 // The service persists name.trim().toLowerCase() into a varchar(255) column;
 // lowercasing can lengthen some Unicode strings, so the limit applies to the
 // normalized form as well.
-const branchName = z.string().trim().min(1).max(255)
-  .refine((value) => value.toLowerCase().length <= 255, { message: 'اسم الفرع طويل جدًا' });
+const branchName = z.string().trim().min(1)
+  .refine((value) => codePoints(value) <= 255 && codePoints(value.toLowerCase()) <= 255, {
+    message: 'اسم الفرع طويل جدًا',
+  });
+
+const branchLocation = z.string().trim().min(1)
+  .refine((value) => codePoints(value) <= 1000, { message: 'الموقع طويل جدًا' });
 
 export const createBranchSchema = z.object({
   name: branchName,
-  location: z.string().trim().min(1).max(1000),
+  location: branchLocation,
   ...gpsReading,
   attendanceRadiusMeters: z.number().finite().positive(),
 }).strict();
 
 export const updateBranchSchema = z.object({
   name: branchName.optional(),
-  location: z.string().trim().min(1).max(1000).optional(),
+  location: branchLocation.optional(),
   latitude: gpsReading.latitude.optional(),
   longitude: gpsReading.longitude.optional(),
   gpsAccuracyMeters: gpsReading.gpsAccuracyMeters.optional(),
@@ -36,7 +44,8 @@ export const updateBranchSchema = z.object({
   }
 });
 
-export const branchIdParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+// Upper bound matches the signed MySQL INT primary-key column.
+export const branchIdParamsSchema = z.object({ id: z.coerce.number().int().positive().max(2147483647) });
 
 export const listBranchesQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
