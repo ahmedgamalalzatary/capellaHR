@@ -271,7 +271,9 @@ Device registration and live facial enrollment are separate post-creation workfl
 - No offline device access, queued offline attendance, or later synchronization is supported.
 - The product remains web-only; a native mobile application is excluded.
 - Browsers do not expose a permanent hardware identifier. Uniqueness is therefore enforced at the browser-profile level through the WebAuthn credential and local installation marker.
+- The server requires WebAuthn user verification and rejects synced, multi-device, or backed-up credentials. The browser's platform-authenticator request remains a WebAuthn client hint rather than hardware provenance; this system does not maintain a vendor attestation allowlist.
 - Clearing browser/site data, losing the credential, or changing browser profiles may make the same physical phone appear new, but it does not grant access; a fresh admin-initiated pairing is required.
+- Every authentication assertion challenge is single-use, including after a failed assertion; the client must request fresh authentication options before retrying.
 
 ## 5. Shifts — Locked
 

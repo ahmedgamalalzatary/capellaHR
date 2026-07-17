@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { verifyDeviceSchema } from '../devices/index.js';
 
 export const adminLoginSchema = z.object({
   email: z.string().trim().email(),
@@ -9,7 +10,7 @@ export const employeeLoginSchema = z.object({
   employeeCode: z.number().int().positive(),
   pin: z.string().regex(/^\d{4}$/),
   personalPhone: z.string().regex(/^01(?:0|1|2|5)\d{8}$/),
-  deviceProof: z.record(z.unknown()),
+  deviceProof: verifyDeviceSchema,
 }).strict();
 
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;

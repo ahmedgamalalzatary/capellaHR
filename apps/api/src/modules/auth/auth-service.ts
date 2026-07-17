@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { verify } from 'argon2';
+import type { VerifyDevice } from '@capella/contracts';
 
 export type ActorType = 'admin' | 'employee';
 
@@ -50,7 +51,7 @@ export interface AuthServiceDependencies {
   sessions: SessionRepository;
   attempts: AttemptRepository;
   employees: { findByCode(code: number): Promise<EmployeeIdentity | null> };
-  personalDevices: { verify(employeeId: number, proof: Record<string, unknown>): Promise<boolean> };
+  personalDevices: { beginAuthentication(employeeId: number, installationMarker: string): Promise<object | null>; verify(employeeId: number, proof: VerifyDevice): Promise<boolean> };
   attendance: { hasOpenSession(employeeId: number): Promise<boolean> };
   tokenFactory?: () => string;
   now?: () => Date;
@@ -110,7 +111,15 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       return { token: await createSession('admin', null), actor: { type: 'admin' as const } };
     },
 
-    async loginEmployee(input: { employeeCode: number; pin: string; personalPhone: string; deviceProof: Record<string, unknown> }, context: AttemptContext = {}) {
+    async beginEmployeeDeviceAuthentication(employeeCode: number, installationMarker: string) {
+      const identity = await dependencies.employees.findByCode(employeeCode);
+      if (!identity || identity.deletedAt) throw new AuthError('DEVICE_NOT_REGISTERED', 'الجهاز غير مسجل');
+      const options = await dependencies.personalDevices.beginAuthentication(identity.id, installationMarker);
+      if (!options) throw new AuthError('DEVICE_NOT_REGISTERED', 'الجهاز غير مسجل');
+      return options;
+    },
+
+    async loginEmployee(input: { employeeCode: number; pin: string; personalPhone: string; deviceProof: VerifyDevice }, context: AttemptContext = {}) {
       const identity = await dependencies.employees.findByCode(input.employeeCode);
       const identityValid = identity !== null
         && identity.deletedAt === null

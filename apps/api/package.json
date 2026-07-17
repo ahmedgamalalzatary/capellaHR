@@ -16,6 +16,7 @@
     "@capella/contracts": "workspace:*",
     "@capella/database": "workspace:*",
     "@capella/shared": "workspace:*",
+    "@simplewebauthn/server": "^13.3.2",
     "argon2": "^0.44.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.44.7",

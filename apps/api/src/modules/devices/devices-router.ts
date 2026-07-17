@@ -1,10 +1,11 @@
-import { deviceAssignmentSchema, deviceIdParamsSchema, listDevicesQuerySchema } from '@capella/contracts';
+import { completeDevicePairingSchema, deviceAssignmentSchema, deviceIdParamsSchema, listDevicesQuerySchema, pairingTokenParamsSchema } from '@capella/contracts';
 import { Router, type Response } from 'express'; import { ZodError } from 'zod';
 import { createAuthMiddleware } from '../auth/auth-middleware.js'; import type { AuthService } from '../auth/auth-service.js'; import { responseRequestId } from '../../shared/http/index.js'; import { DeviceError, type DeviceService } from './devices-service.js';
 const failure = (response: Response, status: number, code: string, message: string) => response.status(status).json({ error: { code, message, requestId: responseRequestId(response) } });
 const handle = (error: unknown, response: Response) => { if (error instanceof ZodError) return failure(response, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة'); if (error instanceof DeviceError) return failure(response, error.code === 'DEVICE_NOT_FOUND' || error.code === 'DEVICE_ASSIGNMENT_NOT_FOUND' ? 404 : 409, error.code, error.message); throw error; };
 export const createDevicesRouter = (service: DeviceService, authService: Pick<AuthService, 'authenticate'>) => { const router = Router(); const auth = createAuthMiddleware(authService);
-  router.post('/pairings/:token/complete', (_request, response) => handle(new DeviceError('DEVICE_PROOF_UNSUPPORTED', 'إثبات تسجيل WebAuthn غير مكتمل'), response));
+  router.post('/pairings/:token/options', async (request, response) => { try { response.json({ data: await service.beginPairing(pairingTokenParamsSchema.parse(request.params).token) }); } catch (error) { handle(error, response); } });
+  router.post('/pairings/:token/complete', async (request, response) => { try { response.status(201).json({ data: await service.completePairing(pairingTokenParamsSchema.parse(request.params).token, completeDevicePairingSchema.parse(request.body)) }); } catch (error) { handle(error, response); } });
   router.use(auth.authenticate, auth.requireAdmin);
   router.post('/pairings', async (request, response) => { try { response.status(201).json({ data: await service.createPairing(deviceAssignmentSchema.parse(request.body)) }); } catch (error) { handle(error, response); } });
   router.delete('/pairings/:id', async (request, response) => { try { await service.cancelPairing(deviceIdParamsSchema.parse(request.params).id); response.status(204).send(); } catch (error) { handle(error, response); } });

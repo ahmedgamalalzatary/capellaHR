@@ -26,7 +26,7 @@ describe('authentication contracts', () => {
     expect(schema.safeParse({ ...identity, deviceProof: 'opaque-string' }).success).toBe(false);
     expect(schema.safeParse({
       ...identity,
-      deviceProof: { id: 'credential-id', response: { clientDataJSON: 'encoded' } },
+      deviceProof: { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'credential-id', rawId: 'credential-id', type: 'public-key', response: { clientDataJSON: 'encoded', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } },
     }).success).toBe(true);
   });
 });
