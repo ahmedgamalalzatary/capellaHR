@@ -9,6 +9,7 @@ import { useForm, type FieldError } from 'react-hook-form';
 import { Button, Card, CardContent, EmptyState, Field, Input } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { listBranches } from '../../branches/api/branches-api';
 import {
@@ -178,9 +179,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
                 label={label}
                 required
                 error={errors[kind]?.message}
-                onSelect={(file) => {
-                  if (file) setValue(kind, file, { shouldValidate: true });
-                }}
+                onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
               />
             ))}
           </div>
@@ -284,9 +283,7 @@ function EditEmployeeForm({
                 label={`${label} (استبدال اختياري)`}
                 required={false}
                 error={errors[kind]?.message}
-                onSelect={(file) => {
-                  if (file) setValue(kind, file, { shouldValidate: true });
-                }}
+                onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
               />
             ))}
           </div>
@@ -334,9 +331,9 @@ export function EmployeesView() {
 
   const branchesQuery = useQuery({
     queryKey: ['branches', 'options'],
-    queryFn: () => listBranches({ pageSize: 100 }),
+    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage, pageSize: 100 })),
   });
-  const branches: BranchOption[] = branchesQuery.data?.items ?? [];
+  const branches: BranchOption[] = branchesQuery.data ?? [];
   const branchNameOf = (id: number) => branches.find((branch) => branch.id === id)?.name;
 
   const removal = useMutation({
@@ -400,6 +397,7 @@ export function EmployeesView() {
 
         <Button
           size="sm"
+          disabled={branchesQuery.isPending || branchesQuery.isError || branches.length === 0}
           onClick={() => {
             setEditing(null);
             setCreating(true);
@@ -409,6 +407,15 @@ export function EmployeesView() {
           إضافة موظف
         </Button>
       </div>
+
+      {branchesQuery.isError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-2 text-[13px] text-danger">
+          <span>تعذر تحميل الفروع، ولا يمكن إضافة موظف بدونها.</span>
+          <Button variant="secondary" size="sm" onClick={() => void branchesQuery.refetch()}>
+            إعادة تحميل الفروع
+          </Button>
+        </div>
+      ) : null}
 
       {creating ? <CreateEmployeeForm branches={branches} onDone={closeForm} /> : null}
       {editing ? (

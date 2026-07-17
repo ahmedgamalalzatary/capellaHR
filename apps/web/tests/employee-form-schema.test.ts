@@ -56,6 +56,13 @@ describe('employeeCreateFormSchema', () => {
     ).toBe(false);
   });
 
+  test('rejects whitespace-only numeric fields instead of coercing them to zero', () => {
+    expect(employeeCreateFormSchema.safeParse({ ...validCreate, age: '   ' }).success).toBe(false);
+    expect(
+      employeeCreateFormSchema.safeParse({ ...validCreate, shiftDurationMinutes: '\t ' }).success,
+    ).toBe(false);
+  });
+
   test('requires all three images and rejects non-image or oversized files', () => {
     const { personal: _personal, ...missing } = validCreate;
     expect(employeeCreateFormSchema.safeParse(missing).success).toBe(false);

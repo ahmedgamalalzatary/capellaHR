@@ -5,7 +5,13 @@ const INVALID_NUMBER = 'أدخل رقمًا صالحًا';
 
 const requiredNumber = (message = INVALID_NUMBER) =>
   z.preprocess(
-    (value) => (value === '' || value === null ? undefined : value),
+    (value) => {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed === '' ? undefined : trimmed;
+      }
+      return value === null ? undefined : value;
+    },
     z.coerce.number({ message }).finite(message),
   );
 

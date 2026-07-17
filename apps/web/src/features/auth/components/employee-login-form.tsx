@@ -1,6 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { startAuthentication } from '@simplewebauthn/browser';
 import { useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 
@@ -8,7 +9,8 @@ import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 
-import { employeeLogin } from '../api/auth-api';
+import { installationMarker } from '../../devices/lib/device-identity';
+import { employeeLogin, getEmployeeDeviceOptions } from '../api/auth-api';
 import { employeeLoginFormSchema, type EmployeeLoginFormValues } from '../schemas/login-schemas';
 
 /** Arabic messages for the employee-login denial codes. */
@@ -28,11 +30,27 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   });
 
   const login = useMutation({
-    mutationFn: (values: EmployeeLoginFormValues) =>
-      // deviceProof comes from the registered device's WebAuthn credential.
-      // Until the Devices module ships its client ceremony, an empty proof is
-      // sent and the server denies with DEVICE_NOT_REGISTERED.
-      employeeLogin({ ...values, deviceProof: {} }),
+    mutationFn: async (values: EmployeeLoginFormValues) => {
+      // The registered phone must prove itself: fetch a one-time challenge for
+      // this installation, sign it via WebAuthn, and attach the proof.
+      const marker = installationMarker();
+      const { challengeId, options } = await getEmployeeDeviceOptions({
+        employeeCode: values.employeeCode,
+        installationMarker: marker,
+      });
+      const response = await startAuthentication({ optionsJSON: options });
+      return employeeLogin({
+        ...values,
+        deviceProof: {
+          challengeId,
+          installationMarker: marker,
+          response: {
+            ...response,
+            clientExtensionResults: { ...response.clientExtensionResults } as Record<string, unknown>,
+          },
+        },
+      });
+    },
     onSuccess: () => onSuccess?.(),
   });
 

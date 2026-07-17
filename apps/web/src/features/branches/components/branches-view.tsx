@@ -206,7 +206,9 @@ export function BranchesView() {
         </Button>
       </div>
 
-      {creating || editing ? <BranchForm branch={editing} onDone={closeForm} /> : null}
+      {creating || editing ? (
+        <BranchForm key={editing?.id ?? 'create'} branch={editing} onDone={closeForm} />
+      ) : null}
 
       {removal.error ? (
         <p role="alert" className="text-[13px] text-danger">

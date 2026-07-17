@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { BranchesView } from '../src/features/branches';
@@ -130,6 +130,27 @@ describe('BranchesView', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toBe('اسم الفرع مستخدم بالفعل');
     });
+  });
+
+  test('switching from editing one branch to another shows and targets the new branch', async () => {
+    const giza = { ...cairo, id: 2, name: 'فرع الجيزة', location: 'الدقي' };
+    listBranchesMock.mockResolvedValue(page([cairo, giza]));
+    updateBranchMock.mockResolvedValue(giza);
+    renderView();
+    await waitFor(() => expect(screen.getByText('فرع الجيزة')).toBeDefined());
+
+    fireEvent.click(within(screen.getByText('فرع القاهرة').closest('tr')!).getByRole('button', { name: 'تعديل' }));
+    expect((screen.getByLabelText(/اسم الفرع/) as HTMLInputElement).value).toBe('فرع القاهرة');
+
+    fireEvent.click(within(screen.getByText('فرع الجيزة').closest('tr')!).getByRole('button', { name: 'تعديل' }));
+    expect((screen.getByLabelText(/اسم الفرع/) as HTMLInputElement).value).toBe('فرع الجيزة');
+
+    fireEvent.change(screen.getByLabelText(/اسم الفرع/), { target: { value: 'فرع الجيزة الجديد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الفرع' }));
+
+    await waitFor(() => expect(updateBranchMock).toHaveBeenCalledTimes(1));
+    expect(updateBranchMock.mock.calls[0]?.[0]).toBe(2);
+    expect(updateBranchMock.mock.calls[0]?.[1]).toMatchObject({ name: 'فرع الجيزة الجديد' });
   });
 
   test('deletes a branch only after explicit confirmation', async () => {

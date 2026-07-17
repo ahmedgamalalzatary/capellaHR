@@ -8,6 +8,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Badge, Button, Card, CardContent, EmptyState, Field, Input } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 import { formatCairoDateTime } from '@/lib/utils/format';
 
 import { listBranches } from '../../branches/api/branches-api';
@@ -117,9 +118,6 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
             <Field label="رابط الربط" htmlFor="pairing-link">
               <Input id="pairing-link" dir="ltr" readOnly value={pairingLink} />
             </Field>
-            <p className="text-[13px] text-warning">
-              إتمام الربط من الهاتف غير متاح بعد حتى اكتمال تحقق WebAuthn في الخادم.
-            </p>
             {cancel.error ? (
               <p role="alert" className="text-[13px] text-danger">
                 {serverErrorMessage(cancel.error)}
@@ -199,7 +197,7 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
                 <Link2 className="size-4" aria-hidden />
                 إنشاء طلب الربط
               </Button>
-              <Button type="button" variant="ghost" onClick={onDone}>
+              <Button type="button" variant="ghost" disabled={create.isPending} onClick={onDone}>
                 إلغاء
               </Button>
             </div>
@@ -263,19 +261,19 @@ export function DevicesView() {
 
   const employeesQuery = useQuery({
     queryKey: ['employees', 'options'],
-    queryFn: () => listEmployees({ pageSize: 100 }),
+    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage, pageSize: 100 })),
   });
   const branchesQuery = useQuery({
     queryKey: ['branches', 'options'],
-    queryFn: () => listBranches({ pageSize: 100 }),
+    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage, pageSize: 100 })),
   });
 
   const options: AssignmentOptions = {
-    employees: (employeesQuery.data?.items ?? []).map((employee) => ({
+    employees: (employeesQuery.data ?? []).map((employee) => ({
       id: employee.id,
       label: employee.fullName,
     })),
-    branches: (branchesQuery.data?.items ?? []).map((branch) => ({
+    branches: (branchesQuery.data ?? []).map((branch) => ({
       id: branch.id,
       label: branch.name,
     })),

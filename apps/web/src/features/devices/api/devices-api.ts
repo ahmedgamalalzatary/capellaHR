@@ -1,3 +1,8 @@
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/browser';
+
 import { api } from '@/lib/api/client';
 
 export type DeviceAssignmentType = 'employee' | 'branch';
@@ -55,6 +60,23 @@ export function getDeviceHistory(id: number) {
 
 export function createPairing(input: { assignmentType: DeviceAssignmentType; assignmentId: number }) {
   return api.post<PairingRequest>('/devices/pairings', input);
+}
+
+/** Public: exchanges the single-use token for WebAuthn registration options. */
+export function getPairingOptions(token: string) {
+  return api.post<PublicKeyCredentialCreationOptionsJSON>(`/devices/pairings/${token}/options`);
+}
+
+export interface CompletePairingInput {
+  installationMarker: string;
+  browser: string;
+  platform: string;
+  response: RegistrationResponseJSON;
+}
+
+/** Public: submits the phone's attestation to activate the device. */
+export function completeDevicePairing(token: string, input: CompletePairingInput) {
+  return api.post<Device>(`/devices/pairings/${token}/complete`, input);
 }
 
 export function cancelPairing(id: number) {

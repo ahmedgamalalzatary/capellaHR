@@ -155,6 +155,68 @@ describe('EmployeesView', () => {
     expect(payload['idBack']).toBeInstanceOf(File);
   });
 
+  test('clearing a selected image removes it so a stale file cannot be uploaded', async () => {
+    mocks.createEmployee.mockResolvedValue({ ...employee, id: 2 });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة موظف' }));
+
+    fireEvent.change(screen.getByLabelText(/الاسم الكامل/), { target: { value: 'منى علي' } });
+    fireEvent.change(screen.getByLabelText(/الهاتف الشخصي/), { target: { value: '01212345678' } });
+    fireEvent.change(screen.getByLabelText(/هاتف واتساب/), { target: { value: '01512345678' } });
+    fireEvent.change(screen.getByLabelText(/الرقم السري/), { target: { value: '4321' } });
+    fireEvent.change(screen.getByLabelText(/العمر/), { target: { value: '30' } });
+    fireEvent.change(screen.getByLabelText(/العنوان/), { target: { value: 'الإسكندرية' } });
+    fireEvent.change(screen.getByLabelText(/^الفرع/), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText(/مدة الوردية/), { target: { value: '480' } });
+    fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: '7000' } });
+    setFile(/الصورة الشخصية/, image('personal.jpg'));
+    setFile(/صورة البطاقة \(وجه\)/, image('front.jpg'));
+    setFile(/صورة البطاقة \(ظهر\)/, image('back.jpg'));
+
+    fireEvent.change(screen.getByLabelText(/الصورة الشخصية/), { target: { files: [] } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
+
+    expect(await screen.findByText('هذا الحقل مطلوب')).toBeDefined();
+    expect(mocks.createEmployee).not.toHaveBeenCalled();
+
+    setFile(/الصورة الشخصية/, image('personal-2.jpg'));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
+    await waitFor(() => expect(mocks.createEmployee).toHaveBeenCalledTimes(1));
+    const payload = mocks.createEmployee.mock.calls[0]?.[0] as Record<string, File>;
+    expect(payload['personal']?.name).toBe('personal-2.jpg');
+  });
+
+  test('blocks adding an employee until branches load, with a retry path', async () => {
+    mocks.listBranches.mockRejectedValueOnce(
+      new ApiError(0, { code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' }),
+    );
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    const addButton = (await screen.findByRole('button', { name: 'إضافة موظف' })) as HTMLButtonElement;
+    await waitFor(() => expect(addButton.disabled).toBe(true));
+    expect(screen.getByText(/تعذر تحميل الفروع/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة تحميل الفروع' }));
+    await waitFor(() => expect(addButton.disabled).toBe(false));
+  });
+
+  test('loads branches beyond the first page for the filter and the form', async () => {
+    mocks.listBranches.mockImplementation((params: { page?: number }) =>
+      Promise.resolve(
+        params.page === 2
+          ? pageOf([{ id: 9, name: 'فرع أسوان' }], { page: 2, total: 101, totalPages: 2 })
+          : pageOf([{ id: 3, name: 'فرع القاهرة' }], { total: 101, totalPages: 2 }),
+      ),
+    );
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    const filter = await screen.findByLabelText('تصفية حسب الفرع');
+    await waitFor(() => expect(within(filter).getByText('فرع أسوان')).toBeDefined());
+  });
+
   test('shows the Arabic server error when a phone already exists', async () => {
     mocks.createEmployee.mockRejectedValue(
       new ApiError(409, { code: 'EMPLOYEE_PHONE_EXISTS', message: 'رقم الهاتف مستخدم بالفعل' }),

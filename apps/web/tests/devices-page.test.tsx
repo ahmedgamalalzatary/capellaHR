@@ -130,7 +130,21 @@ describe('DevicesView', () => {
 
     const link = (await screen.findByLabelText('رابط الربط')) as HTMLInputElement;
     expect(link.value).toContain('/pair/tok-abc123');
+    expect(screen.queryByText(/غير متاح بعد/)).toBeNull();
     await waitFor(() => expect(screen.getByTestId('pairing-qr').innerHTML).toContain('svg'));
+  });
+
+  test('disables closing the pairing form while creation is pending', async () => {
+    mocks.createPairing.mockReturnValue(new Promise(() => {}));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'ربط جهاز جديد' }));
+    fireEvent.change(screen.getByLabelText(/^التعيين/), { target: { value: '7' } });
+
+    const cancel = screen.getByRole('button', { name: 'إلغاء' }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء طلب الربط' }));
+    await waitFor(() => expect(cancel.disabled).toBe(true));
   });
 
   test('cancels a pending pairing request', async () => {
