@@ -41,14 +41,17 @@ describe('MySQL-backed authentication', () => {
 
   it('replaces the stored hash when the env password changes on restart', async () => {
     const createAuthModule = Reflect.get(auth, 'createAuthModule');
-    const module = createAuthModule({ database });
-    await module.initializeAdmin({ email: 'admin@capella.test', password: 'old-password' });
-    await module.initializeAdmin({ email: 'admin@capella.test', password: 'new-password' });
-    const app = createApp({ authService: module.service, secureCookies: false });
+    const firstModule = createAuthModule({ database });
+    await firstModule.initializeAdmin({ email: 'admin@capella.test', password: 'old-password' });
+    const firstApp = createApp({ authService: firstModule.service, secureCookies: false });
 
-    const oldLogin = await request(app).post('/api/v1/auth/admin/login')
+    const secondModule = createAuthModule({ database });
+    await secondModule.initializeAdmin({ email: 'admin@capella.test', password: 'new-password' });
+    const secondApp = createApp({ authService: secondModule.service, secureCookies: false });
+
+    const oldLogin = await request(firstApp).post('/api/v1/auth/admin/login')
       .send({ email: 'admin@capella.test', password: 'old-password' });
-    const newLogin = await request(app).post('/api/v1/auth/admin/login')
+    const newLogin = await request(secondApp).post('/api/v1/auth/admin/login')
       .send({ email: 'admin@capella.test', password: 'new-password' });
 
     expect(oldLogin.status).toBe(401);

@@ -22,12 +22,6 @@
     },
     "clean": {
       "cache": false
-    },
-    "@capella/shared#build": { "dependsOn": ["^build"], "outputs": [] },
-    "@capella/contracts#build": { "dependsOn": ["^build"], "outputs": [] },
-    "@capella/testing#build": { "dependsOn": ["^build"], "outputs": [] },
-    "@capella/ui#build": { "dependsOn": ["^build"], "outputs": [] },
-    "@capella/config#build": { "dependsOn": ["^build"], "outputs": [] },
-    "@capella/database#build": { "dependsOn": ["^build"], "outputs": [] }
+    }
   }
 }

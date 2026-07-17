@@ -40,6 +40,6 @@ describe('Cairo formatters', () => {
   });
 
   test('time renders with Western digits', () => {
-    expect(formatCairoTime(lateUtcEvening)).toMatch(/2:30/);
+    expect(formatCairoTime(lateUtcEvening)).toMatch(/(?:^|\D)0?2:30(?:\D|$)/);
   });
 });

@@ -37,7 +37,7 @@ The system manages one company with multiple branches. Its planned functional ar
 - The admin email and plaintext bootstrap password are stored in server-only environment variables.
 - On API startup, the password is Argon2-hashed and the single admin credential is upserted in MySQL; the database never stores the plaintext password.
 - Admin login reads the stored hash from MySQL and verifies the submitted password against it.
-- No admin database table or additional admin accounts exist.
+- The `admin_credentials` MySQL table exists and permits exactly one singleton credential row for the system admin; additional admin accounts remain prohibited.
 - Changing admin credentials requires changing the server environment and restarting the API; startup replaces the single stored admin credential hash.
 - A successful login creates a secure HTTP-only cookie session.
 - Admin sessions remain valid until explicit logout.

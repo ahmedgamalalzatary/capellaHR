@@ -47,7 +47,10 @@ describe('api client error contract', () => {
     const error = await api.get('/employees').catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).code).toBe('UNEXPECTED_ERROR');
+    const apiError = error as ApiError;
+    expect(apiError.status).toBe(502);
+    expect(apiError.code).toBe('UNEXPECTED_ERROR');
+    expect(apiError.message).toBe('حدث خطأ غير متوقع. حاول مرة أخرى.');
   });
 
   test('maps network failure to an Arabic connectivity error', async () => {
@@ -59,6 +62,7 @@ describe('api client error contract', () => {
     const apiError = error as ApiError;
     expect(apiError.status).toBe(0);
     expect(apiError.code).toBe('NETWORK_ERROR');
+    expect(apiError.message).toBe('تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.');
   });
 
   test('returns parsed JSON on success', async () => {
