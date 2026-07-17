@@ -1,10 +1,23 @@
 import type { createDatabase } from '@capella/database';
 import { branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employees } from '@capella/database/schema';
-import { and, asc, count, eq, gt, isNull } from 'drizzle-orm';
+import { and, asc, count, eq, getTableColumns, gt, isNull, or, sql } from 'drizzle-orm';
 import type { DeviceRepository, PublicDevice } from './devices-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
-const publicDevice = (row: typeof devices.$inferSelect): PublicDevice => ({ id: row.id, assignmentType: row.assignmentType, assignmentId: row.assignmentType === 'employee' ? row.employeeId! : row.branchId!, status: row.status, browser: row.browser, platform: row.platform, pairedAt: row.pairedAt, lastUsedAt: row.lastUsedAt, revokedAt: row.revokedAt });
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+type Executor = Database | Transaction;
+const publicDevice = (row: typeof devices.$inferSelect, assignmentName: string | null = null): PublicDevice => ({ id: row.id, assignmentType: row.assignmentType, assignmentId: row.assignmentType === 'employee' ? row.employeeId! : row.branchId!, assignmentName, status: row.status, browser: row.browser, platform: row.platform, pairedAt: row.pairedAt, lastUsedAt: row.lastUsedAt, revokedAt: row.revokedAt });
+const findPublicDevice = async (executor: Executor, id: number): Promise<PublicDevice | null> => {
+  const result = (await executor.select({ ...getTableColumns(devices), employeeName: employees.fullName, branchName: branches.name })
+    .from(devices)
+    .leftJoin(employees, eq(devices.employeeId, employees.id))
+    .leftJoin(branches, eq(devices.branchId, branches.id))
+    .where(eq(devices.id, id))
+    .limit(1))[0];
+  if (!result) return null;
+  const { employeeName, branchName, ...row } = result;
+  return publicDevice(row, employeeName ?? branchName);
+};
 const duplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
 const assignmentFilter = (type: 'employee' | 'branch', id: number) => type === 'employee' ? eq(devices.employeeId, id) : eq(devices.branchId, id);
 
@@ -43,18 +56,90 @@ export const createDrizzleDeviceRepository = (database: Database, now: () => Dat
         const id = Number(result[0].insertId);
         await tx.insert(deviceHistory).values({ deviceId: id, event: 'paired', createdAt: at });
         await tx.update(devicePairingRequests).set({ status: 'used', consumedAt: at, registrationChallenge: null }).where(eq(devicePairingRequests.id, pairing.id));
-        return publicDevice((await tx.select().from(devices).where(eq(devices.id, id)).limit(1))[0]!);
+        return (await findPublicDevice(tx, id))!;
       });
     } catch (error) { if (duplicate(error)) return 'conflict'; throw error; }
   },
   async findActiveCredential(input) { const row = (await database.select().from(devices).where(and(assignmentFilter(input.assignmentType, input.assignmentId), eq(devices.installationMarkerHash, input.installationMarkerHash))).limit(1))[0]; if (!row) return 'invalid'; if (row.status === 'revoked') return 'revoked'; return { deviceId: row.id, credentialId: row.credentialId, credentialPublicKey: row.credentialPublicKey, counter: row.counter, transports: row.transports }; },
   async createAuthenticationChallenge(input) { return database.transaction(async (tx) => { const device = await tx.select({ status: devices.status }).from(devices).where(eq(devices.id, input.deviceId)).for('update').limit(1); if (device[0]?.status !== 'active') return false; await tx.delete(deviceAuthenticationChallenges).where(eq(deviceAuthenticationChallenges.deviceId, input.deviceId)); await tx.insert(deviceAuthenticationChallenges).values(input); return true; }); },
-  async consumeAuthenticationChallenge(input) { return database.transaction(async (tx) => { const challenge = (await tx.select().from(deviceAuthenticationChallenges).where(and(eq(deviceAuthenticationChallenges.id, input.challengeId), isNull(deviceAuthenticationChallenges.consumedAt), gt(deviceAuthenticationChallenges.expiresAt, input.now))).for('update').limit(1))[0]; if (!challenge) return 'invalid' as const; const row = (await tx.select().from(devices).where(eq(devices.id, challenge.deviceId)).for('update').limit(1))[0]; if (!row) return 'invalid' as const; if (row.status === 'revoked') return 'revoked' as const; const matchesAssignment = row.assignmentType === input.assignmentType && (row.assignmentType === 'employee' ? row.employeeId : row.branchId) === input.assignmentId; if (!matchesAssignment || row.credentialIdHash !== input.credentialIdHash || row.installationMarkerHash !== input.installationMarkerHash) return 'invalid' as const; const consumed = await tx.update(deviceAuthenticationChallenges).set({ consumedAt: input.now }).where(and(eq(deviceAuthenticationChallenges.id, input.challengeId), isNull(deviceAuthenticationChallenges.consumedAt))); if (consumed[0].affectedRows !== 1) return 'invalid' as const; return { deviceId: row.id, credentialId: row.credentialId, credentialPublicKey: row.credentialPublicKey, counter: row.counter, transports: row.transports, challenge: challenge.challenge }; }); },
-  async recordSuccessfulVerification(deviceId, expectedCounter, newCounter) { return database.transaction(async (tx) => { const row = (await tx.select().from(devices).where(eq(devices.id, deviceId)).for('update').limit(1))[0]; if (!row || row.counter !== expectedCounter) return 'invalid' as const; if (row.status === 'revoked') return 'revoked' as const; const at = now(); await tx.update(devices).set({ counter: newCounter, lastUsedAt: at }).where(and(eq(devices.id, deviceId), eq(devices.counter, expectedCounter))); await tx.insert(deviceHistory).values({ deviceId, event: 'verified', createdAt: at }); return publicDevice({ ...row, counter: newCounter, lastUsedAt: at }); }); },
+  async consumeAuthenticationChallenge(input) {
+    return database.transaction(async (tx) => {
+      const candidate = (await tx.select({ deviceId: deviceAuthenticationChallenges.deviceId })
+        .from(deviceAuthenticationChallenges)
+        .where(eq(deviceAuthenticationChallenges.id, input.challengeId))
+        .limit(1))[0];
+      if (!candidate) return 'invalid' as const;
+
+      const row = (await tx.select().from(devices)
+        .where(eq(devices.id, candidate.deviceId))
+        .for('update')
+        .limit(1))[0];
+      const challenge = (await tx.select().from(deviceAuthenticationChallenges)
+        .where(and(
+          eq(deviceAuthenticationChallenges.id, input.challengeId),
+          isNull(deviceAuthenticationChallenges.consumedAt),
+          gt(deviceAuthenticationChallenges.expiresAt, input.now),
+        ))
+        .for('update')
+        .limit(1))[0];
+      if (!challenge) return 'invalid' as const;
+
+      const consumed = await tx.update(deviceAuthenticationChallenges)
+        .set({ consumedAt: input.now })
+        .where(and(
+          eq(deviceAuthenticationChallenges.id, input.challengeId),
+          isNull(deviceAuthenticationChallenges.consumedAt),
+        ));
+      if (consumed[0].affectedRows !== 1) return 'invalid' as const;
+      if (!row) return 'invalid' as const;
+      if (row.status === 'revoked') return 'revoked' as const;
+
+      const matchesAssignment = row.assignmentType === input.assignmentType
+        && (row.assignmentType === 'employee' ? row.employeeId : row.branchId) === input.assignmentId;
+      if (
+        !matchesAssignment
+        || row.credentialIdHash !== input.credentialIdHash
+        || row.installationMarkerHash !== input.installationMarkerHash
+      ) return 'invalid' as const;
+
+      return {
+        deviceId: row.id,
+        credentialId: row.credentialId,
+        credentialPublicKey: row.credentialPublicKey,
+        counter: row.counter,
+        transports: row.transports,
+        challenge: challenge.challenge,
+      };
+    });
+  },
+  async recordSuccessfulVerification(deviceId, expectedCounter, newCounter) { return database.transaction(async (tx) => { const row = (await tx.select().from(devices).where(eq(devices.id, deviceId)).for('update').limit(1))[0]; if (!row || row.counter !== expectedCounter) return 'invalid' as const; if (row.status === 'revoked') return 'revoked' as const; const at = now(); await tx.update(devices).set({ counter: newCounter, lastUsedAt: at }).where(and(eq(devices.id, deviceId), eq(devices.counter, expectedCounter))); await tx.insert(deviceHistory).values({ deviceId, event: 'verified', createdAt: at }); return (await findPublicDevice(tx, deviceId))!; }); },
   async cancelPairing(id) { const result = await database.update(devicePairingRequests).set({ status: 'cancelled', cancelledAt: now(), registrationChallenge: null }).where(and(eq(devicePairingRequests.id, id), eq(devicePairingRequests.status, 'pending'))); return result[0].affectedRows === 1; },
   async revoke(id) { return database.transaction(async (tx) => { const at = now(); const result = await tx.update(devices).set({ status: 'revoked', revokedAt: at }).where(and(eq(devices.id, id), eq(devices.status, 'active'))); if (result[0].affectedRows !== 1) return false; await tx.insert(deviceHistory).values({ deviceId: id, event: 'revoked', createdAt: at }); return true; }); },
-  async list(query) { const filters = []; if (query.status) filters.push(eq(devices.status, query.status)); if (query.assignmentType) filters.push(eq(devices.assignmentType, query.assignmentType)); if (query.assignmentId) filters.push(query.assignmentType === 'branch' ? eq(devices.branchId, query.assignmentId) : eq(devices.employeeId, query.assignmentId)); const where = filters.length ? and(...filters) : undefined; const rows = await database.select().from(devices).where(where).orderBy(asc(devices.id)).limit(query.pageSize).offset((query.page - 1) * query.pageSize); const total = (await database.select({ value: count() }).from(devices).where(where))[0]?.value ?? 0; return { items: rows.map(publicDevice), total }; },
-  async findById(id) { const row = (await database.select().from(devices).where(eq(devices.id, id)).limit(1))[0]; return row ? publicDevice(row) : null; },
+  async list(query) {
+    const filters = [];
+    if (query.status) filters.push(eq(devices.status, query.status));
+    if (query.assignmentType) filters.push(eq(devices.assignmentType, query.assignmentType));
+    if (query.assignmentId) filters.push(query.assignmentType === 'branch' ? eq(devices.branchId, query.assignmentId) : eq(devices.employeeId, query.assignmentId));
+    if (query.search) filters.push(or(
+      sql`locate(${query.search}, ${devices.browser}) > 0`,
+      sql`locate(${query.search}, ${devices.platform}) > 0`,
+      sql`locate(${query.search}, ${employees.fullName}) > 0`,
+      sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`,
+      sql`locate(${query.search}, ${branches.name}) > 0`,
+    )!);
+    const where = filters.length ? and(...filters) : undefined;
+    const queryBase = database.select({ ...getTableColumns(devices), employeeName: employees.fullName, branchName: branches.name })
+      .from(devices)
+      .leftJoin(employees, eq(devices.employeeId, employees.id))
+      .leftJoin(branches, eq(devices.branchId, branches.id));
+    const rows = await queryBase.where(where).orderBy(asc(devices.id)).limit(query.pageSize).offset((query.page - 1) * query.pageSize);
+    const total = (await database.select({ value: count() }).from(devices)
+      .leftJoin(employees, eq(devices.employeeId, employees.id))
+      .leftJoin(branches, eq(devices.branchId, branches.id))
+      .where(where))[0]?.value ?? 0;
+    return { items: rows.map(({ employeeName, branchName, ...row }) => publicDevice(row, employeeName ?? branchName)), total };
+  },
+  findById(id) { return findPublicDevice(database, id); },
   async history(id) { return database.select({ event: deviceHistory.event, createdAt: deviceHistory.createdAt }).from(deviceHistory).where(eq(deviceHistory.deviceId, id)).orderBy(asc(deviceHistory.id)); },
 });
 

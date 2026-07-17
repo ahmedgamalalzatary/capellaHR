@@ -8,7 +8,7 @@ export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion
 export type EmployeeTransactionContext = unknown;
 export type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
 export interface EmployeeRepository {
-  create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord>;
+  create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord | 'branch_not_found'>;
   findActiveById(id: number): Promise<EmployeeRecord | null>;
   findIdentityByCode(code: number): Promise<{ id: number; code: number; personalPhone: string; pinHash: string; credentialVersion: number; deletedAt: Date | null } | null>;
   findPhoneOwner(phone: string, excludeId?: number): Promise<{ id: number } | null>;
@@ -25,7 +25,11 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
     const { pin, images, ...fields } = input;
-    try { return expose(await repository.create({ ...fields, fullName: fields.fullName.trim(), address: fields.address.trim(), pinHash: await hash(pin), images })); }
+    try {
+      const created = await repository.create({ ...fields, fullName: fields.fullName.trim(), address: fields.address.trim(), pinHash: await hash(pin), images });
+      if (created === 'branch_not_found') throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
+      return expose(created);
+    }
     catch (error) { if (isDuplicate(error)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل'); throw error; }
   },
   async get(id: number) { const found = await repository.findActiveById(id); if (!found) throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود'); return expose(found); },

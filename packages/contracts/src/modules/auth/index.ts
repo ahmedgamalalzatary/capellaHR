@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { verifyDeviceSchema } from '../devices/index.js';
+import { positiveMysqlIntSchema } from '../../common/index.js';
 
 export const adminLoginSchema = z.object({
   email: z.string().trim().email(),
@@ -7,7 +8,7 @@ export const adminLoginSchema = z.object({
 }).strict();
 
 export const employeeLoginSchema = z.object({
-  employeeCode: z.number().int().positive(),
+  employeeCode: positiveMysqlIntSchema,
   pin: z.string().regex(/^\d{4}$/),
   personalPhone: z.string().regex(/^01(?:0|1|2|5)\d{8}$/),
   deviceProof: verifyDeviceSchema,

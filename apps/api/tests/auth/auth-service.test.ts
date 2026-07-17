@@ -61,12 +61,14 @@ const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boole
   sessions.employeeCurrent = overrides.employeeCurrent ?? true;
   const attempts = new MemoryAttempts();
   let tokenNumber = 0;
+  let deviceVerificationCount = 0;
   const createAuthService = Reflect.get(auth, 'createAuthService');
   expect(createAuthService).toBeTypeOf('function');
 
   return {
     sessions,
     attempts,
+    get deviceVerificationCount() { return deviceVerificationCount; },
     service: createAuthService({
       adminCredentials: {
         async findByEmail(email: string) {
@@ -85,6 +87,7 @@ const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boole
       personalDevices: {
         async beginAuthentication() { return (overrides.deviceActive ?? true) ? { challengeId: 'challenge', options: {} } : null; },
         async verify(employeeId: number, proof: typeof validProof) {
+          deviceVerificationCount += 1;
           return employeeId === employee.id && proof.response.id === 'valid-proof' && (overrides.deviceActive ?? true);
         },
       },
@@ -178,6 +181,23 @@ describe('authentication service', () => {
 
     expect(attempts.rows).toHaveLength(1);
     expect(attempts.rows[0]?.succeeded).toBe(false);
+  });
+
+  it.each([
+    ['wrong PIN', { pin: '9999' }],
+    ['wrong phone', { personalPhone: '01100000000' }],
+  ])('consumes device proof when an existing employee submits a %s', async (_name, inputOverrides) => {
+    const setup = makeService();
+
+    await expect(setup.service.loginEmployee({
+      employeeCode: 12,
+      pin: '0123',
+      personalPhone: '01012345678',
+      deviceProof: validProof,
+      ...inputOverrides,
+    })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+
+    expect(setup.deviceVerificationCount).toBe(1);
   });
 
   it('revokes every employee session after a PIN reset', async () => {

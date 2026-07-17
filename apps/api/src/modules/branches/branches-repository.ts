@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
 import { branches } from '@capella/database/schema';
-import { and, asc, count, eq, like, or } from 'drizzle-orm';
+import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
 import type { BranchRepository } from './branches-service.js';
 
@@ -28,8 +28,10 @@ export const createDrizzleBranchRepository = (database: Database, now: () => Dat
     return (await database.select({ id: branches.id }).from(branches).where(eq(branches.nameNormalized, name)).limit(1))[0] ?? null;
   },
   async list(query) {
-    const pattern = query.search ? `%${query.search}%` : undefined;
-    const where = pattern ? or(like(branches.name, pattern), like(branches.location, pattern)) : undefined;
+    const where = query.search ? or(
+      sql`locate(${query.search}, ${branches.name}) > 0`,
+      sql`locate(${query.search}, ${branches.location}) > 0`,
+    ) : undefined;
     const items = await database.select().from(branches).where(where).orderBy(asc(branches.id))
       .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const totals = await database.select({ value: count() }).from(branches).where(where);

@@ -28,4 +28,5 @@ createApp({
   shiftService: shiftModule.service,
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,
+  ...(env.TRUST_PROXY_HOPS === undefined ? {} : { trustProxyHops: env.TRUST_PROXY_HOPS }),
 }).listen(env.API_PORT);

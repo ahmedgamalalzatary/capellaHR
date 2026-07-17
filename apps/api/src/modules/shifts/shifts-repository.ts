@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
 import { branches, employees } from '@capella/database/schema';
-import { and, asc, count, eq, isNull, like, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm';
 
 import type {
   ShiftAssignmentRecord,
@@ -44,10 +44,9 @@ export const createDrizzleShiftRepository = (
     const filters = [isNull(employees.deletedAt)];
     if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
     if (query.search !== undefined) {
-      const pattern = `%${query.search}%`;
       filters.push(or(
-        like(employees.fullName, pattern),
-        sql`cast(${employees.employeeCode} as char) like ${pattern}`,
+        sql`locate(${query.search}, ${employees.fullName}) > 0`,
+        sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`,
       )!);
     }
 

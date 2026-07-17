@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
 import { authSessions, branches, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
-import { and, asc, count, eq, isNull, like, max, ne, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
 import type { EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
 type Database = ReturnType<typeof createDatabase>;
 
@@ -11,6 +11,9 @@ const hydrate = async (db: Database | Parameters<Parameters<Database['transactio
 export const createDrizzleEmployeeRepository = (database: Database, now: () => Date = () => new Date()): EmployeeRepository => ({
   async create(input) {
     return database.transaction(async (tx) => {
+      const branch = await tx.select({ id: branches.id }).from(branches)
+        .where(eq(branches.id, input.branchId)).for('update').limit(1);
+      if (!branch[0]) return 'branch_not_found' as const;
       await tx.insert(employeeCodeSequence).values({ id: 1, nextCode: 1 }).onDuplicateKeyUpdate({ set: { id: 1 } });
       const sequence = await tx.select().from(employeeCodeSequence).where(eq(employeeCodeSequence.id, 1)).for('update');
       const highest = await tx.select({ value: max(employees.employeeCode) }).from(employees);
@@ -31,7 +34,7 @@ export const createDrizzleEmployeeRepository = (database: Database, now: () => D
   async branchExists(id) { return Boolean((await database.select({ id: branches.id }).from(branches).where(eq(branches.id, id)).limit(1))[0]); },
   async list(query) {
     const filters = [isNull(employees.deletedAt)]; if (query.branchId) filters.push(eq(employees.branchId, query.branchId));
-    if (query.search) { const pattern = `%${query.search}%`; filters.push(or(like(employees.fullName, pattern), like(employees.personalPhone, pattern), like(employees.whatsappPhone, pattern), sql`cast(${employees.employeeCode} as char) like ${pattern}`)!); }
+    if (query.search) { filters.push(or(sql`locate(${query.search}, ${employees.fullName}) > 0`, sql`locate(${query.search}, ${employees.personalPhone}) > 0`, sql`locate(${query.search}, ${employees.whatsappPhone}) > 0`, sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`)!); }
     const where = and(...filters); const rows = await database.select().from(employees).where(where).orderBy(asc(employees.employeeCode)).limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const totals = await database.select({ value: count() }).from(employees).where(where);
     return { items: await Promise.all(rows.map((row) => hydrate(database, row))), total: totals[0]?.value ?? 0 };

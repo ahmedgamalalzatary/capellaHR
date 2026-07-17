@@ -21,6 +21,7 @@ describe('MySQL-backed branches', () => {
   it('persists, searches, updates, and deletes a never-referenced branch', async () => {
     const created = await module.service.create(input);
     expect((await module.service.list({ search: 'Nasr', page: 1, pageSize: 20 })).total).toBe(1);
+    expect((await module.service.list({ search: '%', page: 1, pageSize: 20 })).total).toBe(0);
     expect((await module.service.update(created.id, { attendanceRadiusMeters: 75 })).attendanceRadiusMeters).toBe(75);
     await module.service.remove(created.id);
     await expect(module.service.get(created.id)).rejects.toMatchObject({ code: 'BRANCH_NOT_FOUND' });

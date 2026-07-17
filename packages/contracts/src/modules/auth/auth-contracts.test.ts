@@ -29,4 +29,10 @@ describe('authentication contracts', () => {
       deviceProof: { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'credential-id', rawId: 'credential-id', type: 'public-key', response: { clientDataJSON: 'encoded', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } },
     }).success).toBe(true);
   });
+
+  it('caps employee codes at the signed MySQL INT range', () => {
+    const login = Reflect.get(contracts, 'employeeLoginSchema');
+    const deviceProof = { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'credential-id', rawId: 'credential-id', type: 'public-key', response: { clientDataJSON: 'encoded', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } };
+    expect(login.safeParse({ employeeCode: 2147483648, pin: '1234', personalPhone: '01012345678', deviceProof }).success).toBe(false);
+  });
 });

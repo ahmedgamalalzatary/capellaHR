@@ -125,9 +125,11 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
         && identity.deletedAt === null
         && identity.personalPhone === input.personalPhone
         && await safelyVerifyHash(identity.pinHash, input.pin);
+      const deviceValid = identity !== null
+        && await dependencies.personalDevices.verify(identity.id, input.deviceProof);
 
       let reason: string | null = identityValid ? null : 'INVALID_CREDENTIALS';
-      if (identityValid && !await dependencies.personalDevices.verify(identity.id, input.deviceProof)) {
+      if (identityValid && !deviceValid) {
         reason = 'DEVICE_NOT_REGISTERED';
       }
       if (identityValid && reason === null && !await dependencies.attendance.hasOpenSession(identity.id)) {

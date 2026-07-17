@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 
 describe('authentication application composition', () => {
+  it('keeps proxy trust disabled unless a trusted hop count is configured', () => {
+    expect(createApp().get('trust proxy')).toBe(false);
+    expect(createApp({ trustProxyHops: 1 }).get('trust proxy')).toBe(1);
+  });
+
   it('mounts the admin login endpoint under API v1', async () => {
     const service = {
       async loginAdmin() { return { token: 'token', actor: { type: 'admin' as const } }; },
@@ -44,5 +49,18 @@ describe('authentication application composition', () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toMatchObject({ code: 'VALIDATION_ERROR' });
     expect(response.body.error.requestId).toBe(response.headers['x-request-id']);
+  });
+
+  it('returns a structured 413 when the JSON body exceeds the configured limit', async () => {
+    const response = await request(createApp())
+      .post('/api/v1/missing')
+      .set('content-type', 'application/json')
+      .send(JSON.stringify({ value: 'x'.repeat(110 * 1024) }));
+
+    expect(response.status).toBe(413);
+    expect(response.body.error).toMatchObject({
+      code: 'PAYLOAD_TOO_LARGE',
+      requestId: response.headers['x-request-id'],
+    });
   });
 });

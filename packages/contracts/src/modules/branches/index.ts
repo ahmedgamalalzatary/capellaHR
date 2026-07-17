@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  coercedMysqlIntSchema,
+  paginationPageSchema,
+  paginationPageSizeSchema,
+} from '../../common/index.js';
 
 const gpsReading = {
   latitude: z.number().finite().min(-90).max(90),
@@ -45,12 +50,12 @@ export const updateBranchSchema = z.object({
 });
 
 // Upper bound matches the signed MySQL INT primary-key column.
-export const branchIdParamsSchema = z.object({ id: z.coerce.number().int().positive().max(2147483647) });
+export const branchIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
 
 export const listBranchesQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  page: paginationPageSchema.default(1),
+  pageSize: paginationPageSizeSchema.default(20),
 });
 
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;

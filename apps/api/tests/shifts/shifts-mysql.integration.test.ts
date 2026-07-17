@@ -95,6 +95,7 @@ describe('MySQL-backed shifts', () => {
       total: 1,
       items: [{ employeeCode: 1, employeeName: 'أحمد علي', durationMinutes: 600 }],
     });
+    expect(await shifts.service.list({ search: '%', page: 1, pageSize: 20 })).toMatchObject({ total: 0, items: [] });
   });
 
   it('gets and atomically updates an active employee assignment', async () => {

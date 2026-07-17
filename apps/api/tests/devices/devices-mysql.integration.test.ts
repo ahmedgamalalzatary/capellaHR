@@ -14,6 +14,23 @@ beforeEach(async () => { await database.delete(deviceAuthenticationChallenges); 
 const complete = async (token: string, marker: string, credential = marker) => { await module.service.beginPairing(token); return module.service.completePairing(token, { installationMarker: `marker-${marker}`.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android', response: { id: `credential-${credential}`, rawId: `credential-${credential}`, type: 'public-key', response: { clientDataJSON: 'data', attestationObject: 'attestation' }, clientExtensionResults: {} } }); };
 
 describe('MySQL-backed devices', () => {
+  it('searches browser, platform, and assigned branch while returning assignment identity', async () => {
+    const branch = await branchesModule.service.create({ name: 'Searchable branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
+    const active = await complete(pairing.pairingToken, 'searchable');
+
+    expect(active.assignmentName).toBe('Searchable branch');
+    await expect(module.service.get(active.id)).resolves.toMatchObject({ assignmentName: 'Searchable branch' });
+
+    for (const search of ['Chrome', 'Android', 'Searchable']) {
+      await expect(module.service.list({ search, page: 1, pageSize: 20 })).resolves.toMatchObject({
+        total: 1,
+        items: [{ assignmentId: branch.id, assignmentName: 'Searchable branch' }],
+      });
+    }
+    await expect(module.service.list({ search: '%', page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 0, items: [] });
+  });
+
   it('supersedes pending links and consumes the successful link once', async () => {
     const branch = await branchesModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const first = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id }); const second = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
@@ -85,6 +102,23 @@ describe('MySQL-backed devices', () => {
     await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, proof)).resolves.toMatchObject({ id: active.id });
     await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, proof)).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
     expect((await database.select().from(devices).where(eq(devices.id, active.id)).limit(1))[0]?.counter).toBe(1);
+  });
+  it('burns an authentication challenge after a wrong installation-marker attempt', async () => {
+    const branch = await branchesModule.service.create({ name: 'Burn challenge', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
+    await complete(pairing.pairingToken, 'burn-device');
+    const installationMarker = 'marker-burn-device'.padEnd(16, 'x');
+    const challenge = await module.service.beginAuthentication({ assignmentType: 'branch', assignmentId: branch.id }, installationMarker);
+    const proof = (marker: string) => ({ challengeId: challenge.challengeId, installationMarker: marker, response: { id: 'credential-burn-device', rawId: 'credential-burn-device', type: 'public-key' as const, response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } });
+
+    await expect(module.service.verify(
+      { assignmentType: 'branch', assignmentId: branch.id },
+      proof('wrong-marker-value'),
+    )).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
+    await expect(module.service.verify(
+      { assignmentType: 'branch', assignmentId: branch.id },
+      proof(installationMarker),
+    )).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
   });
   it('supersedes the previous authentication challenge for the same device', async () => {
     const branch = await branchesModule.service.create({ name: 'Challenge branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

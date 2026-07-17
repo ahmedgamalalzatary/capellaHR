@@ -19,9 +19,11 @@ export const createApp = (dependencies: {
   shiftService?: ShiftService;
   secureCookies?: boolean;
   corsOrigin?: string;
+  trustProxyHops?: number;
 } = {}) => {
   const app = express();
 
+  if (dependencies.trustProxyHops !== undefined) app.set('trust proxy', dependencies.trustProxyHops);
   app.use(requestContext);
   app.use(helmet());
   if (dependencies.corsOrigin) {

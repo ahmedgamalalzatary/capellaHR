@@ -28,6 +28,13 @@ describe('employee contracts', () => {
     }).shiftDurationMinutes).toBe(600);
   });
 
+  it('accepts decimal integer strings from multipart forms without coercing other JSON types', () => {
+    expect(createEmployeeFieldsSchema.parse({ ...valid, age: '30', branchId: '1' }))
+      .toMatchObject({ age: 30, branchId: 1 });
+    expect(updateEmployeeFieldsSchema.safeParse({ age: true }).success).toBe(false);
+    expect(updateEmployeeFieldsSchema.safeParse({ age: [30] }).success).toBe(false);
+  });
+
   it('does not permit branch or code updates', () => {
     expect(() => updateEmployeeFieldsSchema.parse({ branchId: 2 })).toThrow();
     expect(() => updateEmployeeFieldsSchema.parse({ employeeCode: 10 })).toThrow();
@@ -36,5 +43,10 @@ describe('employee contracts', () => {
 
   it('parses employee list filters', () => {
     expect(listEmployeesQuerySchema.parse({ branchId: '2', page: '2' })).toMatchObject({ branchId: 2, page: 2, pageSize: 20 });
+  });
+
+  it('rejects filters outside safe MySQL and pagination ranges', () => {
+    expect(listEmployeesQuerySchema.safeParse({ branchId: '2147483648' }).success).toBe(false);
+    expect(listEmployeesQuerySchema.safeParse({ page: '1e308' }).success).toBe(false);
   });
 });

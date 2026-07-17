@@ -2,9 +2,12 @@
   "name": "@capella/config",
   "private": true,
   "type": "module",
-  "exports": { "./server": "./src/server.ts", "./client": "./src/client.ts" },
+  "exports": {
+    "./server": { "types": "./src/server.ts", "development": "./src/server.ts", "default": "./dist/server.js" },
+    "./client": { "types": "./src/client.ts", "development": "./src/client.ts", "default": "./dist/client.js" }
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit",

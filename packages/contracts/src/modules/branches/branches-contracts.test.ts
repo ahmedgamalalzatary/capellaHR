@@ -52,4 +52,8 @@ describe('branch contracts', () => {
   it('normalizes list pagination defaults', () => {
     expect(listBranchesQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 });
   });
+
+  it.each(['2147483648', '1e308'])('rejects unsafe list page %s', (page) => {
+    expect(listBranchesQuerySchema.safeParse({ page }).success).toBe(false);
+  });
 });

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { CompleteDevicePairing, DeviceAssignment, ListDevicesQuery, VerifyDevice } from '@capella/contracts';
 
-export type PublicDevice = { id: number; assignmentType: 'employee' | 'branch'; assignmentId: number; status: 'active' | 'revoked'; browser: string; platform: string; pairedAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
+export type PublicDevice = { id: number; assignmentType: 'employee' | 'branch'; assignmentId: number; assignmentName: string | null; status: 'active' | 'revoked'; browser: string; platform: string; pairedAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
 type StoredCredential = { deviceId: number; credentialId: string; credentialPublicKey: string; counter: number; transports: string[] };
 type PairingState = DeviceAssignment & { challenge: string | null; webauthnUserId: string | null; excludeCredentialIds: string[] };
 

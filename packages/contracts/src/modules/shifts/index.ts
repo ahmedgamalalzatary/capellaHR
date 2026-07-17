@@ -1,10 +1,16 @@
 import { z } from 'zod';
+import {
+  coercedMysqlIntSchema,
+  decimalIntegerInput,
+  paginationPageSchema,
+  paginationPageSizeSchema,
+} from '../../common/index.js';
 
-const databaseId = z.coerce.number().int().positive().max(2147483647);
+const databaseId = coercedMysqlIntSchema;
 
 export const shiftDurationMinutesSchema = z.number().int().min(1).max(720);
 export const coercedShiftDurationMinutesSchema = z.preprocess(
-  (value) => typeof value === 'string' && value.trim() !== '' ? Number(value) : value,
+  decimalIntegerInput,
   shiftDurationMinutesSchema,
 );
 
@@ -19,8 +25,8 @@ export const updateShiftAssignmentSchema = z.object({
 export const listShiftAssignmentsQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
   branchId: databaseId.optional(),
-  page: z.coerce.number().int().positive().max(2147483647).default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  page: paginationPageSchema.default(1),
+  pageSize: paginationPageSizeSchema.default(20),
 });
 
 export type UpdateShiftAssignmentInput = z.infer<typeof updateShiftAssignmentSchema>;

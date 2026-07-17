@@ -11,5 +11,6 @@ process.env.NODE_ENV = 'test';
 
 export default defineConfig({
   envDir: workspaceRoot,
+  resolve: { conditions: ['development'] },
   test: { environment: 'node', setupFiles: ['@capella/testing/setup'], fileParallelism: false },
 });

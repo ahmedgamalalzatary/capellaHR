@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDrizzleAuthRepositories } from '../../src/modules/auth/index.js';
-import { createEmployeesModule } from '../../src/modules/employees/index.js';
+import { createDrizzleEmployeeRepository, createEmployeeService, createEmployeesModule } from '../../src/modules/employees/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? '');
 const branchModule = createBranchesModule(database); const employeeModule = createEmployeesModule(database, { hasOpenSession: async () => false });
@@ -17,6 +17,7 @@ describe('MySQL-backed employees', () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const created = await Promise.all([employeeModule.service.create(employee(branch.id, '01012345678')), employeeModule.service.create(employee(branch.id, '01112345678'))]);
     expect(created.map((item) => item.employeeCode).sort()).toEqual([1, 2]);
+    expect((await employeeModule.service.list({ search: '%', page: 1, pageSize: 20 })).total).toBe(0);
     await expect(branchModule.service.remove(branch.id)).rejects.toMatchObject({ code: 'BRANCH_REFERENCED' });
   });
   it('reserves deleted employee phones and hides the employee', async () => {
@@ -35,5 +36,29 @@ describe('MySQL-backed employees', () => {
     await database.insert(authSessions).values({ id: 'delete-session', tokenHash: 'b'.repeat(64), actorType: 'employee', employeeId: created.id, createdAt: new Date(), revokedAt: null });
     await employeeModule.service.remove(created.id);
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'delete-session')))[0]!.revokedAt).not.toBeNull();
+  });
+  it('returns branch-not-found when the branch is deleted after the preliminary check', async () => {
+    const branch = await branchModule.service.create({ name: 'Race branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const repository = createDrizzleEmployeeRepository(database);
+    let releaseCheck!: () => void;
+    let signalChecked!: () => void;
+    const checked = new Promise<void>((resolve) => { signalChecked = resolve; });
+    const released = new Promise<void>((resolve) => { releaseCheck = resolve; });
+    const service = createEmployeeService({
+      ...repository,
+      async branchExists(id) {
+        const exists = await repository.branchExists(id);
+        signalChecked();
+        await released;
+        return exists;
+      },
+    });
+
+    const creation = service.create(employee(branch.id, '01012345678'));
+    await checked;
+    await branchModule.service.remove(branch.id);
+    releaseCheck();
+
+    await expect(creation).rejects.toMatchObject({ code: 'EMPLOYEE_BRANCH_NOT_FOUND' });
   });
 });

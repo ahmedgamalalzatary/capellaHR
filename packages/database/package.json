@@ -2,9 +2,12 @@
   "name": "@capella/database",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./schema": "./src/schema/index.ts" },
+  "exports": {
+    ".": { "types": "./src/index.ts", "development": "./src/index.ts", "default": "./dist/index.js" },
+    "./schema": { "types": "./src/schema/index.ts", "development": "./src/schema/index.ts", "default": "./dist/schema/index.js" }
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "db:generate": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs migrate",
     "db:push": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs push",

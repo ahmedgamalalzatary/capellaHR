@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDeviceService, type DeviceRepository, type WebAuthnProvider } from '../../src/modules/devices/devices-service.js';
 
-const publicDevice = { id: 4, assignmentType: 'employee' as const, assignmentId: 8, status: 'active' as const, browser: 'Chrome', platform: 'Android', pairedAt: new Date(), lastUsedAt: null, revokedAt: null };
+const publicDevice = { id: 4, assignmentType: 'employee' as const, assignmentId: 8, assignmentName: 'Employee', status: 'active' as const, browser: 'Chrome', platform: 'Android', pairedAt: new Date(), lastUsedAt: null, revokedAt: null };
 const repository = (): DeviceRepository => ({
   assignmentExists: vi.fn(async () => true), createPairing: vi.fn(async () => ({ id: 1 })),
   getPendingPairing: vi.fn(async () => ({ assignmentType: 'employee' as const, assignmentId: 8, challenge: null, webauthnUserId: null, excludeCredentialIds: [] })),
