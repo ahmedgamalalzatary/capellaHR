@@ -1,0 +1,2 @@
+import type { createDatabase } from '@capella/database'; import { createDeviceLifecycle, createDrizzleDeviceRepository } from './devices-repository.js'; import { createDeviceService } from './devices-service.js';
+export const createDevicesModule = (database: ReturnType<typeof createDatabase>) => { const repository = createDrizzleDeviceRepository(database); return { repository, service: createDeviceService(repository), lifecycle: createDeviceLifecycle(database) }; };

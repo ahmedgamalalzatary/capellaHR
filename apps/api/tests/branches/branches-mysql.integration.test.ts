@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { authSessions, branches, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -12,6 +12,7 @@ const input = {
 };
 
 beforeEach(async () => {
+  await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests);
   await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations);
   await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches);
 });

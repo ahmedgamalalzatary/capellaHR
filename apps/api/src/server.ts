@@ -5,13 +5,15 @@ import { createApp } from './app.js';
 import { createAuthModule } from './modules/auth/index.js';
 import { createBranchesModule } from './modules/branches/index.js';
 import { createDrizzleEmployeeRepository, createEmployeesModule } from './modules/employees/index.js';
+import { createDevicesModule } from './modules/devices/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
 const employeeRepository = createDrizzleEmployeeRepository(database);
+const deviceModule = createDevicesModule(database);
 const auth = createAuthModule({ database, employees: { findByCode: (code) => employeeRepository.findIdentityByCode(code) } });
 await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD });
 const branchModule = createBranchesModule(database);
-const employeeModule = createEmployeesModule(database, undefined, employeeRepository);
+const employeeModule = createEmployeesModule(database, undefined, employeeRepository, deviceModule.lifecycle);
 await employeeModule.uploadStore.retryPendingCleanup();
 
 createApp({
@@ -19,6 +21,7 @@ createApp({
   branchService: branchModule.service,
   employeeService: employeeModule.service,
   employeeUploadStore: employeeModule.uploadStore,
+  deviceService: deviceModule.service,
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,
 }).listen(env.API_PORT);

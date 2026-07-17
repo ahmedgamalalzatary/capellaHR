@@ -1,0 +1,14 @@
+import { deviceAssignmentSchema, deviceIdParamsSchema, listDevicesQuerySchema } from '@capella/contracts';
+import { Router, type Response } from 'express'; import { ZodError } from 'zod';
+import { createAuthMiddleware } from '../auth/auth-middleware.js'; import type { AuthService } from '../auth/auth-service.js'; import { responseRequestId } from '../../shared/http/index.js'; import { DeviceError, type DeviceService } from './devices-service.js';
+const failure = (response: Response, status: number, code: string, message: string) => response.status(status).json({ error: { code, message, requestId: responseRequestId(response) } });
+const handle = (error: unknown, response: Response) => { if (error instanceof ZodError) return failure(response, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة'); if (error instanceof DeviceError) return failure(response, error.code === 'DEVICE_NOT_FOUND' || error.code === 'DEVICE_ASSIGNMENT_NOT_FOUND' ? 404 : 409, error.code, error.message); throw error; };
+export const createDevicesRouter = (service: DeviceService, authService: Pick<AuthService, 'authenticate'>) => { const router = Router(); const auth = createAuthMiddleware(authService);
+  router.post('/pairings/:token/complete', (_request, response) => handle(new DeviceError('DEVICE_PROOF_UNSUPPORTED', 'إثبات تسجيل WebAuthn غير مكتمل'), response));
+  router.use(auth.authenticate, auth.requireAdmin);
+  router.post('/pairings', async (request, response) => { try { response.status(201).json({ data: await service.createPairing(deviceAssignmentSchema.parse(request.body)) }); } catch (error) { handle(error, response); } });
+  router.delete('/pairings/:id', async (request, response) => { try { await service.cancelPairing(deviceIdParamsSchema.parse(request.params).id); response.status(204).send(); } catch (error) { handle(error, response); } });
+  router.get('/', async (request, response) => { try { const query = listDevicesQuerySchema.parse(request.query); const result = await service.list(query); response.json({ data: result.items, meta: { page: query.page, pageSize: query.pageSize, total: result.total, totalPages: Math.ceil(result.total / query.pageSize) } }); } catch (error) { handle(error, response); } });
+  router.get('/:id/history', async (request, response) => { try { response.json({ data: await service.history(deviceIdParamsSchema.parse(request.params).id) }); } catch (error) { handle(error, response); } });
+  router.get('/:id', async (request, response) => { try { response.json({ data: await service.get(deviceIdParamsSchema.parse(request.params).id) }); } catch (error) { handle(error, response); } });
+  router.delete('/:id', async (request, response) => { try { await service.revoke(deviceIdParamsSchema.parse(request.params).id); response.status(204).send(); } catch (error) { handle(error, response); } }); return router; };

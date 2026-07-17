@@ -57,6 +57,13 @@
       "when": 1784301596390,
       "tag": "0007_majestic_thunderbolts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1784303322503,
+      "tag": "0008_legal_old_lace",
+      "breakpoints": true
     }
   ]
 }

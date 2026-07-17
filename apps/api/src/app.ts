@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import type { AuthService } from './modules/auth/index.js';
 import type { BranchService } from './modules/branches/index.js';
 import type { EmployeeService, EmployeeUploadStore } from './modules/employees/index.js';
+import type { DeviceService } from './modules/devices/index.js';
 import { createApiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler, requestContext } from './shared/http/index.js';
 
@@ -13,6 +14,7 @@ export const createApp = (dependencies: {
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
+  deviceService?: DeviceService;
   secureCookies?: boolean;
   corsOrigin?: string;
 } = {}) => {
