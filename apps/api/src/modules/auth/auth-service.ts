@@ -60,6 +60,10 @@ export class AuthError extends Error {
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
+// Valid argon2 hash of an unused throwaway value; verified against when no
+// credential exists so unknown emails take the same time as wrong passwords.
+const TIMING_DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$O33BRlRwoIn+0l0wzrVq7g$jTAOxanRrPw/yvMxeDaz0CHzlDf77QOU6llfV3aKaXs';
+
 const safelyVerifyHash = async (storedHash: string, value: string) => {
   try {
     return await verify(storedHash, value);
@@ -87,7 +91,8 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   return {
     async loginAdmin(email: string, password: string) {
       const credential = await dependencies.adminCredentials.findByEmail(email);
-      const valid = credential !== null && await safelyVerifyHash(credential.passwordHash, password);
+      const passwordMatches = await safelyVerifyHash(credential?.passwordHash ?? TIMING_DUMMY_HASH, password);
+      const valid = credential !== null && passwordMatches;
       await dependencies.attempts.record({
         actorType: 'admin', identifier: email, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS',
       });

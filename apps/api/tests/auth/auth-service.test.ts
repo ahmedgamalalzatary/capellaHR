@@ -114,6 +114,17 @@ describe('authentication service', () => {
     expect(attempts.rows.every((row) => !row.succeeded)).toBe(true);
   });
 
+  it('rejects unknown admin emails with the same invalid-credentials error', async () => {
+    const { service, sessions, attempts } = makeService();
+
+    await expect(service.loginAdmin('nobody@capella.test', 'whatever')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+
+    expect(sessions.rows).toHaveLength(0);
+    expect(attempts.rows).toEqual([
+      { actorType: 'admin', identifier: 'nobody@capella.test', succeeded: false, reason: 'INVALID_CREDENTIALS' },
+    ]);
+  });
+
   it('logs out only the presented session', async () => {
     const { service, sessions } = makeService();
     const first = await service.loginAdmin('admin@capella.test', 'correct horse battery staple');

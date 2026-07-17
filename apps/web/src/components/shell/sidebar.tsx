@@ -7,11 +7,21 @@ import { cn } from '@capella/ui';
 
 import { ADMIN_NAV } from './nav';
 
-export function Sidebar() {
+export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed inset-y-0 start-0 z-30 flex w-64 flex-col border-e border-line bg-paper">
+    <aside
+      id="admin-sidebar"
+      data-state={open ? 'open' : 'closed'}
+      className={cn(
+        'fixed inset-y-0 start-0 z-30 flex w-64 flex-col border-e border-line bg-paper',
+        'transition-[transform,visibility] duration-200 lg:visible lg:translate-x-0',
+        // visibility (not just transform) removes the closed mobile drawer
+        // from keyboard and screen-reader navigation below lg.
+        open ? 'visible translate-x-0' : 'invisible translate-x-full',
+      )}
+    >
       <div className="flex h-14 items-center border-b border-line px-5">
         <span className="text-lg font-bold tracking-tight">كابيلا</span>
         <span className="ms-2 text-[12px] text-muted">الموارد البشرية</span>
@@ -31,6 +41,7 @@ export function Sidebar() {
                     <Link
                       href={item.href}
                       aria-current={active ? 'page' : undefined}
+                      onClick={() => onNavigate?.()}
                       className={cn(
                         'flex items-center gap-2.5 rounded-control px-2 py-1.5 text-sm transition-colors duration-150',
                         active ? 'bg-ink font-medium text-paper' : 'text-ink hover:bg-ink/5',

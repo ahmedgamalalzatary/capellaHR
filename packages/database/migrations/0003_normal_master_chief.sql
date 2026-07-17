@@ -1,0 +1,1 @@
+ALTER TABLE `admin_credentials` ADD CONSTRAINT `admin_credentials_singleton` CHECK (`admin_credentials`.`id` = 1);

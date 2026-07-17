@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   int,
   json,
@@ -14,7 +16,10 @@ export const adminCredentials = mysqlTable('admin_credentials', {
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
-});
+}, (table) => [
+  // Single-admin system: the table can only ever hold the singleton row.
+  check('admin_credentials_singleton', sql`${table.id} = 1`),
+]);
 
 export const authSessions = mysqlTable('auth_sessions', {
   id: varchar('id', { length: 36 }).primaryKey(),

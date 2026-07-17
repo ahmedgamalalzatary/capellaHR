@@ -3,11 +3,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 
 import type { AuthService } from './modules/auth/index.js';
+import type { BranchService } from './modules/branches/index.js';
 import { createApiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './shared/http/index.js';
 
 export const createApp = (dependencies: {
   authService?: AuthService;
+  branchService?: BranchService;
   secureCookies?: boolean;
   corsOrigin?: string;
 } = {}) => {
