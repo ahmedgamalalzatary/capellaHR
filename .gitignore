@@ -14,3 +14,4 @@ coverage/
 Thumbs.db
 .idea/
 next-env.d.ts
+apps/api/uploads/*

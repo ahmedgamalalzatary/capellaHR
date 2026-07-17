@@ -27,7 +27,7 @@ describe('branch service', () => {
     ));
     const repo = repository({ create });
     await createBranchService(repo).create(input);
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Cairo', nameNormalized: 'cairo' }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Cairo', nameNormalized: expect.stringMatching(/^[a-f0-9]{64}$/) }));
   });
 
   it('rejects a duplicate normalized name', async () => {

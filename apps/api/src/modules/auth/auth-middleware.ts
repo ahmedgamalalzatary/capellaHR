@@ -1,6 +1,5 @@
-import { randomUUID } from 'node:crypto';
-
 import type { RequestHandler } from 'express';
+import { responseRequestId } from '../../shared/http/index.js';
 
 import type { AuthService } from './auth-service.js';
 
@@ -8,13 +7,13 @@ const readSessionToken = (cookieHeader: string | undefined) => {
   if (!cookieHeader) return '';
   for (const section of cookieHeader.split(';')) {
     const [name, ...value] = section.trim().split('=');
-    if (name === 'capella_session') return decodeURIComponent(value.join('='));
+    if (name === 'capella_session') { try { return decodeURIComponent(value.join('=')); } catch { return ''; } }
   }
   return '';
 };
 
 const reject = (status: number, code: string, message: string): RequestHandler => (_request, response) => {
-  response.status(status).json({ error: { code, message, requestId: randomUUID() } });
+  response.status(status).json({ error: { code, message, requestId: responseRequestId(response) } });
 };
 
 export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>) => {

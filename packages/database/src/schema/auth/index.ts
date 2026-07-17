@@ -10,6 +10,7 @@ import {
   timestamp,
   varchar,
 } from 'drizzle-orm/mysql-core';
+import { employees } from '../employees/index.js';
 
 export const adminCredentials = mysqlTable('admin_credentials', {
   id: int('id').primaryKey(),
@@ -25,11 +26,12 @@ export const authSessions = mysqlTable('auth_sessions', {
   id: varchar('id', { length: 36 }).primaryKey(),
   tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
   actorType: mysqlEnum('actor_type', ['admin', 'employee']).notNull(),
-  employeeId: int('employee_id'),
+  employeeId: int('employee_id').references(() => employees.id),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   revokedAt: timestamp('revoked_at', { mode: 'date', fsp: 3 }),
 }, (table) => [
   index('auth_sessions_employee_active_idx').on(table.employeeId, table.revokedAt),
+  check('auth_sessions_actor_employee_consistency', sql`(${table.actorType} = 'admin' and ${table.employeeId} is null) or (${table.actorType} = 'employee' and ${table.employeeId} is not null)`),
 ]);
 
 export const authAttempts = mysqlTable('auth_attempts', {

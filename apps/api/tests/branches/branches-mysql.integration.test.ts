@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { branches } from '@capella/database/schema';
+import { authSessions, branches, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -11,7 +11,10 @@ const input = {
   gpsAccuracyMeters: 5, attendanceRadiusMeters: 50,
 };
 
-beforeEach(async () => { await database.delete(branches); });
+beforeEach(async () => {
+  await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations);
+  await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches);
+});
 
 describe('MySQL-backed branches', () => {
   it('persists, searches, updates, and deletes a never-referenced branch', async () => {

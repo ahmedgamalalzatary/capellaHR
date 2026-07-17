@@ -14,6 +14,7 @@ export type StoredSession = {
 
 export interface SessionRepository {
   create(session: StoredSession): Promise<void>;
+  createEmployeeIfCurrent(session: StoredSession, credentialVersion: number): Promise<boolean>;
   findActiveByTokenHash(tokenHash: string): Promise<StoredSession | null>;
   revokeByTokenHash(tokenHash: string, at: Date): Promise<boolean>;
   revokeEmployee(employeeId: number, at: Date): Promise<void>;
@@ -25,6 +26,9 @@ export interface AttemptRepository {
     identifier: string;
     succeeded: boolean;
     reason: string | null;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    requestId?: string | null;
   }): Promise<void>;
 }
 
@@ -37,6 +41,7 @@ export interface EmployeeIdentity {
   code: number;
   personalPhone: string;
   pinHash: string;
+  credentialVersion: number;
   deletedAt: Date | null;
 }
 
@@ -73,34 +78,39 @@ const safelyVerifyHash = async (storedHash: string, value: string) => {
 };
 
 export const createAuthService = (dependencies: AuthServiceDependencies) => {
+  type AttemptContext = { ipAddress?: string | null; userAgent?: string | null; requestId?: string | null };
   const now = dependencies.now ?? (() => new Date());
   const tokenFactory = dependencies.tokenFactory ?? (() => randomBytes(32).toString('base64url'));
 
-  const createSession = async (actorType: ActorType, employeeId: number | null) => {
+  const createSession = async (actorType: ActorType, employeeId: number | null, credentialVersion?: number) => {
     const token = tokenFactory();
-    await dependencies.sessions.create({
+    const session = {
       id: randomUUID(),
       tokenHash: hashToken(token),
       actorType,
       employeeId,
       revokedAt: null,
-    });
+    };
+    const created = actorType === 'employee'
+      ? await dependencies.sessions.createEmployeeIfCurrent(session, credentialVersion!)
+      : (await dependencies.sessions.create(session), true);
+    if (!created) throw new AuthError('INVALID_CREDENTIALS', 'تعذر تسجيل الدخول');
     return token;
   };
 
   return {
-    async loginAdmin(email: string, password: string) {
+    async loginAdmin(email: string, password: string, context: AttemptContext = {}) {
       const credential = await dependencies.adminCredentials.findByEmail(email);
       const passwordMatches = await safelyVerifyHash(credential?.passwordHash ?? TIMING_DUMMY_HASH, password);
       const valid = credential !== null && passwordMatches;
       await dependencies.attempts.record({
-        actorType: 'admin', identifier: email, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS',
+        actorType: 'admin', identifier: email, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS', ...context,
       });
       if (!valid) throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
       return { token: await createSession('admin', null), actor: { type: 'admin' as const } };
     },
 
-    async loginEmployee(input: { employeeCode: number; pin: string; personalPhone: string; deviceProof: Record<string, unknown> }) {
+    async loginEmployee(input: { employeeCode: number; pin: string; personalPhone: string; deviceProof: Record<string, unknown> }, context: AttemptContext = {}) {
       const identity = await dependencies.employees.findByCode(input.employeeCode);
       const identityValid = identity !== null
         && identity.deletedAt === null
@@ -115,17 +125,18 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
         reason = 'ACTIVE_ATTENDANCE_REQUIRED';
       }
 
-      await dependencies.attempts.record({
-        actorType: 'employee',
-        identifier: String(input.employeeCode),
-        succeeded: reason === null,
-        reason,
+      const recordAttempt = (succeeded: boolean, failureReason: string | null) => dependencies.attempts.record({
+        actorType: 'employee', identifier: String(input.employeeCode), succeeded, reason: failureReason, ...context,
       });
-      if (reason !== null) throw new AuthError(reason, 'تعذر تسجيل الدخول');
+      if (reason !== null) { await recordAttempt(false, reason); throw new AuthError(reason, 'تعذر تسجيل الدخول'); }
 
       const employeeId = identity!.id;
+      let token: string;
+      try { token = await createSession('employee', employeeId, identity!.credentialVersion); }
+      catch (error) { await recordAttempt(false, 'INVALID_CREDENTIALS'); throw error; }
+      await recordAttempt(true, null);
       return {
-        token: await createSession('employee', employeeId),
+        token,
         actor: { type: 'employee' as const, employeeId },
       };
     },

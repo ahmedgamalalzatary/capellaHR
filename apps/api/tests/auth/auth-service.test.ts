@@ -13,8 +13,10 @@ type Session = {
 
 class MemorySessions {
   readonly rows: Session[] = [];
+  employeeCurrent = true;
 
   async create(session: Session) { this.rows.push(session); }
+  async createEmployeeIfCurrent(session: Session) { if (!this.employeeCurrent) return false; this.rows.push(session); return true; }
   async revokeByTokenHash(tokenHash: string, at: Date) {
     const row = this.rows.find((item) => item.tokenHash === tokenHash);
     if (row) row.revokedAt = at;
@@ -39,6 +41,7 @@ const employee = {
   personalPhone: '01012345678',
   pinHash: '',
   deletedAt: null,
+  credentialVersion: 1,
 };
 
 let adminHash = '';
@@ -49,8 +52,9 @@ beforeAll(async () => {
   employeePinHash = await hash('0123');
 });
 
-const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boolean } = {}) => {
+const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boolean; employeeCurrent?: boolean } = {}) => {
   const sessions = new MemorySessions();
+  sessions.employeeCurrent = overrides.employeeCurrent ?? true;
   const attempts = new MemoryAttempts();
   let tokenNumber = 0;
   const createAuthService = Reflect.get(auth, 'createAuthService');
@@ -180,5 +184,12 @@ describe('authentication service', () => {
 
     await expect(service.authenticate(first.token)).resolves.toBeNull();
     await expect(service.authenticate(second.token)).resolves.toBeNull();
+  });
+
+  it('rejects login when employee credentials change before session creation', async () => {
+    const { service, sessions, attempts } = makeService({ employeeCurrent: false });
+    await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: { id: 'valid-proof' } })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+    expect(sessions.rows).toHaveLength(0);
+    expect(attempts.rows).toEqual([expect.objectContaining({ succeeded: false, reason: 'INVALID_CREDENTIALS' })]);
   });
 });

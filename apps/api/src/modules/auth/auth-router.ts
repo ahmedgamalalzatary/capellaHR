@@ -1,10 +1,9 @@
-import { randomUUID } from 'node:crypto';
-
 import { adminLoginSchema, employeeLoginSchema } from '@capella/contracts';
 import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 
 import { AuthError, type AuthService } from './auth-service.js';
+import { responseRequestId } from '../../shared/http/index.js';
 
 const SESSION_COOKIE = 'capella_session';
 
@@ -14,7 +13,7 @@ const readCookie = (cookieHeader: string | undefined, name: string) => {
     const separator = section.indexOf('=');
     if (separator < 0) continue;
     if (section.slice(0, separator).trim() === name) {
-      return decodeURIComponent(section.slice(separator + 1).trim());
+      try { return decodeURIComponent(section.slice(separator + 1).trim()); } catch { return null; }
     }
   }
   return null;
@@ -34,14 +33,14 @@ export const createAuthRouter = (
 
   router.post('/admin/login', async (request, response) => {
     const input = adminLoginSchema.parse(request.body);
-    const result = await service.loginAdmin(input.email, input.password);
+    const result = await service.loginAdmin(input.email, input.password, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
     response.cookie(SESSION_COOKIE, result.token, cookieOptions);
     response.json({ data: { actor: result.actor } });
   });
 
   router.post('/employee/login', async (request, response) => {
     const input = employeeLoginSchema.parse(request.body);
-    const result = await service.loginEmployee(input);
+    const result = await service.loginEmployee(input, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
     response.cookie(SESSION_COOKIE, result.token, cookieOptions);
     response.json({ data: { actor: result.actor } });
   });
@@ -64,7 +63,7 @@ export const createAuthRouter = (
   });
 
   const authErrorHandler: ErrorRequestHandler = (error, request, response, next) => {
-    const requestId = request.header('x-request-id') ?? randomUUID();
+    const requestId = responseRequestId(response);
     if (error instanceof ZodError) {
       response.status(400).json({
         error: {

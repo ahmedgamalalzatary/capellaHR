@@ -29,6 +29,34 @@
       "when": 1784296880004,
       "tag": "0003_normal_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1784299495100,
+      "tag": "0004_volatile_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1784300276497,
+      "tag": "0005_ambiguous_shockwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1784301152539,
+      "tag": "0006_chunky_raza",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1784301596390,
+      "tag": "0007_majestic_thunderbolts",
+      "breakpoints": true
     }
   ]
 }

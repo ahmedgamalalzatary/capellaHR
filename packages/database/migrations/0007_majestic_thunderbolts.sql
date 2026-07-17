@@ -1,0 +1,3 @@
+DELETE `s` FROM `auth_sessions` `s` LEFT JOIN `employees` `e` ON `e`.`id` = `s`.`employee_id` WHERE (`s`.`actor_type` = 'admin' AND `s`.`employee_id` IS NOT NULL) OR (`s`.`actor_type` = 'employee' AND (`s`.`employee_id` IS NULL OR `e`.`id` IS NULL));--> statement-breakpoint
+ALTER TABLE `auth_sessions` ADD CONSTRAINT `auth_sessions_actor_employee_consistency` CHECK ((`auth_sessions`.`actor_type` = 'admin' and `auth_sessions`.`employee_id` is null) or (`auth_sessions`.`actor_type` = 'employee' and `auth_sessions`.`employee_id` is not null));--> statement-breakpoint
+ALTER TABLE `auth_sessions` ADD CONSTRAINT `auth_sessions_employee_id_employees_id_fk` FOREIGN KEY (`employee_id`) REFERENCES `employees`(`id`) ON DELETE no action ON UPDATE no action;

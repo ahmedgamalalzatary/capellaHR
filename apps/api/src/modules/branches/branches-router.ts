@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import {
   branchIdParamsSchema,
   createBranchSchema,
@@ -12,9 +10,10 @@ import { ZodError } from 'zod';
 import { createAuthMiddleware } from '../auth/auth-middleware.js';
 import type { AuthService } from '../auth/auth-service.js';
 import { BranchError, type BranchService } from './branches-service.js';
+import { responseRequestId } from '../../shared/http/index.js';
 
 const failure = (response: Response, status: number, code: string, message: string, fieldErrors?: Record<string, string[]>) => {
-  response.status(status).json({ error: { code, message, ...(fieldErrors ? { fieldErrors } : {}), requestId: randomUUID() } });
+  response.status(status).json({ error: { code, message, ...(fieldErrors ? { fieldErrors } : {}), requestId: responseRequestId(response) } });
 };
 
 const handleError = (error: unknown, response: Response) => {

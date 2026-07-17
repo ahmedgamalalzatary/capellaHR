@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { CreateBranchInput, ListBranchesQuery, UpdateBranchInput } from '@capella/contracts';
 
 export type BranchRecord = CreateBranchInput & {
@@ -24,7 +25,7 @@ export class BranchError extends Error {
   }
 }
 
-const normalizeName = (name: string) => name.trim().toLowerCase();
+const normalizeName = (name: string) => createHash('sha256').update(name.trim().toLowerCase()).digest('hex');
 const isDuplicateNameError = (error: unknown) => (
   typeof error === 'object' && error !== null && (
     Reflect.get(error, 'code') === 'ER_DUP_ENTRY'

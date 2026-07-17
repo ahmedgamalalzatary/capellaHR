@@ -31,4 +31,17 @@ describe('authentication application composition', () => {
     expect(response.headers['access-control-allow-origin']).toBe('http://localhost:3000');
     expect(response.headers['access-control-allow-credentials']).toBe('true');
   });
+
+  it('assigns one correlation ID to headers and structured errors', async () => {
+    const response = await request(createApp()).get('/api/v1/missing').set('x-request-id', 'client-request-1');
+    expect(response.headers['x-request-id']).toBe('client-request-1');
+    expect(response.body.error).toMatchObject({ code: 'NOT_FOUND', requestId: 'client-request-1' });
+  });
+
+  it('returns a structured Arabic 400 for malformed JSON', async () => {
+    const response = await request(createApp()).post('/api/v1/missing').set('content-type', 'application/json').send('{');
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(response.body.error.requestId).toBe(response.headers['x-request-id']);
+  });
 });

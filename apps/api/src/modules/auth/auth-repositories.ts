@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type createDatabase } from '@capella/database';
-import { adminCredentials, authAttempts, authSessions } from '@capella/database/schema';
+import { adminCredentials, authAttempts, authSessions, employees } from '@capella/database/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import type { AdminCredentialRepository, AttemptRepository, SessionRepository } from './auth-service.js';
@@ -24,6 +24,13 @@ export const createDrizzleAuthRepositories = (
   sessions: {
     async create(session) {
       await database.insert(authSessions).values({ ...session, createdAt: now() });
+    },
+    async createEmployeeIfCurrent(session, credentialVersion) {
+      return database.transaction(async (tx) => {
+        const employee = (await tx.select({ credentialVersion: employees.credentialVersion, deletedAt: employees.deletedAt }).from(employees).where(eq(employees.id, session.employeeId!)).for('update').limit(1))[0];
+        if (!employee || employee.deletedAt || employee.credentialVersion !== credentialVersion) return false;
+        await tx.insert(authSessions).values({ ...session, createdAt: now() }); return true;
+      });
     },
     async findActiveByTokenHash(tokenHash) {
       const rows = await database.select().from(authSessions).where(and(
