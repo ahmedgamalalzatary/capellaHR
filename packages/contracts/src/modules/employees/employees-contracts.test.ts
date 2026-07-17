@@ -21,6 +21,13 @@ describe('employee contracts', () => {
 
   it('accepts exactly twelve hours', () => expect(createEmployeeFieldsSchema.parse({ ...valid, shiftDurationMinutes: 720 }).shiftDurationMinutes).toBe(720));
 
+  it('coerces the shift duration received from multipart employee forms', () => {
+    expect(createEmployeeFieldsSchema.parse({
+      ...valid,
+      shiftDurationMinutes: '600',
+    }).shiftDurationMinutes).toBe(600);
+  });
+
   it('does not permit branch or code updates', () => {
     expect(() => updateEmployeeFieldsSchema.parse({ branchId: 2 })).toThrow();
     expect(() => updateEmployeeFieldsSchema.parse({ employeeCode: 10 })).toThrow();

@@ -4,6 +4,7 @@ import { createAuthRouter, type AuthService } from '../modules/auth/index.js';
 import { createBranchesRouter, type BranchService } from '../modules/branches/index.js';
 import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore } from '../modules/employees/index.js';
 import { createDevicesRouter, type DeviceService } from '../modules/devices/index.js';
+import { createShiftsRouter, type ShiftService } from '../modules/shifts/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -11,6 +12,7 @@ export const createApiRouter = (dependencies: {
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
   deviceService?: DeviceService;
+  shiftService?: ShiftService;
   secureCookies?: boolean;
 } = {}) => {
   const router = Router();
@@ -25,6 +27,7 @@ export const createApiRouter = (dependencies: {
     }
     if (dependencies.employeeService) router.use('/employees', createEmployeesRouter(dependencies.employeeService, dependencies.authService, dependencies.employeeUploadStore));
     if (dependencies.deviceService) router.use('/devices', createDevicesRouter(dependencies.deviceService, dependencies.authService));
+    if (dependencies.shiftService) router.use('/shifts', createShiftsRouter(dependencies.shiftService, dependencies.authService));
   }
 
   return router;

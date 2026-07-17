@@ -6,6 +6,7 @@ import type { AuthService } from './modules/auth/index.js';
 import type { BranchService } from './modules/branches/index.js';
 import type { EmployeeService, EmployeeUploadStore } from './modules/employees/index.js';
 import type { DeviceService } from './modules/devices/index.js';
+import type { ShiftService } from './modules/shifts/index.js';
 import { createApiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler, requestContext } from './shared/http/index.js';
 
@@ -15,6 +16,7 @@ export const createApp = (dependencies: {
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
   deviceService?: DeviceService;
+  shiftService?: ShiftService;
   secureCookies?: boolean;
   corsOrigin?: string;
 } = {}) => {

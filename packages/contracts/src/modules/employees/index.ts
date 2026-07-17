@@ -1,5 +1,6 @@
 import { normalizeEgyptianMobile } from '@capella/shared';
 import { z } from 'zod';
+import { coercedShiftDurationMinutesSchema } from '../shifts/index.js';
 
 const phone = z.string().transform((value, context) => {
   const normalized = normalizeEgyptianMobile(value);
@@ -12,7 +13,7 @@ const money = z.string().regex(/^\d{1,10}(?:\.\d{1,2})?$/).refine((value) => !/^
 export const createEmployeeFieldsSchema = z.object({
   fullName: z.string().trim().min(1).max(255), personalPhone: phone, whatsappPhone: phone, pin: z.string().regex(/^\d{4}$/),
   age: z.coerce.number().int().positive().max(2147483647), address: z.string().trim().min(1).max(1000),
-  branchId: z.coerce.number().int().positive().max(2147483647), shiftDurationMinutes: z.coerce.number().int().positive().max(720), monthlyBaseSalary: money,
+  branchId: z.coerce.number().int().positive().max(2147483647), shiftDurationMinutes: coercedShiftDurationMinutesSchema, monthlyBaseSalary: money,
 }).strict();
 export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ branchId: true, monthlyBaseSalary: true }).partial().strict().refine((value) => Object.keys(value).length > 0);
 export const employeeIdParamsSchema = z.object({ id: z.coerce.number().int().positive().max(2147483647) });
