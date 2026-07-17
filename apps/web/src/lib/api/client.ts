@@ -1,30 +1,28 @@
 /**
  * REST client for the Capella API.
  *
- * All requests carry the session cookie. Errors follow the locked REST
- * error contract: stable code, Arabic user-facing message, optional field
- * errors, and a request/correlation ID.
+ * All requests carry the session cookie. Success bodies use the envelope
+ * `{ data: T }`. Errors follow the locked REST contract:
+ * `{ error: { code, message, fieldErrors?, requestId } }` where fieldErrors
+ * is a zod-flatten map of field name to Arabic messages.
  */
 
 /** Full API base including the version prefix, from the root .env */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
-export interface ApiFieldError {
-  field: string;
-  message: string;
-}
+export type ApiFieldErrors = Record<string, string[] | undefined>;
 
 export interface ApiErrorBody {
   code: string;
   message: string;
-  fieldErrors?: ApiFieldError[];
+  fieldErrors?: ApiFieldErrors;
   requestId?: string;
 }
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly fieldErrors: ApiFieldError[];
+  readonly fieldErrors: ApiFieldErrors;
   readonly requestId: string | undefined;
 
   constructor(status: number, body: ApiErrorBody) {
@@ -32,7 +30,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
     this.code = body.code;
-    this.fieldErrors = body.fieldErrors ?? [];
+    this.fieldErrors = body.fieldErrors ?? {};
     this.requestId = body.requestId;
   }
 }
@@ -63,7 +61,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let body: ApiErrorBody = GENERIC_ERROR;
     try {
-      body = (await response.json()) as ApiErrorBody;
+      const parsed = (await response.json()) as { error?: ApiErrorBody };
+      if (parsed.error?.code && parsed.error.message) {
+        body = parsed.error;
+      }
     } catch {
       // Non-JSON error response; keep the generic Arabic message.
     }
@@ -74,7 +75,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  const envelope = (await response.json()) as { data: T };
+  return envelope.data;
 }
 
 export const api = {

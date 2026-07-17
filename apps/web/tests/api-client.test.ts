@@ -14,27 +14,29 @@ afterEach(() => {
 });
 
 describe('api client error contract', () => {
-  test('surfaces the API error code, Arabic message, and field errors', async () => {
+  test('surfaces the nested API error code, Arabic message, and zod field errors', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        jsonResponse(409, {
-          code: 'DUPLICATE_PHONE',
-          message: 'رقم الهاتف مستخدم بالفعل',
-          fieldErrors: [{ field: 'phone', message: 'رقم الهاتف مستخدم بالفعل' }],
-          requestId: 'req-1',
+        jsonResponse(400, {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'البيانات المدخلة غير صحيحة',
+            fieldErrors: { email: ['بريد إلكتروني غير صالح'] },
+            requestId: 'req-1',
+          },
         }),
       ),
     );
 
-    const error = await api.get('/employees').catch((e: unknown) => e);
+    const error = await api.get('/auth/session').catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ApiError);
     const apiError = error as ApiError;
-    expect(apiError.status).toBe(409);
-    expect(apiError.code).toBe('DUPLICATE_PHONE');
-    expect(apiError.message).toBe('رقم الهاتف مستخدم بالفعل');
-    expect(apiError.fieldErrors).toEqual([{ field: 'phone', message: 'رقم الهاتف مستخدم بالفعل' }]);
+    expect(apiError.status).toBe(400);
+    expect(apiError.code).toBe('VALIDATION_ERROR');
+    expect(apiError.message).toBe('البيانات المدخلة غير صحيحة');
+    expect(apiError.fieldErrors).toEqual({ email: ['بريد إلكتروني غير صالح'] });
     expect(apiError.requestId).toBe('req-1');
   });
 
@@ -65,9 +67,18 @@ describe('api client error contract', () => {
     expect(apiError.message).toBe('تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.');
   });
 
-  test('returns parsed JSON on success', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { id: 1 })));
+  test('unwraps the data envelope on success', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(200, { data: { actor: { type: 'admin' } } })),
+    );
 
-    await expect(api.get<{ id: number }>('/employees/1')).resolves.toEqual({ id: 1 });
+    await expect(api.get('/auth/session')).resolves.toEqual({ actor: { type: 'admin' } });
+  });
+
+  test('returns undefined for 204 responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+
+    await expect(api.post('/auth/logout')).resolves.toBeUndefined();
   });
 });
