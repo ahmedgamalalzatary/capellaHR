@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDevicesModule } from '../../src/modules/devices/index.js';
+import { createDrizzleDeviceRepository } from '../../src/modules/devices/devices-repository.js';
 import { createEmployeesModule } from '../../src/modules/employees/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? ''); const module = createDevicesModule(database); const branchesModule = createBranchesModule(database); const employeesModule = createEmployeesModule(database, { hasOpenSession: async () => false }, undefined, module.lifecycle);
@@ -61,5 +62,22 @@ describe('MySQL-backed devices', () => {
     await employeesModule.service.remove(employee.id);
     expect((await module.service.get(active.id)).status).toBe('revoked');
     await expect(complete(pending.pairingToken, 'replacement')).rejects.toMatchObject({ code: 'DEVICE_PAIRING_INVALID' });
+  });
+  it('rejects creating a pairing when the employee became deleted before the locked write', async () => {
+    const branch = await branchesModule.service.create({ name: 'Branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const employee = await employeesModule.service.create({ fullName: 'Employee', personalPhone: '01012345678', whatsappPhone: '01012345678', pin: '1234', age: 30, address: 'Cairo', branchId: branch.id, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: { storagePath: 'p', originalName: 'p.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idFront: { storagePath: 'f', originalName: 'f.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idBack: { storagePath: 'b', originalName: 'b.jpg', mimeType: 'image/jpeg', sizeBytes: 1 } } });
+    await database.update(employees).set({ deletedAt: new Date() }).where(eq(employees.id, employee.id));
+
+    await expect(createDrizzleDeviceRepository(database).createPairing({ assignmentType: 'employee', assignmentId: employee.id, tokenHash: 'deleted-employee-token' })).resolves.toBe('assignment_not_found');
+    expect(await database.select().from(devicePairingRequests)).toHaveLength(0);
+  });
+  it('invalidates a pending pairing when its employee was soft-deleted', async () => {
+    const branch = await branchesModule.service.create({ name: 'Branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const employee = await employeesModule.service.create({ fullName: 'Employee', personalPhone: '01012345678', whatsappPhone: '01012345678', pin: '1234', age: 30, address: 'Cairo', branchId: branch.id, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: { storagePath: 'p', originalName: 'p.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idFront: { storagePath: 'f', originalName: 'f.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idBack: { storagePath: 'b', originalName: 'b.jpg', mimeType: 'image/jpeg', sizeBytes: 1 } } });
+    const pairing = await module.service.createPairing({ assignmentType: 'employee', assignmentId: employee.id });
+    await database.update(employees).set({ deletedAt: new Date() }).where(eq(employees.id, employee.id));
+
+    await expect(complete(pairing.pairingToken, 'deleted')).rejects.toMatchObject({ code: 'DEVICE_PAIRING_INVALID' });
+    expect(await database.select().from(devices)).toHaveLength(0);
   });
 });

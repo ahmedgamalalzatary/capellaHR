@@ -3,7 +3,7 @@ import type { CompleteDevicePairing, DeviceAssignment, ListDevicesQuery, VerifyD
 export type PublicDevice = { id: number; assignmentType: 'employee' | 'branch'; assignmentId: number; status: 'active' | 'revoked'; browser: string; platform: string; pairedAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
 export interface DeviceRepository {
   assignmentExists(input: DeviceAssignment): Promise<boolean>;
-  createPairing(input: DeviceAssignment & { tokenHash: string }): Promise<{ id: number }>;
+  createPairing(input: DeviceAssignment & { tokenHash: string }): Promise<{ id: number } | 'assignment_not_found'>;
   completePairing(input: CompleteDevicePairing & { tokenHash: string; credentialIdHash: string; installationMarkerHash: string }): Promise<PublicDevice | 'invalid' | 'conflict'>;
   cancelPairing(id: number): Promise<boolean>; revoke(id: number): Promise<boolean>;
   verify(input: DeviceAssignment & { credentialIdHash: string; installationMarkerHash: string }): Promise<PublicDevice | 'invalid' | 'revoked'>;
@@ -13,7 +13,7 @@ export interface DeviceRepository {
 export class DeviceError extends Error { constructor(public readonly code: 'DEVICE_ASSIGNMENT_NOT_FOUND' | 'DEVICE_PAIRING_INVALID' | 'DEVICE_ALREADY_REGISTERED' | 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DEVICE_PROOF_UNSUPPORTED', message: string) { super(message); } }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export const createDeviceService = (repository: DeviceRepository) => ({
-  async createPairing(input: DeviceAssignment) { if (!await repository.assignmentExists(input)) throw new DeviceError('DEVICE_ASSIGNMENT_NOT_FOUND', 'التعيين غير موجود'); const pairingToken = randomBytes(32).toString('base64url'); const pairing = await repository.createPairing({ ...input, tokenHash: digest(pairingToken) }); return { id: pairing.id, pairingToken }; },
+  async createPairing(input: DeviceAssignment) { if (!await repository.assignmentExists(input)) throw new DeviceError('DEVICE_ASSIGNMENT_NOT_FOUND', 'التعيين غير موجود'); const pairingToken = randomBytes(32).toString('base64url'); const pairing = await repository.createPairing({ ...input, tokenHash: digest(pairingToken) }); if (pairing === 'assignment_not_found') throw new DeviceError('DEVICE_ASSIGNMENT_NOT_FOUND', 'التعيين غير موجود'); return { id: pairing.id, pairingToken }; },
   async completePairing(token: string, input: CompleteDevicePairing) { const result = await repository.completePairing({ ...input, tokenHash: digest(token), credentialIdHash: digest(input.credentialId), installationMarkerHash: digest(input.installationMarker) }); if (result === 'invalid') throw new DeviceError('DEVICE_PAIRING_INVALID', 'طلب ربط الجهاز غير صالح'); if (result === 'conflict') throw new DeviceError('DEVICE_ALREADY_REGISTERED', 'الجهاز مسجل بالفعل'); return result; },
   async cancelPairing(id: number) { if (!await repository.cancelPairing(id)) throw new DeviceError('DEVICE_PAIRING_INVALID', 'طلب ربط الجهاز غير صالح'); },
   async revoke(id: number) { if (!await repository.revoke(id)) throw new DeviceError('DEVICE_NOT_FOUND', 'الجهاز غير موجود'); },
