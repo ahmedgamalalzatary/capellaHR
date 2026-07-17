@@ -5,5 +5,11 @@ export default tseslint.config(
   { ignores: ['dist/**', 'coverage/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
-  { languageOptions: { parserOptions: { projectService: true } } },
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: { allowDefaultProject: ['*.mjs', '*.config.ts'] },
+      },
+    },
+  },
 );

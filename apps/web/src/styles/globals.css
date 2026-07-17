@@ -1,0 +1,58 @@
+@import 'tailwindcss';
+
+@source '../../../../packages/ui/src';
+
+/*
+ * Capella HR design tokens — "الدفتر" (The Ledger)
+ * Monochrome ink-on-paper system; color carries status meaning only.
+ */
+@theme {
+  --font-sans: var(--font-plex-arabic), 'IBM Plex Sans Arabic', system-ui, sans-serif;
+
+  --color-ink: #09090b;
+  --color-paper: #ffffff;
+  --color-surface: #fafafa;
+  --color-line: #e4e4e7;
+  --color-muted: #71717a;
+
+  --color-success: #15803d;
+  --color-success-soft: #f0fdf4;
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+
+  --radius-card: 0.5rem;
+  --radius-control: 0.375rem;
+}
+
+@layer base {
+  html {
+    direction: rtl;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  /* Ledger data: codes, money, durations, phones always align */
+  .tabular {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

@@ -2,8 +2,12 @@
   "name": "@capella/eslint-config",
   "private": true,
   "type": "module",
-  "exports": { "./node": "./node.mjs", "./next": "./next.mjs" },
+  "exports": {
+    "./node": "./node.mjs",
+    "./next": "./next.mjs"
+  },
   "dependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@eslint/js": "^9.31.0",
     "eslint": "^9.31.0",
     "eslint-config-next": "^15.4.2",

@@ -2,7 +2,9 @@
   "name": "@capella/contracts",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
@@ -10,10 +12,14 @@
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist coverage"
   },
-  "dependencies": { "@capella/shared": "workspace:*", "zod": "catalog:" },
+  "dependencies": {
+    "@capella/shared": "workspace:*",
+    "zod": "catalog:"
+  },
   "devDependencies": {
     "@capella/eslint-config": "workspace:*",
     "@capella/typescript-config": "workspace:*",
+    "@types/node": "^24.13.3",
     "eslint": "^9.31.0",
     "rimraf": "^6.0.1",
     "typescript": "catalog:",

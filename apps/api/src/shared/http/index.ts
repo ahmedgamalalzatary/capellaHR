@@ -5,5 +5,6 @@ export const notFoundHandler: RequestHandler = (_request, response) => {
 };
 
 export const errorHandler: ErrorRequestHandler = (_error, _request, response, _next) => {
+  void _next;
   response.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Internal error' } });
 };
