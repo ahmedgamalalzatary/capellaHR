@@ -19,7 +19,7 @@ import {
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAdvanceModule } from '../../src/modules/advances/index.js';
@@ -177,6 +177,34 @@ describe('MySQL-backed salary domain', () => {
       .rejects.toMatchObject({ code: 'ADVANCE_PAYROLL_FINALIZED' });
   });
 
+  it('rejects create and update when any generated installment month is finalized', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1, new Date('2026-05-01T09:00:00.000Z'));
+    const advanceModule = createAdvanceModule(database, { now: () => fixedNow });
+    const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
+    await payroll.service.finalize(employeeId, '2026-05');
+    await payroll.service.finalize(employeeId, '2026-06');
+    await database.delete(payrollMonths).where(and(
+      eq(payrollMonths.employeeId, employeeId),
+      eq(payrollMonths.payrollMonth, '2026-05-01'),
+    ));
+
+    await expect(advanceModule.service.create({
+      employeeId, amount: '90.00', installmentCount: 2, startMonth: '2026-05',
+    })).rejects.toMatchObject({ code: 'ADVANCE_PAYROLL_FINALIZED' });
+
+    const editable = await advanceModule.service.create({
+      employeeId, amount: '90.00', installmentCount: 1, startMonth: '2026-07',
+    });
+    await expect(advanceModule.service.update(editable.id, {
+      installmentCount: 2, startMonth: '2026-06',
+    })).rejects.toMatchObject({ code: 'ADVANCE_PAYROLL_FINALIZED' });
+    await expect(advanceModule.service.get(editable.id)).resolves.toMatchObject({
+      installmentCount: 1,
+      installments: [{ payrollMonth: '2026-07', amount: '90.00' }],
+    });
+  });
+
   it('accelerates the remaining advance balance inside employee deletion', async () => {
     const branchId = await createBranch();
     const employeeId = await createEmployee(branchId, 1);
@@ -229,6 +257,53 @@ describe('MySQL-backed salary domain', () => {
       installments: [{ payrollMonth: '2026-07', amount: '100.00' }],
       employeeDeletedAt: deletionInstant,
     });
+  });
+
+  it('accelerates deletion balance into the next month when the deletion month is finalized', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1, new Date('2026-06-01T09:00:00.000Z'));
+    const augustNow = new Date('2026-08-18T09:00:00.000Z');
+    const deletionInstant = new Date('2026-07-31T12:00:00.000Z');
+    const advanceModule = createAdvanceModule(database, { now: () => augustNow });
+    const created = await advanceModule.service.create({
+      employeeId, amount: '100.00', installmentCount: 2, startMonth: '2026-08',
+    });
+    const payroll = createPayrollModule(database, { now: () => augustNow, attendance });
+    await payroll.service.finalize(employeeId, '2026-06');
+    await payroll.service.finalize(employeeId, '2026-07');
+    const employeeModule = createEmployeesModule(
+      database,
+      16_777_216,
+      { hasOpenSession: async () => false },
+      createDrizzleEmployeeRepository(database, () => deletionInstant),
+      undefined,
+      advanceModule.lifecycle,
+    );
+
+    await employeeModule.service.remove(employeeId);
+
+    await expect(advanceModule.service.get(created.id)).resolves.toMatchObject({
+      installments: [{ payrollMonth: '2026-08', amount: '100.00' }],
+      employeeDeletedAt: deletionInstant,
+    });
+  });
+
+  it('rejects an installment whose employee does not own its advance', async () => {
+    const branchId = await createBranch();
+    const ownerId = await createEmployee(branchId, 1);
+    const otherEmployeeId = await createEmployee(branchId, 2);
+    const created = await createAdvanceModule(database, { now: () => fixedNow }).service.create({
+      employeeId: ownerId, amount: '10.00', installmentCount: 1, startMonth: '2026-07',
+    });
+
+    await expect(database.insert(advanceInstallments).values({
+      advanceId: created.id,
+      employeeId: otherEmployeeId,
+      ordinal: 2,
+      payrollMonth: '2026-08-01',
+      amount: '1.00',
+      createdAt: fixedNow,
+    })).rejects.toThrow();
   });
 
   it('calculates and permanently finalizes payroll with all financial inputs', async () => {
@@ -374,7 +449,11 @@ describe('MySQL-backed salary domain', () => {
     ]);
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      reason: expect.objectContaining({ code: 'PAYROLL_ALREADY_FINALIZED' }),
+    });
     expect(await database.select().from(payrollMonths)).toHaveLength(1);
   });
 

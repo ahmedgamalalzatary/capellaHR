@@ -34,8 +34,15 @@ describe('payroll schema', () => {
 
   it('constrains advance count and installment uniqueness', () => {
     expect(config(advances).checks.some((check) => check.name === 'advances_installment_count_range')).toBe(true);
+    expect(config(advances).indexes.some((index) => index.config.name === 'advances_id_employee_unique')).toBe(true);
     expect(config(advanceInstallments).indexes.some((index) => index.config.name === 'advance_installments_advance_ordinal_unique')).toBe(true);
     expect(config(advanceInstallments).indexes.some((index) => index.config.name === 'advance_installments_advance_month_unique')).toBe(true);
+    expect(config(advanceInstallments).foreignKeys.map((foreignKey) => foreignKey.reference()))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        name: 'advance_installments_advance_employee_fk',
+        columns: [advanceInstallments.advanceId, advanceInstallments.employeeId],
+        foreignColumns: [advances.id, advances.employeeId],
+      })]));
   });
 
   it('defines append-only financial audit storage', () => {

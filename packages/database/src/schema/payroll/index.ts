@@ -3,6 +3,7 @@ import {
   check,
   date,
   decimal,
+  foreignKey,
   index,
   int,
   json,
@@ -95,6 +96,7 @@ export const advances = mysqlTable('advances', {
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
+  uniqueIndex('advances_id_employee_unique').on(table.id, table.employeeId),
   index('advances_employee_idx').on(table.employeeId),
   check('advances_amount_positive', sql`${table.amount} > 0`),
   check('advances_installment_count_range', sql`${table.installmentCount} between 1 and 4`),
@@ -103,13 +105,18 @@ export const advances = mysqlTable('advances', {
 
 export const advanceInstallments = mysqlTable('advance_installments', {
   id: int('id').autoincrement().primaryKey(),
-  advanceId: int('advance_id').notNull().references(() => advances.id),
-  employeeId: int('employee_id').notNull().references(() => employees.id),
+  advanceId: int('advance_id').notNull(),
+  employeeId: int('employee_id').notNull(),
   ordinal: int('ordinal').notNull(),
   payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
+  foreignKey({
+    name: 'advance_installments_advance_employee_fk',
+    columns: [table.advanceId, table.employeeId],
+    foreignColumns: [advances.id, advances.employeeId],
+  }),
   uniqueIndex('advance_installments_advance_ordinal_unique').on(table.advanceId, table.ordinal),
   uniqueIndex('advance_installments_advance_month_unique').on(table.advanceId, table.payrollMonth),
   index('advance_installments_employee_month_idx').on(table.employeeId, table.payrollMonth),

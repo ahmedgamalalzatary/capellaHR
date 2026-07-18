@@ -18,6 +18,7 @@ import {
   writeFinancialAudit,
 } from '../payroll/financial-repository-helpers.js';
 import {
+  addPayrollMonths,
   calendarMonthInTimeZone,
   isValidInstallmentSchedule,
   payrollMonthStart,
@@ -67,14 +68,35 @@ const insertSchedule = async (
   transaction: Transaction,
   advanceId: number,
   employeeId: number,
-  amount: string,
-  countValue: number,
-  startMonth: string,
+  schedule: ReturnType<typeof splitInstallments>,
   at: Date,
-) => transaction.insert(advanceInstallments).values(splitInstallments(amount, countValue, startMonth).map((item) => ({
+) => transaction.insert(advanceInstallments).values(schedule.map((item) => ({
   advanceId, employeeId, ordinal: item.ordinal, payrollMonth: payrollMonthStart(item.payrollMonth),
   amount: item.amount, createdAt: at,
 })));
+const hasFinalizedScheduleMonth = async (
+  transaction: Transaction,
+  employeeId: number,
+  schedule: ReturnType<typeof splitInstallments>,
+) => {
+  let finalized = false;
+  for (const installment of schedule) {
+    if (await isFinalized(transaction, employeeId, installment.payrollMonth)) finalized = true;
+  }
+  return finalized;
+};
+const firstUnfinalizedMonth = async (
+  transaction: Transaction,
+  employeeId: number,
+  initialMonth: string,
+) => {
+  let month = initialMonth;
+  while (await isFinalized(transaction, employeeId, month)) {
+    if (month === '9999-12') throw new RangeError('No safe payroll month is available for advance acceleration');
+    month = addPayrollMonths(month, 1);
+  }
+  return month;
+};
 
 export const createDrizzleAdvanceRepository = (
   database: Database,
@@ -92,14 +114,15 @@ export const createDrizzleAdvanceRepository = (
           return { kind: 'invalid_schedule' as const };
         }
         if (input.startMonth < calendarMonthInTimeZone(employee.createdAt, timeZone)) return { kind: 'ineligible_month' as const };
-        if (input.startMonth <= context.currentMonth() && await isFinalized(transaction, input.employeeId, input.startMonth)) return { kind: 'finalized' as const };
+        const schedule = splitInstallments(input.amount, input.installmentCount, input.startMonth);
+        if (await hasFinalizedScheduleMonth(transaction, input.employeeId, schedule)) return { kind: 'finalized' as const };
         const at = context.now();
         const inserted = await transaction.insert(advances).values({
           employeeId: input.employeeId, amount: input.amount, installmentCount: input.installmentCount,
           startMonth: payrollMonthStart(input.startMonth), createdAt: at, updatedAt: at,
         });
         const id = Number(inserted[0].insertId);
-        await insertSchedule(transaction, id, input.employeeId, input.amount, input.installmentCount, input.startMonth, at);
+        await insertSchedule(transaction, id, input.employeeId, schedule, at);
         const record = (await findRecord(transaction, id))!;
         await writeFinancialAudit(transaction, { entityType: 'advance', entityId: id, action: 'create', afterState: record, createdAt: at });
         return { kind: 'success' as const, record };
@@ -146,13 +169,14 @@ export const createDrizzleAdvanceRepository = (
           return { kind: 'invalid_schedule' as const };
         }
         if (startMonth < calendarMonthInTimeZone(employee.createdAt, timeZone)) return { kind: 'ineligible_month' as const };
-        if (startMonth <= context.currentMonth() && await isFinalized(transaction, employee.id, startMonth)) return { kind: 'finalized' as const };
+        const schedule = splitInstallments(amount, installmentCount, startMonth);
+        if (await hasFinalizedScheduleMonth(transaction, employee.id, schedule)) return { kind: 'finalized' as const };
         const at = context.now();
         await transaction.delete(advanceInstallments).where(eq(advanceInstallments.advanceId, id));
         await transaction.update(advances).set({
           amount, installmentCount, startMonth: payrollMonthStart(startMonth), updatedAt: at,
         }).where(eq(advances.id, id));
-        await insertSchedule(transaction, id, employee.id, amount, installmentCount, startMonth, at);
+        await insertSchedule(transaction, id, employee.id, schedule, at);
         const record = (await findRecord(transaction, id))!;
         await writeFinancialAudit(transaction, { entityType: 'advance', entityId: id, action: 'update', beforeState: current, afterState: record, createdAt: at });
         return { kind: 'success' as const, record };
@@ -176,6 +200,7 @@ export const createDrizzleAdvanceRepository = (
     async accelerateForDeletion(employeeId, deletedAt, transactionContext) {
       const transaction = transactionContext as Transaction;
       const deletionMonth = calendarMonthInTimeZone(deletedAt, timeZone);
+      const destinationMonth = await firstUnfinalizedMonth(transaction, employeeId, deletionMonth);
       const rows = await transaction.select({ id: advances.id }).from(advances)
         .where(eq(advances.employeeId, employeeId));
       for (const { id } of rows) {
@@ -203,7 +228,7 @@ export const createDrizzleAdvanceRepository = (
         ));
         await transaction.insert(advanceInstallments).values({
           advanceId: id, employeeId, ordinal: Math.min(...remaining.map((item) => item.ordinal)),
-          payrollMonth: payrollMonthStart(deletionMonth), amount, createdAt: deletedAt,
+          payrollMonth: payrollMonthStart(destinationMonth), amount, createdAt: deletedAt,
         });
         const after = await findRecord(transaction, id);
         await writeFinancialAudit(transaction, {
