@@ -1,5 +1,6 @@
 import { env } from '@capella/config/server';
 import { createDatabase } from '@capella/database';
+import { sql } from 'drizzle-orm';
 
 import { createApp } from './app.js';
 import { createAuthModule } from './modules/auth/index.js';
@@ -58,4 +59,7 @@ createApp({
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,
   ...(env.TRUST_PROXY_HOPS === undefined ? {} : { trustProxyHops: env.TRUST_PROXY_HOPS }),
+  readinessCheck: async () => {
+    await database.execute(sql`SELECT 1`);
+  },
 }).listen(env.API_PORT);

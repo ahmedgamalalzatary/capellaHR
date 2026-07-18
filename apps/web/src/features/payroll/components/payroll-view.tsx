@@ -325,6 +325,8 @@ function MonthlyPayrollSection() {
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [confirmFinalizeId, setConfirmFinalizeId] = useState<number | null>(null);
+  const [confirmBranchFinalize, setConfirmBranchFinalize] = useState(false);
 
   const payrollQuery = useQuery({
     queryKey: payrollQueryKeys.list({ month, search, branchFilter, page }),
@@ -347,10 +349,12 @@ function MonthlyPayrollSection() {
   const finalizeOne = useMutation({
     mutationFn: (record: PayrollRecord) =>
       finalizePayroll(record.employeeId, record.payrollMonth),
+    onSettled: () => setConfirmFinalizeId(null),
     onSuccess: invalidate,
   });
   const finalizeBranch = useMutation({
     mutationFn: (branchId: number) => finalizeBranchPayroll(branchId, month),
+    onSettled: () => setConfirmBranchFinalize(false),
     onSuccess: invalidate,
   });
 
@@ -416,15 +420,38 @@ function MonthlyPayrollSection() {
           ))}
         </select>
         {branchFilter !== null ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={finalizeBranch.isPending}
-            onClick={() => finalizeBranch.mutate(branchFilter)}
-          >
-            <BadgeCheck className="size-4" aria-hidden />
-            اعتماد رواتب الفرع
-          </Button>
+          confirmBranchFinalize ? (
+            <>
+              <span className="text-[13px] text-muted">
+                اعتماد نهائي لرواتب شهر <span className="tabular" dir="ltr">{month}</span>؟
+              </span>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={finalizeBranch.isPending}
+                onClick={() => finalizeBranch.mutate(branchFilter)}
+              >
+                تأكيد اعتماد الفرع
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={finalizeBranch.isPending}
+                onClick={() => setConfirmBranchFinalize(false)}
+              >
+                إلغاء
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConfirmBranchFinalize(true)}
+            >
+              <BadgeCheck className="size-4" aria-hidden />
+              اعتماد رواتب الفرع
+            </Button>
+          )
         ) : null}
       </div>
 
@@ -518,15 +545,35 @@ function MonthlyPayrollSection() {
                             التفاصيل
                           </Button>
                           {record.status === 'open' ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={finalizeOne.isPending}
-                              onClick={() => finalizeOne.mutate(record)}
-                            >
-                              <BadgeCheck className="size-4" aria-hidden />
-                              اعتماد
-                            </Button>
+                            confirmFinalizeId === record.id ? (
+                              <>
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  disabled={finalizeOne.isPending}
+                                  onClick={() => finalizeOne.mutate(record)}
+                                >
+                                  تأكيد الاعتماد
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={finalizeOne.isPending}
+                                  onClick={() => setConfirmFinalizeId(null)}
+                                >
+                                  إلغاء
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setConfirmFinalizeId(record.id)}
+                              >
+                                <BadgeCheck className="size-4" aria-hidden />
+                                اعتماد
+                              </Button>
+                            )
                           ) : null}
                         </span>
                       </td>

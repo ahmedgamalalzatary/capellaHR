@@ -26,8 +26,24 @@ export const createApiRouter = (dependencies: {
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
+  readinessCheck?: () => Promise<void>;
 } = {}) => {
   const router = Router();
+
+  router.get('/health/live', (_request, response) => {
+    response.json({ status: 'ok' });
+  });
+
+  if (dependencies.readinessCheck) {
+    router.get('/health/ready', async (_request, response) => {
+      try {
+        await dependencies.readinessCheck?.();
+        response.json({ status: 'ok' });
+      } catch {
+        response.status(503).json({ status: 'unavailable' });
+      }
+    });
+  }
 
   if (dependencies.publicConfig) {
     router.get('/config', (_request, response) => {

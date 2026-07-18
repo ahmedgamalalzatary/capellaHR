@@ -100,7 +100,9 @@ describe('WeeklyDayOffView', () => {
   test('search resets to the first page and passes the term', async () => {
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'منى' } });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'بحث بالاسم أو الكود' }), {
+      target: { value: 'منى' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
     await waitFor(() => {
       expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
@@ -175,6 +177,26 @@ describe('WeeklyDayOffView', () => {
       'textContent',
       'يجب أن يفصل سبعة أيام على الأقل بين أيام الراحة',
     );
+  });
+
+  test('a status transition resets the list to the first page', async () => {
+    mocks.listWeeklyDayRecords.mockResolvedValue(pageOf([absence], { total: 30, totalPages: 2 }));
+    mocks.convertWeeklyDayRecord.mockResolvedValue({ ...absence, status: 'weekly_day_off' });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    await waitFor(() => {
+      expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2 }),
+      );
+    });
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تعيين يوم راحة' }));
+    await waitFor(() => {
+      expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1 }),
+      );
+    });
   });
 
   test('paginates with the next button', async () => {

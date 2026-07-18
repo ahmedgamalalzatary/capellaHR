@@ -8,4 +8,5 @@ catalog:
   zod: ^3.25.76
 
 onlyBuiltDependencies:
+  - argon2
   - esbuild

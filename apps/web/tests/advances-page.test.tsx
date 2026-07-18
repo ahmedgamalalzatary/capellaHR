@@ -182,6 +182,23 @@ describe('AdvancesView', () => {
     );
   });
 
+  test('surfaces an employee-load failure in the create form with a retry action', async () => {
+    mocks.listEmployees.mockRejectedValue(
+      new ApiError(500, { code: 'INTERNAL', message: 'حدث خطأ في الخادم' }),
+    );
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة سلفة' }));
+    expect(await screen.findByText('تعذر تحميل الموظفين')).toBeDefined();
+    expect(screen.getByLabelText(/الموظف/)).toHaveProperty('disabled', true);
+    mocks.listEmployees.mockResolvedValue(
+      pageOf([{ id: 1, employeeCode: 1001, fullName: 'أحمد جمال' }]),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await screen.findByRole('option', { name: /أحمد جمال/ })).toBeDefined();
+    expect(screen.getByLabelText(/الموظف/)).toHaveProperty('disabled', false);
+  });
+
   test('shows an Arabic empty state when no advances exist', async () => {
     mocks.listAdvances.mockResolvedValue(pageOf([]));
     renderView();

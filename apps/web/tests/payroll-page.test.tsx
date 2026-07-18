@@ -139,11 +139,13 @@ describe('PayrollView', () => {
     expect(screen.getByText('الترحيل السالب السابق')).toBeDefined();
   });
 
-  test('finalizes an open employee-month from its row', async () => {
+  test('finalizes an open employee-month only after an inline confirmation', async () => {
     mocks.finalizePayroll.mockResolvedValue({ ...payroll, status: 'finalized' });
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    expect(mocks.finalizePayroll).not.toHaveBeenCalled();
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تأكيد الاعتماد' }));
     await waitFor(() => expect(mocks.finalizePayroll).toHaveBeenCalledWith(1, '2026-06'));
   });
 
@@ -161,6 +163,8 @@ describe('PayrollView', () => {
     fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
     fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
+    expect(mocks.finalizeBranchPayroll).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد اعتماد الفرع' }));
     await waitFor(() => expect(mocks.finalizeBranchPayroll).toHaveBeenCalledWith(3, '2026-06'));
   });
 
@@ -182,6 +186,7 @@ describe('PayrollView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تأكيد الاعتماد' }));
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
       'يجب اعتماد الشهور الأقدم أولًا',

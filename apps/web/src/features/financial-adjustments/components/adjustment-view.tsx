@@ -93,18 +93,36 @@ function AdjustmentCreateForm({
         <p className="text-[13px] font-medium">{title}</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="الموظف" htmlFor="adjustment-employee" required error={errors.employeeId?.message}>
-            <select
-              id="adjustment-employee"
-              className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
-              {...register('employeeId')}
-            >
-              <option value="">اختر الموظف</option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.employeeCode} — {employee.fullName}
+            <div className="space-y-1">
+              <select
+                id="adjustment-employee"
+                disabled={employeesQuery.isPending || employeesQuery.isError}
+                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
+                {...register('employeeId')}
+              >
+                <option value="">
+                  {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'اختر الموظف'}
                 </option>
-              ))}
-            </select>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.employeeCode} — {employee.fullName}
+                  </option>
+                ))}
+              </select>
+              {employeesQuery.isError ? (
+                <div className="flex items-center gap-2 text-[12px] text-danger">
+                  <span>تعذر تحميل الموظفين</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void employeesQuery.refetch()}
+                  >
+                    إعادة المحاولة
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </Field>
           <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
             <Input

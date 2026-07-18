@@ -68,6 +68,7 @@ export function WeeklyDayOffView() {
         ? convertWeeklyDayRecord(record.id)
         : revertWeeklyDayRecord(record.id),
     onSuccess: async () => {
+      setPage(1);
       await queryClient.invalidateQueries({ queryKey: weeklyDayOffQueryKeys.all });
     },
   });
@@ -89,6 +90,7 @@ export function WeeklyDayOffView() {
         >
           <Input
             type="search"
+            aria-label="بحث بالاسم أو الكود"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
             placeholder="ابحث بالاسم أو الكود…"

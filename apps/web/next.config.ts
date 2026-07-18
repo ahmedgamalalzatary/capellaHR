@@ -7,6 +7,8 @@ import type { NextConfig } from 'next';
 loadEnvConfig(path.resolve(__dirname, '../..'));
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
+  outputFileTracingRoot: path.resolve(__dirname, '../..'),
   transpilePackages: ['@capella/ui', '@capella/shared', '@capella/contracts'],
   // Workspace packages use ESM `.js` specifiers that point at `.ts` sources.
   webpack: (config) => {

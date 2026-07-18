@@ -32,6 +32,7 @@ export const createApp = (dependencies: {
   secureCookies?: boolean;
   corsOrigin?: string;
   trustProxyHops?: number;
+  readinessCheck?: () => Promise<void>;
 } = {}) => {
   const app = express();
 
