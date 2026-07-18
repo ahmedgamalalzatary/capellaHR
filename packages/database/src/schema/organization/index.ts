@@ -1,4 +1,3 @@
-export {};
 import { sql } from 'drizzle-orm';
 import { boolean, check, double, int, mysqlTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 

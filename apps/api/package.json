@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx --conditions=development watch --env-file=../../.env src/server.ts",
+    "dev": "tsx watch --conditions=development --env-file=../../.env src/server.ts",
     "start": "node --env-file=../../.env dist/server.js",
     "lint": "eslint .",
     "test": "vitest run && pnpm test:runtime:development",
