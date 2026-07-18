@@ -7,6 +7,7 @@ import type { BranchService } from './modules/branches/index.js';
 import type { EmployeeService, EmployeeUploadStore } from './modules/employees/index.js';
 import type { DeviceService } from './modules/devices/index.js';
 import type { ShiftService } from './modules/shifts/index.js';
+import type { WeeklyDayOffService } from './modules/weekly-day-off/index.js';
 import { createApiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler, requestContext } from './shared/http/index.js';
 
@@ -17,6 +18,7 @@ export const createApp = (dependencies: {
   employeeUploadStore?: EmployeeUploadStore;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
+  weeklyDayOffService?: WeeklyDayOffService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;

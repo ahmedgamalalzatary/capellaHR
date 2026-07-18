@@ -68,13 +68,26 @@ describe('server environment', () => {
     });
   });
 
-  it('rejects unusable display settings and upload limits above the database ceiling', async () => {
+  it('rejects display settings outside the locked Cairo and Arabic product configuration', async () => {
     const { parseServerEnv } = await import('./server.js');
     const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
 
     expect(() => parseServerEnv({ ...base, APP_TIME_ZONE: 'Not/AZone' })).toThrow();
-    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'not_a_locale' })).toThrow('APP_LOCALE must be a supported Intl locale');
-    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'zz-ZZ' })).toThrow('APP_LOCALE must be a supported Intl locale');
+    expect(() => parseServerEnv({ ...base, APP_TIME_ZONE: 'UTC' })).toThrow(
+      'APP_TIME_ZONE must be Africa/Cairo',
+    );
+    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'not_a_locale' })).toThrow(
+      'APP_LOCALE must be ar-EG-u-nu-latn',
+    );
+    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'en-US' })).toThrow(
+      'APP_LOCALE must be ar-EG-u-nu-latn',
+    );
+  });
+
+  it('rejects upload limits above the database ceiling', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
     expect(() => parseServerEnv({ ...base, MAX_EMPLOYEE_IMAGE_BYTES: '16777217' })).toThrow();
   });
 });

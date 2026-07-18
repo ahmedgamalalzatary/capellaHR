@@ -1,5 +1,6 @@
 import { createDatabase } from '@capella/database';
 import {
+  attendanceDailyRecords,
   authSessions,
   branches,
   deviceAuthenticationChallenges,
@@ -65,6 +66,7 @@ const createEmployee = async (
 };
 
 beforeEach(async () => {
+  await database.delete(attendanceDailyRecords);
   await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);

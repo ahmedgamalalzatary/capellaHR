@@ -55,6 +55,21 @@ describe('employee router', () => {
     });
   });
 
+  it('rejects an empty update instead of mutating only updatedAt', async () => {
+    const update = vi.fn(async () => ({ employee: {}, replacedImages: {} }));
+    const updateService = { update } as unknown as EmployeeService;
+
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: updateService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).patch('/api/v1/employees/1').send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('keeps a newly committed replacement when deleting the old image fails', async () => {
     const oldEmployee = { id: 1, images: { personal: { storagePath: 'employees/old.png' } } };
     const replacementService = { get: vi.fn(async () => oldEmployee), update: vi.fn(async () => ({ employee: { ...oldEmployee, images: { personal: { storagePath: 'employees/new.png' } } }, replacedImages: { personal: { storagePath: 'employees/old.png' } } })) } as unknown as EmployeeService;

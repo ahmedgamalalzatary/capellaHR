@@ -5,6 +5,7 @@ import { createBranchesRouter, type BranchService } from '../modules/branches/in
 import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore } from '../modules/employees/index.js';
 import { createDevicesRouter, type DeviceService } from '../modules/devices/index.js';
 import { createShiftsRouter, type ShiftService } from '../modules/shifts/index.js';
+import { createWeeklyDayOffRouter, type WeeklyDayOffService } from '../modules/weekly-day-off/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -13,6 +14,7 @@ export const createApiRouter = (dependencies: {
   employeeUploadStore?: EmployeeUploadStore;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
+  weeklyDayOffService?: WeeklyDayOffService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -46,6 +48,12 @@ export const createApiRouter = (dependencies: {
     }
     if (dependencies.deviceService) router.use('/devices', createDevicesRouter(dependencies.deviceService, dependencies.authService));
     if (dependencies.shiftService) router.use('/shifts', createShiftsRouter(dependencies.shiftService, dependencies.authService));
+    if (dependencies.weeklyDayOffService) {
+      router.use('/weekly-day-offs', createWeeklyDayOffRouter(
+        dependencies.weeklyDayOffService,
+        dependencies.authService,
+      ));
+    }
   }
 
   return router;

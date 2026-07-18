@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -10,7 +10,7 @@ import { createEmployeesModule } from '../../src/modules/employees/index.js';
 
 const provider: WebAuthnProvider = { registrationOptions: async () => ({ challenge: `registration-${randomUUID()}` }), verifyRegistration: async (response) => ({ verified: true, credential: { id: response.id, publicKey: new Uint8Array([1, 2, 3]), counter: 0, transports: ['internal'] }, credentialDeviceType: 'singleDevice', credentialBackedUp: false }), authenticationOptions: async () => ({ challenge: `authentication-${randomUUID()}` }), verifyAuthentication: async (_response, _challenge, credential) => ({ verified: true, newCounter: credential.counter + 1 }) };
 const database = createDatabase(process.env.DATABASE_URL ?? ''); const module = createDevicesModule(database, provider); const branchesModule = createBranchesModule(database); const employeesModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false }, undefined, module.lifecycle);
-beforeEach(async () => { await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(attendanceDailyRecords); await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 const complete = async (token: string, marker: string, credential = marker) => { await module.service.beginPairing(token); return module.service.completePairing(token, { installationMarker: `marker-${marker}`.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android', response: { id: `credential-${credential}`, rawId: `credential-${credential}`, type: 'public-key', response: { clientDataJSON: 'data', attestationObject: 'attestation' }, clientExtensionResults: {} } }); };
 
 describe('MySQL-backed devices', () => {

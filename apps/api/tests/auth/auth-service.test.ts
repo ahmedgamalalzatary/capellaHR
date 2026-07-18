@@ -200,6 +200,19 @@ describe('authentication service', () => {
     expect(setup.deviceVerificationCount).toBe(1);
   });
 
+  it('consumes device proof when the claimed employee code is unknown', async () => {
+    const setup = makeService();
+
+    await expect(setup.service.loginEmployee({
+      employeeCode: 999,
+      pin: '0123',
+      personalPhone: '01012345678',
+      deviceProof: validProof,
+    })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+
+    expect(setup.deviceVerificationCount).toBe(1);
+  });
+
   it('revokes every employee session after a PIN reset', async () => {
     const { service } = makeService();
     const first = await service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: validProof });

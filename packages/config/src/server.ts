@@ -9,24 +9,15 @@ const webOriginSchema = z.string().url().transform((value, context) => {
   return url.origin;
 });
 
-const timeZoneSchema = z.string().min(1).refine((value) => {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: value }).format();
-    return true;
-  } catch {
-    return false;
-  }
-}, 'APP_TIME_ZONE must be a supported IANA time zone');
+const timeZoneSchema = z.string().refine(
+  (value) => value === 'Africa/Cairo',
+  'APP_TIME_ZONE must be Africa/Cairo',
+);
 
-const localeSchema = z.string().min(1).refine((value) => {
-  try {
-    const canonicalLocales = Intl.getCanonicalLocales(value);
-    return Intl.DateTimeFormat.supportedLocalesOf(canonicalLocales).length === canonicalLocales.length
-      && Intl.NumberFormat.supportedLocalesOf(canonicalLocales).length === canonicalLocales.length;
-  } catch {
-    return false;
-  }
-}, 'APP_LOCALE must be a supported Intl locale');
+const localeSchema = z.string().refine(
+  (value) => value === 'ar-EG-u-nu-latn',
+  'APP_LOCALE must be ar-EG-u-nu-latn',
+);
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
