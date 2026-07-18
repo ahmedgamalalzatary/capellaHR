@@ -6,6 +6,10 @@ import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore }
 import { createDevicesRouter, type DeviceService } from '../modules/devices/index.js';
 import { createShiftsRouter, type ShiftService } from '../modules/shifts/index.js';
 import { createWeeklyDayOffRouter, type WeeklyDayOffService } from '../modules/weekly-day-off/index.js';
+import { createPayrollRouter, type PayrollService } from '../modules/payroll/index.js';
+import { createBonusesRouter, type BonusService } from '../modules/bonuses/index.js';
+import { createDeductionsRouter, type DeductionService } from '../modules/deductions/index.js';
+import { createAdvancesRouter, type AdvanceService } from '../modules/advances/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -15,6 +19,10 @@ export const createApiRouter = (dependencies: {
   deviceService?: DeviceService;
   shiftService?: ShiftService;
   weeklyDayOffService?: WeeklyDayOffService;
+  payrollService?: PayrollService;
+  bonusService?: BonusService;
+  deductionService?: DeductionService;
+  advanceService?: AdvanceService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -54,6 +62,10 @@ export const createApiRouter = (dependencies: {
         dependencies.authService,
       ));
     }
+    if (dependencies.payrollService) router.use('/payroll', createPayrollRouter(dependencies.payrollService, dependencies.authService));
+    if (dependencies.bonusService) router.use('/bonuses', createBonusesRouter(dependencies.bonusService, dependencies.authService));
+    if (dependencies.deductionService) router.use('/deductions', createDeductionsRouter(dependencies.deductionService, dependencies.authService));
+    if (dependencies.advanceService) router.use('/advances', createAdvancesRouter(dependencies.advanceService, dependencies.authService));
   }
 
   return router;

@@ -71,4 +71,22 @@ describe('employee service', () => {
     expect(attendance.hasOpenSession).toHaveBeenCalledWith(1, context);
     expect(repo.findActiveById).not.toHaveBeenCalled();
   });
+
+  it('runs advance acceleration inside the atomic employee deletion transaction', async () => {
+    const repo = repository();
+    const attendance = { hasOpenSession: vi.fn(async () => false) };
+    const financialLifecycle = { prepareEmployeeDeletion: vi.fn(async () => undefined) };
+    vi.mocked(repo.softDeleteIfAttendanceClosed).mockResolvedValue('deleted');
+
+    await createEmployeeService(repo, attendance, undefined, financialLifecycle).remove(1);
+
+    expect(repo.softDeleteIfAttendanceClosed).toHaveBeenCalledWith(
+      1, true, expect.any(Function), undefined, expect.any(Function),
+    );
+    const prepareDeletion = vi.mocked(repo.softDeleteIfAttendanceClosed).mock.calls[0]![4]!;
+    const context = { transaction: true };
+    const deletedAt = new Date('2026-07-31T21:00:00.000Z');
+    await prepareDeletion(1, deletedAt, context);
+    expect(financialLifecycle.prepareEmployeeDeletion).toHaveBeenCalledWith(1, deletedAt, context);
+  });
 });

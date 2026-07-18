@@ -15,12 +15,12 @@ export interface EmployeeRepository {
   branchExists(id: number): Promise<boolean>;
   list(query: ListEmployeesQuery): Promise<{ items: EmployeeRecord[]; total: number }>;
   update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'branchId' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean): Promise<{ record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | null>;
-  softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, cleanupDevices?: (id: number, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeDeleteResult>;
+  softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, cleanupDevices?: (id: number, context: EmployeeTransactionContext) => Promise<void>, prepareFinancials?: (id: number, deletedAt: Date, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeDeleteResult>;
 }
 export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }) => ({
+export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: { prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void> }) => ({
   async create(input: CreateEmployeeFields & { images: EmployeeImages }) {
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
@@ -48,8 +48,16 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
   async remove(id: number) {
     if (!attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
     const attendanceCheck = (employeeId: number, context: EmployeeTransactionContext) => attendance.hasOpenSession(employeeId, context);
-    const result = deviceLifecycle
-      ? await repository.softDeleteIfAttendanceClosed(id, true, attendanceCheck, (employeeId, context) => deviceLifecycle.revokeEmployee(employeeId, context))
+    const result = deviceLifecycle || financialLifecycle
+      ? await repository.softDeleteIfAttendanceClosed(
+        id,
+        true,
+        attendanceCheck,
+        deviceLifecycle ? (employeeId, context) => deviceLifecycle.revokeEmployee(employeeId, context) : undefined,
+        financialLifecycle
+          ? (employeeId, deletedAt, context) => financialLifecycle.prepareEmployeeDeletion(employeeId, deletedAt, context)
+          : undefined,
+      )
       : await repository.softDeleteIfAttendanceClosed(id, true, attendanceCheck);
     if (result === 'checked_in') throw new EmployeeError('EMPLOYEE_CHECKED_IN', 'يجب تسجيل خروج الموظف أولاً');
     if (result === 'not_found') throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');

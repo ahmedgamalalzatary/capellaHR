@@ -57,12 +57,14 @@ export const createDrizzleEmployeeRepository = (database: Database, now: () => D
       return { record, replacedImages };
     });
   },
-  async softDeleteIfAttendanceClosed(id, revokeSessions, hasOpenSession, cleanupDevices) {
+  async softDeleteIfAttendanceClosed(id, revokeSessions, hasOpenSession, cleanupDevices, prepareFinancials) {
     return database.transaction(async (tx) => {
       const current = await tx.select({ id: employees.id }).from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1);
       if (!current[0]) return 'not_found';
       if (await hasOpenSession(id, tx)) return 'checked_in';
-      const at = now(); const result = await tx.update(employees).set({ deletedAt: at, credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
+      const at = now();
+      if (prepareFinancials) await prepareFinancials(id, at, tx);
+      const result = await tx.update(employees).set({ deletedAt: at, credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
       if (result[0].affectedRows !== 1) return 'not_found';
       if (revokeSessions) await tx.update(authSessions).set({ revokedAt: at }).where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
       if (cleanupDevices) await cleanupDevices(id, tx);

@@ -85,6 +85,13 @@
       "when": 1784373161860,
       "tag": "0011_sour_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1784376588511,
+      "tag": "0012_hot_sentinels",
+      "breakpoints": true
     }
   ]
 }

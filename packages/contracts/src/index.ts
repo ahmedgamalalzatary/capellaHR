@@ -5,3 +5,7 @@ export * from './modules/employees/index.js';
 export * from './modules/devices/index.js';
 export * from './modules/shifts/index.js';
 export * from './modules/weekly-day-off/index.js';
+export * from './modules/payroll/index.js';
+export * from './modules/bonuses/index.js';
+export * from './modules/deductions/index.js';
+export * from './modules/advances/index.js';
