@@ -13,6 +13,16 @@ describe('employee contracts', () => {
     expect(createEmployeeFieldsSchema.parse(valid)).toMatchObject({ personalPhone: '01012345678', shiftDurationMinutes: 600 });
   });
 
+  it('rejects Arabic-Indic phone digits with a Western-digit instruction', () => {
+    const result = createEmployeeFieldsSchema.safeParse({
+      ...valid,
+      personalPhone: '٠١٠١٢٣٤٥٦٧٨',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('استخدم الأرقام الإنجليزية من 0 إلى 9');
+  });
+
   it.each([
     ['pin', { pin: '12345' }], ['age', { age: 0 }], ['shift', { shiftDurationMinutes: 0 }],
     ['shift maximum', { shiftDurationMinutes: 721 }], ['salary', { monthlyBaseSalary: '1.001' }],

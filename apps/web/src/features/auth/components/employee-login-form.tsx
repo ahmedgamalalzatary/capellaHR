@@ -13,13 +13,6 @@ import { installationMarker } from '../../devices/lib/device-identity';
 import { employeeLogin, getEmployeeDeviceOptions } from '../api/auth-api';
 import { employeeLoginFormSchema, type EmployeeLoginFormValues } from '../schemas/login-schemas';
 
-/** Arabic messages for the employee-login denial codes. */
-const EMPLOYEE_LOGIN_ERRORS: Record<string, string> = {
-  INVALID_CREDENTIALS: 'بيانات تسجيل الدخول غير صحيحة',
-  DEVICE_NOT_REGISTERED: 'هذا الهاتف غير مسجل. راجع المدير لتسجيل جهازك الشخصي.',
-  ACTIVE_ATTENDANCE_REQUIRED: 'يجب تسجيل الحضور أولًا قبل الدخول إلى الخدمة الذاتية.',
-};
-
 export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const {
     register,
@@ -56,7 +49,7 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
 
   const serverError =
     login.error instanceof ApiError
-      ? (EMPLOYEE_LOGIN_ERRORS[login.error.code] ?? login.error.message)
+      ? login.error.message
       : login.error
         ? 'حدث خطأ غير متوقع. حاول مرة أخرى.'
         : null;

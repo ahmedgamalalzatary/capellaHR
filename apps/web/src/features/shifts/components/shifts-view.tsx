@@ -13,22 +13,32 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 import { formatDuration } from '@/lib/utils/format';
 
 import { listBranches } from '../../branches/api/branches-api';
+import { branchQueryKeys } from '../../branches/query-keys';
 import {
   listShiftAssignments,
   updateShiftAssignment,
   type ShiftAssignment,
 } from '../api/shifts-api';
 import { shiftFormSchema, splitDuration, type ShiftFormValues } from '../schemas/shift-form';
+import { shiftQueryKeys } from '../query-keys';
 
 type ShiftFormInput = import('zod').input<typeof shiftFormSchema>;
 
-const PAGE_SIZE = 20;
-const SHIFTS_QUERY_KEY = 'shifts';
-const COLUMNS = 5;
+// One structural source renders headers and determines spanning editor rows.
+const shiftColumns = [
+  { key: 'code', label: 'الكود', className: 'px-4 py-2.5 text-start font-medium' },
+  { key: 'employee', label: 'الموظف', className: 'px-4 py-2.5 text-start font-medium' },
+  { key: 'branch', label: 'الفرع', className: 'hidden px-4 py-2.5 text-start font-medium md:table-cell' },
+  { key: 'duration', label: 'مدة الوردية', className: 'px-4 py-2.5 text-start font-medium' },
+  { key: 'actions', label: 'إجراءات', className: 'px-4 py-2.5 text-start font-medium' },
+] as const;
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
-  return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+  if (error instanceof ApiError) {
+    return error.fieldErrors.durationMinutes?.[0] ?? error.message;
+  }
+  return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
 function ShiftEditorRow({
@@ -52,14 +62,14 @@ function ShiftEditorRow({
   const save = useMutation({
     mutationFn: (values: ShiftFormValues) => updateShiftAssignment(assignment.employeeId, values),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: [SHIFTS_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: shiftQueryKeys.all });
       onDone();
     },
   });
 
   return (
     <tr className="border-b border-line/60 bg-ink/[0.02] last:border-b-0">
-      <td colSpan={COLUMNS} className="px-4 py-4">
+      <td colSpan={shiftColumns.length} className="px-4 py-4">
         <form
           noValidate
           onSubmit={handleSubmit((values) => save.mutate(values))}
@@ -129,19 +139,18 @@ export function ShiftsView() {
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const shiftsQuery = useQuery({
-    queryKey: [SHIFTS_QUERY_KEY, { search, branchFilter, page }],
+    queryKey: shiftQueryKeys.list({ search, branchFilter, page }),
     queryFn: () =>
       listShiftAssignments({
         ...(search ? { search } : {}),
         ...(branchFilter !== null ? { branchId: branchFilter } : {}),
         page,
-        pageSize: PAGE_SIZE,
       }),
   });
 
   const branchesQuery = useQuery({
-    queryKey: ['branches', 'options'],
-    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage, pageSize: 100 })),
+    queryKey: branchQueryKeys.options(),
+    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage })),
   });
   const branches = branchesQuery.data ?? [];
 
@@ -218,11 +227,9 @@ export function ShiftsView() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line text-[12px] text-muted">
-                  <th className="px-4 py-2.5 text-start font-medium">الكود</th>
-                  <th className="px-4 py-2.5 text-start font-medium">الموظف</th>
-                  <th className="hidden px-4 py-2.5 text-start font-medium md:table-cell">الفرع</th>
-                  <th className="px-4 py-2.5 text-start font-medium">مدة الوردية</th>
-                  <th className="px-4 py-2.5 text-start font-medium">إجراءات</th>
+                  {shiftColumns.map((column) => (
+                    <th key={column.key} className={column.className}>{column.label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

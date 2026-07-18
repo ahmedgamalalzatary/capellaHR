@@ -15,6 +15,16 @@ describe('shift contracts', () => {
     expect(() => updateShiftAssignmentSchema.parse({ durationMinutes })).toThrow();
   });
 
+  it.each([0, 721])('returns the API-owned Arabic range message for %i minutes', (durationMinutes) => {
+    const result = updateShiftAssignmentSchema.safeParse({ durationMinutes });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]).toMatchObject({
+      path: ['durationMinutes'],
+      message: 'مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة',
+    });
+  });
+
   it('rejects unknown update fields', () => {
     expect(() => updateShiftAssignmentSchema.parse({ durationMinutes: 600, name: 'Morning' })).toThrow();
   });

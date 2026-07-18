@@ -17,6 +17,8 @@ export const createApp = (dependencies: {
   employeeUploadStore?: EmployeeUploadStore;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
+  publicConfig?: { timeZone: string; locale: string };
+  employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
   corsOrigin?: string;
   trustProxyHops?: number;

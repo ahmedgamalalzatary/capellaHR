@@ -15,7 +15,7 @@ const deviceModule = createDevicesModule(database, createWebAuthnProvider({ rpNa
 const auth = createAuthModule({ database, employees: { findByCode: (code) => employeeRepository.findIdentityByCode(code) }, personalDevices: deviceModule.personalDevices });
 await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD });
 const branchModule = createBranchesModule(database);
-const employeeModule = createEmployeesModule(database, undefined, employeeRepository, deviceModule.lifecycle);
+const employeeModule = createEmployeesModule(database, env.MAX_EMPLOYEE_IMAGE_BYTES, undefined, employeeRepository, deviceModule.lifecycle);
 const shiftModule = createShiftsModule(database);
 await employeeModule.uploadStore.retryPendingCleanup();
 
@@ -24,8 +24,10 @@ createApp({
   branchService: branchModule.service,
   employeeService: employeeModule.service,
   employeeUploadStore: employeeModule.uploadStore,
+  employeeUploadMaxBytes: env.MAX_EMPLOYEE_IMAGE_BYTES,
   deviceService: deviceModule.service,
   shiftService: shiftModule.service,
+  publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,
   ...(env.TRUST_PROXY_HOPS === undefined ? {} : { trustProxyHops: env.TRUST_PROXY_HOPS }),

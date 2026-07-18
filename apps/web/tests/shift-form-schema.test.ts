@@ -16,18 +16,16 @@ describe('shiftFormSchema', () => {
     expect(shiftFormSchema.parse({ hours: '12', minutes: '0' })).toEqual({ durationMinutes: 720 });
   });
 
-  test('rejects a zero-length shift', () => {
-    const result = shiftFormSchema.safeParse({ hours: '0', minutes: '0' });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe('أقل مدة للوردية دقيقة واحدة');
-    expect(result.error?.issues[0]?.path).toEqual(['hours']);
+  test('leaves the minimum total-duration rule to the API', () => {
+    expect(shiftFormSchema.parse({ hours: '0', minutes: '0' })).toEqual({
+      durationMinutes: 0,
+    });
   });
 
-  test('rejects a shift longer than twelve hours', () => {
-    const result = shiftFormSchema.safeParse({ hours: '12', minutes: '30' });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe('الحد الأقصى للوردية 12 ساعة');
-    expect(result.error?.issues[0]?.path).toEqual(['hours']);
+  test('leaves the maximum total-duration rule to the API', () => {
+    expect(shiftFormSchema.parse({ hours: '12', minutes: '30' })).toEqual({
+      durationMinutes: 750,
+    });
   });
 
   test('rejects minutes outside a single hour', () => {

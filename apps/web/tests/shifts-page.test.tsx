@@ -149,7 +149,12 @@ describe('ShiftsView', () => {
     expect((screen.getByLabelText(/دقائق/) as HTMLInputElement).value).toBe('30');
   });
 
-  test('rejects a duration longer than twelve hours without calling the API', async () => {
+  test('submits a long duration and shows the API-owned range error', async () => {
+    mocks.updateShiftAssignment.mockRejectedValue(new ApiError(400, {
+      code: 'VALIDATION_ERROR',
+      message: 'بيانات الطلب غير صالحة',
+      fieldErrors: { durationMinutes: ['مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة'] },
+    }));
     renderView();
     await screen.findByText('أحمد جمال');
     const hours = await openEditor('أحمد جمال');
@@ -158,11 +163,16 @@ describe('ShiftsView', () => {
     fireEvent.change(screen.getByLabelText(/دقائق/), { target: { value: '30' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الوردية' }));
 
-    expect(await screen.findByText('الحد الأقصى للوردية 12 ساعة')).toBeDefined();
-    expect(mocks.updateShiftAssignment).not.toHaveBeenCalled();
+    expect(await screen.findByText('مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة')).toBeDefined();
+    expect(mocks.updateShiftAssignment).toHaveBeenCalledWith(1, { durationMinutes: 750 });
   });
 
-  test('rejects a zero-length duration without calling the API', async () => {
+  test('submits a zero duration and shows the API-owned range error', async () => {
+    mocks.updateShiftAssignment.mockRejectedValue(new ApiError(400, {
+      code: 'VALIDATION_ERROR',
+      message: 'بيانات الطلب غير صالحة',
+      fieldErrors: { durationMinutes: ['مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة'] },
+    }));
     renderView();
     await screen.findByText('أحمد جمال');
     const hours = await openEditor('أحمد جمال');
@@ -171,8 +181,8 @@ describe('ShiftsView', () => {
     fireEvent.change(screen.getByLabelText(/دقائق/), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الوردية' }));
 
-    expect(await screen.findByText('أقل مدة للوردية دقيقة واحدة')).toBeDefined();
-    expect(mocks.updateShiftAssignment).not.toHaveBeenCalled();
+    expect(await screen.findByText('مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة')).toBeDefined();
+    expect(mocks.updateShiftAssignment).toHaveBeenCalledWith(1, { durationMinutes: 0 });
   });
 
   test('surfaces the Arabic server error when the assignment is missing', async () => {
@@ -206,9 +216,9 @@ describe('ShiftsView', () => {
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
     await waitFor(() => {
-      expect(mocks.listShiftAssignments).toHaveBeenLastCalledWith(
-        expect.objectContaining({ page: 2 }),
-      );
+      const params = mocks.listShiftAssignments.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ page: 2 });
+      expect(params).not.toHaveProperty('pageSize');
     });
   });
 

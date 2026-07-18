@@ -123,7 +123,7 @@ describe('EmployeesView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'إضافة موظف' }));
 
     fireEvent.change(screen.getByLabelText(/الاسم الكامل/), { target: { value: 'منى علي' } });
-    fireEvent.change(screen.getByLabelText(/الهاتف الشخصي/), { target: { value: '٠١٢ 1234 5678' } });
+    fireEvent.change(screen.getByLabelText(/الهاتف الشخصي/), { target: { value: '012 1234 5678' } });
     fireEvent.change(screen.getByLabelText(/هاتف واتساب/), { target: { value: '01512345678' } });
     fireEvent.change(screen.getByLabelText(/الرقم السري/), { target: { value: '4321' } });
     fireEvent.change(screen.getByLabelText(/العمر/), { target: { value: '30' } });
@@ -217,9 +217,15 @@ describe('EmployeesView', () => {
     await waitFor(() => expect(within(filter).getByText('فرع أسوان')).toBeDefined());
   });
 
-  test('shows the Arabic server error when a phone already exists', async () => {
+  test('shows the API field error for an out-of-range shift duration', async () => {
     mocks.createEmployee.mockRejectedValue(
-      new ApiError(409, { code: 'EMPLOYEE_PHONE_EXISTS', message: 'رقم الهاتف مستخدم بالفعل' }),
+      new ApiError(400, {
+        code: 'VALIDATION_ERROR',
+        message: 'بيانات الطلب غير صالحة',
+        fieldErrors: {
+          shiftDurationMinutes: ['مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة'],
+        },
+      }),
     );
     renderView();
     await screen.findByText('أحمد جمال');
@@ -232,7 +238,7 @@ describe('EmployeesView', () => {
     fireEvent.change(screen.getByLabelText(/العمر/), { target: { value: '30' } });
     fireEvent.change(screen.getByLabelText(/العنوان/), { target: { value: 'الإسكندرية' } });
     fireEvent.change(screen.getByLabelText(/^الفرع/), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText(/مدة الوردية/), { target: { value: '480' } });
+    fireEvent.change(screen.getByLabelText(/مدة الوردية/), { target: { value: '721' } });
     fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: '7000' } });
     setFile(/الصورة الشخصية/, image('personal.jpg'));
     setFile(/صورة البطاقة \(وجه\)/, image('front.jpg'));
@@ -242,7 +248,7 @@ describe('EmployeesView', () => {
 
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
-      'رقم الهاتف مستخدم بالفعل',
+      'مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة',
     );
   });
 
@@ -288,7 +294,9 @@ describe('EmployeesView', () => {
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
     await waitFor(() => {
-      expect(mocks.listEmployees).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }));
+      const params = mocks.listEmployees.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ page: 2 });
+      expect(params).not.toHaveProperty('pageSize');
     });
   });
 

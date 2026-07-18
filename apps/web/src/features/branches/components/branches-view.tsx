@@ -18,11 +18,9 @@ import {
   type Branch,
 } from '../api/branches-api';
 import { branchFormSchema, type BranchFormValues } from '../schemas/branch-form';
+import { branchQueryKeys } from '../query-keys';
 
 type BranchFormInput = import('zod').input<typeof branchFormSchema>;
-
-const PAGE_SIZE = 20;
-const BRANCHES_QUERY_KEY = 'branches';
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -57,7 +55,7 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
     mutationFn: (values: BranchFormValues) =>
       branch ? updateBranch(branch.id, values) : createBranch(values),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: [BRANCHES_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: branchQueryKeys.all });
       onDone();
     },
   });
@@ -149,15 +147,15 @@ export function BranchesView() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const branchesQuery = useQuery({
-    queryKey: [BRANCHES_QUERY_KEY, { search, page }],
-    queryFn: () => listBranches({ ...(search ? { search } : {}), page, pageSize: PAGE_SIZE }),
+    queryKey: branchQueryKeys.list({ search, page }),
+    queryFn: () => listBranches({ ...(search ? { search } : {}), page }),
   });
 
   const removal = useMutation({
     mutationFn: deleteBranch,
     onSuccess: async () => {
       setConfirmDeleteId(null);
-      await queryClient.invalidateQueries({ queryKey: [BRANCHES_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: branchQueryKeys.all });
     },
   });
 

@@ -1,4 +1,4 @@
-import { normalizeEgyptianMobile } from '@capella/shared';
+import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/shared';
 import { z } from 'zod';
 import { coercedShiftDurationMinutesSchema } from '../shifts/index.js';
 import {
@@ -8,6 +8,10 @@ import {
 } from '../../common/index.js';
 
 const phone = z.string().transform((value, context) => {
+  if (containsArabicIndicDigits(value)) {
+    context.addIssue({ code: 'custom', message: 'استخدم الأرقام الإنجليزية من 0 إلى 9' });
+    return z.NEVER;
+  }
   const normalized = normalizeEgyptianMobile(value);
   if (!normalized) { context.addIssue({ code: 'custom', message: 'رقم الهاتف المصري غير صالح' }); return z.NEVER; }
   return normalized;

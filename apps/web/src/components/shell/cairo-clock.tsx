@@ -2,14 +2,12 @@
 
 import { useEffect, useState } from 'react';
 
-import { formatCairoDate, formatCairoTime } from '@/lib/utils/format';
+import { useDisplayFormatters } from '@/providers/runtime-config';
 
-/**
- * Signature element: live Africa/Cairo date and time. The whole domain
- * (attendance days, payroll months) runs on Cairo time.
- */
+/** Live date and time rendered with the backend-provided locale and time zone. */
 export function CairoClock({ className }: { className?: string }) {
   const [now, setNow] = useState<Date | null>(null);
+  const formatters = useDisplayFormatters();
 
   useEffect(() => {
     setNow(new Date());
@@ -17,7 +15,7 @@ export function CairoClock({ className }: { className?: string }) {
     return () => clearInterval(timer);
   }, []);
 
-  if (!now) {
+  if (!now || !formatters) {
     return <div className={className} aria-hidden />;
   }
 
@@ -27,8 +25,8 @@ export function CairoClock({ className }: { className?: string }) {
         dateTime={now.toISOString()}
         className="tabular flex items-baseline gap-2 whitespace-nowrap text-sm text-ink"
       >
-        <span className="font-semibold">{formatCairoTime(now)}</span>
-        <span className="text-muted">{formatCairoDate(now)}</span>
+        <span className="font-semibold">{formatters.formatTime(now)}</span>
+        <span className="text-muted">{formatters.formatDate(now)}</span>
       </time>
     </div>
   );

@@ -1,6 +1,15 @@
+import { containsArabicIndicDigits } from '@capella/shared';
 import { z } from 'zod';
 import { verifyDeviceSchema } from '../devices/index.js';
 import { positiveMysqlIntSchema } from '../../common/index.js';
+
+const employeeLoginPhoneSchema = z.string().transform((value, context) => {
+  if (containsArabicIndicDigits(value)) {
+    context.addIssue({ code: 'custom', message: 'استخدم الأرقام الإنجليزية من 0 إلى 9' });
+    return z.NEVER;
+  }
+  return value;
+}).pipe(z.string().regex(/^01(?:0|1|2|5)\d{8}$/));
 
 export const adminLoginSchema = z.object({
   email: z.string().trim().email(),
@@ -10,7 +19,7 @@ export const adminLoginSchema = z.object({
 export const employeeLoginSchema = z.object({
   employeeCode: positiveMysqlIntSchema,
   pin: z.string().regex(/^\d{4}$/),
-  personalPhone: z.string().regex(/^01(?:0|1|2|5)\d{8}$/),
+  personalPhone: employeeLoginPhoneSchema,
   deviceProof: verifyDeviceSchema,
 }).strict();
 

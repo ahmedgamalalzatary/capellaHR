@@ -12,6 +12,7 @@ import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { listBranches } from '../../branches/api/branches-api';
+import { branchQueryKeys } from '../../branches/query-keys';
 import {
   createEmployee,
   deleteEmployee,
@@ -26,12 +27,12 @@ import {
   type EmployeeCreateFormValues,
   type EmployeeUpdateFormValues,
 } from '../schemas/employee-form';
+import { employeeQueryKeys } from '../query-keys';
 
 type CreateFormInput = import('zod').input<typeof employeeCreateFormSchema>;
 type UpdateFormInput = import('zod').input<typeof employeeUpdateFormSchema>;
 
-const PAGE_SIZE = 20;
-const EMPLOYEES_QUERY_KEY = 'employees';
+// Ordered image fields keep create and edit forms synchronized with the multipart contract.
 const IMAGE_FIELDS: { kind: EmployeeImageKind; label: string }[] = [
   { kind: 'personal', label: 'الصورة الشخصية' },
   { kind: 'idFront', label: 'صورة البطاقة (وجه)' },
@@ -40,7 +41,13 @@ const IMAGE_FIELDS: { kind: EmployeeImageKind; label: string }[] = [
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
-  return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+  if (error instanceof ApiError) {
+    const fieldMessage = Object.values(error.fieldErrors).find(
+      (messages) => messages && messages.length > 0,
+    )?.[0];
+    return fieldMessage ?? error.message;
+  }
+  return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
 interface BranchOption {
@@ -118,7 +125,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
   const save = useMutation({
     mutationFn: (values: EmployeeCreateFormValues) => createEmployee(values),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: [EMPLOYEES_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
       onDone();
     },
   });
@@ -235,7 +242,7 @@ function EditEmployeeForm({
   const save = useMutation({
     mutationFn: (values: EmployeeUpdateFormValues) => updateEmployee(employee.id, values),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: [EMPLOYEES_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
       onDone();
     },
   });
@@ -319,19 +326,18 @@ export function EmployeesView() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const employeesQuery = useQuery({
-    queryKey: [EMPLOYEES_QUERY_KEY, { search, branchFilter, page }],
+    queryKey: employeeQueryKeys.list({ search, branchFilter, page }),
     queryFn: () =>
       listEmployees({
         ...(search ? { search } : {}),
         ...(branchFilter !== null ? { branchId: branchFilter } : {}),
         page,
-        pageSize: PAGE_SIZE,
       }),
   });
 
   const branchesQuery = useQuery({
-    queryKey: ['branches', 'options'],
-    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage, pageSize: 100 })),
+    queryKey: branchQueryKeys.options(),
+    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage })),
   });
   const branches: BranchOption[] = branchesQuery.data ?? [];
   const branchNameOf = (id: number) => branches.find((branch) => branch.id === id)?.name;
@@ -340,7 +346,7 @@ export function EmployeesView() {
     mutationFn: deleteEmployee,
     onSuccess: async () => {
       setConfirmDeleteId(null);
-      await queryClient.invalidateQueries({ queryKey: [EMPLOYEES_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
     },
   });
 

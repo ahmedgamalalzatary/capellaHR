@@ -7,9 +7,15 @@ import {
 
 const image = (name = 'photo.jpg') => new File(['x'], name, { type: 'image/jpeg' });
 
+const oversizedImage = () => {
+  const file = image('large.jpg');
+  Object.defineProperty(file, 'size', { value: 16 * 1024 * 1024 + 1 });
+  return file;
+};
+
 const validCreate = {
   fullName: 'أحمد جمال',
-  personalPhone: '٠١٠ 1234-5678',
+  personalPhone: '010 1234-5678',
   whatsappPhone: '+20 111 234 5678',
   pin: '1234',
   age: '28',
@@ -39,15 +45,29 @@ describe('employeeCreateFormSchema', () => {
     expect(result.error?.issues[0]?.message).toBe('رقم الهاتف المصري غير صالح');
   });
 
+  test('rejects Arabic-Indic phone digits with a Western-digit instruction', () => {
+    const result = employeeCreateFormSchema.safeParse({
+      ...validCreate,
+      personalPhone: '٠١٠١٢٣٤٥٦٧٨',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('استخدم الأرقام الإنجليزية من 0 إلى 9');
+  });
+
   test('requires a four-digit PIN', () => {
     expect(employeeCreateFormSchema.safeParse({ ...validCreate, pin: '12' }).success).toBe(false);
     expect(employeeCreateFormSchema.safeParse({ ...validCreate, pin: 'abcd' }).success).toBe(false);
   });
 
-  test('rejects a shift longer than 12 hours and a non-positive salary', () => {
-    expect(
-      employeeCreateFormSchema.safeParse({ ...validCreate, shiftDurationMinutes: '721' }).success,
-    ).toBe(false);
+  test('leaves the shift-duration range to the API', () => {
+    expect(employeeCreateFormSchema.parse({
+      ...validCreate,
+      shiftDurationMinutes: '721',
+    }).shiftDurationMinutes).toBe(721);
+  });
+
+  test('rejects a non-positive or malformed salary', () => {
     expect(
       employeeCreateFormSchema.safeParse({ ...validCreate, monthlyBaseSalary: '0' }).success,
     ).toBe(false);
@@ -63,7 +83,7 @@ describe('employeeCreateFormSchema', () => {
     ).toBe(false);
   });
 
-  test('requires all three images and rejects non-image or oversized files', () => {
+  test('requires all three images and rejects non-image files', () => {
     const { personal: _personal, ...missing } = validCreate;
     expect(employeeCreateFormSchema.safeParse(missing).success).toBe(false);
     expect(
@@ -72,6 +92,13 @@ describe('employeeCreateFormSchema', () => {
         idFront: new File(['x'], 'doc.pdf', { type: 'application/pdf' }),
       }).success,
     ).toBe(false);
+  });
+
+  test('leaves image byte-size enforcement to the API', () => {
+    expect(employeeCreateFormSchema.safeParse({
+      ...validCreate,
+      personal: oversizedImage(),
+    }).success).toBe(true);
   });
 });
 

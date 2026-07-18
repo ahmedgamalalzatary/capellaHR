@@ -89,7 +89,12 @@ describe('shifts HTTP API', () => {
       .set('Cookie', 'capella_session=x').set('x-request-id', 'shift-test');
 
     expect(invalid.status).toBe(400);
-    expect(invalid.body.error).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(invalid.body.error).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      fieldErrors: {
+        durationMinutes: ['مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة'],
+      },
+    });
     expect(missing.status).toBe(404);
     expect(missing.body.error).toEqual({
       code: 'SHIFT_ASSIGNMENT_NOT_FOUND',

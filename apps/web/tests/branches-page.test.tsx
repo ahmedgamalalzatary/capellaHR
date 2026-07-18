@@ -174,7 +174,9 @@ describe('BranchesView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
 
     await waitFor(() => {
-      expect(listBranchesMock.mock.calls.at(-1)?.[0]).toMatchObject({ page: 2 });
+      const params = listBranchesMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ page: 2 });
+      expect(params).not.toHaveProperty('pageSize');
     });
   });
 });

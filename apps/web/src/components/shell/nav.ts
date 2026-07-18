@@ -27,6 +27,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+// Frontend route metadata: labels and icons are presentation, not backend domain data.
 export const ADMIN_NAV: NavGroup[] = [
   {
     label: null,

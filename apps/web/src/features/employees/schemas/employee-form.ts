@@ -1,11 +1,9 @@
-import { normalizeEgyptianMobile } from '@capella/shared';
+import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/shared';
 import { z } from 'zod';
 
-const REQUIRED = 'هذا الحقل مطلوب';
-const INVALID_NUMBER = 'أدخل رقمًا صالحًا';
-const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+import { FORM_MESSAGES } from '@/lib/validation/messages';
 
-const requiredNumber = (message = INVALID_NUMBER) =>
+const requiredNumber = (message: string = FORM_MESSAGES.invalidNumber) =>
   z.preprocess(
     (value) => {
       if (typeof value === 'string') {
@@ -17,8 +15,12 @@ const requiredNumber = (message = INVALID_NUMBER) =>
     z.coerce.number({ message }).finite(message),
   );
 
-/** Egyptian mobile: accepts spacing, dashes, Arabic-Indic digits, and +20. */
+/** Egyptian mobile: accepts Western digits with spacing, dashes, or a +20 prefix. */
 const egyptianPhone = z.string().transform((value, context) => {
+  if (containsArabicIndicDigits(value)) {
+    context.addIssue({ code: 'custom', message: 'استخدم الأرقام الإنجليزية من 0 إلى 9' });
+    return z.NEVER;
+  }
   const normalized = normalizeEgyptianMobile(value);
   if (!normalized) {
     context.addIssue({ code: 'custom', message: 'رقم الهاتف المصري غير صالح' });
@@ -37,21 +39,19 @@ const salary = z
   .refine((value) => Number(value) > 0, 'أدخل مبلغًا أكبر من صفر');
 
 const imageFile = z
-  .custom<File>((value) => value instanceof File, REQUIRED)
-  .refine((file) => file.type.startsWith('image/'), 'اختر ملف صورة صالحًا')
-  .refine((file) => file.size <= MAX_IMAGE_BYTES, 'حجم الصورة يتجاوز 16 ميجابايت');
+  .custom<File>((value) => value instanceof File, FORM_MESSAGES.required)
+  .refine((file) => file.type.startsWith('image/'), 'اختر ملف صورة صالحًا');
 
 const editableFields = {
-  fullName: z.string().trim().min(1, REQUIRED)
+  fullName: z.string().trim().min(1, FORM_MESSAGES.required)
     .refine((value) => [...value].length <= 255, 'الاسم طويل جدًا'),
   personalPhone: egyptianPhone,
   whatsappPhone: egyptianPhone,
-  age: requiredNumber().pipe(z.number().int(INVALID_NUMBER).positive(INVALID_NUMBER)),
-  address: z.string().trim().min(1, REQUIRED)
+  age: requiredNumber().pipe(z.number().int(FORM_MESSAGES.invalidNumber).positive(FORM_MESSAGES.invalidNumber)),
+  address: z.string().trim().min(1, FORM_MESSAGES.required)
     .refine((value) => [...value].length <= 1000, 'العنوان طويل جدًا'),
   shiftDurationMinutes: requiredNumber('أدخل مدة الوردية بالدقائق').pipe(
-    z.number().int('أدخل مدة الوردية بالدقائق').positive('أدخل مدة الوردية بالدقائق')
-      .max(720, 'الحد الأقصى للوردية 12 ساعة'),
+    z.number().int('أدخل مدة الوردية بالدقائق'),
   ),
 };
 

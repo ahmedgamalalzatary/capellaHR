@@ -8,7 +8,13 @@ import {
 
 const databaseId = coercedMysqlIntSchema;
 
-export const shiftDurationMinutesSchema = z.number().int().min(1).max(720);
+export const shiftDurationMinutesSchema = z
+  .number()
+  .int('مدة الوردية يجب أن تكون عددًا صحيحًا من الدقائق')
+  .refine(
+    (durationMinutes) => durationMinutes >= 1 && durationMinutes <= 720,
+    'مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة',
+  );
 export const coercedShiftDurationMinutesSchema = z.preprocess(
   decimalIntegerInput,
   shiftDurationMinutesSchema,

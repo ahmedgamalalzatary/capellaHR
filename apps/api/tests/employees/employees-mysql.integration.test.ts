@@ -7,7 +7,7 @@ import { createDrizzleAuthRepositories } from '../../src/modules/auth/index.js';
 import { createDrizzleEmployeeRepository, createEmployeeService, createEmployeesModule } from '../../src/modules/employees/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? '');
-const branchModule = createBranchesModule(database); const employeeModule = createEmployeesModule(database, { hasOpenSession: async () => false });
+const branchModule = createBranchesModule(database); const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false });
 const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, originalName: `${name}.jpg`, mimeType: 'image/jpeg', sizeBytes: 10 });
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
 

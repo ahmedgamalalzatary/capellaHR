@@ -98,4 +98,36 @@ describe('EmployeeLoginForm', () => {
     );
     expect(mocks.employeeLogin).not.toHaveBeenCalled();
   });
+
+  test('displays the backend login message without replacing it by error code', async () => {
+    mocks.getEmployeeDeviceOptions.mockRejectedValue(
+      new ApiError(401, {
+        code: 'DEVICE_NOT_REGISTERED',
+        message: 'رسالة الجهاز المعتمدة من الخادم',
+      }),
+    );
+    renderForm();
+    fillAndSubmit();
+
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'رسالة الجهاز المعتمدة من الخادم',
+    );
+  });
+
+  test('rejects Arabic-Indic phone digits with a Western-digit instruction', async () => {
+    renderForm();
+    fireEvent.change(screen.getByLabelText(/كود الموظف/), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/الرقم السري/), { target: { value: '1234' } });
+    fireEvent.change(screen.getByLabelText(/رقم الهاتف الشخصي/), {
+      target: { value: '٠١٠١٢٣٤٥٦٧٨' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدخول' }));
+
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'استخدم الأرقام الإنجليزية من 0 إلى 9',
+    );
+    expect(mocks.getEmployeeDeviceOptions).not.toHaveBeenCalled();
+  });
 });

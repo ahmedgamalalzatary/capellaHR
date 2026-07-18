@@ -51,4 +51,30 @@ describe('server environment', () => {
     expect(() => parseServerEnv({ ...base, TRUST_PROXY_HOPS: '0' })).toThrow();
     expect(() => parseServerEnv({ ...base, TRUST_PROXY_HOPS: '11' })).toThrow();
   });
+
+  it('parses backend-owned display settings and employee upload limits', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(parseServerEnv({
+      ...base,
+      APP_TIME_ZONE: 'Africa/Cairo',
+      APP_LOCALE: 'ar-EG-u-nu-latn',
+      MAX_EMPLOYEE_IMAGE_BYTES: '16777216',
+    })).toMatchObject({
+      APP_TIME_ZONE: 'Africa/Cairo',
+      APP_LOCALE: 'ar-EG-u-nu-latn',
+      MAX_EMPLOYEE_IMAGE_BYTES: 16_777_216,
+    });
+  });
+
+  it('rejects unusable display settings and upload limits above the database ceiling', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({ ...base, APP_TIME_ZONE: 'Not/AZone' })).toThrow();
+    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'not_a_locale' })).toThrow('APP_LOCALE must be a supported Intl locale');
+    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'zz-ZZ' })).toThrow('APP_LOCALE must be a supported Intl locale');
+    expect(() => parseServerEnv({ ...base, MAX_EMPLOYEE_IMAGE_BYTES: '16777217' })).toThrow();
+  });
 });

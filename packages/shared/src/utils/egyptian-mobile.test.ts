@@ -24,8 +24,12 @@ describe('isNormalizedEgyptianMobile', () => {
 });
 
 describe('normalizeEgyptianMobile', () => {
-  test('strips spaces, dashes, and Arabic-Indic digits', () => {
-    expect(normalizeEgyptianMobile('٠١٠ 1234-5678')).toBe('01012345678');
+  test('strips supported separators from Western digits', () => {
+    expect(normalizeEgyptianMobile('010 1234-5678')).toBe('01012345678');
+  });
+
+  test('rejects Arabic-Indic digits instead of silently changing the input alphabet', () => {
+    expect(normalizeEgyptianMobile('٠١٠١٢٣٤٥٦٧٨')).toBeNull();
   });
 
   test('converts +20 country prefix to local 0 prefix', () => {

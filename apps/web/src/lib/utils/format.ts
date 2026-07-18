@@ -1,51 +1,40 @@
-/**
- * Display formatting — everything renders in Africa/Cairo with Western
- * digits (locked design decision: `ar-EG-u-nu-latn`).
- */
-
-export const CAIRO_TIME_ZONE = 'Africa/Cairo';
-
-const ARABIC_LOCALE = 'ar-EG-u-nu-latn';
-
-const dateFormatter = new Intl.DateTimeFormat(ARABIC_LOCALE, {
-  timeZone: CAIRO_TIME_ZONE,
-  dateStyle: 'medium',
-});
-
-const timeFormatter = new Intl.DateTimeFormat(ARABIC_LOCALE, {
-  timeZone: CAIRO_TIME_ZONE,
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: true,
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat(ARABIC_LOCALE, {
-  timeZone: CAIRO_TIME_ZONE,
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
-
-const moneyFormatter = new Intl.NumberFormat(ARABIC_LOCALE, {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
-export function formatCairoDate(value: Date | string | number): string {
-  return dateFormatter.format(new Date(value));
+export interface DisplaySettings {
+  locale: string;
+  timeZone: string;
 }
 
-export function formatCairoTime(value: Date | string | number): string {
-  return timeFormatter.format(new Date(value));
+/** Builds display formatters exclusively from backend-provided runtime settings. */
+export function createDisplayFormatters(settings: DisplaySettings) {
+  const dateFormatter = new Intl.DateTimeFormat(settings.locale, {
+    timeZone: settings.timeZone,
+    dateStyle: 'medium',
+  });
+  const timeFormatter = new Intl.DateTimeFormat(settings.locale, {
+    timeZone: settings.timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+  const dateTimeFormatter = new Intl.DateTimeFormat(settings.locale, {
+    timeZone: settings.timeZone,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const moneyFormatter = new Intl.NumberFormat(settings.locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  return {
+    formatDate: (value: Date | string | number) => dateFormatter.format(new Date(value)),
+    formatTime: (value: Date | string | number) => timeFormatter.format(new Date(value)),
+    formatDateTime: (value: Date | string | number) => dateTimeFormatter.format(new Date(value)),
+    /** EGP amount, e.g. "1,234.56 ج.م". */
+    formatMoney: (amount: number | string) => `${moneyFormatter.format(Number(amount))} ج.م`,
+  };
 }
 
-export function formatCairoDateTime(value: Date | string | number): string {
-  return dateTimeFormatter.format(new Date(value));
-}
-
-/** EGP amount, e.g. "1,234.56 ج.م" */
-export function formatMoney(amount: number | string): string {
-  return `${moneyFormatter.format(Number(amount))} ج.م`;
-}
+export type DisplayFormatters = ReturnType<typeof createDisplayFormatters>;
 
 /** Whole minutes as "س:د", e.g. 510 → "8:30" */
 export function formatDuration(totalMinutes: number): string {

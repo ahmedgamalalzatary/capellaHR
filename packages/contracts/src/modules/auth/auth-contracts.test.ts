@@ -35,4 +35,13 @@ describe('authentication contracts', () => {
     const deviceProof = { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'credential-id', rawId: 'credential-id', type: 'public-key', response: { clientDataJSON: 'encoded', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } };
     expect(login.safeParse({ employeeCode: 2147483648, pin: '1234', personalPhone: '01012345678', deviceProof }).success).toBe(false);
   });
+
+  it('returns the Western-digit instruction for Arabic-Indic login phones', () => {
+    const login = Reflect.get(contracts, 'employeeLoginSchema');
+    const deviceProof = { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'credential-id', rawId: 'credential-id', type: 'public-key', response: { clientDataJSON: 'encoded', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } };
+    const result = login.safeParse({ employeeCode: 1, pin: '1234', personalPhone: '٠١٠١٢٣٤٥٦٧٨', deviceProof });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('استخدم الأرقام الإنجليزية من 0 إلى 9');
+  });
 });

@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/client';
 
 import { getSession, logout } from '../api/auth-api';
 
+// A single exported identity keeps login, logout, and route guards on the same cache entry.
 export const SESSION_QUERY_KEY = ['auth', 'session'] as const;
 
 /** Current session actor; null when unauthenticated. */

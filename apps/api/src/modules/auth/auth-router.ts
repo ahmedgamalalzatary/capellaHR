@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import { AuthError, type AuthService } from './auth-service.js';
 import { responseRequestId } from '../../shared/http/index.js';
 
+// Stable protocol name shared by issuing, reading, and clearing the session cookie.
 const SESSION_COOKIE = 'capella_session';
 
 const readCookie = (cookieHeader: string | undefined, name: string) => {

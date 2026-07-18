@@ -1,1 +1,5 @@
-export { isNormalizedEgyptianMobile, normalizeEgyptianMobile } from './egyptian-mobile.js';
+export {
+  containsArabicIndicDigits,
+  isNormalizedEgyptianMobile,
+  normalizeEgyptianMobile,
+} from './egyptian-mobile.js';

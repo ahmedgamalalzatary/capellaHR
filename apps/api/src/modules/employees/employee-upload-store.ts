@@ -4,9 +4,9 @@ import path from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import type { ImageMetadata } from './employees-service.js';
 export class EmployeeUploadError extends Error { constructor(public readonly code: 'IMAGE_REQUIRED' | 'INVALID_IMAGE' | 'IMAGE_TOO_LARGE', message: string) { super(message); } }
-export const createEmployeeUploadStore = (root: string) => ({
+export const createEmployeeUploadStore = (root: string, maxImageBytes: number) => ({
   async save(file: Express.Multer.File): Promise<ImageMetadata> {
-    if (file.size > 16 * 1024 * 1024) throw new EmployeeUploadError('IMAGE_TOO_LARGE', 'حجم الصورة يتجاوز 16 ميجابايت');
+    if (file.size > maxImageBytes) throw new EmployeeUploadError('IMAGE_TOO_LARGE', 'حجم الصورة يتجاوز الحد الأقصى المسموح');
     const detected = await fileTypeFromBuffer(file.buffer);
     if (!detected?.mime.startsWith('image/')) throw new EmployeeUploadError('INVALID_IMAGE', 'محتوى الملف ليس صورة صالحة');
     await mkdir(root, { recursive: true }); const filename = `${randomUUID()}.${detected.ext}`; await writeFile(path.join(root, filename), file.buffer);

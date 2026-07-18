@@ -13,9 +13,17 @@ export const createApiRouter = (dependencies: {
   employeeUploadStore?: EmployeeUploadStore;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
+  publicConfig?: { timeZone: string; locale: string };
+  employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
 } = {}) => {
   const router = Router();
+
+  if (dependencies.publicConfig) {
+    router.get('/config', (_request, response) => {
+      response.json({ data: dependencies.publicConfig });
+    });
+  }
 
   if (dependencies.authService) {
     const authOptions = dependencies.secureCookies === undefined
@@ -25,7 +33,17 @@ export const createApiRouter = (dependencies: {
     if (dependencies.branchService) {
       router.use('/branches', createBranchesRouter(dependencies.branchService, dependencies.authService));
     }
-    if (dependencies.employeeService) router.use('/employees', createEmployeesRouter(dependencies.employeeService, dependencies.authService, dependencies.employeeUploadStore));
+    if (dependencies.employeeService) {
+      if (dependencies.employeeUploadMaxBytes === undefined) {
+        throw new Error('employeeUploadMaxBytes is required when the employee module is enabled');
+      }
+      router.use('/employees', createEmployeesRouter(
+        dependencies.employeeService,
+        dependencies.authService,
+        dependencies.employeeUploadMaxBytes,
+        dependencies.employeeUploadStore,
+      ));
+    }
     if (dependencies.deviceService) router.use('/devices', createDevicesRouter(dependencies.deviceService, dependencies.authService));
     if (dependencies.shiftService) router.use('/shifts', createShiftsRouter(dependencies.shiftService, dependencies.authService));
   }

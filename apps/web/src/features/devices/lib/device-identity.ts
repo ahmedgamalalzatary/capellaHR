@@ -1,3 +1,4 @@
+// Browser-local installation identity used during the backend pairing challenge.
 const MARKER_STORAGE_KEY = 'capella-device-installation-marker';
 
 /** Stable random marker identifying this browser installation across pairings. */

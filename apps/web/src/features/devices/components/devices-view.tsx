@@ -9,10 +9,12 @@ import { Badge, Button, Card, CardContent, EmptyState, Field, Input } from '@cap
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
-import { formatCairoDateTime } from '@/lib/utils/format';
+import { useDisplayFormatters } from '@/providers/runtime-config';
 
 import { listBranches } from '../../branches/api/branches-api';
+import { branchQueryKeys } from '../../branches/query-keys';
 import { listEmployees } from '../../employees/api/employees-api';
+import { employeeQueryKeys } from '../../employees/query-keys';
 import {
   cancelPairing,
   createPairing,
@@ -24,15 +26,25 @@ import {
   type DeviceStatus,
   type PairingRequest,
 } from '../api/devices-api';
+import { deviceQueryKeys } from '../query-keys';
 
-const PAGE_SIZE = 20;
-const DEVICES_QUERY_KEY = 'devices';
-
+// Backend event codes stay stable while the frontend owns their Arabic presentation.
 const EVENT_LABELS: Record<'paired' | 'verified' | 'revoked', string> = {
   paired: 'تم الربط',
   verified: 'تم التحقق',
   revoked: 'تم الإلغاء',
 };
+
+// One structural source renders headers and determines spanning history rows.
+const deviceColumns = [
+  { key: 'assignment', label: 'التعيين', className: 'px-4 py-2.5 text-start font-medium' },
+  { key: 'type', label: 'النوع', className: 'px-4 py-2.5 text-start font-medium' },
+  { key: 'status', label: 'الحالة', className: 'px-4 py-2.5 text-start font-medium' },
+  { key: 'browser', label: 'المتصفح', className: 'hidden px-4 py-2.5 text-start font-medium md:table-cell' },
+  { key: 'pairedAt', label: 'تاريخ الربط', className: 'hidden px-4 py-2.5 text-start font-medium lg:table-cell' },
+  { key: 'lastUsedAt', label: 'آخر استخدام', className: 'hidden px-4 py-2.5 text-start font-medium lg:table-cell' },
+  { key: 'actions', label: 'إجراءات', className: 'px-4 py-2.5 text-start font-medium' },
+] as const;
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -208,15 +220,16 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
   );
 }
 
-function DeviceHistoryRow({ deviceId, columns }: { deviceId: number; columns: number }) {
+function DeviceHistoryRow({ deviceId }: { deviceId: number }) {
+  const formatters = useDisplayFormatters();
   const historyQuery = useQuery({
-    queryKey: [DEVICES_QUERY_KEY, deviceId, 'history'],
+    queryKey: deviceQueryKeys.history(deviceId),
     queryFn: () => getDeviceHistory(deviceId),
   });
 
   return (
     <tr className="border-b border-line/60 bg-ink/[0.02] last:border-b-0">
-      <td colSpan={columns} className="px-4 py-3">
+      <td colSpan={deviceColumns.length} className="px-4 py-3">
         <p className="mb-2 text-[13px] font-medium">سجل الجهاز</p>
         {historyQuery.isPending ? (
           <p className="text-[13px] text-muted">جارٍ تحميل السجل…</p>
@@ -229,7 +242,7 @@ function DeviceHistoryRow({ deviceId, columns }: { deviceId: number; columns: nu
             {historyQuery.data.map((entry, index) => (
               <li key={index} className="flex items-center gap-2">
                 <span className="font-medium">{EVENT_LABELS[entry.event]}</span>
-                <span className="tabular text-muted">{formatCairoDateTime(entry.createdAt)}</span>
+                <span className="tabular text-muted">{formatters?.formatDateTime(entry.createdAt) ?? '—'}</span>
               </li>
             ))}
           </ul>
@@ -240,6 +253,7 @@ function DeviceHistoryRow({ deviceId, columns }: { deviceId: number; columns: nu
 }
 
 export function DevicesView() {
+  const formatters = useDisplayFormatters();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<DeviceStatus | ''>('');
   const [typeFilter, setTypeFilter] = useState<DeviceAssignmentType | ''>('');
@@ -249,23 +263,22 @@ export function DevicesView() {
   const [historyId, setHistoryId] = useState<number | null>(null);
 
   const devicesQuery = useQuery({
-    queryKey: [DEVICES_QUERY_KEY, { statusFilter, typeFilter, page }],
+    queryKey: deviceQueryKeys.list({ statusFilter, typeFilter, page }),
     queryFn: () =>
       listDevices({
         ...(statusFilter ? { status: statusFilter } : {}),
         ...(typeFilter ? { assignmentType: typeFilter } : {}),
         page,
-        pageSize: PAGE_SIZE,
       }),
   });
 
   const employeesQuery = useQuery({
-    queryKey: ['employees', 'options'],
-    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage, pageSize: 100 })),
+    queryKey: employeeQueryKeys.options(),
+    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage })),
   });
   const branchesQuery = useQuery({
-    queryKey: ['branches', 'options'],
-    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage, pageSize: 100 })),
+    queryKey: branchQueryKeys.options(),
+    queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage })),
   });
 
   const options: AssignmentOptions = {
@@ -289,14 +302,12 @@ export function DevicesView() {
     mutationFn: revokeDevice,
     onSuccess: async () => {
       setConfirmRevokeId(null);
-      await queryClient.invalidateQueries({ queryKey: [DEVICES_QUERY_KEY] });
+      await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.all });
     },
   });
 
   const items = devicesQuery.data?.items ?? [];
   const meta = devicesQuery.data?.meta;
-  const COLUMNS = 7;
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -370,13 +381,9 @@ export function DevicesView() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line text-[12px] text-muted">
-                  <th className="px-4 py-2.5 text-start font-medium">التعيين</th>
-                  <th className="px-4 py-2.5 text-start font-medium">النوع</th>
-                  <th className="px-4 py-2.5 text-start font-medium">الحالة</th>
-                  <th className="hidden px-4 py-2.5 text-start font-medium md:table-cell">المتصفح</th>
-                  <th className="hidden px-4 py-2.5 text-start font-medium lg:table-cell">تاريخ الربط</th>
-                  <th className="hidden px-4 py-2.5 text-start font-medium lg:table-cell">آخر استخدام</th>
-                  <th className="px-4 py-2.5 text-start font-medium">إجراءات</th>
+                  {deviceColumns.map((column) => (
+                    <th key={column.key} className={column.className}>{column.label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -403,11 +410,11 @@ export function DevicesView() {
                         {device.browser} — {device.platform}
                       </td>
                       <td className="hidden px-4 py-3 lg:table-cell">
-                        <span className="tabular">{formatCairoDateTime(device.pairedAt)}</span>
+                        <span className="tabular">{formatters?.formatDateTime(device.pairedAt) ?? '—'}</span>
                       </td>
                       <td className="hidden px-4 py-3 lg:table-cell">
                         {device.lastUsedAt ? (
-                          <span className="tabular">{formatCairoDateTime(device.lastUsedAt)}</span>
+                          <span className="tabular">{formatters?.formatDateTime(device.lastUsedAt) ?? '—'}</span>
                         ) : (
                           <span className="text-muted">—</span>
                         )}
@@ -458,7 +465,7 @@ export function DevicesView() {
                       </td>
                     </tr>
                     {historyId === device.id ? (
-                      <DeviceHistoryRow deviceId={device.id} columns={COLUMNS} />
+                      <DeviceHistoryRow deviceId={device.id} />
                     ) : null}
                   </Fragment>
                 ))}

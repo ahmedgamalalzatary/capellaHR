@@ -44,6 +44,17 @@ describe('authentication application composition', () => {
     expect(response.body.error).toMatchObject({ code: 'NOT_FOUND', requestId: 'client-request-1' });
   });
 
+  it('exposes backend-owned display settings without authentication', async () => {
+    const response = await request(createApp({
+      publicConfig: { timeZone: 'Africa/Cairo', locale: 'ar-EG-u-nu-latn' },
+    })).get('/api/v1/config');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: { timeZone: 'Africa/Cairo', locale: 'ar-EG-u-nu-latn' },
+    });
+  });
+
   it('returns a structured Arabic 400 for malformed JSON', async () => {
     const response = await request(createApp()).post('/api/v1/missing').set('content-type', 'application/json').send('{');
     expect(response.status).toBe(400);

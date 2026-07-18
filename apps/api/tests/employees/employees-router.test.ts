@@ -10,21 +10,49 @@ const service = { list: vi.fn(async () => ({ items: [], total: 0 })) } as unknow
 
 describe('employee router', () => {
   it('exposes an admin-only paginated employee list', async () => {
-    const response = await request(createApp({ authService: auth, employeeService: service })).get('/api/v1/employees');
+    const response = await request(createApp({ authService: auth, employeeService: service, employeeUploadMaxBytes: 16_777_216 })).get('/api/v1/employees');
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } });
   });
 
   it('rejects employee-role access', async () => {
     const employeeAuth = { authenticate: vi.fn(async () => ({ actorType: 'employee', employeeId: 1 })) } as unknown as AuthService;
-    expect((await request(createApp({ authService: employeeAuth, employeeService: service })).get('/api/v1/employees')).status).toBe(403);
+    expect((await request(createApp({ authService: employeeAuth, employeeService: service, employeeUploadMaxBytes: 16_777_216 })).get('/api/v1/employees')).status).toBe(403);
   });
 
   it('returns a structured validation error for rejected multipart files', async () => {
-    const response = await request(createApp({ authService: auth, employeeService: service }))
+    const response = await request(createApp({ authService: auth, employeeService: service, employeeUploadMaxBytes: 16_777_216 }))
       .post('/api/v1/employees').attach('unexpected', Buffer.from('x'), 'x.jpg');
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_IMAGE');
+  });
+
+  it('maps the injected Multer size limit to IMAGE_TOO_LARGE', async () => {
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: service,
+      employeeUploadMaxBytes: 1,
+    })).post('/api/v1/employees').attach('personal', Buffer.from('xx'), 'photo.jpg');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: 'IMAGE_TOO_LARGE',
+      message: 'حجم الصورة يتجاوز الحد الأقصى المسموح',
+    });
+  });
+
+  it('preserves contract field errors for invalid employee changes', async () => {
+    const response = await request(createApp({ authService: auth, employeeService: service, employeeUploadMaxBytes: 16_777_216 }))
+      .patch('/api/v1/employees/1')
+      .send({ shiftDurationMinutes: '721' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      fieldErrors: {
+        shiftDurationMinutes: ['مدة الوردية يجب أن تكون بين دقيقة واحدة و12 ساعة'],
+      },
+    });
   });
 
   it('keeps a newly committed replacement when deleting the old image fails', async () => {
@@ -33,7 +61,7 @@ describe('employee router', () => {
     const remove = vi.fn(async (path: string) => { if (path.endsWith('old.png')) throw new Error('locked'); });
     const recordCleanupFailure = vi.fn(async () => undefined);
     const store = { save: vi.fn(async () => ({ storagePath: 'employees/new.png', originalName: 'new.png', mimeType: 'image/png', sizeBytes: 1 })), remove, recordCleanupFailure } as unknown as EmployeeUploadStore;
-    const response = await request(createApp({ authService: auth, employeeService: replacementService, employeeUploadStore: store }))
+    const response = await request(createApp({ authService: auth, employeeService: replacementService, employeeUploadStore: store, employeeUploadMaxBytes: 16_777_216 }))
       .patch('/api/v1/employees/1').attach('personal', Buffer.from('image'), 'new.png');
     expect(response.status).toBe(200);
     expect(remove).toHaveBeenCalledWith('employees/old.png');

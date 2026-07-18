@@ -211,7 +211,9 @@ describe('DevicesView', () => {
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
     await waitFor(() => {
-      expect(mocks.listDevices).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }));
+      const params = mocks.listDevices.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ page: 2 });
+      expect(params).not.toHaveProperty('pageSize');
     });
   });
 });

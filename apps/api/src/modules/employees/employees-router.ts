@@ -7,17 +7,30 @@ import type { AuthService } from '../auth/auth-service.js';
 import { EmployeeUploadError, type EmployeeUploadStore } from './employee-upload-store.js';
 import { EmployeeError, type EmployeeImages, type EmployeeService, type ImageKind } from './employees-service.js';
 import { responseRequestId } from '../../shared/http/index.js';
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024, files: 3 } });
-const fail = (res: Response, status: number, code: string, message: string) => res.status(status).json({ error: { code, message, requestId: responseRequestId(res) } });
+const fail = (res: Response, status: number, code: string, message: string, fieldErrors?: Record<string, string[]>) => res.status(status).json({ error: { code, message, ...(fieldErrors ? { fieldErrors } : {}), requestId: responseRequestId(res) } });
 const handle = (error: unknown, res: Response) => {
-  if (error instanceof ZodError) return fail(res, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة');
-  if (error instanceof EmployeeUploadError || error instanceof multer.MulterError) return fail(res, 400, error instanceof multer.MulterError ? 'INVALID_IMAGE' : error.code, error instanceof multer.MulterError ? 'ملف الصورة غير صالح' : error.message);
+  if (error instanceof ZodError) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of error.issues) {
+      const field = issue.path.join('.') || '_root';
+      (fieldErrors[field] ??= []).push(issue.message);
+    }
+    return fail(res, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة', fieldErrors);
+  }
+  if (error instanceof multer.MulterError) {
+    return error.code === 'LIMIT_FILE_SIZE'
+      ? fail(res, 400, 'IMAGE_TOO_LARGE', 'حجم الصورة يتجاوز الحد الأقصى المسموح')
+      : fail(res, 400, 'INVALID_IMAGE', 'ملف الصورة غير صالح');
+  }
+  if (error instanceof EmployeeUploadError) return fail(res, 400, error.code, error.message);
   if (error instanceof EmployeeError) return fail(res, error.code === 'EMPLOYEE_NOT_FOUND' || error.code === 'EMPLOYEE_BRANCH_NOT_FOUND' ? 404 : error.code === 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' ? 503 : 409, error.code, error.message);
   throw error;
 };
+// Multipart field names are part of the public employee-image API contract.
 const fields = [{ name: 'personal', maxCount: 1 }, { name: 'idFront', maxCount: 1 }, { name: 'idBack', maxCount: 1 }];
-const acceptUploads = (request: Request, response: Response, next: NextFunction) => upload.fields(fields)(request, response, (error) => { if (error) handle(error, response); else next(); });
-export const createEmployeesRouter = (service: EmployeeService, authService: Pick<AuthService, 'authenticate'>, store?: EmployeeUploadStore) => {
+export const createEmployeesRouter = (service: EmployeeService, authService: Pick<AuthService, 'authenticate'>, maxImageBytes: number, store?: EmployeeUploadStore) => {
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxImageBytes, files: 3 } });
+  const acceptUploads = (request: Request, response: Response, next: NextFunction) => upload.fields(fields)(request, response, (error) => { if (error) handle(error, response); else next(); });
   const router = Router(); const auth = createAuthMiddleware(authService); router.use(auth.authenticate, auth.requireAdmin);
   const compensate = async (paths: string[]) => {
     if (!store) return;

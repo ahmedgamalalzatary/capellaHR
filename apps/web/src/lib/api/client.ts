@@ -35,6 +35,7 @@ export class ApiError extends Error {
   }
 }
 
+/** Safe fallback when an upstream error body is missing or is not valid JSON. */
 const GENERIC_ERROR: ApiErrorBody = {
   code: 'UNEXPECTED_ERROR',
   message: 'حدث خطأ غير متوقع. حاول مرة أخرى.',

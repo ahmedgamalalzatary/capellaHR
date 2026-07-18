@@ -38,6 +38,7 @@ export interface ListEmployeesParams {
   pageSize?: number;
 }
 
+// Binary image URLs cannot use the JSON API helper, so they share its env-backed base URL.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
 /** Cookie-authenticated binary endpoint; usable directly as an <img> source. */
