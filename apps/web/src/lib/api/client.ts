@@ -103,9 +103,18 @@ async function requestPage<T>(path: string): Promise<{ items: T[]; meta: PageMet
   return { items: parsed.data, meta: parsed.meta };
 }
 
+/** Single-object envelopes that still carry pagination `meta` (report snapshots). */
+async function requestWithMeta<T>(path: string): Promise<{ data: T; meta: PageMeta }> {
+  const response = await requestRaw(path);
+  return (await response.json()) as { data: T; meta: PageMeta };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   getPage: <T>(path: string) => requestPage<T>(path),
+  getWithMeta: <T>(path: string) => requestWithMeta<T>(path),
+  /** Binary downloads (report PDFs) — errors still follow the JSON contract. */
+  getBlob: async (path: string) => (await requestRaw(path)).blob(),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? null : JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>
