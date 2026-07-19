@@ -90,4 +90,44 @@ describe('server environment', () => {
 
     expect(() => parseServerEnv({ ...base, MAX_EMPLOYEE_IMAGE_BYTES: '16777217' })).toThrow();
   });
+
+  it('parses bounded report-worker polling and optional shared storage settings', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(parseServerEnv(base)).toMatchObject({ REPORT_WORKER_POLL_MS: 2_000 });
+    expect(parseServerEnv({
+      ...base,
+      REPORT_WORKER_POLL_MS: '500',
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+    })).toMatchObject({
+      REPORT_WORKER_POLL_MS: 500,
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+    });
+    expect(() => parseServerEnv({ ...base, REPORT_WORKER_POLL_MS: '99' })).toThrow();
+    expect(() => parseServerEnv({ ...base, REPORT_WORKER_POLL_MS: '60001' })).toThrow();
+  });
+
+  it('parses worker settings without accepting admin or WebAuthn credentials', async () => {
+    const { parseWorkerEnv } = await import('./worker.js');
+    const parsed = parseWorkerEnv({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://user:password@db/capella_hr',
+      APP_TIME_ZONE: 'Africa/Cairo',
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+      ADMIN_EMAIL: 'must-not-enter-worker@capella.test',
+      ADMIN_PASSWORD: 'must-not-enter-worker',
+      WEBAUTHN_RP_ID: 'must-not-enter-worker.test',
+    });
+
+    expect(parsed).toMatchObject({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://user:password@db/capella_hr',
+      APP_TIME_ZONE: 'Africa/Cairo',
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+    });
+    expect(parsed).not.toHaveProperty('ADMIN_EMAIL');
+    expect(parsed).not.toHaveProperty('ADMIN_PASSWORD');
+    expect(parsed).not.toHaveProperty('WEBAUTHN_RP_ID');
+  });
 });

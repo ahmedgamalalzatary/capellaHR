@@ -62,6 +62,7 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 4000
+      REPORT_FILES_ROOT: /app/uploads/reports
     depends_on:
       db:
         condition: service_healthy
@@ -77,6 +78,37 @@ services:
       timeout: 5s
       retries: 8
       start_period: 30s
+    mem_limit: 384m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  worker:
+    image: capella-hr-worker:latest
+    build:
+      context: .
+      dockerfile: dockerfile.api
+      target: worker-runtime
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_TIME_ZONE: Africa/Cairo
+      REPORT_WORKER_POLL_MS: ${REPORT_WORKER_POLL_MS:-2000}
+      REPORT_FILES_ROOT: /app/uploads/reports
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - employee_uploads:/app/uploads
+    networks:
+      - internal
     mem_limit: 384m
     security_opt:
       - no-new-privileges:true

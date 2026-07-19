@@ -1,0 +1,32 @@
+{
+  "name": "@capella/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch --conditions=development --env-file=../../.env src/main.ts",
+    "start": "node --env-file=../../.env dist/main.js",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist coverage"
+  },
+  "dependencies": {
+    "@capella/api": "workspace:*",
+    "@capella/config": "workspace:*",
+    "@capella/database": "workspace:*",
+    "@capella/reporting": "workspace:*",
+    "pino": "^9.7.0"
+  },
+  "devDependencies": {
+    "@capella/eslint-config": "workspace:*",
+    "@capella/testing": "workspace:*",
+    "@capella/typescript-config": "workspace:*",
+    "@types/node": "^24.0.14",
+    "eslint": "^9.31.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

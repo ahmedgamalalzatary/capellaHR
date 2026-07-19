@@ -9,3 +9,4 @@ export * from './modules/payroll/index.js';
 export * from './modules/bonuses/index.js';
 export * from './modules/deductions/index.js';
 export * from './modules/advances/index.js';
+export * from './modules/reports/index.js';

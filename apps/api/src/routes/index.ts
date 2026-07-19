@@ -10,6 +10,7 @@ import { createPayrollRouter, type PayrollService } from '../modules/payroll/ind
 import { createBonusesRouter, type BonusService } from '../modules/bonuses/index.js';
 import { createDeductionsRouter, type DeductionService } from '../modules/deductions/index.js';
 import { createAdvancesRouter, type AdvanceService } from '../modules/advances/index.js';
+import { createReportsRouter, type ReportService } from '../modules/reports/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -23,6 +24,7 @@ export const createApiRouter = (dependencies: {
   bonusService?: BonusService;
   deductionService?: DeductionService;
   advanceService?: AdvanceService;
+  reportService?: ReportService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -82,6 +84,7 @@ export const createApiRouter = (dependencies: {
     if (dependencies.bonusService) router.use('/bonuses', createBonusesRouter(dependencies.bonusService, dependencies.authService));
     if (dependencies.deductionService) router.use('/deductions', createDeductionsRouter(dependencies.deductionService, dependencies.authService));
     if (dependencies.advanceService) router.use('/advances', createAdvancesRouter(dependencies.advanceService, dependencies.authService));
+    if (dependencies.reportService) router.use('/reports', createReportsRouter(dependencies.reportService, dependencies.authService));
   }
 
   return router;

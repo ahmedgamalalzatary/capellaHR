@@ -1,6 +1,6 @@
 # Backend implementation tracker (temporary)
 
-Last rebuilt: 2026-07-18
+Last rebuilt: 2026-07-19
 
 This is a temporary working checklist for backend implementation. The locked product rules remain in `docs/hr-specs.md`; this file tracks implementation progress only.
 
@@ -69,6 +69,7 @@ Current branch endpoints:
 - `advances`
 - `advance_installments`
 - `financial_audit_events`
+- `report_exports`
 
 ## 3. Employees — Complete
 
@@ -221,20 +222,38 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Move the complete remaining balance into the deletion month's unfinalized payroll inside employee deletion.
 - [x] Persist mutation/schedule audit events and add rounding, schedule, locking, acceleration, concurrency, authorization, and MySQL tests.
 
-## 13. Reports and PDF Exports
+## 13. Reports and PDF Exports — Backend Complete for Available Sources
 
-- [ ] Add read-only report tabs/APIs for Branches, Employees, Devices, Shifts, Weekly Day-Off, Attendance/Absence, Salaries, Bonuses, Deductions, and Advances.
-- [ ] Exclude login/admin-session activity and denied/flagged attendance attempts.
-- [ ] Provide Arabic/RTL detailed rows, fixed full field sets, and relevant totals/summaries.
-- [ ] Exclude employee images, PINs, credentials, biometrics, and all secrets.
-- [ ] Label open/finalized payroll and historically relevant soft-deleted employees.
-- [ ] Add unrestricted relevant date/month ranges, branch/record filters, employee search, and selected/subset/all-filtered selection.
-- [ ] Support on-screen results and PDF only; exclude CSV/Excel.
-- [ ] Generate one combined immutable PDF per report tab; never mix tabs.
-- [ ] Add private admin-only download and permanent retention until manual file deletion.
-- [ ] Preserve export metadata after file deletion.
-- [ ] Embed an Arabic-capable font and verify RTL layout.
-- [ ] Add data-selection, sensitive-data exclusion, snapshot, PDF-rendering, authorization, and MySQL tests.
+- [x] Add admin-only read APIs for Branches, Employees, Devices, Shifts, Weekly Day-Off, Bonuses, Deductions, and Advances.
+- [ ] Add Attendance/Absence and Payroll report readers after Attendance supplies trustworthy facts; both currently fail closed with `REPORT_SOURCE_UNAVAILABLE`.
+- [x] Exclude login/admin-session activity and denied/flagged attendance attempts.
+- [x] Provide Arabic detailed rows, fixed safe field sets, and relevant totals/summaries.
+- [x] Exclude employee images, PINs and hashes, device credentials, biometrics, and all secrets.
+- [x] Include historically relevant soft-deleted employees in employee-related reports.
+- [ ] Label open/finalized payroll rows when the deferred Payroll report reader becomes available.
+- [x] Add Cairo-correct date ranges, payroll-month ranges, branch/device filters, employee search, and selected/subset/all-filtered selection.
+- [x] Match Advances against their actual installment rows, including schedules rewritten by employee-deletion acceleration.
+- [x] Support paginated on-screen results and PDF only; exclude CSV/Excel.
+- [x] Generate one combined immutable PDF per report tab; never mix tabs.
+- [x] Add a durable MySQL export queue with atomic claims, three attempts per cycle, preserved lifetime attempt history, periodic stale-job recovery, and a separate `apps/worker` process.
+- [x] Stream bounded MySQL batches through a private disk spool into PDFKit and stream authenticated downloads, avoiding whole-report/PDF buffering under container memory limits.
+- [x] Reconcile pending physical deletions, stale spools, and unreferenced PDFs after crashes without diverging file and database state.
+- [x] Store PDFs privately under `uploads/reports`, retain them until explicit admin deletion, and preserve export metadata after file deletion.
+- [x] Add admin-only export history, status, download, and stored-file deletion endpoints.
+- [x] Embed Noto Sans Arabic and visually verify real PDF output for RTL columns, bidirectional dates/numbers, wrapped rows, repeated headers, wide-column bands, and page numbering.
+- [x] Add selection, secret-exclusion, lifecycle, concurrency, file-compensation, PDF, authorization, Cairo-boundary, installment-overlap, and real-MySQL tests.
+
+Migrations `0014_lyrical_tusk.sql` and `0015_yummy_puma.sql` are applied to both `capella_hr` and `capella_hr-test`. Both databases report the full 16-entry migration chain.
+
+Current report endpoints:
+
+- `GET /api/v1/reports/:reportType`
+- `POST /api/v1/reports/exports`
+- `GET /api/v1/reports/exports`
+- `GET /api/v1/reports/exports/:exportId`
+- `POST /api/v1/reports/exports/:exportId/retry`
+- `GET /api/v1/reports/exports/:exportId/download`
+- `DELETE /api/v1/reports/exports/:exportId/file`
 
 ## 14. Roles and Employee Self-Service
 
@@ -274,13 +293,13 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 
 ## 18. Background Worker and Durable Jobs
 
-- [ ] Add `apps/worker` and shared MySQL-backed job infrastructure without Redis.
-- [ ] Add durable handlers/schedules for PDF generation, midnight absences, 16-hour timeouts, biometrics, and reconciliation.
-- [ ] Store job state, attempts, failure reason, scheduling, and correlation metadata.
-- [ ] Retry ordinary failures up to three times and expose failed jobs on the dashboard.
-- [ ] Permit admin retry for failed PDF jobs.
+- [x] Add `apps/worker` and the first MySQL-backed durable job flow without Redis.
+- [ ] Add the remaining durable handlers/schedules for midnight absences, 16-hour timeouts, biometrics, and reconciliation.
+- [x] Store PDF-job state, attempts, failure reason, and lifecycle timestamps.
+- [x] Retry PDF generation failures up to three times; dashboard exposure remains pending.
+- [x] Permit admin retry for failed PDF jobs without erasing lifetime attempt/failure history.
 - [ ] Continue reconciliation retries for attendance/payroll state until success.
-- [ ] Make every handler idempotent against duplicate jobs and process restarts.
+- [x] Make PDF generation and file deletion recoverable/idempotent against duplicate jobs and process restarts; other future handlers remain pending.
 - [ ] Add scheduling, retry, crash recovery, idempotency, concurrency, and MySQL tests.
 
 ## Deferred: Facial Recognition and Settings — Implement Immediately Before Hardening
@@ -350,4 +369,4 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 
 ## Immediate action
 
-Implement Reports and PDF Exports next, without touching `apps/web`. Facial Recognition and Attendance remain intentionally deferred until immediately before final hardening.
+Proceed to Roles and Employee Self-Service without touching `apps/web`, while keeping attendance-dependent login/session rules deferred with Attendance. The Attendance/Absence and Payroll report adapters remain deferred until Attendance is trustworthy. Facial Recognition and Attendance remain intentionally deferred until immediately before final hardening.

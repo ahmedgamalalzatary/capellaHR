@@ -12,6 +12,7 @@ import type { PayrollService } from './modules/payroll/index.js';
 import type { BonusService } from './modules/bonuses/index.js';
 import type { DeductionService } from './modules/deductions/index.js';
 import type { AdvanceService } from './modules/advances/index.js';
+import type { ReportService } from './modules/reports/index.js';
 import { createApiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler, requestContext } from './shared/http/index.js';
 
@@ -27,6 +28,7 @@ export const createApp = (dependencies: {
   bonusService?: BonusService;
   deductionService?: DeductionService;
   advanceService?: AdvanceService;
+  reportService?: ReportService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;

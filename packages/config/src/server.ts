@@ -27,6 +27,8 @@ const schema = z.object({
   APP_TIME_ZONE: timeZoneSchema.default('Africa/Cairo'),
   APP_LOCALE: localeSchema.default('ar-EG-u-nu-latn'),
   MAX_EMPLOYEE_IMAGE_BYTES: z.coerce.number().int().positive().max(16_777_216).default(16_777_216),
+  REPORT_WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
+  REPORT_FILES_ROOT: z.string().trim().min(1).max(500).optional(),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(1).max(10).optional(),
   WEB_ORIGIN: webOriginSchema.default('http://localhost:3000'),
   WEBAUTHN_RP_NAME: z.string().min(1).default('Capella HR'),

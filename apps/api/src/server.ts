@@ -13,6 +13,7 @@ import { createPayrollModule } from './modules/payroll/index.js';
 import { createBonusModule } from './modules/bonuses/index.js';
 import { createDeductionModule } from './modules/deductions/index.js';
 import { createAdvanceModule } from './modules/advances/index.js';
+import { createReportsModule } from './modules/reports/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
 const employeeRepository = createDrizzleEmployeeRepository(database);
@@ -26,6 +27,10 @@ const payrollModule = createPayrollModule(database, { timeZone: env.APP_TIME_ZON
 const bonusModule = createBonusModule(database, { timeZone: env.APP_TIME_ZONE });
 const deductionModule = createDeductionModule(database, { timeZone: env.APP_TIME_ZONE });
 const advanceModule = createAdvanceModule(database, { timeZone: env.APP_TIME_ZONE });
+const reportsModule = createReportsModule(database, {
+  ...(env.REPORT_FILES_ROOT === undefined ? {} : { filesRoot: env.REPORT_FILES_ROOT }),
+  timeZone: env.APP_TIME_ZONE,
+});
 const employeeModule = createEmployeesModule(
   database,
   env.MAX_EMPLOYEE_IMAGE_BYTES,
@@ -55,6 +60,7 @@ createApp({
   bonusService: bonusModule.service,
   deductionService: deductionModule.service,
   advanceService: advanceModule.service,
+  reportService: reportsModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

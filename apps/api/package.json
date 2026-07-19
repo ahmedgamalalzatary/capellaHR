@@ -2,6 +2,13 @@
   "name": "@capella/api",
   "private": true,
   "type": "module",
+  "exports": {
+    "./reports-runtime": {
+      "types": "./src/modules/reports/reports-runtime.ts",
+      "development": "./src/modules/reports/reports-runtime.ts",
+      "default": "./dist/modules/reports/reports-runtime.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch --conditions=development --env-file=../../.env src/server.ts",

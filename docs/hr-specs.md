@@ -932,7 +932,7 @@ Unused scaffold placeholders such as Benefits, Departments, Positions, Recruitme
 
 ### Reports and end-to-end tests
 
-- PDF tests verify Arabic/RTL rendering, embedded fonts, fixed columns, filters/selections, combined output, deleted-employee labels, and sensitive-data exclusion.
+- Automated PDF tests verify embedded fonts, fixed columns, pagination, filters/selections, combined output, deleted-employee labels, and sensitive-data exclusion; rendered-page QA verifies Arabic/RTL and bidi output visually.
 - Background-export tests cover queued, processing, completed, failed, retry, download, and file-deletion behavior.
 - End-to-end tests cover critical admin, employee self-service, attendance, payroll, and report workflows.
 

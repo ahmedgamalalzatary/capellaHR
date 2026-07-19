@@ -1,24 +1,32 @@
 {
-  "name": "@capella/config",
+  "name": "@capella/reporting",
   "private": true,
   "type": "module",
   "exports": {
-    "./server": { "types": "./src/server.ts", "development": "./src/server.ts", "default": "./dist/server.js" },
-    "./client": { "types": "./src/client.ts", "development": "./src/client.ts", "default": "./dist/client.js" },
-    "./worker": { "types": "./src/worker.ts", "development": "./src/worker.ts", "default": "./dist/worker.js" }
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist coverage"
   },
-  "dependencies": { "zod": "catalog:" },
+  "dependencies": {
+    "@capella/contracts": "workspace:*",
+    "@expo-google-fonts/noto-sans-arabic": "^0.4.3",
+    "bidi-js": "^1.0.3",
+    "pdfkit": "^0.19.1"
+  },
   "devDependencies": {
     "@capella/eslint-config": "workspace:*",
     "@capella/typescript-config": "workspace:*",
     "@types/node": "^24.0.14",
+    "@types/pdfkit": "^0.17.6",
     "eslint": "^9.31.0",
     "rimraf": "^6.0.1",
     "typescript": "catalog:",
