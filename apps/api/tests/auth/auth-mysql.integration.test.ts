@@ -1,5 +1,6 @@
 import { createDatabase } from '@capella/database';
-import { adminCredentials, authAttempts, authSessions } from '@capella/database/schema';
+import { adminCredentials, auditEvents, authAttempts, authSessions } from '@capella/database/schema';
+import { asc, eq } from 'drizzle-orm';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -9,6 +10,7 @@ import * as auth from '../../src/modules/auth/index.js';
 const database = createDatabase(process.env.DATABASE_URL ?? '');
 
 beforeEach(async () => {
+  await database.delete(auditEvents);
   await database.delete(authAttempts);
   await database.delete(authSessions);
   await database.delete(adminCredentials);
@@ -33,10 +35,20 @@ describe('MySQL-backed authentication', () => {
     const secondModule = createAuthModule(dependencies);
     const secondApp = createApp({ authService: secondModule.service, secureCookies: false });
     const session = await request(secondApp).get('/api/v1/auth/session').set('Cookie', cookie ?? '');
+    const logout = await request(secondApp).post('/api/v1/auth/logout').set('Cookie', cookie ?? '');
 
     expect(login.status).toBe(200);
     expect(session.status).toBe(200);
     expect(session.body.data.actor).toEqual({ type: 'admin' });
+    expect(logout.status).toBe(204);
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'auth')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action)).toEqual([
+      'credential_sync', 'login_succeeded', 'session_create', 'logout',
+    ]);
+    expect(events.slice(1).every((event) => event.requestId !== null)).toBe(true);
+    expect(JSON.stringify(events)).not.toContain(cookie ?? 'capella_session=missing');
+    expect(JSON.stringify(events)).not.toContain('integration-password');
   });
 
   it('replaces the stored hash when the env password changes on restart', async () => {
@@ -56,5 +68,8 @@ describe('MySQL-backed authentication', () => {
 
     expect(oldLogin.status).toBe(401);
     expect(newLogin.status).toBe(200);
+    const actions = (await database.select({ action: auditEvents.action }).from(auditEvents)
+      .where(eq(auditEvents.module, 'auth'))).map(({ action }) => action);
+    expect(actions).toEqual(expect.arrayContaining(['login_failed', 'login_succeeded']));
   });
 });

@@ -6,6 +6,7 @@ import {
 } from '@capella/database/schema';
 import { and, eq } from 'drizzle-orm';
 
+import { writeAudit } from '../audit/index.js';
 import { calendarMonthInTimeZone, payrollMonthStart } from './payroll-domain.js';
 
 export type Database = ReturnType<typeof createDatabase>;
@@ -41,7 +42,7 @@ export const isFinalized = async (
   eq(payrollMonths.payrollMonth, payrollMonthStart(month)),
 )).limit(1))[0]);
 
-export const writeFinancialAudit = (
+export const writeFinancialAudit = async (
   transaction: Transaction,
   event: {
     entityType: 'salary' | 'payroll' | 'bonus' | 'deduction' | 'advance';
@@ -51,11 +52,28 @@ export const writeFinancialAudit = (
     afterState?: unknown;
     createdAt: Date;
   },
-) => transaction.insert(financialAuditEvents).values({
-  entityType: event.entityType,
-  entityId: event.entityId,
-  action: event.action,
-  beforeState: event.beforeState ?? null,
-  afterState: event.afterState ?? null,
-  createdAt: event.createdAt,
-});
+) => {
+  await transaction.insert(financialAuditEvents).values({
+    entityType: event.entityType,
+    entityId: event.entityId,
+    action: event.action,
+    beforeState: event.beforeState ?? null,
+    afterState: event.afterState ?? null,
+    createdAt: event.createdAt,
+  });
+  const state = (event.afterState ?? event.beforeState) as Record<string, unknown> | undefined;
+  const employeeId = typeof state?.employeeId === 'number' ? state.employeeId : undefined;
+  const module = event.entityType === 'bonus' ? 'bonuses'
+    : event.entityType === 'deduction' ? 'deductions'
+      : event.entityType === 'advance' ? 'advances' : 'payroll';
+  await writeAudit(transaction, {
+    module,
+    action: event.action,
+    entityType: event.entityType,
+    entityId: event.entityId,
+    beforeState: event.beforeState,
+    afterState: event.afterState,
+    ...(employeeId === undefined ? {} : { relatedIds: { employeeId } }),
+    createdAt: event.createdAt,
+  });
+};

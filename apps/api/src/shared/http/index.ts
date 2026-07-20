@@ -1,12 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 
+import { runWithAuditContext } from '../../modules/audit/index.js';
+
 export const requestContext: RequestHandler = (request, response, next) => {
   const supplied = request.header('x-request-id');
   const requestId = supplied && /^[\w.-]{1,64}$/.test(supplied) ? supplied : randomUUID();
   response.locals.requestId = requestId;
   response.setHeader('x-request-id', requestId);
-  next();
+  runWithAuditContext({
+    actorType: 'system',
+    actorIdentifier: 'system',
+    requestId,
+    ipAddress: request.ip?.slice(0, 45) ?? null,
+    userAgent: request.header('user-agent')?.slice(0, 1024) ?? null,
+  }, next);
 };
 
 export const responseRequestId = (response: { locals: Record<string, unknown> }) => (

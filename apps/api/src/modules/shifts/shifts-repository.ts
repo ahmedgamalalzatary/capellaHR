@@ -2,6 +2,7 @@ import { type createDatabase } from '@capella/database';
 import { branches, employees } from '@capella/database/schema';
 import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm';
 
+import { writeAudit } from '../audit/index.js';
 import type {
   ShiftAssignmentRecord,
   ShiftRepository,
@@ -65,18 +66,28 @@ export const createDrizzleShiftRepository = (
 
   updateDuration(employeeId, durationMinutes) {
     return database.transaction(async (transaction) => {
-      const current = await transaction.select({ id: employees.id })
+      const current = await transaction.select({
+        id: employees.id,
+        durationMinutes: employees.shiftDurationMinutes,
+      })
         .from(employees)
         .where(and(eq(employees.id, employeeId), isNull(employees.deletedAt)))
         .for('update')
         .limit(1);
       if (!current[0]) return null;
 
+      const updatedAt = now();
       await transaction.update(employees)
-        .set({ shiftDurationMinutes: durationMinutes, updatedAt: now() })
+        .set({ shiftDurationMinutes: durationMinutes, updatedAt })
         .where(and(eq(employees.id, employeeId), isNull(employees.deletedAt)));
 
-      return findActiveAssignment(transaction, employeeId);
+      const after = await findActiveAssignment(transaction, employeeId);
+      await writeAudit(transaction, {
+        module: 'shifts', action: 'update', entityType: 'shift_assignment', entityId: employeeId,
+        beforeState: current[0], afterState: after,
+        relatedIds: { employeeId }, createdAt: updatedAt,
+      });
+      return after;
     });
   },
 

@@ -2,6 +2,7 @@ import { createDatabase } from '@capella/database';
 import {
   advanceInstallments,
   advances,
+  auditEvents,
   attendanceDailyRecords,
   authSessions,
   bonuses,
@@ -44,6 +45,7 @@ const attendance: PayrollAttendanceGateway = {
 };
 
 const clear = async () => {
+  await database.delete(auditEvents);
   await database.delete(financialAuditEvents);
   await database.delete(advanceInstallments);
   await database.delete(advances);
@@ -468,5 +470,14 @@ describe('MySQL-backed salary domain', () => {
       .where(eq(financialAuditEvents.entityType, 'bonus')).orderBy(asc(financialAuditEvents.id));
     expect(events.map((event) => event.action)).toEqual(['create', 'update', 'delete']);
     expect(events[2]?.beforeState).toMatchObject({ amount: '20.00' });
+    const general = await database.select().from(auditEvents)
+      .where(eq(auditEvents.entityType, 'bonus')).orderBy(asc(auditEvents.id));
+    expect(general.map((event) => event.action)).toEqual(['create', 'update', 'delete']);
+    expect(general[1]).toMatchObject({
+      module: 'bonuses',
+      relatedIds: { employeeId: String(employeeId) },
+      beforeState: expect.objectContaining({ amount: '10.00' }),
+      afterState: expect.objectContaining({ amount: '20.00' }),
+    });
   });
 });

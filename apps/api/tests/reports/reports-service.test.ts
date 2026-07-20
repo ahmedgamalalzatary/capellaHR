@@ -36,6 +36,7 @@ const queued: ReportExportRecord = {
   attemptCount: 0,
   cycleAttemptCount: 0,
   retryCount: 0,
+  originRequestId: null,
   failureReason: null,
   queuedAt: now,
   startedAt: null,

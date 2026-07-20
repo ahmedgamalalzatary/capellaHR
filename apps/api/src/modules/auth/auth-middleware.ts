@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express';
 import { responseRequestId } from '../../shared/http/index.js';
+import { setAuditActor } from '../audit/index.js';
 
 import type { AuthService } from './auth-service.js';
 
@@ -26,6 +27,9 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
     response.locals.actor = session.actorType === 'admin'
       ? { type: 'admin' as const }
       : { type: 'employee' as const, employeeId: session.employeeId };
+    setAuditActor(session.actorType === 'admin'
+      ? { type: 'admin', identifier: 'admin' }
+      : { type: 'employee', identifier: String(session.employeeId) });
     next();
   };
 

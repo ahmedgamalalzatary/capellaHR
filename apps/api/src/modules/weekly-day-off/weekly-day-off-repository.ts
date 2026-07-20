@@ -14,6 +14,7 @@ import {
   sql,
 } from 'drizzle-orm';
 
+import { writeAudit } from '../audit/index.js';
 import type {
   WeeklyDayOffFinancialLockCheck,
   WeeklyDayOffRepository,
@@ -170,6 +171,12 @@ export const createDrizzleWeeklyDayOffRepository = (
       ));
       const updated = await findActiveRecord(transaction, id);
       if (!updated) throw new Error('Weekly day-off record disappeared during conversion');
+      await writeAudit(transaction, {
+        module: 'weekly-day-off', action: 'convert',
+        entityType: 'attendance_daily_record', entityId: id,
+        beforeState: record, afterState: updated,
+        relatedIds: { employeeId }, createdAt: convertedAt,
+      });
       return { kind: 'success' as const, record: updated };
     });
   },
@@ -190,16 +197,23 @@ export const createDrizzleWeeklyDayOffRepository = (
         transaction,
       )) return { kind: 'financially_locked' as const };
 
+      const revertedAt = now();
       await transaction.update(attendanceDailyRecords).set({
         status: 'absence',
         dayOffConvertedAt: null,
-        updatedAt: now(),
+        updatedAt: revertedAt,
       }).where(and(
         eq(attendanceDailyRecords.id, id),
         eq(attendanceDailyRecords.status, 'weekly_day_off'),
       ));
       const updated = await findActiveRecord(transaction, id);
       if (!updated) throw new Error('Weekly day-off record disappeared during reversion');
+      await writeAudit(transaction, {
+        module: 'weekly-day-off', action: 'revert',
+        entityType: 'attendance_daily_record', entityId: id,
+        beforeState: record, afterState: updated,
+        relatedIds: { employeeId }, createdAt: revertedAt,
+      });
       return { kind: 'success' as const, record: updated };
     });
   },

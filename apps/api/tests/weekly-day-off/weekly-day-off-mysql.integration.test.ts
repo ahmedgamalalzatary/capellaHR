@@ -1,6 +1,7 @@
 import { createDatabase } from '@capella/database';
 import {
   attendanceDailyRecords,
+  auditEvents,
   authSessions,
   branches,
   deviceAuthenticationChallenges,
@@ -12,7 +13,7 @@ import {
   employeePhoneReservations,
   employees,
 } from '@capella/database/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -89,6 +90,7 @@ const createAbsence = async (
 };
 
 beforeEach(async () => {
+  await database.delete(auditEvents);
   await database.delete(attendanceDailyRecords);
   await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
@@ -161,6 +163,14 @@ describe('MySQL-backed weekly day off', () => {
       absenceRequiredMinutes: 437,
       requiredMinutes: 437,
       dayOffConvertedAt: null,
+    });
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'weekly-day-off')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action)).toEqual(['convert', 'revert']);
+    expect(events[0]).toMatchObject({
+      entityType: 'attendance_daily_record', entityId: String(recordId),
+      beforeState: expect.objectContaining({ status: 'absence' }),
+      afterState: expect.objectContaining({ status: 'weekly_day_off' }),
     });
   });
 

@@ -1,6 +1,7 @@
 import { createDatabase } from '@capella/database';
 import {
   attendanceDailyRecords,
+  auditEvents,
   authSessions,
   branches,
   deviceAuthenticationChallenges,
@@ -66,6 +67,7 @@ const createEmployee = async (
 };
 
 beforeEach(async () => {
+  await database.delete(auditEvents);
   await database.delete(attendanceDailyRecords);
   await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
@@ -116,6 +118,13 @@ describe('MySQL-backed shifts', () => {
     const stored = await database.select({ duration: employees.shiftDurationMinutes })
       .from(employees).where(eq(employees.id, employeeId));
     expect(stored[0]?.duration).toBe(720);
+    const event = (await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'shifts')).limit(1))[0];
+    expect(event).toMatchObject({
+      action: 'update', entityType: 'shift_assignment', entityId: String(employeeId),
+      beforeState: expect.objectContaining({ durationMinutes: 600 }),
+      afterState: expect.objectContaining({ durationMinutes: 720 }),
+    });
   });
 
   it('reads the required-duration snapshot inside the caller transaction', async () => {

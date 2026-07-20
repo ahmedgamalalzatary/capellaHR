@@ -1,6 +1,6 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
-import { eq } from 'drizzle-orm';
+import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDrizzleAuthRepositories } from '../../src/modules/auth/index.js';
@@ -11,7 +11,7 @@ const branchModule = createBranchesModule(database); const employeeModule = crea
 const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, originalName: `${name}.jpg`, mimeType: 'image/jpeg', sizeBytes: 10 });
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
 
-beforeEach(async () => { await database.delete(attendanceDailyRecords); await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
   it('creates concurrent employees with distinct incremental codes and locks the branch', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -36,6 +36,19 @@ describe('MySQL-backed employees', () => {
     await database.insert(authSessions).values({ id: 'delete-session', tokenHash: 'b'.repeat(64), actorType: 'employee', employeeId: created.id, createdAt: new Date(), revokedAt: null });
     await employeeModule.service.remove(created.id);
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'delete-session')))[0]!.revokedAt).not.toBeNull();
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'employees')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action)).toEqual(['create', 'pin_reset', 'delete']);
+    const sessionEvents = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'auth')).orderBy(asc(auditEvents.id));
+    expect(sessionEvents.map(({ action, entityId, relatedIds }) => ({
+      action, entityId, relatedIds,
+    }))).toEqual([
+      { action: 'session_revoke', entityId: 'pin-reset-session', relatedIds: { employeeId: String(created.id) } },
+      { action: 'session_revoke', entityId: 'delete-session', relatedIds: { employeeId: String(created.id) } },
+    ]);
+    expect(events[0]?.afterState).toMatchObject({ pinHash: '[REDACTED]' });
+    expect(JSON.stringify(events)).not.toContain('$argon2');
   });
   it('returns branch-not-found when the branch is deleted after the preliminary check', async () => {
     const branch = await branchModule.service.create({ name: 'Race branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

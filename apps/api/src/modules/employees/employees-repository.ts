@@ -1,6 +1,7 @@
 import { type createDatabase } from '@capella/database';
 import { authSessions, branches, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
+import { writeAudit } from '../audit/index.js';
 import type { EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
 type Database = ReturnType<typeof createDatabase>;
 
@@ -11,7 +12,10 @@ const hydrate = async (db: Database | Parameters<Parameters<Database['transactio
 export const createDrizzleEmployeeRepository = (database: Database, now: () => Date = () => new Date()): EmployeeRepository => ({
   async create(input) {
     return database.transaction(async (tx) => {
-      const branch = await tx.select({ id: branches.id }).from(branches)
+      const branch = await tx.select({
+        id: branches.id,
+        hasEverBeenReferenced: branches.hasEverBeenReferenced,
+      }).from(branches)
         .where(eq(branches.id, input.branchId)).for('update').limit(1);
       if (!branch[0]) return 'branch_not_found' as const;
       await tx.insert(employeeCodeSequence).values({ id: 1, nextCode: 1 }).onDuplicateKeyUpdate({ set: { id: 1 } });
@@ -25,7 +29,19 @@ export const createDrizzleEmployeeRepository = (database: Database, now: () => D
       await tx.insert(employeePhoneReservations).values([...new Set([fields.personalPhone, fields.whatsappPhone])].map((phone) => ({ phone, employeeId: id })));
       await tx.insert(employeeImages).values((Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]).map(([kind, image]) => ({ employeeId: id, kind, ...image, createdAt, updatedAt: createdAt })));
       await tx.update(branches).set({ hasEverBeenReferenced: true, updatedAt: createdAt }).where(eq(branches.id, fields.branchId));
-      return hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      if (!branch[0].hasEverBeenReferenced) {
+        await writeAudit(tx, {
+          module: 'branches', action: 'reference_lock', entityType: 'branch', entityId: fields.branchId,
+          beforeState: { hasEverBeenReferenced: false }, afterState: { hasEverBeenReferenced: true },
+          relatedIds: { employeeId: id }, createdAt,
+        });
+      }
+      const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      await writeAudit(tx, {
+        module: 'employees', action: 'create', entityType: 'employee', entityId: id,
+        afterState: record, relatedIds: { branchId: fields.branchId }, createdAt,
+      });
+      return record;
     });
   },
   async findActiveById(id) { const row = (await database.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).limit(1))[0]; return row ? hydrate(database, row) : null; },
@@ -44,30 +60,60 @@ export const createDrizzleEmployeeRepository = (database: Database, now: () => D
       const current = (await tx.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0]; if (!current) return null;
       const before = await hydrate(tx, current);
       const { images, ...fields } = changes;
+      const updatedAt = now();
       if (fields.personalPhone || fields.whatsappPhone) {
         const personalPhone = fields.personalPhone ?? current.personalPhone; const whatsappPhone = fields.whatsappPhone ?? current.whatsappPhone;
         await tx.delete(employeePhoneReservations).where(eq(employeePhoneReservations.employeeId, id));
         await tx.insert(employeePhoneReservations).values([...new Set([personalPhone, whatsappPhone])].map((phone) => ({ phone, employeeId: id })));
       }
-      await tx.update(employees).set({ ...fields, ...(revokeSessions ? { credentialVersion: sql`${employees.credentialVersion} + 1` } : {}), updatedAt: now() }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
-      if (revokeSessions) await tx.update(authSessions).set({ revokedAt: now() }).where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
-      if (images) for (const [kind, image] of Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]) await tx.update(employeeImages).set({ ...image, updatedAt: now() }).where(and(eq(employeeImages.employeeId, id), eq(employeeImages.kind, kind)));
+      const sessions = revokeSessions
+        ? await tx.select({ id: authSessions.id }).from(authSessions)
+          .where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt))).for('update')
+        : [];
+      await tx.update(employees).set({ ...fields, ...(revokeSessions ? { credentialVersion: sql`${employees.credentialVersion} + 1` } : {}), updatedAt }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
+      if (revokeSessions) await tx.update(authSessions).set({ revokedAt: updatedAt }).where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
+      for (const session of sessions) await writeAudit(tx, {
+        module: 'auth', action: 'session_revoke', entityType: 'session', entityId: session.id,
+        relatedIds: { employeeId: id }, createdAt: updatedAt,
+      });
+      if (images) for (const [kind, image] of Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]) await tx.update(employeeImages).set({ ...image, updatedAt }).where(and(eq(employeeImages.employeeId, id), eq(employeeImages.kind, kind)));
       const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
       const replacedImages = Object.fromEntries(Object.keys(images ?? {}).map((kind) => [kind, before.images[kind as ImageKind]])) as Partial<EmployeeImages>;
+      await writeAudit(tx, {
+        module: 'employees', action: revokeSessions ? 'pin_reset' : 'update',
+        entityType: 'employee', entityId: id,
+        beforeState: before, afterState: record,
+        relatedIds: { branchId: record.branchId }, createdAt: updatedAt,
+      });
       return { record, replacedImages };
     });
   },
   async softDeleteIfAttendanceClosed(id, revokeSessions, hasOpenSession, cleanupDevices, prepareFinancials) {
     return database.transaction(async (tx) => {
-      const current = await tx.select({ id: employees.id }).from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1);
+      const current = await tx.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1);
       if (!current[0]) return 'not_found';
+      const before = await hydrate(tx, current[0]);
       if (await hasOpenSession(id, tx)) return 'checked_in';
       const at = now();
       if (prepareFinancials) await prepareFinancials(id, at, tx);
       const result = await tx.update(employees).set({ deletedAt: at, credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
       if (result[0].affectedRows !== 1) return 'not_found';
+      const sessions = revokeSessions
+        ? await tx.select({ id: authSessions.id }).from(authSessions)
+          .where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt))).for('update')
+        : [];
       if (revokeSessions) await tx.update(authSessions).set({ revokedAt: at }).where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
+      for (const session of sessions) await writeAudit(tx, {
+        module: 'auth', action: 'session_revoke', entityType: 'session', entityId: session.id,
+        relatedIds: { employeeId: id }, createdAt: at,
+      });
       if (cleanupDevices) await cleanupDevices(id, tx);
+      const after = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      await writeAudit(tx, {
+        module: 'employees', action: 'delete', entityType: 'employee', entityId: id,
+        beforeState: before, afterState: after,
+        relatedIds: { branchId: before.branchId }, createdAt: at,
+      });
       return 'deleted';
     });
   },

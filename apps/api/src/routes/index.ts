@@ -12,6 +12,7 @@ import { createDeductionsRouter, type DeductionService } from '../modules/deduct
 import { createAdvancesRouter, type AdvanceService } from '../modules/advances/index.js';
 import { createReportsRouter, type ReportService } from '../modules/reports/index.js';
 import { createSelfServiceRouter, type SelfServiceService } from '../modules/self-service/index.js';
+import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -27,6 +28,7 @@ export const createApiRouter = (dependencies: {
   advanceService?: AdvanceService;
   reportService?: ReportService;
   selfServiceService?: SelfServiceService;
+  auditService?: AuditService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -89,6 +91,9 @@ export const createApiRouter = (dependencies: {
     if (dependencies.reportService) router.use('/reports', createReportsRouter(dependencies.reportService, dependencies.authService));
     if (dependencies.selfServiceService) {
       router.use('/self-service', createSelfServiceRouter(dependencies.selfServiceService, dependencies.authService));
+    }
+    if (dependencies.auditService) {
+      router.use('/audit', createAuditRouter(dependencies.auditService, dependencies.authService));
     }
   }
 

@@ -30,6 +30,7 @@ export const reportExports = mysqlTable('report_exports', {
   attemptCount: int('attempt_count').notNull().default(0),
   cycleAttemptCount: int('cycle_attempt_count').notNull().default(0),
   retryCount: int('retry_count').notNull().default(0),
+  originRequestId: varchar('origin_request_id', { length: 64 }),
   failureReason: text('failure_reason'),
   queuedAt: timestamp('queued_at', { mode: 'date', fsp: 3 }).notNull(),
   startedAt: timestamp('started_at', { mode: 'date', fsp: 3 }),

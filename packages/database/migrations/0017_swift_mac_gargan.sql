@@ -1,0 +1,1 @@
+ALTER TABLE `report_exports` ADD `origin_request_id` varchar(64);

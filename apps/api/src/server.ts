@@ -15,6 +15,7 @@ import { createDeductionModule } from './modules/deductions/index.js';
 import { createAdvanceModule } from './modules/advances/index.js';
 import { createReportsModule } from './modules/reports/index.js';
 import { createSelfServiceModule } from './modules/self-service/index.js';
+import { createAuditModule } from './modules/audit/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
 const employeeRepository = createDrizzleEmployeeRepository(database);
@@ -32,6 +33,7 @@ const reportsModule = createReportsModule(database, {
   ...(env.REPORT_FILES_ROOT === undefined ? {} : { filesRoot: env.REPORT_FILES_ROOT }),
   timeZone: env.APP_TIME_ZONE,
 });
+const auditModule = createAuditModule(database, { timeZone: env.APP_TIME_ZONE });
 const employeeModule = createEmployeesModule(
   database,
   env.MAX_EMPLOYEE_IMAGE_BYTES,
@@ -72,6 +74,7 @@ createApp({
   advanceService: advanceModule.service,
   reportService: reportsModule.service,
   selfServiceService: selfServiceModule.service,
+  auditService: auditModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

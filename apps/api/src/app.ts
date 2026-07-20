@@ -14,6 +14,7 @@ import type { DeductionService } from './modules/deductions/index.js';
 import type { AdvanceService } from './modules/advances/index.js';
 import type { ReportService } from './modules/reports/index.js';
 import type { SelfServiceService } from './modules/self-service/index.js';
+import type { AuditService } from './modules/audit/index.js';
 import { createApiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler, requestContext } from './shared/http/index.js';
 
@@ -31,6 +32,7 @@ export const createApp = (dependencies: {
   advanceService?: AdvanceService;
   reportService?: ReportService;
   selfServiceService?: SelfServiceService;
+  auditService?: AuditService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;

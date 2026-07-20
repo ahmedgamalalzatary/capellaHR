@@ -165,7 +165,7 @@ Attendance remains responsible for generating an absence only after a Cairo day 
 
 ## Previously deferred slices
 
-Facial Recognition and Attendance were previously deferred. They are now on the active completion path: finish the non-Attendance Roles foundation and establish general Audit/correlation first, then implement Facial Recognition and Attendance before their dependent Payroll, Reports, self-service, Dashboard, and worker integrations.
+Facial Recognition and Attendance were previously deferred. They are now on the active completion path: the non-Attendance Roles foundation and general Audit/correlation slice are complete, so implement Facial Recognition and Attendance next before their dependent Payroll, Reports, self-service, Dashboard, and worker integrations.
 
 ## 8. Salaries and Payroll — Backend Complete; Attendance Gateway Deferred
 
@@ -244,7 +244,7 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Embed Noto Sans Arabic and visually verify real PDF output for RTL columns, bidirectional dates/numbers, wrapped rows, repeated headers, wide-column bands, and page numbering.
 - [x] Add selection, secret-exclusion, lifecycle, concurrency, file-compensation, PDF, authorization, Cairo-boundary, installment-overlap, and real-MySQL tests.
 
-Migrations `0014_lyrical_tusk.sql` and `0015_yummy_puma.sql` are applied to both `capella_hr` and `capella_hr-test`. Both databases report the full 16-entry migration chain.
+Reports migrations `0014_lyrical_tusk.sql` through `0015_yummy_puma.sql` add the durable export queue and its bounded-cycle/lifetime retry accounting. The full 18-entry migration chain is applied to `capella_hr-test`.
 
 Current report endpoints:
 
@@ -265,11 +265,11 @@ Current report endpoints:
 - [x] Add functional admin views for Branches, Employees, Devices and pairing, Shifts, Weekly Day-Off, Payroll/base salary, Bonuses, Deductions, Advances, and the currently available Reports/PDF workflows.
 - [x] Add admin and employee login forms plus the employee WebAuthn authentication-options flow.
 - [x] Add the Arabic/RTL employee self-service view for own non-secret profile, branch, shift, finalized payroll, weekly-day/absence records, bonuses, deductions, advances/installments, pagination, and logout.
+- [x] Add the admin-only immutable Audit History view with search, actor/module/date filters, pagination, retry/empty states, and expandable redacted details.
 
 ### Still required
 
 - [ ] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
-- [ ] Replace the placeholder Audit page with immutable history search and filters.
 - [ ] Replace the placeholder Dashboard page with all locked operational summaries.
 - [ ] Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.
 - [ ] Implement the personal-device attendance interface with GPS, PIN, WebAuthn, check-in, and check-out flows.
@@ -283,7 +283,7 @@ Current report endpoints:
 The detailed module checklists below remain the acceptance criteria. Step 1 is complete; implement the remaining work in this order:
 
 1. **Completed:** Non-Attendance Roles and Employee Self-Service authorization foundation.
-2. Add shared correlation/error foundations and the general immutable Audit system before introducing more mutations that would otherwise require retrofitting.
+2. **Completed:** Shared request correlation and the general immutable Audit system.
 3. Implement Facial Recognition, encrypted templates, enrollment, liveness, and recognition Settings.
 4. Implement the Attendance/Absence data model, employee/admin workflows, denied and flagged attempts, calculations, and corrections.
 5. Extend the worker with biometric processing, midnight absences, exact 16-hour timeouts, and attendance/payroll reconciliation; wire all Attendance cross-module hooks.
@@ -295,7 +295,7 @@ The detailed module checklists below remain the acceptance criteria. Step 1 is c
 
 ## 13. Roles and Employee Self-Service
 
-Current boundary: everything possible without the Attendance gateway is complete. The remaining login eligibility, Attendance history, open-payroll preview, checkout/timeout revocation, and related tests intentionally resume after Facial Recognition/Settings and Attendance/Absence exist. The immediate next project slice is shared correlation/error foundations and Audit.
+Current boundary: the Roles and Employee Self-Service work possible without the Attendance gateway is complete, excluding the separately scoped, still-unimplemented Facial Recognition and Settings slices. The remaining login eligibility, Attendance history, open-payroll preview, checkout/timeout revocation, and related tests intentionally resume after Facial Recognition/Settings and Attendance/Absence exist. The immediate next project slice is Facial Recognition and Settings.
 
 - [x] Retain exactly two fixed actor types in the authentication/session foundation: the singleton Admin and Employee.
 - [x] Protect employee image endpoints for Admin only.
@@ -314,12 +314,14 @@ Current boundary: everything possible without the Attendance gateway is complete
 
 ## 14. Audit History
 
-- [ ] Add permanent immutable audit records and admin-only read/search/filter endpoints.
-- [ ] Audit every mutation and security-sensitive/system event, but not ordinary page/report views.
-- [ ] Store actor, action/module, entity, before/after values, Cairo timestamp, request ID, network/browser context, and related identifiers where available.
-- [ ] Redact/exclude passwords, PINs and hashes, session tokens/cookies, credential material, biometric templates, and other secrets.
-- [ ] Integrate auditing transactionally across all modules.
-- [ ] Add immutability, completeness, redaction, authorization, correlation, and MySQL tests.
+Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream, and `0017_swift_mac_gargan.sql` adds the originating request ID to report exports so background audit events retain correlation.
+
+- [x] Add permanent immutable audit records and admin-only read/search/filter endpoints.
+- [x] Audit every mutation and security-sensitive/system event in the currently implemented modules, but not ordinary page/report views.
+- [x] Store actor, action/module, entity, before/after values, Cairo timestamp, request ID, network/browser context, and related identifiers where available.
+- [x] Redact/exclude passwords, PINs and hashes, session tokens/cookies, credential material, biometric templates, and other secrets.
+- [x] Integrate auditing transactionally across all currently implemented modules and preserve originating correlation IDs across background report transitions.
+- [x] Add immutability, completeness, redaction, authorization, correlation, rollback, background-transition, and MySQL tests.
 
 ## 15. Dashboard Operational Visibility
 
@@ -435,4 +437,4 @@ Current boundary: everything possible without the Attendance gateway is complete
 
 ## Immediate action
 
-Proceed with shared correlation/error foundations and the general Audit system. Next implement Facial Recognition and Settings, followed by Attendance/Absence and its durable worker jobs. Use trustworthy Attendance facts to unlock Payroll and Reports, then complete employee self-service, Dashboard, legacy seeds, the corresponding functional web workflows, and final hardening.
+Proceed with Facial Recognition and Settings, followed by Attendance/Absence and its durable worker jobs. Use trustworthy Attendance facts to unlock Payroll and Reports, then complete employee self-service, Dashboard, legacy seeds, the corresponding functional web workflows, and final hardening.

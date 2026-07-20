@@ -2,6 +2,7 @@ import { type createDatabase } from '@capella/database';
 import { branches } from '@capella/database/schema';
 import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
+import { writeAudit } from '../audit/index.js';
 import type { BranchRepository } from './branches-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
@@ -17,9 +18,17 @@ const isReferencedRowError = (error: unknown) => {
 
 export const createDrizzleBranchRepository = (database: Database, now: () => Date = () => new Date()): BranchRepository => ({
   async create(input) {
-    const createdAt = now();
-    const result = await database.insert(branches).values({ ...input, createdAt, updatedAt: createdAt });
-    return (await this.findById(Number(result[0].insertId)))!;
+    return database.transaction(async (transaction) => {
+      const createdAt = now();
+      const result = await transaction.insert(branches).values({ ...input, createdAt, updatedAt: createdAt });
+      const id = Number(result[0].insertId);
+      const record = (await transaction.select().from(branches).where(eq(branches.id, id)).limit(1))[0]!;
+      await writeAudit(transaction, {
+        module: 'branches', action: 'create', entityType: 'branch', entityId: id,
+        afterState: record, createdAt,
+      });
+      return record;
+    });
   },
   async findById(id) {
     return (await database.select().from(branches).where(eq(branches.id, id)).limit(1))[0] ?? null;
@@ -38,24 +47,52 @@ export const createDrizzleBranchRepository = (database: Database, now: () => Dat
     return { items, total: totals[0]?.value ?? 0 };
   },
   async update(id, input) {
-    await database.update(branches).set({ ...input, updatedAt: now() }).where(eq(branches.id, id));
-    return this.findById(id);
+    return database.transaction(async (transaction) => {
+      const before = (await transaction.select().from(branches).where(eq(branches.id, id)).for('update').limit(1))[0];
+      if (!before) return null;
+      const updatedAt = now();
+      await transaction.update(branches).set({ ...input, updatedAt }).where(eq(branches.id, id));
+      const after = (await transaction.select().from(branches).where(eq(branches.id, id)).limit(1))[0]!;
+      await writeAudit(transaction, {
+        module: 'branches', action: 'update', entityType: 'branch', entityId: id,
+        beforeState: before, afterState: after, createdAt: updatedAt,
+      });
+      return after;
+    });
   },
   async deleteUnreferenced(id) {
-    const branch = await this.findById(id);
-    if (!branch) return 'not_found';
-    if (branch.hasEverBeenReferenced) return 'referenced';
-    let result;
     try {
-      result = await database.delete(branches).where(and(eq(branches.id, id), eq(branches.hasEverBeenReferenced, false)));
+      return await database.transaction(async (transaction) => {
+        const branch = (await transaction.select().from(branches).where(eq(branches.id, id)).for('update').limit(1))[0];
+        if (!branch) return 'not_found' as const;
+        if (branch.hasEverBeenReferenced) return 'referenced' as const;
+        const result = await transaction.delete(branches).where(and(eq(branches.id, id), eq(branches.hasEverBeenReferenced, false)));
+        if (result[0].affectedRows !== 1) return 'referenced' as const;
+        const createdAt = now();
+        await writeAudit(transaction, {
+          module: 'branches', action: 'delete', entityType: 'branch', entityId: id,
+          beforeState: branch, createdAt,
+        });
+        return 'deleted' as const;
+      });
     } catch (error) {
       if (isReferencedRowError(error)) return 'referenced';
       throw error;
     }
-    return result[0].affectedRows === 1 ? 'deleted' : 'referenced';
   },
   async markReferenced(id) {
-    const result = await database.update(branches).set({ hasEverBeenReferenced: true, updatedAt: now() }).where(eq(branches.id, id));
-    return result[0].affectedRows === 1;
+    return database.transaction(async (transaction) => {
+      const before = (await transaction.select().from(branches).where(eq(branches.id, id)).for('update').limit(1))[0];
+      if (!before) return false;
+      if (before.hasEverBeenReferenced) return true;
+      const updatedAt = now();
+      const result = await transaction.update(branches).set({ hasEverBeenReferenced: true, updatedAt }).where(eq(branches.id, id));
+      if (result[0].affectedRows !== 1) return false;
+      await writeAudit(transaction, {
+        module: 'branches', action: 'reference_lock', entityType: 'branch', entityId: id,
+        beforeState: before, afterState: { ...before, hasEverBeenReferenced: true, updatedAt }, createdAt: updatedAt,
+      });
+      return true;
+    });
   },
 });

@@ -24,6 +24,7 @@ export type ReportExportRecord = {
   attemptCount: number;
   cycleAttemptCount: number;
   retryCount: number;
+  originRequestId: string | null;
   failureReason: string | null;
   queuedAt: Date;
   startedAt: Date | null;

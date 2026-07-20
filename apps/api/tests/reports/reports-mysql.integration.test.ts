@@ -2,6 +2,7 @@ import { createDatabase } from '@capella/database';
 import {
   advanceInstallments,
   advances,
+  auditEvents,
   attendanceDailyRecords,
   authSessions,
   bonuses,
@@ -19,18 +20,20 @@ import {
   payrollMonths,
   reportExports,
 } from '@capella/database/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   createDrizzleReportExportRepository,
   createDrizzleReportReader,
 } from '../../src/modules/reports/index.js';
+import { runWithAuditContext } from '../../src/modules/audit/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? '');
 const now = new Date('2026-07-19T08:00:00.000Z');
 
 const clear = async () => {
+  await database.delete(auditEvents);
   await database.delete(reportExports);
   await database.delete(advanceInstallments);
   await database.delete(advances);
@@ -445,6 +448,69 @@ describe('MySQL-backed reports', () => {
     ]);
     await expect(repository.clearDeletedFilePath(created.id, 'reports/1.pdf', now))
       .resolves.toMatchObject({ filePath: null, fileDeletedAt: now });
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'reports')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action)).toEqual([
+      'export_create',
+      'export_processing', 'export_failure',
+      'export_processing', 'export_failure',
+      'export_processing', 'export_failure',
+      'export_retry', 'file_delete_mark', 'file_delete_complete',
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      entityType: 'report_export', entityId: String(created.id),
+    });
+    expect(events.at(-1)?.afterState).not.toHaveProperty('filePath');
+  });
+
+  it('keeps the initiating request ID on background export transitions', async () => {
+    await seed();
+    const repository = createDrizzleReportExportRepository(database);
+    const created = await runWithAuditContext({
+      actorType: 'admin', actorIdentifier: 'admin', requestId: 'request-export-17',
+      ipAddress: '127.0.0.1', userAgent: 'Vitest',
+    }, () => repository.create({
+      reportType: 'employees', filters: {}, selection: { mode: 'all' },
+    }, now));
+
+    await repository.claimNext(now);
+    await repository.recordFailure(created.id, 'PDF_EXPORT_FAILED', now);
+
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.entityId, String(created.id))).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action, requestId }) => ({ action, requestId }))).toEqual([
+      { action: 'export_create', requestId: 'request-export-17' },
+      { action: 'export_processing', requestId: 'request-export-17' },
+      { action: 'export_failure', requestId: 'request-export-17' },
+    ]);
+  });
+
+  it('keeps a file-deletion request ID when maintenance completes deletion later', async () => {
+    await seed();
+    const repository = createDrizzleReportExportRepository(database);
+    const created = await runWithAuditContext({
+      actorType: 'admin', actorIdentifier: 'admin', requestId: 'request-export-create',
+      ipAddress: '127.0.0.1', userAgent: 'Vitest',
+    }, () => repository.create({
+      reportType: 'employees', filters: {}, selection: { mode: 'all' },
+    }, now));
+    await database.update(reportExports).set({
+      status: 'completed', filePath: 'reports/correlated.pdf', fileSha256: 'a'.repeat(64),
+      fileSizeBytes: 10, rowCount: 1, completedAt: now,
+    }).where(eq(reportExports.id, created.id));
+
+    await runWithAuditContext({
+      actorType: 'admin', actorIdentifier: 'admin', requestId: 'request-file-delete',
+      ipAddress: '127.0.0.1', userAgent: 'Vitest',
+    }, () => repository.markFileDeleted(created.id, now));
+    await repository.clearDeletedFilePath(created.id, 'reports/correlated.pdf', now);
+
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.entityId, String(created.id))).orderBy(asc(auditEvents.id));
+    expect(events.slice(-2).map(({ action, requestId }) => ({ action, requestId }))).toEqual([
+      { action: 'file_delete_mark', requestId: 'request-file-delete' },
+      { action: 'file_delete_complete', requestId: 'request-file-delete' },
+    ]);
   });
 
   it('recovers interrupted jobs without exceeding the three-attempt ceiling', async () => {

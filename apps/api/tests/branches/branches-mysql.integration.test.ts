@@ -1,5 +1,6 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -12,6 +13,7 @@ const input = {
 };
 
 beforeEach(async () => {
+  await database.delete(auditEvents);
   await database.delete(attendanceDailyRecords);
   await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests);
   await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations);
@@ -26,6 +28,14 @@ describe('MySQL-backed branches', () => {
     expect((await module.service.update(created.id, { attendanceRadiusMeters: 75 })).attendanceRadiusMeters).toBe(75);
     await module.service.remove(created.id);
     await expect(module.service.get(created.id)).rejects.toMatchObject({ code: 'BRANCH_NOT_FOUND' });
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'branches')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action)).toEqual(['create', 'update', 'delete']);
+    expect(events[1]).toMatchObject({
+      entityType: 'branch', entityId: String(created.id),
+      beforeState: expect.objectContaining({ attendanceRadiusMeters: 50 }),
+      afterState: expect.objectContaining({ attendanceRadiusMeters: 75 }),
+    });
   });
 
   it('enforces normalized uniqueness and the permanent reference lock', async () => {

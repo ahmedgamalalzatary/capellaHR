@@ -126,7 +126,7 @@ describe('ShiftsView', () => {
     fireEvent.click(within(branchError).getByRole('button'));
 
     await waitFor(() => expect(mocks.listBranches).toHaveBeenCalledTimes(2));
-    expect(document.querySelector('select')).not.toBeNull();
+    expect(await screen.findByRole('combobox')).toBeDefined();
   });
 
   test('edits one employee duration and sends whole minutes', async () => {

@@ -18,6 +18,7 @@ describe('reports schema', () => {
       'attempt_count',
       'cycle_attempt_count',
       'retry_count',
+      'origin_request_id',
       'queued_at',
       'started_at',
       'completed_at',

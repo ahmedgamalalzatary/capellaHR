@@ -1,7 +1,9 @@
 import type { createDatabase } from '@capella/database';
 import { adminCredentials } from '@capella/database/schema';
 import { hash } from 'argon2';
+import { eq } from 'drizzle-orm';
 
+import { writeAudit } from '../audit/index.js';
 import { createDrizzleAuthRepositories } from './auth-repositories.js';
 import {
   AuthError,
@@ -45,17 +47,24 @@ export const createAuthModule = (dependencies: {
     repositories,
     async initializeAdmin(admin: { email: string; password: string }) {
       const passwordHash = await hash(admin.password);
-      await dependencies.database.insert(adminCredentials).values({
-        id: 1,
-        email: admin.email.toLowerCase(),
-        passwordHash,
-        updatedAt: new Date(),
-      }).onDuplicateKeyUpdate({
-        set: {
-          email: admin.email.toLowerCase(),
+      await dependencies.database.transaction(async (transaction) => {
+        const before = (await transaction.select({ email: adminCredentials.email })
+          .from(adminCredentials).where(eq(adminCredentials.id, 1)).for('update').limit(1))[0] ?? null;
+        const updatedAt = new Date();
+        const email = admin.email.toLowerCase();
+        await transaction.insert(adminCredentials).values({
+          id: 1,
+          email,
           passwordHash,
-          updatedAt: new Date(),
-        },
+          updatedAt,
+        }).onDuplicateKeyUpdate({
+          set: { email, passwordHash, updatedAt },
+        });
+        await writeAudit(transaction, {
+          module: 'auth', action: 'credential_sync',
+          entityType: 'admin_credential', entityId: 1,
+          beforeState: before, afterState: { email }, createdAt: updatedAt,
+        });
       });
     },
   };
