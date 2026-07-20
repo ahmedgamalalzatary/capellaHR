@@ -4,6 +4,12 @@ Last rebuilt: 2026-07-20
 
 This is the temporary working checklist for completing the full functional product. The locked product rules remain in `docs/hr-specs.md`; this file tracks implementation progress and dependency order only.
 
+## User-confirmed scope decision
+
+- **SKIP — USER CONFIRMED (2026-07-20):** Do not implement Capella-managed facial recognition, face enrollment/templates, liveness challenges, ONNX processing, biometric thresholds, or biometric Settings.
+- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-20):** Employee-originated check-in and check-out use employee code plus the four-digit PIN while retaining the applicable registered-device/WebAuthn and assigned-branch GPS checks.
+- Face ID, fingerprint, or device passcode used internally by a phone to satisfy WebAuthn user verification is device-platform behavior, not Capella facial recognition, and remains allowed.
+
 ## Tracker boundary
 
 - Track `apps/api`, `apps/worker`, `apps/web`, shared packages, database migrations, and all required tests.
@@ -27,7 +33,7 @@ This is the temporary working checklist for completing the full functional produ
 - [x] Auth contracts, service tests, repository tests, router tests, middleware tests, and MySQL integration tests.
 - [x] Drizzle migrations for `admin_credentials`, `auth_sessions`, and `auth_attempts`.
 
-Authentication is complete as a foundation. Employee login/check-in cannot be completed end-to-end until Employees, Devices, Attendance, and Facial Recognition provide their required data and rules.
+Authentication is complete as a foundation. Employee login/check-in cannot be completed end-to-end until Employees, Devices, and Attendance provide their required data and rules. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition is no longer a dependency.
 
 ### 2. Branches
 
@@ -86,7 +92,7 @@ Current branch endpoints:
 - [x] Add admin-only CRUD, protected image reads, search, branch filters, and pagination.
 - [x] Implement irreversible soft deletion, exclude deleted employees from normal reads, and fail closed until Attendance supplies checked-in-state verification.
 - [x] Permit edits to editable employee fields while keeping employee code and branch immutable.
-- [x] Store the initial shift duration and base salary; attendance timing effects and face enrollment remain deferred to their own modules.
+- [x] Store the initial shift duration and base salary; attendance timing effects remain deferred to Attendance. **SKIP — USER CONFIRMED (2026-07-20):** Face enrollment will not be implemented.
 - [x] Add contract, schema, service, router, upload, authorization, replacement-compensation, employee-code concurrency, stale-login rejection, atomic-session-revocation, and real-MySQL integration tests.
 - [x] Generate and apply backend migrations through `0007_majestic_thunderbolts.sql` to both databases.
 - [x] Run lint, typecheck, tests, and builds for every affected backend package.
@@ -165,7 +171,7 @@ Attendance remains responsible for generating an absence only after a Cairo day 
 
 ## Previously deferred slices
 
-Facial Recognition and Attendance were previously deferred. They are now on the active completion path: the non-Attendance Roles foundation and general Audit/correlation slice are complete, so implement Facial Recognition and Attendance next before their dependent Payroll, Reports, self-service, Dashboard, and worker integrations.
+Attendance was previously deferred and is now the immediate active completion path after the completed non-Attendance Roles foundation and general Audit/correlation slice. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition is removed from the completion path and from downstream dependencies.
 
 ## 8. Salaries and Payroll — Backend Complete; Attendance Gateway Deferred
 
@@ -229,7 +235,7 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [ ] Add Attendance/Absence and Payroll report readers after Attendance supplies trustworthy facts; both currently fail closed with `REPORT_SOURCE_UNAVAILABLE`.
 - [x] Exclude login/admin-session activity and denied/flagged attendance attempts.
 - [x] Provide Arabic detailed rows, fixed safe field sets, and relevant totals/summaries.
-- [x] Exclude employee images, PINs and hashes, device credentials, biometrics, and all secrets.
+- [x] Exclude employee images, PINs and hashes, device credentials, and all secrets. **SKIP — USER CONFIRMED (2026-07-20):** No biometric fields or artifacts will exist to report.
 - [x] Include historically relevant soft-deleted employees in employee-related reports.
 - [ ] Label open/finalized payroll rows when the deferred Payroll report reader becomes available.
 - [x] Add Cairo-correct date ranges, payroll-month ranges, branch/device filters, employee search, and selected/subset/all-filtered selection.
@@ -271,9 +277,9 @@ Current report endpoints:
 
 - [ ] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
 - [ ] Replace the placeholder Dashboard page with all locked operational summaries.
-- [ ] Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.
-- [ ] Implement the personal-device attendance interface with GPS, PIN, WebAuthn, check-in, and check-out flows.
-- [ ] Implement the shared branch-kiosk interface with employee code, PIN, GPS, randomized liveness, face match, check-in, and check-out flows.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.~~
+- [ ] Implement the personal-device attendance interface with employee code, PIN, GPS, WebAuthn, check-in, and check-out flows.
+- [ ] Implement the shared branch-kiosk interface with employee code, PIN, registered branch-device validation, GPS, check-in, and check-out flows. **SKIP — USER CONFIRMED (2026-07-20):** No camera, randomized liveness, or face match.
 - [ ] Extend employee self-service with Attendance history and trustworthy open payroll previews after the Attendance gateway exists.
 - [ ] Expose the Attendance/Absence and Payroll report tabs only after their backend readers become trustworthy.
 - [ ] Run a final functional web audit for Arabic/RTL rendering, Cairo dates, numeric and monetary presentation, search/filter/reset behavior, empty/error/loading states, authorization, accessibility, and responsive operation.
@@ -284,9 +290,9 @@ The detailed module checklists below remain the acceptance criteria. Step 1 is c
 
 1. **Completed:** Non-Attendance Roles and Employee Self-Service authorization foundation.
 2. **Completed:** Shared request correlation and the general immutable Audit system.
-3. Implement Facial Recognition, encrypted templates, enrollment, liveness, and recognition Settings.
-4. Implement the Attendance/Absence data model, employee/admin workflows, denied and flagged attempts, calculations, and corrections.
-5. Extend the worker with biometric processing, midnight absences, exact 16-hour timeouts, and attendance/payroll reconciliation; wire all Attendance cross-module hooks.
+3. **SKIP — USER CONFIRMED (2026-07-20):** ~~Implement Facial Recognition, encrypted templates, enrollment, liveness, and recognition Settings.~~
+4. Implement the Attendance/Absence data model and employee-code/PIN verification flows, employee/admin workflows, denied and flagged attempts, calculations, and corrections.
+5. Extend the worker with midnight absences, exact 16-hour timeouts, and attendance/payroll reconciliation; wire all Attendance cross-module hooks. **SKIP — USER CONFIRMED (2026-07-20):** No biometric-processing worker job.
 6. Supply trustworthy Attendance facts to Payroll and Reports and remove their production fail-closed gateways.
 7. Complete production employee self-service, including all session-revocation and device-revocation rules.
 8. Implement Dashboard operational visibility.
@@ -295,7 +301,7 @@ The detailed module checklists below remain the acceptance criteria. Step 1 is c
 
 ## 13. Roles and Employee Self-Service
 
-Current boundary: the Roles and Employee Self-Service work possible without the Attendance gateway is complete, excluding the separately scoped, still-unimplemented Facial Recognition and Settings slices. The remaining login eligibility, Attendance history, open-payroll preview, checkout/timeout revocation, and related tests intentionally resume after Facial Recognition/Settings and Attendance/Absence exist. The immediate next project slice is Facial Recognition and Settings.
+Current boundary: the Roles and Employee Self-Service work possible without the Attendance gateway is complete. The remaining login eligibility, Attendance history, open-payroll preview, checkout/timeout revocation, and related tests resume after Attendance/Absence exists. The immediate next project slice is Attendance/Absence. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition and biometric Settings are removed.
 
 - [x] Retain exactly two fixed actor types in the authentication/session foundation: the singleton Admin and Employee.
 - [x] Protect employee image endpoints for Admin only.
@@ -319,7 +325,7 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [x] Add permanent immutable audit records and admin-only read/search/filter endpoints.
 - [x] Audit every mutation and security-sensitive/system event in the currently implemented modules, but not ordinary page/report views.
 - [x] Store actor, action/module, entity, before/after values, Cairo timestamp, request ID, network/browser context, and related identifiers where available.
-- [x] Redact/exclude passwords, PINs and hashes, session tokens/cookies, credential material, biometric templates, and other secrets.
+- [x] Redact/exclude passwords, PINs and hashes, session tokens/cookies, credential material, and other secrets. **SKIP — USER CONFIRMED (2026-07-20):** Biometric templates will not exist.
 - [x] Integrate auditing transactionally across all currently implemented modules and preserve originating correlation IDs across background report transitions.
 - [x] Add immutability, completeness, redaction, authorization, correlation, rollback, background-transition, and MySQL tests.
 
@@ -342,7 +348,7 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 ## 17. Background Worker and Durable Jobs
 
 - [x] Add `apps/worker` and the first MySQL-backed durable job flow without Redis.
-- [ ] Add the remaining durable handlers/schedules for midnight absences, 16-hour timeouts, biometrics, and reconciliation.
+- [ ] Add the remaining durable handlers/schedules for midnight absences, 16-hour timeouts, and reconciliation. **SKIP — USER CONFIRMED (2026-07-20):** Do not add biometric processing.
 - [x] Store PDF-job state, attempts, failure reason, and lifecycle timestamps.
 - [x] Retry PDF generation failures up to three times; dashboard exposure remains pending.
 - [x] Permit admin retry for failed PDF jobs without erasing lifetime attempt/failure history.
@@ -350,19 +356,19 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [x] Make PDF generation and file deletion recoverable/idempotent against duplicate jobs and process restarts; other future handlers remain pending.
 - [ ] Add scheduling, retry, crash recovery, idempotency, concurrency, and MySQL tests.
 
-## 18. Facial Recognition and Settings
+## 18. Facial Recognition and Settings — SKIPPED; USER CONFIRMED (2026-07-20)
 
-- [ ] Create `packages/biometrics` and local ONNX inference integration used by the worker.
-- [ ] Add supervised face enrollment separate from employee/profile/ID images.
-- [ ] Encrypt face templates in MySQL using an environment-only server key.
-- [ ] Store model name/version and enforce embedding-model compatibility.
-- [ ] Implement replacement enrollment while retaining the old template until success.
-- [ ] Permanently delete the encrypted template when an employee is soft-deleted.
-- [ ] Add randomized active liveness challenges plus local model evaluation for branch-phone attendance.
-- [ ] Discard temporary camera frames immediately and retain only scores, outcomes, thresholds, model version, and operational metadata.
-- [ ] Add admin-controlled singleton company-wide face-match and liveness thresholds.
-- [ ] Audit threshold changes and snapshot thresholds into every attempt.
-- [ ] Add encryption, deletion, re-enrollment, compatibility, threshold, liveness, and raw-frame-disposal tests using synthetic/consented fixtures.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Create `packages/biometrics` and local ONNX inference integration used by the worker.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Add supervised face enrollment separate from employee/profile/ID images.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Encrypt face templates in MySQL using an environment-only server key.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Store model name/version and enforce embedding-model compatibility.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Implement replacement enrollment while retaining the old template until success.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Permanently delete the encrypted template when an employee is soft-deleted.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Add randomized active liveness challenges plus local model evaluation for branch-phone attendance.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Discard temporary camera frames immediately and retain only scores, outcomes, thresholds, model version, and operational metadata.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Add admin-controlled singleton company-wide face-match and liveness thresholds.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Audit threshold changes and snapshot thresholds into every attempt.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Add encryption, deletion, re-enrollment, compatibility, threshold, liveness, and raw-frame-disposal tests using synthetic/consented fixtures.~~
 
 ## 7. Attendance and Absence
 
@@ -370,8 +376,8 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [ ] Use UTC storage and `Africa/Cairo` for all workday decisions.
 - [ ] Assign a cross-midnight session entirely to its Cairo check-in date.
 - [ ] Atomically enforce one session per employee/check-in date and one open session per employee.
-- [ ] Implement personal-phone check-in/out with PIN, GPS, and registered WebAuthn proof.
-- [ ] Implement branch-phone check-in/out with employee code, PIN, GPS, liveness, and face match.
+- [ ] Implement personal-phone check-in/out with employee code, PIN, GPS, and registered WebAuthn proof.
+- [ ] Implement branch-phone check-in/out with employee code, PIN, registered branch-device validation, and GPS. **SKIP — USER CONFIRMED (2026-07-20):** No liveness or face match.
 - [ ] Validate the employee's assigned branch/device and accept distance exactly on the configured radius.
 - [ ] Snapshot source, device, timestamps, GPS, accuracy, calculated distance, branch coordinates/radius, and verification results.
 - [ ] Add separate admin manual check-in and check-out operations that bypass employee verification.
@@ -403,13 +409,14 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 ## 20–23. Functional Scope, Verification, Data Integrity, and Final Hardening
 
 - [ ] Standardize every REST error as stable code, Arabic message, optional field errors, and request ID.
-- [ ] Add safe unexpected-error handling with no stack, SQL, path, hash, credential, or biometric leakage.
+- [ ] Add safe unexpected-error handling with no stack, SQL, path, hash, credential, or secret leakage. **SKIP — USER CONFIRMED (2026-07-20):** No biometric data will be processed.
 - [ ] Assign and propagate correlation IDs across API logs, jobs, audits, and error responses.
 - [ ] Add shared exact-decimal money and UTC/Cairo date utilities.
 - [ ] Add transaction helpers and database constraints for all critical invariants.
 - [ ] Add filesystem compensation for employee image creation/replacement and report-file deletion.
 - [ ] Verify retry/idempotency behavior for attendance, pairing, jobs, payroll, and employee-code allocation.
 - [ ] Remove unused out-of-scope module placeholders: Benefits, Departments, Positions, Recruitment, Onboarding, Performance, Documents, Organization, Notifications, and other excluded scaffolds.
+- [ ] Remove the placeholder biometric Settings page/module. **SKIP — USER CONFIRMED (2026-07-20):** It must not be implemented as a recognition-threshold or enrollment interface.
 - [ ] Run complete lint, typecheck, builds, unit tests, component tests, real-MySQL integration tests, concurrency tests, worker tests, and critical end-to-end admin, employee, attendance, payroll, and report workflows.
 - [ ] Apply the final migration chain cleanly to empty `capella_hr` and `capella_hr-test` databases.
 - [ ] Verify the completed `apps/web` functionality matches the locked Arabic/RTL, authorization, validation, filtering, empty-state, attendance, self-service, reporting, and operational requirements without expanding into deferred aesthetic design.
@@ -420,21 +427,21 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - Employee creation must call the Branches reference-lock operation in the same transaction boundary.
 - Attendance must call the Shifts transaction-aware duration reader inside its check-in transaction and persist the returned immutable snapshot on the attendance session.
 - Device registration and pairing complete the registered-phone requirement.
-- Facial Recognition supplies face enrollment, liveness, templates, and thresholds.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Facial Recognition supplies face enrollment, liveness, templates, and thresholds.~~ Attendance instead verifies employee code and PIN plus the applicable device and GPS requirements.
 - Attendance supplies checked-in state, GPS enforcement, and employee self-service access eligibility.
 - Payroll consumes attendance duration, shifts, weekly days off, bonuses, deductions, and advances.
 - Reports consume finalized read models from every completed module.
 - Audit receives transaction-aware mutation/security events from every module and shares request IDs with API errors and background jobs.
-- The worker performs biometric inference, midnight absence generation, exact 16-hour timeout, PDF generation, and durable reconciliation without duplicating business effects.
+- The worker performs midnight absence generation, exact 16-hour timeout, PDF generation, and durable reconciliation without duplicating business effects. **SKIP — USER CONFIRMED (2026-07-20):** No biometric inference.
 
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.
 - Do not add notification center, push, email, SMS, or WhatsApp notifications.
-- Do not add CSV/Excel exports, admin import UI, payment tracking, shift templates, branch archival, employee restoration, or biometric cloud services.
+- Do not add CSV/Excel exports, admin import UI, payment tracking, shift templates, branch archival, or employee restoration. **SKIP — USER CONFIRMED (2026-07-20):** All biometric services, local or cloud, are outside scope.
 - Remove rather than implement Benefits, Departments, Positions, Recruitment, Onboarding, Performance, Documents, Organization, Notifications, and other excluded scaffolds.
 - Do not treat final aesthetic design as part of this tracker; preserve functional Arabic/RTL and accessibility requirements for the later visual-design pass.
 
 ## Immediate action
 
-Proceed with Facial Recognition and Settings, followed by Attendance/Absence and its durable worker jobs. Use trustworthy Attendance facts to unlock Payroll and Reports, then complete employee self-service, Dashboard, legacy seeds, the corresponding functional web workflows, and final hardening.
+Proceed with Attendance/Absence using employee code and PIN plus the applicable device and GPS checks, followed by its durable worker jobs. Use trustworthy Attendance facts to unlock Payroll and Reports, then complete employee self-service, Dashboard, legacy seeds, the corresponding functional web workflows, and final hardening. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition, liveness, biometric processing, and recognition Settings are not prerequisites and will not be implemented.

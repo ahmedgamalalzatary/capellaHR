@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createDatabase } from '@capella/database';
 import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { createAuthModule } from '../../src/modules/auth/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDevicesModule, type WebAuthnProvider } from '../../src/modules/devices/index.js';
@@ -143,40 +143,44 @@ describe('MySQL-backed devices', () => {
     const active = await complete(pairing.pairingToken, 'concurrent-revocation');
     const competingRevokedAt = new Date('2026-07-20T12:00:00.000Z');
     let releaseCompeting!: () => void;
-    let markCompetingReady!: () => void;
+    let markCompetingReady!: (connectionId: number) => void;
     const competingRelease = new Promise<void>((resolve) => { releaseCompeting = resolve; });
-    const competingReady = new Promise<void>((resolve) => { markCompetingReady = resolve; });
+    const competingReady = new Promise<number>((resolve) => { markCompetingReady = resolve; });
 
     const competing = database.transaction(async (tx) => {
+      const connectionResult = await tx.execute(sql`select connection_id() as connectionId`);
+      const connectionId = Number((connectionResult[0] as unknown as Array<{ connectionId: number }>)[0]?.connectionId);
       await tx.select({ id: devices.id }).from(devices).where(eq(devices.id, active.id)).for('update').limit(1);
       await tx.update(devices).set({ status: 'revoked', revokedAt: competingRevokedAt }).where(eq(devices.id, active.id));
       await tx.insert(deviceHistory).values({ deviceId: active.id, event: 'revoked', createdAt: competingRevokedAt });
-      markCompetingReady();
+      markCompetingReady(connectionId);
       await competingRelease;
     });
 
-    await competingReady;
+    const competingConnectionId = await competingReady;
     const lifecycleRevocation = module.lifecycle.revokeEmployee(employee.id);
     const lockDeadline = Date.now() + 5_000;
-    let lifecycleEmployeeLockObserved = false;
-    while (!lifecycleEmployeeLockObserved && Date.now() < lockDeadline) {
-      try {
-        await database.transaction(async (tx) => {
-          await tx.select({ id: employees.id }).from(employees)
-            .where(eq(employees.id, employee.id)).for('update', { noWait: true }).limit(1);
-        });
-      } catch (error) {
-        const cause = Reflect.get(error as object, 'cause');
-        const code = Reflect.get(error as object, 'code')
-          ?? (typeof cause === 'object' && cause !== null ? Reflect.get(cause, 'code') : undefined);
-        if (code !== 'ER_LOCK_NOWAIT') throw error;
-        lifecycleEmployeeLockObserved = true;
-      }
-      if (!lifecycleEmployeeLockObserved) await new Promise((resolve) => setTimeout(resolve, 10));
+    let lifecycleDeviceWaitObserved = false;
+    while (!lifecycleDeviceWaitObserved && Date.now() < lockDeadline) {
+      const lockWaitResult = await database.execute(sql`
+        select exists(
+          select 1
+          from performance_schema.data_lock_waits waits
+          join performance_schema.data_locks requested
+            on requested.engine_lock_id = waits.requesting_engine_lock_id
+          join information_schema.innodb_trx blocker
+            on blocker.trx_id = waits.blocking_engine_transaction_id
+          where requested.object_schema = database()
+            and requested.object_name = 'devices'
+            and blocker.trx_mysql_thread_id = ${competingConnectionId}
+        ) as waiting
+      `);
+      lifecycleDeviceWaitObserved = Number((lockWaitResult[0] as unknown as Array<{ waiting: number }>)[0]?.waiting) === 1;
+      if (!lifecycleDeviceWaitObserved) await new Promise((resolve) => setTimeout(resolve, 10));
     }
     releaseCompeting();
     await Promise.all([competing, lifecycleRevocation]);
-    expect(lifecycleEmployeeLockObserved).toBe(true);
+    expect(lifecycleDeviceWaitObserved).toBe(true);
 
     const history = await database.select().from(deviceHistory).where(and(
       eq(deviceHistory.deviceId, active.id),
