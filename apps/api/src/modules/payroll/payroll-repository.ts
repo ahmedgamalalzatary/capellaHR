@@ -202,6 +202,9 @@ export const createDrizzlePayrollRepository = (
   const context = createFinancialContext(options.now, timeZone);
   return {
     getBaseSalary(employeeId) { return findSalary(database, employeeId); },
+    findFinalized(employeeId, month) {
+      return rawFinalized(database, employeeId, month).then(exposeFinalized);
+    },
     updateBaseSalary(employeeId, amount) {
       return database.transaction(async (transaction) => {
         const employee = await lockEmployee(transaction, employeeId);

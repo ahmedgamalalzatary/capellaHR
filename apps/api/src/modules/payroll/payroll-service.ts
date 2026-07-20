@@ -67,6 +67,7 @@ type BranchPayrollResult =
 
 export interface PayrollRepository {
   getBaseSalary(employeeId: number): Promise<BaseSalaryRecord | null>;
+  findFinalized(employeeId: number, month: string): Promise<PayrollRecord | null>;
   updateBaseSalary(employeeId: number, amount: string): Promise<
     { kind: 'success'; salary: BaseSalaryRecord } | { kind: 'employee_not_found' | 'employee_deleted' }
   >;
@@ -142,7 +143,12 @@ export const createPayrollService = (
       throw error('PAYROLL_BLOCKED', result.reasons);
     },
     async preview(employeeId: number, month: string) {
-      return unwrap(await repository.preview(employeeId, month, requireAttendance()));
+      if (!attendance) {
+        const finalized = await repository.findFinalized(employeeId, month);
+        if (finalized) return finalized;
+        throw error('PAYROLL_ATTENDANCE_UNAVAILABLE');
+      }
+      return unwrap(await repository.preview(employeeId, month, attendance));
     },
     async finalize(employeeId: number, month: string) {
       return unwrap(await repository.finalize(employeeId, month, requireAttendance()));

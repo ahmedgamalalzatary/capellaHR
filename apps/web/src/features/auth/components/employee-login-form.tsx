@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
@@ -11,9 +11,11 @@ import { ApiError } from '@/lib/api/client';
 
 import { installationMarker } from '../../devices/lib/device-identity';
 import { employeeLogin, getEmployeeDeviceOptions } from '../api/auth-api';
+import { SESSION_QUERY_KEY } from '../hooks/use-session';
 import { employeeLoginFormSchema, type EmployeeLoginFormValues } from '../schemas/login-schemas';
 
 export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
+  const queryClient = useQueryClient();
   const {
     register,
     handleSubmit,
@@ -44,7 +46,10 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
         },
       });
     },
-    onSuccess: () => onSuccess?.(),
+    onSuccess: (session) => {
+      queryClient.setQueryData(SESSION_QUERY_KEY, session);
+      onSuccess?.();
+    },
   });
 
   const serverError =

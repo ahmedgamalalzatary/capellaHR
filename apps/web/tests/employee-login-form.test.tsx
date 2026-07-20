@@ -21,6 +21,7 @@ vi.mock('@simplewebauthn/browser', () => ({
 }));
 
 import { EmployeeLoginForm } from '../src/features/auth/components/employee-login-form';
+import { SESSION_QUERY_KEY } from '../src/features/auth/hooks/use-session';
 
 const authenticationResponse = {
   id: 'cred-1',
@@ -32,11 +33,12 @@ const authenticationResponse = {
 
 function renderForm(onSuccess?: () => void) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <EmployeeLoginForm {...(onSuccess ? { onSuccess } : {})} />
     </QueryClientProvider>,
   );
+  return { queryClient, ...rendered };
 }
 
 const fillAndSubmit = () => {
@@ -53,7 +55,7 @@ beforeEach(() => {
     options: { challenge: 'c1' },
   });
   mocks.startAuthentication.mockResolvedValue(authenticationResponse);
-  mocks.employeeLogin.mockResolvedValue({ actor: { type: 'employee', employeeId: 7 } });
+  mocks.employeeLogin.mockResolvedValue({ actor: { type: 'employee' } });
 });
 
 afterEach(() => {
@@ -83,6 +85,15 @@ describe('EmployeeLoginForm', () => {
       response: authenticationResponse,
     });
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+  });
+
+  test('publishes the employee session immediately after login', async () => {
+    const { queryClient } = renderForm();
+    fillAndSubmit();
+
+    await waitFor(() => expect(queryClient.getQueryData(SESSION_QUERY_KEY)).toEqual({
+      actor: { type: 'employee' },
+    }));
   });
 
   test('shows the Arabic message for an unregistered device', async () => {

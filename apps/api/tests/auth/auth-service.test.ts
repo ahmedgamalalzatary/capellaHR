@@ -159,7 +159,7 @@ describe('authentication service', () => {
       deviceProof: validProof,
     });
 
-    expect(result.actor).toEqual({ type: 'employee', employeeId: 7 });
+    expect(result.actor).toEqual({ type: 'employee' });
     await expect(service.authenticate(result.token)).resolves.toMatchObject({ actorType: 'employee', employeeId: 7 });
   });
 

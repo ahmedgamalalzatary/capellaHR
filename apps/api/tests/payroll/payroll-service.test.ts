@@ -13,6 +13,7 @@ const salary = {
 
 const repository = (): PayrollRepository => ({
   getBaseSalary: vi.fn(async () => salary),
+  findFinalized: vi.fn(async () => null),
   updateBaseSalary: vi.fn(async () => ({ kind: 'success' as const, salary: { ...salary, amount: '6000.00' } })),
   list: vi.fn(async () => ({ kind: 'success' as const, items: [], total: 0 })),
   preview: vi.fn(async () => ({ kind: 'success' as const, payroll: {} as never })),
@@ -37,6 +38,17 @@ describe('payroll service', () => {
     });
     await expect(service.finalize(7, '2026-06')).rejects.toMatchObject({ code: 'PAYROLL_ATTENDANCE_UNAVAILABLE' });
     await expect(service.finalizeBranch(2, '2026-06')).rejects.toMatchObject({ code: 'PAYROLL_ATTENDANCE_UNAVAILABLE' });
+  });
+
+  it('reads an immutable finalized snapshot without requiring Attendance', async () => {
+    const repo = repository();
+    const finalized = { payrollMonth: '2026-06', status: 'finalized' } as never;
+    vi.mocked(repo.findFinalized).mockResolvedValue(finalized);
+    const service = createPayrollService(repo);
+
+    await expect(service.preview(7, '2026-06')).resolves.toBe(finalized);
+    expect(repo.findFinalized).toHaveBeenCalledWith(7, '2026-06');
+    expect(repo.preview).not.toHaveBeenCalled();
   });
 
   it('delegates with an explicitly configured transaction-aware Attendance gateway', async () => {

@@ -23,6 +23,7 @@ export function useSession() {
     },
     staleTime: 60_000,
     retry: false,
+    refetchInterval: (query) => query.state.data?.actor.type === 'employee' ? 5_000 : false,
   });
 }
 

@@ -14,6 +14,7 @@ import { createBonusModule } from './modules/bonuses/index.js';
 import { createDeductionModule } from './modules/deductions/index.js';
 import { createAdvanceModule } from './modules/advances/index.js';
 import { createReportsModule } from './modules/reports/index.js';
+import { createSelfServiceModule } from './modules/self-service/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
 const employeeRepository = createDrizzleEmployeeRepository(database);
@@ -45,6 +46,15 @@ const weeklyDayOffModule = createWeeklyDayOffModule(database, {
   ),
   timeZone: env.APP_TIME_ZONE,
 });
+const selfServiceModule = createSelfServiceModule({
+  employees: employeeModule.service,
+  branches: branchModule.service,
+  weeklyDays: weeklyDayOffModule.service,
+  payroll: payrollModule.service,
+  bonuses: bonusModule.service,
+  deductions: deductionModule.service,
+  advances: advanceModule.service,
+});
 await employeeModule.uploadStore.retryPendingCleanup();
 
 createApp({
@@ -61,6 +71,7 @@ createApp({
   deductionService: deductionModule.service,
   advanceService: advanceModule.service,
   reportService: reportsModule.service,
+  selfServiceService: selfServiceModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

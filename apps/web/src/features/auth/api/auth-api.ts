@@ -5,7 +5,7 @@ import { api } from '@/lib/api/client';
 
 export type SessionActor =
   | { type: 'admin' }
-  | { type: 'employee'; employeeId: number };
+  | { type: 'employee' };
 
 export interface SessionData {
   actor: SessionActor;

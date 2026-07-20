@@ -1,14 +1,15 @@
-# Backend implementation tracker (temporary)
+# Capella HR implementation tracker (temporary)
 
-Last rebuilt: 2026-07-19
+Last rebuilt: 2026-07-20
 
-This is a temporary working checklist for backend implementation. The locked product rules remain in `docs/hr-specs.md`; this file tracks implementation progress only.
+This is the temporary working checklist for completing the full functional product. The locked product rules remain in `docs/hr-specs.md`; this file tracks implementation progress and dependency order only.
 
-## Backend boundary
+## Tracker boundary
 
-- Backend work only: `apps/api`, backend packages, database migrations, and backend tests.
-- Do not modify `apps/web` unless the user explicitly requests it.
-- Implement each module with test-driven development.
+- Track `apps/api`, `apps/worker`, `apps/web`, shared packages, database migrations, and all required tests.
+- Implement backend modules and bug fixes with test-driven development; add component and end-to-end coverage for the corresponding web workflows.
+- Complete the functional Arabic/RTL web behavior required by `docs/hr-specs.md`; final aesthetic and interaction-system design remains explicitly deferred.
+- Preserve the locked scope boundaries. Do not add excluded modules or features merely because placeholders exist.
 - Runtime database: `capella_hr` from `.env`.
 - Test database: `capella_hr-test` from `.env.test`.
 
@@ -162,11 +163,11 @@ Current weekly day-off endpoints:
 
 Attendance remains responsible for generating an absence only after a Cairo day ends, enforcing employee creation/deletion eligibility, proving that no attendance session exists, and atomically replacing an absence with eligible backdated attendance. Payroll remains responsible for supplying the financial-lock check and consuming zero effective required minutes for a weekly day off.
 
-## Deferred slices moved to immediately before final hardening
+## Previously deferred slices
 
-Facial Recognition and Attendance were explicitly deferred. Their full checklists now appear after Background Worker and Durable Jobs and immediately before Shared Backend Infrastructure and Final Hardening.
+Facial Recognition and Attendance were previously deferred. They are now on the active completion path: finish the non-Attendance Roles foundation and establish general Audit/correlation first, then implement Facial Recognition and Attendance before their dependent Payroll, Reports, self-service, Dashboard, and worker integrations.
 
-## 9. Salaries and Payroll — Backend Complete; Attendance Gateway Deferred
+## 8. Salaries and Payroll — Backend Complete; Attendance Gateway Deferred
 
 - [x] Require a positive two-decimal EGP base salary during employee creation.
 - [x] Add base-salary view/update with no deletion.
@@ -189,7 +190,7 @@ Facial Recognition and Attendance were explicitly deferred. Their full checklist
 
 Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAILABLE` until the deferred Attendance module supplies closed-session, denied-attempt, eligible-workday, required-minute, overtime, and shortage facts inside the payroll transaction. Base salary and all other financial CRUD remain available.
 
-## 10. Bonuses — Complete
+## 9. Bonuses — Complete
 
 - [x] Add positive fixed two-decimal EGP bonuses assigned to one employee and payroll month.
 - [x] Allow multiple bonuses per employee-month and no bulk creation or description fields.
@@ -199,7 +200,7 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Keep attendance overtime separate from Bonus records.
 - [x] Persist mutation audit events and add eligibility, locking, deletion, payroll-sum, authorization, and MySQL tests.
 
-## 11. Deductions — Complete
+## 10. Deductions — Complete
 
 - [x] Mirror Bonuses with positive two-decimal EGP values that subtract from payroll.
 - [x] Allow multiple manual deductions per employee-month and no bulk creation or description fields.
@@ -209,7 +210,7 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Keep attendance shortage/absence separate from manual Deduction records.
 - [x] Persist mutation audit events and add eligibility, locking, deletion, payroll-sum, authorization, and MySQL tests.
 
-## 12. Advances — Complete
+## 11. Advances — Complete
 
 - [x] Add positive two-decimal EGP advances assigned to one immutable employee.
 - [x] Treat creation as already disbursed; add no payment/status workflow or description fields.
@@ -222,7 +223,7 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Move the complete remaining balance into the deletion month's unfinalized payroll inside employee deletion.
 - [x] Persist mutation/schedule audit events and add rounding, schedule, locking, acceleration, concurrency, authorization, and MySQL tests.
 
-## 13. Reports and PDF Exports — Backend Complete for Available Sources
+## 12. Reports and PDF Exports — Backend Complete for Available Sources
 
 - [x] Add admin-only read APIs for Branches, Employees, Devices, Shifts, Weekly Day-Off, Bonuses, Deductions, and Advances.
 - [ ] Add Attendance/Absence and Payroll report readers after Attendance supplies trustworthy facts; both currently fail closed with `REPORT_SOURCE_UNAVAILABLE`.
@@ -255,18 +256,63 @@ Current report endpoints:
 - `GET /api/v1/reports/exports/:exportId/download`
 - `DELETE /api/v1/reports/exports/:exportId/file`
 
-## 14. Roles and Employee Self-Service
+## Current frontend implementation
 
-- [ ] Retain exactly two fixed roles: the singleton Admin and Employee.
-- [ ] Enforce all authorization in Express, including immutable-state rules that Admin cannot bypass.
-- [ ] Protect employee image endpoints for Admin only.
-- [ ] Complete self-service login using registered personal phone, employee code, PIN, and an active attendance session.
-- [ ] Limit each employee to their own non-secret profile, branch, shift, attendance, days off, payroll, bonuses, deductions, and advances.
-- [ ] Keep self-service completely read-only and prohibit Reports/PDF/export access.
-- [ ] Revoke employee sessions on PIN reset, checkout, timeout, and deletion; preserve the locked device-revocation exception until checkout.
-- [ ] Add horizontal-access, secret/image denial, mutation denial, session-revocation, and MySQL integration tests.
+### Complete for currently available backend sources
 
-## 15. Audit History
+- [x] Add the Arabic/RTL application shell, responsive admin navigation, Cairo clock, session loading, and admin route protection.
+- [x] Add the shared API client, stable error-envelope handling, runtime Cairo/locale formatting, query state, loading, retry, and empty-state foundations.
+- [x] Add functional admin views for Branches, Employees, Devices and pairing, Shifts, Weekly Day-Off, Payroll/base salary, Bonuses, Deductions, Advances, and the currently available Reports/PDF workflows.
+- [x] Add admin and employee login forms plus the employee WebAuthn authentication-options flow.
+- [x] Add the Arabic/RTL employee self-service view for own non-secret profile, branch, shift, finalized payroll, weekly-day/absence records, bonuses, deductions, advances/installments, pagination, and logout.
+
+### Still required
+
+- [ ] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
+- [ ] Replace the placeholder Audit page with immutable history search and filters.
+- [ ] Replace the placeholder Dashboard page with all locked operational summaries.
+- [ ] Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.
+- [ ] Implement the personal-device attendance interface with GPS, PIN, WebAuthn, check-in, and check-out flows.
+- [ ] Implement the shared branch-kiosk interface with employee code, PIN, GPS, randomized liveness, face match, check-in, and check-out flows.
+- [ ] Extend employee self-service with Attendance history and trustworthy open payroll previews after the Attendance gateway exists.
+- [ ] Expose the Attendance/Absence and Payroll report tabs only after their backend readers become trustworthy.
+- [ ] Run a final functional web audit for Arabic/RTL rendering, Cairo dates, numeric and monetary presentation, search/filter/reset behavior, empty/error/loading states, authorization, accessibility, and responsive operation.
+
+## Dependency-ordered completion roadmap
+
+The detailed module checklists below remain the acceptance criteria. Step 1 is complete; implement the remaining work in this order:
+
+1. **Completed:** Non-Attendance Roles and Employee Self-Service authorization foundation.
+2. Add shared correlation/error foundations and the general immutable Audit system before introducing more mutations that would otherwise require retrofitting.
+3. Implement Facial Recognition, encrypted templates, enrollment, liveness, and recognition Settings.
+4. Implement the Attendance/Absence data model, employee/admin workflows, denied and flagged attempts, calculations, and corrections.
+5. Extend the worker with biometric processing, midnight absences, exact 16-hour timeouts, and attendance/payroll reconciliation; wire all Attendance cross-module hooks.
+6. Supply trustworthy Attendance facts to Payroll and Reports and remove their production fail-closed gateways.
+7. Complete production employee self-service, including all session-revocation and device-revocation rules.
+8. Implement Dashboard operational visibility.
+9. Implement idempotent legacy seeds.
+10. Complete the corresponding web workflows as each backend slice becomes available, then perform shared infrastructure and final hardening.
+
+## 13. Roles and Employee Self-Service
+
+Current boundary: everything possible without the Attendance gateway is complete. The remaining login eligibility, Attendance history, open-payroll preview, checkout/timeout revocation, and related tests intentionally resume after Facial Recognition/Settings and Attendance/Absence exist. The immediate next project slice is shared correlation/error foundations and Audit.
+
+- [x] Retain exactly two fixed actor types in the authentication/session foundation: the singleton Admin and Employee.
+- [x] Protect employee image endpoints for Admin only.
+- [x] Add the employee-login contracts, service/router flow, PIN/phone/device verification, session support, and Attendance eligibility gateway.
+- [x] Enforce Admin/Employee authorization consistently across every currently implemented Express endpoint and keep the employee API structurally GET-only.
+- [ ] Preserve that authorization coverage across future endpoints, including immutable-state rules that Admin cannot bypass.
+- [ ] Wire the existing employee-login foundation to the real Attendance gateway in production so an open attendance session is required.
+- [x] Limit each employee to their own non-secret profile, branch, shift, days off, finalized payroll, bonuses, deductions, and advances/installments.
+- [ ] Add the employee's own Attendance history and open payroll preview after trustworthy Attendance facts exist.
+- [x] Keep self-service completely read-only and prohibit employee access to images, secrets, Reports, PDFs, and exports.
+- [x] Revoke employee sessions on PIN reset and employee deletion.
+- [x] Preserve the locked exception in which personal-device revocation does not revoke an already-active self-service session.
+- [ ] Revoke employee sessions on checkout and automatic timeout, including ending a device-revocation exception at checkout.
+- [x] Add horizontal-access, secret/image denial, mutation denial, current session-revocation, and MySQL integration tests.
+- [ ] Add Attendance-dependent checkout, timeout, and open-session integration tests with the Attendance slice.
+
+## 14. Audit History
 
 - [ ] Add permanent immutable audit records and admin-only read/search/filter endpoints.
 - [ ] Audit every mutation and security-sensitive/system event, but not ordinary page/report views.
@@ -275,15 +321,15 @@ Current report endpoints:
 - [ ] Integrate auditing transactionally across all modules.
 - [ ] Add immutability, completeness, redaction, authorization, correlation, and MySQL tests.
 
-## 16. Dashboard Operational Visibility
+## 15. Dashboard Operational Visibility
 
 - [ ] Add admin-only summary endpoints for currently checked-in employees and previous-day open sessions.
 - [ ] Add current-day not-checked-in, latest absences/day-off conversions, and denied/flagged attempt summaries.
 - [ ] Add automatic-timeout, device pairing/replacement, payroll blocker, and PDF-job summaries.
-- [ ] Keep notification center, push, email, SMS, and WhatsApp notifications outside scope.
+- [x] Keep notification center, push, email, SMS, and WhatsApp notifications outside scope.
 - [ ] Add authorization, Cairo-boundary, aggregation, and MySQL tests.
 
-## 17. Legacy Seeds
+## 16. Legacy Seeds
 
 - [ ] Implement developer-run idempotent database seeds with no import UI.
 - [ ] Match legacy employees by immutable numeric employee code and never duplicate an existing code.
@@ -291,7 +337,7 @@ Current report endpoints:
 - [ ] Continue new employee-code allocation after the highest seeded/stored code.
 - [ ] Add rerun, preservation, missing-field, allocation, and MySQL tests.
 
-## 18. Background Worker and Durable Jobs
+## 17. Background Worker and Durable Jobs
 
 - [x] Add `apps/worker` and the first MySQL-backed durable job flow without Redis.
 - [ ] Add the remaining durable handlers/schedules for midnight absences, 16-hour timeouts, biometrics, and reconciliation.
@@ -302,7 +348,7 @@ Current report endpoints:
 - [x] Make PDF generation and file deletion recoverable/idempotent against duplicate jobs and process restarts; other future handlers remain pending.
 - [ ] Add scheduling, retry, crash recovery, idempotency, concurrency, and MySQL tests.
 
-## Deferred: Facial Recognition and Settings — Implement Immediately Before Hardening
+## 18. Facial Recognition and Settings
 
 - [ ] Create `packages/biometrics` and local ONNX inference integration used by the worker.
 - [ ] Add supervised face enrollment separate from employee/profile/ID images.
@@ -316,7 +362,7 @@ Current report endpoints:
 - [ ] Audit threshold changes and snapshot thresholds into every attempt.
 - [ ] Add encryption, deletion, re-enrollment, compatibility, threshold, liveness, and raw-frame-disposal tests using synthetic/consented fixtures.
 
-## Deferred: Attendance and Absence — Implement Immediately Before Hardening
+## 7. Attendance and Absence
 
 - [ ] Add attendance sessions/events, denied attempts, flagged attempts, automatic absences, and immutable snapshots.
 - [ ] Use UTC storage and `Africa/Cairo` for all workday decisions.
@@ -342,7 +388,17 @@ Current report endpoints:
 - [ ] Supply the transaction-aware Payroll facts gateway and remove `PAYROLL_ATTENDANCE_UNAVAILABLE` from production previews/finalization.
 - [ ] Add GPS-boundary, cross-midnight, concurrency, duplicate submission, timeout, correction, approval, immutability, payroll-gateway, and MySQL tests.
 
-## 19. Shared Backend Infrastructure and Final Hardening
+## 19. Session Persistence — Foundation Complete; Attendance Integration Pending
+
+- [x] Store secure opaque admin and employee session records in MySQL so API restarts do not lose session state.
+- [x] Support explicit logout and direct employee-session revocation in the authentication foundation.
+- [x] Wire immediate employee-session revocation to PIN reset and employee deletion.
+- [ ] Wire immediate employee-session revocation to attendance checkout and automatic timeout.
+- [x] Preserve the locked exception in which an already-active employee session survives personal-device revocation before attendance checkout.
+- [ ] End that device-revocation exception at attendance checkout.
+- [ ] Add production integration coverage for restart persistence and every locked revocation path.
+
+## 20–23. Functional Scope, Verification, Data Integrity, and Final Hardening
 
 - [ ] Standardize every REST error as stable code, Arabic message, optional field errors, and request ID.
 - [ ] Add safe unexpected-error handling with no stack, SQL, path, hash, credential, or biometric leakage.
@@ -352,12 +408,12 @@ Current report endpoints:
 - [ ] Add filesystem compensation for employee image creation/replacement and report-file deletion.
 - [ ] Verify retry/idempotency behavior for attendance, pairing, jobs, payroll, and employee-code allocation.
 - [ ] Remove unused out-of-scope module placeholders: Benefits, Departments, Positions, Recruitment, Onboarding, Performance, Documents, Organization, Notifications, and other excluded scaffolds.
-- [ ] Run complete lint, typecheck, builds, unit tests, real-MySQL integration tests, concurrency tests, and critical end-to-end backend workflows.
+- [ ] Run complete lint, typecheck, builds, unit tests, component tests, real-MySQL integration tests, concurrency tests, worker tests, and critical end-to-end admin, employee, attendance, payroll, and report workflows.
 - [ ] Apply the final migration chain cleanly to empty `capella_hr` and `capella_hr-test` databases.
-- [ ] Verify no backend implementation changed `apps/web`.
-- [ ] Update this tracker, `docs/architecture.md`, and the target tree after backend completion.
+- [ ] Verify the completed `apps/web` functionality matches the locked Arabic/RTL, authorization, validation, filtering, empty-state, attendance, self-service, reporting, and operational requirements without expanding into deferred aesthetic design.
+- [ ] Update this tracker, `docs/architecture.md`, and the target tree after full functional completion.
 
-## Deferred integration hooks
+## Cross-module integration gates
 
 - Employee creation must call the Branches reference-lock operation in the same transaction boundary.
 - Attendance must call the Shifts transaction-aware duration reader inside its check-in transaction and persist the returned immutable snapshot on the attendance session.
@@ -366,7 +422,17 @@ Current report endpoints:
 - Attendance supplies checked-in state, GPS enforcement, and employee self-service access eligibility.
 - Payroll consumes attendance duration, shifts, weekly days off, bonuses, deductions, and advances.
 - Reports consume finalized read models from every completed module.
+- Audit receives transaction-aware mutation/security events from every module and shares request IDs with API errors and background jobs.
+- The worker performs biometric inference, midnight absence generation, exact 16-hour timeout, PDF generation, and durable reconciliation without duplicating business effects.
+
+## Locked exclusions — do not implement
+
+- Do not add public registration, employee self-registration, extra admin accounts, or additional roles.
+- Do not add notification center, push, email, SMS, or WhatsApp notifications.
+- Do not add CSV/Excel exports, admin import UI, payment tracking, shift templates, branch archival, employee restoration, or biometric cloud services.
+- Remove rather than implement Benefits, Departments, Positions, Recruitment, Onboarding, Performance, Documents, Organization, Notifications, and other excluded scaffolds.
+- Do not treat final aesthetic design as part of this tracker; preserve functional Arabic/RTL and accessibility requirements for the later visual-design pass.
 
 ## Immediate action
 
-Proceed to Roles and Employee Self-Service without touching `apps/web`, while keeping attendance-dependent login/session rules deferred with Attendance. The Attendance/Absence and Payroll report adapters remain deferred until Attendance is trustworthy. Facial Recognition and Attendance remain intentionally deferred until immediately before final hardening.
+Proceed with shared correlation/error foundations and the general Audit system. Next implement Facial Recognition and Settings, followed by Attendance/Absence and its durable worker jobs. Use trustworthy Attendance facts to unlock Payroll and Reports, then complete employee self-service, Dashboard, legacy seeds, the corresponding functional web workflows, and final hardening.

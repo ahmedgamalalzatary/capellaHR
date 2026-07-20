@@ -8,6 +8,8 @@ import { responseRequestId } from '../../shared/http/index.js';
 // Stable protocol name shared by issuing, reading, and clearing the session cookie.
 const SESSION_COOKIE = 'capella_session';
 
+const publicActor = (actor: { type: 'admin' | 'employee' }) => ({ type: actor.type });
+
 const readCookie = (cookieHeader: string | undefined, name: string) => {
   if (!cookieHeader) return null;
   for (const section of cookieHeader.split(';')) {
@@ -36,14 +38,14 @@ export const createAuthRouter = (
     const input = adminLoginSchema.parse(request.body);
     const result = await service.loginAdmin(input.email, input.password, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
     response.cookie(SESSION_COOKIE, result.token, cookieOptions);
-    response.json({ data: { actor: result.actor } });
+    response.json({ data: { actor: publicActor(result.actor) } });
   });
 
   router.post('/employee/login', async (request, response) => {
     const input = employeeLoginSchema.parse(request.body);
     const result = await service.loginEmployee(input, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
     response.cookie(SESSION_COOKIE, result.token, cookieOptions);
-    response.json({ data: { actor: result.actor } });
+    response.json({ data: { actor: publicActor(result.actor) } });
   });
 
   router.post('/employee/device-options', async (request, response) => {
@@ -55,9 +57,7 @@ export const createAuthRouter = (
     const token = readCookie(request.headers.cookie, SESSION_COOKIE) ?? '';
     const session = await service.authenticate(token);
     if (!session) throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
-    const actor = session.actorType === 'admin'
-      ? { type: 'admin' as const }
-      : { type: 'employee' as const, employeeId: session.employeeId };
+    const actor = publicActor({ type: session.actorType });
     response.json({ data: { actor } });
   });
 

@@ -1,8 +1,10 @@
+import { createHash, randomUUID } from 'node:crypto';
+
 import { createDatabase } from '@capella/database';
 import { attendanceDailyRecords, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+import { createAuthModule } from '../../src/modules/auth/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDevicesModule, type WebAuthnProvider } from '../../src/modules/devices/index.js';
 import { createDrizzleDeviceRepository } from '../../src/modules/devices/devices-repository.js';
@@ -74,6 +76,21 @@ describe('MySQL-backed devices', () => {
     await module.service.revoke(first.id);
     const secondPairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
     await expect(complete(secondPairing.pairingToken, 'same-phone', 'fresh-credential')).resolves.toMatchObject({ status: 'active' });
+  });
+  it('keeps an already-active employee session alive when only the personal device is revoked', async () => {
+    const branch = await branchesModule.service.create({ name: 'Session exception', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const employee = await employeesModule.service.create({ fullName: 'Employee', personalPhone: '01012345678', whatsappPhone: '01012345678', pin: '1234', age: 30, address: 'Cairo', branchId: branch.id, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: { storagePath: 'p', originalName: 'p.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idFront: { storagePath: 'f', originalName: 'f.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idBack: { storagePath: 'b', originalName: 'b.jpg', mimeType: 'image/jpeg', sizeBytes: 1 } } });
+    const pairing = await module.service.createPairing({ assignmentType: 'employee', assignmentId: employee.id });
+    const active = await complete(pairing.pairingToken, 'session-exception');
+    const token = 'active-device-revocation-session';
+    await database.insert(authSessions).values({ id: 'active-self-service', tokenHash: createHash('sha256').update(token).digest('hex'), actorType: 'employee', employeeId: employee.id, createdAt: new Date(), revokedAt: null });
+
+    await module.service.revoke(active.id);
+
+    expect((await database.select().from(authSessions).where(eq(authSessions.id, 'active-self-service')).limit(1))[0]?.revokedAt).toBeNull();
+    await expect(createAuthModule({ database }).service.authenticate(token)).resolves.toMatchObject({
+      actorType: 'employee', employeeId: employee.id, revokedAt: null,
+    });
   });
   it('rejects browser-profile reuse across assignments', async () => {
     const branch = await branchesModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

@@ -150,7 +150,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       await recordAttempt(true, null);
       return {
         token,
-        actor: { type: 'employee' as const, employeeId },
+        actor: { type: 'employee' as const },
       };
     },
 

@@ -74,7 +74,7 @@ describe('authentication HTTP API', () => {
       .send({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'proof', rawId: 'proof', type: 'public-key', response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } } });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ data: { actor: { type: 'employee', employeeId: 7 } } });
+    expect(response.body).toEqual({ data: { actor: { type: 'employee' } } });
     expect(response.headers['set-cookie']?.[0]).toContain('capella_session=employee-token');
     expect(response.body).not.toHaveProperty('data.token');
   });

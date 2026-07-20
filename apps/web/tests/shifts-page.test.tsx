@@ -112,6 +112,23 @@ describe('ShiftsView', () => {
     });
   });
 
+  test('shows a retryable error instead of an incomplete branch selector when branch options fail', async () => {
+    mocks.listBranches
+      .mockRejectedValueOnce(new ApiError(0, { code: 'NETWORK_ERROR', message: 'Branch options unavailable' }))
+      .mockResolvedValueOnce(pageOf([{ id: 3, name: 'Cairo branch' }]));
+
+    renderView();
+
+    const branchError = await screen.findByRole('alert');
+    expect(branchError.textContent).toContain('Branch options unavailable');
+    expect(document.querySelector('select')).toBeNull();
+
+    fireEvent.click(within(branchError).getByRole('button'));
+
+    await waitFor(() => expect(mocks.listBranches).toHaveBeenCalledTimes(2));
+    expect(document.querySelector('select')).not.toBeNull();
+  });
+
   test('edits one employee duration and sends whole minutes', async () => {
     mocks.updateShiftAssignment.mockResolvedValue({ ...ahmed, durationMinutes: 570 });
     renderView();

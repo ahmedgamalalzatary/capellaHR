@@ -181,7 +181,21 @@ export function ShiftsView() {
             بحث
           </Button>
         </form>
-        <select
+        {branchesQuery.isError ? (
+          <div role="alert" className="flex items-center gap-2 rounded-control border border-danger/20 bg-danger-soft px-3 py-1.5 text-sm text-danger">
+            <span>{serverErrorMessage(branchesQuery.error)}</span>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={branchesQuery.isFetching}
+              onClick={() => void branchesQuery.refetch()}
+            >
+              إعادة المحاولة
+            </Button>
+          </div>
+        ) : (
+          <select
           aria-label="تصفية حسب الفرع"
           className="h-9 rounded-control border border-line bg-paper px-3 text-sm"
           value={branchFilter ?? ''}
@@ -197,7 +211,8 @@ export function ShiftsView() {
               {branch.name}
             </option>
           ))}
-        </select>
+          </select>
+        )}
       </div>
 
       <Card>
