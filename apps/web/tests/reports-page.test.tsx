@@ -237,6 +237,64 @@ describe('ReportsView', () => {
     );
   });
 
+  test('exports Attendance-dependent payroll rows by employee id even for an open preview', async () => {
+    mocks.createReportExport.mockResolvedValue({ ...completedExport, status: 'queued' });
+    mocks.viewReport.mockImplementation(async (reportType: string) => reportType === 'payroll'
+      ? {
+          snapshot: {
+            reportType: 'payroll', title: 'تقرير الرواتب', generatedAt: '2026-07-19T10:00:00.000Z',
+            columns: [
+              { key: 'employeeId', label: 'رقم الموظف' },
+              { key: 'employeeName', label: 'اسم الموظف' },
+              { key: 'status', label: 'الحالة' },
+            ],
+            rows: [{ id: null, employeeId: 77, employeeName: 'موظف راتب مفتوح', status: 'open' }],
+            summary: { totalRecords: 1 },
+          },
+          meta: { ...meta, total: 1 },
+        }
+      : { snapshot: branchesSnapshot, meta });
+    renderView();
+    fireEvent.click(screen.getByRole('tab', { name: 'الرواتب' }));
+    await screen.findByText('موظف راتب مفتوح');
+    expect(screen.getByText('مفتوح')).toBeDefined();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 77' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير المحدد (1)' }));
+
+    await waitFor(() => expect(mocks.createReportExport).toHaveBeenCalledWith({
+      reportType: 'payroll',
+      filters: {},
+      selection: { mode: 'selected', ids: [77] },
+    }));
+  });
+
+  test('renders multiple Attendance rows for one employee without duplicate React keys', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.viewReport.mockImplementation(async (reportType: string) => reportType === 'attendance'
+      ? {
+          snapshot: {
+            reportType: 'attendance', title: 'تقرير الحضور والغياب', generatedAt: '2026-07-19T10:00:00.000Z',
+            columns: [
+              { key: 'employeeName', label: 'اسم الموظف' },
+              { key: 'attendanceDate', label: 'التاريخ' },
+            ],
+            rows: [
+              { recordType: 'attendance', id: 1, employeeId: 77, employeeName: 'موظف متكرر', attendanceDate: '2026-07-18' },
+              { recordType: 'daily_record', id: 1, employeeId: 77, employeeName: 'موظف متكرر', attendanceDate: '2026-07-19' },
+            ],
+            summary: { totalRecords: 2 },
+          },
+          meta,
+        }
+      : { snapshot: branchesSnapshot, meta });
+    renderView();
+    fireEvent.click(screen.getByRole('tab', { name: 'الحضور والغياب' }));
+    await screen.findByText('2026-07-19');
+
+    expect(screen.getAllByRole('checkbox', { name: 'تحديد الصف 77' })).toHaveLength(2);
+    expect(consoleError.mock.calls.flat().join(' ')).not.toContain('same key');
+  });
+
   test('surfaces the Arabic error when a report source is unavailable', async () => {
     mocks.viewReport.mockRejectedValue(new ApiError(409, {
       code: 'REPORT_SOURCE_UNAVAILABLE',

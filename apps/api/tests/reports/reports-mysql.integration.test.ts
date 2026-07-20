@@ -4,6 +4,8 @@ import {
   advances,
   auditEvents,
   attendanceDailyRecords,
+  attendanceDeniedAttempts,
+  attendanceSessions,
   authSessions,
   bonuses,
   branches,
@@ -28,6 +30,8 @@ import {
   createDrizzleReportReader,
 } from '../../src/modules/reports/index.js';
 import { runWithAuditContext } from '../../src/modules/audit/index.js';
+import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/index.js';
+import { createPayrollModule } from '../../src/modules/payroll/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? '');
 const now = new Date('2026-07-19T08:00:00.000Z');
@@ -41,7 +45,9 @@ const clear = async () => {
   await database.delete(deductions);
   await database.delete(payrollMonths);
   await database.delete(employeeSalaryPeriods);
+  await database.delete(attendanceDeniedAttempts);
   await database.delete(attendanceDailyRecords);
+  await database.delete(attendanceSessions);
   await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
@@ -177,7 +183,7 @@ describe('MySQL-backed reports', () => {
     const reader = createDrizzleReportReader(database);
     const available = [
       'branches', 'employees', 'devices', 'shifts', 'weekly-day-off',
-      'bonuses', 'deductions', 'advances',
+      'attendance', 'bonuses', 'deductions', 'advances',
     ] as const;
 
     for (const reportType of available) {
@@ -192,6 +198,21 @@ describe('MySQL-backed reports', () => {
       expect(serialized).not.toContain('pinHash');
       expect(serialized).not.toContain('credentialId');
       expect(serialized).not.toContain('installationMarker');
+      if (reportType === 'employees') {
+        expect(result.snapshot.rows[0]?.monthlyBaseSalary).toBe('6000.00');
+      }
+      if (reportType === 'bonuses') {
+        expect(result.snapshot.rows[0]?.amount).toBe('100.00');
+        expect(result.snapshot.summary.totalAmount).toBe('100.00');
+      }
+      if (reportType === 'deductions') {
+        expect(result.snapshot.rows[0]?.amount).toBe('25.00');
+        expect(result.snapshot.summary.totalAmount).toBe('25.00');
+      }
+      if (reportType === 'advances') {
+        expect(result.snapshot.rows[0]?.amount).toBe('80.00');
+        expect(result.snapshot.summary.totalAmount).toBe('80.00');
+      }
     }
 
     const employeesResult = await reader.read('employees', { branchId: ids.branchId }, {
@@ -204,10 +225,146 @@ describe('MySQL-backed reports', () => {
         rows: [expect.objectContaining({ employeeCode: 2, isDeleted: true })],
       },
     });
-    await expect(reader.read('attendance', {}, { mode: 'all' }, null, now))
-      .resolves.toEqual({ kind: 'unavailable' });
     await expect(reader.read('payroll', {}, { mode: 'all' }, null, now))
       .resolves.toEqual({ kind: 'unavailable' });
+  });
+
+  it('reports attendance facts without denied attempts and includes open and finalized payroll status', async () => {
+    const { employeeId, deletedEmployeeId } = await seed();
+    await database.insert(attendanceSessions).values({
+      employeeId,
+      attendanceDate: '2026-07-19',
+      requiredMinutes: 600,
+      checkInAt: new Date('2026-07-19T05:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T15:30:00.000Z'),
+      workedMinutes: 630,
+      overtimeMinutes: 30,
+      shortageMinutes: 0,
+      automaticTimeoutAt: null,
+      automaticTimeoutCorrectedAt: null,
+      flagged: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.insert(attendanceDailyRecords).values({
+      employeeId: deletedEmployeeId,
+      attendanceDate: '2026-07-11',
+      status: 'absence',
+      absenceRequiredMinutes: 480,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.insert(attendanceDeniedAttempts).values({
+      eventType: 'check_in', claimedEmployeeCode: 1, employeeId,
+      source: 'personal_device', occurredAt: now,
+      failureReason: 'DEVICE_INVALID', suspicious: true, createdAt: now,
+    });
+    await database.insert(payrollMonths).values({
+      employeeId,
+      payrollMonth: '2026-07-01',
+      status: 'finalized',
+      baseSalary: '6000.00',
+      proratedBase: '6000.00',
+      overtimeAmount: '10.00',
+      bonusAmount: '100.00',
+      attendanceDeductionAmount: '0.00',
+      manualDeductionAmount: '0.00',
+      advanceAmount: '40.00',
+      priorNegativeCarry: '0.00',
+      netSalary: '6070.00',
+      eligibleWorkdays: 1,
+      fullMonthWorkdays: 30,
+      requiredMinutes: 600,
+      overtimeMinutes: 30,
+      shortageMinutes: 0,
+      finalizedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const attendance = createDrizzleAttendanceRepository(database, {
+      now: () => now,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: () => Promise.resolve(600),
+    });
+    const payroll = createPayrollModule(database, { now: () => now, attendance });
+    let payrollPreviewCount = 0;
+    const reader = createDrizzleReportReader(database, {
+      now: () => now,
+      payroll: {
+        preview: (targetEmployeeId, month, context) => {
+          payrollPreviewCount += 1;
+          return payroll.repository.previewInContext(targetEmployeeId, month, attendance, context);
+        },
+      },
+    });
+
+    const attendanceResult = await reader.read('attendance', {
+      dateFrom: '2026-07-01', dateTo: '2026-07-31',
+    }, { mode: 'all' }, null, now);
+    expect(attendanceResult).toMatchObject({
+      kind: 'success',
+      total: 3,
+      snapshot: {
+        summary: { attendanceRecords: 1, absenceRecords: 1, weeklyDayOffRecords: 1 },
+      },
+    });
+    expect(JSON.stringify(attendanceResult)).not.toContain('DEVICE_INVALID');
+
+    const payrollResult = await reader.read('payroll', {
+      monthFrom: '2026-07', monthTo: '2026-07',
+    }, { mode: 'all' }, null, now);
+    expect(payrollResult).toMatchObject({
+      kind: 'success',
+      total: 2,
+      snapshot: {
+        rows: expect.arrayContaining([
+          expect.objectContaining({ employeeId, payrollMonth: '2026-07', status: 'finalized' }),
+          expect.objectContaining({ employeeId: deletedEmployeeId, payrollMonth: '2026-07', status: 'open' }),
+        ]),
+        summary: { finalizedRecords: 1, openRecords: 1, totalNetSalary: '6045.00' },
+      },
+    });
+
+    const attendanceBatches: unknown[] = [];
+    await expect(reader.readBatches(
+      'attendance', { dateFrom: '2026-07-01', dateTo: '2026-07-31' },
+      { mode: 'all' }, 2, now,
+      async (rows) => { attendanceBatches.push(...rows); },
+    )).resolves.toMatchObject({ kind: 'success', total: 3, rowCount: 3 });
+    expect(attendanceBatches).toHaveLength(3);
+
+    const payrollBatches: Array<Record<string, unknown>> = [];
+    payrollPreviewCount = 0;
+    await expect(reader.readBatches(
+      'payroll', { monthFrom: '2026-07', monthTo: '2026-07' },
+      { mode: 'all' }, 1, now,
+      async (rows) => { payrollBatches.push(...rows); },
+    )).resolves.toMatchObject({ kind: 'success', total: 2, rowCount: 2 });
+    expect(payrollBatches.map(({ status }) => status)).toEqual(['finalized', 'open']);
+    expect(payrollPreviewCount).toBe(2);
+
+    const boundedReader = createDrizzleReportReader(database, {
+      now: () => now,
+      maxInteractivePayrollCandidates: 1,
+      payroll: {
+        preview: (targetEmployeeId, month, context) => {
+          payrollPreviewCount += 1;
+          return payroll.repository.previewInContext(targetEmployeeId, month, attendance, context);
+        },
+      },
+    });
+    payrollPreviewCount = 0;
+    await expect(boundedReader.read(
+      'payroll', { monthFrom: '2026-07', monthTo: '2026-07' },
+      { mode: 'all' }, { page: 1, pageSize: 1 }, now,
+    )).resolves.toEqual({ kind: 'unavailable' });
+    expect(payrollPreviewCount).toBe(0);
+    await expect(boundedReader.read(
+      'payroll', { monthFrom: '2026-07', monthTo: '2026-07' },
+      { mode: 'all' }, { page: 1, pageSize: 1, purpose: 'availability' }, now,
+    )).resolves.toMatchObject({ kind: 'success' });
+    expect(payrollPreviewCount).toBe(0);
   });
 
   it('uses Cairo calendar boundaries for timestamp filters', async () => {

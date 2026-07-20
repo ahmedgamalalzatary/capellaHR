@@ -3,6 +3,7 @@ import type { CompleteDevicePairing, DeviceAssignment, ListDevicesQuery, VerifyD
 
 export type PublicDevice = { id: number; assignmentType: 'employee' | 'branch'; assignmentId: number; assignmentName: string | null; status: 'active' | 'revoked'; browser: string; platform: string; pairedAt: Date; lastUsedAt: Date | null; revokedAt: Date | null };
 type StoredCredential = { deviceId: number; credentialId: string; credentialPublicKey: string; counter: number; transports: string[] };
+type ConsumedCredentialFailure = { kind: 'invalid' | 'revoked'; deviceId: number | null };
 type PairingState = DeviceAssignment & { challenge: string | null; webauthnUserId: string | null; excludeCredentialIds: string[] };
 
 export interface DeviceRepository {
@@ -13,7 +14,7 @@ export interface DeviceRepository {
   activatePairing(input: DeviceAssignment & { tokenHash: string; expectedChallenge: string; credentialId: string; credentialIdHash: string; credentialPublicKey: string; counter: number; transports: string[]; credentialDeviceType: 'singleDevice' | 'multiDevice'; credentialBackedUp: boolean; installationMarkerHash: string; browser: string; platform: string }): Promise<PublicDevice | 'invalid' | 'conflict'>;
   findActiveCredential(input: DeviceAssignment & { installationMarkerHash: string }): Promise<StoredCredential | 'invalid' | 'revoked'>;
   createAuthenticationChallenge(input: { id: string; deviceId: number; challenge: string; createdAt: Date; expiresAt: Date }): Promise<boolean>;
-  consumeAuthenticationChallenge(input: DeviceAssignment & { challengeId: string; credentialIdHash: string; installationMarkerHash: string; now: Date }): Promise<(StoredCredential & { challenge: string }) | 'invalid' | 'revoked'>;
+  consumeAuthenticationChallenge(input: DeviceAssignment & { challengeId: string; credentialIdHash: string; installationMarkerHash: string; now: Date }): Promise<(StoredCredential & { challenge: string }) | ConsumedCredentialFailure>;
   recordSuccessfulVerification(deviceId: number, expectedCounter: number, newCounter: number): Promise<PublicDevice | 'invalid' | 'revoked'>;
   cancelPairing(id: number): Promise<boolean>; revoke(id: number): Promise<boolean>;
   list(query: ListDevicesQuery): Promise<{ items: PublicDevice[]; total: number }>;
@@ -28,10 +29,14 @@ export interface WebAuthnProvider {
 }
 
 export class DeviceError extends Error {
-  constructor(public readonly code: 'DEVICE_ASSIGNMENT_NOT_FOUND' | 'DEVICE_PAIRING_INVALID' | 'DEVICE_ALREADY_REGISTERED' | 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DEVICE_PROOF_INVALID', message: string) { super(message); }
+  constructor(
+    public readonly code: 'DEVICE_ASSIGNMENT_NOT_FOUND' | 'DEVICE_PAIRING_INVALID' | 'DEVICE_ALREADY_REGISTERED' | 'DEVICE_NOT_FOUND' | 'DEVICE_REVOKED' | 'DEVICE_PROOF_INVALID',
+    message: string,
+    public readonly deviceId: number | null = null,
+  ) { super(message); }
 }
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
-const invalidProof = () => new DeviceError('DEVICE_PROOF_INVALID', 'تعذر التحقق من إثبات الجهاز');
+const invalidProof = (deviceId: number | null = null) => new DeviceError('DEVICE_PROOF_INVALID', 'تعذر التحقق من إثبات الجهاز', deviceId);
 
 export const createDeviceService = (repository: DeviceRepository, webauthn: WebAuthnProvider, options: { now?: () => Date; authenticationChallengeTtlMs?: number } = {}) => {
   const now = options.now ?? (() => new Date());
@@ -82,15 +87,17 @@ export const createDeviceService = (repository: DeviceRepository, webauthn: WebA
     },
     async verify(assignment: DeviceAssignment, input: VerifyDevice) {
       const credential = await repository.consumeAuthenticationChallenge({ ...assignment, challengeId: input.challengeId, credentialIdHash: digest(input.response.id), installationMarkerHash: digest(input.installationMarker), now: now() });
-      if (credential === 'revoked') throw new DeviceError('DEVICE_REVOKED', 'تم إلغاء الجهاز');
-      if (credential === 'invalid') throw invalidProof();
+      if ('kind' in credential) {
+        if (credential.kind === 'revoked') throw new DeviceError('DEVICE_REVOKED', 'تم إلغاء الجهاز', credential.deviceId);
+        throw invalidProof(credential.deviceId);
+      }
       let verification;
       try { verification = await webauthn.verifyAuthentication(input.response, credential.challenge, { id: credential.credentialId, publicKey: new Uint8Array(Buffer.from(credential.credentialPublicKey, 'base64url')), counter: credential.counter, transports: credential.transports }); }
-      catch { throw invalidProof(); }
-      if (!verification.verified) throw invalidProof();
+      catch { throw invalidProof(credential.deviceId); }
+      if (!verification.verified) throw invalidProof(credential.deviceId);
       const result = await repository.recordSuccessfulVerification(credential.deviceId, credential.counter, verification.newCounter);
-      if (result === 'revoked') throw new DeviceError('DEVICE_REVOKED', 'تم إلغاء الجهاز');
-      if (result === 'invalid') throw invalidProof();
+      if (result === 'revoked') throw new DeviceError('DEVICE_REVOKED', 'تم إلغاء الجهاز', credential.deviceId);
+      if (result === 'invalid') throw invalidProof(credential.deviceId);
       return result;
     },
     async cancelPairing(id: number) { if (!await repository.cancelPairing(id)) throw new DeviceError('DEVICE_PAIRING_INVALID', 'طلب ربط الجهاز غير صالح'); },

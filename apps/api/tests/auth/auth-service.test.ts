@@ -14,9 +14,29 @@ type Session = {
 class MemorySessions {
   readonly rows: Session[] = [];
   employeeCurrent = true;
+  attendanceEligibilityChecks = 0;
+  deviceEligibilityChecks = 0;
+  readonly transactionContext = { kind: 'auth-transaction' };
 
   async create(session: Session) { this.rows.push(session); }
-  async createEmployeeIfCurrent(session: Session) { if (!this.employeeCurrent) return false; this.rows.push(session); return true; }
+  async createEmployeeIfCurrent(
+    session: Session,
+    _credentialVersion?: number,
+    deviceEligible?: (context: unknown) => Promise<boolean>,
+    attendanceEligible?: (context: unknown) => Promise<boolean>,
+  ) {
+    if (!this.employeeCurrent) return 'credentials_changed' as const;
+    if (deviceEligible) {
+      this.deviceEligibilityChecks += 1;
+      if (!await deviceEligible(this.transactionContext)) return 'device_invalid' as const;
+    }
+    if (attendanceEligible) {
+      this.attendanceEligibilityChecks += 1;
+      if (!await attendanceEligible(this.transactionContext)) return 'attendance_required' as const;
+    }
+    this.rows.push(session);
+    return 'created' as const;
+  }
   async revokeByTokenHash(tokenHash: string, at: Date) {
     const row = this.rows.find((item) => item.tokenHash === tokenHash);
     if (row) row.revokedAt = at;
@@ -56,12 +76,13 @@ beforeAll(async () => {
   employeePinHash = await hash('0123');
 });
 
-const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boolean; employeeCurrent?: boolean } = {}) => {
+const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolean; attendanceOpen?: boolean; employeeCurrent?: boolean } = {}) => {
   const sessions = new MemorySessions();
   sessions.employeeCurrent = overrides.employeeCurrent ?? true;
   const attempts = new MemoryAttempts();
   let tokenNumber = 0;
   let deviceVerificationCount = 0;
+  let attendanceContext: unknown;
   const createAuthService = Reflect.get(auth, 'createAuthService');
   expect(createAuthService).toBeTypeOf('function');
 
@@ -69,6 +90,7 @@ const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boole
     sessions,
     attempts,
     get deviceVerificationCount() { return deviceVerificationCount; },
+    get attendanceContext() { return attendanceContext; },
     service: createAuthService({
       adminCredentials: {
         async findByEmail(email: string) {
@@ -88,11 +110,18 @@ const makeService = (overrides: { deviceActive?: boolean; attendanceOpen?: boole
         async beginAuthentication() { return (overrides.deviceActive ?? true) ? { challengeId: 'challenge', options: {} } : null; },
         async verify(employeeId: number, proof: typeof validProof) {
           deviceVerificationCount += 1;
-          return employeeId === employee.id && proof.response.id === 'valid-proof' && (overrides.deviceActive ?? true);
+          return employeeId === employee.id && proof.response.id === 'valid-proof' && (overrides.deviceActive ?? true)
+            ? { id: 4 }
+            : null;
+        },
+        async isActiveEmployeeDevice(deviceId: number, employeeId: number, context: unknown) {
+          expect(context).toBe(sessions.transactionContext);
+          return deviceId === 4 && employeeId === employee.id && (overrides.deviceCurrent ?? true);
         },
       },
       attendance: {
-        async hasOpenSession(employeeId: number) {
+        async hasOpenSession(employeeId: number, context?: unknown) {
+          attendanceContext = context;
           return employeeId === employee.id && (overrides.attendanceOpen ?? true);
         },
       },
@@ -150,9 +179,9 @@ describe('authentication service', () => {
   });
 
   it('creates employee self-service only with matching identity, device, and open attendance', async () => {
-    const { service } = makeService();
+    const setup = makeService();
 
-    const result = await service.loginEmployee({
+    const result = await setup.service.loginEmployee({
       employeeCode: 12,
       pin: '0123',
       personalPhone: '01012345678',
@@ -160,7 +189,10 @@ describe('authentication service', () => {
     });
 
     expect(result.actor).toEqual({ type: 'employee' });
-    await expect(service.authenticate(result.token)).resolves.toMatchObject({ actorType: 'employee', employeeId: 7 });
+    await expect(setup.service.authenticate(result.token)).resolves.toMatchObject({ actorType: 'employee', employeeId: 7 });
+    expect(setup.sessions.attendanceEligibilityChecks).toBe(1);
+    expect(setup.sessions.deviceEligibilityChecks).toBe(1);
+    expect(setup.attendanceContext).toBe(setup.sessions.transactionContext);
   });
 
   it.each([
@@ -234,6 +266,23 @@ describe('authentication service', () => {
     await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: validProof })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
     expect(sessions.rows).toHaveLength(0);
     expect(attempts.rows).toEqual([expect.objectContaining({ succeeded: false, reason: 'INVALID_CREDENTIALS' })]);
+  });
+
+  it('rejects login when the verified device is revoked before session creation', async () => {
+    const { service, sessions, attempts } = makeService({ deviceCurrent: false });
+
+    await expect(service.loginEmployee({
+      employeeCode: 12,
+      pin: '0123',
+      personalPhone: '01012345678',
+      deviceProof: validProof,
+    })).rejects.toMatchObject({ code: 'DEVICE_NOT_REGISTERED' });
+    expect(sessions.rows).toHaveLength(0);
+    expect(sessions.deviceEligibilityChecks).toBe(1);
+    expect(attempts.rows).toEqual([expect.objectContaining({
+      succeeded: false,
+      reason: 'DEVICE_NOT_REGISTERED',
+    })]);
   });
 
   it('does not record infrastructure failures as invalid credentials', async () => {

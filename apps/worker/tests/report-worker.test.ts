@@ -1,8 +1,101 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { runReportWorker } from '../src/report-worker.js';
+import { runIndependentWorkers, runReportWorker } from '../src/report-worker.js';
 
 describe('report worker loop', () => {
+  it('services both continuously busy queues without starvation', async () => {
+    const controller = new AbortController();
+    const attendance = { processNext: vi.fn(async () => ({ id: 'attendance' })) };
+    const reports = { processNext: vi.fn(async () => {
+      if (attendance.processNext.mock.calls.length >= 2) controller.abort();
+      return { id: 'report' };
+    }) };
+
+    await runIndependentWorkers(attendance, reports, {
+      signal: controller.signal,
+      idleDelayMs: 1,
+      sleep: vi.fn(),
+    });
+
+    expect(attendance.processNext.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(reports.processNext).toHaveBeenCalled();
+  });
+
+  it('services due attendance while a long report remains in flight', async () => {
+    const controller = new AbortController();
+    let releaseReport!: () => void;
+    const reportReleased = new Promise<void>((resolve) => { releaseReport = resolve; });
+    let signalReportStarted!: () => void;
+    const reportStarted = new Promise<void>((resolve) => { signalReportStarted = resolve; });
+    let signalAttendance!: () => void;
+    const attendanceProcessed = new Promise<void>((resolve) => { signalAttendance = resolve; });
+    const attendance = { processNext: vi.fn(async () => {
+      await reportStarted;
+      signalAttendance();
+      controller.abort();
+      return { id: 'attendance' };
+    }) };
+    const reports = { processNext: vi.fn(async () => {
+      signalReportStarted();
+      await reportReleased;
+      return { id: 'report' };
+    }) };
+
+    const running = runIndependentWorkers(attendance, reports, {
+      signal: controller.signal,
+      idleDelayMs: 1,
+    });
+    await attendanceProcessed;
+
+    expect(attendance.processNext).toHaveBeenCalledTimes(1);
+    expect(reports.processNext).toHaveBeenCalledTimes(1);
+    releaseReport();
+    await running;
+  });
+
+  it('does not run report stale recovery from attendance maintenance during a long export', async () => {
+    const controller = new AbortController();
+    let currentTime = 0;
+    let releaseReport!: () => void;
+    const reportReleased = new Promise<void>((resolve) => { releaseReport = resolve; });
+    let signalReportStarted!: () => void;
+    const reportStarted = new Promise<void>((resolve) => { signalReportStarted = resolve; });
+    let signalAttendanceMaintained!: () => void;
+    const attendanceMaintained = new Promise<void>((resolve) => {
+      signalAttendanceMaintained = resolve;
+    });
+    const maintain = vi.fn(async () => {
+      signalAttendanceMaintained();
+      controller.abort();
+    });
+    const reportMaintain = vi.fn(async () => undefined);
+    const sleep = vi.fn(async () => { currentTime = 20 * 60_000; });
+
+    const running = runIndependentWorkers(
+      { processNext: async () => null },
+      { processNext: async () => {
+        signalReportStarted();
+        await reportReleased;
+        return { id: 'report' };
+      } },
+      {
+        signal: controller.signal,
+        idleDelayMs: 1,
+        maintenanceIntervalMs: 5 * 60_000,
+        maintain,
+        reportMaintain,
+        now: () => currentTime,
+        sleep,
+      },
+    );
+    await Promise.all([reportStarted, attendanceMaintained]);
+
+    expect(maintain).toHaveBeenCalled();
+    expect(reportMaintain).not.toHaveBeenCalled();
+    releaseReport();
+    await running;
+  });
+
   it('processes jobs serially and waits only when the queue is empty', async () => {
     const controller = new AbortController();
     const processNext = vi.fn()

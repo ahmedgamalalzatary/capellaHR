@@ -12,3 +12,5 @@ export * from './modules/advances/index.js';
 export * from './modules/audit/index.js';
 export * from './modules/reports/index.js';
 export * from './modules/self-service/index.js';
+export * from './modules/attendance/index.js';
+export * from './modules/dashboard/index.js';

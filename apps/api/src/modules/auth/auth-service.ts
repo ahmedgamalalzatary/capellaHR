@@ -15,7 +15,12 @@ export type StoredSession = {
 
 export interface SessionRepository {
   create(session: StoredSession): Promise<void>;
-  createEmployeeIfCurrent(session: StoredSession, credentialVersion: number): Promise<boolean>;
+  createEmployeeIfCurrent(
+    session: StoredSession,
+    credentialVersion: number,
+    deviceEligible: (context: unknown) => Promise<boolean>,
+    attendanceEligible: (context: unknown) => Promise<boolean>,
+  ): Promise<'created' | 'credentials_changed' | 'device_invalid' | 'attendance_required'>;
   findActiveByTokenHash(tokenHash: string): Promise<StoredSession | null>;
   revokeByTokenHash(tokenHash: string, at: Date): Promise<boolean>;
   revokeEmployee(employeeId: number, at: Date): Promise<void>;
@@ -51,8 +56,12 @@ export interface AuthServiceDependencies {
   sessions: SessionRepository;
   attempts: AttemptRepository;
   employees: { findByCode(code: number): Promise<EmployeeIdentity | null> };
-  personalDevices: { beginAuthentication(employeeId: number, installationMarker: string): Promise<object | null>; verify(employeeId: number, proof: VerifyDevice): Promise<boolean> };
-  attendance: { hasOpenSession(employeeId: number): Promise<boolean> };
+  personalDevices: {
+    beginAuthentication(employeeId: number, installationMarker: string): Promise<object | null>;
+    verify(employeeId: number, proof: VerifyDevice): Promise<{ id: number } | null>;
+    isActiveEmployeeDevice(deviceId: number, employeeId: number, context: unknown): Promise<boolean>;
+  };
+  attendance: { hasOpenSession(employeeId: number, context?: unknown): Promise<boolean> };
   tokenFactory?: () => string;
   now?: () => Date;
 }
@@ -83,7 +92,12 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   const now = dependencies.now ?? (() => new Date());
   const tokenFactory = dependencies.tokenFactory ?? (() => randomBytes(32).toString('base64url'));
 
-  const createSession = async (actorType: ActorType, employeeId: number | null, credentialVersion?: number) => {
+  const createSession = async (
+    actorType: ActorType,
+    employeeId: number | null,
+    credentialVersion?: number,
+    deviceId?: number,
+  ) => {
     const token = tokenFactory();
     const session = {
       id: randomUUID(),
@@ -92,10 +106,19 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       employeeId,
       revokedAt: null,
     };
-    const created = actorType === 'employee'
-      ? await dependencies.sessions.createEmployeeIfCurrent(session, credentialVersion!)
-      : (await dependencies.sessions.create(session), true);
-    if (!created) throw new AuthError('INVALID_CREDENTIALS', 'تعذر تسجيل الدخول');
+    if (actorType === 'employee') {
+      const result = await dependencies.sessions.createEmployeeIfCurrent(
+        session,
+        credentialVersion!,
+        (context) => dependencies.personalDevices.isActiveEmployeeDevice(deviceId!, employeeId!, context),
+        (context) => dependencies.attendance.hasOpenSession(employeeId!, context),
+      );
+      if (result === 'credentials_changed') throw new AuthError('INVALID_CREDENTIALS', 'تعذر تسجيل الدخول');
+      if (result === 'device_invalid') throw new AuthError('DEVICE_NOT_REGISTERED', 'تعذر تسجيل الدخول');
+      if (result === 'attendance_required') throw new AuthError('ACTIVE_ATTENDANCE_REQUIRED', 'تعذر تسجيل الدخول');
+    } else {
+      await dependencies.sessions.create(session);
+    }
     return token;
   };
 
@@ -125,19 +148,15 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
         && identity.deletedAt === null
         && identity.personalPhone === input.personalPhone
         && await safelyVerifyHash(identity.pinHash, input.pin);
-      const deviceValid = await dependencies.personalDevices.verify(
+      const verifiedDevice = await dependencies.personalDevices.verify(
         identity?.id ?? 0,
         input.deviceProof,
       );
 
       let reason: string | null = identityValid ? null : 'INVALID_CREDENTIALS';
-      if (identityValid && !deviceValid) {
+      if (identityValid && !verifiedDevice) {
         reason = 'DEVICE_NOT_REGISTERED';
       }
-      if (identityValid && reason === null && !await dependencies.attendance.hasOpenSession(identity.id)) {
-        reason = 'ACTIVE_ATTENDANCE_REQUIRED';
-      }
-
       const recordAttempt = (succeeded: boolean, failureReason: string | null) => dependencies.attempts.record({
         actorType: 'employee', identifier: String(input.employeeCode), succeeded, reason: failureReason, ...context,
       });
@@ -145,8 +164,8 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
 
       const employeeId = identity!.id;
       let token: string;
-      try { token = await createSession('employee', employeeId, identity!.credentialVersion); }
-      catch (error) { if (error instanceof AuthError) await recordAttempt(false, 'INVALID_CREDENTIALS'); throw error; }
+      try { token = await createSession('employee', employeeId, identity!.credentialVersion, verifiedDevice!.id); }
+      catch (error) { if (error instanceof AuthError) await recordAttempt(false, error.code); throw error; }
       await recordAttempt(true, null);
       return {
         token,

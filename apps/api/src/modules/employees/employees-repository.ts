@@ -4,12 +4,22 @@ import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
 import type { EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
 type Database = ReturnType<typeof createDatabase>;
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+export type EmployeeBeforeDurationChange = (
+  employeeId: number,
+  previousDurationMinutes: number,
+  context: Transaction,
+) => Promise<unknown>;
 
 const hydrate = async (db: Database | Parameters<Parameters<Database['transaction']>[0]>[0], employee: typeof employees.$inferSelect): Promise<EmployeeRecord> => {
   const files = await db.select().from(employeeImages).where(eq(employeeImages.employeeId, employee.id));
   return { ...employee, images: Object.fromEntries(files.map((file) => [file.kind, { storagePath: file.storagePath, originalName: file.originalName, mimeType: file.mimeType, sizeBytes: file.sizeBytes }])) as EmployeeImages };
 };
-export const createDrizzleEmployeeRepository = (database: Database, now: () => Date = () => new Date()): EmployeeRepository => ({
+export const createDrizzleEmployeeRepository = (
+  database: Database,
+  now: () => Date = () => new Date(),
+  beforeDurationChange?: EmployeeBeforeDurationChange,
+): EmployeeRepository => ({
   async create(input) {
     return database.transaction(async (tx) => {
       const branch = await tx.select({
@@ -61,6 +71,10 @@ export const createDrizzleEmployeeRepository = (database: Database, now: () => D
       const before = await hydrate(tx, current);
       const { images, ...fields } = changes;
       const updatedAt = now();
+      if (fields.shiftDurationMinutes !== undefined
+        && fields.shiftDurationMinutes !== current.shiftDurationMinutes) {
+        await beforeDurationChange?.(id, current.shiftDurationMinutes, tx);
+      }
       if (fields.personalPhone || fields.whatsappPhone) {
         const personalPhone = fields.personalPhone ?? current.personalPhone; const whatsappPhone = fields.whatsappPhone ?? current.whatsappPhone;
         await tx.delete(employeePhoneReservations).where(eq(employeePhoneReservations.employeeId, id));

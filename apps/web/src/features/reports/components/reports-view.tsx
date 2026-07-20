@@ -67,8 +67,27 @@ const DATE_RANGE_TABS: ReadonlySet<ReportType> = new Set([
   'advances',
 ]);
 
-/** Selection ids target the source table; shift rows are keyed by their employee. */
-const idKeyOf = (reportType: ReportType) => (reportType === 'shifts' ? 'employeeId' : 'id');
+/** Employee-related report selection always targets employees, not transient row ids. */
+const EMPLOYEE_SCOPED_TABS: ReadonlySet<ReportType> = new Set([
+  'employees',
+  'shifts',
+  'weekly-day-off',
+  'attendance',
+  'payroll',
+  'bonuses',
+  'deductions',
+  'advances',
+]);
+const idKeyOf = (reportType: ReportType) => EMPLOYEE_SCOPED_TABS.has(reportType) ? 'employeeId' : 'id';
+const rowKeyOf = (reportType: ReportType, row: Record<string, unknown>, index: number) => [
+  reportType,
+  row.recordType,
+  row.id,
+  row.employeeId,
+  row.attendanceDate,
+  row.payrollMonth,
+  index,
+].map((value) => String(value ?? '')).join(':');
 
 const SUMMARY_LABELS: Record<string, string> = {
   totalRecords: 'إجمالي السجلات',
@@ -78,6 +97,15 @@ const SUMMARY_LABELS: Record<string, string> = {
   averageDurationMinutes: 'متوسط مدة الوردية بالدقائق',
   totalRequiredMinutes: 'إجمالي الدقائق المطلوبة',
   totalAmount: 'إجمالي المبلغ (ج.م)',
+  attendanceRecords: 'سجلات الحضور',
+  absenceRecords: 'سجلات الغياب',
+  weeklyDayOffRecords: 'أيام الراحة الأسبوعية',
+  totalWorkedMinutes: 'إجمالي دقائق العمل',
+  totalOvertimeMinutes: 'إجمالي الدقائق الإضافية',
+  totalShortageMinutes: 'إجمالي دقائق النقص',
+  openRecords: 'رواتب مفتوحة',
+  finalizedRecords: 'رواتب معتمدة',
+  totalNetSalary: 'إجمالي صافي الرواتب (ج.م)',
 };
 
 const EXPORT_STATUS: Record<
@@ -99,6 +127,18 @@ const serverErrorMessage = (error: unknown): string | null => {
 const cellText = (value: ReportCell): string => {
   if (value === null) return '—';
   if (typeof value === 'boolean') return value ? 'نعم' : 'لا';
+  if (typeof value === 'string') return ({
+    open: 'مفتوح',
+    finalized: 'معتمد',
+    attendance: 'حضور',
+    absence: 'غياب',
+    weekly_day_off: 'راحة أسبوعية',
+    daily_record: 'سجل يومي',
+    active: 'نشط',
+    revoked: 'ملغى',
+    employee: 'موظف',
+    branch: 'فرع',
+  } as Record<string, string>)[value] ?? value;
   return String(value);
 };
 
@@ -582,7 +622,7 @@ export function ReportsView() {
                 {snapshot.rows.map((row, index) => {
                   const rowId = typeof row[idKey] === 'number' ? (row[idKey] as number) : null;
                   return (
-                    <tr key={rowId ?? index} className="border-b border-line/60 last:border-b-0">
+                    <tr key={rowKeyOf(reportType, row, index)} className="border-b border-line/60 last:border-b-0">
                       <td className="px-3 py-3">
                         {rowId !== null ? (
                           <input

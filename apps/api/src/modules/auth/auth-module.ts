@@ -19,7 +19,8 @@ const unavailableEmployees: AuthServiceDependencies['employees'] = {
 
 const unavailableDevices: AuthServiceDependencies['personalDevices'] = {
   beginAuthentication() { return Promise.reject(new AuthError('DEVICE_NOT_REGISTERED', 'الجهاز غير مسجل')); },
-  verify() { return Promise.resolve(false); },
+  verify() { return Promise.resolve(null); },
+  isActiveEmployeeDevice() { return Promise.resolve(false); },
 };
 
 const unavailableAttendance: AuthServiceDependencies['attendance'] = {

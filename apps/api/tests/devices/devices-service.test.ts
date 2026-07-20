@@ -62,4 +62,15 @@ describe('device service', () => {
     expect(provider.verifyAuthentication).toHaveBeenCalledWith(proof.response, 'auth-challenge', expect.objectContaining({ counter: 1 }));
     expect(repo.recordSuccessfulVerification).toHaveBeenCalledWith(4, 1, 2);
   });
+
+  it('retains the consumed candidate device id when WebAuthn verification fails', async () => {
+    const repo = repository(); const provider = webauthn();
+    vi.mocked(provider.verifyAuthentication).mockResolvedValue({ verified: false, newCounter: 1 });
+    const proof = { challengeId: 'b4f3550c-0230-4a73-ae58-f4086ab13206', installationMarker: 'marker-marker-123', response: { id: 'credential', rawId: 'credential', type: 'public-key' as const, response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } };
+
+    await expect(createDeviceService(repo, provider).verify(
+      { assignmentType: 'employee', assignmentId: 8 },
+      proof,
+    )).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID', deviceId: 4 });
+  });
 });

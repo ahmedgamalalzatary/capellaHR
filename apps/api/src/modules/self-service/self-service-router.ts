@@ -1,4 +1,5 @@
 import {
+  selfServiceAttendanceListQuerySchema,
   selfServiceFinancialListQuerySchema,
   selfServicePayrollMonthParamsSchema,
   selfServiceWeeklyDayListQuerySchema,
@@ -78,6 +79,13 @@ export const createSelfServiceRouter = (
   router.get('/overview', async (_request: Request, response: Response, next: NextFunction) => {
     try { response.json({ data: await service.getOverview(employeeId(response)) }); }
     catch (error) { handle(error, response, next); }
+  });
+
+  router.get('/attendance', async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const query = selfServiceAttendanceListQuerySchema.parse(request.query);
+      sendPage(response, await service.listAttendance(employeeId(response), query), query);
+    } catch (error) { handle(error, response, next); }
   });
 
   router.get('/weekly-days', async (request: Request, response: Response, next: NextFunction) => {

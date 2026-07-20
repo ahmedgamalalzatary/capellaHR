@@ -1,12 +1,34 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  selfServiceAttendanceListQuerySchema,
   selfServiceFinancialListQuerySchema,
   selfServicePayrollMonthParamsSchema,
   selfServiceWeeklyDayListQuerySchema,
 } from './index.js';
 
 describe('employee self-service contracts', () => {
+  it('accepts only own attendance history filters', () => {
+    expect(selfServiceAttendanceListQuerySchema.parse({
+      state: 'closed',
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-31',
+      page: '2',
+    })).toEqual({
+      state: 'closed',
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-31',
+      page: 2,
+      pageSize: 20,
+    });
+    expect(selfServiceAttendanceListQuerySchema.safeParse({ employeeId: '9' }).success).toBe(false);
+    expect(selfServiceAttendanceListQuerySchema.safeParse({ branchId: '2' }).success).toBe(false);
+    expect(selfServiceAttendanceListQuerySchema.safeParse({ search: 'someone else' }).success).toBe(false);
+    expect(selfServiceAttendanceListQuerySchema.safeParse({
+      dateFrom: '2026-07-31', dateTo: '2026-07-01',
+    }).success).toBe(false);
+  });
+
   it('accepts only paging and month filters for financial history', () => {
     expect(selfServiceFinancialListQuerySchema.parse({
       payrollMonth: '2026-07',

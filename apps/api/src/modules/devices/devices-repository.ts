@@ -22,6 +22,18 @@ const findPublicDevice = async (executor: Executor, id: number): Promise<PublicD
 const duplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
 const assignmentFilter = (type: 'employee' | 'branch', id: number) => type === 'employee' ? eq(devices.employeeId, id) : eq(devices.branchId, id);
 
+export const createDeviceLoginEligibility = () => ({
+  isActiveEmployeeDevice: async (deviceId: number, employeeId: number, context: unknown) => {
+    const transaction = context as Transaction;
+    return (await transaction.select({ id: devices.id }).from(devices).where(and(
+      eq(devices.id, deviceId),
+      eq(devices.assignmentType, 'employee'),
+      eq(devices.employeeId, employeeId),
+      eq(devices.status, 'active'),
+    )).for('update').limit(1))[0] !== undefined;
+  },
+});
+
 export const createDrizzleDeviceRepository = (database: Database, now: () => Date = () => new Date()): DeviceRepository => ({
   async assignmentExists(input) { if (input.assignmentType === 'branch') return Boolean((await database.select({ id: branches.id }).from(branches).where(eq(branches.id, input.assignmentId)).limit(1))[0]); return Boolean((await database.select({ id: employees.id }).from(employees).where(and(eq(employees.id, input.assignmentId), isNull(employees.deletedAt))).limit(1))[0]); },
   async createPairing(input) {
@@ -158,7 +170,7 @@ export const createDrizzleDeviceRepository = (database: Database, now: () => Dat
         .from(deviceAuthenticationChallenges)
         .where(eq(deviceAuthenticationChallenges.id, input.challengeId))
         .limit(1))[0];
-      if (!candidate) return 'invalid' as const;
+      if (!candidate) return { kind: 'invalid' as const, deviceId: null };
 
       const row = (await tx.select().from(devices)
         .where(eq(devices.id, candidate.deviceId))
@@ -172,7 +184,7 @@ export const createDrizzleDeviceRepository = (database: Database, now: () => Dat
         ))
         .for('update')
         .limit(1))[0];
-      if (!challenge) return 'invalid' as const;
+      if (!challenge) return { kind: 'invalid' as const, deviceId: candidate.deviceId };
 
       const consumed = await tx.update(deviceAuthenticationChallenges)
         .set({ consumedAt: input.now })
@@ -180,15 +192,15 @@ export const createDrizzleDeviceRepository = (database: Database, now: () => Dat
           eq(deviceAuthenticationChallenges.id, input.challengeId),
           isNull(deviceAuthenticationChallenges.consumedAt),
         ));
-      if (consumed[0].affectedRows !== 1) return 'invalid' as const;
+      if (consumed[0].affectedRows !== 1) return { kind: 'invalid' as const, deviceId: candidate.deviceId };
       await writeAudit(tx, {
         module: 'devices', action: 'authentication_challenge_consume',
         entityType: 'device_authentication_challenge', entityId: input.challengeId,
         beforeState: { consumedAt: null }, afterState: { consumedAt: input.now },
         relatedIds: { deviceId: row?.id ?? candidate.deviceId }, createdAt: input.now,
       });
-      if (!row) return 'invalid' as const;
-      if (row.status === 'revoked') return 'revoked' as const;
+      if (!row) return { kind: 'invalid' as const, deviceId: candidate.deviceId };
+      if (row.status === 'revoked') return { kind: 'revoked' as const, deviceId: row.id };
 
       const matchesAssignment = row.assignmentType === input.assignmentType
         && (row.assignmentType === 'employee' ? row.employeeId : row.branchId) === input.assignmentId;
@@ -196,7 +208,7 @@ export const createDrizzleDeviceRepository = (database: Database, now: () => Dat
         !matchesAssignment
         || row.credentialIdHash !== input.credentialIdHash
         || row.installationMarkerHash !== input.installationMarkerHash
-      ) return 'invalid' as const;
+      ) return { kind: 'invalid' as const, deviceId: row.id };
 
       return {
         deviceId: row.id,

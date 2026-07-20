@@ -103,10 +103,11 @@ const compute = async (
   employee: NonNullable<Awaited<ReturnType<typeof lockEmployee>>>,
   month: string,
   attendance: PayrollAttendanceGateway,
+  mode: 'preview' | 'finalize',
 ): Promise<Computed> => {
   const existing = exposeFinalized(await rawFinalized(transaction, employee.id, month));
   if (existing) return { kind: 'success', payroll: existing };
-  const attendanceResult = await attendance.readPayrollFacts(employee.id, month, transaction);
+  const attendanceResult = await attendance.readPayrollFacts(employee.id, month, transaction, mode);
   if (attendanceResult.kind === 'blocked') return attendanceResult;
   const [baseSalary, bonusAmount, manualDeductionAmount, advanceAmount, carry] = await Promise.all([
     salaryForMonth(transaction, employee, month),
@@ -268,9 +269,25 @@ export const createDrizzlePayrollRepository = (
         if (!employee) return { kind: 'employee_not_found' as const };
         if (!employeeEligibleForMonth(employee, month, timeZone)) return { kind: 'month_not_eligible' as const };
         if (month > context.currentMonth()) return { kind: 'month_not_ended' as const };
-        const result = await compute(transaction, employee, month, attendance);
+        const result = await compute(transaction, employee, month, attendance, 'preview');
         return result.kind === 'success' ? result : { kind: 'blocked' as const, reasons: result.reasons };
       });
+    },
+    async previewInContext(employeeId, month, attendance, transactionContext) {
+      const transaction = transactionContext as Transaction;
+      const employee = (await transaction.select({
+        id: employees.id,
+        employeeCode: employees.employeeCode,
+        fullName: employees.fullName,
+        branchId: employees.branchId,
+        monthlyBaseSalary: employees.monthlyBaseSalary,
+        createdAt: employees.createdAt,
+        deletedAt: employees.deletedAt,
+      }).from(employees).where(eq(employees.id, employeeId)).limit(1))[0];
+      if (!employee) return { kind: 'employee_not_found' };
+      if (!employeeEligibleForMonth(employee, month, timeZone)) return { kind: 'month_not_eligible' };
+      if (month > context.currentMonth()) return { kind: 'month_not_ended' };
+      return compute(transaction, employee, month, attendance, 'preview');
     },
     finalize(employeeId, month, attendance) {
       return database.transaction(async (transaction) => {
@@ -280,7 +297,7 @@ export const createDrizzlePayrollRepository = (
         if (month >= context.currentMonth()) return { kind: 'month_not_ended' as const };
         if (await isFinalized(transaction, employeeId, month)) return { kind: 'already_finalized' as const };
         if (!await chronological(transaction, employee, month, timeZone)) return { kind: 'chronology_conflict' as const };
-        const result = await compute(transaction, employee, month, attendance);
+        const result = await compute(transaction, employee, month, attendance, 'finalize');
         if (result.kind === 'blocked') return result;
         return { kind: 'success' as const, payroll: await insertFinalized(transaction, result.payroll, context.now()) };
       });
@@ -309,7 +326,7 @@ export const createDrizzlePayrollRepository = (
             reasons.push(`${row.id}:PAYROLL_CHRONOLOGY_CONFLICT`);
             continue;
           }
-          const result = await compute(transaction, employee, month, attendance);
+          const result = await compute(transaction, employee, month, attendance, 'finalize');
           if (result.kind === 'blocked') reasons.push(...result.reasons.map((reason) => `${row.id}:${reason}`));
           else calculated.push(result.payroll);
         }

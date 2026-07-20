@@ -9,35 +9,91 @@ import { createDrizzleEmployeeRepository, createEmployeesModule } from './module
 import { createDevicesModule, createWebAuthnProvider } from './modules/devices/index.js';
 import { createShiftsModule } from './modules/shifts/index.js';
 import { createWeeklyDayOffModule } from './modules/weekly-day-off/index.js';
-import { createPayrollModule } from './modules/payroll/index.js';
+import { createPayrollModule, type PayrollAttendanceGateway } from './modules/payroll/index.js';
 import { createBonusModule } from './modules/bonuses/index.js';
 import { createDeductionModule } from './modules/deductions/index.js';
 import { createAdvanceModule } from './modules/advances/index.js';
 import { createReportsModule } from './modules/reports/index.js';
 import { createSelfServiceModule } from './modules/self-service/index.js';
 import { createAuditModule } from './modules/audit/index.js';
+import {
+  createAttendanceModule,
+  type AttendanceShiftChangeReconciler,
+} from './modules/attendance/index.js';
+import { createDashboardModule } from './modules/dashboard/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
-const employeeRepository = createDrizzleEmployeeRepository(database);
+let reconcileAbsencesBeforeShiftChange: AttendanceShiftChangeReconciler = () => Promise.resolve(0);
+const employeeRepository = createDrizzleEmployeeRepository(
+  database,
+  () => new Date(),
+  (...input) => reconcileAbsencesBeforeShiftChange(...input),
+);
 const webOrigin = new URL(env.WEB_ORIGIN);
 const deviceModule = createDevicesModule(database, createWebAuthnProvider({ rpName: env.WEBAUTHN_RP_NAME, rpId: env.WEBAUTHN_RP_ID ?? webOrigin.hostname, origin: webOrigin.origin }));
-const auth = createAuthModule({ database, employees: { findByCode: (code) => employeeRepository.findIdentityByCode(code) }, personalDevices: deviceModule.personalDevices });
-await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD });
 const branchModule = createBranchesModule(database);
-const shiftModule = createShiftsModule(database);
-const payrollModule = createPayrollModule(database, { timeZone: env.APP_TIME_ZONE });
+const shiftModule = createShiftsModule(database, {
+  beforeDurationChange: (employeeId, previousDurationMinutes, context) => (
+    reconcileAbsencesBeforeShiftChange(
+      employeeId,
+      previousDurationMinutes,
+      context as Parameters<AttendanceShiftChangeReconciler>[2],
+    )
+  ),
+});
+const attendanceForPayroll: { current?: PayrollAttendanceGateway } = {};
+const payrollModule = createPayrollModule(database, {
+  timeZone: env.APP_TIME_ZONE,
+  attendance: {
+    readPayrollFacts: (...input) => {
+      if (!attendanceForPayroll.current) throw new Error('Attendance payroll gateway is not initialized');
+      return attendanceForPayroll.current.readPayrollFacts(...input);
+    },
+  },
+});
+const attendanceModule = createAttendanceModule(database, deviceModule.attendanceDevices, {
+  isFinanciallyLocked: (employeeId, attendanceDate, context) => (
+    payrollModule.service.isFinanciallyLocked(employeeId, attendanceDate, context)
+  ),
+  readRequiredDuration: (employeeId, context, includeDeleted) => (
+    shiftModule.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
+  ),
+  timeZone: env.APP_TIME_ZONE,
+});
+attendanceForPayroll.current = attendanceModule.repository;
+reconcileAbsencesBeforeShiftChange = attendanceModule.repository.reconcileDueAbsencesForEmployee;
+const auth = createAuthModule({
+  database,
+  employees: { findByCode: (code) => employeeRepository.findIdentityByCode(code) },
+  personalDevices: deviceModule.personalDevices,
+  attendance: attendanceModule.service,
+});
+await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD });
 const bonusModule = createBonusModule(database, { timeZone: env.APP_TIME_ZONE });
 const deductionModule = createDeductionModule(database, { timeZone: env.APP_TIME_ZONE });
 const advanceModule = createAdvanceModule(database, { timeZone: env.APP_TIME_ZONE });
 const reportsModule = createReportsModule(database, {
   ...(env.REPORT_FILES_ROOT === undefined ? {} : { filesRoot: env.REPORT_FILES_ROOT }),
   timeZone: env.APP_TIME_ZONE,
+  payroll: {
+    preview: (employeeId, month, context) => (
+      payrollModule.repository.previewInContext(
+        employeeId,
+        month,
+        attendanceModule.repository,
+        context,
+      )
+    ),
+  },
 });
 const auditModule = createAuditModule(database, { timeZone: env.APP_TIME_ZONE });
+const dashboardModule = createDashboardModule(database, {
+  timeZone: env.APP_TIME_ZONE,
+});
 const employeeModule = createEmployeesModule(
   database,
   env.MAX_EMPLOYEE_IMAGE_BYTES,
-  undefined,
+  attendanceModule.service,
   employeeRepository,
   deviceModule.lifecycle,
   advanceModule.lifecycle,
@@ -51,6 +107,7 @@ const weeklyDayOffModule = createWeeklyDayOffModule(database, {
 const selfServiceModule = createSelfServiceModule({
   employees: employeeModule.service,
   branches: branchModule.service,
+  attendance: attendanceModule.service,
   weeklyDays: weeklyDayOffModule.service,
   payroll: payrollModule.service,
   bonuses: bonusModule.service,
@@ -75,6 +132,8 @@ createApp({
   reportService: reportsModule.service,
   selfServiceService: selfServiceModule.service,
   auditService: auditModule.service,
+  attendanceService: attendanceModule.service,
+  dashboardService: dashboardModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

@@ -14,6 +14,12 @@ export type ShiftAssignmentRecord = {
 
 export type ShiftTransactionContext = unknown;
 
+export type ShiftBeforeDurationChange = (
+  employeeId: number,
+  previousDurationMinutes: number,
+  context: ShiftTransactionContext,
+) => Promise<unknown>;
+
 export interface ShiftRepository {
   findByEmployeeId(employeeId: number): Promise<ShiftAssignmentRecord | null>;
   list(query: ListShiftAssignmentsQuery): Promise<{ items: ShiftAssignmentRecord[]; total: number }>;
@@ -21,6 +27,7 @@ export interface ShiftRepository {
   lockDurationForCheckIn(
     employeeId: number,
     context: ShiftTransactionContext,
+    includeDeleted?: boolean,
   ): Promise<number | null>;
 }
 
@@ -58,8 +65,9 @@ export const createShiftService = (repository: ShiftRepository) => ({
   async readRequiredDurationForCheckIn(
     employeeId: number,
     context: ShiftTransactionContext,
+    includeDeleted = false,
   ) {
-    const durationMinutes = await repository.lockDurationForCheckIn(employeeId, context);
+    const durationMinutes = await repository.lockDurationForCheckIn(employeeId, context, includeDeleted);
     if (durationMinutes === null) throw assignmentNotFound();
     return durationMinutes;
   },

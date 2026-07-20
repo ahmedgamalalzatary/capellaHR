@@ -40,7 +40,7 @@ export interface ReportReader {
     reportType: ReportType,
     filters: ReportFilters,
     selection: ReportSelection,
-    pagination: { page: number; pageSize: number } | null,
+    pagination: { page: number; pageSize: number; purpose?: 'screen' | 'availability' } | null,
     generatedAt: Date,
   ): Promise<{ kind: 'success'; snapshot: ReportSnapshot; total: number } | { kind: 'unavailable' }>;
   readBatches(
@@ -141,7 +141,11 @@ export const createReportService = (
 
   async createExport(input: CreateReportExportInput) {
     reportFilterCompatibilitySchema.parse({ reportType: input.reportType, filters: input.filters });
-    const available = await reader.read(input.reportType, input.filters, input.selection, { page: 1, pageSize: 1 }, now());
+    const available = await reader.read(input.reportType, input.filters, input.selection, {
+      page: 1,
+      pageSize: 1,
+      purpose: 'availability',
+    }, now());
     if (available.kind === 'unavailable') throw new ReportError('REPORT_SOURCE_UNAVAILABLE');
     return exports.create(input, now());
   },

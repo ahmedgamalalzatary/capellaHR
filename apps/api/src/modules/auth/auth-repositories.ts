@@ -39,10 +39,12 @@ export const createDrizzleAuthRepositories = (
         });
       });
     },
-    async createEmployeeIfCurrent(session, credentialVersion) {
+    async createEmployeeIfCurrent(session, credentialVersion, deviceEligible, attendanceEligible) {
       return database.transaction(async (tx) => {
         const employee = (await tx.select({ credentialVersion: employees.credentialVersion, deletedAt: employees.deletedAt }).from(employees).where(eq(employees.id, session.employeeId!)).for('update').limit(1))[0];
-        if (!employee || employee.deletedAt || employee.credentialVersion !== credentialVersion) return false;
+        if (!employee || employee.deletedAt || employee.credentialVersion !== credentialVersion) return 'credentials_changed';
+        if (!await deviceEligible(tx)) return 'device_invalid';
+        if (!await attendanceEligible(tx)) return 'attendance_required';
         const createdAt = now();
         await tx.insert(authSessions).values({ ...session, createdAt });
         await writeAudit(tx, {
@@ -51,7 +53,7 @@ export const createDrizzleAuthRepositories = (
           afterState: { actorType: session.actorType, employeeId: session.employeeId },
           relatedIds: { employeeId: session.employeeId! }, createdAt,
         });
-        return true;
+        return 'created';
       });
     },
     async findActiveByTokenHash(tokenHash) {

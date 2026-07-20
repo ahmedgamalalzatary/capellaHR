@@ -17,6 +17,7 @@ const repository = (): PayrollRepository => ({
   updateBaseSalary: vi.fn(async () => ({ kind: 'success' as const, salary: { ...salary, amount: '6000.00' } })),
   list: vi.fn(async () => ({ kind: 'success' as const, items: [], total: 0 })),
   preview: vi.fn(async () => ({ kind: 'success' as const, payroll: {} as never })),
+  previewInContext: vi.fn(async () => ({ kind: 'success' as const, payroll: {} as never })),
   finalize: vi.fn(async () => ({ kind: 'success' as const, payroll: {} as never })),
   finalizeBranch: vi.fn(async () => ({ kind: 'success' as const, payrolls: [] })),
   isFinalized: vi.fn(async () => false),

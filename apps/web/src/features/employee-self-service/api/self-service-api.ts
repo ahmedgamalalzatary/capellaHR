@@ -1,4 +1,5 @@
 import type {
+  SelfServiceAttendanceListQuery,
   SelfServiceFinancialListQuery,
   SelfServiceWeeklyDayListQuery,
 } from '@capella/contracts';
@@ -8,6 +9,7 @@ import { api } from '@/lib/api/client';
 import type {
   SelfServiceAdjustment,
   SelfServiceAdvance,
+  SelfServiceAttendance,
   SelfServiceOverview,
   SelfServicePayroll,
   SelfServiceWeeklyDay,
@@ -23,6 +25,10 @@ const queryString = (query: Record<string, string | number | undefined>) => {
 };
 
 export const getSelfServiceOverview = () => api.get<SelfServiceOverview>('/self-service/overview');
+
+export const listSelfServiceAttendance = (query: Partial<SelfServiceAttendanceListQuery> = {}) => (
+  api.getPage<SelfServiceAttendance>(`/self-service/attendance${queryString(query)}`)
+);
 
 export const listSelfServiceWeeklyDays = (query: Partial<SelfServiceWeeklyDayListQuery> = {}) => (
   api.getPage<SelfServiceWeeklyDay>(`/self-service/weekly-days${queryString(query)}`)

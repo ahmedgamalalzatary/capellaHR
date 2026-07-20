@@ -342,7 +342,7 @@ describe('MySQL-backed salary domain', () => {
     const blockedAttendance: PayrollAttendanceGateway = {
       readPayrollFacts: async (employeeId) => employeeId === second
         ? { kind: 'blocked', reasons: ['OPEN_SESSION'] }
-        : attendance.readPayrollFacts(employeeId, '2026-05', {}),
+        : attendance.readPayrollFacts(employeeId, '2026-05', {}, 'finalize'),
     };
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
     await expect(payroll.service.finalize(first, '2026-06'))
@@ -363,7 +363,7 @@ describe('MySQL-backed salary domain', () => {
     const blockedAttendance: PayrollAttendanceGateway = {
       readPayrollFacts: async (employeeId) => employeeId === second
         ? { kind: 'blocked', reasons: ['OPEN_SESSION'] }
-        : attendance.readPayrollFacts(employeeId, '2026-06', {}),
+        : attendance.readPayrollFacts(employeeId, '2026-06', {}, 'preview'),
     };
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance: blockedAttendance });
 
@@ -393,7 +393,7 @@ describe('MySQL-backed salary domain', () => {
     const blockedAttendance: PayrollAttendanceGateway = {
       readPayrollFacts: async (employeeId) => employeeId === attendanceEmployee
         ? { kind: 'blocked', reasons: ['DENIED_ATTEMPT'] }
-        : attendance.readPayrollFacts(employeeId, '2026-06', {}),
+        : attendance.readPayrollFacts(employeeId, '2026-06', {}, 'finalize'),
     };
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance: blockedAttendance });
 

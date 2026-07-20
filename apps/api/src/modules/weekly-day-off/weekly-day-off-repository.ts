@@ -33,7 +33,7 @@ const recordFields = {
   branchId: branches.id,
   branchName: branches.name,
   attendanceDate: attendanceDailyRecords.attendanceDate,
-  status: attendanceDailyRecords.status,
+  status: sql<WeeklyDayRecord['status']>`${attendanceDailyRecords.status}`,
   absenceRequiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
   requiredMinutes: sql<number>`case when ${attendanceDailyRecords.status} = 'weekly_day_off' then 0 else ${attendanceDailyRecords.absenceRequiredMinutes} end`.mapWith(Number),
   dayOffConvertedAt: attendanceDailyRecords.dayOffConvertedAt,
@@ -49,7 +49,11 @@ const findActiveRecord = async (
     .from(attendanceDailyRecords)
     .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
     .innerJoin(branches, eq(branches.id, employees.branchId))
-    .where(and(eq(attendanceDailyRecords.id, id), isNull(employees.deletedAt)))
+    .where(and(
+      eq(attendanceDailyRecords.id, id),
+      isNull(employees.deletedAt),
+      ne(attendanceDailyRecords.status, 'attendance_replaced'),
+    ))
     .limit(1)
 )[0] ?? null;
 
@@ -100,7 +104,10 @@ export const createDrizzleWeeklyDayOffRepository = (
   },
 
   async list(query) {
-    const filters = [isNull(employees.deletedAt)];
+    const filters = [
+      isNull(employees.deletedAt),
+      ne(attendanceDailyRecords.status, 'attendance_replaced'),
+    ];
     if (query.employeeId !== undefined) filters.push(eq(employees.id, query.employeeId));
     if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
     if (query.status !== undefined) filters.push(eq(attendanceDailyRecords.status, query.status));

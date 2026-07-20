@@ -34,6 +34,11 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  test('does not render an empty page heading when no shell title is provided', () => {
+    renderShell();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  });
+
   test('closes the mobile drawer and releases the focus trap at the desktop breakpoint', () => {
     let desktop = false;
     const listeners = new Set<(event: MediaQueryListEvent) => void>();

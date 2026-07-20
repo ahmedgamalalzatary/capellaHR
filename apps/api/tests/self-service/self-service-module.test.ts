@@ -7,6 +7,7 @@ describe('self-service module', () => {
     const dependencies = {
       employees: { get: async () => ({ branchId: 1 }) },
       branches: { get: async () => ({}) },
+      attendance: { listSessions: async () => ({ items: [], total: 0 }) },
       weeklyDays: { list: async () => ({ items: [], total: 0 }) },
       payroll: { getBaseSalary: async () => ({}), preview: async () => ({}) },
       bonuses: { list: async () => ({ items: [], total: 0 }) },

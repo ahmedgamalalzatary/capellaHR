@@ -37,7 +37,7 @@ export function Topbar({
             {menuOpen ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
           </Button>
         ) : null}
-        <h1 className="text-base font-semibold">{title}</h1>
+        {title ? <h1 className="text-base font-semibold">{title}</h1> : null}
       </div>
       <div className="flex items-center gap-2 sm:gap-4">
         <div className="hidden sm:block">

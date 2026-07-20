@@ -127,6 +127,27 @@
       "when": 1784551100588,
       "tag": "0017_swift_mac_gargan",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1784562235024,
+      "tag": "0018_fearless_sunfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1784563200756,
+      "tag": "0019_living_ultron",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1784570489825,
+      "tag": "0020_many_peter_quill",
+      "breakpoints": true
     }
   ]
 }

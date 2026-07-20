@@ -6,6 +6,7 @@ import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
   getOverview: vi.fn(),
+  listAttendance: vi.fn(),
   listWeeklyDays: vi.fn(),
   getPayrollMonth: vi.fn(),
   listBonuses: vi.fn(),
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/features/employee-self-service/api/self-service-api', () => ({
   getSelfServiceOverview: mocks.getOverview,
+  listSelfServiceAttendance: mocks.listAttendance,
   listSelfServiceWeeklyDays: mocks.listWeeklyDays,
   getSelfServicePayrollMonth: mocks.getPayrollMonth,
   listSelfServiceBonuses: mocks.listBonuses,
@@ -65,13 +67,25 @@ const renderView = (retry: false | number = false) => {
 
 const noRetryCases = [
   { name: 'overview', read: mocks.getOverview, tabIndex: null, queryKey: ['self-service', 'overview'] },
-  { name: 'weekly days', read: mocks.listWeeklyDays, tabIndex: 1, queryKey: ['self-service', 'weekly-days', 1] },
-  { name: 'adjustments', read: mocks.listBonuses, tabIndex: 3, queryKey: ['self-service', 'bonuses', 1] },
-  { name: 'advances', read: mocks.listAdvances, tabIndex: 5, queryKey: ['self-service', 'advances', 1] },
+  { name: 'attendance', read: mocks.listAttendance, tabIndex: 1, queryKey: ['self-service', 'attendance', 1] },
+  { name: 'weekly days', read: mocks.listWeeklyDays, tabIndex: 2, queryKey: ['self-service', 'weekly-days', 1] },
+  { name: 'adjustments', read: mocks.listBonuses, tabIndex: 4, queryKey: ['self-service', 'bonuses', 1] },
+  { name: 'advances', read: mocks.listAdvances, tabIndex: 6, queryKey: ['self-service', 'advances', 1] },
 ] as const;
 
 beforeEach(() => {
   mocks.getOverview.mockResolvedValue(overview);
+  mocks.listAttendance.mockResolvedValue(pageOf([{
+    id: 11,
+    attendanceDate: '2026-07-20',
+    state: 'closed',
+    requiredMinutes: 480,
+    checkInAt: '2026-07-20T06:00:00.000Z',
+    checkOutAt: '2026-07-20T14:00:00.000Z',
+    workedMinutes: 480,
+    overtimeMinutes: 0,
+    shortageMinutes: 0,
+  }]));
   mocks.listWeeklyDays.mockResolvedValue(pageOf([
     { id: 1, attendanceDate: '2026-07-01', status: 'weekly_day_off', requiredMinutes: 480, dayOffConvertedAt: '2026-07-02T00:00:00.000Z' },
   ]));
@@ -119,13 +133,34 @@ describe('SelfServiceView', () => {
     expect(screen.getByRole('tabpanel').id).toBe('self-service-panel-overview');
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(overviewTab.id);
 
-    const bonusesTab = screen.getAllByRole('tab')[3]!;
+    const bonusesTab = screen.getAllByRole('tab')[4]!;
     fireEvent.click(bonusesTab);
     expect(bonusesTab.id).toBe('self-service-tab-bonuses');
     expect(bonusesTab.getAttribute('aria-controls')).toBe('self-service-panel-bonuses');
     expect(bonusesTab.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('tabpanel').id).toBe('self-service-panel-bonuses');
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(bonusesTab.id);
+  });
+
+  it('uses roving focus and RTL keyboard navigation across the tabs', async () => {
+    renderView();
+    await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledTimes(1));
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1]);
+
+    tabs[0]!.focus();
+    fireEvent.keyDown(tabs[0]!, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(tabs[1]);
+    expect(tabs[1]!.getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.keyDown(tabs[1]!, { key: 'End' });
+    expect(document.activeElement).toBe(tabs[6]);
+    expect(tabs[6]!.getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.keyDown(tabs[6]!, { key: 'Home' });
+    expect(document.activeElement).toBe(tabs[0]);
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
   });
 
   it('shows the employee identity, assignment, and salary without admin or export controls', async () => {
@@ -143,6 +178,10 @@ describe('SelfServiceView', () => {
   it('lets the employee browse only their read-only histories', async () => {
     renderView();
     await screen.findByText('أحمد جمال');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'الحضور' }));
+    expect(await screen.findByText('2026-07-20')).toBeDefined();
+    expect(screen.getByText('مغلق')).toBeDefined();
 
     fireEvent.click(screen.getByRole('tab', { name: 'أيام الراحة والغياب' }));
     expect(await screen.findByText('2026-07-01')).toBeDefined();

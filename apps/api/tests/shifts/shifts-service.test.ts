@@ -76,7 +76,7 @@ describe('shift service', () => {
       transaction,
     )).resolves.toBe(600);
 
-    expect(vi.mocked(repository.lockDurationForCheckIn)).toHaveBeenCalledWith(7, transaction);
+    expect(vi.mocked(repository.lockDurationForCheckIn)).toHaveBeenCalledWith(7, transaction, false);
   });
 
   it('rejects snapshot capture for an unknown or deleted employee', async () => {

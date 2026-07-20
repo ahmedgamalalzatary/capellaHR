@@ -43,3 +43,30 @@ export const runReportWorker = async (
     }
   }
 };
+
+export const runIndependentWorkers = async (
+  attendance: Processor,
+  reports: Processor,
+  options: Parameters<typeof runReportWorker>[1] & {
+    reportMaintain?: () => Promise<void>;
+  },
+) => {
+  const { reportMaintain, ...attendanceOptions } = options;
+  const reportOptions = {
+    signal: options.signal,
+    idleDelayMs: options.idleDelayMs,
+    ...(reportMaintain ? {
+      maintain: reportMaintain,
+      ...(options.maintenanceIntervalMs
+        ? { maintenanceIntervalMs: options.maintenanceIntervalMs }
+        : {}),
+    } : {}),
+    ...(options.now ? { now: options.now } : {}),
+    ...(options.sleep ? { sleep: options.sleep } : {}),
+    ...(options.onIterationError ? { onIterationError: options.onIterationError } : {}),
+  };
+  await Promise.all([
+    runReportWorker(attendance, attendanceOptions),
+    runReportWorker(reports, reportOptions),
+  ]);
+};

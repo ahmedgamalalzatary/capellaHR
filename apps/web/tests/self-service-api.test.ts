@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getSelfServiceOverview,
   getSelfServicePayrollMonth,
+  listSelfServiceAttendance,
   listSelfServiceAdvances,
   listSelfServiceBonuses,
   listSelfServiceDeductions,
@@ -23,6 +24,7 @@ describe('self-service API', () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ data: { profile: {} } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
+      .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ data: { payrollMonth: '2026-07' } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
@@ -30,6 +32,7 @@ describe('self-service API', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await getSelfServiceOverview();
+    await listSelfServiceAttendance({ state: 'closed', dateFrom: '2026-07-01', page: 2 });
     await listSelfServiceWeeklyDays({ status: 'weekly_day_off', page: 2 });
     await getSelfServicePayrollMonth('2026-07');
     await listSelfServiceBonuses({ payrollMonth: '2026-07' });
@@ -39,6 +42,7 @@ describe('self-service API', () => {
     const paths = fetchMock.mock.calls.map(([url]) => String(url));
     expect(paths).toEqual([
       'http://localhost:4000/api/v1/self-service/overview',
+      'http://localhost:4000/api/v1/self-service/attendance?state=closed&dateFrom=2026-07-01&page=2',
       'http://localhost:4000/api/v1/self-service/weekly-days?status=weekly_day_off&page=2',
       'http://localhost:4000/api/v1/self-service/payroll/2026-07',
       'http://localhost:4000/api/v1/self-service/bonuses?payrollMonth=2026-07',

@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
 
+import { DashboardView } from '@/features/dashboard';
+
 export const metadata: Metadata = { title: 'الرئيسية' };
 
 export default function DashboardPage() {
-  return (
-    <div className="text-sm text-muted">
-      وحدة «الرئيسية» قيد الإنشاء.
-    </div>
-  );
+  return <DashboardView />;
 }

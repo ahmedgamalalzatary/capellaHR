@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, LogOut, MapPin, WalletCards } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type KeyboardEvent, useEffect, useState } from 'react';
 
 import { Badge, Button, Card, EmptyState, Input } from '@capella/ui';
 
@@ -14,15 +14,17 @@ import {
   getSelfServiceOverview,
   getSelfServicePayrollMonth,
   listSelfServiceAdvances,
+  listSelfServiceAttendance,
   listSelfServiceBonuses,
   listSelfServiceDeductions,
   listSelfServiceWeeklyDays,
 } from '../api/self-service-api';
 
-type Section = 'overview' | 'weekly-days' | 'payroll' | 'bonuses' | 'deductions' | 'advances';
+type Section = 'overview' | 'attendance' | 'weekly-days' | 'payroll' | 'bonuses' | 'deductions' | 'advances';
 
 const sections: Array<{ id: Section; label: string }> = [
   { id: 'overview', label: 'بياناتي' },
+  { id: 'attendance', label: 'الحضور' },
   { id: 'weekly-days', label: 'أيام الراحة والغياب' },
   { id: 'payroll', label: 'الراتب' },
   { id: 'bonuses', label: 'المكافآت' },
@@ -41,6 +43,11 @@ const formatMoney = (amount: string) => `${amount} ج.م`;
 const formatDuration = (minutes: number) => minutes % 60 === 0
   ? `${minutes / 60} ساعات`
   : `${Math.floor(minutes / 60)} ساعة و${minutes % 60} دقيقة`;
+const formatAttendanceTime = (value: string | null) => value === null ? '—' : new Intl.DateTimeFormat('ar-EG', {
+  timeZone: 'Africa/Cairo',
+  hour: '2-digit',
+  minute: '2-digit',
+}).format(new Date(value));
 
 const currentCairoMonth = () => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -130,6 +137,54 @@ function OverviewSection() {
           <p className="tabular mt-1 font-semibold" dir="ltr">{formatMoney(baseSalary.amount)}</p>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function AttendanceSection() {
+  const [page, setPage] = useState(1);
+  const query = useQuery({
+    queryKey: ['self-service', 'attendance', page],
+    queryFn: () => listSelfServiceAttendance(page === 1 ? {} : { page }),
+    retry: false,
+  });
+  useExitOnUnauthorized(query.error);
+  if (query.isPending) return <Card><Loading /></Card>;
+  if (query.isError) return <Card><QueryError error={query.error} retry={() => void query.refetch()} /></Card>;
+  if (!query.data.items.length) return <Card><EmptyState title="لا توجد سجلات حضور حتى الآن" /></Card>;
+  return (
+    <div className="space-y-3">
+      <Card className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-line text-[12px] text-muted">
+            <th className="px-4 py-3 text-start font-medium">التاريخ</th>
+            <th className="px-4 py-3 text-start font-medium">الحالة</th>
+            <th className="px-4 py-3 text-start font-medium">الحضور</th>
+            <th className="px-4 py-3 text-start font-medium">الانصراف</th>
+            <th className="px-4 py-3 text-start font-medium">المطلوب</th>
+            <th className="px-4 py-3 text-start font-medium">دقائق العمل</th>
+            <th className="px-4 py-3 text-start font-medium">إضافي</th>
+            <th className="px-4 py-3 text-start font-medium">نقص</th>
+          </tr></thead>
+          <tbody>{query.data.items.map((record) => (
+            <tr key={record.id} className="border-b border-line/60 last:border-0">
+              <td className="tabular px-4 py-3" dir="ltr">{record.attendanceDate}</td>
+              <td className="px-4 py-3">
+                <Badge variant={record.state === 'open' ? 'success' : 'neutral'}>
+                  {record.state === 'open' ? 'مفتوح' : 'مغلق'}
+                </Badge>
+              </td>
+              <td className="tabular px-4 py-3" dir="ltr">{formatAttendanceTime(record.checkInAt)}</td>
+              <td className="tabular px-4 py-3" dir="ltr">{formatAttendanceTime(record.checkOutAt)}</td>
+              <td className="tabular px-4 py-3">{record.requiredMinutes}</td>
+              <td className="tabular px-4 py-3">{record.workedMinutes ?? '—'}</td>
+              <td className="tabular px-4 py-3">{record.overtimeMinutes ?? '—'}</td>
+              <td className="tabular px-4 py-3">{record.shortageMinutes ?? '—'}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </Card>
+      <Pagination meta={query.data.meta} onPage={setPage} />
     </div>
   );
 }
@@ -277,6 +332,21 @@ function PayrollSection() {
 export function SelfServiceView() {
   const [section, setSection] = useState<Section>('overview');
   const logout = useLogout();
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: Section) => {
+    const currentIndex = sections.findIndex((item) => item.id === current);
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowLeft': nextIndex = (currentIndex + 1) % sections.length; break;
+      case 'ArrowRight': nextIndex = (currentIndex - 1 + sections.length) % sections.length; break;
+      case 'Home': nextIndex = 0; break;
+      case 'End': nextIndex = sections.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    const nextSection = sections[nextIndex]!.id;
+    setSection(nextSection);
+    document.getElementById(tabId(nextSection))?.focus();
+  };
   return (
     <main className="min-h-dvh bg-surface">
       <header className="border-b border-line bg-paper">
@@ -294,13 +364,14 @@ export function SelfServiceView() {
       <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6">
         <div role="tablist" aria-label="أقسام الخدمة الذاتية" className="mb-4 flex gap-1 overflow-x-auto border-b border-line pb-2">
           {sections.map((item) => (
-            <Button key={item.id} id={tabId(item.id)} role="tab" aria-controls={panelId(item.id)} aria-selected={section === item.id} variant={section === item.id ? 'primary' : 'ghost'} size="sm" className="shrink-0" onClick={() => setSection(item.id)}>
+            <Button key={item.id} id={tabId(item.id)} role="tab" aria-controls={panelId(item.id)} aria-selected={section === item.id} tabIndex={section === item.id ? 0 : -1} variant={section === item.id ? 'primary' : 'ghost'} size="sm" className="shrink-0" onClick={() => setSection(item.id)} onKeyDown={(event) => handleTabKeyDown(event, item.id)}>
               {item.label}
             </Button>
           ))}
         </div>
         <div id={panelId(section)} role="tabpanel" aria-labelledby={tabId(section)}>
           {section === 'overview' ? <OverviewSection /> : null}
+          {section === 'attendance' ? <AttendanceSection /> : null}
           {section === 'weekly-days' ? <WeeklyDaysSection /> : null}
           {section === 'payroll' ? <PayrollSection /> : null}
           {section === 'bonuses' ? <AdjustmentSection kind="bonuses" /> : null}

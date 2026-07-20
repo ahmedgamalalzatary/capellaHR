@@ -10,6 +10,22 @@ import {
   weeklyDayRecordStatusSchema,
 } from '../weekly-day-off/index.js';
 
+export const selfServiceAttendanceListQuerySchema = z.object({
+  state: z.enum(['open', 'closed']).optional(),
+  dateFrom: cairoDateSchema.optional(),
+  dateTo: cairoDateSchema.optional(),
+  page: paginationPageSchema.default(1),
+  pageSize: paginationPageSizeSchema.default(20),
+}).strict().superRefine((value, context) => {
+  if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
+    context.addIssue({
+      code: 'custom',
+      path: ['dateTo'],
+      message: 'تاريخ النهاية يجب ألا يسبق تاريخ البداية',
+    });
+  }
+});
+
 export const selfServiceFinancialListQuerySchema = z.object({
   payrollMonth: payrollMonthSchema.optional(),
   page: paginationPageSchema.default(1),
@@ -37,5 +53,5 @@ export const selfServicePayrollMonthParamsSchema = z.object({
 }).strict();
 
 export type SelfServiceFinancialListQuery = z.infer<typeof selfServiceFinancialListQuerySchema>;
+export type SelfServiceAttendanceListQuery = z.infer<typeof selfServiceAttendanceListQuerySchema>;
 export type SelfServiceWeeklyDayListQuery = z.infer<typeof selfServiceWeeklyDayListQuerySchema>;
-

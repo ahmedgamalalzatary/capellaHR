@@ -1,17 +1,19 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDrizzleAuthRepositories } from '../../src/modules/auth/index.js';
+import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/index.js';
 import { createDrizzleEmployeeRepository, createEmployeeService, createEmployeesModule } from '../../src/modules/employees/index.js';
+import { createShiftsModule } from '../../src/modules/shifts/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? '');
 const branchModule = createBranchesModule(database); const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false });
 const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, originalName: `${name}.jpg`, mimeType: 'image/jpeg', sizeBytes: 10 });
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
 
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
   it('creates concurrent employees with distinct incremental codes and locks the branch', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -32,7 +34,12 @@ describe('MySQL-backed employees', () => {
     await database.insert(authSessions).values({ id: 'pin-reset-session', tokenHash: 'a'.repeat(64), actorType: 'employee', employeeId: created.id, createdAt: new Date(), revokedAt: null });
     await employeeModule.service.update(created.id, { pin: '4321' });
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'pin-reset-session')))[0]!.revokedAt).not.toBeNull();
-    await expect(createDrizzleAuthRepositories(database).sessions.createEmployeeIfCurrent({ id: 'stale-login', tokenHash: 'c'.repeat(64), actorType: 'employee', employeeId: created.id, revokedAt: null }, 1)).resolves.toBe(false);
+    await expect(createDrizzleAuthRepositories(database).sessions.createEmployeeIfCurrent(
+      { id: 'stale-login', tokenHash: 'c'.repeat(64), actorType: 'employee', employeeId: created.id, revokedAt: null },
+      1,
+      () => Promise.resolve(true),
+      () => Promise.resolve(true),
+    )).resolves.toBe('credentials_changed');
     await database.insert(authSessions).values({ id: 'delete-session', tokenHash: 'b'.repeat(64), actorType: 'employee', employeeId: created.id, createdAt: new Date(), revokedAt: null });
     await employeeModule.service.remove(created.id);
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'delete-session')))[0]!.revokedAt).not.toBeNull();
@@ -73,5 +80,56 @@ describe('MySQL-backed employees', () => {
     releaseCheck();
 
     await expect(creation).rejects.toMatchObject({ code: 'EMPLOYEE_BRANCH_NOT_FOUND' });
+  });
+
+  it('snapshots the old duration when an employee edit races midnight absence generation', async () => {
+    const branch = await branchModule.service.create({ name: 'Employee edit race', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    let clock = new Date('2026-07-01T09:00:00.000Z');
+    let reconcile: NonNullable<Parameters<typeof createDrizzleEmployeeRepository>[2]> = () => Promise.resolve(0);
+    let signalEditLocked!: () => void;
+    let releaseEdit!: () => void;
+    const editLocked = new Promise<void>((resolve) => { signalEditLocked = resolve; });
+    const editReleased = new Promise<void>((resolve) => { releaseEdit = resolve; });
+    let gateEdit = false;
+    const repository = createDrizzleEmployeeRepository(
+      database,
+      () => clock,
+      async (...input) => {
+        if (gateEdit) {
+          signalEditLocked();
+          await editReleased;
+        }
+        return reconcile(...input);
+      },
+    );
+    const service = createEmployeeService(repository);
+    const shifts = createShiftsModule(database);
+    const attendance = createDrizzleAttendanceRepository(database, {
+      now: () => clock,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: (employeeId, context, includeDeleted) => (
+        shifts.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
+      ),
+    });
+    reconcile = attendance.reconcileDueAbsencesForEmployee;
+    const created = await service.create(employee(branch.id, '01012345678'));
+    clock = new Date('2026-07-20T21:00:01.000Z');
+    await attendance.ensureAbsenceJob('2026-07-20', new Date('2026-07-20T21:00:00.000Z'));
+    gateEdit = true;
+
+    const edit = service.update(created.id, { shiftDurationMinutes: 480 });
+    await editLocked;
+    const generation = attendance.generateAbsences('2026-07-20');
+    releaseEdit();
+    await Promise.all([edit, generation]);
+
+    expect((await database.select().from(attendanceDailyRecords))[0]).toMatchObject({
+      employeeId: created.id,
+      attendanceDate: '2026-07-20',
+      absenceRequiredMinutes: 600,
+    });
+    expect((await database.select({ duration: employees.shiftDurationMinutes })
+      .from(employees).where(eq(employees.id, created.id)))[0]?.duration).toBe(480);
   });
 });

@@ -5,6 +5,7 @@ import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
 import type {
   ShiftAssignmentRecord,
+  ShiftBeforeDurationChange,
   ShiftRepository,
   ShiftTransactionContext,
 } from './shifts-service.js';
@@ -36,6 +37,7 @@ const findActiveAssignment = async (
 export const createDrizzleShiftRepository = (
   database: Database,
   now: () => Date = () => new Date(),
+  beforeDurationChange?: ShiftBeforeDurationChange,
 ): ShiftRepository => ({
   findByEmployeeId(employeeId) {
     return findActiveAssignment(database, employeeId);
@@ -76,6 +78,12 @@ export const createDrizzleShiftRepository = (
         .limit(1);
       if (!current[0]) return null;
 
+      await beforeDurationChange?.(
+        current[0].id,
+        current[0].durationMinutes,
+        transaction,
+      );
+
       const updatedAt = now();
       await transaction.update(employees)
         .set({ shiftDurationMinutes: durationMinutes, updatedAt })
@@ -91,11 +99,13 @@ export const createDrizzleShiftRepository = (
     });
   },
 
-  async lockDurationForCheckIn(employeeId, context: ShiftTransactionContext) {
+  async lockDurationForCheckIn(employeeId, context: ShiftTransactionContext, includeDeleted = false) {
     const transaction = context as Transaction;
+    const filters = [eq(employees.id, employeeId)];
+    if (!includeDeleted) filters.push(isNull(employees.deletedAt));
     const row = await transaction.select({ durationMinutes: employees.shiftDurationMinutes })
       .from(employees)
-      .where(and(eq(employees.id, employeeId), isNull(employees.deletedAt)))
+      .where(and(...filters))
       .for('update')
       .limit(1);
     return row[0]?.durationMinutes ?? null;

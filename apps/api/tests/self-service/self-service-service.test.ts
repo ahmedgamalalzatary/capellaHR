@@ -40,6 +40,26 @@ const branch = {
 const makeDependencies = () => ({
   employees: { get: vi.fn(async () => employee) },
   branches: { get: vi.fn(async () => branch) },
+  attendance: { listSessions: vi.fn(async () => ({ items: [{
+    id: 11,
+    employeeId: 7,
+    employeeCode: 42,
+    employeeName: employee.fullName,
+    branchId: 3,
+    branchName: branch.name,
+    attendanceDate: '2026-07-20',
+    requiredMinutes: 480,
+    checkInAt: new Date('2026-07-20T06:00:00.000Z'),
+    checkOutAt: new Date('2026-07-20T14:00:00.000Z'),
+    workedMinutes: 480,
+    overtimeMinutes: 0,
+    shortageMinutes: 0,
+    automaticTimeoutAt: null,
+    automaticTimeoutCorrectedAt: null,
+    flagged: false,
+    createdAt: new Date('2026-07-20T06:00:00.000Z'),
+    updatedAt: new Date('2026-07-20T14:00:00.000Z'),
+  }], total: 1 })) },
   weeklyDays: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   payroll: {
     getBaseSalary: vi.fn(async () => ({
@@ -87,11 +107,19 @@ describe('employee self-service service', () => {
     const dependencies = makeDependencies();
     const service = createSelfServiceService(dependencies);
 
+    const attendance = await service.listAttendance(7, { state: 'closed', page: 2, pageSize: 10 });
     await service.listWeeklyDays(7, { status: 'weekly_day_off', page: 2, pageSize: 10 });
     await service.listBonuses(7, { payrollMonth: '2026-06', page: 2, pageSize: 10 });
     await service.listDeductions(7, { page: 1, pageSize: 20 });
     await service.listAdvances(7, { page: 1, pageSize: 20 });
 
+    expect(dependencies.attendance.listSessions).toHaveBeenCalledWith({
+      employeeId: 7, state: 'closed', page: 2, pageSize: 10,
+    });
+    expect(attendance.items).toEqual([expect.objectContaining({
+      id: 11, attendanceDate: '2026-07-20', state: 'closed', workedMinutes: 480,
+    })]);
+    expect(JSON.stringify(attendance)).not.toMatch(/employeeId|employeeCode|employeeName|branchId|branchName|flagged/);
     expect(dependencies.weeklyDays.list).toHaveBeenCalledWith({
       employeeId: 7, status: 'weekly_day_off', page: 2, pageSize: 10,
     });

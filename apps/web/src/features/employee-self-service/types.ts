@@ -12,6 +12,18 @@ export type SelfServiceOverview = {
   baseSalary: { amount: string; currency: 'EGP' };
 };
 
+export type SelfServiceAttendance = {
+  id: number;
+  attendanceDate: string;
+  state: 'open' | 'closed';
+  requiredMinutes: number;
+  checkInAt: string;
+  checkOutAt: string | null;
+  workedMinutes: number | null;
+  overtimeMinutes: number | null;
+  shortageMinutes: number | null;
+};
+
 export type SelfServiceWeeklyDay = {
   id: number;
   attendanceDate: string;
@@ -57,4 +69,3 @@ export type SelfServicePayroll = {
   shortageMinutes: number;
   finalizedAt: string | null;
 };
-

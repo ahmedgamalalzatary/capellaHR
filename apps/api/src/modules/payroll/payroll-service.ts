@@ -49,10 +49,11 @@ export interface PayrollAttendanceGateway {
     employeeId: number,
     payrollMonth: string,
     context: PayrollTransactionContext,
+    mode: 'preview' | 'finalize',
   ): Promise<{ kind: 'ready'; facts: PayrollAttendanceFacts } | { kind: 'blocked'; reasons: string[] }>;
 }
 
-type PayrollResult =
+export type PayrollResult =
   | { kind: 'success'; payroll: PayrollRecord }
   | { kind: 'employee_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
   | { kind: 'blocked'; reasons: string[] };
@@ -73,6 +74,12 @@ export interface PayrollRepository {
   >;
   list(query: ListPayrollMonthsQuery, attendance: PayrollAttendanceGateway): Promise<PayrollListResult>;
   preview(employeeId: number, month: string, attendance: PayrollAttendanceGateway): Promise<PayrollResult>;
+  previewInContext(
+    employeeId: number,
+    month: string,
+    attendance: PayrollAttendanceGateway,
+    context: PayrollTransactionContext,
+  ): Promise<PayrollResult>;
   finalize(employeeId: number, month: string, attendance: PayrollAttendanceGateway): Promise<PayrollResult>;
   finalizeBranch(branchId: number, month: string, attendance: PayrollAttendanceGateway): Promise<BranchPayrollResult>;
   isFinalized(employeeId: number, attendanceDate: string, context?: PayrollTransactionContext): Promise<boolean>;

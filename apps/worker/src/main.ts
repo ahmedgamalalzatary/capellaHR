@@ -2,6 +2,7 @@ import {
   createReportProcessor,
   createReportsModule,
 } from '@capella/api/reports-runtime';
+import { createAttendanceJobsRuntime } from '@capella/api/attendance-runtime';
 import { workerEnv as env } from '@capella/config/worker';
 import { createDatabase } from '@capella/database';
 import { renderReportPdfToStream } from '@capella/reporting';
@@ -9,7 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
 
-import { runReportWorker } from './report-worker.js';
+import { scheduleCurrentAttendanceDate } from './attendance-scheduler.js';
+import { runIndependentWorkers } from './report-worker.js';
 
 const defaultFilesRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -19,11 +21,24 @@ const staleAfterMilliseconds = 15 * 60 * 1_000;
 const maintenanceIntervalMilliseconds = 5 * 60 * 1_000;
 const logger = pino({ level: env.LOG_LEVEL });
 const database = createDatabase(env.DATABASE_URL);
+const attendance = createAttendanceJobsRuntime(database, {
+  timeZone: env.APP_TIME_ZONE,
+});
 const reports = createReportsModule(database, {
   filesRoot: env.REPORT_FILES_ROOT ?? defaultFilesRoot,
   timeZone: env.APP_TIME_ZONE,
+  payroll: {
+    preview: (employeeId, month, context) => (
+      attendance.payroll.repository.previewInContext(
+        employeeId,
+        month,
+        attendance.repository,
+        context,
+      )
+    ),
+  },
 });
-const processor = createReportProcessor(
+const reportProcessor = createReportProcessor(
   reports.reader,
   reports.repository,
   reports.fileStore,
@@ -41,7 +56,18 @@ process.once('SIGINT', stop);
 process.once('SIGTERM', stop);
 
 try {
-  const recoverStale = async () => {
+  const maintainAttendance = async () => {
+    const recoveredAt = new Date();
+    const staleBefore = new Date(recoveredAt.valueOf() - staleAfterMilliseconds);
+    await scheduleCurrentAttendanceDate(
+      attendance.repository,
+      recoveredAt,
+      env.APP_TIME_ZONE,
+    );
+    await attendance.repository.reconcileFailed();
+    await attendance.repository.recoverStale(staleBefore);
+  };
+  const maintainReports = async () => {
     const recoveredAt = new Date();
     const staleBefore = new Date(recoveredAt.valueOf() - staleAfterMilliseconds);
     await reports.repository.recoverStale(
@@ -50,12 +76,13 @@ try {
     );
     await reports.service.reconcileFiles(staleBefore);
   };
-  await recoverStale();
-  await runReportWorker(processor, {
+  await Promise.all([maintainAttendance(), maintainReports()]);
+  await runIndependentWorkers(attendance.processor, reportProcessor, {
     signal: controller.signal,
     idleDelayMs: env.REPORT_WORKER_POLL_MS,
     maintenanceIntervalMs: maintenanceIntervalMilliseconds,
-    maintain: recoverStale,
+    maintain: maintainAttendance,
+    reportMaintain: maintainReports,
     onIterationError: () => logger.error('Report worker iteration failed'),
   });
 } catch {

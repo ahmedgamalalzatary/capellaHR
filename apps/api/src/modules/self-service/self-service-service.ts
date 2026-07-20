@@ -1,9 +1,11 @@
 import type {
+  SelfServiceAttendanceListQuery,
   SelfServiceFinancialListQuery,
   SelfServiceWeeklyDayListQuery,
 } from '@capella/contracts';
 
 import type { AdvanceRecord, AdvanceService } from '../advances/index.js';
+import type { AttendanceService, AttendanceSession } from '../attendance/index.js';
 import type { BonusRecord, BonusService } from '../bonuses/index.js';
 import type { BranchService } from '../branches/index.js';
 import type { DeductionService } from '../deductions/index.js';
@@ -14,12 +16,25 @@ import type { WeeklyDayOffService, WeeklyDayRecord } from '../weekly-day-off/ind
 export type SelfServiceDependencies = {
   employees: Pick<EmployeeService, 'get'>;
   branches: Pick<BranchService, 'get'>;
+  attendance: Pick<AttendanceService, 'listSessions'>;
   weeklyDays: Pick<WeeklyDayOffService, 'list'>;
   payroll: Pick<PayrollService, 'getBaseSalary' | 'preview'>;
   bonuses: Pick<BonusService, 'list'>;
   deductions: Pick<DeductionService, 'list'>;
   advances: Pick<AdvanceService, 'list'>;
 };
+
+const projectAttendance = (record: AttendanceSession) => ({
+  id: record.id,
+  attendanceDate: record.attendanceDate,
+  state: record.checkOutAt === null ? 'open' as const : 'closed' as const,
+  requiredMinutes: record.requiredMinutes,
+  checkInAt: record.checkInAt,
+  checkOutAt: record.checkOutAt,
+  workedMinutes: record.workedMinutes,
+  overtimeMinutes: record.overtimeMinutes,
+  shortageMinutes: record.shortageMinutes,
+});
 
 const projectWeeklyDay = (record: WeeklyDayRecord) => ({
   id: record.id,
@@ -101,6 +116,10 @@ export const createSelfServiceService = (dependencies: SelfServiceDependencies) 
 
   async listWeeklyDays(employeeId: number, query: SelfServiceWeeklyDayListQuery) {
     return projectPage(await dependencies.weeklyDays.list({ ...query, employeeId }), projectWeeklyDay);
+  },
+
+  async listAttendance(employeeId: number, query: SelfServiceAttendanceListQuery) {
+    return projectPage(await dependencies.attendance.listSessions({ ...query, employeeId }), projectAttendance);
   },
 
   async getPayrollMonth(employeeId: number, month: string) {

@@ -13,6 +13,8 @@ import { createAdvancesRouter, type AdvanceService } from '../modules/advances/i
 import { createReportsRouter, type ReportService } from '../modules/reports/index.js';
 import { createSelfServiceRouter, type SelfServiceService } from '../modules/self-service/index.js';
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
+import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
+import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -29,6 +31,8 @@ export const createApiRouter = (dependencies: {
   reportService?: ReportService;
   selfServiceService?: SelfServiceService;
   auditService?: AuditService;
+  attendanceService?: AttendanceService;
+  dashboardService?: DashboardService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -77,6 +81,12 @@ export const createApiRouter = (dependencies: {
       ));
     }
     if (dependencies.deviceService) router.use('/devices', createDevicesRouter(dependencies.deviceService, dependencies.authService));
+    if (dependencies.attendanceService) {
+      router.use('/attendance', createAttendanceRouter(
+        dependencies.attendanceService,
+        dependencies.authService,
+      ));
+    }
     if (dependencies.shiftService) router.use('/shifts', createShiftsRouter(dependencies.shiftService, dependencies.authService));
     if (dependencies.weeklyDayOffService) {
       router.use('/weekly-day-offs', createWeeklyDayOffRouter(
@@ -94,6 +104,9 @@ export const createApiRouter = (dependencies: {
     }
     if (dependencies.auditService) {
       router.use('/audit', createAuditRouter(dependencies.auditService, dependencies.authService));
+    }
+    if (dependencies.dashboardService) {
+      router.use('/dashboard', createDashboardRouter(dependencies.dashboardService, dependencies.authService));
     }
   }
 

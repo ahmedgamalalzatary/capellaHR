@@ -7,6 +7,11 @@
       "types": "./src/modules/reports/reports-runtime.ts",
       "development": "./src/modules/reports/reports-runtime.ts",
       "default": "./dist/modules/reports/reports-runtime.js"
+    },
+    "./attendance-runtime": {
+      "types": "./src/modules/attendance/attendance-runtime.ts",
+      "development": "./src/modules/attendance/attendance-runtime.ts",
+      "default": "./dist/modules/attendance/attendance-runtime.js"
     }
   },
   "scripts": {

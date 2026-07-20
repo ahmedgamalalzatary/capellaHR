@@ -142,8 +142,8 @@ The system manages one company with multiple branches. Its planned functional ar
 
 - Each employee has a hidden internal database identifier and a separate visible employee code.
 - Employee codes are company-wide incremental positive integers: `1`, `2`, `3`, and so on.
-- Seeded legacy employees retain their existing employee codes.
-- After seeding, the next employee receives the next integer after the highest existing code.
+- **SKIP — USER CONFIRMED (2026-07-20):** Legacy employee seeding and seed-specific employee-code preservation are not implemented.
+- New employee-code allocation continues after the highest stored employee code.
 - Code allocation must be atomic so concurrent creation cannot issue the same code twice.
 - Employee codes are immutable and are never reused, including after employee deletion.
 - Employee codes are used in login, attendance, administration, imports, exports, and reports.
@@ -417,6 +417,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - A denied attempt retains event type, claimed employee when known, timestamp, device/source, coordinates and distance when available, and failure reason. **SKIP — USER CONFIRMED (2026-07-20):** No recognition/liveness results are stored.
 - Attempts remain unlimited and do not automatically block an employee.
 - The admin may approve any denied attempt as a manual override.
+- The admin may instead dismiss a denied attempt as reviewed-invalid; dismissal preserves the attempt, is audited, and permanently prevents later approval.
 - Approval preserves the original denied attempt and creates the attempted check-in or check-out at its original timestamp.
 - The resulting event records that it came from an admin-approved denied attempt.
 - Only one denied check-in may be approved for an employee on a given Cairo check-in date.
@@ -526,7 +527,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - A newer employee-month cannot be finalized while any older employee-month remains unfinalized.
 - Branch-wide finalization applies the same chronological validation to every employee in the branch.
 - Every attendance session belonging to the employee-month must be closed before finalization.
-- The admin must approve any valid denied attendance attempts before finalization.
+- The admin must resolve every still-actionable denied attendance attempt before finalization by approving valid attempts or dismissing reviewed-invalid attempts.
 - Finalization permanently prevents later approval of denied attempts from that employee-month.
 - Finalization financially locks all salary, attendance, weekly day-off, bonus, deduction, and advance inputs affecting that employee-month.
 - Finalization is permanent and cannot be reopened.
@@ -816,16 +817,12 @@ The admin dashboard shows live summaries for:
 
 - Dashboard summaries link conceptually to the relevant module data, while exact visual interaction is deferred to the later UI-design phase.
 
-## 16. Legacy Seed Compatibility — Locked
+## 16. Legacy Seed Compatibility — SKIP — USER CONFIRMED (2026-07-20)
 
-- Legacy data is loaded only through developer-run database seeds.
-- The product has no admin CSV, Excel, or other import UI.
-- Seeds are idempotent.
-- Legacy employees are matched by immutable numeric employee code.
-- Rerunning seeds never creates duplicate employees for an existing code.
-- Seeds preserve existing/admin-edited production values.
-- Reruns create missing records or fill genuinely missing required seed data without overwriting populated employee values.
-- After seeding, new employee-code allocation continues after the highest stored employee code.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Legacy data is loaded through developer-run, idempotent database seeds.~~
+- The product still has no admin CSV, Excel, or other import UI.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Legacy employee matching, rerun deduplication, preservation/fill behavior, and seed-specific employee-code allocation are required.~~
+- Normal employee creation continues to allocate the next integer after the highest stored employee code.
 
 ## 17. Background Worker and Jobs — Locked
 
@@ -925,7 +922,7 @@ Unused scaffold placeholders such as Benefits, Departments, Positions, Recruitme
 
 - Integration tests run against MySQL for transaction behavior, unique constraints, soft deletion, session revocation, payroll financial locks, job retries, and immutable records.
 - Concurrency tests cover employee-code allocation, duplicate check-in submissions, one-session enforcement, background-job idempotency, and payroll finalization.
-- Seed tests prove reruns preserve admin-edited data, fill only missing required data, and never duplicate employee codes.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Seed tests prove reruns preserve admin-edited data, fill only missing required data, and never duplicate employee codes.~~
 
 ### API and authorization tests
 
@@ -1155,10 +1152,6 @@ HR/
 |   |   |   |   +-- reports/
 |   |   |   |   +-- audit/
 |   |   |   |   +-- jobs/
-|   |   |   |   \-- index.ts
-|   |   |   +-- seed/
-|   |   |   |   +-- data/
-|   |   |   |   +-- helpers/
 |   |   |   |   \-- index.ts
 |   |   |   +-- client.ts
 |   |   |   \-- index.ts

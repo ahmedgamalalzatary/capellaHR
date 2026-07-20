@@ -108,7 +108,7 @@ Current branch endpoints:
 - [x] Implement replacement while retaining the old device until the new device pairs successfully.
 - [x] Revoke replaced/removed devices permanently and require fresh pairing for reuse.
 - [x] Cancel pending pairing and revoke the active personal device during employee soft deletion.
-- [ ] Preserve active employee self-service after device revocation until checkout, while blocking new verification/login; Auth/Attendance integration remains pending.
+- [x] Preserve active employee self-service after device revocation until checkout, while blocking new verification/login; checkout and timeout now end the exception through the Attendance integration.
 - [x] Verify personal and branch devices with one-time server challenges, origin/RP-ID validation, assertion signatures, user verification, and monotonic signature counters. Static credential IDs and installation markers are explicitly not accepted as authentication proof.
 - [x] Wire the cryptographic personal-device verifier into Auth and expose the branch-device verifier for Attendance consumption when that module is implemented.
 - [x] Add admin-only device list/detail/status/history endpoints, assignment/browser/platform search, filters, and assignment identity without exposing credentials or secrets.
@@ -169,11 +169,11 @@ Current weekly day-off endpoints:
 
 Attendance remains responsible for generating an absence only after a Cairo day ends, enforcing employee creation/deletion eligibility, proving that no attendance session exists, and atomically replacing an absence with eligible backdated attendance. Payroll remains responsible for supplying the financial-lock check and consuming zero effective required minutes for a weekly day off.
 
-## Previously deferred slices
+## Completed dependency slices
 
-Attendance was previously deferred and is now the immediate active completion path after the completed non-Attendance Roles foundation and general Audit/correlation slice. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition is removed from the completion path and from downstream dependencies.
+Attendance, its Payroll/Reports integrations, employee self-service Attendance history, Dashboard operational visibility, the non-Attendance Roles foundation, and the general Audit/correlation slice are complete. The remaining functional Attendance web workflows are the immediate active completion path. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition is removed from the completion path and from downstream dependencies.
 
-## 8. Salaries and Payroll — Backend Complete; Attendance Gateway Deferred
+## 8. Salaries and Payroll — Backend Complete
 
 - [x] Require a positive two-decimal EGP base salary during employee creation.
 - [x] Add base-salary view/update with no deletion.
@@ -194,7 +194,7 @@ Attendance was previously deferred and is now the immediate active completion pa
 - [x] Keep actual payment tracking outside scope.
 - [x] Add proration, rounding, eligibility, branch atomicity, idempotency, lock, concurrency, HTTP, and MySQL tests.
 
-Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAILABLE` until the deferred Attendance module supplies closed-session, denied-attempt, eligible-workday, required-minute, overtime, and shortage facts inside the payroll transaction. Base salary and all other financial CRUD remain available.
+Production preview/finalization now receives open/closed-session, denied-attempt, eligible-workday, required-minute, overtime, shortage, and missing-reconciliation facts from Attendance inside the payroll transaction. Open previews remain provisional while finalization enforces unresolved actionable denied attempts, open sessions, and completed reconciliation. Finalized snapshots remain readable independently of live Attendance state.
 
 ## 9. Bonuses — Complete
 
@@ -229,18 +229,19 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Move the complete remaining balance into the deletion month's unfinalized payroll inside employee deletion.
 - [x] Persist mutation/schedule audit events and add rounding, schedule, locking, acceleration, concurrency, authorization, and MySQL tests.
 
-## 12. Reports and PDF Exports — Backend Complete for Available Sources
+## 12. Reports and PDF Exports — Backend Complete
 
-- [x] Add admin-only read APIs for Branches, Employees, Devices, Shifts, Weekly Day-Off, Bonuses, Deductions, and Advances.
-- [ ] Add Attendance/Absence and Payroll report readers after Attendance supplies trustworthy facts; both currently fail closed with `REPORT_SOURCE_UNAVAILABLE`.
+- [x] Add admin-only read APIs for Branches, Employees, Devices, Shifts, Weekly Day-Off, Attendance/Absence, Payroll, Bonuses, Deductions, and Advances.
+- [x] Add Attendance/Absence and Payroll report readers backed by transaction-aware Attendance facts; production view and PDF paths no longer use their fail-closed placeholders.
 - [x] Exclude login/admin-session activity and denied/flagged attendance attempts.
 - [x] Provide Arabic detailed rows, fixed safe field sets, and relevant totals/summaries.
 - [x] Exclude employee images, PINs and hashes, device credentials, and all secrets. **SKIP — USER CONFIRMED (2026-07-20):** No biometric fields or artifacts will exist to report.
 - [x] Include historically relevant soft-deleted employees in employee-related reports.
-- [ ] Label open/finalized payroll rows when the deferred Payroll report reader becomes available.
+- [x] Label open/finalized payroll rows and relevant soft-deleted employees.
 - [x] Add Cairo-correct date ranges, payroll-month ranges, branch/device filters, employee search, and selected/subset/all-filtered selection.
 - [x] Match Advances against their actual installment rows, including schedules rewritten by employee-deletion acceleration.
 - [x] Support paginated on-screen results and PDF only; exclude CSV/Excel.
+- [x] Bound interactive Payroll report work to 5,000 employee-month candidates while keeping durable PDF export batching unrestricted.
 - [x] Generate one combined immutable PDF per report tab; never mix tabs.
 - [x] Add a durable MySQL export queue with atomic claims, three attempts per cycle, preserved lifetime attempt history, periodic stale-job recovery, and a separate `apps/worker` process.
 - [x] Stream bounded MySQL batches through a private disk spool into PDFKit and stream authenticated downloads, avoiding whole-report/PDF buffering under container memory limits.
@@ -250,7 +251,7 @@ Production preview/finalization intentionally returns `PAYROLL_ATTENDANCE_UNAVAI
 - [x] Embed Noto Sans Arabic and visually verify real PDF output for RTL columns, bidirectional dates/numbers, wrapped rows, repeated headers, wide-column bands, and page numbering.
 - [x] Add selection, secret-exclusion, lifecycle, concurrency, file-compensation, PDF, authorization, Cairo-boundary, installment-overlap, and real-MySQL tests.
 
-Reports migrations `0014_lyrical_tusk.sql` through `0015_yummy_puma.sql` add the durable export queue and its bounded-cycle/lifetime retry accounting. The full 18-entry migration chain is applied to `capella_hr-test`.
+Reports migrations `0014_lyrical_tusk.sql` through `0015_yummy_puma.sql` add the durable export queue and its bounded-cycle/lifetime retry accounting. Audit migrations `0016_clammy_wilson_fisk.sql` and `0017_swift_mac_gargan.sql` add the immutable audit stream and report-export request correlation. Attendance migration `0018_fearless_sunfire.sql` adds sessions, events, denied attempts, snapshots, and database-enforced ownership/open-session invariants; `0019_living_ultron.sql` adds durable absence/timeout jobs, claims, retries, failure visibility, and lifecycle constraints; `0020_many_peter_quill.sql` adds the mutually exclusive audited dismissal state for reviewed-invalid denied attempts. The full 21-entry migration chain through `0020` is applied cleanly to `capella_hr-test`.
 
 Current report endpoints:
 
@@ -270,53 +271,54 @@ Current report endpoints:
 - [x] Add the shared API client, stable error-envelope handling, runtime Cairo/locale formatting, query state, loading, retry, and empty-state foundations.
 - [x] Add functional admin views for Branches, Employees, Devices and pairing, Shifts, Weekly Day-Off, Payroll/base salary, Bonuses, Deductions, Advances, and the currently available Reports/PDF workflows.
 - [x] Add admin and employee login forms plus the employee WebAuthn authentication-options flow.
-- [x] Add the Arabic/RTL employee self-service view for own non-secret profile, branch, shift, finalized payroll, weekly-day/absence records, bonuses, deductions, advances/installments, pagination, and logout.
+- [x] Add the Arabic/RTL employee self-service view for own non-secret profile, branch, shift, current/historical Attendance, open/finalized payroll, weekly-day/absence records, bonuses, deductions, advances/installments, pagination, and logout.
 - [x] Add the admin-only immutable Audit History view with search, actor/module/date filters, pagination, retry/empty states, and expandable redacted details.
 
 ### Still required
 
 - [ ] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
-- [ ] Replace the placeholder Dashboard page with all locked operational summaries.
+- [x] Replace the placeholder Dashboard page with all locked operational summaries, bounded live lists, complete totals/status counts, retry/refresh states, and direct links to the owning modules.
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.~~
 - [ ] Implement the personal-device attendance interface with employee code, PIN, GPS, WebAuthn, check-in, and check-out flows.
 - [ ] Implement the shared branch-kiosk interface with employee code, PIN, registered branch-device validation, GPS, check-in, and check-out flows. **SKIP — USER CONFIRMED (2026-07-20):** No camera, randomized liveness, or face match.
-- [ ] Extend employee self-service with Attendance history and trustworthy open payroll previews after the Attendance gateway exists.
-- [ ] Expose the Attendance/Absence and Payroll report tabs only after their backend readers become trustworthy.
+- [x] Extend employee self-service with its own Attendance history and trustworthy open payroll previews through the completed Attendance gateway.
+- [x] Expose the existing Attendance/Absence and Payroll report tabs through their now-trustworthy backend readers.
 - [ ] Run a final functional web audit for Arabic/RTL rendering, Cairo dates, numeric and monetary presentation, search/filter/reset behavior, empty/error/loading states, authorization, accessibility, and responsive operation.
 
 ## Dependency-ordered completion roadmap
 
-The detailed module checklists below remain the acceptance criteria. Step 1 is complete; implement the remaining work in this order:
+The detailed module checklists below remain the acceptance criteria. Completed and skipped steps are marked explicitly; implement the remaining work in this order:
 
 1. **Completed:** Non-Attendance Roles and Employee Self-Service authorization foundation.
 2. **Completed:** Shared request correlation and the general immutable Audit system.
 3. **SKIP — USER CONFIRMED (2026-07-20):** ~~Implement Facial Recognition, encrypted templates, enrollment, liveness, and recognition Settings.~~
-4. Implement the Attendance/Absence data model and employee-code/PIN verification flows, employee/admin workflows, denied and flagged attempts, calculations, and corrections.
-5. Extend the worker with midnight absences, exact 16-hour timeouts, and attendance/payroll reconciliation; wire all Attendance cross-module hooks. **SKIP — USER CONFIRMED (2026-07-20):** No biometric-processing worker job.
-6. Supply trustworthy Attendance facts to Payroll and Reports and remove their production fail-closed gateways.
-7. Complete production employee self-service, including all session-revocation and device-revocation rules.
-8. Implement Dashboard operational visibility.
-9. Implement idempotent legacy seeds.
+4. **Completed:** Attendance/Absence data model and employee-code/PIN verification flows, employee/admin workflows, denied and flagged attempts, calculations, and corrections.
+5. **Completed:** midnight absences, exact 16-hour timeouts, durable retries/reconciliation, and Attendance cross-module hooks. **SKIP — USER CONFIRMED (2026-07-20):** No biometric-processing worker job.
+6. **Completed:** trustworthy transaction-aware Attendance facts now feed Payroll previews/finalization and Attendance/Payroll reports in both API and worker runtimes.
+7. **Completed:** Employee Attendance history, open Payroll previews, and session/device revocation integration.
+8. **Completed:** Dashboard operational visibility through one coherent admin-only snapshot and the Arabic/RTL operations ledger.
+9. **SKIP — USER CONFIRMED (2026-07-20):** ~~Implement idempotent legacy seeds.~~
 10. Complete the corresponding web workflows as each backend slice becomes available, then perform shared infrastructure and final hardening.
 
 ## 13. Roles and Employee Self-Service
 
-Current boundary: the Roles and Employee Self-Service work possible without the Attendance gateway is complete. The remaining login eligibility, Attendance history, open-payroll preview, checkout/timeout revocation, and related tests resume after Attendance/Absence exists. The immediate next project slice is Attendance/Absence. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition and biometric Settings are removed.
+Current boundary: employee login requires an open Attendance session, checkout/timeout revokes employee sessions, open payroll previews use trustworthy Attendance facts, and employees can read their own current/historical Attendance. This dependent slice is complete. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition and biometric Settings are removed.
 
 - [x] Retain exactly two fixed actor types in the authentication/session foundation: the singleton Admin and Employee.
 - [x] Protect employee image endpoints for Admin only.
 - [x] Add the employee-login contracts, service/router flow, PIN/phone/device verification, session support, and Attendance eligibility gateway.
 - [x] Enforce Admin/Employee authorization consistently across every currently implemented Express endpoint and keep the employee API structurally GET-only.
 - [ ] Preserve that authorization coverage across future endpoints, including immutable-state rules that Admin cannot bypass.
-- [ ] Wire the existing employee-login foundation to the real Attendance gateway in production so an open attendance session is required.
-- [x] Limit each employee to their own non-secret profile, branch, shift, days off, finalized payroll, bonuses, deductions, and advances/installments.
-- [ ] Add the employee's own Attendance history and open payroll preview after trustworthy Attendance facts exist.
+- [x] Wire the existing employee-login foundation to the real Attendance gateway in production so an open attendance session is required.
+- [x] Limit each employee to their own non-secret profile, branch, shift, Attendance history, days off, open/finalized payroll, bonuses, deductions, and advances/installments.
+- [x] Add the employee's own paginated Attendance history without employee/branch identifiers, flags, devices, or admin-only fields.
+- [x] Add trustworthy open payroll previews backed by Attendance facts.
 - [x] Keep self-service completely read-only and prohibit employee access to images, secrets, Reports, PDFs, and exports.
 - [x] Revoke employee sessions on PIN reset and employee deletion.
 - [x] Preserve the locked exception in which personal-device revocation does not revoke an already-active self-service session.
-- [ ] Revoke employee sessions on checkout and automatic timeout, including ending a device-revocation exception at checkout.
+- [x] Revoke employee sessions on checkout and automatic timeout, including ending a device-revocation exception at checkout.
 - [x] Add horizontal-access, secret/image denial, mutation denial, current session-revocation, and MySQL integration tests.
-- [ ] Add Attendance-dependent checkout, timeout, and open-session integration tests with the Attendance slice.
+- [x] Add Attendance-dependent checkout, timeout, and open-session integration tests with the Attendance slice.
 
 ## 14. Audit History
 
@@ -329,32 +331,34 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [x] Integrate auditing transactionally across all currently implemented modules and preserve originating correlation IDs across background report transitions.
 - [x] Add immutability, completeness, redaction, authorization, correlation, rollback, background-transition, and MySQL tests.
 
-## 15. Dashboard Operational Visibility
+## 15. Dashboard Operational Visibility — Complete
 
-- [ ] Add admin-only summary endpoints for currently checked-in employees and previous-day open sessions.
-- [ ] Add current-day not-checked-in, latest absences/day-off conversions, and denied/flagged attempt summaries.
-- [ ] Add automatic-timeout, device pairing/replacement, payroll blocker, and PDF-job summaries.
+- [x] Add an admin-only snapshot endpoint for currently checked-in employees and previous-day open sessions.
+- [x] Add current-day not-checked-in, latest absences/day-off conversions, and unresolved denied/flagged attempt summaries.
+- [x] Add automatic-timeout, pending device pairing/replacement, latest-ended-month payroll blocker, and PDF-job summaries.
 - [x] Keep notification center, push, email, SMS, and WhatsApp notifications outside scope.
-- [ ] Add authorization, Cairo-boundary, aggregation, and MySQL tests.
+- [x] Add authorization, unexpected-error forwarding, exact Cairo-midnight boundary, aggregation, safe-field, and MySQL tests.
 
-## 16. Legacy Seeds
+## 16. Legacy Seeds — SKIP — USER CONFIRMED (2026-07-20)
 
-- [ ] Implement developer-run idempotent database seeds with no import UI.
-- [ ] Match legacy employees by immutable numeric employee code and never duplicate an existing code.
-- [ ] Preserve populated/admin-edited production data and fill only genuinely missing required seed fields.
-- [ ] Continue new employee-code allocation after the highest seeded/stored code.
-- [ ] Add rerun, preservation, missing-field, allocation, and MySQL tests.
+- [x] **SKIP — USER CONFIRMED (2026-07-20):** ~~Implement developer-run idempotent database seeds with no import UI.~~
+- [x] **SKIP — USER CONFIRMED (2026-07-20):** ~~Match legacy employees by immutable numeric employee code and never duplicate an existing code.~~
+- [x] **SKIP — USER CONFIRMED (2026-07-20):** ~~Preserve populated/admin-edited production data and fill only genuinely missing required seed fields.~~
+- [x] **SKIP — USER CONFIRMED (2026-07-20):** ~~Continue seed-specific employee-code allocation after the highest seeded code.~~ Normal employee creation still allocates after the highest stored code.
+- [x] **SKIP — USER CONFIRMED (2026-07-20):** ~~Add seed rerun, preservation, missing-field, allocation, and MySQL tests.~~
 
 ## 17. Background Worker and Durable Jobs
 
 - [x] Add `apps/worker` and the first MySQL-backed durable job flow without Redis.
-- [ ] Add the remaining durable handlers/schedules for midnight absences, 16-hour timeouts, and reconciliation. **SKIP — USER CONFIRMED (2026-07-20):** Do not add biometric processing.
+- [x] Add durable handlers/schedules for midnight absences, exact 16-hour timeouts, and Attendance reconciliation. **SKIP — USER CONFIRMED (2026-07-20):** Do not add biometric processing.
 - [x] Store PDF-job state, attempts, failure reason, and lifecycle timestamps.
-- [x] Retry PDF generation failures up to three times; dashboard exposure remains pending.
+- [x] Retry PDF generation failures up to three times and expose queued, processing, completed, and visibly failed status on the Dashboard.
 - [x] Permit admin retry for failed PDF jobs without erasing lifetime attempt/failure history.
-- [ ] Continue reconciliation retries for attendance/payroll state until success.
-- [x] Make PDF generation and file deletion recoverable/idempotent against duplicate jobs and process restarts; other future handlers remain pending.
-- [ ] Add scheduling, retry, crash recovery, idempotency, concurrency, and MySQL tests.
+- [x] Continue reconciliation retries for Attendance state until success.
+- [x] Backfill missed absence schedule dates after worker downtime before scheduling the next Cairo midnight.
+- [x] Reconcile Payroll against completed Attendance snapshots, open sessions, denied attempts, and missing ended-day Attendance state through the transaction-aware gateway.
+- [x] Make PDF generation, file deletion, automatic absence, and automatic timeout recoverable/idempotent against duplicate jobs and process restarts.
+- [x] Add scheduling, retry, crash recovery, idempotency, concurrency, and MySQL tests for the implemented durable handlers.
 
 ## 18. Facial Recognition and Settings — SKIPPED; USER CONFIRMED (2026-07-20)
 
@@ -372,38 +376,41 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 
 ## 7. Attendance and Absence
 
-- [ ] Add attendance sessions/events, denied attempts, flagged attempts, automatic absences, and immutable snapshots.
-- [ ] Use UTC storage and `Africa/Cairo` for all workday decisions.
-- [ ] Assign a cross-midnight session entirely to its Cairo check-in date.
-- [ ] Atomically enforce one session per employee/check-in date and one open session per employee.
-- [ ] Implement personal-phone check-in/out with employee code, PIN, GPS, and registered WebAuthn proof.
-- [ ] Implement branch-phone check-in/out with employee code, PIN, registered branch-device validation, and GPS. **SKIP — USER CONFIRMED (2026-07-20):** No liveness or face match.
-- [ ] Validate the employee's assigned branch/device and accept distance exactly on the configured radius.
-- [ ] Snapshot source, device, timestamps, GPS, accuracy, calculated distance, branch coordinates/radius, and verification results.
-- [ ] Add separate admin manual check-in and check-out operations that bypass employee verification.
-- [ ] Permit past/present manual times, reject future times, require checkout after an open check-in, and reject standalone checkout.
-- [ ] Replace an automatic absence with backdated attendance while preserving audit history.
-- [ ] Reject attendance over a weekly day off until it is converted back to absence.
-- [ ] Record every failed attempt as denied and additionally flag security-relevant failures without blocking future attempts.
-- [ ] Allow admin approval of a denied attempt at its original timestamp without deleting the attempt.
-- [ ] Enforce all normal session/day-off constraints on denied-attempt approval.
-- [ ] Automatically checkout open sessions at exactly 16 hours and flag them.
-- [ ] Immediately timeout newly created backdated sessions already older than 16 hours.
-- [ ] Allow correction only for system-generated automatic checkout; keep all other attendance immutable.
-- [ ] Calculate whole completed worked, overtime, and shortage minutes using the check-in shift snapshot.
-- [ ] Generate absences only after a Cairo date ends; creation/deletion boundaries and weekly days off must be respected.
-- [ ] End employee self-service immediately on any checkout or timeout.
-- [ ] Supply the transaction-aware Payroll facts gateway and remove `PAYROLL_ATTENDANCE_UNAVAILABLE` from production previews/finalization.
-- [ ] Add GPS-boundary, cross-midnight, concurrency, duplicate submission, timeout, correction, approval, immutability, payroll-gateway, and MySQL tests.
+- [x] Add attendance sessions/events, denied attempts, flagged attempts, and immutable snapshots.
+- [x] Generate automatic absences through the durable worker.
+- [x] Use UTC storage and `Africa/Cairo` for all workday decisions.
+- [x] Assign a cross-midnight session entirely to its Cairo check-in date.
+- [x] Atomically enforce one session per employee/check-in date and one open session per employee.
+- [x] Implement personal-phone check-in/out with employee code, PIN, GPS, and registered WebAuthn proof.
+- [x] Implement branch-phone check-in/out with employee code, PIN, registered branch-device validation, and GPS. **SKIP — USER CONFIRMED (2026-07-20):** No liveness or face match.
+- [x] Validate the employee's assigned branch/device and accept distance exactly on the configured radius.
+- [x] Snapshot source, device, timestamps, GPS, accuracy, calculated distance, branch coordinates/radius, and verification results.
+- [x] Add separate admin manual check-in and check-out operations that bypass employee verification.
+- [x] Permit past/present manual times, reject future times, require checkout after an open check-in, and reject standalone checkout.
+- [x] Replace an automatic absence with backdated attendance while preserving audit history.
+- [x] Reject attendance over a weekly day off until it is converted back to absence.
+- [x] Record every failed attempt as denied and additionally flag security-relevant failures without blocking future attempts.
+- [x] Allow admin approval of a denied attempt at its original timestamp without deleting the attempt.
+- [x] Allow admin dismissal of a reviewed-invalid denied attempt while preserving and auditing it, and block finalization only on unresolved actionable attempts.
+- [x] Enforce all normal session/day-off constraints on denied-attempt approval.
+- [x] Automatically checkout open sessions at exactly 16 hours and flag them.
+- [x] Immediately timeout newly created backdated sessions already older than 16 hours.
+- [x] Allow correction only for system-generated automatic checkout; keep all other attendance immutable.
+- [x] Calculate whole completed worked, overtime, and shortage minutes using the check-in shift snapshot.
+- [x] Generate absences only after a Cairo date ends; creation/deletion boundaries, shift-change races, existing attendance, and weekly days off are respected.
+- [x] End employee self-service immediately on any checkout or timeout.
+- [x] Supply the transaction-aware Payroll facts gateway and remove `PAYROLL_ATTENDANCE_UNAVAILABLE` from production previews/finalization.
+- [x] Add GPS-boundary, cross-midnight, concurrency, duplicate submission, timeout, correction, approval, immutability, durable-job, and MySQL tests.
+- [x] Add Payroll-gateway, payroll-reconciliation, Attendance/Payroll report, PDF-batch, and real-MySQL tests with the dependent Payroll/Reports slice.
 
-## 19. Session Persistence — Foundation Complete; Attendance Integration Pending
+## 19. Session Persistence — Foundation and Attendance Integration Complete; Coverage Pending
 
 - [x] Store secure opaque admin and employee session records in MySQL so API restarts do not lose session state.
 - [x] Support explicit logout and direct employee-session revocation in the authentication foundation.
 - [x] Wire immediate employee-session revocation to PIN reset and employee deletion.
-- [ ] Wire immediate employee-session revocation to attendance checkout and automatic timeout.
+- [x] Wire immediate employee-session revocation to attendance checkout and automatic timeout.
 - [x] Preserve the locked exception in which an already-active employee session survives personal-device revocation before attendance checkout.
-- [ ] End that device-revocation exception at attendance checkout.
+- [x] End that device-revocation exception at attendance checkout.
 - [ ] Add production integration coverage for restart persistence and every locked revocation path.
 
 ## 20–23. Functional Scope, Verification, Data Integrity, and Final Hardening
@@ -444,4 +451,4 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 
 ## Immediate action
 
-Proceed with Attendance/Absence using employee code and PIN plus the applicable device and GPS checks, followed by its durable worker jobs. Use trustworthy Attendance facts to unlock Payroll and Reports, then complete employee self-service, Dashboard, legacy seeds, the corresponding functional web workflows, and final hardening. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition, liveness, biometric processing, and recognition Settings are not prerequisites and will not be implemented.
+Implement the remaining functional Attendance web workflows next—admin Attendance, personal-device Attendance, and the shared branch kiosk—then perform final infrastructure/security/accessibility/E2E hardening. Dashboard, Attendance-backed employee self-service, Payroll, and Reports are implemented. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition, liveness, biometric processing, recognition Settings, and Legacy Seeds are not prerequisites and will not be implemented.

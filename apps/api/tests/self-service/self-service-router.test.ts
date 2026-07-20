@@ -27,6 +27,7 @@ const makeService = (): SelfServiceService => ({
     shift: { durationMinutes: 480 },
     baseSalary: { amount: '5000.00', currency: 'EGP' as const },
   })),
+  listAttendance: vi.fn(async () => ({ items: [], total: 0 })),
   listWeeklyDays: vi.fn(async () => ({ items: [], total: 0 })),
   getPayrollMonth: vi.fn(async () => ({ payrollMonth: '2026-06' } as never)),
   listBonuses: vi.fn(async () => ({ items: [{ id: 1, payrollMonth: '2026-06', amount: '100.00', createdAt: new Date(), updatedAt: new Date() }], total: 1 })),
@@ -40,6 +41,7 @@ describe('employee self-service router', () => {
     const service = makeService();
     for (const method of [
       service.getOverview,
+      service.listAttendance,
       service.listWeeklyDays,
       service.getPayrollMonth,
       service.listBonuses,
@@ -52,6 +54,7 @@ describe('employee self-service router', () => {
     const response = { locals: { actor: { type: 'employee', employeeId: 7 } } };
     const cases = [
       { path: '/overview', request: {} },
+      { path: '/attendance', request: { query: {} } },
       { path: '/weekly-days', request: { query: {} } },
       { path: '/payroll/:month', request: { params: { month: '2026-07' } } },
       { path: '/bonuses', request: { query: {} } },
@@ -120,6 +123,21 @@ describe('employee self-service router', () => {
     expect(response.status).toBe(200);
     expect(service.listBonuses).toHaveBeenCalledWith(7, { payrollMonth: '2026-06', page: 2, pageSize: 10 });
     expect(response.body.meta).toEqual({ page: 2, pageSize: 10, total: 1, totalPages: 1 });
+  });
+
+  it('derives Attendance history identity from the session and rejects horizontal filters', async () => {
+    const service = makeService();
+    const app = createApp({ authService: makeAuth('employee'), selfServiceService: service });
+    const cookie = { Cookie: 'capella_session=x' };
+    const response = await request(app)
+      .get('/api/v1/self-service/attendance?state=closed&dateFrom=2026-07-01&page=2&pageSize=10')
+      .set(cookie);
+
+    expect(response.status).toBe(200);
+    expect(service.listAttendance).toHaveBeenCalledWith(7, {
+      state: 'closed', dateFrom: '2026-07-01', page: 2, pageSize: 10,
+    });
+    expect((await request(app).get('/api/v1/self-service/attendance?employeeId=9').set(cookie)).status).toBe(400);
   });
 
   it('has no mutation surface', async () => {
