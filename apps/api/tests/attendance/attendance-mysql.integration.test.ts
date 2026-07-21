@@ -290,6 +290,14 @@ describe('MySQL-backed attendance', () => {
       .resolves.toBeNull();
   });
 
+  it('initializes a new absence schedule at the rollout date instead of employee history', async () => {
+    await createFixtures();
+    const repo = repository();
+
+    await expect(repo.findMissingAbsenceScheduleStart('2026-07-20'))
+      .resolves.toBe('2026-07-20');
+  });
+
   it('serializes concurrent check-ins into one session for the Cairo date', async () => {
     const { employeeId, deviceId } = await createFixtures();
     const repo = repository();
@@ -356,6 +364,70 @@ describe('MySQL-backed attendance', () => {
       attendanceDate: '2026-07-20',
       checkInAt: new Date('2026-07-20T06:00:00.000Z'),
     })).rejects.toMatchObject({ cause: { code: 'ER_DUP_ENTRY' } });
+  });
+
+  it('rejects closed sessions whose minute totals do not match their timestamps', async () => {
+    const { employeeId } = await createFixtures();
+    const values = {
+      employeeId,
+      attendanceDate: '2026-07-19',
+      requiredMinutes: 480,
+      checkInAt: new Date('2026-07-19T06:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T07:00:00.000Z'),
+      automaticTimeoutAt: null,
+      automaticTimeoutCorrectedAt: null,
+      flagged: false,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    };
+
+    await expect(database.insert(attendanceSessions).values({
+      ...values,
+      workedMinutes: 1,
+      overtimeMinutes: 999,
+      shortageMinutes: 999,
+    })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+    await expect(database.insert(attendanceSessions).values({
+      ...values,
+      workedMinutes: null,
+      overtimeMinutes: null,
+      shortageMinutes: null,
+    })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+  });
+
+  it('rejects inconsistent automatic-timeout state at the database layer', async () => {
+    const { employeeId } = await createFixtures();
+
+    await expect(database.insert(attendanceSessions).values({
+      employeeId,
+      attendanceDate: '2026-07-19',
+      requiredMinutes: 480,
+      checkInAt: new Date('2026-07-19T06:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T07:00:00.000Z'),
+      workedMinutes: 60,
+      overtimeMinutes: 0,
+      shortageMinutes: 420,
+      automaticTimeoutAt: new Date('2026-07-19T07:00:00.000Z'),
+      automaticTimeoutCorrectedAt: null,
+      flagged: false,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+    await expect(database.insert(attendanceSessions).values({
+      employeeId,
+      attendanceDate: '2026-07-19',
+      requiredMinutes: 480,
+      checkInAt: new Date('2026-07-19T06:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T07:00:00.000Z'),
+      workedMinutes: 60,
+      overtimeMinutes: 0,
+      shortageMinutes: 420,
+      automaticTimeoutAt: null,
+      automaticTimeoutCorrectedAt: null,
+      flagged: true,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
   });
 
   it('rejects cross-owner and cross-date attendance links at the database layer', async () => {
@@ -724,6 +796,55 @@ describe('MySQL-backed attendance', () => {
       .toEqual(expect.arrayContaining(['job_schedule', 'job_cancel_timeout']));
   });
 
+  it('enforces the exact timeout when checkout arrives after a delayed worker deadline', async () => {
+    const { employeeId, deviceId } = await createFixtures();
+    const apiRepository = repository();
+    const checkedIn = await apiRepository.checkIn(mutation(employeeId, deviceId));
+    expect(checkedIn.kind).toBe('success');
+    if (checkedIn.kind !== 'success') return;
+    const timeoutAt = new Date(fixedNow.getTime() + 16 * 60 * 60_000);
+    const delayedNow = new Date(timeoutAt.getTime() + 60_000);
+    const delayedRepository = createDrizzleAttendanceRepository(database, {
+      now: () => delayedNow,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: () => Promise.resolve(480),
+    });
+
+    await expect(delayedRepository.manualCheckOut({
+      employeeId,
+      occurredAt: delayedNow,
+    })).resolves.toMatchObject({
+      kind: 'success',
+      session: {
+        checkOutAt: timeoutAt,
+        automaticTimeoutAt: timeoutAt,
+        workedMinutes: 960,
+        flagged: true,
+      },
+    });
+    expect((await database.select().from(attendanceEvents)
+      .orderBy(asc(attendanceEvents.id))).at(-1)).toMatchObject({
+      eventType: 'check_out',
+      source: 'automatic_timeout',
+      occurredAt: timeoutAt,
+    });
+  });
+
+  it('does not treat an overdue unprocessed session as active attendance', async () => {
+    const { employeeId, deviceId } = await createFixtures();
+    const checkedIn = await repository().checkIn(mutation(employeeId, deviceId));
+    expect(checkedIn.kind).toBe('success');
+    const overdueRepository = createDrizzleAttendanceRepository(database, {
+      now: () => new Date(fixedNow.getTime() + 16 * 60 * 60_000),
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: () => Promise.resolve(480),
+    });
+
+    await expect(overdueRepository.hasOpenSession(employeeId)).resolves.toBe(false);
+  });
+
   it('executes a due timeout at check-in plus exactly 16 hours and remains idempotent', async () => {
     const { employeeId, deviceId } = await createFixtures();
     const apiRepository = repository();
@@ -820,11 +941,11 @@ describe('MySQL-backed attendance', () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const claimed = await repo.claimNext();
       expect(claimed?.attemptCount).toBe(attempt + 1);
-      await repo.fail(claimed!.id);
+      await repo.fail(claimed!.id, 'ABSENCE_GENERATION_FAILED');
     }
 
     expect((await database.select().from(attendanceJobs))[0])
-      .toMatchObject({ status: 'failed', attemptCount: 3, lastError: 'ATTENDANCE_JOB_FAILED' });
+      .toMatchObject({ status: 'failed', attemptCount: 3, lastError: 'ABSENCE_GENERATION_FAILED' });
     await repo.reconcileFailed();
     expect((await database.select().from(attendanceJobs))[0])
       .toMatchObject({ status: 'scheduled', attemptCount: 3, runAt: fixedNow });

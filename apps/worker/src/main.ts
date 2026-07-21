@@ -83,10 +83,10 @@ try {
     maintenanceIntervalMs: maintenanceIntervalMilliseconds,
     maintain: maintainAttendance,
     reportMaintain: maintainReports,
-    onIterationError: () => logger.error('Report worker iteration failed'),
+    onIterationError: () => logger.error('Background worker iteration failed'),
   });
 } catch {
-  logger.fatal('Report worker stopped unexpectedly');
+  logger.fatal('Background worker stopped unexpectedly');
   process.exitCode = 1;
 } finally {
   process.removeListener('SIGINT', stop);

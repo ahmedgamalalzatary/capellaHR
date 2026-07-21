@@ -61,7 +61,7 @@ describe('attendance job processor', () => {
     await expect(createAttendanceJobProcessor(repository).processNext())
       .rejects.toThrow('super-secret');
 
-    expect(repository.fail).toHaveBeenCalledWith(7);
+    expect(repository.fail).toHaveBeenCalledWith(7, 'AUTOMATIC_TIMEOUT_FAILED');
     expect(repository.complete).not.toHaveBeenCalled();
   });
 });

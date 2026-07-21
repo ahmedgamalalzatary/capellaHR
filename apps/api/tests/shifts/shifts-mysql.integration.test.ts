@@ -258,4 +258,45 @@ describe('MySQL-backed shifts', () => {
     expect((await database.select().from(attendanceDailyRecords))[0])
       .toMatchObject({ employeeId, absenceRequiredMinutes: 600 });
   });
+
+  it('keeps the old snapshot when worker downtime left the ended date unscheduled', async () => {
+    const branchId = await createBranch('Downtime branch');
+    const employeeId = await createEmployee(branchId, 1, 'Downtime employee', 600);
+    const changedAt = new Date('2026-07-20T21:00:01.000Z');
+    const shiftReader = createShiftsModule(database);
+    const attendance = createDrizzleAttendanceRepository(database, {
+      now: () => changedAt,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: (id, context, includeDeleted) => (
+        shiftReader.service.readRequiredDurationForCheckIn(id, context, includeDeleted)
+      ),
+    });
+    const shiftsWithAttendance = createShiftsModule(database, {
+      beforeDurationChange: (id, oldDuration, context) => (
+        attendance.reconcileDueAbsencesForEmployee(
+          id,
+          oldDuration,
+          context as Parameters<typeof attendance.reconcileDueAbsencesForEmployee>[2],
+        )
+      ),
+    });
+    await attendance.ensureAbsenceJob(
+      '2026-07-19',
+      new Date('2026-07-19T21:00:00.000Z'),
+    );
+    await attendance.complete((await database.select({ id: attendanceJobs.id })
+      .from(attendanceJobs))[0]!.id);
+
+    await shiftsWithAttendance.service.updateByEmployee(employeeId, { durationMinutes: 480 });
+    await attendance.ensureAbsenceJob(
+      '2026-07-20',
+      new Date('2026-07-20T21:00:00.000Z'),
+    );
+    await attendance.generateAbsences('2026-07-20');
+
+    expect((await database.select().from(attendanceDailyRecords)
+      .where(eq(attendanceDailyRecords.attendanceDate, '2026-07-20')))[0])
+      .toMatchObject({ employeeId, absenceRequiredMinutes: 600 });
+  });
 });

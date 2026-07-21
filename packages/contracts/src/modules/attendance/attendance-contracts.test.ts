@@ -50,6 +50,26 @@ describe('attendance contracts', () => {
     expect(schema.safeParse({ ...base, latitude: 91 }).success).toBe(false);
   });
 
+  it('requires event and GPS context before issuing attendance device options', () => {
+    const schema = contracts.beginAttendanceDeviceAuthenticationSchema;
+    const complete = {
+      employeeCode: 17,
+      eventType: 'check_in',
+      source: 'branch_device',
+      installationMarker: 'installation-marker-123',
+      latitude: 30.0444,
+      longitude: 31.2357,
+      gpsAccuracyMeters: 8,
+    };
+
+    expect(schema.safeParse(complete).success).toBe(true);
+    expect(schema.safeParse({
+      employeeCode: 17,
+      source: 'branch_device',
+      installationMarker: 'installation-marker-123',
+    }).success).toBe(false);
+  });
+
   it('validates manual events, denied approval, timeout correction, and list filters', () => {
     expect(contracts.manualAttendanceEventSchema).toBeDefined();
     expect(contracts.attendanceDeniedAttemptParamsSchema).toBeDefined();

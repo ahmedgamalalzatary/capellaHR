@@ -179,7 +179,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
 
     async authenticate(token: string) {
       if (!token) return null;
-      return dependencies.sessions.findActiveByTokenHash(hashToken(token));
+      const session = await dependencies.sessions.findActiveByTokenHash(hashToken(token));
+      if (session?.actorType === 'employee'
+        && !await dependencies.attendance.hasOpenSession(session.employeeId!)) {
+        await dependencies.sessions.revokeEmployee(session.employeeId!, now());
+        return null;
+      }
+      return session;
     },
 
     async revokeEmployeeSessions(employeeId: number) {

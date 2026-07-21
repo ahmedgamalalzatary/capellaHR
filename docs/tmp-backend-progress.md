@@ -171,7 +171,7 @@ Attendance remains responsible for generating an absence only after a Cairo day 
 
 ## Completed dependency slices
 
-Attendance, its Payroll/Reports integrations, employee self-service Attendance history, Dashboard operational visibility, the non-Attendance Roles foundation, and the general Audit/correlation slice are complete. The remaining functional Attendance web workflows are the immediate active completion path. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition is removed from the completion path and from downstream dependencies.
+Attendance, its Payroll/Reports integrations, employee self-service Attendance history, Dashboard operational visibility, all Attendance web workflows, the non-Attendance Roles foundation, and the general Audit/correlation slice are complete. Final infrastructure, security, accessibility, E2E, placeholder, migration, and documentation hardening is the remaining active completion path. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition is removed from the completion path and from downstream dependencies.
 
 ## 8. Salaries and Payroll — Backend Complete
 
@@ -276,11 +276,11 @@ Current report endpoints:
 
 ### Still required
 
-- [ ] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
+- [x] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
 - [x] Replace the placeholder Dashboard page with all locked operational summaries, bounded live lists, complete totals/status counts, retry/refresh states, and direct links to the owning modules.
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.~~
-- [ ] Implement the personal-device attendance interface with employee code, PIN, GPS, WebAuthn, check-in, and check-out flows.
-- [ ] Implement the shared branch-kiosk interface with employee code, PIN, registered branch-device validation, GPS, check-in, and check-out flows. **SKIP — USER CONFIRMED (2026-07-20):** No camera, randomized liveness, or face match.
+- [x] Implement the personal-device attendance interface with employee code, PIN, GPS, WebAuthn, check-in, and check-out flows.
+- [x] Implement the shared branch-kiosk interface with employee code, PIN, registered branch-device validation, GPS, check-in, and check-out flows. **SKIP — USER CONFIRMED (2026-07-20):** No camera, randomized liveness, or face match.
 - [x] Extend employee self-service with its own Attendance history and trustworthy open payroll previews through the completed Attendance gateway.
 - [x] Expose the existing Attendance/Absence and Payroll report tabs through their now-trustworthy backend readers.
 - [ ] Run a final functional web audit for Arabic/RTL rendering, Cairo dates, numeric and monetary presentation, search/filter/reset behavior, empty/error/loading states, authorization, accessibility, and responsive operation.
@@ -298,7 +298,8 @@ The detailed module checklists below remain the acceptance criteria. Completed a
 7. **Completed:** Employee Attendance history, open Payroll previews, and session/device revocation integration.
 8. **Completed:** Dashboard operational visibility through one coherent admin-only snapshot and the Arabic/RTL operations ledger.
 9. **SKIP — USER CONFIRMED (2026-07-20):** ~~Implement idempotent legacy seeds.~~
-10. Complete the corresponding web workflows as each backend slice becomes available, then perform shared infrastructure and final hardening.
+10. **Completed:** Corresponding admin Attendance, personal-device, and shared branch-kiosk web workflows.
+11. Perform shared infrastructure and final hardening.
 
 ## 13. Roles and Employee Self-Service
 
@@ -451,4 +452,4 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 
 ## Immediate action
 
-Implement the remaining functional Attendance web workflows next—admin Attendance, personal-device Attendance, and the shared branch kiosk—then perform final infrastructure/security/accessibility/E2E hardening. Dashboard, Attendance-backed employee self-service, Payroll, and Reports are implemented. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition, liveness, biometric processing, recognition Settings, and Legacy Seeds are not prerequisites and will not be implemented.
+Perform final infrastructure/security/accessibility/E2E, placeholder, migration-chain, and documentation hardening. The admin Attendance, personal-device Attendance, shared branch kiosk, Dashboard, Attendance-backed employee self-service, Payroll, and Reports workflows are implemented. **SKIP — USER CONFIRMED (2026-07-20):** Facial Recognition, liveness, biometric processing, recognition Settings, and Legacy Seeds are not prerequisites and will not be implemented.

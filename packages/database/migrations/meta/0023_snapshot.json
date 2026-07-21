@@ -1,0 +1,3328 @@
+{
+  "version": "5",
+  "dialect": "mysql",
+  "id": "78c15961-7196-4f95-83a7-54fbb6aabe2e",
+  "prevId": "4693ab85-1792-4470-9cbe-cbdcd0eb98c2",
+  "tables": {
+    "admin_credentials": {
+      "name": "admin_credentials",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "admin_credentials_id": {
+          "name": "admin_credentials_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "admin_credentials_email_unique": {
+          "name": "admin_credentials_email_unique",
+          "columns": [
+            "email"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "admin_credentials_singleton": {
+          "name": "admin_credentials_singleton",
+          "value": "`admin_credentials`.`id` = 1"
+        }
+      }
+    },
+    "auth_attempts": {
+      "name": "auth_attempts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "enum('admin','employee')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "succeeded": {
+          "name": "succeeded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "flagged": {
+          "name": "flagged",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "varchar(45)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "varchar(1024)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "auth_attempts_identifier_created_idx": {
+          "name": "auth_attempts_identifier_created_idx",
+          "columns": [
+            "identifier",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "auth_attempts_flagged_created_idx": {
+          "name": "auth_attempts_flagged_created_idx",
+          "columns": [
+            "flagged",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "auth_attempts_id": {
+          "name": "auth_attempts_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "auth_sessions": {
+      "name": "auth_sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "enum('admin','employee')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "auth_sessions_employee_active_idx": {
+          "name": "auth_sessions_employee_active_idx",
+          "columns": [
+            "employee_id",
+            "revoked_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "auth_sessions_employee_id_employees_id_fk": {
+          "name": "auth_sessions_employee_id_employees_id_fk",
+          "tableFrom": "auth_sessions",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "auth_sessions_id": {
+          "name": "auth_sessions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {
+        "auth_sessions_token_hash_unique": {
+          "name": "auth_sessions_token_hash_unique",
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "checkConstraint": {
+        "auth_sessions_actor_employee_consistency": {
+          "name": "auth_sessions_actor_employee_consistency",
+          "value": "(`auth_sessions`.`actor_type` = 'admin' and `auth_sessions`.`employee_id` is null) or (`auth_sessions`.`actor_type` = 'employee' and `auth_sessions`.`employee_id` is not null)"
+        }
+      }
+    },
+    "branches": {
+      "name": "branches",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_normalized": {
+          "name": "name_normalized",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "location": {
+          "name": "location",
+          "type": "varchar(1000)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gps_accuracy_meters": {
+          "name": "gps_accuracy_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attendance_radius_meters": {
+          "name": "attendance_radius_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "has_ever_been_referenced": {
+          "name": "has_ever_been_referenced",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "branches_name_normalized_unique": {
+          "name": "branches_name_normalized_unique",
+          "columns": [
+            "name_normalized"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "branches_id": {
+          "name": "branches_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "branches_latitude_range": {
+          "name": "branches_latitude_range",
+          "value": "`branches`.`latitude` between -90 and 90"
+        },
+        "branches_longitude_range": {
+          "name": "branches_longitude_range",
+          "value": "`branches`.`longitude` between -180 and 180"
+        },
+        "branches_accuracy_nonnegative": {
+          "name": "branches_accuracy_nonnegative",
+          "value": "`branches`.`gps_accuracy_meters` >= 0"
+        },
+        "branches_radius_positive": {
+          "name": "branches_radius_positive",
+          "value": "`branches`.`attendance_radius_meters` > 0"
+        }
+      }
+    },
+    "employee_code_sequence": {
+      "name": "employee_code_sequence",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "next_code": {
+          "name": "next_code",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "employee_code_sequence_id": {
+          "name": "employee_code_sequence_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "employee_code_sequence_singleton": {
+          "name": "employee_code_sequence_singleton",
+          "value": "`employee_code_sequence`.`id` = 1"
+        },
+        "employee_code_sequence_positive": {
+          "name": "employee_code_sequence_positive",
+          "value": "`employee_code_sequence`.`next_code` > 0"
+        }
+      }
+    },
+    "employee_images": {
+      "name": "employee_images",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "enum('personal','idFront','idBack')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_path": {
+          "name": "storage_path",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "original_name": {
+          "name": "original_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "employee_images_employee_kind_unique": {
+          "name": "employee_images_employee_kind_unique",
+          "columns": [
+            "employee_id",
+            "kind"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "employee_images_employee_id_employees_id_fk": {
+          "name": "employee_images_employee_id_employees_id_fk",
+          "tableFrom": "employee_images",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "employee_images_id": {
+          "name": "employee_images_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "employee_images_size_range": {
+          "name": "employee_images_size_range",
+          "value": "`employee_images`.`size_bytes` between 1 and 16777216"
+        }
+      }
+    },
+    "employee_phone_reservations": {
+      "name": "employee_phone_reservations",
+      "columns": {
+        "phone": {
+          "name": "phone",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "employee_phone_reservations_employee_id_employees_id_fk": {
+          "name": "employee_phone_reservations_employee_id_employees_id_fk",
+          "tableFrom": "employee_phone_reservations",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "employee_phone_reservations_phone": {
+          "name": "employee_phone_reservations_phone",
+          "columns": [
+            "phone"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "employees": {
+      "name": "employees",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_code": {
+          "name": "employee_code",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "personal_phone": {
+          "name": "personal_phone",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "whatsapp_phone": {
+          "name": "whatsapp_phone",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pin_hash": {
+          "name": "pin_hash",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credential_version": {
+          "name": "credential_version",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "age": {
+          "name": "age",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "varchar(1000)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shift_duration_minutes": {
+          "name": "shift_duration_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_base_salary": {
+          "name": "monthly_base_salary",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "employees_employee_code_unique": {
+          "name": "employees_employee_code_unique",
+          "columns": [
+            "employee_code"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "employees_branch_id_branches_id_fk": {
+          "name": "employees_branch_id_branches_id_fk",
+          "tableFrom": "employees",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "employees_id": {
+          "name": "employees_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "employees_age_positive": {
+          "name": "employees_age_positive",
+          "value": "`employees`.`age` > 0"
+        },
+        "employees_code_positive": {
+          "name": "employees_code_positive",
+          "value": "`employees`.`employee_code` > 0"
+        },
+        "employees_personal_phone_format": {
+          "name": "employees_personal_phone_format",
+          "value": "`employees`.`personal_phone` regexp '^01[0125][0-9]{8}$'"
+        },
+        "employees_whatsapp_phone_format": {
+          "name": "employees_whatsapp_phone_format",
+          "value": "`employees`.`whatsapp_phone` regexp '^01[0125][0-9]{8}$'"
+        },
+        "employees_shift_duration_range": {
+          "name": "employees_shift_duration_range",
+          "value": "`employees`.`shift_duration_minutes` between 1 and 720"
+        },
+        "employees_salary_positive": {
+          "name": "employees_salary_positive",
+          "value": "`employees`.`monthly_base_salary` > 0"
+        }
+      }
+    },
+    "device_authentication_challenges": {
+      "name": "device_authentication_challenges",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(36)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "challenge": {
+          "name": "challenge",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "device_authentication_challenges_device_id_devices_id_fk": {
+          "name": "device_authentication_challenges_device_id_devices_id_fk",
+          "tableFrom": "device_authentication_challenges",
+          "tableTo": "devices",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "device_authentication_challenges_id": {
+          "name": "device_authentication_challenges_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "device_history": {
+      "name": "device_history",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event": {
+          "name": "event",
+          "type": "enum('paired','verified','revoked')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "device_history_device_id_devices_id_fk": {
+          "name": "device_history_device_id_devices_id_fk",
+          "tableFrom": "device_history",
+          "tableTo": "devices",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "device_history_id": {
+          "name": "device_history_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "device_pairing_requests": {
+      "name": "device_pairing_requests",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "assignment_type": {
+          "name": "assignment_type",
+          "type": "enum('employee','branch')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('pending','used','cancelled')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "registration_challenge": {
+          "name": "registration_challenge",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "webauthn_user_id": {
+          "name": "webauthn_user_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "device_pairing_token_hash_unique": {
+          "name": "device_pairing_token_hash_unique",
+          "columns": [
+            "token_hash"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "device_pairing_requests_employee_id_employees_id_fk": {
+          "name": "device_pairing_requests_employee_id_employees_id_fk",
+          "tableFrom": "device_pairing_requests",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "device_pairing_requests_branch_id_branches_id_fk": {
+          "name": "device_pairing_requests_branch_id_branches_id_fk",
+          "tableFrom": "device_pairing_requests",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "device_pairing_requests_id": {
+          "name": "device_pairing_requests_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "device_pairings_exact_assignment": {
+          "name": "device_pairings_exact_assignment",
+          "value": "(`device_pairing_requests`.`assignment_type` = 'employee' and `device_pairing_requests`.`employee_id` is not null and `device_pairing_requests`.`branch_id` is null) or (`device_pairing_requests`.`assignment_type` = 'branch' and `device_pairing_requests`.`branch_id` is not null and `device_pairing_requests`.`employee_id` is null)"
+        }
+      }
+    },
+    "devices": {
+      "name": "devices",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "assignment_type": {
+          "name": "assignment_type",
+          "type": "enum('employee','branch')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "credential_id": {
+          "name": "credential_id",
+          "type": "varchar(4096)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credential_id_hash": {
+          "name": "credential_id_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "counter": {
+          "name": "counter",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "transports": {
+          "name": "transports",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credential_device_type": {
+          "name": "credential_device_type",
+          "type": "enum('singleDevice','multiDevice')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credential_backed_up": {
+          "name": "credential_backed_up",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "installation_marker_hash": {
+          "name": "installation_marker_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "browser": {
+          "name": "browser",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "platform": {
+          "name": "platform",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('active','revoked')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "paired_at": {
+          "name": "paired_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "devices_credential_hash_unique": {
+          "name": "devices_credential_hash_unique",
+          "columns": [
+            "credential_id_hash"
+          ],
+          "isUnique": true
+        },
+        "devices_installation_marker_hash_unique": {
+          "name": "devices_installation_marker_hash_unique",
+          "columns": [
+            "installation_marker_hash"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "devices_employee_id_employees_id_fk": {
+          "name": "devices_employee_id_employees_id_fk",
+          "tableFrom": "devices",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "devices_branch_id_branches_id_fk": {
+          "name": "devices_branch_id_branches_id_fk",
+          "tableFrom": "devices",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "devices_id": {
+          "name": "devices_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "devices_exact_assignment": {
+          "name": "devices_exact_assignment",
+          "value": "(`devices`.`assignment_type` = 'employee' and `devices`.`employee_id` is not null and `devices`.`branch_id` is null) or (`devices`.`assignment_type` = 'branch' and `devices`.`branch_id` is not null and `devices`.`employee_id` is null)"
+        }
+      }
+    },
+    "attendance_daily_records": {
+      "name": "attendance_daily_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attendance_date": {
+          "name": "attendance_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('absence','weekly_day_off','attendance_replaced')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'absence'"
+        },
+        "absence_required_minutes": {
+          "name": "absence_required_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "day_off_converted_at": {
+          "name": "day_off_converted_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "replaced_by_session_id": {
+          "name": "replaced_by_session_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "replaced_at": {
+          "name": "replaced_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "attendance_daily_records_employee_date_unique": {
+          "name": "attendance_daily_records_employee_date_unique",
+          "columns": [
+            "employee_id",
+            "attendance_date"
+          ],
+          "isUnique": true
+        },
+        "attendance_daily_records_date_employee_idx": {
+          "name": "attendance_daily_records_date_employee_idx",
+          "columns": [
+            "attendance_date",
+            "employee_id"
+          ],
+          "isUnique": false
+        },
+        "attendance_daily_records_status_date_idx": {
+          "name": "attendance_daily_records_status_date_idx",
+          "columns": [
+            "status",
+            "attendance_date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "attendance_daily_records_employee_id_employees_id_fk": {
+          "name": "attendance_daily_records_employee_id_employees_id_fk",
+          "tableFrom": "attendance_daily_records",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_daily_records_replaced_owner_fk": {
+          "name": "attendance_daily_records_replaced_owner_fk",
+          "tableFrom": "attendance_daily_records",
+          "tableTo": "attendance_sessions",
+          "columnsFrom": [
+            "replaced_by_session_id",
+            "employee_id",
+            "attendance_date"
+          ],
+          "columnsTo": [
+            "id",
+            "employee_id",
+            "attendance_date"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "attendance_daily_records_id": {
+          "name": "attendance_daily_records_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "attendance_daily_records_required_minutes_range": {
+          "name": "attendance_daily_records_required_minutes_range",
+          "value": "`attendance_daily_records`.`absence_required_minutes` between 1 and 720"
+        },
+        "attendance_daily_records_conversion_state": {
+          "name": "attendance_daily_records_conversion_state",
+          "value": "(`attendance_daily_records`.`status` = 'absence' and `attendance_daily_records`.`day_off_converted_at` is null and `attendance_daily_records`.`replaced_by_session_id` is null and `attendance_daily_records`.`replaced_at` is null) or (`attendance_daily_records`.`status` = 'weekly_day_off' and `attendance_daily_records`.`day_off_converted_at` is not null and `attendance_daily_records`.`replaced_by_session_id` is null and `attendance_daily_records`.`replaced_at` is null) or (`attendance_daily_records`.`status` = 'attendance_replaced' and `attendance_daily_records`.`day_off_converted_at` is null and `attendance_daily_records`.`replaced_by_session_id` is not null and `attendance_daily_records`.`replaced_at` is not null)"
+        }
+      }
+    },
+    "attendance_denied_attempts": {
+      "name": "attendance_denied_attempts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "enum('check_in','check_out')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "claimed_employee_code": {
+          "name": "claimed_employee_code",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "enum('personal_device','branch_device')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gps_accuracy_meters": {
+          "name": "gps_accuracy_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "distance_meters": {
+          "name": "distance_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_latitude": {
+          "name": "branch_latitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_longitude": {
+          "name": "branch_longitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_radius_meters": {
+          "name": "branch_radius_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "suspicious": {
+          "name": "suspicious",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_session_id": {
+          "name": "approved_session_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dismissed_at": {
+          "name": "dismissed_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "attendance_denied_attempts_id_owner_type_unique": {
+          "name": "attendance_denied_attempts_id_owner_type_unique",
+          "columns": [
+            "id",
+            "employee_id",
+            "event_type"
+          ],
+          "isUnique": true
+        },
+        "attendance_denied_attempts_employee_date_idx": {
+          "name": "attendance_denied_attempts_employee_date_idx",
+          "columns": [
+            "employee_id",
+            "occurred_at"
+          ],
+          "isUnique": false
+        },
+        "attendance_denied_attempts_review_idx": {
+          "name": "attendance_denied_attempts_review_idx",
+          "columns": [
+            "approved_at",
+            "suspicious"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "attendance_denied_attempts_employee_id_employees_id_fk": {
+          "name": "attendance_denied_attempts_employee_id_employees_id_fk",
+          "tableFrom": "attendance_denied_attempts",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_denied_attempts_device_id_devices_id_fk": {
+          "name": "attendance_denied_attempts_device_id_devices_id_fk",
+          "tableFrom": "attendance_denied_attempts",
+          "tableTo": "devices",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_denied_attempts_approved_owner_fk": {
+          "name": "attendance_denied_attempts_approved_owner_fk",
+          "tableFrom": "attendance_denied_attempts",
+          "tableTo": "attendance_sessions",
+          "columnsFrom": [
+            "approved_session_id",
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id",
+            "employee_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "attendance_denied_attempts_id": {
+          "name": "attendance_denied_attempts_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "attendance_denied_attempts_code_positive": {
+          "name": "attendance_denied_attempts_code_positive",
+          "value": "`attendance_denied_attempts`.`claimed_employee_code` > 0"
+        },
+        "attendance_denied_attempts_approval_state": {
+          "name": "attendance_denied_attempts_approval_state",
+          "value": "(`attendance_denied_attempts`.`approved_at` is null and `attendance_denied_attempts`.`approved_session_id` is null and `attendance_denied_attempts`.`dismissed_at` is null) or (`attendance_denied_attempts`.`approved_at` is not null and `attendance_denied_attempts`.`approved_session_id` is not null and `attendance_denied_attempts`.`employee_id` is not null and `attendance_denied_attempts`.`dismissed_at` is null) or (`attendance_denied_attempts`.`approved_at` is null and `attendance_denied_attempts`.`approved_session_id` is null and `attendance_denied_attempts`.`dismissed_at` is not null)"
+        }
+      }
+    },
+    "attendance_events": {
+      "name": "attendance_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "enum('check_in','check_out')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "enum('personal_device','branch_device','admin_manual','admin_approved_denied','automatic_timeout')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "gps_accuracy_meters": {
+          "name": "gps_accuracy_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "distance_meters": {
+          "name": "distance_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_latitude": {
+          "name": "branch_latitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_longitude": {
+          "name": "branch_longitude",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_radius_meters": {
+          "name": "branch_radius_meters",
+          "type": "double",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_denied_attempt_id": {
+          "name": "approved_denied_attempt_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "attendance_events_session_type_unique": {
+          "name": "attendance_events_session_type_unique",
+          "columns": [
+            "session_id",
+            "event_type"
+          ],
+          "isUnique": true
+        },
+        "attendance_events_employee_occurred_idx": {
+          "name": "attendance_events_employee_occurred_idx",
+          "columns": [
+            "employee_id",
+            "occurred_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "attendance_events_employee_id_employees_id_fk": {
+          "name": "attendance_events_employee_id_employees_id_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_events_device_id_devices_id_fk": {
+          "name": "attendance_events_device_id_devices_id_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "devices",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_events_approved_attempt_owner_fk": {
+          "name": "attendance_events_approved_attempt_owner_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "attendance_denied_attempts",
+          "columnsFrom": [
+            "approved_denied_attempt_id",
+            "employee_id",
+            "event_type"
+          ],
+          "columnsTo": [
+            "id",
+            "employee_id",
+            "event_type"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "attendance_events_session_owner_fk": {
+          "name": "attendance_events_session_owner_fk",
+          "tableFrom": "attendance_events",
+          "tableTo": "attendance_sessions",
+          "columnsFrom": [
+            "session_id",
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id",
+            "employee_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "attendance_events_id": {
+          "name": "attendance_events_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "attendance_events_approval_source_state": {
+          "name": "attendance_events_approval_source_state",
+          "value": "(`attendance_events`.`source` = 'admin_approved_denied' and `attendance_events`.`approved_denied_attempt_id` is not null) or (`attendance_events`.`source` <> 'admin_approved_denied' and `attendance_events`.`approved_denied_attempt_id` is null)"
+        }
+      }
+    },
+    "attendance_jobs": {
+      "name": "attendance_jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "job_type": {
+          "name": "job_type",
+          "type": "enum('automatic_timeout','absence_generation')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attendance_date": {
+          "name": "attendance_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('scheduled','processing','completed','failed')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'scheduled'"
+        },
+        "run_at": {
+          "name": "run_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "varchar(1000)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "attendance_jobs_session_unique": {
+          "name": "attendance_jobs_session_unique",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": true
+        },
+        "attendance_jobs_absence_date_unique": {
+          "name": "attendance_jobs_absence_date_unique",
+          "columns": [
+            "attendance_date"
+          ],
+          "isUnique": true
+        },
+        "attendance_jobs_claim_idx": {
+          "name": "attendance_jobs_claim_idx",
+          "columns": [
+            "status",
+            "run_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "attendance_jobs_session_id_attendance_sessions_id_fk": {
+          "name": "attendance_jobs_session_id_attendance_sessions_id_fk",
+          "tableFrom": "attendance_jobs",
+          "tableTo": "attendance_sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "attendance_jobs_id": {
+          "name": "attendance_jobs_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "attendance_jobs_attempt_count_nonnegative": {
+          "name": "attendance_jobs_attempt_count_nonnegative",
+          "value": "`attendance_jobs`.`attempt_count` >= 0"
+        },
+        "attendance_jobs_payload_state": {
+          "name": "attendance_jobs_payload_state",
+          "value": "(`attendance_jobs`.`job_type` = 'automatic_timeout' and `attendance_jobs`.`session_id` is not null and `attendance_jobs`.`attendance_date` is null) or (`attendance_jobs`.`job_type` = 'absence_generation' and `attendance_jobs`.`session_id` is null and `attendance_jobs`.`attendance_date` is not null)"
+        },
+        "attendance_jobs_execution_state": {
+          "name": "attendance_jobs_execution_state",
+          "value": "(`attendance_jobs`.`status` = 'scheduled' and `attendance_jobs`.`started_at` is null and `attendance_jobs`.`completed_at` is null) or (`attendance_jobs`.`status` = 'processing' and `attendance_jobs`.`started_at` is not null and `attendance_jobs`.`completed_at` is null) or (`attendance_jobs`.`status` = 'completed' and `attendance_jobs`.`completed_at` is not null) or (`attendance_jobs`.`status` = 'failed' and `attendance_jobs`.`started_at` is not null and `attendance_jobs`.`completed_at` is null and `attendance_jobs`.`last_error` is not null)"
+        }
+      }
+    },
+    "attendance_sessions": {
+      "name": "attendance_sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attendance_date": {
+          "name": "attendance_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "required_minutes": {
+          "name": "required_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "check_in_at": {
+          "name": "check_in_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "check_out_at": {
+          "name": "check_out_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "open_employee_id": {
+          "name": "open_employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "generated": {
+            "as": "case when check_out_at is null then employee_id else null end",
+            "type": "stored"
+          }
+        },
+        "worked_minutes": {
+          "name": "worked_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "overtime_minutes": {
+          "name": "overtime_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "shortage_minutes": {
+          "name": "shortage_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "automatic_timeout_at": {
+          "name": "automatic_timeout_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "automatic_timeout_corrected_at": {
+          "name": "automatic_timeout_corrected_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "flagged": {
+          "name": "flagged",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "attendance_sessions_employee_date_unique": {
+          "name": "attendance_sessions_employee_date_unique",
+          "columns": [
+            "employee_id",
+            "attendance_date"
+          ],
+          "isUnique": true
+        },
+        "attendance_sessions_date_employee_idx": {
+          "name": "attendance_sessions_date_employee_idx",
+          "columns": [
+            "attendance_date",
+            "employee_id"
+          ],
+          "isUnique": false
+        },
+        "attendance_sessions_id_employee_date_unique": {
+          "name": "attendance_sessions_id_employee_date_unique",
+          "columns": [
+            "id",
+            "employee_id",
+            "attendance_date"
+          ],
+          "isUnique": true
+        },
+        "attendance_sessions_open_employee_unique": {
+          "name": "attendance_sessions_open_employee_unique",
+          "columns": [
+            "open_employee_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "attendance_sessions_employee_id_employees_id_fk": {
+          "name": "attendance_sessions_employee_id_employees_id_fk",
+          "tableFrom": "attendance_sessions",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "attendance_sessions_id": {
+          "name": "attendance_sessions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "attendance_sessions_required_minutes_range": {
+          "name": "attendance_sessions_required_minutes_range",
+          "value": "`attendance_sessions`.`required_minutes` between 1 and 720"
+        },
+        "attendance_sessions_checkout_state": {
+          "name": "attendance_sessions_checkout_state",
+          "value": "(`attendance_sessions`.`check_out_at` is null and `attendance_sessions`.`worked_minutes` is null and `attendance_sessions`.`overtime_minutes` is null and `attendance_sessions`.`shortage_minutes` is null) or (`attendance_sessions`.`check_out_at` is not null and `attendance_sessions`.`worked_minutes` is not null and `attendance_sessions`.`overtime_minutes` is not null and `attendance_sessions`.`shortage_minutes` is not null and `attendance_sessions`.`check_out_at` > `attendance_sessions`.`check_in_at` and `attendance_sessions`.`worked_minutes` = timestampdiff(minute, `attendance_sessions`.`check_in_at`, `attendance_sessions`.`check_out_at`) and `attendance_sessions`.`overtime_minutes` = greatest(`attendance_sessions`.`worked_minutes` - `attendance_sessions`.`required_minutes`, 0) and `attendance_sessions`.`shortage_minutes` = greatest(`attendance_sessions`.`required_minutes` - `attendance_sessions`.`worked_minutes`, 0))"
+        },
+        "attendance_sessions_automatic_timeout_state": {
+          "name": "attendance_sessions_automatic_timeout_state",
+          "value": "(`attendance_sessions`.`automatic_timeout_at` is null and `attendance_sessions`.`automatic_timeout_corrected_at` is null and `attendance_sessions`.`flagged` = false) or (`attendance_sessions`.`automatic_timeout_at` is not null and `attendance_sessions`.`automatic_timeout_at` = timestampadd(hour, 16, `attendance_sessions`.`check_in_at`) and `attendance_sessions`.`flagged` = true and `attendance_sessions`.`check_out_at` is not null and ((`attendance_sessions`.`automatic_timeout_corrected_at` is null and `attendance_sessions`.`check_out_at` = `attendance_sessions`.`automatic_timeout_at`) or (`attendance_sessions`.`automatic_timeout_corrected_at` is not null and `attendance_sessions`.`automatic_timeout_corrected_at` >= `attendance_sessions`.`automatic_timeout_at`)))"
+        }
+      }
+    },
+    "audit_events": {
+      "name": "audit_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "actor_type": {
+          "name": "actor_type",
+          "type": "enum('admin','employee','system')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_identifier": {
+          "name": "actor_identifier",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "action": {
+          "name": "action",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "module": {
+          "name": "module",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "before_state": {
+          "name": "before_state",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "after_state": {
+          "name": "after_state",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "related_ids": {
+          "name": "related_ids",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "varchar(45)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "varchar(1024)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "audit_events_created_idx": {
+          "name": "audit_events_created_idx",
+          "columns": [
+            "created_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "audit_events_module_action_idx": {
+          "name": "audit_events_module_action_idx",
+          "columns": [
+            "module",
+            "action",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "audit_events_actor_idx": {
+          "name": "audit_events_actor_idx",
+          "columns": [
+            "actor_type",
+            "actor_identifier",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "audit_events_entity_idx": {
+          "name": "audit_events_entity_idx",
+          "columns": [
+            "entity_type",
+            "entity_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "audit_events_request_idx": {
+          "name": "audit_events_request_idx",
+          "columns": [
+            "request_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "audit_events_id": {
+          "name": "audit_events_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "advance_installments": {
+      "name": "advance_installments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "advance_id": {
+          "name": "advance_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payroll_month": {
+          "name": "payroll_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "advance_installments_advance_ordinal_unique": {
+          "name": "advance_installments_advance_ordinal_unique",
+          "columns": [
+            "advance_id",
+            "ordinal"
+          ],
+          "isUnique": true
+        },
+        "advance_installments_advance_month_unique": {
+          "name": "advance_installments_advance_month_unique",
+          "columns": [
+            "advance_id",
+            "payroll_month"
+          ],
+          "isUnique": true
+        },
+        "advance_installments_employee_month_idx": {
+          "name": "advance_installments_employee_month_idx",
+          "columns": [
+            "employee_id",
+            "payroll_month"
+          ],
+          "isUnique": false
+        },
+        "advance_installments_month_employee_idx": {
+          "name": "advance_installments_month_employee_idx",
+          "columns": [
+            "payroll_month",
+            "employee_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "advance_installments_advance_employee_fk": {
+          "name": "advance_installments_advance_employee_fk",
+          "tableFrom": "advance_installments",
+          "tableTo": "advances",
+          "columnsFrom": [
+            "advance_id",
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id",
+            "employee_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "advance_installments_id": {
+          "name": "advance_installments_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "advance_installments_amount_positive": {
+          "name": "advance_installments_amount_positive",
+          "value": "`advance_installments`.`amount` > 0"
+        },
+        "advance_installments_ordinal_range": {
+          "name": "advance_installments_ordinal_range",
+          "value": "`advance_installments`.`ordinal` between 1 and 4"
+        },
+        "advance_installments_month_first_day": {
+          "name": "advance_installments_month_first_day",
+          "value": "dayofmonth(`advance_installments`.`payroll_month`) = 1"
+        }
+      }
+    },
+    "advances": {
+      "name": "advances",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "installment_count": {
+          "name": "installment_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_month": {
+          "name": "start_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "advances_id_employee_unique": {
+          "name": "advances_id_employee_unique",
+          "columns": [
+            "id",
+            "employee_id"
+          ],
+          "isUnique": true
+        },
+        "advances_employee_idx": {
+          "name": "advances_employee_idx",
+          "columns": [
+            "employee_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "advances_employee_id_employees_id_fk": {
+          "name": "advances_employee_id_employees_id_fk",
+          "tableFrom": "advances",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "advances_id": {
+          "name": "advances_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "advances_amount_positive": {
+          "name": "advances_amount_positive",
+          "value": "`advances`.`amount` > 0"
+        },
+        "advances_installment_count_range": {
+          "name": "advances_installment_count_range",
+          "value": "`advances`.`installment_count` between 1 and 4"
+        },
+        "advances_month_first_day": {
+          "name": "advances_month_first_day",
+          "value": "dayofmonth(`advances`.`start_month`) = 1"
+        }
+      }
+    },
+    "bonuses": {
+      "name": "bonuses",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payroll_month": {
+          "name": "payroll_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "bonuses_employee_month_idx": {
+          "name": "bonuses_employee_month_idx",
+          "columns": [
+            "employee_id",
+            "payroll_month"
+          ],
+          "isUnique": false
+        },
+        "bonuses_month_employee_idx": {
+          "name": "bonuses_month_employee_idx",
+          "columns": [
+            "payroll_month",
+            "employee_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "bonuses_employee_id_employees_id_fk": {
+          "name": "bonuses_employee_id_employees_id_fk",
+          "tableFrom": "bonuses",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "bonuses_id": {
+          "name": "bonuses_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "bonuses_amount_positive": {
+          "name": "bonuses_amount_positive",
+          "value": "`bonuses`.`amount` > 0"
+        },
+        "bonuses_month_first_day": {
+          "name": "bonuses_month_first_day",
+          "value": "dayofmonth(`bonuses`.`payroll_month`) = 1"
+        }
+      }
+    },
+    "deductions": {
+      "name": "deductions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payroll_month": {
+          "name": "payroll_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "deductions_employee_month_idx": {
+          "name": "deductions_employee_month_idx",
+          "columns": [
+            "employee_id",
+            "payroll_month"
+          ],
+          "isUnique": false
+        },
+        "deductions_month_employee_idx": {
+          "name": "deductions_month_employee_idx",
+          "columns": [
+            "payroll_month",
+            "employee_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "deductions_employee_id_employees_id_fk": {
+          "name": "deductions_employee_id_employees_id_fk",
+          "tableFrom": "deductions",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "deductions_id": {
+          "name": "deductions_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "deductions_amount_positive": {
+          "name": "deductions_amount_positive",
+          "value": "`deductions`.`amount` > 0"
+        },
+        "deductions_month_first_day": {
+          "name": "deductions_month_first_day",
+          "value": "dayofmonth(`deductions`.`payroll_month`) = 1"
+        }
+      }
+    },
+    "employee_salary_periods": {
+      "name": "employee_salary_periods",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "effective_month": {
+          "name": "effective_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_salary": {
+          "name": "base_salary",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "employee_salary_periods_employee_month_unique": {
+          "name": "employee_salary_periods_employee_month_unique",
+          "columns": [
+            "employee_id",
+            "effective_month"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "employee_salary_periods_employee_id_employees_id_fk": {
+          "name": "employee_salary_periods_employee_id_employees_id_fk",
+          "tableFrom": "employee_salary_periods",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "employee_salary_periods_id": {
+          "name": "employee_salary_periods_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "employee_salary_periods_amount_positive": {
+          "name": "employee_salary_periods_amount_positive",
+          "value": "`employee_salary_periods`.`base_salary` > 0"
+        },
+        "employee_salary_periods_month_first_day": {
+          "name": "employee_salary_periods_month_first_day",
+          "value": "dayofmonth(`employee_salary_periods`.`effective_month`) = 1"
+        }
+      }
+    },
+    "financial_audit_events": {
+      "name": "financial_audit_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "enum('salary','payroll','bonus','deduction','advance')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "action": {
+          "name": "action",
+          "type": "enum('create','update','delete','finalize','accelerate')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "before_state": {
+          "name": "before_state",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "after_state": {
+          "name": "after_state",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "financial_audit_events_entity_idx": {
+          "name": "financial_audit_events_entity_idx",
+          "columns": [
+            "entity_type",
+            "entity_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "financial_audit_events_id": {
+          "name": "financial_audit_events_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "payroll_months": {
+      "name": "payroll_months",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "employee_id": {
+          "name": "employee_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payroll_month": {
+          "name": "payroll_month",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('finalized')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'finalized'"
+        },
+        "base_salary": {
+          "name": "base_salary",
+          "type": "decimal(12,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prorated_base": {
+          "name": "prorated_base",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "overtime_amount": {
+          "name": "overtime_amount",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bonus_amount": {
+          "name": "bonus_amount",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attendance_deduction_amount": {
+          "name": "attendance_deduction_amount",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "manual_deduction_amount": {
+          "name": "manual_deduction_amount",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "advance_amount": {
+          "name": "advance_amount",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prior_negative_carry": {
+          "name": "prior_negative_carry",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "net_salary": {
+          "name": "net_salary",
+          "type": "decimal(14,2)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "eligible_workdays": {
+          "name": "eligible_workdays",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "full_month_workdays": {
+          "name": "full_month_workdays",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "required_minutes": {
+          "name": "required_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "overtime_minutes": {
+          "name": "overtime_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shortage_minutes": {
+          "name": "shortage_minutes",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finalized_at": {
+          "name": "finalized_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "payroll_months_employee_month_unique": {
+          "name": "payroll_months_employee_month_unique",
+          "columns": [
+            "employee_id",
+            "payroll_month"
+          ],
+          "isUnique": true
+        },
+        "payroll_months_month_status_idx": {
+          "name": "payroll_months_month_status_idx",
+          "columns": [
+            "payroll_month",
+            "status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "payroll_months_employee_id_employees_id_fk": {
+          "name": "payroll_months_employee_id_employees_id_fk",
+          "tableFrom": "payroll_months",
+          "tableTo": "employees",
+          "columnsFrom": [
+            "employee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "payroll_months_id": {
+          "name": "payroll_months_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "payroll_months_month_first_day": {
+          "name": "payroll_months_month_first_day",
+          "value": "dayofmonth(`payroll_months`.`payroll_month`) = 1"
+        },
+        "payroll_months_counts_nonnegative": {
+          "name": "payroll_months_counts_nonnegative",
+          "value": "`payroll_months`.`eligible_workdays` >= 0 and `payroll_months`.`full_month_workdays` >= 0 and `payroll_months`.`required_minutes` >= 0 and `payroll_months`.`overtime_minutes` >= 0 and `payroll_months`.`shortage_minutes` >= 0"
+        }
+      }
+    },
+    "report_exports": {
+      "name": "report_exports",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "report_type": {
+          "name": "report_type",
+          "type": "enum('branches','employees','devices','shifts','weekly-day-off','attendance','payroll','bonuses','deductions','advances')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "enum('queued','processing','completed','failed')",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'queued'"
+        },
+        "filters": {
+          "name": "filters",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "selection": {
+          "name": "selection",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "file_sha256": {
+          "name": "file_sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "file_size_bytes": {
+          "name": "file_size_bytes",
+          "type": "bigint unsigned",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "row_count": {
+          "name": "row_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "cycle_attempt_count": {
+          "name": "cycle_attempt_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "retry_count": {
+          "name": "retry_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "origin_request_id": {
+          "name": "origin_request_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "queued_at": {
+          "name": "queued_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "file_deleted_at": {
+          "name": "file_deleted_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "report_exports_status_queue_idx": {
+          "name": "report_exports_status_queue_idx",
+          "columns": [
+            "status",
+            "queued_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "report_exports_type_created_idx": {
+          "name": "report_exports_type_created_idx",
+          "columns": [
+            "report_type",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "report_exports_id": {
+          "name": "report_exports_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "report_exports_attempt_count_nonnegative": {
+          "name": "report_exports_attempt_count_nonnegative",
+          "value": "`report_exports`.`attempt_count` >= 0"
+        },
+        "report_exports_cycle_attempt_count_bounded": {
+          "name": "report_exports_cycle_attempt_count_bounded",
+          "value": "`report_exports`.`cycle_attempt_count` >= 0 and `report_exports`.`cycle_attempt_count` <= 3"
+        },
+        "report_exports_retry_count_nonnegative": {
+          "name": "report_exports_retry_count_nonnegative",
+          "value": "`report_exports`.`retry_count` >= 0"
+        },
+        "report_exports_row_count_nonnegative": {
+          "name": "report_exports_row_count_nonnegative",
+          "value": "`report_exports`.`row_count` is null or `report_exports`.`row_count` >= 0"
+        }
+      }
+    }
+  },
+  "views": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "tables": {},
+    "indexes": {}
+  }
+}

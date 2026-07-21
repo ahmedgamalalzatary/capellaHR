@@ -268,6 +268,35 @@ describe('ReportsView', () => {
     }));
   });
 
+  test('exports selected employee report rows by their row id', async () => {
+    mocks.createReportExport.mockResolvedValue({ ...completedExport, status: 'queued' });
+    mocks.viewReport.mockImplementation(async (reportType: string) => reportType === 'employees'
+      ? {
+          snapshot: {
+            reportType: 'employees', title: 'تقرير الموظفين', generatedAt: '2026-07-19T10:00:00.000Z',
+            columns: [
+              { key: 'id', label: 'الرقم' },
+              { key: 'fullName', label: 'الاسم' },
+            ],
+            rows: [{ id: 41, fullName: 'موظف التقرير' }],
+            summary: { totalRecords: 1 },
+          },
+          meta: { ...meta, total: 1 },
+        }
+      : { snapshot: branchesSnapshot, meta });
+    renderView();
+    fireEvent.click(screen.getByRole('tab', { name: 'الموظفون' }));
+    await screen.findByText('موظف التقرير');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 41' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير المحدد (1)' }));
+
+    await waitFor(() => expect(mocks.createReportExport).toHaveBeenCalledWith({
+      reportType: 'employees',
+      filters: {},
+      selection: { mode: 'selected', ids: [41] },
+    }));
+  });
+
   test('renders multiple Attendance rows for one employee without duplicate React keys', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.viewReport.mockImplementation(async (reportType: string) => reportType === 'attendance'

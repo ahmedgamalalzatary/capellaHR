@@ -86,15 +86,23 @@ describe('attendance HTTP API', () => {
       authService: makeAuth(null), attendanceService: service,
     })).post('/api/v1/attendance/device-authentication/options').send({
       employeeCode: 42,
+      eventType: 'check_in',
       source: 'branch_device',
       installationMarker: 'installation-marker-123',
+      latitude: 30.0444,
+      longitude: 31.2357,
+      gpsAccuracyMeters: 8,
     });
 
     expect(response.status).toBe(200);
     expect(vi.mocked(service.beginDeviceAuthentication)).toHaveBeenCalledWith({
       employeeCode: 42,
+      eventType: 'check_in',
       source: 'branch_device',
       installationMarker: 'installation-marker-123',
+      latitude: 30.0444,
+      longitude: 31.2357,
+      gpsAccuracyMeters: 8,
     });
   });
 

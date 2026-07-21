@@ -70,6 +70,7 @@ export const bonuses = mysqlTable('bonuses', {
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   index('bonuses_employee_month_idx').on(table.employeeId, table.payrollMonth),
+  index('bonuses_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('bonuses_amount_positive', sql`${table.amount} > 0`),
   check('bonuses_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
@@ -83,6 +84,7 @@ export const deductions = mysqlTable('deductions', {
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   index('deductions_employee_month_idx').on(table.employeeId, table.payrollMonth),
+  index('deductions_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('deductions_amount_positive', sql`${table.amount} > 0`),
   check('deductions_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
@@ -120,6 +122,7 @@ export const advanceInstallments = mysqlTable('advance_installments', {
   uniqueIndex('advance_installments_advance_ordinal_unique').on(table.advanceId, table.ordinal),
   uniqueIndex('advance_installments_advance_month_unique').on(table.advanceId, table.payrollMonth),
   index('advance_installments_employee_month_idx').on(table.employeeId, table.payrollMonth),
+  index('advance_installments_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('advance_installments_amount_positive', sql`${table.amount} > 0`),
   check('advance_installments_ordinal_range', sql`${table.ordinal} between 1 and 4`),
   check('advance_installments_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),

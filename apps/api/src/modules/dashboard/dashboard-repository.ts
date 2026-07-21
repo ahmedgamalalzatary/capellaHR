@@ -1,18 +1,12 @@
 import type { DashboardSnapshotDto } from '@capella/contracts';
 import type { createDatabase } from '@capella/database';
 import {
-  advanceInstallments,
   attendanceDailyRecords,
   attendanceDeniedAttempts,
   attendanceSessions,
-  bonuses,
   branches,
-  deductions,
   devicePairingRequests,
-  devices,
-  employeeSalaryPeriods,
   employees,
-  payrollMonths,
   reportExports,
 } from '@capella/database/schema';
 import {
@@ -21,20 +15,14 @@ import {
   count,
   desc,
   eq,
-  gte,
-  inArray,
   isNull,
   lt,
-  lte,
   notExists,
   sql,
 } from 'drizzle-orm';
 
 import {
-  calculatePayroll,
   calendarMonthInTimeZone,
-  isPayrollSnapshotAmount,
-  payrollMonthStart,
 } from '../payroll/index.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import type { DashboardRepository } from './dashboard-service.js';
@@ -84,218 +72,264 @@ const startOfDate = (value: string, timeZone: string) => {
 
 const totalOf = async (query: Promise<Array<{ value: number }>>) => Number((await query)[0]?.value ?? 0);
 
+const rawRows = async <T>(query: ReturnType<Transaction['execute']>) => (
+  (await query)[0] as unknown as T[]
+);
+
+type PayrollBlockerClassification = {
+  employeeId: number;
+  employeeCode: number;
+  employeeName: string;
+  branchId: number;
+  branchName: string;
+  chronologyConflict: number;
+  openSession: number;
+  deniedAttempt: number;
+  attendancePending: number;
+  amountOutOfRange: number;
+};
+
+const payrollBlockerQuery = (
+  month: string,
+  timeZone: string,
+  currentDate: string,
+  selection: 'count' | 'details',
+) => {
+  const monthStart = `${month}-01`;
+  const nextMonthStart = `${nextMonth(month)}-01`;
+  const [year, monthNumber] = month.split('-').map(Number) as [number, number];
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const monthStartAt = startOfDate(monthStart, timeZone);
+  const nextMonthStartAt = startOfDate(nextMonthStart, timeZone);
+  const dateRows = Array.from({ length: daysInMonth }, (_, index) => {
+    const attendanceDate = `${month}-${String(index + 1).padStart(2, '0')}`;
+    const nextDate = index + 1 === daysInMonth
+      ? nextMonthStart
+      : `${month}-${String(index + 2).padStart(2, '0')}`;
+    return sql`select cast(${attendanceDate} as date) attendance_date, ${startOfDate(attendanceDate, timeZone)} day_start, ${startOfDate(nextDate, timeZone)} next_day_start`;
+  });
+  const resultSelection = selection === 'count'
+    ? sql`count(*) value`
+    : sql`employee_id employeeId, employee_code employeeCode, employee_name employeeName,
+        branch_id branchId, branch_name branchName, chronology_conflict chronologyConflict,
+        open_session openSession, denied_attempt deniedAttempt,
+        attendance_pending attendancePending, amount_out_of_range amountOutOfRange`;
+  const resultTail = selection === 'count'
+    ? sql``
+    : sql`order by employee_code limit ${LIST_LIMIT}`;
+
+  return sql`
+    with date_bounds as (
+      ${sql.join(dateRows, sql` union all `)}
+    ),
+    session_facts as (
+      select employee_id,
+        count(*) session_count,
+        coalesce(sum(required_minutes), 0) session_required_minutes,
+        coalesce(sum(overtime_minutes), 0) overtime_minutes,
+        coalesce(sum(shortage_minutes), 0) session_shortage_minutes,
+        max(check_out_at is null) open_session
+      from attendance_sessions
+      where attendance_date >= ${monthStart} and attendance_date < ${nextMonthStart}
+      group by employee_id
+    ),
+    daily_facts as (
+      select employee_id,
+        sum(status = 'weekly_day_off') weekly_days,
+        sum(status = 'absence') absence_days,
+        coalesce(sum(case when status = 'absence' then absence_required_minutes else 0 end), 0) absence_required_minutes
+      from attendance_daily_records
+      where attendance_date >= ${monthStart} and attendance_date < ${nextMonthStart}
+      group by employee_id
+    ),
+    bonus_facts as (
+      select employee_id, coalesce(sum(amount), 0.00) bonus_amount
+      from bonuses where payroll_month = ${monthStart} group by employee_id
+    ),
+    deduction_facts as (
+      select employee_id, coalesce(sum(amount), 0.00) deduction_amount
+      from deductions where payroll_month = ${monthStart} group by employee_id
+    ),
+    advance_facts as (
+      select employee_id, coalesce(sum(amount), 0.00) advance_amount
+      from advance_installments where payroll_month = ${monthStart} group by employee_id
+    ),
+    employee_facts as (
+      select employee.id employee_id, employee.employee_code, employee.full_name employee_name,
+        branch.id branch_id, branch.name branch_name, employee.created_at, employee.deleted_at,
+        coalesce((
+          select salary.base_salary from employee_salary_periods salary
+          where salary.employee_id = employee.id and salary.effective_month <= ${monthStart}
+          order by salary.effective_month desc limit 1
+        ), employee.monthly_base_salary) base_salary,
+        coalesce(session.session_count, 0) session_count,
+        coalesce(session.session_required_minutes, 0) session_required_minutes,
+        coalesce(session.overtime_minutes, 0) overtime_minutes,
+        coalesce(session.session_shortage_minutes, 0) session_shortage_minutes,
+        coalesce(session.open_session, 0) open_session,
+        coalesce(daily.weekly_days, 0) weekly_days,
+        coalesce(daily.absence_days, 0) absence_days,
+        coalesce(daily.absence_required_minutes, 0) absence_required_minutes,
+        coalesce(bonus.bonus_amount, 0.00) bonus_amount,
+        coalesce(deduction.deduction_amount, 0.00) deduction_amount,
+        coalesce(advance_payment.advance_amount, 0.00) advance_amount,
+        coalesce((
+          select case when prior.net_salary < 0 then prior.net_salary else 0.00 end
+          from payroll_months prior
+          where prior.employee_id = employee.id and prior.payroll_month < ${monthStart}
+          order by prior.payroll_month desc limit 1
+        ), 0.00) prior_negative_carry,
+        greatest(period_diff(
+          extract(year_month from cast(${monthStart} as date)),
+          extract(year_month from coalesce(
+            convert_tz(employee.created_at, 'UTC', ${timeZone}),
+            employee.created_at
+          ))
+        ), 0) expected_prior_months,
+        (
+          select count(*) from payroll_months history
+          where history.employee_id = employee.id
+            and history.payroll_month >= cast(date_format(coalesce(
+              convert_tz(employee.created_at, 'UTC', ${timeZone}),
+              employee.created_at
+            ), '%Y-%m-01') as date)
+            and history.payroll_month < ${monthStart}
+        ) finalized_prior_months
+      from employees employee
+      join branches branch on branch.id = employee.branch_id
+      left join session_facts session on session.employee_id = employee.id
+      left join daily_facts daily on daily.employee_id = employee.id
+      left join bonus_facts bonus on bonus.employee_id = employee.id
+      left join deduction_facts deduction on deduction.employee_id = employee.id
+      left join advance_facts advance_payment on advance_payment.employee_id = employee.id
+      where employee.created_at < ${nextMonthStartAt}
+        and (employee.deleted_at is null or employee.deleted_at >= ${monthStartAt})
+        and not exists (
+          select 1 from payroll_months current_payroll
+          where current_payroll.employee_id = employee.id
+            and current_payroll.payroll_month = ${monthStart}
+        )
+    ),
+    blocker_flags as (
+      select facts.*,
+        (facts.finalized_prior_months < facts.expected_prior_months) chronology_conflict,
+        exists (
+          select 1 from attendance_denied_attempts denied
+          join date_bounds denied_date
+            on denied.occurred_at >= denied_date.day_start
+            and denied.occurred_at < denied_date.next_day_start
+          where denied.employee_id = facts.employee_id
+            and denied.approved_at is null and denied.dismissed_at is null
+            and (
+              (denied.event_type = 'check_out' and exists (
+                select 1 from attendance_sessions open_attendance
+                where open_attendance.employee_id = facts.employee_id
+                  and open_attendance.check_out_at is null
+                  and denied.occurred_at > open_attendance.check_in_at
+              ))
+              or
+              (denied.event_type = 'check_in'
+                and not exists (
+                  select 1 from attendance_sessions denied_session
+                  where denied_session.employee_id = facts.employee_id
+                    and denied_session.attendance_date = denied_date.attendance_date
+                )
+                and not exists (
+                  select 1 from attendance_daily_records denied_daily
+                  where denied_daily.employee_id = facts.employee_id
+                    and denied_daily.attendance_date = denied_date.attendance_date
+                    and denied_daily.status = 'weekly_day_off'
+                ))
+            )
+        ) denied_attempt,
+        exists (
+          select 1 from date_bounds attendance_date
+          where attendance_date.attendance_date < cast(${currentDate} as date)
+            and facts.created_at < attendance_date.day_start
+            and (facts.deleted_at is null or facts.deleted_at >= attendance_date.next_day_start)
+            and not exists (
+              select 1 from attendance_sessions missing_session
+              where missing_session.employee_id = facts.employee_id
+                and missing_session.attendance_date = attendance_date.attendance_date
+            )
+            and not exists (
+              select 1 from attendance_daily_records missing_daily
+              where missing_daily.employee_id = facts.employee_id
+                and missing_daily.attendance_date = attendance_date.attendance_date
+            )
+        ) attendance_pending
+      from employee_facts facts
+    ),
+    calculated_amounts as (
+      select flags.*,
+        case when (${daysInMonth} - flags.weekly_days) > 0
+          and (flags.session_required_minutes + flags.absence_required_minutes) > 0
+          then round(flags.base_salary * (flags.session_count + flags.absence_days)
+            / (${daysInMonth} - flags.weekly_days), 2) else 0.00 end prorated_base,
+        case when (${daysInMonth} - flags.weekly_days) > 0
+          and (flags.session_required_minutes + flags.absence_required_minutes) > 0
+          then round(flags.base_salary * (flags.session_count + flags.absence_days) * flags.overtime_minutes
+            / ((${daysInMonth} - flags.weekly_days)
+              * (flags.session_required_minutes + flags.absence_required_minutes)), 2) else 0.00 end overtime_amount,
+        case when (${daysInMonth} - flags.weekly_days) > 0
+          and (flags.session_required_minutes + flags.absence_required_minutes) > 0
+          then round(flags.base_salary * (flags.session_count + flags.absence_days)
+            * (flags.session_shortage_minutes + flags.absence_required_minutes)
+            / ((${daysInMonth} - flags.weekly_days)
+              * (flags.session_required_minutes + flags.absence_required_minutes)), 2) else 0.00 end attendance_deduction_amount
+      from blocker_flags flags
+    ),
+    classified as (
+      select amounts.*,
+        (not amounts.chronology_conflict
+          and not amounts.open_session
+          and not amounts.denied_attempt
+          and not amounts.attendance_pending
+          and greatest(
+          abs(amounts.base_salary), abs(amounts.prorated_base), abs(amounts.overtime_amount),
+          abs(amounts.bonus_amount), abs(amounts.attendance_deduction_amount),
+          abs(amounts.deduction_amount), abs(amounts.advance_amount), abs(amounts.prior_negative_carry),
+          abs(amounts.prorated_base + amounts.overtime_amount + amounts.bonus_amount
+            - amounts.attendance_deduction_amount - amounts.deduction_amount
+            - amounts.advance_amount + amounts.prior_negative_carry)
+          ) > 999999999999.99) amount_out_of_range
+      from calculated_amounts amounts
+    )
+    select ${resultSelection} from classified
+    where chronology_conflict or open_session or denied_attempt or attendance_pending or amount_out_of_range
+    ${resultTail}
+  `;
+};
+
 const payrollBlockers = async (
   transaction: Transaction,
   month: string,
   timeZone: string,
   currentDate: string,
 ) => {
-  const candidates = await transaction.select({
-    ...employeeFields,
-    monthlyBaseSalary: employees.monthlyBaseSalary,
-    createdAt: employees.createdAt,
-    deletedAt: employees.deletedAt,
-  }).from(employees).innerJoin(branches, eq(branches.id, employees.branchId))
-    .orderBy(asc(employees.employeeCode));
-  const finalized = await transaction.select({
-    employeeId: payrollMonths.employeeId,
-    payrollMonth: payrollMonths.payrollMonth,
-    netSalary: payrollMonths.netSalary,
-  }).from(payrollMonths);
-  const finalizedKeys = new Set(finalized.map((row) => `${row.employeeId}:${row.payrollMonth.slice(0, 7)}`));
-  const eligible = candidates.filter((employee) => {
-    const creationMonth = calendarMonthInTimeZone(employee.createdAt, timeZone);
-    const deletionMonth = employee.deletedAt
-      ? calendarMonthInTimeZone(employee.deletedAt, timeZone)
-      : null;
-    return creationMonth <= month && (deletionMonth === null || deletionMonth >= month);
-  }).filter((employee) => !finalizedKeys.has(`${employee.employeeId}:${month}`));
-  if (!eligible.length) return { total: 0, items: [] };
-
-  const employeeIds = eligible.map(({ employeeId }) => employeeId);
-  const monthStart = `${month}-01`;
-  const [year, monthNumber] = month.split('-').map(Number) as [number, number];
-  const monthEnd = `${month}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, '0')}`;
-  const deniedStart = startOfDate(monthStart, timeZone);
-  const deniedEnd = new Date(startOfDate(`${nextMonth(month)}-01`, timeZone).getTime() - 1);
-
-  const sessions = await transaction.select({
-    employeeId: attendanceSessions.employeeId,
-    attendanceDate: attendanceSessions.attendanceDate,
-    requiredMinutes: attendanceSessions.requiredMinutes,
-    checkInAt: attendanceSessions.checkInAt,
-    checkOutAt: attendanceSessions.checkOutAt,
-    overtimeMinutes: attendanceSessions.overtimeMinutes,
-    shortageMinutes: attendanceSessions.shortageMinutes,
-  }).from(attendanceSessions).where(and(
-    inArray(attendanceSessions.employeeId, employeeIds),
-    gte(attendanceSessions.attendanceDate, monthStart),
-    lte(attendanceSessions.attendanceDate, monthEnd),
+  const [totalRow] = await rawRows<{ value: number }>(transaction.execute(
+    payrollBlockerQuery(month, timeZone, currentDate, 'count'),
   ));
-  const dailyRecords = await transaction.select({
-    employeeId: attendanceDailyRecords.employeeId,
-    attendanceDate: attendanceDailyRecords.attendanceDate,
-    status: attendanceDailyRecords.status,
-    requiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
-  }).from(attendanceDailyRecords).where(and(
-    inArray(attendanceDailyRecords.employeeId, employeeIds),
-    gte(attendanceDailyRecords.attendanceDate, monthStart),
-    lte(attendanceDailyRecords.attendanceDate, monthEnd),
+  const detailRows = await rawRows<PayrollBlockerClassification>(transaction.execute(
+    payrollBlockerQuery(month, timeZone, currentDate, 'details'),
   ));
-  const pendingDenied = await transaction.select({
-    employeeId: attendanceDeniedAttempts.employeeId,
-    eventType: attendanceDeniedAttempts.eventType,
-    occurredAt: attendanceDeniedAttempts.occurredAt,
-  }).from(attendanceDeniedAttempts).where(and(
-    inArray(attendanceDeniedAttempts.employeeId, employeeIds),
-    isNull(attendanceDeniedAttempts.approvedAt),
-    isNull(attendanceDeniedAttempts.dismissedAt),
-    gte(attendanceDeniedAttempts.occurredAt, deniedStart),
-    lte(attendanceDeniedAttempts.occurredAt, deniedEnd),
-  ));
-  const openSessions = await transaction.select({
-    employeeId: attendanceSessions.openEmployeeId,
-    checkInAt: attendanceSessions.checkInAt,
-  }).from(attendanceSessions).where(inArray(attendanceSessions.openEmployeeId, employeeIds));
-  const salaryPeriods = await transaction.select({
-    employeeId: employeeSalaryPeriods.employeeId,
-    effectiveMonth: employeeSalaryPeriods.effectiveMonth,
-    amount: employeeSalaryPeriods.baseSalary,
-  }).from(employeeSalaryPeriods).where(and(
-    inArray(employeeSalaryPeriods.employeeId, employeeIds),
-    lte(employeeSalaryPeriods.effectiveMonth, payrollMonthStart(month)),
-  )).orderBy(desc(employeeSalaryPeriods.effectiveMonth));
-  const bonusRows = await transaction.select({
-    employeeId: bonuses.employeeId,
-    amount: sql<string>`coalesce(sum(${bonuses.amount}), 0.00)`,
-  }).from(bonuses).where(and(
-    inArray(bonuses.employeeId, employeeIds),
-    eq(bonuses.payrollMonth, payrollMonthStart(month)),
-  )).groupBy(bonuses.employeeId);
-  const deductionRows = await transaction.select({
-    employeeId: deductions.employeeId,
-    amount: sql<string>`coalesce(sum(${deductions.amount}), 0.00)`,
-  }).from(deductions).where(and(
-    inArray(deductions.employeeId, employeeIds),
-    eq(deductions.payrollMonth, payrollMonthStart(month)),
-  )).groupBy(deductions.employeeId);
-  const advanceRows = await transaction.select({
-    employeeId: advanceInstallments.employeeId,
-    amount: sql<string>`coalesce(sum(${advanceInstallments.amount}), 0.00)`,
-  }).from(advanceInstallments).where(and(
-    inArray(advanceInstallments.employeeId, employeeIds),
-    eq(advanceInstallments.payrollMonth, payrollMonthStart(month)),
-  )).groupBy(advanceInstallments.employeeId);
-
-  const grouped = <T extends { employeeId: number }>(rows: T[]) => {
-    const result = new Map<number, T[]>();
-    for (const row of rows) result.set(row.employeeId, [...(result.get(row.employeeId) ?? []), row]);
-    return result;
+  return {
+    total: Number(totalRow?.value ?? 0),
+    items: detailRows.map((row) => ({
+      employeeId: Number(row.employeeId),
+      employeeCode: Number(row.employeeCode),
+      employeeName: row.employeeName,
+      branchId: Number(row.branchId),
+      branchName: row.branchName,
+      reasons: [
+        ...(Number(row.chronologyConflict) ? ['PAYROLL_CHRONOLOGY_CONFLICT'] : []),
+        ...(Number(row.openSession) ? ['OPEN_SESSION'] : []),
+        ...(Number(row.deniedAttempt) ? ['DENIED_ATTEMPT'] : []),
+        ...(Number(row.attendancePending) ? ['ATTENDANCE_RECONCILIATION_PENDING'] : []),
+        ...(Number(row.amountOutOfRange) ? ['PAYROLL_AMOUNT_OUT_OF_RANGE'] : []),
+      ],
+    })),
   };
-  const sessionsByEmployee = grouped(sessions);
-  const dailyByEmployee = grouped(dailyRecords);
-  const deniedByEmployee = grouped(pendingDenied.flatMap((row) => row.employeeId === null ? [] : [{ ...row, employeeId: row.employeeId }]));
-  const openByEmployee = new Map(openSessions.flatMap((row) => row.employeeId === null ? [] : [[row.employeeId, row]]));
-  const salaryByEmployee = new Map<number, string>();
-  for (const row of salaryPeriods) if (!salaryByEmployee.has(row.employeeId)) salaryByEmployee.set(row.employeeId, row.amount);
-  const amountMap = (rows: Array<{ employeeId: number; amount: string }>) => new Map(rows.map((row) => [row.employeeId, row.amount]));
-  const bonusesByEmployee = amountMap(bonusRows);
-  const deductionsByEmployee = amountMap(deductionRows);
-  const advancesByEmployee = amountMap(advanceRows);
-  const carryByEmployee = new Map<number, { month: string; amount: string }>();
-  for (const row of finalized) {
-    const payrollMonth = row.payrollMonth.slice(0, 7);
-    const prior = carryByEmployee.get(row.employeeId);
-    if (payrollMonth < month && (!prior || payrollMonth > prior.month)) {
-      carryByEmployee.set(row.employeeId, { month: payrollMonth, amount: row.netSalary.startsWith('-') ? row.netSalary : '0.00' });
-    }
-  }
-
-  const blockers: DashboardSnapshotDto['payrollBlockers']['items'] = [];
-  for (const employee of eligible) {
-    const reasons = new Set<string>();
-    for (
-      let cursor = calendarMonthInTimeZone(employee.createdAt, timeZone);
-      cursor < month;
-      cursor = nextMonth(cursor)
-    ) {
-      if (!finalizedKeys.has(`${employee.employeeId}:${cursor}`)) {
-        reasons.add('PAYROLL_CHRONOLOGY_CONFLICT');
-        break;
-      }
-    }
-
-    const employeeSessions = sessionsByEmployee.get(employee.employeeId) ?? [];
-    const employeeDaily = dailyByEmployee.get(employee.employeeId) ?? [];
-    const employeeDenied = deniedByEmployee.get(employee.employeeId) ?? [];
-    const sessionByDate = new Map(employeeSessions.map((session) => [session.attendanceDate, session]));
-    const dailyByDate = new Map(employeeDaily.map((record) => [record.attendanceDate, record]));
-    if (employeeSessions.some(({ checkOutAt }) => checkOutAt === null)) reasons.add('OPEN_SESSION');
-    if (employeeDenied.some((attempt) => {
-      if (attempt.eventType === 'check_out') {
-        const open = openByEmployee.get(employee.employeeId);
-        return open !== undefined && attempt.occurredAt.getTime() > open.checkInAt.getTime();
-      }
-      const attendanceDate = calendarDateInTimeZone(attempt.occurredAt, timeZone);
-      return !sessionByDate.has(attendanceDate)
-        && dailyByDate.get(attendanceDate)?.status !== 'weekly_day_off';
-    })) reasons.add('DENIED_ATTEMPT');
-
-    const creationDate = calendarDateInTimeZone(employee.createdAt, timeZone);
-    const deletionDate = employee.deletedAt ? calendarDateInTimeZone(employee.deletedAt, timeZone) : null;
-    for (let day = 1; day <= Number(monthEnd.slice(-2)); day += 1) {
-      const attendanceDate = `${month}-${String(day).padStart(2, '0')}`;
-      const employmentInterior = attendanceDate > creationDate
-        && (deletionDate === null || attendanceDate < deletionDate);
-      if (attendanceDate < currentDate && employmentInterior
-        && !sessionByDate.has(attendanceDate) && !dailyByDate.has(attendanceDate)) {
-        reasons.add('ATTENDANCE_RECONCILIATION_PENDING');
-        break;
-      }
-    }
-
-    if (!reasons.size) {
-      const weeklyDays = new Set(employeeDaily
-        .filter(({ status }) => status === 'weekly_day_off')
-        .map(({ attendanceDate }) => attendanceDate));
-      const facts = {
-        fullMonthWorkdays: Number(monthEnd.slice(-2)) - weeklyDays.size,
-        eligibleWorkdays: employeeSessions.length + employeeDaily.filter(({ status }) => status === 'absence').length,
-        requiredMinutes: employeeSessions.reduce((total, row) => total + row.requiredMinutes, 0)
-          + employeeDaily.filter(({ status }) => status === 'absence')
-            .reduce((total, row) => total + row.requiredMinutes, 0),
-        overtimeMinutes: employeeSessions.reduce((total, row) => total + (row.overtimeMinutes ?? 0), 0),
-        shortageMinutes: employeeSessions.reduce((total, row) => total + (row.shortageMinutes ?? 0), 0)
-          + employeeDaily.filter(({ status }) => status === 'absence')
-            .reduce((total, row) => total + row.requiredMinutes, 0),
-      };
-      const baseSalary = salaryByEmployee.get(employee.employeeId) ?? employee.monthlyBaseSalary;
-      const bonusAmount = bonusesByEmployee.get(employee.employeeId) ?? '0.00';
-      const manualDeductionAmount = deductionsByEmployee.get(employee.employeeId) ?? '0.00';
-      const advanceAmount = advancesByEmployee.get(employee.employeeId) ?? '0.00';
-      const carry = carryByEmployee.get(employee.employeeId)?.amount ?? '0.00';
-      const calculated = calculatePayroll({
-        baseSalary,
-        ...facts,
-        bonuses: bonusAmount,
-        deductions: manualDeductionAmount,
-        advances: advanceAmount,
-        priorNegativeCarry: carry,
-      });
-      if (![baseSalary, calculated.proratedBase, calculated.overtimeAmount, bonusAmount,
-        calculated.attendanceDeductionAmount, manualDeductionAmount, advanceAmount, carry,
-        calculated.netSalary].every(isPayrollSnapshotAmount)) reasons.add('PAYROLL_AMOUNT_OUT_OF_RANGE');
-    }
-    if (reasons.size) blockers.push({
-      employeeId: employee.employeeId,
-      employeeCode: employee.employeeCode,
-      employeeName: employee.employeeName,
-      branchId: employee.branchId,
-      branchName: employee.branchName,
-      reasons: [...reasons],
-    });
-  }
-  return { total: blockers.length, items: blockers.slice(0, LIST_LIMIT) };
 };
 
 export const createDrizzleDashboardRepository = (
@@ -432,6 +466,21 @@ export const createDrizzleDashboardRepository = (
         .from(attendanceSessions).innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
         .where(timeoutCondition));
 
+      const activeDeviceExists = () => sql<number>`(
+        (${devicePairingRequests.assignmentType} = 'employee' and exists (
+          select 1 from devices active_employee_device
+          where active_employee_device.status = 'active'
+            and active_employee_device.assignment_type = 'employee'
+            and active_employee_device.employee_id = ${devicePairingRequests.employeeId}
+        ))
+        or
+        (${devicePairingRequests.assignmentType} = 'branch' and exists (
+          select 1 from devices active_branch_device
+          where active_branch_device.status = 'active'
+            and active_branch_device.assignment_type = 'branch'
+            and active_branch_device.branch_id = ${devicePairingRequests.branchId}
+        ))
+      )`;
       const pendingRows = await transaction.select({
         id: devicePairingRequests.id,
         assignmentType: devicePairingRequests.assignmentType,
@@ -439,31 +488,25 @@ export const createDrizzleDashboardRepository = (
         employeeName: employees.fullName,
         branchId: devicePairingRequests.branchId,
         branchName: branches.name,
+        hasActiveDevice: activeDeviceExists().mapWith(Number),
         registrationChallenge: devicePairingRequests.registrationChallenge,
         createdAt: devicePairingRequests.createdAt,
       }).from(devicePairingRequests)
         .leftJoin(employees, eq(employees.id, devicePairingRequests.employeeId))
         .leftJoin(branches, eq(branches.id, devicePairingRequests.branchId))
         .where(eq(devicePairingRequests.status, 'pending'))
-        .orderBy(desc(devicePairingRequests.createdAt));
-      const activeAssignments = await transaction.select({
-        assignmentType: devices.assignmentType,
-        employeeId: devices.employeeId,
-        branchId: devices.branchId,
-      }).from(devices).where(eq(devices.status, 'active'));
-      const activeKeys = new Set(activeAssignments.map((device) => `${device.assignmentType}:${
-        device.assignmentType === 'employee' ? device.employeeId : device.branchId
-      }`));
-      const pairingItems = [] as DashboardSnapshotDto['devicePairings']['items'];
-      let replacementTotal = 0;
-      for (const pairing of pendingRows) {
+        .orderBy(desc(devicePairingRequests.createdAt), desc(devicePairingRequests.id))
+        .limit(LIST_LIMIT);
+      const pendingTotal = await totalOf(transaction.select({ value: count() })
+        .from(devicePairingRequests).where(eq(devicePairingRequests.status, 'pending')));
+      const replacementTotal = await totalOf(transaction.select({ value: count() })
+        .from(devicePairingRequests)
+        .where(and(eq(devicePairingRequests.status, 'pending'), activeDeviceExists())));
+      const pairingItems = pendingRows.map((pairing) => {
         const assignmentId = pairing.assignmentType === 'employee' ? pairing.employeeId! : pairing.branchId!;
-        const kind = activeKeys.has(`${pairing.assignmentType}:${assignmentId}`)
-          ? 'replacement' as const : 'pairing' as const;
-        if (kind === 'replacement') replacementTotal += 1;
-        if (pairingItems.length < LIST_LIMIT) pairingItems.push({
+        return {
           id: pairing.id,
-          kind,
+          kind: pairing.hasActiveDevice ? 'replacement' as const : 'pairing' as const,
           assignmentType: pairing.assignmentType,
           assignmentId,
           assignmentName: (pairing.assignmentType === 'employee'
@@ -471,8 +514,8 @@ export const createDrizzleDashboardRepository = (
             : pairing.branchName) ?? `#${assignmentId}`,
           optionsIssued: pairing.registrationChallenge !== null,
           createdAt: pairing.createdAt.toISOString(),
-        });
-      }
+        };
+      });
 
       const exportCounts = { queued: 0, processing: 0, completed: 0, failed: 0 };
       const groupedExports = await transaction.select({
@@ -531,7 +574,7 @@ export const createDrizzleDashboardRepository = (
           })),
         },
         devicePairings: {
-          pendingTotal: pendingRows.length,
+          pendingTotal,
           replacementTotal,
           items: pairingItems,
         },

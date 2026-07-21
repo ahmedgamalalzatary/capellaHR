@@ -26,6 +26,8 @@ import {
   payrollMonths,
   reportExports,
 } from '@capella/database/schema';
+import type { SQL } from 'drizzle-orm';
+import { MySqlDialect } from 'drizzle-orm/mysql-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createDashboardModule } from '../../src/modules/dashboard/index.js';
@@ -33,17 +35,73 @@ import { createDashboardModule } from '../../src/modules/dashboard/index.js';
 const database = createDatabase(process.env.DATABASE_URL ?? '');
 const fixedNow = new Date('2026-07-20T09:00:00.000Z');
 type Transaction = Parameters<Parameters<typeof database.transaction>[0]>[0];
+type SqlCompiler = (this: object) => { params?: unknown[] };
+type SqlGetter = (this: object) => SQL;
+type QueryThen = (
+  this: object,
+  onFulfilled?: (rows: unknown) => unknown,
+  onRejected?: (error: unknown) => unknown,
+) => unknown;
+const isSqlCompiler = (value: unknown): value is SqlCompiler => typeof value === 'function';
+const isSqlGetter = (value: unknown): value is SqlGetter => typeof value === 'function';
+const isQueryThen = (value: unknown): value is QueryThen => typeof value === 'function';
+const sqlDialect = new MySqlDialect();
+const rawSql = (value: unknown): SQL | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const getSql: unknown = Reflect.get(value, 'getSQL');
+  return isSqlGetter(getSql) ? getSql.call(value) : value as SQL;
+};
 
 const countingDatabase = () => {
-  let selectCount = 0;
+  let queryCount = 0;
+  let maxSelectedRows = 0;
+  let maxParameterCount = 0;
+  let executeParameterCount = 0;
+  const observeQuery = (query: object): object => new Proxy(query, {
+    get(target, property, receiver): unknown {
+      if (property === 'then') {
+        const toSql = Reflect.get(target, 'toSQL', receiver);
+        if (isSqlCompiler(toSql)) {
+          const compiled = toSql.call(target);
+          maxParameterCount = Math.max(maxParameterCount, compiled.params?.length ?? 0);
+        }
+        const then = Reflect.get(target, property, receiver);
+        if (!isQueryThen(then)) return then;
+        return (onFulfilled?: (rows: unknown) => unknown, onRejected?: (error: unknown) => unknown) => (
+          then.call(target,
+            (rows: unknown) => {
+              const selectedRows = Array.isArray(rows) && Array.isArray(rows[0]) ? rows[0] : rows;
+              if (Array.isArray(selectedRows)) maxSelectedRows = Math.max(maxSelectedRows, selectedRows.length);
+              return onFulfilled?.(rows) ?? rows;
+            },
+            onRejected,
+          )
+        );
+      }
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        const result = Reflect.apply(value, target, args) as unknown;
+        return typeof result === 'object' && result !== null ? observeQuery(result) : result;
+      };
+    },
+  });
   const wrapTransaction = (transaction: Transaction) => new Proxy(transaction, {
     get(target, property, receiver): unknown {
       const value: unknown = Reflect.get(target, property, receiver);
-      if (property === 'select' && typeof value === 'function') {
+      if ((property === 'select' || property === 'execute') && typeof value === 'function') {
         return (...args: unknown[]) => {
-          selectCount += 1;
-          const result: unknown = Reflect.apply(value, target, args);
-          return result;
+          queryCount += 1;
+          if (property === 'execute') {
+            const statement = rawSql(args[0]);
+            if (statement) {
+              const parameterCount = sqlDialect.sqlToQuery(statement).params.length;
+              executeParameterCount = Math.max(executeParameterCount, parameterCount);
+              maxParameterCount = Math.max(maxParameterCount, parameterCount);
+            }
+          }
+          const result = Reflect.apply(value, target, args) as object;
+          return observeQuery(result);
         };
       }
       const result: unknown = typeof value === 'function' ? value.bind(target) : value;
@@ -62,7 +120,13 @@ const countingDatabase = () => {
       return result;
     },
   });
-  return { database: wrapped, selectCount: () => selectCount };
+  return {
+    database: wrapped,
+    queryCount: () => queryCount,
+    maxSelectedRows: () => maxSelectedRows,
+    maxParameterCount: () => maxParameterCount,
+    executeParameterCount: () => executeParameterCount,
+  };
 };
 
 const cleanup = async () => {
@@ -257,6 +321,38 @@ describe('MySQL-backed Dashboard snapshot', () => {
     expect(after.previousDayOpen.items.map((item) => item.employeeCode)).toEqual([2]);
   });
 
+  it('does not add an amount-range blocker before attendance reconciliation succeeds', async () => {
+    const { missing } = await seed();
+    await database.insert(bonuses).values(Array.from({ length: 101 }, () => ({
+      employeeId: missing,
+      amount: '9999999999.99',
+      payrollMonth: '2026-06-01',
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    })));
+
+    const snapshot = await createModule(fixedNow).service.getSnapshot();
+    const blocker = snapshot.payrollBlockers.items.find((item) => item.employeeCode === 3);
+    expect(blocker?.reasons).toEqual(['ATTENDANCE_RECONCILIATION_PENDING']);
+  });
+
+  it('returns each pending pairing once when an assignment has multiple active devices', async () => {
+    const { current } = await seed();
+    await database.insert(devices).values({
+      assignmentType: 'employee', employeeId: current, branchId: null,
+      credentialId: 'dashboard-credential-duplicate', credentialIdHash: 'e'.repeat(64),
+      credentialPublicKey: 'public-key-duplicate', counter: 0, transports: [],
+      credentialDeviceType: 'singleDevice', credentialBackedUp: false,
+      installationMarkerHash: 'f'.repeat(64), browser: 'Firefox', platform: 'Android',
+      status: 'active', pairedAt: fixedNow,
+    });
+
+    const snapshot = await createModule(fixedNow).service.getSnapshot();
+    expect(snapshot.devicePairings).toMatchObject({ pendingTotal: 2, replacementTotal: 1 });
+    expect(snapshot.devicePairings.items).toHaveLength(2);
+    expect(new Set(snapshot.devicePairings.items.map((item) => item.id)).size).toBe(2);
+  });
+
   it('keeps snapshot query growth constant as employees and pairing requests increase', async () => {
     const { branchId } = await seed();
     const baseline = countingDatabase();
@@ -280,12 +376,43 @@ describe('MySQL-backed Dashboard snapshot', () => {
       assignmentType: 'employee' as const, employeeId, branchId: null,
       tokenHash: String(index + 1).repeat(64), status: 'pending' as const, createdAt: fixedNow,
     })));
+    const historyEmployee = Number((await database.insert(employees).values({
+      employeeCode: 200, fullName: 'Historical Scale', personalPhone: '01299999999',
+      whatsappPhone: '01599999999', pinHash: 'history-secret', credentialVersion: 1,
+      age: 30, address: 'Cairo', branchId, shiftDurationMinutes: 480,
+      monthlyBaseSalary: '5000.00', deletedAt: null,
+      createdAt: new Date('2024-01-01T06:00:00.000Z'), updatedAt: fixedNow,
+    }))[0].insertId);
+    const historyMonths = Array.from({ length: 8 }, (_, index) => `2025-${String(index + 1).padStart(2, '0')}`);
+    await database.insert(attendanceSessions).values(historyMonths.map((month) => ({
+      employeeId: historyEmployee, attendanceDate: `${month}-01`, requiredMinutes: 480,
+      checkInAt: new Date(`${month}-01T06:00:00.000Z`), checkOutAt: new Date(`${month}-01T14:00:00.000Z`),
+      workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
+      automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
+      createdAt: fixedNow, updatedAt: fixedNow,
+    })));
+    await database.insert(attendanceDailyRecords).values(historyMonths.map((month) => ({
+      employeeId: historyEmployee, attendanceDate: `${month}-02`, status: 'absence' as const,
+      absenceRequiredMinutes: 480, dayOffConvertedAt: null, createdAt: fixedNow, updatedAt: fixedNow,
+    })));
+    await database.insert(bonuses).values(historyMonths.map((month) => ({
+      employeeId: historyEmployee, payrollMonth: `${month}-01`, amount: '10.00',
+      createdAt: fixedNow, updatedAt: fixedNow,
+    })));
+    await database.insert(deductions).values(historyMonths.map((month) => ({
+      employeeId: historyEmployee, payrollMonth: `${month}-01`, amount: '5.00',
+      createdAt: fixedNow, updatedAt: fixedNow,
+    })));
 
     const scaled = countingDatabase();
     await createDashboardModule(scaled.database, {
       now: () => fixedNow, timeZone: 'Africa/Cairo',
     }).service.getSnapshot();
 
-    expect(scaled.selectCount()).toBe(baseline.selectCount());
+    expect(scaled.queryCount()).toBe(baseline.queryCount());
+    expect(scaled.maxSelectedRows()).toBeLessThanOrEqual(5);
+    expect(scaled.executeParameterCount()).toBeGreaterThan(0);
+    expect(scaled.executeParameterCount()).toBe(baseline.executeParameterCount());
+    expect(scaled.maxParameterCount()).toBe(baseline.maxParameterCount());
   });
 });

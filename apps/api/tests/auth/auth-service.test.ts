@@ -83,6 +83,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
   let tokenNumber = 0;
   let deviceVerificationCount = 0;
   let attendanceContext: unknown;
+  let attendanceOpen = overrides.attendanceOpen ?? true;
   const createAuthService = Reflect.get(auth, 'createAuthService');
   expect(createAuthService).toBeTypeOf('function');
 
@@ -91,6 +92,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
     attempts,
     get deviceVerificationCount() { return deviceVerificationCount; },
     get attendanceContext() { return attendanceContext; },
+    setAttendanceOpen(value: boolean) { attendanceOpen = value; },
     service: createAuthService({
       adminCredentials: {
         async findByEmail(email: string) {
@@ -122,7 +124,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
       attendance: {
         async hasOpenSession(employeeId: number, context?: unknown) {
           attendanceContext = context;
-          return employeeId === employee.id && (overrides.attendanceOpen ?? true);
+          return employeeId === employee.id && attendanceOpen;
         },
       },
       tokenFactory: () => `opaque-token-${++tokenNumber}`,
@@ -189,10 +191,10 @@ describe('authentication service', () => {
     });
 
     expect(result.actor).toEqual({ type: 'employee' });
-    await expect(setup.service.authenticate(result.token)).resolves.toMatchObject({ actorType: 'employee', employeeId: 7 });
     expect(setup.sessions.attendanceEligibilityChecks).toBe(1);
     expect(setup.sessions.deviceEligibilityChecks).toBe(1);
     expect(setup.attendanceContext).toBe(setup.sessions.transactionContext);
+    await expect(setup.service.authenticate(result.token)).resolves.toMatchObject({ actorType: 'employee', employeeId: 7 });
   });
 
   it.each([
@@ -283,6 +285,20 @@ describe('authentication service', () => {
       succeeded: false,
       reason: 'DEVICE_NOT_REGISTERED',
     })]);
+  });
+
+  it('rejects and revokes an existing employee token after attendance expires', async () => {
+    const setup = makeService();
+    const login = await setup.service.loginEmployee({
+      employeeCode: 12,
+      pin: '0123',
+      personalPhone: '01012345678',
+      deviceProof: validProof,
+    });
+    setup.setAttendanceOpen(false);
+
+    await expect(setup.service.authenticate(login.token)).resolves.toBeNull();
+    expect(setup.sessions.rows[0]?.revokedAt).not.toBeNull();
   });
 
   it('does not record infrastructure failures as invalid credentials', async () => {

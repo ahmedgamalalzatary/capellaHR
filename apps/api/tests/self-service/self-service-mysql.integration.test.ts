@@ -66,6 +66,13 @@ const currentCairoMonth = () => {
   const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
   return `${read('year')}-${read('month')}`;
 };
+const currentCairoDate = (instant: Date) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(instant);
+  const read = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  return `${read('year')}-${read('month')}-${read('day')}`;
+};
 
 const cleanupDatabase = async () => {
   await database.delete(financialAuditEvents);
@@ -127,6 +134,13 @@ describe('MySQL-backed employee self-service', () => {
     ]);
     await database.insert(attendanceSessions).values([
       {
+        employeeId: owner.id, attendanceDate: currentCairoDate(now), requiredMinutes: 480,
+        checkInAt: new Date(now.valueOf() - 60_000), checkOutAt: null,
+        workedMinutes: null, overtimeMinutes: null, shortageMinutes: null,
+        automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
+        createdAt: now, updatedAt: now,
+      },
+      {
         employeeId: owner.id, attendanceDate: `${payrollMonth}-03`, requiredMinutes: 480,
         checkInAt: new Date(`${payrollMonth}-03T06:00:00.000Z`), checkOutAt: new Date(`${payrollMonth}-03T14:00:00.000Z`),
         workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
@@ -167,11 +181,11 @@ describe('MySQL-backed employee self-service', () => {
       createdAt: now,
       revokedAt: null,
     });
-    const authModule = createAuthModule({ database });
     const attendance = createDrizzleAttendanceRepository(database, {
       isFinanciallyLocked: async () => false,
       readRequiredDuration: async () => 480,
     });
+    const authModule = createAuthModule({ database, attendance });
     const selfServiceModule = createSelfServiceModule({
       employees: employeeModule.service,
       branches: branchModule.service,
@@ -198,9 +212,10 @@ describe('MySQL-backed employee self-service', () => {
     expect(overview.status).toBe(200);
     expect(overview.body.data.profile.fullName).toBe('صاحب الجلسة');
     expect(JSON.stringify(overview.body)).not.toMatch(/pin|image|storagePath|credential|latitude|longitude|Radius|employeeId/iu);
-    expect(responseData<{ attendanceDate: string }>(attendanceResponse.body)).toEqual([
+    expect(responseData<{ attendanceDate: string }>(attendanceResponse.body)).toEqual(expect.arrayContaining([
       expect.objectContaining({ attendanceDate: `${payrollMonth}-03`, state: 'closed' }),
-    ]);
+      expect.objectContaining({ attendanceDate: currentCairoDate(now), state: 'open' }),
+    ]));
     expect(JSON.stringify(attendanceResponse.body)).not.toMatch(/employeeId|employeeCode|employeeName|branchId|branchName|flagged/);
     expect(responseData<{ amount: string }>(bonusesResponse.body).map((item) => item.amount)).toEqual(['100.00']);
     expect(responseData<{ amount: string }>(deductionsResponse.body).map((item) => item.amount)).toEqual(['20.00']);
@@ -215,7 +230,7 @@ describe('MySQL-backed employee self-service', () => {
   });
 
   it('serves an open Attendance-backed payroll preview to an authenticated checked-in employee while finalization stays blocked', async () => {
-    const now = new Date('2026-08-05T09:00:00.000Z');
+    const now = new Date('2026-08-01T09:00:00.000Z');
     const branchModule = createBranchesModule(database);
     const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => true });
     const bonusModule = createBonusModule(database, { now: () => now });
@@ -232,9 +247,9 @@ describe('MySQL-backed employee self-service', () => {
 
     await database.insert(attendanceSessions).values({
       employeeId: owner.id,
-      attendanceDate: '2026-07-20',
+      attendanceDate: '2026-07-31',
       requiredMinutes: 480,
-      checkInAt: new Date('2026-07-20T06:00:00.000Z'),
+      checkInAt: new Date('2026-07-31T20:00:00.000Z'),
       checkOutAt: null,
       workedMinutes: null,
       overtimeMinutes: null,
@@ -246,7 +261,7 @@ describe('MySQL-backed employee self-service', () => {
       updatedAt: now,
     });
     await database.insert(attendanceDailyRecords).values(Array.from({ length: 31 }, (_, index) => index + 1)
-      .filter((day) => day !== 20)
+      .filter((day) => day !== 31)
       .map((day) => ({
         employeeId: owner.id,
         attendanceDate: `2026-07-${String(day).padStart(2, '0')}`,
@@ -288,7 +303,7 @@ describe('MySQL-backed employee self-service', () => {
       advances: advanceModule.service,
     });
     const app = createApp({
-      authService: createAuthModule({ database }).service,
+      authService: createAuthModule({ database, attendance }).service,
       selfServiceService: selfServiceModule.service,
     });
 

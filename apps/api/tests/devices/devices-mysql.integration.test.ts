@@ -113,7 +113,10 @@ describe('MySQL-backed devices', () => {
     await module.service.revoke(active.id);
 
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'active-self-service')).limit(1))[0]?.revokedAt).toBeNull();
-    await expect(createAuthModule({ database }).service.authenticate(token)).resolves.toMatchObject({
+    await expect(createAuthModule({
+      database,
+      attendance: { hasOpenSession: async () => true },
+    }).service.authenticate(token)).resolves.toMatchObject({
       actorType: 'employee', employeeId: employee.id, revokedAt: null,
     });
   });

@@ -44,8 +44,12 @@ export const employeeAttendanceEventSchema = z.object({
 
 export const beginAttendanceDeviceAuthenticationSchema = z.object({
   employeeCode: positiveMysqlIntSchema,
+  eventType: attendanceEventTypeSchema,
   source: employeeAttendanceSourceSchema,
   installationMarker: z.string().min(16).max(4096),
+  latitude: attendanceGpsSchema.shape.latitude,
+  longitude: attendanceGpsSchema.shape.longitude,
+  gpsAccuracyMeters: attendanceGpsSchema.shape.gpsAccuracyMeters,
 }).strict();
 
 const explicitOffsetDateTimeSchema = z.string().datetime({ offset: true })

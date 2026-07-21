@@ -6,6 +6,7 @@ import {
   calculateDistanceMeters,
   createAttendanceService,
   type DeniedAttendanceInput,
+  type AttendanceDeviceGateway,
   type AttendanceRepository,
 } from '../../src/modules/attendance/attendance-service.js';
 
@@ -85,9 +86,18 @@ const event = {
   gpsAccuracyMeters: 8,
   deviceProof: proof,
 };
+const deviceOptionsInput = {
+  employeeCode: 42,
+  eventType: 'check_in' as const,
+  source: 'personal_device' as const,
+  installationMarker: 'installation-marker-123',
+  latitude: 30.0444,
+  longitude: 31.2357,
+  gpsAccuracyMeters: 8,
+};
 
 const createService = (repository = makeRepository()) => {
-  const devices = {
+  const devices: AttendanceDeviceGateway = {
     beginAuthentication: vi.fn(async () => ({ challengeId: 'challenge' })),
     verify: vi.fn(async () => ({ id: 9, verified: true })),
   };
@@ -117,6 +127,64 @@ describe('attendance service', () => {
     )).toEqual({ workedMinutes: 60, overtimeMinutes: 0, shortageMinutes: 0 });
     expect(calculateAttendanceMinutes(now, new Date(now.getTime() + 61 * 60_000), 60))
       .toEqual({ workedMinutes: 61, overtimeMinutes: 1, shortageMinutes: 0 });
+  });
+
+  it('records an invalid-device preflight as exactly one denied attendance attempt', async () => {
+    const { service, repository, devices } = createService();
+    vi.mocked(devices.beginAuthentication).mockResolvedValue(null);
+
+    await expect(service.beginDeviceAuthentication(deviceOptionsInput)).rejects.toMatchObject({
+      code: 'ATTENDANCE_VERIFICATION_FAILED',
+    });
+    expect(repository.recordDeniedAttempt).toHaveBeenCalledOnce();
+    expect(repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'check_in',
+      claimedEmployeeCode: 42,
+      employeeId: 7,
+      source: 'personal_device',
+      occurredAt: now,
+      latitude: 30.0444,
+      longitude: 31.2357,
+      gpsAccuracyMeters: 8,
+      distanceMeters: 0,
+      failureReason: 'DEVICE_INVALID',
+      suspicious: true,
+    }));
+  });
+
+  it('records unknown-code and out-of-range preflights without issuing a challenge', async () => {
+    const unknownRepository = makeRepository();
+    vi.mocked(unknownRepository.findIdentityByCode).mockResolvedValue(null);
+    const unknown = createService(unknownRepository);
+    await expect(unknown.service.beginDeviceAuthentication(deviceOptionsInput)).rejects.toMatchObject({
+      code: 'ATTENDANCE_VERIFICATION_FAILED',
+    });
+    expect(unknownRepository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      employeeId: null,
+      failureReason: 'INVALID_CREDENTIALS',
+      suspicious: true,
+    }));
+    expect(unknown.devices.beginAuthentication).not.toHaveBeenCalled();
+
+    const outside = createService();
+    await expect(outside.service.beginDeviceAuthentication({
+      ...deviceOptionsInput,
+      latitude: 31,
+    })).rejects.toMatchObject({ code: 'ATTENDANCE_VERIFICATION_FAILED' });
+    expect(outside.repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      failureReason: 'OUT_OF_RANGE',
+      suspicious: true,
+    }));
+    expect(outside.devices.beginAuthentication).not.toHaveBeenCalled();
+  });
+
+  it('masks every preflight factor failure behind the same external error', async () => {
+    const invalidDevice = createService();
+    vi.mocked(invalidDevice.devices.beginAuthentication).mockResolvedValue(null);
+    await expect(invalidDevice.service.beginDeviceAuthentication(deviceOptionsInput)).rejects.toMatchObject({
+      code: 'ATTENDANCE_VERIFICATION_FAILED',
+      message: 'تعذر التحقق من بيانات الحضور',
+    });
   });
 
   it('checks in with the personal device assignment and complete GPS snapshot', async () => {

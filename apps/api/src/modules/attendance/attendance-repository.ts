@@ -16,6 +16,7 @@ import {
   count,
   desc,
   eq,
+  gt,
   gte,
   isNotNull,
   isNull,
@@ -192,6 +193,11 @@ const endOfDate = (value: string, timeZone: string) => {
   return new Date(startOfDate(next, timeZone).valueOf() - 1);
 };
 
+const nextCalendarDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+};
+
 type EventSnapshot = {
   source: 'personal_device' | 'branch_device' | 'admin_manual' | 'admin_approved_denied' | 'automatic_timeout';
   deviceId: number | null;
@@ -268,6 +274,21 @@ export const createDrizzleAttendanceRepository = (
     snapshot: EventSnapshot & { source: EventSnapshot['source'] | 'automatic_timeout' },
     automatic: boolean,
   ): Promise<AttendanceMutationResult> => {
+    const timeoutAt = new Date(session.checkInAt.getTime() + 16 * 60 * 60_000);
+    if (!automatic && occurredAt.getTime() >= timeoutAt.getTime()) {
+      return closeSession(transaction, session, timeoutAt, {
+        source: 'automatic_timeout',
+        deviceId: null,
+        latitude: null,
+        longitude: null,
+        gpsAccuracyMeters: null,
+        distanceMeters: null,
+        branchLatitude: snapshot.branchLatitude,
+        branchLongitude: snapshot.branchLongitude,
+        branchRadiusMeters: snapshot.branchRadiusMeters,
+        approvedDeniedAttemptId: null,
+      }, true);
+    }
     const before = await findSession(transaction, session.id);
     if (!before) throw new Error('Attendance session disappeared before check-out');
     if (occurredAt.getTime() <= session.checkInAt.getTime()) return { kind: 'invalid_time' };
@@ -675,12 +696,13 @@ export const createDrizzleAttendanceRepository = (
 
   return {
     async findMissingAbsenceScheduleStart(throughDate) {
-      const earliest = (await database.select({ createdAt: employees.createdAt })
-        .from(employees).orderBy(asc(employees.createdAt)).limit(1))[0]?.createdAt;
-      const firstDate = earliest
-        ? calendarDateInTimeZone(earliest, timeZone)
+      const firstScheduledDate = (await database.select({
+        attendanceDate: attendanceJobs.attendanceDate,
+      }).from(attendanceJobs).where(eq(attendanceJobs.jobType, 'absence_generation'))
+        .orderBy(asc(attendanceJobs.attendanceDate)).limit(1))[0]?.attendanceDate;
+      const startDate = firstScheduledDate && firstScheduledDate < throughDate
+        ? firstScheduledDate
         : throughDate;
-      const startDate = firstDate > throughDate ? throughDate : firstDate;
       const scheduled = await database.select({ attendanceDate: attendanceJobs.attendanceDate })
         .from(attendanceJobs).where(and(
           eq(attendanceJobs.jobType, 'absence_generation'),
@@ -1270,15 +1292,20 @@ export const createDrizzleAttendanceRepository = (
     },
 
     async reconcileDueAbsencesForEmployee(employeeId, previousRequiredMinutes, context) {
-      const dueDates = await context.select({ attendanceDate: attendanceJobs.attendanceDate })
-        .from(attendanceJobs).where(and(
-          eq(attendanceJobs.jobType, 'absence_generation'),
-          isNull(attendanceJobs.completedAt),
-          lte(attendanceJobs.runAt, now()),
-        )).orderBy(asc(attendanceJobs.attendanceDate));
+      const rolloutDate = (await context.select({ attendanceDate: attendanceJobs.attendanceDate })
+        .from(attendanceJobs)
+        .where(eq(attendanceJobs.jobType, 'absence_generation'))
+        .orderBy(asc(attendanceJobs.attendanceDate))
+        .limit(1))[0]?.attendanceDate;
+      if (rolloutDate === undefined || rolloutDate === null) return 0;
+
+      const currentDate = calendarDateInTimeZone(now(), timeZone);
       let createdCount = 0;
-      for (const { attendanceDate } of dueDates) {
-        if (attendanceDate === null) continue;
+      for (
+        let attendanceDate = rolloutDate;
+        attendanceDate < currentDate;
+        attendanceDate = nextCalendarDate(attendanceDate)
+      ) {
         createdCount += await createAbsenceForEmployee(
           context,
           employeeId,
@@ -1306,10 +1333,9 @@ export const createDrizzleAttendanceRepository = (
       });
     },
 
-    fail(id) {
+    fail(id, reason) {
       return database.transaction(async (transaction) => {
         const failedAt = now();
-        const reason = 'ATTENDANCE_JOB_FAILED';
         const before = (await transaction.select().from(attendanceJobs)
           .where(eq(attendanceJobs.id, id)).for('update').limit(1))[0];
         if (!before || before.status !== 'processing') return;
@@ -1378,8 +1404,12 @@ export const createDrizzleAttendanceRepository = (
 
     async hasOpenSession(employeeId, context) {
       const executor = (context as Executor | undefined) ?? database;
+      const activeAfter = new Date(now().getTime() - 16 * 60 * 60_000);
       return (await executor.select({ id: attendanceSessions.id }).from(attendanceSessions)
-        .where(eq(attendanceSessions.openEmployeeId, employeeId)).limit(1))[0] !== undefined;
+        .where(and(
+          eq(attendanceSessions.openEmployeeId, employeeId),
+          gt(attendanceSessions.checkInAt, activeAfter),
+        )).limit(1))[0] !== undefined;
     },
   };
 };

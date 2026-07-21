@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
+import { bigint, boolean, check, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 import { employees } from '../employees/index.js';
 import { branches } from '../organization/index.js';
 
@@ -21,6 +21,8 @@ export const devices = mysqlTable('devices', {
 }, (table) => [
   uniqueIndex('devices_credential_hash_unique').on(table.credentialIdHash),
   uniqueIndex('devices_installation_marker_hash_unique').on(table.installationMarkerHash),
+  index('devices_active_employee_assignment_idx').on(table.status, table.assignmentType, table.employeeId),
+  index('devices_active_branch_assignment_idx').on(table.status, table.assignmentType, table.branchId),
   check('devices_exact_assignment', sql`(${table.assignmentType} = 'employee' and ${table.employeeId} is not null and ${table.branchId} is null) or (${table.assignmentType} = 'branch' and ${table.branchId} is not null and ${table.employeeId} is null)`),
 ]);
 
@@ -31,7 +33,11 @@ export const devicePairingRequests = mysqlTable('device_pairing_requests', {
   registrationChallenge: varchar('registration_challenge', { length: 512 }),
   webauthnUserId: varchar('webauthn_user_id', { length: 128 }),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(), consumedAt: timestamp('consumed_at', { mode: 'date', fsp: 3 }), cancelledAt: timestamp('cancelled_at', { mode: 'date', fsp: 3 }),
-}, (table) => [uniqueIndex('device_pairing_token_hash_unique').on(table.tokenHash), check('device_pairings_exact_assignment', sql`(${table.assignmentType} = 'employee' and ${table.employeeId} is not null and ${table.branchId} is null) or (${table.assignmentType} = 'branch' and ${table.branchId} is not null and ${table.employeeId} is null)`) ]);
+}, (table) => [
+  uniqueIndex('device_pairing_token_hash_unique').on(table.tokenHash),
+  index('device_pairings_status_created_idx').on(table.status, table.createdAt, table.id),
+  check('device_pairings_exact_assignment', sql`(${table.assignmentType} = 'employee' and ${table.employeeId} is not null and ${table.branchId} is null) or (${table.assignmentType} = 'branch' and ${table.branchId} is not null and ${table.employeeId} is null)`),
+]);
 
 export const deviceAuthenticationChallenges = mysqlTable('device_authentication_challenges', {
   id: varchar('id', { length: 36 }).primaryKey(),

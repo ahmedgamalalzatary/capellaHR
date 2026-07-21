@@ -12,6 +12,13 @@ const {
   attendanceSessions,
 } = attendanceSchema as typeof attendanceSchema & Record<string, unknown>;
 
+describe('attendance dashboard indexes', () => {
+  it('supports date-first monthly attendance scans', () => {
+    expect(getTableConfig(attendanceSessions).indexes.some((item) => item.config.name === 'attendance_sessions_date_employee_idx')).toBe(true);
+    expect(getTableConfig(attendanceDailyRecords).indexes.some((item) => item.config.name === 'attendance_daily_records_date_employee_idx')).toBe(true);
+  });
+});
+
 describe('attendance job schema', () => {
   it('stores durable scheduled jobs with retry and failure state', () => {
     expect(Object.keys(getTableColumns(attendanceJobs))).toEqual(expect.arrayContaining([

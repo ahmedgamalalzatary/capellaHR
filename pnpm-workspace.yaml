@@ -7,6 +7,9 @@ catalog:
   vitest: ^3.2.4
   zod: ^3.25.76
 
+overrides:
+  postcss: 8.5.19
+
 onlyBuiltDependencies:
   - argon2
   - esbuild

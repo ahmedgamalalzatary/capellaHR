@@ -45,6 +45,7 @@ export const attendanceSessions = mysqlTable('attendance_sessions', {
 }, (table) => [
   uniqueIndex('attendance_sessions_employee_date_unique')
     .on(table.employeeId, table.attendanceDate),
+  index('attendance_sessions_date_employee_idx').on(table.attendanceDate, table.employeeId),
   uniqueIndex('attendance_sessions_id_employee_date_unique')
     .on(table.id, table.employeeId, table.attendanceDate),
   uniqueIndex('attendance_sessions_open_employee_unique').on(table.openEmployeeId),
@@ -54,7 +55,11 @@ export const attendanceSessions = mysqlTable('attendance_sessions', {
   ),
   check(
     'attendance_sessions_checkout_state',
-    sql`(${table.checkOutAt} is null and ${table.workedMinutes} is null and ${table.overtimeMinutes} is null and ${table.shortageMinutes} is null) or (${table.checkOutAt} is not null and ${table.checkOutAt} > ${table.checkInAt} and ${table.workedMinutes} >= 0 and ${table.overtimeMinutes} >= 0 and ${table.shortageMinutes} >= 0)`,
+    sql`(${table.checkOutAt} is null and ${table.workedMinutes} is null and ${table.overtimeMinutes} is null and ${table.shortageMinutes} is null) or (${table.checkOutAt} is not null and ${table.workedMinutes} is not null and ${table.overtimeMinutes} is not null and ${table.shortageMinutes} is not null and ${table.checkOutAt} > ${table.checkInAt} and ${table.workedMinutes} = timestampdiff(minute, ${table.checkInAt}, ${table.checkOutAt}) and ${table.overtimeMinutes} = greatest(${table.workedMinutes} - ${table.requiredMinutes}, 0) and ${table.shortageMinutes} = greatest(${table.requiredMinutes} - ${table.workedMinutes}, 0))`,
+  ),
+  check(
+    'attendance_sessions_automatic_timeout_state',
+    sql`(${table.automaticTimeoutAt} is null and ${table.automaticTimeoutCorrectedAt} is null and ${table.flagged} = false) or (${table.automaticTimeoutAt} is not null and ${table.automaticTimeoutAt} = timestampadd(hour, 16, ${table.checkInAt}) and ${table.flagged} = true and ${table.checkOutAt} is not null and ((${table.automaticTimeoutCorrectedAt} is null and ${table.checkOutAt} = ${table.automaticTimeoutAt}) or (${table.automaticTimeoutCorrectedAt} is not null and ${table.automaticTimeoutCorrectedAt} >= ${table.automaticTimeoutAt})))`,
   ),
 ]);
 
@@ -101,6 +106,7 @@ export const attendanceDailyRecords = mysqlTable('attendance_daily_records', {
 }, (table) => [
   uniqueIndex('attendance_daily_records_employee_date_unique')
     .on(table.employeeId, table.attendanceDate),
+  index('attendance_daily_records_date_employee_idx').on(table.attendanceDate, table.employeeId),
   index('attendance_daily_records_status_date_idx').on(table.status, table.attendanceDate),
   foreignKey({
     columns: [table.replacedBySessionId, table.employeeId, table.attendanceDate],

@@ -13,6 +13,10 @@ export type AttendanceJob = {
   updatedAt: Date;
 };
 
+export type AttendanceJobFailureReason =
+  | 'AUTOMATIC_TIMEOUT_FAILED'
+  | 'ABSENCE_GENERATION_FAILED';
+
 export interface AttendanceJobRepository {
   findMissingAbsenceScheduleStart(this: void, throughDate: string): Promise<string | null>;
   ensureAbsenceJob(this: void, date: string, runAt: Date): Promise<unknown>;
@@ -20,7 +24,7 @@ export interface AttendanceJobRepository {
   processAutomaticTimeout(this: void, sessionId: number): Promise<unknown>;
   generateAbsences(this: void, date: string): Promise<unknown>;
   complete(this: void, id: number): Promise<unknown>;
-  fail(this: void, id: number): Promise<unknown>;
+  fail(this: void, id: number, reason: AttendanceJobFailureReason): Promise<unknown>;
   recoverStale(this: void, staleBefore: Date): Promise<unknown>;
   reconcileFailed(this: void): Promise<unknown>;
 }
@@ -40,7 +44,12 @@ export const createAttendanceJobProcessor = (repository: AttendanceJobRepository
       await repository.complete(job.id);
       return job;
     } catch (error) {
-      await repository.fail(job.id);
+      await repository.fail(
+        job.id,
+        job.jobType === 'automatic_timeout'
+          ? 'AUTOMATIC_TIMEOUT_FAILED'
+          : 'ABSENCE_GENERATION_FAILED',
+      );
       throw error;
     }
   },

@@ -14,6 +14,12 @@ import {
 const config = (table: Parameters<typeof getTableConfig>[0]) => getTableConfig(table);
 
 describe('payroll schema', () => {
+  it('supports month-first dashboard financial scans', () => {
+    expect(config(bonuses).indexes.some((item) => item.config.name === 'bonuses_month_employee_idx')).toBe(true);
+    expect(config(deductions).indexes.some((item) => item.config.name === 'deductions_month_employee_idx')).toBe(true);
+    expect(config(advanceInstallments).indexes.some((item) => item.config.name === 'advance_installments_month_employee_idx')).toBe(true);
+  });
+
   it('defines the salary history and unique employee-month payroll snapshot tables', () => {
     expect(config(employeeSalaryPeriods).name).toBe('employee_salary_periods');
     expect(config(employeeSalaryPeriods).indexes.some((index) => index.config.name === 'employee_salary_periods_employee_month_unique')).toBe(true);

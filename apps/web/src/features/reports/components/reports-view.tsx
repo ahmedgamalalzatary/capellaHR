@@ -69,7 +69,6 @@ const DATE_RANGE_TABS: ReadonlySet<ReportType> = new Set([
 
 /** Employee-related report selection always targets employees, not transient row ids. */
 const EMPLOYEE_SCOPED_TABS: ReadonlySet<ReportType> = new Set([
-  'employees',
   'shifts',
   'weekly-day-off',
   'attendance',
