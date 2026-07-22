@@ -7,8 +7,8 @@ This is the temporary working checklist for completing the full functional produ
 ## User-confirmed scope decision
 
 - **SKIP — USER CONFIRMED (2026-07-20):** Do not implement Capella-managed facial recognition, face enrollment/templates, liveness challenges, ONNX processing, biometric thresholds, or biometric Settings.
-- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-20):** Employee-originated check-in and check-out use employee code plus the four-digit PIN while retaining the applicable registered-device/WebAuthn and assigned-branch GPS checks.
-- Face ID, fingerprint, or device passcode used internally by a phone to satisfy WebAuthn user verification is device-platform behavior, not Capella facial recognition, and remains allowed.
+- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-22):** Employee-originated check-in and check-out use employee code plus the four-digit PIN while retaining the exact registered browser marker and assigned-branch GPS checks.
+- Device verification is silent and does not invoke a pattern, security key, biometric, or device-passcode prompt.
 
 ## Tracker boundary
 
@@ -66,7 +66,6 @@ Current branch endpoints:
 - `employee_images`
 - `devices`
 - `device_pairing_requests`
-- `device_authentication_challenges`
 - `device_history`
 - `attendance_daily_records`
 - `employee_salary_periods`
@@ -99,23 +98,23 @@ Current branch endpoints:
 
 ## 4. Devices — Complete
 
-- [x] Add schemas for devices, WebAuthn credentials, installation markers, pairing requests, and immutable device history.
+- [x] Add schemas for browser-marker devices, one-time pairing requests, and immutable device history.
 - [x] Enforce one active personal phone per employee and one active shared phone per branch.
 - [x] Prevent a browser profile from having more than one employee/branch assignment or being transferred.
 - [x] Add admin-generated, assignment-scoped, single-use QR/link pairing.
 - [x] Keep pairing requests active until used, cancelled, or superseded; allow only one pending request per assignment.
-- [x] Complete successful pairing automatically without a second approval after a server-generated WebAuthn registration challenge and cryptographic attestation verification.
+- [x] Complete pairing automatically when the target browser opens a valid one-time link and submits its local installation marker.
 - [x] Implement replacement while retaining the old device until the new device pairs successfully.
 - [x] Revoke replaced/removed devices permanently and require fresh pairing for reuse.
 - [x] Cancel pending pairing and revoke the active personal device during employee soft deletion.
 - [x] Preserve active employee self-service after device revocation until checkout, while blocking new verification/login; checkout and timeout now end the exception through the Attendance integration.
-- [x] Verify personal and branch devices with one-time server challenges, origin/RP-ID validation, assertion signatures, user verification, and monotonic signature counters. Static credential IDs and installation markers are explicitly not accepted as authentication proof.
-- [x] Wire the cryptographic personal-device verifier into Auth and expose the branch-device verifier for Attendance consumption when that module is implemented.
+- [x] Verify personal and branch devices silently by hashing the browser's installation marker and matching it to the assigned active device.
+- [x] Wire marker-only personal-device verification into Auth and marker-only branch-device verification into Attendance.
 - [x] Add admin-only device list/detail/status/history endpoints, assignment/browser/platform search, filters, and assignment identity without exposing credentials or secrets.
 - [x] Require online API access for pairing; implement no offline queue.
 - [x] Add pairing-request concurrency, single-use storage, replacement, revocation, authorization, and MySQL integration tests.
-- [x] Add real WebAuthn registration/authentication through `@simplewebauthn/server`, strict RP/origin and user-verification checks, one-time expiring authentication challenges, signature counters, malformed-proof tests, and MySQL replay tests.
-- [x] Wire the registered personal-device verifier and authentication-options flow into employee Auth; expose the assignment-scoped verifier for the future Attendance module.
+- [x] Keep one-time pairing links valid until used, cancelled, or superseded; pairing requires only the browser's local installation marker.
+- [x] Wire silent registered-browser marker verification into employee Auth and both personal-phone and branch-phone Attendance flows.
 
 Migrations through `0010_cool_the_watchers.sql` are applied to both `capella_hr` and `capella_hr-test`.
 
@@ -134,7 +133,7 @@ No new migration was needed: migrations `0004` and `0005` already created and co
 
 ## Current-slice hardening audit
 
-- [x] Burn one-time WebAuthn authentication challenges on every attempted proof, including wrong assignment, credential, marker, and revoked-device paths.
+- [x] Reject wrong-assignment, wrong-marker, and revoked-device verification attempts without disabling the valid registered marker.
 - [x] Use a consistent device/challenge lock order and revalidate employee/branch assignments inside pairing transactions.
 - [x] Keep branch deletion and employee creation races on stable domain errors instead of foreign-key 500 responses.
 - [x] Bound MySQL integer identifiers and pagination before database access.
@@ -235,7 +234,7 @@ Production preview/finalization now receives open/closed-session, denied-attempt
 - [x] Add Attendance/Absence and Payroll report readers backed by transaction-aware Attendance facts; production view and PDF paths no longer use their fail-closed placeholders.
 - [x] Exclude login/admin-session activity and denied/flagged attendance attempts.
 - [x] Provide Arabic detailed rows, fixed safe field sets, and relevant totals/summaries.
-- [x] Exclude employee images, PINs and hashes, device credentials, and all secrets. **SKIP — USER CONFIRMED (2026-07-20):** No biometric fields or artifacts will exist to report.
+- [x] Exclude employee images, PINs and hashes, installation-marker data, and all secrets. **SKIP — USER CONFIRMED (2026-07-20):** No biometric fields or artifacts will exist to report.
 - [x] Include historically relevant soft-deleted employees in employee-related reports.
 - [x] Label open/finalized payroll rows and relevant soft-deleted employees.
 - [x] Add Cairo-correct date ranges, payroll-month ranges, branch/device filters, employee search, and selected/subset/all-filtered selection.
@@ -270,7 +269,7 @@ Current report endpoints:
 - [x] Add the Arabic/RTL application shell, responsive admin navigation, Cairo clock, session loading, and admin route protection.
 - [x] Add the shared API client, stable error-envelope handling, runtime Cairo/locale formatting, query state, loading, retry, and empty-state foundations.
 - [x] Add functional admin views for Branches, Employees, Devices and pairing, Shifts, Weekly Day-Off, Payroll/base salary, Bonuses, Deductions, Advances, and the currently available Reports/PDF workflows.
-- [x] Add admin and employee login forms plus the employee WebAuthn authentication-options flow.
+- [x] Add admin and employee login forms with silent registered-browser marker verification for employees.
 - [x] Add the Arabic/RTL employee self-service view for own non-secret profile, branch, shift, current/historical Attendance, open/finalized payroll, weekly-day/absence records, bonuses, deductions, advances/installments, pagination, and logout.
 - [x] Add the admin-only immutable Audit History view with search, actor/module/date filters, pagination, retry/empty states, and expandable redacted details.
 
@@ -279,7 +278,7 @@ Current report endpoints:
 - [x] Replace the placeholder admin Attendance page with attendance/absence, denied/flagged-attempt, approval, manual-event, timeout, and correction workflows.
 - [x] Replace the placeholder Dashboard page with all locked operational summaries, bounded live lists, complete totals/status counts, retry/refresh states, and direct links to the owning modules.
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Replace the placeholder Settings page with company-wide face-match and liveness threshold management plus supervised enrollment entry points where relevant.~~
-- [x] Implement the personal-device attendance interface with employee code, PIN, GPS, WebAuthn, check-in, and check-out flows.
+- [x] Implement the personal-device attendance interface with employee code, PIN, GPS, registered-browser marker, check-in, and check-out flows.
 - [x] Implement the shared branch-kiosk interface with employee code, PIN, registered branch-device validation, GPS, check-in, and check-out flows. **SKIP — USER CONFIRMED (2026-07-20):** No camera, randomized liveness, or face match.
 - [x] Extend employee self-service with its own Attendance history and trustworthy open payroll previews through the completed Attendance gateway.
 - [x] Expose the existing Attendance/Absence and Payroll report tabs through their now-trustworthy backend readers.
@@ -328,7 +327,7 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [x] Add permanent immutable audit records and admin-only read/search/filter endpoints.
 - [x] Audit every mutation and security-sensitive/system event in the currently implemented modules, but not ordinary page/report views.
 - [x] Store actor, action/module, entity, before/after values, Cairo timestamp, request ID, network/browser context, and related identifiers where available.
-- [x] Redact/exclude passwords, PINs and hashes, session tokens/cookies, credential material, and other secrets. **SKIP — USER CONFIRMED (2026-07-20):** Biometric templates will not exist.
+- [x] Redact/exclude passwords, PINs and hashes, session tokens/cookies, raw installation markers and marker hashes, and other secrets. **SKIP — USER CONFIRMED (2026-07-20):** Biometric templates will not exist.
 - [x] Integrate auditing transactionally across all currently implemented modules and preserve originating correlation IDs across background report transitions.
 - [x] Add immutability, completeness, redaction, authorization, correlation, rollback, background-transition, and MySQL tests.
 
@@ -382,7 +381,7 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [x] Use UTC storage and `Africa/Cairo` for all workday decisions.
 - [x] Assign a cross-midnight session entirely to its Cairo check-in date.
 - [x] Atomically enforce one session per employee/check-in date and one open session per employee.
-- [x] Implement personal-phone check-in/out with employee code, PIN, GPS, and registered WebAuthn proof.
+- [x] Implement personal-phone check-in/out with employee code, PIN, GPS, and the registered browser marker.
 - [x] Implement branch-phone check-in/out with employee code, PIN, registered branch-device validation, and GPS. **SKIP — USER CONFIRMED (2026-07-20):** No liveness or face match.
 - [x] Validate the employee's assigned branch/device and accept distance exactly on the configured radius.
 - [x] Snapshot source, device, timestamps, GPS, accuracy, calculated distance, branch coordinates/radius, and verification results.

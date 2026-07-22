@@ -66,17 +66,7 @@ const makeRepository = (): AttendanceRepository => ({
   hasOpenSession: vi.fn(async () => true),
 });
 
-const proof = {
-  challengeId: 'b4f3550c-0230-4a73-ae58-f4086ab13206',
-  installationMarker: 'installation-marker-123',
-  response: {
-    id: 'credential', rawId: 'credential', type: 'public-key' as const,
-    response: {
-      clientDataJSON: 'client', authenticatorData: 'authenticator', signature: 'signature',
-    },
-    clientExtensionResults: {},
-  },
-};
+const installationMarker = 'installation-marker-123';
 const event = {
   employeeCode: 42,
   pin: '1234',
@@ -84,29 +74,21 @@ const event = {
   latitude: 30.0444,
   longitude: 31.2357,
   gpsAccuracyMeters: 8,
-  deviceProof: proof,
-};
-const deviceOptionsInput = {
-  employeeCode: 42,
-  eventType: 'check_in' as const,
-  source: 'personal_device' as const,
-  installationMarker: 'installation-marker-123',
-  latitude: 30.0444,
-  longitude: 31.2357,
-  gpsAccuracyMeters: 8,
+  installationMarker,
 };
 
 const createService = (repository = makeRepository()) => {
   const devices: AttendanceDeviceGateway = {
-    beginAuthentication: vi.fn(async () => ({ challengeId: 'challenge' })),
     verify: vi.fn(async () => ({ id: 9, verified: true })),
   };
+  const verifyPin = vi.fn(async () => true);
   return {
     repository,
     devices,
+    verifyPin,
     service: createAttendanceService(repository, devices, {
       now: () => now,
-      verifyPin: vi.fn(async () => true),
+      verifyPin,
     }),
   };
 };
@@ -129,71 +111,13 @@ describe('attendance service', () => {
       .toEqual({ workedMinutes: 61, overtimeMinutes: 1, shortageMinutes: 0 });
   });
 
-  it('records an invalid-device preflight as exactly one denied attendance attempt', async () => {
-    const { service, repository, devices } = createService();
-    vi.mocked(devices.beginAuthentication).mockResolvedValue(null);
-
-    await expect(service.beginDeviceAuthentication(deviceOptionsInput)).rejects.toMatchObject({
-      code: 'ATTENDANCE_VERIFICATION_FAILED',
-    });
-    expect(repository.recordDeniedAttempt).toHaveBeenCalledOnce();
-    expect(repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      eventType: 'check_in',
-      claimedEmployeeCode: 42,
-      employeeId: 7,
-      source: 'personal_device',
-      occurredAt: now,
-      latitude: 30.0444,
-      longitude: 31.2357,
-      gpsAccuracyMeters: 8,
-      distanceMeters: 0,
-      failureReason: 'DEVICE_INVALID',
-      suspicious: true,
-    }));
-  });
-
-  it('records unknown-code and out-of-range preflights without issuing a challenge', async () => {
-    const unknownRepository = makeRepository();
-    vi.mocked(unknownRepository.findIdentityByCode).mockResolvedValue(null);
-    const unknown = createService(unknownRepository);
-    await expect(unknown.service.beginDeviceAuthentication(deviceOptionsInput)).rejects.toMatchObject({
-      code: 'ATTENDANCE_VERIFICATION_FAILED',
-    });
-    expect(unknownRepository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      employeeId: null,
-      failureReason: 'INVALID_CREDENTIALS',
-      suspicious: true,
-    }));
-    expect(unknown.devices.beginAuthentication).not.toHaveBeenCalled();
-
-    const outside = createService();
-    await expect(outside.service.beginDeviceAuthentication({
-      ...deviceOptionsInput,
-      latitude: 31,
-    })).rejects.toMatchObject({ code: 'ATTENDANCE_VERIFICATION_FAILED' });
-    expect(outside.repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      failureReason: 'OUT_OF_RANGE',
-      suspicious: true,
-    }));
-    expect(outside.devices.beginAuthentication).not.toHaveBeenCalled();
-  });
-
-  it('masks every preflight factor failure behind the same external error', async () => {
-    const invalidDevice = createService();
-    vi.mocked(invalidDevice.devices.beginAuthentication).mockResolvedValue(null);
-    await expect(invalidDevice.service.beginDeviceAuthentication(deviceOptionsInput)).rejects.toMatchObject({
-      code: 'ATTENDANCE_VERIFICATION_FAILED',
-      message: 'تعذر التحقق من بيانات الحضور',
-    });
-  });
-
   it('checks in with the personal device assignment and complete GPS snapshot', async () => {
     const { service, repository, devices } = createService();
 
     await expect(service.checkIn(event)).resolves.toEqual(session);
     expect(devices.verify).toHaveBeenCalledWith(
       { assignmentType: 'employee', assignmentId: 7 },
-      proof,
+      installationMarker,
     );
     expect(repository.checkIn).toHaveBeenCalledWith(expect.objectContaining({
       employeeId: 7,
@@ -212,14 +136,13 @@ describe('attendance service', () => {
     await service.checkOut({ ...event, source: 'branch_device' });
     expect(devices.verify).toHaveBeenCalledWith(
       { assignmentType: 'branch', assignmentId: 2 },
-      proof,
+      installationMarker,
     );
   });
 
-  it('records and flags a wrong PIN after consuming the supplied one-time device proof', async () => {
+  it('records and flags a wrong PIN after checking the paired browser marker', async () => {
     const repository = makeRepository();
     const devices = {
-      beginAuthentication: vi.fn(),
       verify: vi.fn(async () => ({ id: 9, verified: true })),
     };
     const service = createAttendanceService(repository, devices, {
@@ -239,7 +162,7 @@ describe('attendance service', () => {
     }));
     expect(devices.verify).toHaveBeenCalledWith(
       { assignmentType: 'employee', assignmentId: 7 },
-      proof,
+      installationMarker,
     );
   });
 
@@ -254,7 +177,7 @@ describe('attendance service', () => {
     }));
     expect(devices.verify).toHaveBeenCalledWith(
       { assignmentType: 'employee', assignmentId: 7 },
-      proof,
+      installationMarker,
     );
   });
 
@@ -289,11 +212,10 @@ describe('attendance service', () => {
     expect(devices.verify).toHaveBeenCalledOnce();
   });
 
-  it('consumes a submitted proof even when the claimed employee code is unknown', async () => {
+  it('checks a submitted marker even when the claimed employee code is unknown', async () => {
     const repository = makeRepository();
     vi.mocked(repository.findIdentityByCode).mockResolvedValue(null);
     const devices = {
-      beginAuthentication: vi.fn(),
       verify: vi.fn(async () => null),
     };
     const service = createAttendanceService(repository, devices, {
@@ -306,7 +228,7 @@ describe('attendance service', () => {
     });
     expect(devices.verify).toHaveBeenCalledWith(
       { assignmentType: 'employee', assignmentId: 0 },
-      proof,
+      installationMarker,
     );
   });
 
@@ -323,10 +245,9 @@ describe('attendance service', () => {
     }));
   });
 
-  it('retains a known candidate device id when its consumed proof is invalid', async () => {
+  it('retains a known candidate device id when its marker is invalidated concurrently', async () => {
     const repository = makeRepository();
     const devices = {
-      beginAuthentication: vi.fn(),
       verify: vi.fn(async () => ({ id: 9, verified: false })),
     };
     const service = createAttendanceService(repository, devices, {

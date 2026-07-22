@@ -41,8 +41,6 @@ APP_LOCALE=ar-EG-u-nu-latn
 MAX_EMPLOYEE_IMAGE_BYTES=16777216
 TRUST_PROXY_HOPS=1
 WEB_ORIGIN=https://capellaegy.com
-WEBAUTHN_RP_NAME=Capella HR
-WEBAUTHN_RP_ID=capellaegy.com
 ADMIN_EMAIL=replace_with_the_admin_email
 ADMIN_PASSWORD=replace_with_a_long_random_admin_password
 ```

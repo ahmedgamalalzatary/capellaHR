@@ -176,6 +176,13 @@
       "when": 1784609957874,
       "tag": "0024_stiff_the_hood",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1784697605367,
+      "tag": "0025_first_sabretooth",
+      "breakpoints": true
     }
   ]
 }

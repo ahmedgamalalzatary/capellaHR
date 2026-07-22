@@ -4,7 +4,6 @@ import {
   auditEvents,
   authSessions,
   branches,
-  deviceAuthenticationChallenges,
   deviceHistory,
   devicePairingRequests,
   devices,
@@ -92,7 +91,6 @@ const createAbsence = async (
 beforeEach(async () => {
   await database.delete(auditEvents);
   await database.delete(attendanceDailyRecords);
-  await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
   await database.delete(devicePairingRequests);

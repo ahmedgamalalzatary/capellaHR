@@ -14,7 +14,6 @@ import {
   bonuses,
   branches,
   deductions,
-  deviceAuthenticationChallenges,
   deviceHistory,
   devicePairingRequests,
   devices,
@@ -87,7 +86,6 @@ const cleanupDatabase = async () => {
   await database.delete(attendanceJobs);
   await database.delete(attendanceSessions);
   await database.delete(attendanceDailyRecords);
-  await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
   await database.delete(devicePairingRequests);

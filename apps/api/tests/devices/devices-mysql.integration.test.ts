@@ -1,22 +1,21 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { createAuthModule } from '../../src/modules/auth/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
-import { createDevicesModule, type WebAuthnProvider } from '../../src/modules/devices/index.js';
+import { createDevicesModule } from '../../src/modules/devices/index.js';
 import { createDrizzleDeviceRepository } from '../../src/modules/devices/devices-repository.js';
 import { createEmployeesModule } from '../../src/modules/employees/index.js';
 
-const provider: WebAuthnProvider = { registrationOptions: async () => ({ challenge: `registration-${randomUUID()}` }), verifyRegistration: async (response) => ({ verified: true, credential: { id: response.id, publicKey: new Uint8Array([1, 2, 3]), counter: 0, transports: ['internal'] }, credentialDeviceType: 'singleDevice', credentialBackedUp: false }), authenticationOptions: async () => ({ challenge: `authentication-${randomUUID()}` }), verifyAuthentication: async (_response, _challenge, credential) => ({ verified: true, newCounter: credential.counter + 1 }) };
-const database = createDatabase(process.env.DATABASE_URL ?? ''); const module = createDevicesModule(database, provider); const branchesModule = createBranchesModule(database); const employeesModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false }, undefined, module.lifecycle);
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
-const complete = async (token: string, marker: string, credential = marker) => { await module.service.beginPairing(token); return module.service.completePairing(token, { installationMarker: `marker-${marker}`.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android', response: { id: `credential-${credential}`, rawId: `credential-${credential}`, type: 'public-key', response: { clientDataJSON: 'data', attestationObject: 'attestation' }, clientExtensionResults: {} } }); };
+const database = createDatabase(process.env.DATABASE_URL ?? ''); const module = createDevicesModule(database); const branchesModule = createBranchesModule(database); const employeesModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false }, undefined, module.lifecycle);
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+const complete = (token: string, marker: string) => module.service.completePairing(token, { installationMarker: `marker-${marker}`.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android' });
 
 describe('MySQL-backed devices', () => {
-  it('audits pairing and revocation without credential or marker material', async () => {
+  it('audits pairing and revocation without marker material', async () => {
     const branch = await branchesModule.service.create({ name: 'Audited branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
     const active = await complete(pairing.pairingToken, 'audited');
@@ -25,10 +24,9 @@ describe('MySQL-backed devices', () => {
     const events = await database.select().from(auditEvents)
       .where(eq(auditEvents.module, 'devices')).orderBy(asc(auditEvents.id));
     expect(events.map(({ action }) => action)).toEqual([
-      'pairing_create', 'pairing_options', 'pairing_complete', 'revoke',
+      'pairing_create', 'pairing_complete', 'revoke',
     ]);
     const serialized = JSON.stringify(events);
-    expect(serialized).not.toContain('credential-audited');
     expect(serialized).not.toContain('marker-audited');
   });
 
@@ -85,13 +83,13 @@ describe('MySQL-backed devices', () => {
     const replacement = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id }); expect((await module.service.get(old.id)).status).toBe('active');
     await complete(replacement.pairingToken, 'new'); expect((await module.service.get(old.id)).status).toBe('revoked');
   });
-  it('allows the same browser profile to re-register for its original assignment with a fresh credential', async () => {
+  it('allows the same browser profile to re-register for its original assignment', async () => {
     const branch = await branchesModule.service.create({ name: 'Same phone', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const firstPairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
-    const first = await complete(firstPairing.pairingToken, 'same-phone', 'first-credential');
+    const first = await complete(firstPairing.pairingToken, 'same-phone');
     await module.service.revoke(first.id);
     const secondPairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
-    await expect(complete(secondPairing.pairingToken, 'same-phone', 'fresh-credential')).resolves.toMatchObject({ status: 'active' });
+    await expect(complete(secondPairing.pairingToken, 'same-phone')).resolves.toMatchObject({ status: 'active' });
     const release = (await database.select().from(auditEvents)
       .where(and(eq(auditEvents.module, 'devices'), eq(auditEvents.action, 'installation_marker_release'))))[0];
     expect(release).toMatchObject({
@@ -101,6 +99,20 @@ describe('MySQL-backed devices', () => {
       relatedIds: { assignmentId: String(branch.id) },
     });
     expect(JSON.stringify(release)).not.toContain('same-phone');
+  });
+  it('allows a revoked browser marker to pair with a different branch', async () => {
+    const firstBranch = await branchesModule.service.create({ name: 'First marker branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const secondBranch = await branchesModule.service.create({ name: 'Second marker branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const marker = 'reassigned-marker';
+    const firstPairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: firstBranch.id });
+    const firstDevice = await complete(firstPairing.pairingToken, marker);
+    await module.service.revoke(firstDevice.id);
+
+    const secondPairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: secondBranch.id });
+    await expect(complete(secondPairing.pairingToken, marker)).resolves.toMatchObject({
+      assignmentType: 'branch', assignmentId: secondBranch.id, status: 'active',
+    });
+    expect((await database.select().from(devices).where(eq(devices.id, firstDevice.id)).limit(1))[0]?.installationMarkerHash).toBeNull();
   });
   it('keeps an already-active employee session alive when only the personal device is revoked', async () => {
     const branch = await branchesModule.service.create({ name: 'Session exception', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -125,8 +137,7 @@ describe('MySQL-backed devices', () => {
     const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id }); await complete(pairing.pairingToken, 'same');
     const employee = await employeesModule.service.create({ fullName: 'موظف', personalPhone: '01012345678', whatsappPhone: '01012345678', pin: '1234', age: 30, address: 'القاهرة', branchId: branch.id, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: { storagePath: 'p', originalName: 'p.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idFront: { storagePath: 'f', originalName: 'f.jpg', mimeType: 'image/jpeg', sizeBytes: 1 }, idBack: { storagePath: 'b', originalName: 'b.jpg', mimeType: 'image/jpeg', sizeBytes: 1 } } });
     const other = await module.service.createPairing({ assignmentType: 'employee', assignmentId: employee.id });
-    await module.service.beginPairing(other.pairingToken);
-    await expect(module.service.completePairing(other.pairingToken, { installationMarker: 'marker-same'.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android', response: { id: 'other', rawId: 'other', type: 'public-key', response: { clientDataJSON: 'data', attestationObject: 'attestation' }, clientExtensionResults: {} } })).rejects.toMatchObject({ code: 'DEVICE_ALREADY_REGISTERED' });
+    await expect(module.service.completePairing(other.pairingToken, { installationMarker: 'marker-same'.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android' })).rejects.toMatchObject({ code: 'DEVICE_ALREADY_REGISTERED' });
   });
   it('revokes the employee device and cancels pending pairing on employee deletion', async () => {
     const branch = await branchesModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -197,53 +208,33 @@ describe('MySQL-backed devices', () => {
     ));
     expect(lifecycleAudits).toHaveLength(0);
   });
-  it('consumes authentication challenges once and advances the stored counter', async () => {
+  it('silently verifies the registered browser marker repeatedly', async () => {
     const branch = await branchesModule.service.create({ name: 'Auth branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
     const active = await complete(pairing.pairingToken, 'auth-device');
     const installationMarker = 'marker-auth-device'.padEnd(16, 'x');
-    const challenge = await module.service.beginAuthentication({ assignmentType: 'branch', assignmentId: branch.id }, installationMarker);
-    const proof = { challengeId: challenge.challengeId, installationMarker, response: { id: 'credential-auth-device', rawId: 'credential-auth-device', type: 'public-key' as const, response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } };
 
-    await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, proof)).resolves.toMatchObject({ id: active.id });
-    await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, proof)).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
-    expect((await database.select().from(devices).where(eq(devices.id, active.id)).limit(1))[0]?.counter).toBe(1);
+    await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, installationMarker)).resolves.toMatchObject({ id: active.id });
+    await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, installationMarker)).resolves.toMatchObject({ id: active.id });
+    expect((await database.select().from(devices).where(eq(devices.id, active.id)).limit(1))[0]?.lastUsedAt).toBeInstanceOf(Date);
     const actions = (await database.select({ action: auditEvents.action }).from(auditEvents)
       .where(eq(auditEvents.module, 'devices'))).map(({ action }) => action);
-    expect(actions).toEqual(expect.arrayContaining([
-      'authentication_challenge_create',
-      'authentication_challenge_consume',
-      'verify',
-    ]));
+    expect(actions.filter((action) => action === 'verify')).toHaveLength(2);
   });
-  it('burns an authentication challenge after a wrong installation-marker attempt', async () => {
-    const branch = await branchesModule.service.create({ name: 'Burn challenge', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+  it('rejects a wrong marker without disabling the registered browser marker', async () => {
+    const branch = await branchesModule.service.create({ name: 'Marker branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
-    await complete(pairing.pairingToken, 'burn-device');
-    const installationMarker = 'marker-burn-device'.padEnd(16, 'x');
-    const challenge = await module.service.beginAuthentication({ assignmentType: 'branch', assignmentId: branch.id }, installationMarker);
-    const proof = (marker: string) => ({ challengeId: challenge.challengeId, installationMarker: marker, response: { id: 'credential-burn-device', rawId: 'credential-burn-device', type: 'public-key' as const, response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } });
+    const active = await complete(pairing.pairingToken, 'marker-device');
+    const installationMarker = 'marker-marker-device'.padEnd(16, 'x');
 
     await expect(module.service.verify(
       { assignmentType: 'branch', assignmentId: branch.id },
-      proof('wrong-marker-value'),
-    )).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
+      'wrong-marker-value',
+    )).rejects.toMatchObject({ code: 'DEVICE_INVALID' });
     await expect(module.service.verify(
       { assignmentType: 'branch', assignmentId: branch.id },
-      proof(installationMarker),
-    )).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
-  });
-  it('supersedes the previous authentication challenge for the same device', async () => {
-    const branch = await branchesModule.service.create({ name: 'Challenge branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
-    const pairing = await module.service.createPairing({ assignmentType: 'branch', assignmentId: branch.id });
-    await complete(pairing.pairingToken, 'challenge-device');
-    const marker = 'marker-challenge-device';
-    const first = await module.service.beginAuthentication({ assignmentType: 'branch', assignmentId: branch.id }, marker);
-    const second = await module.service.beginAuthentication({ assignmentType: 'branch', assignmentId: branch.id }, marker);
-    const assertion = (challengeId: string) => ({ challengeId, installationMarker: marker, response: { id: 'credential-challenge-device', rawId: 'credential-challenge-device', type: 'public-key' as const, response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } });
-    await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, assertion(first.challengeId))).rejects.toMatchObject({ code: 'DEVICE_PROOF_INVALID' });
-    await expect(module.service.verify({ assignmentType: 'branch', assignmentId: branch.id }, assertion(second.challengeId))).resolves.toMatchObject({ status: 'active' });
-    expect(await database.select().from(deviceAuthenticationChallenges)).toHaveLength(1);
+      installationMarker,
+    )).resolves.toMatchObject({ id: active.id });
   });
   it('rejects creating a pairing when the employee became deleted before the locked write', async () => {
     const branch = await branchesModule.service.create({ name: 'Branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

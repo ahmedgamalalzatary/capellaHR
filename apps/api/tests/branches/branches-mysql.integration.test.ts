@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceAuthenticationChallenges, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -15,7 +15,7 @@ const input = {
 beforeEach(async () => {
   await database.delete(auditEvents);
   await database.delete(attendanceDailyRecords);
-  await database.delete(deviceAuthenticationChallenges); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests);
+  await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests);
   await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations);
   await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches);
 });

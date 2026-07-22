@@ -10,7 +10,6 @@ import {
   bonuses,
   branches,
   deductions,
-  deviceAuthenticationChallenges,
   deviceHistory,
   devicePairingRequests,
   devices,
@@ -48,7 +47,6 @@ const clear = async () => {
   await database.delete(attendanceDeniedAttempts);
   await database.delete(attendanceDailyRecords);
   await database.delete(attendanceSessions);
-  await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
   await database.delete(devicePairingRequests);
@@ -109,13 +107,6 @@ const seed = async () => {
   await database.insert(devices).values({
     assignmentType: 'employee',
     employeeId,
-    credentialId: 'must-never-appear-credential',
-    credentialIdHash: 'a'.repeat(64),
-    credentialPublicKey: 'must-never-appear-public-key',
-    counter: 0,
-    transports: ['internal'],
-    credentialDeviceType: 'singleDevice',
-    credentialBackedUp: false,
     installationMarkerHash: 'b'.repeat(64),
     browser: 'Mobile Safari',
     platform: 'iOS',
@@ -196,7 +187,7 @@ describe('MySQL-backed reports', () => {
       const serialized = JSON.stringify(result.snapshot);
       expect(serialized).not.toContain('must-never-appear');
       expect(serialized).not.toContain('pinHash');
-      expect(serialized).not.toContain('credentialId');
+      expect(serialized).not.toContain('installationMarkerHash');
       expect(serialized).not.toContain('installationMarker');
       if (reportType === 'employees') {
         expect(result.snapshot.rows[0]?.monthlyBaseSalary).toBe('6000.00');

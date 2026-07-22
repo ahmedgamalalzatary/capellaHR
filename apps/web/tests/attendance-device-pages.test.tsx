@@ -2,26 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ startAuthentication: vi.fn() }));
-
-vi.mock('@simplewebauthn/browser', () => ({
-  startAuthentication: mocks.startAuthentication,
-}));
-
 import BranchKioskPage from '../src/app/(attendance)/branch-kiosk/page';
 import PersonalDevicePage from '../src/app/(attendance)/personal-device/page';
-
-const authenticationResponse = {
-  id: 'credential-id',
-  rawId: 'credential-id',
-  type: 'public-key',
-  response: {
-    clientDataJSON: 'client-data',
-    authenticatorData: 'auth-data',
-    signature: 'signature',
-  },
-  clientExtensionResults: {},
-};
 
 const session = {
   id: 11,
@@ -66,16 +48,8 @@ beforeEach(() => {
       } as GeolocationPosition)),
     },
   });
-  Object.defineProperty(window, 'PublicKeyCredential', {
-    configurable: true,
-    value: class PublicKeyCredential {},
-  });
-  mocks.startAuthentication.mockResolvedValue(authenticationResponse);
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes('/device-authentication/options')) {
-      return response({ data: { challengeId: '00000000-0000-4000-8000-000000000001', options: { challenge: 'c1' } } });
-    }
     if (url.includes('/attendance/check-in')) return response({ data: session }, 201);
     if (url.includes('/attendance/check-out')) return response({ data: { ...session, checkOutAt: '2026-07-21T14:00:00.000Z' } });
     return response({ data: null });
@@ -89,15 +63,12 @@ afterEach(() => {
 });
 
 describe('personal-device attendance', () => {
-  it('captures GPS, proves the registered personal device, and checks in', async () => {
+  it('captures GPS, sends the paired browser marker, and checks in', async () => {
     renderPage(<PersonalDevicePage />);
     expect(screen.getByRole('heading', { name: 'الحضور من جهازي', level: 1 })).toBeDefined();
     fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
 
-    await waitFor(() => expect(mocks.startAuthentication).toHaveBeenCalledWith({
-      optionsJSON: { challenge: 'c1' },
-    }));
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining('/attendance/check-in'),
       expect.objectContaining({
@@ -105,16 +76,6 @@ describe('personal-device attendance', () => {
         body: expect.stringContaining('"source":"personal_device"'),
       }),
     ));
-    const optionsCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/device-authentication/options'))!;
-    expect(JSON.parse(String((optionsCall[1] as RequestInit).body))).toEqual({
-      employeeCode: 42,
-      eventType: 'check_in',
-      source: 'personal_device',
-      installationMarker: 'installation-marker-123',
-      latitude: 30.0444,
-      longitude: 31.2357,
-      gpsAccuracyMeters: 8,
-    });
     const attendanceCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/attendance/check-in'))!;
     expect(JSON.parse(String((attendanceCall[1] as RequestInit).body))).toEqual({
       employeeCode: 42,
@@ -123,11 +84,7 @@ describe('personal-device attendance', () => {
       latitude: 30.0444,
       longitude: 31.2357,
       gpsAccuracyMeters: 8,
-      deviceProof: {
-        challengeId: '00000000-0000-4000-8000-000000000001',
-        installationMarker: 'installation-marker-123',
-        response: authenticationResponse,
-      },
+      installationMarker: 'installation-marker-123',
     });
     expect((await screen.findByRole('status')).textContent).toContain('تم تسجيل الحضور');
     expect(screen.getByText('أحمد سالم')).toBeDefined();
@@ -146,18 +103,21 @@ describe('personal-device attendance', () => {
   });
 
   it('locks the selected action while verification is in progress', async () => {
-    let finishAuthentication!: (value: typeof authenticationResponse) => void;
-    mocks.startAuthentication.mockImplementationOnce(() => new Promise((resolve) => {
-      finishAuthentication = resolve;
+    let finishRequest!: () => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      finishRequest = () => resolve(new Response(JSON.stringify({ data: session }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }));
     }));
     renderPage(<PersonalDevicePage />);
     fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
-    await waitFor(() => expect(mocks.startAuthentication).toHaveBeenCalled());
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());
     const checkoutTab = screen.getByRole('tab', { name: 'تسجيل الانصراف' });
     expect((checkoutTab as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(checkoutTab);
-    finishAuthentication(authenticationResponse);
+    finishRequest();
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining('/attendance/check-in'),
       expect.objectContaining({ method: 'POST' }),
@@ -177,7 +137,7 @@ describe('personal-device attendance', () => {
     expect(checkOut.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('explains location denial without starting device authentication', async () => {
+  it('explains location denial without sending attendance', async () => {
     vi.mocked(navigator.geolocation.getCurrentPosition).mockImplementationOnce((_success, error) => {
       error?.({ code: 1, message: 'denied', PERMISSION_DENIED: 1 } as GeolocationPositionError);
     });
@@ -185,12 +145,12 @@ describe('personal-device attendance', () => {
     fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
     expect((await screen.findByRole('alert')).textContent).toContain('اسمح للموقع');
-    expect(mocks.startAuthentication).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 });
 
 describe('shared branch kiosk', () => {
-  it('uses branch-device proof and clears employee identity after success', async () => {
+  it('uses the branch-device marker and clears employee identity after success', async () => {
     renderPage(<BranchKioskPage />);
     expect(screen.getByRole('heading', { name: 'هاتف الفرع', level: 1 })).toBeDefined();
     fillCredentials();
@@ -204,12 +164,7 @@ describe('shared branch kiosk', () => {
   });
 
   it('shows the server denial and permits a fresh unlimited attempt', async () => {
-    vi.mocked(fetch).mockImplementationOnce((input) => {
-      if (String(input).includes('/device-authentication/options')) {
-        return response({ data: { challengeId: '00000000-0000-4000-8000-000000000001', options: { challenge: 'c1' } } });
-      }
-      return response({ data: null });
-    }).mockImplementationOnce(() => response({
+    vi.mocked(fetch).mockImplementationOnce(() => response({
       error: { code: 'ATTENDANCE_OUT_OF_RANGE', message: 'الموقع خارج نطاق الفرع المسموح' },
     }, 409));
     renderPage(<BranchKioskPage />);

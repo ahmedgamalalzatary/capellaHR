@@ -1,8 +1,3 @@
-import type {
-  AuthenticationResponseJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-} from '@simplewebauthn/browser';
-
 import { api, type PageMeta } from '@/lib/api/client';
 
 export type AttendanceEventType = 'check_in' | 'check_out';
@@ -116,11 +111,6 @@ export const correctAutomaticTimeout = (sessionId: number, checkOutAt: string) =
   api.patch<AttendanceSession>(`/attendance/sessions/${sessionId}/automatic-timeout`, { checkOutAt })
 );
 
-export interface AttendanceDeviceOptions {
-  challengeId: string;
-  options: PublicKeyCredentialRequestOptionsJSON;
-}
-
 export interface EmployeeAttendanceInput {
   employeeCode: number;
   pin: string;
@@ -128,22 +118,8 @@ export interface EmployeeAttendanceInput {
   latitude: number;
   longitude: number;
   gpsAccuracyMeters: number;
-  deviceProof: {
-    challengeId: string;
-    installationMarker: string;
-    response: AuthenticationResponseJSON;
-  };
-}
-
-export const beginAttendanceDeviceAuthentication = (input: {
-  employeeCode: number;
-  eventType: AttendanceEventType;
-  source: AttendanceDeviceSource;
   installationMarker: string;
-  latitude: number;
-  longitude: number;
-  gpsAccuracyMeters: number;
-}) => api.post<AttendanceDeviceOptions>('/attendance/device-authentication/options', input);
+}
 
 export const recordEmployeeAttendance = (
   eventType: AttendanceEventType,

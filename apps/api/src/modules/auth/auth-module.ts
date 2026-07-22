@@ -5,11 +5,7 @@ import { eq } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import { createDrizzleAuthRepositories } from './auth-repositories.js';
-import {
-  AuthError,
-  createAuthService,
-  type AuthServiceDependencies,
-} from './auth-service.js';
+import { createAuthService, type AuthServiceDependencies } from './auth-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
 
@@ -18,7 +14,6 @@ const unavailableEmployees: AuthServiceDependencies['employees'] = {
 };
 
 const unavailableDevices: AuthServiceDependencies['personalDevices'] = {
-  beginAuthentication() { return Promise.reject(new AuthError('DEVICE_NOT_REGISTERED', 'الجهاز غير مسجل')); },
   verify() { return Promise.resolve(null); },
   isActiveEmployeeDevice() { return Promise.resolve(false); },
 };

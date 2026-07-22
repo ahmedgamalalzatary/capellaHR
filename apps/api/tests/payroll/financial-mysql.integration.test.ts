@@ -8,7 +8,6 @@ import {
   bonuses,
   branches,
   deductions,
-  deviceAuthenticationChallenges,
   deviceHistory,
   devicePairingRequests,
   devices,
@@ -54,7 +53,6 @@ const clear = async () => {
   await database.delete(payrollMonths);
   await database.delete(employeeSalaryPeriods);
   await database.delete(attendanceDailyRecords);
-  await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
   await database.delete(devicePairingRequests);

@@ -63,10 +63,7 @@ const employee = {
   deletedAt: null,
   credentialVersion: 1,
 };
-const validProof = {
-  challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123',
-  response: { id: 'valid-proof', rawId: 'valid-proof', type: 'public-key' as const, response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} },
-};
+const installationMarker = 'marker-marker-123';
 
 let adminHash = '';
 let employeePinHash = '';
@@ -109,10 +106,9 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
         },
       },
       personalDevices: {
-        async beginAuthentication() { return (overrides.deviceActive ?? true) ? { challengeId: 'challenge', options: {} } : null; },
-        async verify(employeeId: number, proof: typeof validProof) {
+        async verify(employeeId: number, marker: string) {
           deviceVerificationCount += 1;
-          return employeeId === employee.id && proof.response.id === 'valid-proof' && (overrides.deviceActive ?? true)
+          return employeeId === employee.id && marker === installationMarker && (overrides.deviceActive ?? true)
             ? { id: 4 }
             : null;
         },
@@ -187,7 +183,7 @@ describe('authentication service', () => {
       employeeCode: 12,
       pin: '0123',
       personalPhone: '01012345678',
-      deviceProof: validProof,
+      installationMarker,
     });
 
     expect(result.actor).toEqual({ type: 'employee' });
@@ -209,7 +205,7 @@ describe('authentication service', () => {
       employeeCode: 12,
       pin: '0123',
       personalPhone: '01012345678',
-      deviceProof: validProof,
+      installationMarker,
       ...inputOverrides,
     })).rejects.toMatchObject({ code });
 
@@ -220,28 +216,28 @@ describe('authentication service', () => {
   it.each([
     ['wrong PIN', { pin: '9999' }],
     ['wrong phone', { personalPhone: '01100000000' }],
-  ])('consumes device proof when an existing employee submits a %s', async (_name, inputOverrides) => {
+  ])('checks the browser marker when an existing employee submits a %s', async (_name, inputOverrides) => {
     const setup = makeService();
 
     await expect(setup.service.loginEmployee({
       employeeCode: 12,
       pin: '0123',
       personalPhone: '01012345678',
-      deviceProof: validProof,
+      installationMarker,
       ...inputOverrides,
     })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
 
     expect(setup.deviceVerificationCount).toBe(1);
   });
 
-  it('consumes device proof when the claimed employee code is unknown', async () => {
+  it('checks the browser marker when the claimed employee code is unknown', async () => {
     const setup = makeService();
 
     await expect(setup.service.loginEmployee({
       employeeCode: 999,
       pin: '0123',
       personalPhone: '01012345678',
-      deviceProof: validProof,
+      installationMarker,
     })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
 
     expect(setup.deviceVerificationCount).toBe(1);
@@ -249,8 +245,8 @@ describe('authentication service', () => {
 
   it('revokes every employee session after a PIN reset', async () => {
     const { service } = makeService();
-    const first = await service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: validProof });
-    const second = await service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: validProof });
+    const first = await service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', installationMarker });
+    const second = await service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', installationMarker });
 
     await service.revokeEmployeeSessions(7);
 
@@ -258,14 +254,9 @@ describe('authentication service', () => {
     await expect(service.authenticate(second.token)).resolves.toBeNull();
   });
 
-  it('uses the same public error for unknown employees and employees without a registered device', async () => {
-    await expect(makeService().service.beginEmployeeDeviceAuthentication(999, 'marker-marker-123')).rejects.toMatchObject({ code: 'DEVICE_NOT_REGISTERED' });
-    await expect(makeService({ deviceActive: false }).service.beginEmployeeDeviceAuthentication(12, 'marker-marker-123')).rejects.toMatchObject({ code: 'DEVICE_NOT_REGISTERED' });
-  });
-
   it('rejects login when employee credentials change before session creation', async () => {
     const { service, sessions, attempts } = makeService({ employeeCurrent: false });
-    await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: validProof })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+    await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', installationMarker })).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
     expect(sessions.rows).toHaveLength(0);
     expect(attempts.rows).toEqual([expect.objectContaining({ succeeded: false, reason: 'INVALID_CREDENTIALS' })]);
   });
@@ -277,7 +268,7 @@ describe('authentication service', () => {
       employeeCode: 12,
       pin: '0123',
       personalPhone: '01012345678',
-      deviceProof: validProof,
+      installationMarker,
     })).rejects.toMatchObject({ code: 'DEVICE_NOT_REGISTERED' });
     expect(sessions.rows).toHaveLength(0);
     expect(sessions.deviceEligibilityChecks).toBe(1);
@@ -293,7 +284,7 @@ describe('authentication service', () => {
       employeeCode: 12,
       pin: '0123',
       personalPhone: '01012345678',
-      deviceProof: validProof,
+      installationMarker,
     });
     setup.setAttendanceOpen(false);
 
@@ -306,7 +297,7 @@ describe('authentication service', () => {
     const failure = new Error('database unavailable');
     sessions.createEmployeeIfCurrent = async () => { throw failure; };
 
-    await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: validProof })).rejects.toBe(failure);
+    await expect(service.loginEmployee({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', installationMarker })).rejects.toBe(failure);
     expect(attempts.rows).toHaveLength(0);
   });
 });

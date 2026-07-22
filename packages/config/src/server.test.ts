@@ -18,14 +18,6 @@ describe('server environment', () => {
     expect(env).not.toHaveProperty('ADMIN_PASSWORD_HASH');
   });
 
-  it('rejects insecure production origins and unrelated WebAuthn RP IDs', async () => {
-    const { parseServerEnv } = await import('./server.js');
-    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
-    expect(() => parseServerEnv({ ...base, NODE_ENV: 'production', WEB_ORIGIN: 'http://hr.example.com' })).toThrow();
-    expect(() => parseServerEnv({ ...base, WEB_ORIGIN: 'https://hr.example.com', WEBAUTHN_RP_ID: 'attacker.example.net' })).toThrow();
-    expect(parseServerEnv({ ...base, WEB_ORIGIN: 'https://hr.example.com', WEBAUTHN_RP_ID: 'example.com' }).WEBAUTHN_RP_ID).toBe('example.com');
-  });
-
   it('rejects ports outside the TCP range', async () => {
     const { parseServerEnv } = await import('./server.js');
     const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
@@ -108,7 +100,7 @@ describe('server environment', () => {
     expect(() => parseServerEnv({ ...base, REPORT_WORKER_POLL_MS: '60001' })).toThrow();
   });
 
-  it('parses worker settings without accepting admin or WebAuthn credentials', async () => {
+  it('parses worker settings without accepting server credentials', async () => {
     const { parseWorkerEnv } = await import('./worker.js');
     const parsed = parseWorkerEnv({
       NODE_ENV: 'production',
@@ -117,7 +109,6 @@ describe('server environment', () => {
       REPORT_FILES_ROOT: '/app/uploads/reports',
       ADMIN_EMAIL: 'must-not-enter-worker@capella.test',
       ADMIN_PASSWORD: 'must-not-enter-worker',
-      WEBAUTHN_RP_ID: 'must-not-enter-worker.test',
     });
 
     expect(parsed).toMatchObject({
@@ -128,6 +119,5 @@ describe('server environment', () => {
     });
     expect(parsed).not.toHaveProperty('ADMIN_EMAIL');
     expect(parsed).not.toHaveProperty('ADMIN_PASSWORD');
-    expect(parsed).not.toHaveProperty('WEBAUTHN_RP_ID');
   });
 });

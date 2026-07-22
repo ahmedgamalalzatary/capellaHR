@@ -6,7 +6,7 @@ import { createApp } from './app.js';
 import { createAuthModule } from './modules/auth/index.js';
 import { createBranchesModule } from './modules/branches/index.js';
 import { createDrizzleEmployeeRepository, createEmployeesModule } from './modules/employees/index.js';
-import { createDevicesModule, createWebAuthnProvider } from './modules/devices/index.js';
+import { createDevicesModule } from './modules/devices/index.js';
 import { createShiftsModule } from './modules/shifts/index.js';
 import { createWeeklyDayOffModule } from './modules/weekly-day-off/index.js';
 import { createPayrollModule, type PayrollAttendanceGateway } from './modules/payroll/index.js';
@@ -29,8 +29,7 @@ const employeeRepository = createDrizzleEmployeeRepository(
   () => new Date(),
   (...input) => reconcileAbsencesBeforeShiftChange(...input),
 );
-const webOrigin = new URL(env.WEB_ORIGIN);
-const deviceModule = createDevicesModule(database, createWebAuthnProvider({ rpName: env.WEBAUTHN_RP_NAME, rpId: env.WEBAUTHN_RP_ID ?? webOrigin.hostname, origin: webOrigin.origin }));
+const deviceModule = createDevicesModule(database);
 const branchModule = createBranchesModule(database);
 const shiftModule = createShiftsModule(database, {
   beforeDurationChange: (employeeId, previousDurationMinutes, context) => (

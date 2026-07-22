@@ -1,11 +1,9 @@
 import type {
   AttendanceEventType,
-  BeginAttendanceDeviceAuthentication,
   EmployeeAttendanceEvent,
   ListAttendanceDeniedAttemptsQuery,
   ListAttendanceSessionsQuery,
   ManualAttendanceEvent,
-  VerifyDevice,
 } from '@capella/contracts';
 
 import { verifyEmployeePin } from '../auth/index.js';
@@ -133,13 +131,9 @@ export interface AttendanceRepository {
 }
 
 export interface AttendanceDeviceGateway {
-  beginAuthentication(
-    assignment: { assignmentType: 'employee' | 'branch'; assignmentId: number },
-    installationMarker: string,
-  ): Promise<object | null>;
   verify(
     assignment: { assignmentType: 'employee' | 'branch'; assignmentId: number },
-    proof: VerifyDevice,
+    installationMarker: string,
   ): Promise<{ id: number; verified: boolean } | null>;
 }
 
@@ -274,7 +268,7 @@ export const createAttendanceService = (
       : { assignmentType: 'branch' as const, assignmentId: identity?.branchId ?? 0 };
     const [pinValid, verifiedDevice] = await Promise.all([
       verifyPin(identity?.pinHash ?? ATTENDANCE_TIMING_DUMMY_HASH, input.pin),
-      devices.verify(assignment, input.deviceProof),
+      devices.verify(assignment, input.installationMarker),
     ]);
     deviceId = verifiedDevice?.id ?? null;
     if (!identity || identity.deletedAt || !pinValid) {
@@ -327,57 +321,6 @@ export const createAttendanceService = (
   };
 
   return {
-    async beginDeviceAuthentication(input: BeginAttendanceDeviceAuthentication) {
-      const occurredAt = now();
-      const identity = await repository.findIdentityByCode(input.employeeCode);
-      const distanceMeters = identity
-        ? calculateDistanceMeters(
-          input.latitude,
-          input.longitude,
-          identity.branchLatitude,
-          identity.branchLongitude,
-        )
-        : null;
-      const deny = async (
-        failure: typeof failures[AttendanceMutationFailure],
-        exposedFailure: { code: string; message: string } = failure,
-      ): Promise<never> => {
-        await repository.recordDeniedAttempt({
-          eventType: input.eventType,
-          claimedEmployeeCode: input.employeeCode,
-          employeeId: identity?.id ?? null,
-          source: input.source,
-          deviceId: null,
-          occurredAt,
-          latitude: input.latitude,
-          longitude: input.longitude,
-          gpsAccuracyMeters: input.gpsAccuracyMeters,
-          distanceMeters,
-          branchLatitude: identity?.branchLatitude ?? null,
-          branchLongitude: identity?.branchLongitude ?? null,
-          branchRadiusMeters: identity?.branchRadiusMeters ?? null,
-          failureReason: failure.reason,
-          suspicious: failure.suspicious,
-        });
-        throw new AttendanceError(exposedFailure.code, exposedFailure.message);
-      };
-      const verificationFailed = {
-        code: 'ATTENDANCE_VERIFICATION_FAILED',
-        message: 'تعذر التحقق من بيانات الحضور',
-      };
-      if (!identity || identity.deletedAt) {
-        return deny(failures.credentials_changed, verificationFailed);
-      }
-      if (distanceMeters === null || !Number.isFinite(distanceMeters) || distanceMeters > identity.branchRadiusMeters) {
-        return deny(failures.out_of_range, verificationFailed);
-      }
-      const assignment = input.source === 'personal_device'
-        ? { assignmentType: 'employee' as const, assignmentId: identity.id }
-        : { assignmentType: 'branch' as const, assignmentId: identity.branchId };
-      const result = await devices.beginAuthentication(assignment, input.installationMarker);
-      if (!result) return deny(failures.device_invalid, verificationFailed);
-      return result;
-    },
     checkIn: (input: EmployeeAttendanceEvent) => employeeEvent('check_in', input),
     checkOut: (input: EmployeeAttendanceEvent) => employeeEvent('check_out', input),
     async manualCheckIn(input: ManualAttendanceEvent) {

@@ -13,7 +13,6 @@ import {
   bonuses,
   branches,
   deductions,
-  deviceAuthenticationChallenges,
   deviceHistory,
   devicePairingRequests,
   devices,
@@ -144,7 +143,6 @@ const cleanup = async () => {
   await database.delete(attendanceJobs);
   await database.delete(attendanceSessions);
   await database.delete(attendanceDailyRecords);
-  await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
   await database.delete(devicePairingRequests);
@@ -240,16 +238,13 @@ const seed = async () => {
 
   await database.insert(devices).values({
     assignmentType: 'employee', employeeId: current, branchId: null,
-    credentialId: 'dashboard-credential', credentialIdHash: 'a'.repeat(64),
-    credentialPublicKey: 'public-key', counter: 0, transports: [],
-    credentialDeviceType: 'singleDevice', credentialBackedUp: false,
     installationMarkerHash: 'b'.repeat(64), browser: 'Chrome', platform: 'Android',
     status: 'active', pairedAt: fixedNow,
   });
   await database.insert(devicePairingRequests).values([
     {
       assignmentType: 'employee', employeeId: current, branchId: null,
-      tokenHash: 'c'.repeat(64), status: 'pending', registrationChallenge: 'issued-challenge', createdAt: fixedNow,
+      tokenHash: 'c'.repeat(64), status: 'pending', createdAt: fixedNow,
     },
     {
       assignmentType: 'branch', employeeId: null, branchId,
@@ -303,9 +298,7 @@ describe('MySQL-backed Dashboard snapshot', () => {
       .toEqual([3, 5]);
     expect(snapshot.devicePairings.items.map((item) => item.kind))
       .toEqual(['replacement', 'pairing']);
-    expect(snapshot.devicePairings.items.map((item) => item.optionsIssued))
-      .toEqual([true, false]);
-    expect(JSON.stringify(snapshot)).not.toMatch(/pinHash|secret-|credential|tokenHash|latitude|longitude/);
+    expect(JSON.stringify(snapshot)).not.toMatch(/pinHash|secret-|installationMarkerHash|tokenHash|latitude|longitude/);
   });
 
   it('changes the operational date exactly at Cairo midnight', async () => {
@@ -340,9 +333,6 @@ describe('MySQL-backed Dashboard snapshot', () => {
     const { current } = await seed();
     await database.insert(devices).values({
       assignmentType: 'employee', employeeId: current, branchId: null,
-      credentialId: 'dashboard-credential-duplicate', credentialIdHash: 'e'.repeat(64),
-      credentialPublicKey: 'public-key-duplicate', counter: 0, transports: [],
-      credentialDeviceType: 'singleDevice', credentialBackedUp: false,
       installationMarkerHash: 'f'.repeat(64), browser: 'Firefox', platform: 'Android',
       status: 'active', pairedAt: fixedNow,
     });

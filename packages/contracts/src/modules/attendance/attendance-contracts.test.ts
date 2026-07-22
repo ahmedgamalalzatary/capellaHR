@@ -5,7 +5,7 @@ import * as attendanceContracts from './index.js';
 const contracts = attendanceContracts as typeof attendanceContracts & Record<string, unknown>;
 
 describe('attendance contracts', () => {
-  it('accepts employee code, PIN, source, GPS, and a WebAuthn device proof', () => {
+  it('accepts employee code, PIN, source, GPS, and the paired browser marker', () => {
     expect(contracts.employeeAttendanceEventSchema).toBeDefined();
     const schema = contracts.employeeAttendanceEventSchema as {
       safeParse(value: unknown): { success: boolean };
@@ -17,18 +17,7 @@ describe('attendance contracts', () => {
       latitude: 30.0444,
       longitude: 31.2357,
       gpsAccuracyMeters: 8,
-      deviceProof: {
-        challengeId: 'b4f3550c-0230-4a73-ae58-f4086ab13206',
-        installationMarker: 'installation-marker-123',
-        response: {
-          id: 'credential', rawId: 'credential', type: 'public-key',
-          response: {
-            clientDataJSON: 'client', authenticatorData: 'authenticator',
-            signature: 'signature',
-          },
-          clientExtensionResults: {},
-        },
-      },
+      installationMarker: 'installation-marker-123',
     }).success).toBe(true);
   });
 
@@ -43,31 +32,11 @@ describe('attendance contracts', () => {
       latitude: 30,
       longitude: 31,
       gpsAccuracyMeters: 8,
-      deviceProof: {},
+      installationMarker: 'installation-marker-123',
     };
     expect(schema.safeParse({ ...base, pin: '١٢٣٤' }).success).toBe(false);
     expect(schema.safeParse({ ...base, pin: '123' }).success).toBe(false);
     expect(schema.safeParse({ ...base, latitude: 91 }).success).toBe(false);
-  });
-
-  it('requires event and GPS context before issuing attendance device options', () => {
-    const schema = contracts.beginAttendanceDeviceAuthenticationSchema;
-    const complete = {
-      employeeCode: 17,
-      eventType: 'check_in',
-      source: 'branch_device',
-      installationMarker: 'installation-marker-123',
-      latitude: 30.0444,
-      longitude: 31.2357,
-      gpsAccuracyMeters: 8,
-    };
-
-    expect(schema.safeParse(complete).success).toBe(true);
-    expect(schema.safeParse({
-      employeeCode: 17,
-      source: 'branch_device',
-      installationMarker: 'installation-marker-123',
-    }).success).toBe(false);
   });
 
   it('validates manual events, denied approval, timeout correction, and list filters', () => {

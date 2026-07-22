@@ -6,30 +6,15 @@ import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
   employeeLogin: vi.fn(),
-  getEmployeeDeviceOptions: vi.fn(),
-  startAuthentication: vi.fn(),
 }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   employeeLogin: mocks.employeeLogin,
-  getEmployeeDeviceOptions: mocks.getEmployeeDeviceOptions,
-}));
-
-vi.mock('@simplewebauthn/browser', () => ({
-  startAuthentication: mocks.startAuthentication,
 }));
 
 import { EmployeeLoginForm } from '../src/features/auth/components/employee-login-form';
 import { SESSION_QUERY_KEY } from '../src/features/auth/hooks/use-session';
-
-const authenticationResponse = {
-  id: 'cred-1',
-  rawId: 'cred-1',
-  type: 'public-key',
-  response: { clientDataJSON: 'x', authenticatorData: 'y', signature: 'z' },
-  clientExtensionResults: {},
-};
 
 function renderForm(onSuccess?: () => void) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -50,11 +35,6 @@ const fillAndSubmit = () => {
 
 beforeEach(() => {
   window.localStorage.clear();
-  mocks.getEmployeeDeviceOptions.mockResolvedValue({
-    challengeId: 'chal-uuid-1',
-    options: { challenge: 'c1' },
-  });
-  mocks.startAuthentication.mockResolvedValue(authenticationResponse);
   mocks.employeeLogin.mockResolvedValue({ actor: { type: 'employee' } });
 });
 
@@ -64,26 +44,15 @@ afterEach(() => {
 });
 
 describe('EmployeeLoginForm', () => {
-  test('runs the device WebAuthn ceremony and logs in with the proof', async () => {
+  test('logs in silently with the paired browser marker', async () => {
     const onSuccess = vi.fn();
     renderForm(onSuccess);
     fillAndSubmit();
 
     await waitFor(() => expect(mocks.employeeLogin).toHaveBeenCalledTimes(1));
-    const optionsInput = mocks.getEmployeeDeviceOptions.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(optionsInput['employeeCode']).toBe(7);
-    expect((optionsInput['installationMarker'] as string).length).toBeGreaterThanOrEqual(16);
-    expect(mocks.startAuthentication.mock.calls[0]?.[0]).toEqual({
-      optionsJSON: { challenge: 'c1' },
-    });
-
     const payload = mocks.employeeLogin.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload).toMatchObject({ employeeCode: 7, pin: '1234', personalPhone: '01012345678' });
-    expect(payload['deviceProof']).toEqual({
-      challengeId: 'chal-uuid-1',
-      installationMarker: optionsInput['installationMarker'],
-      response: authenticationResponse,
-    });
+    expect((payload['installationMarker'] as string).length).toBeGreaterThanOrEqual(16);
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
   });
 
@@ -97,21 +66,20 @@ describe('EmployeeLoginForm', () => {
   });
 
   test('shows the Arabic message for an unregistered device', async () => {
-    mocks.getEmployeeDeviceOptions.mockRejectedValue(
-      new ApiError(409, { code: 'DEVICE_PROOF_INVALID', message: 'تعذر التحقق من إثبات الجهاز' }),
+    mocks.employeeLogin.mockRejectedValue(
+      new ApiError(401, { code: 'DEVICE_NOT_REGISTERED', message: 'تعذر التحقق من الجهاز' }),
     );
     renderForm();
     fillAndSubmit();
 
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
-      'تعذر التحقق من إثبات الجهاز',
+      'تعذر التحقق من الجهاز',
     );
-    expect(mocks.employeeLogin).not.toHaveBeenCalled();
   });
 
   test('displays the backend login message without replacing it by error code', async () => {
-    mocks.getEmployeeDeviceOptions.mockRejectedValue(
+    mocks.employeeLogin.mockRejectedValue(
       new ApiError(401, {
         code: 'DEVICE_NOT_REGISTERED',
         message: 'رسالة الجهاز المعتمدة من الخادم',
@@ -139,6 +107,6 @@ describe('EmployeeLoginForm', () => {
       'textContent',
       'استخدم الأرقام الإنجليزية من 0 إلى 9',
     );
-    expect(mocks.getEmployeeDeviceOptions).not.toHaveBeenCalled();
+    expect(mocks.employeeLogin).not.toHaveBeenCalled();
   });
 });

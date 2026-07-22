@@ -540,8 +540,6 @@ export const createDrizzleReportReader = (
         employeeName: employees.fullName,
         branchId: sql<number | null>`coalesce(${devices.branchId}, ${employees.branchId})`,
         branchName: branches.name,
-        credentialDeviceType: devices.credentialDeviceType,
-        credentialBackedUp: devices.credentialBackedUp,
         browser: devices.browser,
         platform: devices.platform,
         status: devices.status,
@@ -574,8 +572,7 @@ export const createDrizzleReportReader = (
       return { kind: 'success', total, snapshot: snapshot(reportType, columns(
         ['id', 'الرقم'], ['assignmentType', 'نوع التعيين'], ['employeeId', 'رقم الموظف'],
         ['employeeCode', 'كود الموظف'], ['employeeName', 'اسم الموظف'], ['branchId', 'رقم الفرع'],
-        ['branchName', 'اسم الفرع'], ['credentialDeviceType', 'نوع الجهاز'],
-        ['credentialBackedUp', 'بيانات الاعتماد منسوخة'], ['browser', 'المتصفح'], ['platform', 'النظام'],
+        ['branchName', 'اسم الفرع'], ['browser', 'المتصفح'], ['platform', 'النظام'],
         ['status', 'الحالة'], ['pairedAt', 'تاريخ الربط'], ['lastUsedAt', 'آخر استخدام'], ['revokedAt', 'تاريخ الإلغاء'],
       ), rows, { totalRecords: total, activeRecords: activeCount, revokedRecords: total - activeCount }, generatedAt) };
     }

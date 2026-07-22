@@ -1,4 +1,4 @@
-import { adminLoginSchema, beginEmployeeDeviceAuthenticationSchema, employeeLoginSchema } from '@capella/contracts';
+import { adminLoginSchema, employeeLoginSchema } from '@capella/contracts';
 import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 
@@ -46,11 +46,6 @@ export const createAuthRouter = (
     const result = await service.loginEmployee(input, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
     response.cookie(SESSION_COOKIE, result.token, cookieOptions);
     response.json({ data: { actor: publicActor(result.actor) } });
-  });
-
-  router.post('/employee/device-options', async (request, response) => {
-    const input = beginEmployeeDeviceAuthenticationSchema.parse(request.body);
-    response.json({ data: await service.beginEmployeeDeviceAuthentication(input.employeeCode, input.installationMarker) });
   });
 
   router.get('/session', async (request, response) => {

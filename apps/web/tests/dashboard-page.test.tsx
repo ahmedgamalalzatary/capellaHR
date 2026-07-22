@@ -35,7 +35,7 @@ const snapshot = {
   }] },
   devicePairings: { pendingTotal: 2, replacementTotal: 1, items: [{
     id: 41, kind: 'replacement', assignmentType: 'employee', assignmentId: 1,
-    assignmentName: 'حاضر الآن', optionsIssued: true, createdAt: '2026-07-20T08:00:00.000Z',
+    assignmentName: 'حاضر الآن', createdAt: '2026-07-20T08:00:00.000Z',
   }] },
   payrollBlockers: { total: 1, items: [{
     employeeId: 3, employeeCode: 3, employeeName: 'لم يحضر', branchId: 1, branchName: 'القاهرة',

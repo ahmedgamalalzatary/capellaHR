@@ -7,7 +7,6 @@ import {
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
 } from '../../common/index.js';
-import { verifyDeviceSchema } from '../devices/index.js';
 import { cairoDateSchema } from '../weekly-day-off/index.js';
 
 export const attendanceEventTypeSchema = z.enum(['check_in', 'check_out']);
@@ -39,17 +38,7 @@ export const employeeAttendanceEventSchema = z.object({
   latitude: attendanceGpsSchema.shape.latitude,
   longitude: attendanceGpsSchema.shape.longitude,
   gpsAccuracyMeters: attendanceGpsSchema.shape.gpsAccuracyMeters,
-  deviceProof: verifyDeviceSchema,
-}).strict();
-
-export const beginAttendanceDeviceAuthenticationSchema = z.object({
-  employeeCode: positiveMysqlIntSchema,
-  eventType: attendanceEventTypeSchema,
-  source: employeeAttendanceSourceSchema,
   installationMarker: z.string().min(16).max(4096),
-  latitude: attendanceGpsSchema.shape.latitude,
-  longitude: attendanceGpsSchema.shape.longitude,
-  gpsAccuracyMeters: attendanceGpsSchema.shape.gpsAccuracyMeters,
 }).strict();
 
 const explicitOffsetDateTimeSchema = z.string().datetime({ offset: true })
@@ -109,7 +98,6 @@ export const listAttendanceDeniedAttemptsQuerySchema = z.object({
 }).superRefine(validateDateRange);
 
 export type EmployeeAttendanceEvent = z.infer<typeof employeeAttendanceEventSchema>;
-export type BeginAttendanceDeviceAuthentication = z.infer<typeof beginAttendanceDeviceAuthenticationSchema>;
 export type ManualAttendanceEvent = z.infer<typeof manualAttendanceEventSchema>;
 export type ListAttendanceSessionsQuery = z.infer<typeof listAttendanceSessionsQuerySchema>;
 export type ListAttendanceDeniedAttemptsQuery = z.infer<typeof listAttendanceDeniedAttemptsQuerySchema>;

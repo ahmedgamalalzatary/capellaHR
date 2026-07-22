@@ -489,7 +489,6 @@ export const createDrizzleDashboardRepository = (
         branchId: devicePairingRequests.branchId,
         branchName: branches.name,
         hasActiveDevice: activeDeviceExists().mapWith(Number),
-        registrationChallenge: devicePairingRequests.registrationChallenge,
         createdAt: devicePairingRequests.createdAt,
       }).from(devicePairingRequests)
         .leftJoin(employees, eq(employees.id, devicePairingRequests.employeeId))
@@ -512,7 +511,6 @@ export const createDrizzleDashboardRepository = (
           assignmentName: (pairing.assignmentType === 'employee'
             ? pairing.employeeName
             : pairing.branchName) ?? `#${assignmentId}`,
-          optionsIssued: pairing.registrationChallenge !== null,
           createdAt: pairing.createdAt.toISOString(),
         };
       });

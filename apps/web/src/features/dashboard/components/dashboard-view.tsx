@@ -261,7 +261,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
             <SummaryBlock title="ربط واستبدال الأجهزة" count={snapshot.devicePairings.pendingTotal} tone={snapshot.devicePairings.pendingTotal ? 'warning' : 'neutral'} icon={<Smartphone className="size-4" />} link={{ href: '/devices', label: 'فتح الأجهزة' }}>
               {snapshot.devicePairings.items.length ? <ul className="divide-y divide-line/70">{snapshot.devicePairings.items.map((item) => (
                 <li key={item.id} className="flex items-center justify-between gap-3 py-2.5">
-                  <div><p className="text-sm font-medium">{item.assignmentName}</p><p className="mt-0.5 text-[12px] text-muted">{item.assignmentType === 'employee' ? 'هاتف موظف' : 'هاتف فرع'} · {item.optionsIssued ? 'بدأ التسجيل' : 'بانتظار فتح الرابط'}</p></div>
+                  <div><p className="text-sm font-medium">{item.assignmentName}</p><p className="mt-0.5 text-[12px] text-muted">{item.assignmentType === 'employee' ? 'هاتف موظف' : 'هاتف فرع'} · بانتظار فتح الرابط</p></div>
                   <Badge variant={item.kind === 'replacement' ? 'warning' : 'neutral'}>{item.kind === 'replacement' ? 'استبدال' : 'ربط جديد'}</Badge>
                 </li>
               ))}</ul> : <EmptyMini>لا توجد طلبات ربط أو استبدال معلقة.</EmptyMini>}

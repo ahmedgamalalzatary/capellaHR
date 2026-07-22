@@ -47,7 +47,6 @@ export interface DashboardDevicePairingItem {
   assignmentType: 'employee' | 'branch';
   assignmentId: number;
   assignmentName: string;
-  optionsIssued: boolean;
   createdAt: string;
 }
 

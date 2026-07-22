@@ -7,8 +7,8 @@ This is the living product specification for the Capella HR system. Modules are 
 ## User-confirmed scope revision
 
 - **SKIP — USER CONFIRMED (2026-07-20):** Capella-managed facial recognition, face enrollment/templates, liveness challenges, ONNX processing, biometric thresholds, and biometric Settings must not be implemented.
-- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-20):** Employee-originated check-in and check-out require employee code plus the four-digit PIN while retaining the applicable registered-device/WebAuthn and assigned-branch GPS checks.
-- Face ID, fingerprint, or device passcode used internally by a phone to satisfy WebAuthn user verification remains allowed because Capella receives only the WebAuthn proof and does not process biometric data.
+- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-22):** Employee-originated check-in and check-out require employee code plus the four-digit PIN while retaining the exact registered browser marker and assigned-branch GPS checks.
+- Device verification is silent: opening an admin-issued pairing link stores a random marker in that browser profile, with no pattern, security-key, biometric, or device-passcode prompt.
 
 ## Product scope
 
@@ -61,7 +61,7 @@ The system manages one company with multiple branches. Its planned functional ar
 
 ### Employee self-service authentication
 
-- Starting a self-service session requires the employee code, four-digit PIN, personal phone number, and proof from the employee's currently registered personal device.
+- Starting a self-service session requires the employee code, four-digit PIN, personal phone number, and the marker from the employee's currently registered browser profile.
 - The employee must have an active attendance check-in session.
 - A new self-service session can be created only from the employee's registered personal phone.
 - If the admin later revokes that device, the already-active session follows the explicit Devices exception and remains available until attendance check-out; no new session may be created.
@@ -71,12 +71,12 @@ The system manages one company with multiple branches. Its planned functional ar
 
 - Each employee may have exactly one registered personal device at a time.
 - Initial registration and replacement require admin approval.
-- Registering a replacement immediately revokes the previous device and its credential.
-- During registration, the phone creates a device-bound WebAuthn credential.
-- The server stores the public credential identifier against the employee; private credential material remains on the phone.
-- Personal-phone attendance verification requires the employee code, employee PIN, valid GPS location, and proof from the registered WebAuthn credential.
-- The phone may satisfy WebAuthn user verification using Face ID, fingerprint, or its secure device passcode.
-- Clearing the browser's site data, losing the credential, or replacing the phone requires admin-approved re-registration.
+- Registering a replacement immediately revokes the previous browser registration.
+- During registration, the opened browser profile creates and stores a random installation marker.
+- The server stores only a hash of the installation marker; the raw marker remains in the registered browser profile.
+- Personal-phone attendance verification requires the employee code, employee PIN, valid GPS location, and the registered browser marker.
+- Verification is marker-only: it uses no credentials or challenges and must not display an authentication prompt.
+- Clearing the browser's site data, changing browser profiles, or replacing the phone requires admin-approved re-registration.
 
 ### Shared branch-phone identity verification
 
@@ -86,7 +86,7 @@ The system manages one company with multiple branches. Its planned functional ar
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~The shared phone uses camera-based facial recognition to verify that the person matches the claimed employee.~~
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Face enrollment is supervised by the admin and captures multiple angles with liveness checks.~~
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~The face-recognition template is separate from the employee profile photo and ID-card images.~~
-- The registered shared branch phone verifies attendance using employee code, four-digit PIN, and assigned-branch GPS validation without camera or biometric processing.
+- The registered shared branch phone verifies attendance using employee code, four-digit PIN, its registered browser marker, and assigned-branch GPS validation without camera or biometric processing.
 
 ### Failed and suspicious attempts
 
@@ -231,7 +231,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 ### Scope and assignments
 
 - The Devices module owns registration, pairing, replacement, revocation, status, and device history.
-- Login, attendance, employees, and branches consume device status but do not manage credential lifecycle.
+- Login, attendance, employees, and branches consume device status but do not manage browser-registration lifecycle.
 - Each employee may have at most one active registered personal phone.
 - Each branch may have at most one active registered shared branch phone.
 - One registered browser profile may have only one assignment and purpose: one employee or one branch.
@@ -245,8 +245,8 @@ Device registration is a separate post-creation workflow and is not an employee-
 - Each employee or branch may have only one active pairing request.
 - Creating a new request cancels the existing pending request.
 - Successful completion consumes the request and activates the device automatically; no second admin approval is required.
-- Pairing creates a device-bound WebAuthn credential and a local installation marker.
-- Private credential material remains on the device.
+- Opening a valid one-time pairing link creates a local installation marker and registers its hash automatically.
+- Pairing creates no credential or challenge and displays no authentication prompt.
 
 ### Replacement
 
@@ -258,8 +258,8 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 - Removing a device revokes it and permanently retains its record in device history.
 - Device records are never hard-deleted.
-- Revoked credentials cannot be reactivated.
-- Reusing the same phone after revocation requires a fresh admin-initiated pairing and a new credential.
+- Revoked device registrations cannot be reactivated.
+- Reusing the same browser profile after revocation requires a fresh admin-initiated pairing; its marker may be assigned again only after the previous device is revoked.
 - Revocation does not require the admin to enter a reason or note.
 - Revoking an employee device prevents future device verification and future self-service logins.
 - An employee self-service session that was already active before revocation remains available until attendance check-out.
@@ -269,7 +269,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 ### Admin device view
 
 - The admin can view assigned employee or branch, device type, current status, paired time, last-used time, revoked time, and browser/platform information.
-- The UI does not expose credential identifiers, private credential material, raw tokens, or other secrets.
+- The UI does not expose raw installation markers, marker hashes, pairing tokens, or other secrets.
 - Devices do not have admin-defined friendly labels.
 
 ### Connectivity and web-platform constraints
@@ -277,10 +277,10 @@ Device registration is a separate post-creation workflow and is not an employee-
 - Pairing, verification, attendance, and employee self-service require an online API connection.
 - No offline device access, queued offline attendance, or later synchronization is supported.
 - The product remains web-only; a native mobile application is excluded.
-- Browsers do not expose a permanent hardware identifier. Uniqueness is therefore enforced at the browser-profile level through the WebAuthn credential and local installation marker.
-- The server requires WebAuthn user verification and rejects synced, multi-device, or backed-up credentials. The browser's platform-authenticator request remains a WebAuthn client hint rather than hardware provenance; this system does not maintain a vendor attestation allowlist.
-- Clearing browser/site data, losing the credential, or changing browser profiles may make the same physical phone appear new, but it does not grant access; a fresh admin-initiated pairing is required.
-- Every authentication assertion challenge is single-use, including after a failed assertion; the client must request fresh authentication options before retrying.
+- Browsers do not expose a permanent hardware identifier. Uniqueness is therefore enforced at the browser-profile level through the local installation marker.
+- The server stores only a hash of the marker and accepts it only for the assignment registered by the one-time link.
+- Clearing browser/site data or changing browser profiles removes access; a fresh admin-initiated pairing is required.
+- Device verification is marker-only and uses no credentials, challenges, authentication options, or authentication prompts.
 
 ## 5. Shifts — Locked
 
@@ -390,8 +390,9 @@ Device registration is a separate post-creation workflow and is not an employee-
 - The measured position must be within or exactly on the configured radius of the employee's permanently assigned branch.
 - Attendance from another branch's shared phone or GPS area is not allowed.
 - Each event stores its source, device, timestamp, coordinates when available, reported GPS accuracy, calculated distance, branch coordinates, and radius snapshot.
-- Personal-phone verification requires employee code, four-digit PIN, assigned-branch GPS validation, and proof from the registered WebAuthn credential.
-- Branch-phone verification requires employee code, four-digit PIN, registered branch-device validation, and assigned-branch GPS validation.
+- Personal-phone verification requires employee code, four-digit PIN, assigned-branch GPS validation, and marker-only verification of the registered browser profile.
+- Branch-phone verification requires employee code, four-digit PIN, marker-only verification of the registered branch browser profile, and assigned-branch GPS validation.
+- Both device paths verify the submitted marker silently, with no credential, challenge, authentication option, or authentication prompt.
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Branch-phone verification requires liveness and face match.~~
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Raw face images captured during attendance attempts are discarded and never stored.~~ No camera frames are captured.
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Face-match/liveness results and operational metadata are retained.~~
@@ -674,7 +675,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - PDF generation embeds an Arabic-capable font rather than relying on a client device font.
 - Each tab has a fixed complete field set; admins cannot select or omit columns.
 - Each tab shows detailed rows plus totals and summaries relevant to that module.
-- Employee reports exclude personal photo, ID-front image, ID-back image, PINs, credential data, and all secrets.
+- Employee reports exclude personal photo, ID-front image, ID-back image, PINs, installation-marker data, and all secrets.
 - Non-secret employee text data may be included where relevant.
 - Salary reports include both open payroll previews and finalized payroll and label the status clearly.
 - Soft-deleted employees appear when relevant to the selected period and are labeled as deleted.
@@ -720,7 +721,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - The admin can access all administrative modules and all company records.
 - Admin access remains constrained by locked business rules; being admin does not allow reopening finalized payroll, editing immutable attendance, restoring deleted employees, or bypassing other prohibited state transitions.
 - The admin may access protected employee images through authorized API endpoints.
-- The admin cannot retrieve PINs, private device credentials, or other stored secrets. **SKIP — USER CONFIRMED (2026-07-20):** Raw biometric images are never created.
+- The admin cannot retrieve PINs, raw installation markers, marker hashes, or other stored secrets. **SKIP — USER CONFIRMED (2026-07-20):** Raw biometric images are never created.
 
 ### Employee attendance identity
 
@@ -751,7 +752,7 @@ While self-service is active, an employee may view only their own:
 
 - Employees cannot view another employee's data under any identifier or URL.
 - Employee self-service displays no personal photo, ID-front image, or ID-back image.
-- Employees cannot view PIN data, device credentials, audit history, or denied/flagged attempts.
+- Employees cannot view PIN data, installation-marker data, audit history, or denied/flagged attempts.
 
 ### Employee mutation and export restrictions
 
@@ -791,7 +792,7 @@ Each entry stores available contextual metadata:
 ### Secret redaction
 
 - Audit entries never store plaintext PINs or passwords.
-- Password hashes, PIN hashes, private/public credential material, raw device tokens, session cookies, and other secrets are redacted or excluded. **SKIP — USER CONFIRMED (2026-07-20):** Biometric templates do not exist.
+- Password hashes, PIN hashes, raw installation markers, marker hashes, raw device tokens, session cookies, and other secrets are redacted or excluded. **SKIP — USER CONFIRMED (2026-07-20):** Biometric templates do not exist.
 - **SKIP — USER CONFIRMED (2026-07-20):** ~~Raw attendance camera images do not exist and therefore cannot enter audit history.~~ No attendance camera capture is implemented.
 
 ## 15. Dashboard and Operational Visibility — Locked

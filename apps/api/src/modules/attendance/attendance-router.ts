@@ -1,7 +1,6 @@
 import {
   attendanceDeniedAttemptParamsSchema,
   attendanceSessionParamsSchema,
-  beginAttendanceDeviceAuthenticationSchema,
   correctAutomaticTimeoutSchema,
   employeeAttendanceEventSchema,
   listAttendanceDeniedAttemptsQuerySchema,
@@ -61,17 +60,6 @@ export const createAttendanceRouter = (
   const router = Router();
   const auth = createAuthMiddleware(authService);
 
-  router.post('/device-authentication/options', async (request: Request, response: Response, next: NextFunction) => {
-    try {
-      response.json({
-        data: await service.beginDeviceAuthentication(
-          beginAttendanceDeviceAuthenticationSchema.parse(request.body),
-        ),
-      });
-    } catch (error) {
-      handle(error, response, next);
-    }
-  });
   router.post('/check-in', async (request: Request, response: Response, next: NextFunction) => {
     try {
       response.status(201).json({

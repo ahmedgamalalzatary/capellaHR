@@ -1,7 +1,6 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { startAuthentication } from '@simplewebauthn/browser';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 
@@ -10,7 +9,7 @@ import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 import { ApiError } from '@/lib/api/client';
 
 import { installationMarker } from '../../devices/lib/device-identity';
-import { employeeLogin, getEmployeeDeviceOptions } from '../api/auth-api';
+import { employeeLogin } from '../api/auth-api';
 import { SESSION_QUERY_KEY } from '../hooks/use-session';
 import { employeeLoginFormSchema, type EmployeeLoginFormValues } from '../schemas/login-schemas';
 
@@ -25,27 +24,10 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
   });
 
   const login = useMutation({
-    mutationFn: async (values: EmployeeLoginFormValues) => {
-      // The registered phone must prove itself: fetch a one-time challenge for
-      // this installation, sign it via WebAuthn, and attach the proof.
-      const marker = installationMarker();
-      const { challengeId, options } = await getEmployeeDeviceOptions({
-        employeeCode: values.employeeCode,
-        installationMarker: marker,
-      });
-      const response = await startAuthentication({ optionsJSON: options });
-      return employeeLogin({
-        ...values,
-        deviceProof: {
-          challengeId,
-          installationMarker: marker,
-          response: {
-            ...response,
-            clientExtensionResults: { ...response.clientExtensionResults } as Record<string, unknown>,
-          },
-        },
-      });
-    },
+    mutationFn: (values: EmployeeLoginFormValues) => employeeLogin({
+      ...values,
+      installationMarker: installationMarker(),
+    }),
     onSuccess: (session) => {
       queryClient.setQueryData(SESSION_QUERY_KEY, session);
       onSuccess?.();

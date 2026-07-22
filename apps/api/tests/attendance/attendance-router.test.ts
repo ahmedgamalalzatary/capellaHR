@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -34,7 +33,6 @@ const makeAuth = (actorType: 'admin' | 'employee' | null = 'admin') => ({
   }),
 }) as unknown as AuthService;
 const makeService = (): AttendanceService => ({
-  beginDeviceAuthentication: vi.fn(async () => ({ challengeId: 'challenge' })),
   checkIn: vi.fn(async () => session),
   checkOut: vi.fn(async () => ({ ...session, checkOutAt: now })),
   manualCheckIn: vi.fn(async () => session),
@@ -47,17 +45,6 @@ const makeService = (): AttendanceService => ({
   listDeniedAttempts: vi.fn(async () => ({ items: [], total: 0 })),
   hasOpenSession: vi.fn(async () => true),
 });
-const deviceProof = {
-  challengeId: 'b4f3550c-0230-4a73-ae58-f4086ab13206',
-  installationMarker: 'installation-marker-123',
-  response: {
-    id: 'credential', rawId: 'credential', type: 'public-key',
-    response: {
-      clientDataJSON: 'client', authenticatorData: 'authenticator', signature: 'signature',
-    },
-    clientExtensionResults: {},
-  },
-};
 
 describe('attendance HTTP API', () => {
   it('keeps employee check-in/out public while validating every factor payload', async () => {
@@ -70,7 +57,7 @@ describe('attendance HTTP API', () => {
       latitude: 30.0444,
       longitude: 31.2357,
       gpsAccuracyMeters: 8,
-      deviceProof,
+      installationMarker: 'installation-marker-123',
     };
 
     expect((await request(app).post('/api/v1/attendance/check-in').send(payload)).status).toBe(201);
@@ -78,32 +65,6 @@ describe('attendance HTTP API', () => {
     expect(vi.mocked(service.checkIn)).toHaveBeenCalledWith(payload);
     expect((await request(app).post('/api/v1/attendance/check-in')
       .send({ ...payload, pin: '١٢٣٤' })).status).toBe(400);
-  });
-
-  it('provides public source-aware device authentication options', async () => {
-    const service = makeService();
-    const response = await request(createApp({
-      authService: makeAuth(null), attendanceService: service,
-    })).post('/api/v1/attendance/device-authentication/options').send({
-      employeeCode: 42,
-      eventType: 'check_in',
-      source: 'branch_device',
-      installationMarker: 'installation-marker-123',
-      latitude: 30.0444,
-      longitude: 31.2357,
-      gpsAccuracyMeters: 8,
-    });
-
-    expect(response.status).toBe(200);
-    expect(vi.mocked(service.beginDeviceAuthentication)).toHaveBeenCalledWith({
-      employeeCode: 42,
-      eventType: 'check_in',
-      source: 'branch_device',
-      installationMarker: 'installation-marker-123',
-      latitude: 30.0444,
-      longitude: 31.2357,
-      gpsAccuracyMeters: 8,
-    });
   });
 
   it('requires an admin for manual, review, list, approval, and correction operations', async () => {
@@ -152,7 +113,7 @@ describe('attendance HTTP API', () => {
       latitude: 30.0444,
       longitude: 31.2357,
       gpsAccuracyMeters: 8,
-      deviceProof,
+      installationMarker: 'installation-marker-123',
     });
 
     expect(response.status).toBe(500);

@@ -1,9 +1,8 @@
 'use client';
 
-import { startAuthentication } from '@simplewebauthn/browser';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Fingerprint, LocateFixed, LockKeyhole, MapPin, ShieldCheck } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { Check, LocateFixed, LockKeyhole, MapPin, ShieldCheck, Smartphone } from 'lucide-react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 
 import { Button, Card, Field, Input } from '@capella/ui';
 
@@ -11,7 +10,6 @@ import { installationMarker } from '@/features/devices/lib/device-identity';
 import { ApiError } from '@/lib/api/client';
 
 import {
-  beginAttendanceDeviceAuthentication,
   recordEmployeeAttendance,
   type AttendanceDeviceSource,
   type AttendanceEventType,
@@ -40,22 +38,16 @@ const errorMessage = (error: unknown) => {
     if (error.reason === 'unsupported') return 'هذا المتصفح لا يدعم تحديد الموقع المطلوب للحضور.';
     return 'تعذر تحديد موقعك بدقة. تأكد من تشغيل الموقع وأعد المحاولة.';
   }
-  if (error instanceof Error && error.message === 'WEBAUTHN_UNSUPPORTED') {
-    return 'هذا المتصفح لا يدعم إثبات الجهاز المسجل.';
-  }
   if (error instanceof Error && error.message === 'INVALID_EMPLOYEE_CODE') {
     return 'أدخل كود موظف صحيحًا بالأرقام الإنجليزية.';
   }
   if (error instanceof Error && error.message === 'INVALID_PIN') {
     return 'الرقم السري يجب أن يتكون من أربعة أرقام إنجليزية.';
   }
-  if (error instanceof Error && (error.name === 'NotAllowedError' || /NotAllowedError/i.test(error.message))) {
-    return 'لم يكتمل تحقق الجهاز. وافق على طلب الجهاز ثم أعد المحاولة.';
-  }
   return 'تعذر إتمام العملية. تحقق من الاتصال وأعد المحاولة.';
 };
 
-function TrustStep({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
+function TrustStep({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
   return <li className="flex gap-3 border-b border-paper/10 py-3 last:border-0"><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full border border-paper/20 text-paper/75">{icon}</span><span><strong className="block text-sm font-medium text-paper">{title}</strong><span className="text-[12px] leading-5 text-paper/55">{detail}</span></span></li>;
 }
 
@@ -79,33 +71,14 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
     }) => {
       if (!/^\d+$/.test(request.employeeCode) || Number(request.employeeCode) <= 0) throw new Error('INVALID_EMPLOYEE_CODE');
       if (!/^\d{4}$/.test(request.pin)) throw new Error('INVALID_PIN');
-      if (typeof window.PublicKeyCredential === 'undefined') throw new Error('WEBAUTHN_UNSUPPORTED');
-
-      // Location comes first so a denied permission never creates a one-time
-      // WebAuthn challenge that cannot be reused.
       const location = await currentAttendanceLocation();
       const marker = installationMarker();
-      const { challengeId, options } = await beginAttendanceDeviceAuthentication({
-        employeeCode: Number(request.employeeCode),
-        eventType: request.eventType,
-        source,
-        installationMarker: marker,
-        ...location,
-      });
-      const response = await startAuthentication({ optionsJSON: options });
       const session = await recordEmployeeAttendance(request.eventType, {
         employeeCode: Number(request.employeeCode),
         pin: request.pin,
         source,
         ...location,
-        deviceProof: {
-          challengeId,
-          installationMarker: marker,
-          response: {
-            ...response,
-            clientExtensionResults: { ...response.clientExtensionResults },
-          },
-        },
+        installationMarker: marker,
       });
       return { session, eventType: request.eventType };
     },
@@ -181,7 +154,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
         </section>
 
         <aside className="bg-ink p-6 text-paper sm:p-8 lg:flex lg:flex-col lg:justify-between">
-          <div><Fingerprint className="size-8 text-paper/80" aria-hidden /><h2 className="mt-5 text-xl font-semibold">ثلاث خطوات للتحقق</h2><ul className="mt-4"><TrustStep icon={<LockKeyhole className="size-4" aria-hidden />} title="هوية الموظف" detail="الكود والرقم السري المكوّن من أربعة أرقام" /><TrustStep icon={<LocateFixed className="size-4" aria-hidden />} title="الموقع الحالي" detail="داخل نطاق الفرع المعيّن للموظف" /><TrustStep icon={<Fingerprint className="size-4" aria-hidden />} title="الجهاز المسجل" detail={isKiosk ? 'هاتف الفرع المرتبط مسبقًا' : 'هاتفك الشخصي المرتبط مسبقًا'} /></ul></div>
+          <div><Smartphone className="size-8 text-paper/80" aria-hidden /><h2 className="mt-5 text-xl font-semibold">ثلاث خطوات للتحقق</h2><ul className="mt-4"><TrustStep icon={<LockKeyhole className="size-4" aria-hidden />} title="هوية الموظف" detail="الكود والرقم السري المكوّن من أربعة أرقام" /><TrustStep icon={<LocateFixed className="size-4" aria-hidden />} title="الموقع الحالي" detail="داخل نطاق الفرع المعيّن للموظف" /><TrustStep icon={<Smartphone className="size-4" aria-hidden />} title="الجهاز المسجل" detail={isKiosk ? 'متصفح هاتف الفرع المرتبط مسبقًا' : 'متصفح هاتفك الشخصي المرتبط مسبقًا'} /></ul></div>
           <p className="mt-7 flex gap-2 border-t border-paper/10 pt-5 text-[12px] leading-6 text-paper/50"><MapPin className="mt-1 size-4 shrink-0" aria-hidden />يُستخدم موقعك فقط للتحقق من نطاق الحضور ويُحفظ مع محاولة الحضور وفق سياسة النظام.</p>
         </aside>
       </div>

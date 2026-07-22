@@ -1,6 +1,5 @@
 import { containsArabicIndicDigits } from '@capella/shared';
 import { z } from 'zod';
-import { verifyDeviceSchema } from '../devices/index.js';
 import { positiveMysqlIntSchema } from '../../common/index.js';
 
 const employeeLoginPhoneSchema = z.string().transform((value, context) => {
@@ -20,7 +19,7 @@ export const employeeLoginSchema = z.object({
   employeeCode: positiveMysqlIntSchema,
   pin: z.string().regex(/^\d{4}$/),
   personalPhone: employeeLoginPhoneSchema,
-  deviceProof: verifyDeviceSchema,
+  installationMarker: z.string().min(16).max(4096),
 }).strict();
 
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;

@@ -8,7 +8,6 @@ import {
   auditEvents,
   authSessions,
   branches,
-  deviceAuthenticationChallenges,
   deviceHistory,
   devicePairingRequests,
   devices,
@@ -69,13 +68,6 @@ const createFixtures = async () => {
     assignmentType: 'employee',
     employeeId,
     branchId: null,
-    credentialId: `attendance-credential-${Date.now()}`,
-    credentialIdHash: `${Date.now()}`.padEnd(64, '0').slice(0, 64),
-    credentialPublicKey: 'public-key',
-    counter: 0,
-    transports: [],
-    credentialDeviceType: 'singleDevice',
-    credentialBackedUp: false,
     installationMarkerHash: `${Date.now()}`.padStart(64, '1').slice(0, 64),
     browser: 'Chrome',
     platform: 'Android',
@@ -94,7 +86,6 @@ const cleanDatabase = async () => {
   await database.delete(attendanceSessions);
   await database.delete(payrollMonths);
   await database.delete(employeeSalaryPeriods);
-  await database.delete(deviceAuthenticationChallenges);
   await database.delete(deviceHistory);
   await database.delete(devices);
   await database.delete(devicePairingRequests);

@@ -71,7 +71,7 @@ describe('authentication HTTP API', () => {
   it('creates an employee self-service cookie without returning the token', async () => {
     const response = await request(makeApp())
       .post('/api/v1/auth/employee/login')
-      .send({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', deviceProof: { challengeId: '00000000-0000-4000-8000-000000000001', installationMarker: 'marker-marker-123', response: { id: 'proof', rawId: 'proof', type: 'public-key', response: { clientDataJSON: 'data', authenticatorData: 'auth', signature: 'signature' }, clientExtensionResults: {} } } });
+      .send({ employeeCode: 12, pin: '0123', personalPhone: '01012345678', installationMarker: 'marker-marker-123' });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ data: { actor: { type: 'employee' } } });
