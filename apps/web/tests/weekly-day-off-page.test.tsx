@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   convertWeeklyDayRecord: vi.fn(),
   revertWeeklyDayRecord: vi.fn(),
   listBranches: vi.fn(),
+  listEmployees: vi.fn(),
 }));
 
 vi.mock('../src/features/weekly-day-off/api/weekly-day-off-api', () => ({
@@ -19,6 +20,10 @@ vi.mock('../src/features/weekly-day-off/api/weekly-day-off-api', () => ({
 
 vi.mock('../src/features/branches/api/branches-api', () => ({
   listBranches: mocks.listBranches,
+}));
+
+vi.mock('../src/features/employees/api/employees-api', () => ({
+  listEmployees: mocks.listEmployees,
 }));
 
 import { WeeklyDayOffView } from '../src/features/weekly-day-off/components/weekly-day-off-view';
@@ -72,6 +77,12 @@ const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 beforeEach(() => {
   mocks.listWeeklyDayRecords.mockResolvedValue(pageOf([absence, dayOff]));
   mocks.listBranches.mockResolvedValue(pageOf([{ id: 3, name: 'فرع القاهرة' }]));
+  mocks.listEmployees.mockResolvedValue(
+    pageOf([
+      { id: 1, employeeCode: 1001, fullName: 'أحمد جمال' },
+      { id: 2, employeeCode: 1002, fullName: 'منى علي' },
+    ]),
+  );
 });
 
 afterEach(() => {
@@ -97,16 +108,13 @@ describe('WeeklyDayOffView', () => {
     expect(await screen.findByText('لا توجد سجلات غياب أو أيام راحة')).toBeDefined();
   });
 
-  test('search resets to the first page and passes the term', async () => {
+  test('filtering by employee resets to the first page and passes the id', async () => {
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.change(screen.getByRole('searchbox', { name: 'بحث بالاسم أو الكود' }), {
-      target: { value: 'منى' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
+    fireEvent.change(await screen.findByLabelText('تصفية حسب الموظف'), { target: { value: '2' } });
     await waitFor(() => {
       expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
-        expect.objectContaining({ search: 'منى', page: 1 }),
+        expect.objectContaining({ employeeId: 2, page: 1 }),
       );
     });
   });

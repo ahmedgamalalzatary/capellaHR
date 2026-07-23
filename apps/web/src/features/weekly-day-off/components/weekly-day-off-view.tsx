@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarOff, RotateCcw, Search, UserRound } from 'lucide-react';
+import { CalendarOff, RotateCcw, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Card, EmptyState, Input } from '@capella/ui';
@@ -12,6 +12,8 @@ import { formatDuration } from '@/lib/utils/format';
 
 import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
+import { listEmployees } from '../../employees/api/employees-api';
+import { employeeQueryKeys } from '../../employees/query-keys';
 import {
   convertWeeklyDayRecord,
   listWeeklyDayRecords,
@@ -33,8 +35,7 @@ const serverErrorMessage = (error: unknown): string | null => {
 
 export function WeeklyDayOffView() {
   const queryClient = useQueryClient();
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState<number | null>(null);
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'absence' | 'weekly_day_off' | null>(null);
   const [dateFrom, setDateFrom] = useState('');
@@ -43,11 +44,11 @@ export function WeeklyDayOffView() {
 
   const recordsQuery = useQuery({
     queryKey: weeklyDayOffQueryKeys.list({
-      search, branchFilter, statusFilter, dateFrom, dateTo, page,
+      employeeFilter, branchFilter, statusFilter, dateFrom, dateTo, page,
     }),
     queryFn: () =>
       listWeeklyDayRecords({
-        ...(search ? { search } : {}),
+        ...(employeeFilter !== null ? { employeeId: employeeFilter } : {}),
         ...(branchFilter !== null ? { branchId: branchFilter } : {}),
         ...(statusFilter !== null ? { status: statusFilter } : {}),
         ...(dateFrom ? { dateFrom } : {}),
@@ -55,6 +56,12 @@ export function WeeklyDayOffView() {
         page,
       }),
   });
+
+  const employeesQuery = useQuery({
+    queryKey: employeeQueryKeys.options(),
+    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage })),
+  });
+  const employees = employeesQuery.data ?? [];
 
   const branchesQuery = useQuery({
     queryKey: branchQueryKeys.options(),
@@ -78,29 +85,45 @@ export function WeeklyDayOffView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <form
-          role="search"
-          className="flex items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setPage(1);
-            setSearch(searchInput.trim());
-          }}
-        >
-          <Input
-            type="search"
-            aria-label="بحث بالاسم أو الكود"
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="ابحث بالاسم أو الكود…"
-            className="w-56"
-          />
-          <Button type="submit" variant="secondary" size="sm">
-            <Search className="size-4" aria-hidden />
-            بحث
-          </Button>
-        </form>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="weekly-day-off-employee" className="text-[12px] text-muted">
+            الموظف
+          </label>
+          <select
+            id="weekly-day-off-employee"
+            aria-label="تصفية حسب الموظف"
+            disabled={employeesQuery.isPending || employeesQuery.isError}
+            className="h-9 w-64 rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
+            value={employeeFilter ?? ''}
+            onChange={(event) => {
+              setPage(1);
+              setEmployeeFilter(event.target.value === '' ? null : Number(event.target.value));
+            }}
+          >
+            <option value="">
+              {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'كل الموظفين'}
+            </option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.employeeCode} — {employee.fullName}
+              </option>
+            ))}
+          </select>
+          {employeesQuery.isError ? (
+            <div className="flex items-center gap-2 text-[12px] text-danger">
+              <span>تعذر تحميل الموظفين</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void employeesQuery.refetch()}
+              >
+                إعادة المحاولة
+              </Button>
+            </div>
+          ) : null}
+        </div>
         <select
           aria-label="تصفية حسب الفرع"
           className="h-9 rounded-control border border-line bg-paper px-3 text-sm"
