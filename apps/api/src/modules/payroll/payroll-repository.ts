@@ -4,11 +4,12 @@ import {
   bonuses,
   branches,
   deductions,
+  employeeBranchAssignments,
   employeeSalaryPeriods,
   employees,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, desc, eq, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, notExists, or, sql } from 'drizzle-orm';
 
 import {
   calculatePayroll,
@@ -43,10 +44,16 @@ const findSalary = async (executor: Executor, employeeId: number): Promise<BaseS
     .where(eq(employees.id, employeeId)).limit(1)
 )[0] ?? null;
 
+const finalizedBranchId = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+const assignmentAtFinalization = and(
+  eq(employeeBranchAssignments.employeeId, payrollMonths.employeeId),
+  lte(employeeBranchAssignments.effectiveFrom, payrollMonths.createdAt),
+  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, payrollMonths.createdAt)),
+);
 const payrollFields = {
   id: payrollMonths.id, employeeId: payrollMonths.employeeId,
   employeeCode: employees.employeeCode, employeeName: employees.fullName,
-  branchId: employees.branchId, branchName: branches.name,
+  branchId: finalizedBranchId, branchName: branches.name,
   payrollMonth: payrollMonths.payrollMonth, status: payrollMonths.status,
   baseSalary: payrollMonths.baseSalary, proratedBase: payrollMonths.proratedBase,
   overtimeAmount: payrollMonths.overtimeAmount, bonusAmount: payrollMonths.bonusAmount,
@@ -63,7 +70,8 @@ const exposeFinalized = (row: Awaited<ReturnType<typeof rawFinalized>>): Payroll
 const rawFinalized = async (executor: Executor, employeeId: number, month: string) => (
   await executor.select(payrollFields).from(payrollMonths)
     .innerJoin(employees, eq(employees.id, payrollMonths.employeeId))
-    .innerJoin(branches, eq(branches.id, employees.branchId))
+    .leftJoin(employeeBranchAssignments, assignmentAtFinalization)
+    .innerJoin(branches, eq(branches.id, finalizedBranchId))
     .where(and(eq(payrollMonths.employeeId, employeeId), eq(payrollMonths.payrollMonth, payrollMonthStart(month))))
     .limit(1)
 )[0] ?? null;
@@ -235,7 +243,6 @@ export const createDrizzlePayrollRepository = (
     async list(query: ListPayrollMonthsQuery, attendance) {
       if (query.month > context.currentMonth()) return { kind: 'month_not_ended' as const };
       const filters = [];
-      if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
       if (query.search !== undefined) filters.push(or(
         sql`locate(${query.search}, ${employees.fullName}) > 0`,
         sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`,
@@ -248,12 +255,13 @@ export const createDrizzlePayrollRepository = (
         deletedAt: employees.deletedAt,
       }).from(employees).where(where).orderBy(asc(employees.employeeCode));
       const eligible = candidates.filter((employee) => employeeEligibleForMonth(employee, query.month, timeZone));
-      const rows = eligible.slice((query.page - 1) * query.pageSize, query.page * query.pageSize);
-      const items: PayrollRecord[] = [];
+      const matching: PayrollRecord[] = [];
       const reasons: string[] = [];
-      for (const row of rows) {
+      for (const row of eligible) {
         const result = await this.preview(row.id, query.month, attendance);
-        if (result.kind === 'success') items.push(result.payroll);
+        if (result.kind === 'success') {
+          if (query.branchId === undefined || result.payroll.branchId === query.branchId) matching.push(result.payroll);
+        }
         else if (result.kind === 'blocked') {
           reasons.push(...result.reasons.map((reason) => `${row.id}:${reason}`));
         } else {
@@ -261,7 +269,11 @@ export const createDrizzlePayrollRepository = (
         }
       }
       if (reasons.length) return { kind: 'blocked' as const, reasons };
-      return { kind: 'success' as const, items, total: eligible.length };
+      return {
+        kind: 'success' as const,
+        items: matching.slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
+        total: matching.length,
+      };
     },
     preview(employeeId, month, attendance) {
       return database.transaction(async (transaction) => {
@@ -308,8 +320,30 @@ export const createDrizzlePayrollRepository = (
           .where(eq(branches.id, branchId)).for('update').limit(1))[0];
         if (!branch) return { kind: 'branch_not_found' as const };
         if (month >= context.currentMonth()) return { kind: 'month_not_ended' as const };
-        const employeeRows = await transaction.select({ id: employees.id }).from(employees)
-          .where(eq(employees.branchId, branchId)).orderBy(asc(employees.id)).for('update');
+        const assignmentRows = await transaction.select({
+          employeeId: employeeBranchAssignments.employeeId,
+          effectiveFrom: employeeBranchAssignments.effectiveFrom,
+          effectiveTo: employeeBranchAssignments.effectiveTo,
+        }).from(employeeBranchAssignments).where(eq(employeeBranchAssignments.branchId, branchId));
+        const assignedEmployeeIds = assignmentRows.filter((assignment) => (
+          calendarMonthInTimeZone(assignment.effectiveFrom, timeZone) <= month
+          && (assignment.effectiveTo === null || calendarMonthInTimeZone(assignment.effectiveTo, timeZone) > month)
+        )).map((assignment) => assignment.employeeId);
+        const legacyEmployeeRows = await transaction.select({ id: employees.id }).from(employees)
+          .where(and(
+            eq(employees.branchId, branchId),
+            notExists(transaction.select({ id: employeeBranchAssignments.id })
+              .from(employeeBranchAssignments)
+              .where(eq(employeeBranchAssignments.employeeId, employees.id))),
+          ));
+        const targetEmployeeIds = [...new Set([
+          ...assignedEmployeeIds,
+          ...legacyEmployeeRows.map(({ id }) => id),
+        ])];
+        const employeeRows = targetEmployeeIds.length
+          ? await transaction.select({ id: employees.id }).from(employees)
+            .where(inArray(employees.id, targetEmployeeIds)).orderBy(asc(employees.id)).for('update')
+          : [];
         const existingPayrolls: PayrollRecord[] = [];
         const calculated: PayrollRecord[] = [];
         const reasons: string[] = [];

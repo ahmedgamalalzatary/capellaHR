@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, decimal, int, mysqlEnum, mysqlTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
+import { check, decimal, index, int, mysqlEnum, mysqlTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 import { branches } from '../organization/index.js';
 export const employeeCodeSequence = mysqlTable('employee_code_sequence', { id: int('id').primaryKey(), nextCode: int('next_code').notNull() }, (table) => [check('employee_code_sequence_singleton', sql`${table.id} = 1`), check('employee_code_sequence_positive', sql`${table.nextCode} > 0`)]);
 export const employees = mysqlTable('employees', {
@@ -26,3 +26,18 @@ export const employeeImages = mysqlTable('employee_images', {
 export const employeePhoneReservations = mysqlTable('employee_phone_reservations', {
   phone: varchar('phone', { length: 11 }).primaryKey(), employeeId: int('employee_id').notNull().references(() => employees.id),
 });
+export const employeeBranchAssignments = mysqlTable('employee_branch_assignments', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  branchId: int('branch_id').notNull().references(() => branches.id),
+  effectiveFrom: timestamp('effective_from', { mode: 'date', fsp: 3 }).notNull(),
+  effectiveTo: timestamp('effective_to', { mode: 'date', fsp: 3 }),
+  activeEmployeeId: int('active_employee_id')
+    .generatedAlwaysAs(sql`case when effective_to is null then employee_id else null end`, { mode: 'stored' }),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('employee_branch_assignments_active_employee_unique').on(table.activeEmployeeId),
+  index('employee_branch_assignments_employee_period_idx').on(table.employeeId, table.effectiveFrom, table.effectiveTo),
+  index('employee_branch_assignments_branch_period_idx').on(table.branchId, table.effectiveFrom, table.effectiveTo),
+  check('employee_branch_assignments_period_valid', sql`${table.effectiveTo} is null or ${table.effectiveTo} >= ${table.effectiveFrom}`),
+]);

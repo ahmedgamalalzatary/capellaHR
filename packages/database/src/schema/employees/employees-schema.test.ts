@@ -2,7 +2,7 @@ import { getTableColumns } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
-import { employeeCodeSequence, employeeImages, employees } from './index.js';
+import { employeeBranchAssignments, employeeCodeSequence, employeeImages, employees } from './index.js';
 
 describe('employee schema', () => {
   it('stores immutable identity, payroll/shift foundation and soft deletion', () => {
@@ -16,6 +16,15 @@ describe('employee schema', () => {
   it('stores private image metadata and a singleton code allocator', () => {
     expect(Object.keys(getTableColumns(employeeImages))).toEqual(expect.arrayContaining(['employeeId', 'kind', 'storagePath', 'mimeType', 'sizeBytes']));
     expect(Object.keys(getTableColumns(employeeCodeSequence))).toContain('nextCode');
+  });
+
+  it('stores effective-dated branch assignments for historical ownership', () => {
+    expect(Object.keys(getTableColumns(employeeBranchAssignments))).toEqual(expect.arrayContaining([
+      'id', 'employeeId', 'branchId', 'effectiveFrom', 'effectiveTo', 'activeEmployeeId', 'createdAt',
+    ]));
+    const indexes = getTableConfig(employeeBranchAssignments).indexes.map((index) => index.config.name);
+    expect(indexes).toContain('employee_branch_assignments_employee_period_idx');
+    expect(indexes).toContain('employee_branch_assignments_active_employee_unique');
   });
 
   it('enforces critical numeric invariants in MySQL', () => {

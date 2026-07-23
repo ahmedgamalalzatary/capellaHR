@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -13,8 +13,29 @@ const branchModule = createBranchesModule(database); const employeeModule = crea
 const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, originalName: `${name}.jpg`, mimeType: 'image/jpeg', sizeBytes: 10 });
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
 
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
+  it('atomically reassigns a checked-out employee and preserves branch history', async () => {
+    const oldBranch = await branchModule.service.create({ name: 'Old branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const newBranch = await branchModule.service.create({ name: 'New branch', location: 'Giza', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const created = await employeeModule.service.create(employee(oldBranch.id, '01012345678'));
+
+    const updated = await employeeModule.service.update(created.id, { branchId: newBranch.id });
+
+    expect(updated.employee.branchId).toBe(newBranch.id);
+    const history = await database.select().from(employeeBranchAssignments)
+      .where(eq(employeeBranchAssignments.employeeId, created.id)).orderBy(asc(employeeBranchAssignments.effectiveFrom));
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ branchId: oldBranch.id });
+    expect(history[0]!.effectiveTo).not.toBeNull();
+    expect(history[1]).toMatchObject({ branchId: newBranch.id, effectiveTo: null });
+    await expect(database.insert(employeeBranchAssignments).values({
+      employeeId: created.id, branchId: oldBranch.id, effectiveFrom: new Date(), createdAt: new Date(),
+    })).rejects.toThrow();
+    const event = (await database.select().from(auditEvents)
+      .where(eq(auditEvents.action, 'branch_reassign')).limit(1))[0];
+    expect(event?.relatedIds).toEqual({ previousBranchId: String(oldBranch.id), branchId: String(newBranch.id) });
+  });
   it('creates concurrent employees with distinct incremental codes and locks the branch', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const created = await Promise.all([employeeModule.service.create(employee(branch.id, '01012345678')), employeeModule.service.create(employee(branch.id, '01112345678'))]);

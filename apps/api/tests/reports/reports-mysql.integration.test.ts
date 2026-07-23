@@ -13,6 +13,7 @@ import {
   deviceHistory,
   devicePairingRequests,
   devices,
+  employeeBranchAssignments,
   employeeCodeSequence,
   employeeImages,
   employeePhoneReservations,
@@ -21,7 +22,7 @@ import {
   payrollMonths,
   reportExports,
 } from '@capella/database/schema';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -53,6 +54,7 @@ const clear = async () => {
   await database.delete(authSessions);
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
+  await database.delete(employeeBranchAssignments);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
@@ -104,6 +106,10 @@ const seed = async () => {
     createdAt: now,
     updatedAt: now,
   }))[0].insertId);
+  await database.insert(employeeBranchAssignments).values([
+    { employeeId, branchId, effectiveFrom: now, createdAt: now },
+    { employeeId: deletedEmployeeId, branchId, effectiveFrom: now, createdAt: now },
+  ]);
   await database.insert(devices).values({
     assignmentType: 'employee',
     employeeId,
@@ -115,6 +121,7 @@ const seed = async () => {
   });
   await database.insert(attendanceDailyRecords).values({
     employeeId: deletedEmployeeId,
+    branchId,
     attendanceDate: '2026-07-12',
     status: 'weekly_day_off',
     absenceRequiredMinutes: 480,
@@ -153,6 +160,30 @@ const seed = async () => {
 };
 
 describe('MySQL-backed reports', () => {
+  it('keeps historical report rows and branch filters under the original branch', async () => {
+    const { branchId, employeeId, deletedEmployeeId } = await seed();
+    const newBranchId = Number((await database.insert(branches).values({
+      name: 'New report branch', nameNormalized: 'new-report-branch', location: 'Giza',
+      latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50,
+      hasEverBeenReferenced: true, createdAt: now, updatedAt: now,
+    }))[0].insertId);
+    const reassignedAt = new Date(now.getTime() + 60_000);
+    for (const reassignedEmployeeId of [employeeId, deletedEmployeeId]) {
+      await database.update(employeeBranchAssignments).set({ effectiveTo: reassignedAt })
+        .where(and(eq(employeeBranchAssignments.employeeId, reassignedEmployeeId), eq(employeeBranchAssignments.branchId, branchId)));
+      await database.insert(employeeBranchAssignments).values({ employeeId: reassignedEmployeeId, branchId: newBranchId, effectiveFrom: reassignedAt, createdAt: reassignedAt });
+      await database.update(employees).set({ branchId: newBranchId, updatedAt: reassignedAt })
+        .where(eq(employees.id, reassignedEmployeeId));
+    }
+    const reader = createDrizzleReportReader(database);
+
+    for (const reportType of ['weekly-day-off', 'bonuses', 'deductions', 'advances'] as const) {
+      const oldBranch = await reader.read(reportType, { branchId }, { mode: 'all' }, null, reassignedAt);
+      expect(oldBranch).toMatchObject({ kind: 'success', total: 1, snapshot: { rows: [{ branchId }] } });
+      await expect(reader.read(reportType, { branchId: newBranchId }, { mode: 'all' }, null, reassignedAt))
+        .resolves.toMatchObject({ kind: 'success', total: 0 });
+    }
+  });
   it('cleans employee-owned residue before deleting shared fixtures', async () => {
     const { employeeId } = await seed();
     await database.insert(employeeImages).values({

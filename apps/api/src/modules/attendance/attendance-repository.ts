@@ -8,6 +8,7 @@ import {
   authSessions,
   branches,
   devices,
+  employeeBranchAssignments,
   employees,
 } from '@capella/database/schema';
 import {
@@ -62,12 +63,29 @@ export type AttendanceShiftChangeReconciler = (
   context: Transaction,
 ) => Promise<number>;
 
+const sessionBranchId = sql<number>`coalesce(${attendanceSessions.branchId}, ${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+const sessionBranchAssignment = and(
+  eq(employeeBranchAssignments.employeeId, attendanceSessions.employeeId),
+  lte(employeeBranchAssignments.effectiveFrom, attendanceSessions.checkInAt),
+  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, attendanceSessions.checkInAt)),
+);
+const branchAt = async (
+  executor: Executor,
+  employeeId: number,
+  instant: Date,
+  fallbackBranchId: number,
+) => (await executor.select({ branchId: employeeBranchAssignments.branchId })
+  .from(employeeBranchAssignments).where(and(
+    eq(employeeBranchAssignments.employeeId, employeeId),
+    lte(employeeBranchAssignments.effectiveFrom, instant),
+    or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, instant)),
+  )).orderBy(desc(employeeBranchAssignments.effectiveFrom)).limit(1))[0]?.branchId ?? fallbackBranchId;
 const sessionFields = {
   id: attendanceSessions.id,
   employeeId: attendanceSessions.employeeId,
   employeeCode: employees.employeeCode,
   employeeName: employees.fullName,
-  branchId: branches.id,
+  branchId: sessionBranchId,
   branchName: branches.name,
   attendanceDate: attendanceSessions.attendanceDate,
   requiredMinutes: attendanceSessions.requiredMinutes,
@@ -110,7 +128,8 @@ const findSession = async (executor: Executor, id: number): Promise<AttendanceSe
   await executor.select(sessionFields)
     .from(attendanceSessions)
     .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
-    .innerJoin(branches, eq(branches.id, employees.branchId))
+    .leftJoin(employeeBranchAssignments, sessionBranchAssignment)
+    .innerJoin(branches, eq(branches.id, sessionBranchId))
     .where(eq(attendanceSessions.id, id))
     .limit(1)
 )[0] ?? null;
@@ -468,6 +487,7 @@ export const createDrizzleAttendanceRepository = (
       : await readRequiredDuration(employee.id, transaction, employee.deletedAt !== null);
     const inserted = await transaction.insert(attendanceSessions).values({
       employeeId: employee.id,
+      branchId: await branchAt(transaction, employee.id, input.occurredAt, employee.branchId),
       attendanceDate,
       requiredMinutes,
       checkInAt: input.occurredAt,
@@ -664,6 +684,7 @@ export const createDrizzleAttendanceRepository = (
     const createdAt = now();
     const inserted = await transaction.insert(attendanceDailyRecords).values({
       employeeId: employee.id,
+      branchId: await branchAt(transaction, employee.id, endOfDate(attendanceDate, timeZone), employee.branchId),
       attendanceDate,
       status: 'absence',
       absenceRequiredMinutes: requiredMinutes,
@@ -1118,7 +1139,7 @@ export const createDrizzleAttendanceRepository = (
     async listSessions(query) {
       const filters: SQL[] = [];
       if (query.employeeId !== undefined) filters.push(eq(attendanceSessions.employeeId, query.employeeId));
-      if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
+      if (query.branchId !== undefined) filters.push(eq(sessionBranchId, query.branchId));
       if (query.state === 'open') filters.push(isNull(attendanceSessions.checkOutAt));
       if (query.state === 'closed') filters.push(isNotNull(attendanceSessions.checkOutAt));
       if (query.dateFrom !== undefined) filters.push(gte(attendanceSessions.attendanceDate, query.dateFrom));
@@ -1131,12 +1152,14 @@ export const createDrizzleAttendanceRepository = (
       const where = filters.length ? and(...filters) : undefined;
       const items = await database.select(sessionFields).from(attendanceSessions)
         .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId))
+        .leftJoin(employeeBranchAssignments, sessionBranchAssignment)
+        .innerJoin(branches, eq(branches.id, sessionBranchId))
         .where(where).orderBy(desc(attendanceSessions.attendanceDate), asc(employees.employeeCode))
         .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
       const totals = await database.select({ value: count() }).from(attendanceSessions)
         .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId)).where(where);
+        .leftJoin(employeeBranchAssignments, sessionBranchAssignment)
+        .innerJoin(branches, eq(branches.id, sessionBranchId)).where(where);
       return { items, total: totals[0]?.value ?? 0 };
     },
 
@@ -1410,6 +1433,11 @@ export const createDrizzleAttendanceRepository = (
           eq(attendanceSessions.openEmployeeId, employeeId),
           gt(attendanceSessions.checkInAt, activeAfter),
         )).limit(1))[0] !== undefined;
+    },
+    async hasAnyOpenSession(employeeId, context) {
+      const executor = (context as Executor | undefined) ?? database;
+      return (await executor.select({ id: attendanceSessions.id }).from(attendanceSessions)
+        .where(eq(attendanceSessions.openEmployeeId, employeeId)).limit(1))[0] !== undefined;
     },
   };
 };

@@ -11,6 +11,7 @@ import {
   deviceHistory,
   devicePairingRequests,
   devices,
+  employeeBranchAssignments,
   employeeCodeSequence,
   employeeImages,
   employeePhoneReservations,
@@ -18,7 +19,7 @@ import {
   employees,
   payrollMonths,
 } from '@capella/database/schema';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/attendance-repository.js';
@@ -64,6 +65,9 @@ const createFixtures = async () => {
     updatedAt: fixedNow,
   });
   const employeeId = Number(employeeResult[0].insertId);
+  await database.insert(employeeBranchAssignments).values({
+    employeeId, branchId, effectiveFrom: new Date('2026-07-01T09:00:00.000Z'), createdAt: new Date('2026-07-01T09:00:00.000Z'),
+  });
   const deviceResult = await database.insert(devices).values({
     assignmentType: 'employee',
     employeeId,
@@ -92,6 +96,7 @@ const cleanDatabase = async () => {
   await database.delete(authSessions);
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
+  await database.delete(employeeBranchAssignments);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
@@ -126,6 +131,27 @@ const repository = (
 });
 
 describe('MySQL-backed attendance', () => {
+  it('snapshots the original branch for backdated attendance created after reassignment', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    const sessionAt = new Date('2026-07-19T06:00:00.000Z');
+    const newBranchResult = await database.insert(branches).values({
+      name: 'New attendance branch', nameNormalized: `new-attendance-${Date.now()}`,
+      location: 'Giza', latitude: 30, longitude: 31, gpsAccuracyMeters: 5,
+      attendanceRadiusMeters: 100, hasEverBeenReferenced: true, createdAt: fixedNow, updatedAt: fixedNow,
+    });
+    const newBranchId = Number(newBranchResult[0].insertId);
+    await database.update(employeeBranchAssignments).set({ effectiveTo: fixedNow })
+      .where(and(eq(employeeBranchAssignments.employeeId, employeeId), eq(employeeBranchAssignments.branchId, branchId)));
+    await database.insert(employeeBranchAssignments).values({ employeeId, branchId: newBranchId, effectiveFrom: fixedNow, createdAt: fixedNow });
+    await database.update(employees).set({ branchId: newBranchId, updatedAt: fixedNow }).where(eq(employees.id, employeeId));
+    await expect(repository().manualCheckIn({ employeeId, occurredAt: sessionAt }))
+      .resolves.toMatchObject({ kind: 'success' });
+
+    const result = await repository().listSessions({ page: 1, pageSize: 20 });
+    expect(result.items[0]).toMatchObject({ employeeId, branchId });
+    expect((await repository().listSessions({ branchId, page: 1, pageSize: 20 })).total).toBe(1);
+    expect((await repository().listSessions({ branchId: newBranchId, page: 1, pageSize: 20 })).total).toBe(0);
+  });
   it('supplies transaction-aware monthly facts and blockers to Payroll', async () => {
     const { employeeId } = await createFixtures();
     await database.update(employees).set({
@@ -834,6 +860,7 @@ describe('MySQL-backed attendance', () => {
     });
 
     await expect(overdueRepository.hasOpenSession(employeeId)).resolves.toBe(false);
+    await expect(overdueRepository.hasAnyOpenSession!(employeeId)).resolves.toBe(true);
   });
 
   it('executes a due timeout at check-in plus exactly 16 hours and remains idempotent', async () => {

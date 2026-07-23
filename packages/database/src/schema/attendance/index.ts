@@ -16,6 +16,7 @@ import {
 
 import { devices } from '../devices/index.js';
 import { employees } from '../employees/index.js';
+import { branches } from '../organization/index.js';
 
 const attendanceEventSources = [
   'personal_device',
@@ -28,6 +29,7 @@ const attendanceEventSources = [
 export const attendanceSessions = mysqlTable('attendance_sessions', {
   id: int('id').autoincrement().primaryKey(),
   employeeId: int('employee_id').notNull().references(() => employees.id),
+  branchId: int('branch_id').notNull().references(() => branches.id),
   attendanceDate: date('attendance_date', { mode: 'string' }).notNull(),
   requiredMinutes: int('required_minutes').notNull(),
   checkInAt: timestamp('check_in_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -95,6 +97,7 @@ export const attendanceJobs = mysqlTable('attendance_jobs', {
 export const attendanceDailyRecords = mysqlTable('attendance_daily_records', {
   id: int('id').autoincrement().primaryKey(),
   employeeId: int('employee_id').notNull().references(() => employees.id),
+  branchId: int('branch_id').notNull().references(() => branches.id),
   attendanceDate: date('attendance_date', { mode: 'string' }).notNull(),
   status: mysqlEnum('status', ['absence', 'weekly_day_off', 'attendance_replaced']).notNull().default('absence'),
   absenceRequiredMinutes: int('absence_required_minutes').notNull(),

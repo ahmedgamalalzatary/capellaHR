@@ -1,5 +1,5 @@
 import { type createDatabase } from '@capella/database';
-import { authSessions, branches, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { authSessions, branches, employeeBranchAssignments, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
 import type { EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
@@ -38,6 +38,7 @@ export const createDrizzleEmployeeRepository = (
       const id = Number(result[0].insertId);
       await tx.insert(employeePhoneReservations).values([...new Set([fields.personalPhone, fields.whatsappPhone])].map((phone) => ({ phone, employeeId: id })));
       await tx.insert(employeeImages).values((Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]).map(([kind, image]) => ({ employeeId: id, kind, ...image, createdAt, updatedAt: createdAt })));
+      await tx.insert(employeeBranchAssignments).values({ employeeId: id, branchId: fields.branchId, effectiveFrom: createdAt, createdAt });
       await tx.update(branches).set({ hasEverBeenReferenced: true, updatedAt: createdAt }).where(eq(branches.id, fields.branchId));
       if (!branch[0].hasEverBeenReferenced) {
         await writeAudit(tx, {
@@ -65,12 +66,33 @@ export const createDrizzleEmployeeRepository = (
     const totals = await database.select({ value: count() }).from(employees).where(where);
     return { items: await Promise.all(rows.map((row) => hydrate(database, row))), total: totals[0]?.value ?? 0 };
   },
-  async update(id, changes, revokeSessions = false) {
+  async update(id, changes, revokeSessions = false, hasOpenSession) {
     return database.transaction(async (tx) => {
       const current = (await tx.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0]; if (!current) return null;
       const before = await hydrate(tx, current);
       const { images, ...fields } = changes;
       const updatedAt = now();
+      const branchChanged = fields.branchId !== undefined && fields.branchId !== current.branchId;
+      if (branchChanged) {
+        const destination = (await tx.select({
+          id: branches.id,
+          hasEverBeenReferenced: branches.hasEverBeenReferenced,
+        }).from(branches).where(eq(branches.id, fields.branchId!)).for('update').limit(1))[0];
+        if (!destination) return 'branch_not_found' as const;
+        if (!hasOpenSession || await hasOpenSession(id, tx)) return 'checked_in' as const;
+        await tx.update(employeeBranchAssignments).set({ effectiveTo: updatedAt })
+          .where(and(eq(employeeBranchAssignments.employeeId, id), isNull(employeeBranchAssignments.effectiveTo)));
+        await tx.insert(employeeBranchAssignments).values({
+          employeeId: id, branchId: fields.branchId!, effectiveFrom: updatedAt, createdAt: updatedAt,
+        });
+        await tx.update(branches).set({ hasEverBeenReferenced: true, updatedAt })
+          .where(eq(branches.id, fields.branchId!));
+        if (!destination.hasEverBeenReferenced) await writeAudit(tx, {
+          module: 'branches', action: 'reference_lock', entityType: 'branch', entityId: fields.branchId!,
+          beforeState: { hasEverBeenReferenced: false }, afterState: { hasEverBeenReferenced: true },
+          relatedIds: { employeeId: id }, createdAt: updatedAt,
+        });
+      }
       if (fields.shiftDurationMinutes !== undefined
         && fields.shiftDurationMinutes !== current.shiftDurationMinutes) {
         await beforeDurationChange?.(id, current.shiftDurationMinutes, tx);
@@ -94,10 +116,13 @@ export const createDrizzleEmployeeRepository = (
       const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
       const replacedImages = Object.fromEntries(Object.keys(images ?? {}).map((kind) => [kind, before.images[kind as ImageKind]])) as Partial<EmployeeImages>;
       await writeAudit(tx, {
-        module: 'employees', action: revokeSessions ? 'pin_reset' : 'update',
+        module: 'employees', action: branchChanged ? 'branch_reassign' : revokeSessions ? 'pin_reset' : 'update',
         entityType: 'employee', entityId: id,
         beforeState: before, afterState: record,
-        relatedIds: { branchId: record.branchId }, createdAt: updatedAt,
+        relatedIds: branchChanged
+          ? { previousBranchId: before.branchId, branchId: record.branchId }
+          : { branchId: record.branchId },
+        createdAt: updatedAt,
       });
       return { record, replacedImages };
     });

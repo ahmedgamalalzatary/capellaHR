@@ -24,7 +24,7 @@ export const createEmployeeFieldsSchema = z.object({
   age: coercedMysqlIntSchema, address: z.string().trim().min(1).max(1000),
   branchId: coercedMysqlIntSchema, shiftDurationMinutes: coercedShiftDurationMinutesSchema, monthlyBaseSalary: money,
 }).strict();
-export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ branchId: true, monthlyBaseSalary: true }).partial().strict().refine((value) => Object.keys(value).length > 0);
+export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ monthlyBaseSalary: true }).partial().strict().refine((value) => Object.keys(value).length > 0);
 export const employeeIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
 export const employeeImageParamsSchema = employeeIdParamsSchema.extend({ kind: z.enum(['personal', 'idFront', 'idBack']) });
 export const listEmployeesQuerySchema = z.object({ search: z.string().trim().min(1).max(255).optional(), branchId: coercedMysqlIntSchema.optional(), page: paginationPageSchema.default(1), pageSize: paginationPageSizeSchema.default(20) });

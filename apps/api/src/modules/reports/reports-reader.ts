@@ -15,6 +15,7 @@ import {
   branches,
   deductions,
   devices,
+  employeeBranchAssignments,
   employees,
 } from '@capella/database/schema';
 import {
@@ -23,10 +24,12 @@ import {
   count,
   eq,
   exists,
+  gt,
   gte,
   inArray,
   lte,
   ne,
+  isNull,
   or,
   sql,
   sum,
@@ -99,8 +102,8 @@ const searchEmployee = (search: string) => or(
   sql`locate(${search}, ${employees.personalPhone}) > 0`,
   sql`locate(${search}, ${employees.whatsappPhone}) > 0`,
 )!;
-const employeeFilters = (filters: ReportFilters, selection: ReportSelection): SQL[] => [
-  ...(filters.branchId === undefined ? [] : [eq(employees.branchId, filters.branchId)]),
+const employeeFilters = (filters: ReportFilters, selection: ReportSelection, branchId: SQL = sql`${employees.branchId}`): SQL[] => [
+  ...(filters.branchId === undefined ? [] : [eq(branchId, filters.branchId)]),
   ...(filters.search === undefined ? [] : [searchEmployee(filters.search)]),
   ...selected(selection, employees.id),
 ];
@@ -209,14 +212,15 @@ export const createDrizzleReportReader = (
   ): ReturnType<ReportReader['read']> => {
 
     if (reportType === 'attendance') {
-      const common = employeeFilters(filters, selection);
+      const sessionBranchId = sql<number>`coalesce(${attendanceSessions.branchId}, ${employees.branchId})`;
+      const dailyBranchId = sql<number>`coalesce(${attendanceDailyRecords.branchId}, ${employees.branchId})`;
       const sessionWhere = whereFrom([
-        ...common,
+        ...employeeFilters(filters, selection, sessionBranchId),
         ...(filters.dateFrom === undefined ? [] : [gte(attendanceSessions.attendanceDate, filters.dateFrom)]),
         ...(filters.dateTo === undefined ? [] : [lte(attendanceSessions.attendanceDate, filters.dateTo)]),
       ]);
       const dailyWhere = whereFrom([
-        ...common,
+        ...employeeFilters(filters, selection, dailyBranchId),
         ne(attendanceDailyRecords.status, 'attendance_replaced'),
         ...(filters.dateFrom === undefined ? [] : [gte(attendanceDailyRecords.attendanceDate, filters.dateFrom)]),
         ...(filters.dateTo === undefined ? [] : [lte(attendanceDailyRecords.attendanceDate, filters.dateTo)]),
@@ -226,7 +230,7 @@ export const createDrizzleReportReader = (
         employeeId: employees.id,
         employeeCode: employees.employeeCode,
         employeeName: employees.fullName,
-        branchId: employees.branchId,
+        branchId: sessionBranchId,
         branchName: branches.name,
         attendanceDate: attendanceSessions.attendanceDate,
         requiredMinutes: attendanceSessions.requiredMinutes,
@@ -240,14 +244,14 @@ export const createDrizzleReportReader = (
         employeeDeletedAt: employees.deletedAt,
       }).from(attendanceSessions)
         .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId)).where(sessionWhere)
+        .innerJoin(branches, eq(branches.id, sessionBranchId)).where(sessionWhere)
         .orderBy(asc(attendanceSessions.attendanceDate), asc(employees.employeeCode));
       const dailyQuery = executor.select({
         id: attendanceDailyRecords.id,
         employeeId: employees.id,
         employeeCode: employees.employeeCode,
         employeeName: employees.fullName,
-        branchId: employees.branchId,
+        branchId: dailyBranchId,
         branchName: branches.name,
         attendanceDate: attendanceDailyRecords.attendanceDate,
         status: attendanceDailyRecords.status,
@@ -255,7 +259,7 @@ export const createDrizzleReportReader = (
         employeeDeletedAt: employees.deletedAt,
       }).from(attendanceDailyRecords)
         .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId)).where(dailyWhere)
+        .innerJoin(branches, eq(branches.id, dailyBranchId)).where(dailyWhere)
         .orderBy(asc(attendanceDailyRecords.attendanceDate), asc(employees.employeeCode));
       const [sessionAggregate, dailyAggregate] = await Promise.all([
         executor.select({
@@ -336,6 +340,7 @@ export const createDrizzleReportReader = (
       const monthTo = filters.monthTo ?? currentMonth;
       if (monthTo > currentMonth) return { kind: 'unavailable' };
       const reportMonths = monthsBetween(monthFrom, monthTo);
+      const payrollFilters = { ...filters, branchId: undefined };
       if (pagination?.purpose === 'availability') {
         return readWith(
           executor,
@@ -347,12 +352,12 @@ export const createDrizzleReportReader = (
         );
       }
       const matchingEmployeeCount = (await executor.select({ value: count() })
-        .from(employees).where(whereFrom(employeeFilters(filters, selection))))[0]?.value ?? 0;
+        .from(employees).where(whereFrom(employeeFilters(payrollFilters, selection))))[0]?.value ?? 0;
       if (matchingEmployeeCount * reportMonths.length > maxInteractivePayrollCandidates) {
         return { kind: 'unavailable' };
       }
       const employeeRows = await executor.select({ id: employees.id, deletedAt: employees.deletedAt })
-        .from(employees).where(whereFrom(employeeFilters(filters, selection)))
+        .from(employees).where(whereFrom(employeeFilters(payrollFilters, selection)))
         .orderBy(asc(employees.employeeCode));
       const selectedRows: Array<{
         payroll: Extract<PayrollResult, { kind: 'success' }>['payroll'];
@@ -369,6 +374,7 @@ export const createDrizzleReportReader = (
           const result = await options.payroll.preview(employee.id, month, executor);
           if (result.kind === 'blocked') return { kind: 'unavailable' };
           if (result.kind !== 'success') continue;
+          if (filters.branchId !== undefined && result.payroll.branchId !== filters.branchId) continue;
           if (total >= offset && selectedRows.length < limit) {
             selectedRows.push({ payroll: result.payroll, isEmployeeDeleted: Boolean(employee.deletedAt) });
           }
@@ -578,9 +584,10 @@ export const createDrizzleReportReader = (
     }
 
     if (reportType === 'weekly-day-off') {
+      const historicalBranchId = sql<number>`coalesce(${attendanceDailyRecords.branchId}, ${employees.branchId})`;
       const conditions = [
         eq(attendanceDailyRecords.status, 'weekly_day_off'),
-        ...employeeFilters(filters, selection),
+        ...employeeFilters(filters, selection, historicalBranchId),
         ...(filters.dateFrom === undefined ? [] : [gte(attendanceDailyRecords.attendanceDate, filters.dateFrom)]),
         ...(filters.dateTo === undefined ? [] : [lte(attendanceDailyRecords.attendanceDate, filters.dateTo)]),
       ];
@@ -590,7 +597,7 @@ export const createDrizzleReportReader = (
         employeeId: employees.id,
         employeeCode: employees.employeeCode,
         employeeName: employees.fullName,
-        branchId: employees.branchId,
+        branchId: historicalBranchId,
         branchName: branches.name,
         attendanceDate: attendanceDailyRecords.attendanceDate,
         requiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
@@ -598,7 +605,7 @@ export const createDrizzleReportReader = (
         employeeDeletedAt: employees.deletedAt,
       }).from(attendanceDailyRecords)
         .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId))
+        .innerJoin(branches, eq(branches.id, historicalBranchId))
         .where(where).orderBy(asc(attendanceDailyRecords.attendanceDate), asc(employees.employeeCode));
       const [records, aggregate] = await Promise.all([
         paginate(query, pagination),
@@ -624,8 +631,14 @@ export const createDrizzleReportReader = (
     if (reportType === 'bonuses' || reportType === 'deductions') {
       const table = reportType === 'bonuses' ? bonuses : deductions;
       const reason = reportType === 'bonuses' ? bonuses.reason : sql<null>`null`;
+      const historicalBranchId = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+      const assignmentAtCreation = and(
+        eq(employeeBranchAssignments.employeeId, table.employeeId),
+        lte(employeeBranchAssignments.effectiveFrom, table.createdAt),
+        or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, table.createdAt)),
+      );
       const conditions = [
-        ...employeeFilters(filters, selection),
+        ...employeeFilters(filters, selection, historicalBranchId),
         ...(filters.monthFrom === undefined ? [] : [gte(table.payrollMonth, monthStart(filters.monthFrom))]),
         ...(filters.monthTo === undefined ? [] : [lte(table.payrollMonth, monthStart(filters.monthTo))]),
         ...(filters.dateFrom === undefined ? [] : [gte(table.createdAt, startOfDate(filters.dateFrom, timeZone))]),
@@ -637,7 +650,7 @@ export const createDrizzleReportReader = (
         employeeId: employees.id,
         employeeCode: employees.employeeCode,
         employeeName: employees.fullName,
-        branchId: employees.branchId,
+        branchId: historicalBranchId,
         branchName: branches.name,
         payrollMonth: table.payrollMonth,
         amount: table.amount,
@@ -646,12 +659,14 @@ export const createDrizzleReportReader = (
         createdAt: table.createdAt,
         updatedAt: table.updatedAt,
       }).from(table).innerJoin(employees, eq(employees.id, table.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+        .innerJoin(branches, eq(branches.id, historicalBranchId))
         .where(where).orderBy(asc(table.payrollMonth), asc(table.id));
       const [records, aggregate] = await Promise.all([
         paginate(query, pagination),
         executor.select({ value: count(), amount: sum(table.amount) }).from(table)
-          .innerJoin(employees, eq(employees.id, table.employeeId)).where(where),
+          .innerJoin(employees, eq(employees.id, table.employeeId))
+          .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where),
       ]);
       const total = aggregate[0]?.value ?? 0;
       const rows = records.map(({ reason: rowReason, ...row }) => ({
@@ -674,8 +689,14 @@ export const createDrizzleReportReader = (
       ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt) };
     }
 
+    const historicalBranchId = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+    const assignmentAtCreation = and(
+      eq(employeeBranchAssignments.employeeId, advances.employeeId),
+      lte(employeeBranchAssignments.effectiveFrom, advances.createdAt),
+      or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, advances.createdAt)),
+    );
     const conditions = [
-      ...employeeFilters(filters, selection),
+      ...employeeFilters(filters, selection, historicalBranchId),
       ...(filters.monthFrom === undefined && filters.monthTo === undefined ? [] : [exists(
         executor.select({ id: advanceInstallments.id }).from(advanceInstallments).where(and(
           eq(advanceInstallments.advanceId, advances.id),
@@ -692,7 +713,7 @@ export const createDrizzleReportReader = (
       employeeId: employees.id,
       employeeCode: employees.employeeCode,
       employeeName: employees.fullName,
-      branchId: employees.branchId,
+      branchId: historicalBranchId,
       branchName: branches.name,
       amount: advances.amount,
       installmentCount: advances.installmentCount,
@@ -701,12 +722,14 @@ export const createDrizzleReportReader = (
       createdAt: advances.createdAt,
       updatedAt: advances.updatedAt,
     }).from(advances).innerJoin(employees, eq(employees.id, advances.employeeId))
-      .innerJoin(branches, eq(branches.id, employees.branchId))
+      .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+      .innerJoin(branches, eq(branches.id, historicalBranchId))
       .where(where).orderBy(asc(advances.startMonth), asc(advances.id));
     const [records, aggregate] = await Promise.all([
       paginate(query, pagination),
       executor.select({ value: count(), amount: sum(advances.amount) }).from(advances)
-        .innerJoin(employees, eq(employees.id, advances.employeeId)).where(where),
+        .innerJoin(employees, eq(employees.id, advances.employeeId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where),
     ]);
     const recordIds = records.map(({ id }) => id);
     const installments = recordIds.length ? await executor.select({

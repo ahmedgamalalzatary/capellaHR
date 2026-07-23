@@ -69,7 +69,10 @@ const setFile = (label: RegExp, file: File) => {
 
 beforeEach(() => {
   mocks.listEmployees.mockResolvedValue(pageOf([employee]));
-  mocks.listBranches.mockResolvedValue(pageOf([{ id: 3, name: 'فرع القاهرة' }]));
+  mocks.listBranches.mockResolvedValue(pageOf([
+    { id: 3, name: 'فرع القاهرة' },
+    { id: 4, name: 'فرع الجيزة' },
+  ]));
 });
 
 afterEach(() => {
@@ -261,12 +264,16 @@ describe('EmployeesView', () => {
     const nameInput = screen.getByLabelText(/الاسم الكامل/) as HTMLInputElement;
     expect(nameInput.value).toBe('أحمد جمال');
     fireEvent.change(nameInput, { target: { value: 'أحمد جمال الزتاري' } });
+    const branchSelect = screen.getByLabelText(/^الفرع/) as HTMLSelectElement;
+    expect(branchSelect.value).toBe('3');
+    fireEvent.change(branchSelect, { target: { value: '4' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
 
     await waitFor(() => expect(mocks.updateEmployee).toHaveBeenCalledTimes(1));
     expect(mocks.updateEmployee.mock.calls[0]?.[0]).toBe(1);
     expect(mocks.updateEmployee.mock.calls[0]?.[1]).toMatchObject({
       fullName: 'أحمد جمال الزتاري',
+      branchId: 4,
     });
     expect((mocks.updateEmployee.mock.calls[0]?.[1] as Record<string, unknown>)['pin']).toBeUndefined();
   });

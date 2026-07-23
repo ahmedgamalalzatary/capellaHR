@@ -213,11 +213,11 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
 
 function EditEmployeeForm({
   employee,
-  branchName,
+  branches,
   onDone,
 }: {
   employee: Employee;
-  branchName: string | undefined;
+  branches: BranchOption[];
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -234,6 +234,7 @@ function EditEmployeeForm({
       whatsappPhone: employee.whatsappPhone,
       age: employee.age,
       address: employee.address,
+      branchId: employee.branchId,
       shiftDurationMinutes: employee.shiftDurationMinutes,
       pin: '',
     },
@@ -255,15 +256,27 @@ function EditEmployeeForm({
         <form noValidate onSubmit={handleSubmit((values) => save.mutate(values))} className="space-y-4">
           <p className="text-[13px] text-muted">
             كود الموظف <span className="tabular">{employee.employeeCode}</span>
-            {branchName ? <> — الفرع: {branchName}</> : null} (الكود والفرع والراتب الأساسي غير قابلة للتعديل)
+            {' '}— الكود والراتب الأساسي غير قابلين للتعديل
           </p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField form={form} name="fullName" label="الاسم الكامل" />
-            <Field label="العنوان" htmlFor="employee-address" required error={errors.address?.message}>
-              <Input id="employee-address" {...register('address')} />
+            <Field label="الفرع" htmlFor="employee-edit-branchId" required error={errors.branchId?.message}>
+              <select
+                id="employee-edit-branchId"
+                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
+                {...register('branchId')}
+              >
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
             </Field>
           </div>
+
+          <Field label="العنوان" htmlFor="employee-address" required error={errors.address?.message}>
+            <Input id="employee-address" {...register('address')} />
+          </Field>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <TextField form={form} name="personalPhone" label="الهاتف الشخصي" ltr />
@@ -428,7 +441,7 @@ export function EmployeesView() {
         <EditEmployeeForm
           key={editing.id}
           employee={editing}
-          branchName={branchNameOf(editing.branchId)}
+          branches={branches}
           onDone={closeForm}
         />
       ) : null}

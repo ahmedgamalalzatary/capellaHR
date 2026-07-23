@@ -7,6 +7,7 @@ export type EmployeeRecord = Omit<CreateEmployeeFields, 'pin'> & { id: number; e
 export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion'>;
 export type EmployeeTransactionContext = unknown;
 export type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
+export type EmployeeUpdateResult = { record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | 'branch_not_found' | 'checked_in';
 export interface EmployeeRepository {
   create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord | 'branch_not_found'>;
   findActiveById(id: number): Promise<EmployeeRecord | null>;
@@ -14,13 +15,13 @@ export interface EmployeeRepository {
   findPhoneOwner(phone: string, excludeId?: number): Promise<{ id: number } | null>;
   branchExists(id: number): Promise<boolean>;
   list(query: ListEmployeesQuery): Promise<{ items: EmployeeRecord[]; total: number }>;
-  update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'branchId' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean): Promise<{ record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | null>;
+  update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<EmployeeUpdateResult | null>;
   softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, cleanupDevices?: (id: number, context: EmployeeTransactionContext) => Promise<void>, prepareFinancials?: (id: number, deletedAt: Date, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeDeleteResult>;
 }
 export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: { prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void> }) => ({
+export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession?(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: { prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void> }) => ({
   async create(input: CreateEmployeeFields & { images: EmployeeImages }) {
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
@@ -39,10 +40,21 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
     for (const phone of new Set([input.personalPhone, input.whatsappPhone].filter((x): x is string => Boolean(x)))) if (await repository.findPhoneOwner(phone, id)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
     const { pin, ...rawChanges } = input;
     const changes = Object.fromEntries(Object.entries(rawChanges).filter(([, value]) => value !== undefined));
-    let stored: { record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | null;
-    try { stored = await repository.update(id, { ...changes, ...(pin ? { pinHash: await hash(pin) } : {}) }, Boolean(pin)); }
+    const branchSubmitted = input.branchId !== undefined;
+    if (branchSubmitted && !attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
+    let stored: EmployeeUpdateResult | null;
+    try { stored = await repository.update(
+      id,
+      { ...changes, ...(pin ? { pinHash: await hash(pin) } : {}) },
+      Boolean(pin),
+      branchSubmitted
+        ? (employeeId, context) => (attendance!.hasAnyOpenSession ?? attendance!.hasOpenSession)(employeeId, context)
+        : undefined,
+    ); }
     catch (error) { if (isDuplicate(error)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل'); throw error; }
     if (!stored) throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
+    if (stored === 'checked_in') throw new EmployeeError('EMPLOYEE_CHECKED_IN', 'يجب تسجيل خروج الموظف أولاً');
+    if (stored === 'branch_not_found') throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     return { employee: expose(stored.record), replacedImages: stored.replacedImages };
   },
   async remove(id: number) {

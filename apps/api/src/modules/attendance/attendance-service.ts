@@ -128,6 +128,7 @@ export interface AttendanceRepository {
   listSessions(query: ListAttendanceSessionsQuery): Promise<{ items: AttendanceSession[]; total: number }>;
   listDeniedAttempts(query: ListAttendanceDeniedAttemptsQuery): Promise<{ items: AttendanceDeniedAttempt[]; total: number }>;
   hasOpenSession(employeeId: number, context?: unknown): Promise<boolean>;
+  hasAnyOpenSession?(employeeId: number, context?: unknown): Promise<boolean>;
 }
 
 export interface AttendanceDeviceGateway {
@@ -358,6 +359,9 @@ export const createAttendanceService = (
     listSessions: (query: ListAttendanceSessionsQuery) => repository.listSessions(query),
     listDeniedAttempts: (query: ListAttendanceDeniedAttemptsQuery) => repository.listDeniedAttempts(query),
     hasOpenSession: (employeeId: number, context?: unknown) => repository.hasOpenSession(employeeId, context),
+    hasAnyOpenSession: (employeeId: number, context?: unknown) => (
+      repository.hasAnyOpenSession ?? repository.hasOpenSession
+    )(employeeId, context),
   };
 };
 

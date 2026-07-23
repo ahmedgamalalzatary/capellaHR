@@ -111,10 +111,12 @@ describe('employeeUpdateFormSchema', () => {
       pin: '',
       age: '30',
       address: 'العنوان',
+      branchId: '4',
       shiftDurationMinutes: '300',
     });
     expect(parsed.pin).toBeUndefined();
     expect(parsed.personal).toBeUndefined();
+    expect(parsed.branchId).toBe(4);
   });
 
   test('still validates a provided pin', () => {

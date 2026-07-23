@@ -1,6 +1,6 @@
 import type { ListDeductionsQuery } from '@capella/contracts';
-import { branches, deductions, employees } from '@capella/database/schema';
-import { and, asc, count, eq, or, sql } from 'drizzle-orm';
+import { branches, deductions, employeeBranchAssignments, employees } from '@capella/database/schema';
+import { and, asc, count, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
 import {
   createFinancialContext,
@@ -13,16 +13,23 @@ import {
 import { calendarMonthInTimeZone, payrollMonthStart } from '../payroll/payroll-domain.js';
 import type { DeductionRecord, DeductionRepository } from './deductions-service.js';
 
+const branchIdAtCreation = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+const assignmentAtCreation = and(
+  eq(employeeBranchAssignments.employeeId, deductions.employeeId),
+  lte(employeeBranchAssignments.effectiveFrom, deductions.createdAt),
+  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, deductions.createdAt)),
+);
 const fields = {
   id: deductions.id, employeeId: deductions.employeeId, employeeCode: employees.employeeCode,
-  employeeName: employees.fullName, branchId: employees.branchId, branchName: branches.name,
+  employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
   payrollMonth: deductions.payrollMonth, amount: deductions.amount, employeeDeletedAt: employees.deletedAt,
   createdAt: deductions.createdAt, updatedAt: deductions.updatedAt,
 };
 const rawFind = async (executor: Executor, id: number) => (
   await executor.select(fields).from(deductions)
     .innerJoin(employees, eq(employees.id, deductions.employeeId))
-    .innerJoin(branches, eq(branches.id, employees.branchId))
+    .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+    .innerJoin(branches, eq(branches.id, branchIdAtCreation))
     .where(eq(deductions.id, id)).limit(1)
 )[0] ?? null;
 const expose = (record: Awaited<ReturnType<typeof rawFind>>): DeductionRecord | null => record
@@ -59,7 +66,7 @@ export const createDrizzleDeductionRepository = (
     async list(query: ListDeductionsQuery) {
       const filters = [];
       if (query.employeeId !== undefined) filters.push(eq(deductions.employeeId, query.employeeId));
-      if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
+      if (query.branchId !== undefined) filters.push(eq(branchIdAtCreation, query.branchId));
       if (query.payrollMonth !== undefined) filters.push(eq(deductions.payrollMonth, payrollMonthStart(query.payrollMonth)));
       if (query.search !== undefined) filters.push(or(
         sql`locate(${query.search}, ${employees.fullName}) > 0`,
@@ -68,11 +75,13 @@ export const createDrizzleDeductionRepository = (
       const where = filters.length ? and(...filters) : undefined;
       const rows = await database.select(fields).from(deductions)
         .innerJoin(employees, eq(employees.id, deductions.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+        .innerJoin(branches, eq(branches.id, branchIdAtCreation))
         .where(where).orderBy(asc(deductions.payrollMonth), asc(deductions.id))
         .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
       const totals = await database.select({ value: count() }).from(deductions)
-        .innerJoin(employees, eq(employees.id, deductions.employeeId)).where(where);
+        .innerJoin(employees, eq(employees.id, deductions.employeeId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where);
       return { items: rows.map((row) => expose(row)!), total: totals[0]?.value ?? 0 };
     },
     async update(id, input) {

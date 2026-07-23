@@ -1,11 +1,12 @@
 import { type createDatabase } from '@capella/database';
-import { attendanceDailyRecords, branches, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, branches, employeeBranchAssignments, employees } from '@capella/database/schema';
 import {
   and,
   asc,
   count,
   desc,
   eq,
+  gt,
   gte,
   isNull,
   lte,
@@ -25,12 +26,18 @@ type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Transaction;
 
+const historicalBranchId = sql<number>`coalesce(${attendanceDailyRecords.branchId}, ${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+const assignmentAtCreation = and(
+  eq(employeeBranchAssignments.employeeId, attendanceDailyRecords.employeeId),
+  lte(employeeBranchAssignments.effectiveFrom, attendanceDailyRecords.createdAt),
+  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, attendanceDailyRecords.createdAt)),
+);
 const recordFields = {
   id: attendanceDailyRecords.id,
   employeeId: employees.id,
   employeeCode: employees.employeeCode,
   employeeName: employees.fullName,
-  branchId: branches.id,
+  branchId: historicalBranchId,
   branchName: branches.name,
   attendanceDate: attendanceDailyRecords.attendanceDate,
   status: sql<WeeklyDayRecord['status']>`${attendanceDailyRecords.status}`,
@@ -48,7 +55,8 @@ const findActiveRecord = async (
   await executor.select(recordFields)
     .from(attendanceDailyRecords)
     .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
-    .innerJoin(branches, eq(branches.id, employees.branchId))
+    .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+    .innerJoin(branches, eq(branches.id, historicalBranchId))
     .where(and(
       eq(attendanceDailyRecords.id, id),
       isNull(employees.deletedAt),
@@ -109,7 +117,7 @@ export const createDrizzleWeeklyDayOffRepository = (
       ne(attendanceDailyRecords.status, 'attendance_replaced'),
     ];
     if (query.employeeId !== undefined) filters.push(eq(employees.id, query.employeeId));
-    if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
+    if (query.branchId !== undefined) filters.push(eq(historicalBranchId, query.branchId));
     if (query.status !== undefined) filters.push(eq(attendanceDailyRecords.status, query.status));
     if (query.dateFrom !== undefined) filters.push(gte(attendanceDailyRecords.attendanceDate, query.dateFrom));
     if (query.dateTo !== undefined) filters.push(lte(attendanceDailyRecords.attendanceDate, query.dateTo));
@@ -124,7 +132,8 @@ export const createDrizzleWeeklyDayOffRepository = (
     const join = (executor: Executor) => executor.select(recordFields)
       .from(attendanceDailyRecords)
       .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
-      .innerJoin(branches, eq(branches.id, employees.branchId));
+      .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+      .innerJoin(branches, eq(branches.id, historicalBranchId));
     const items = await join(database)
       .where(where)
       .orderBy(desc(attendanceDailyRecords.attendanceDate), asc(employees.employeeCode))
@@ -133,7 +142,8 @@ export const createDrizzleWeeklyDayOffRepository = (
     const totals = await database.select({ value: count() })
       .from(attendanceDailyRecords)
       .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
-      .innerJoin(branches, eq(branches.id, employees.branchId))
+      .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+      .innerJoin(branches, eq(branches.id, historicalBranchId))
       .where(where);
     return { items, total: totals[0]?.value ?? 0 };
   },

@@ -8,6 +8,7 @@ import {
   deviceHistory,
   devicePairingRequests,
   devices,
+  employeeBranchAssignments,
   employeeCodeSequence,
   employeeImages,
   employeePhoneReservations,
@@ -77,6 +78,7 @@ beforeEach(async () => {
   await database.delete(authSessions);
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
+  await database.delete(employeeBranchAssignments);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);

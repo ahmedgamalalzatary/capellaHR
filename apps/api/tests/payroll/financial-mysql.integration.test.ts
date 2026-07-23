@@ -12,6 +12,7 @@ import {
   devicePairingRequests,
   devices,
   employeeCodeSequence,
+  employeeBranchAssignments,
   employeeImages,
   employeePhoneReservations,
   employeeSalaryPeriods,
@@ -59,6 +60,7 @@ const clear = async () => {
   await database.delete(authSessions);
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
+  await database.delete(employeeBranchAssignments);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
@@ -100,6 +102,39 @@ const createEmployee = async (
 }))[0].insertId);
 
 describe('MySQL-backed salary domain', () => {
+  it('keeps financial records under the branch where they were created after reassignment', async () => {
+    const oldBranchId = await createBranch('Old branch');
+    const newBranchId = await createBranch('New branch');
+    const employeeId = await createEmployee(oldBranchId, 1);
+    const employeeCreatedAt = new Date('2026-06-01T09:00:00.000Z');
+    await database.insert(employeeBranchAssignments).values({
+      employeeId, branchId: oldBranchId, effectiveFrom: employeeCreatedAt, createdAt: employeeCreatedAt,
+    });
+    const bonusModule = createBonusModule(database, { now: () => fixedNow });
+    const deductionModule = createDeductionModule(database, { now: () => fixedNow });
+    const advanceModule = createAdvanceModule(database, { now: () => fixedNow });
+    const payrollModule = createPayrollModule(database, { now: () => fixedNow, attendance });
+    const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07', reason: 'سبب' });
+    const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-07' });
+    const advance = await advanceModule.service.create({ employeeId, amount: '200.00', installmentCount: 2, startMonth: '2026-07' });
+    await payrollModule.service.finalize(employeeId, '2026-06');
+    const reassignedAt = new Date(fixedNow.getTime() + 60_000);
+    await database.update(employeeBranchAssignments).set({ effectiveTo: reassignedAt })
+      .where(and(eq(employeeBranchAssignments.employeeId, employeeId), eq(employeeBranchAssignments.branchId, oldBranchId)));
+    await database.insert(employeeBranchAssignments).values({
+      employeeId, branchId: newBranchId, effectiveFrom: reassignedAt, createdAt: reassignedAt,
+    });
+    await database.update(employees).set({ branchId: newBranchId, updatedAt: reassignedAt }).where(eq(employees.id, employeeId));
+
+    await expect(bonusModule.service.get(bonus.id)).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
+    await expect(bonusModule.service.list({ branchId: oldBranchId, page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 1, items: [{ id: bonus.id, branchId: oldBranchId }] });
+    await expect(bonusModule.service.list({ branchId: newBranchId, page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 0, items: [] });
+    await expect(deductionModule.service.get(deduction.id)).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
+    await expect(advanceModule.service.get(advance.id)).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
+    await expect(payrollModule.service.preview(employeeId, '2026-06')).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
+  });
   it('records effective salary periods while applying a change to the whole current month', async () => {
     const branchId = await createBranch();
     const employeeId = await createEmployee(branchId, 1, new Date('2026-05-10T09:00:00.000Z'));

@@ -45,8 +45,8 @@ describe('employee contracts', () => {
     expect(updateEmployeeFieldsSchema.safeParse({ age: [30] }).success).toBe(false);
   });
 
-  it('does not permit branch or code updates', () => {
-    expect(() => updateEmployeeFieldsSchema.parse({ branchId: 2 })).toThrow();
+  it('permits branch updates but not employee code or salary updates', () => {
+    expect(updateEmployeeFieldsSchema.parse({ branchId: '2' })).toEqual({ branchId: 2 });
     expect(() => updateEmployeeFieldsSchema.parse({ employeeCode: 10 })).toThrow();
     expect(() => updateEmployeeFieldsSchema.parse({ monthlyBaseSalary: '6000.00' })).toThrow();
   });

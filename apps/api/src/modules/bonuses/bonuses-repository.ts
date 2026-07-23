@@ -1,6 +1,6 @@
 import type { ListBonusesQuery } from '@capella/contracts';
-import { bonuses, branches, employees } from '@capella/database/schema';
-import { and, asc, count, eq, or, sql } from 'drizzle-orm';
+import { bonuses, branches, employeeBranchAssignments, employees } from '@capella/database/schema';
+import { and, asc, count, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
 import {
   createFinancialContext,
@@ -13,9 +13,15 @@ import {
 import { calendarMonthInTimeZone, payrollMonthStart } from '../payroll/payroll-domain.js';
 import type { BonusRecord, BonusRepository } from './bonuses-service.js';
 
+const branchIdAtCreation = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+const assignmentAtCreation = and(
+  eq(employeeBranchAssignments.employeeId, bonuses.employeeId),
+  lte(employeeBranchAssignments.effectiveFrom, bonuses.createdAt),
+  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, bonuses.createdAt)),
+);
 const fields = {
   id: bonuses.id, employeeId: bonuses.employeeId, employeeCode: employees.employeeCode,
-  employeeName: employees.fullName, branchId: employees.branchId, branchName: branches.name,
+  employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
   payrollMonth: bonuses.payrollMonth, amount: bonuses.amount, reason: bonuses.reason,
   employeeDeletedAt: employees.deletedAt,
   createdAt: bonuses.createdAt, updatedAt: bonuses.updatedAt,
@@ -25,7 +31,8 @@ const expose = (record: typeof fields extends never ? never : Awaited<ReturnType
 const rawFind = async (executor: Executor, id: number) => (
   await executor.select(fields).from(bonuses)
     .innerJoin(employees, eq(employees.id, bonuses.employeeId))
-    .innerJoin(branches, eq(branches.id, employees.branchId))
+    .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+    .innerJoin(branches, eq(branches.id, branchIdAtCreation))
     .where(eq(bonuses.id, id)).limit(1)
 )[0] ?? null;
 const findRecord = async (executor: Executor, id: number): Promise<BonusRecord | null> => expose(await rawFind(executor, id));
@@ -60,7 +67,7 @@ export const createDrizzleBonusRepository = (
     async list(query: ListBonusesQuery) {
       const filters = [];
       if (query.employeeId !== undefined) filters.push(eq(bonuses.employeeId, query.employeeId));
-      if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
+      if (query.branchId !== undefined) filters.push(eq(branchIdAtCreation, query.branchId));
       if (query.payrollMonth !== undefined) filters.push(eq(bonuses.payrollMonth, payrollMonthStart(query.payrollMonth)));
       if (query.search !== undefined) filters.push(or(
         sql`locate(${query.search}, ${employees.fullName}) > 0`,
@@ -69,11 +76,13 @@ export const createDrizzleBonusRepository = (
       const where = filters.length ? and(...filters) : undefined;
       const rows = await database.select(fields).from(bonuses)
         .innerJoin(employees, eq(employees.id, bonuses.employeeId))
-        .innerJoin(branches, eq(branches.id, employees.branchId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+        .innerJoin(branches, eq(branches.id, branchIdAtCreation))
         .where(where).orderBy(asc(bonuses.payrollMonth), asc(bonuses.id))
         .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
       const totals = await database.select({ value: count() }).from(bonuses)
-        .innerJoin(employees, eq(employees.id, bonuses.employeeId)).where(where);
+        .innerJoin(employees, eq(employees.id, bonuses.employeeId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where);
       return { items: rows.map((row) => expose(row)!), total: totals[0]?.value ?? 0 };
     },
     async update(id, input) {

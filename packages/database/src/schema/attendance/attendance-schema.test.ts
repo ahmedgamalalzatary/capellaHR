@@ -40,10 +40,12 @@ describe('attendance job schema', () => {
 
 describe('attendance daily-record schema', () => {
   it('stores the absence snapshot and reversible weekly day-off state', () => {
-    expect(Object.keys(getTableColumns(attendanceDailyRecords))).toEqual(expect.arrayContaining([
-      'id', 'employeeId', 'attendanceDate', 'status', 'absenceRequiredMinutes',
+    const columns = getTableColumns(attendanceDailyRecords);
+    expect(Object.keys(columns)).toEqual(expect.arrayContaining([
+      'id', 'employeeId', 'branchId', 'attendanceDate', 'status', 'absenceRequiredMinutes',
       'dayOffConvertedAt', 'replacedBySessionId', 'replacedAt', 'createdAt', 'updatedAt',
     ]));
+    expect(columns.branchId.notNull).toBe(true);
   });
 
   it('enforces one record per employee/date and a valid duration snapshot', () => {
@@ -60,11 +62,12 @@ describe('attendance daily-record schema', () => {
     expect(attendanceSessions).toBeDefined();
     const columns = getTableColumns(attendanceSessions);
     expect(Object.keys(columns)).toEqual(expect.arrayContaining([
-      'id', 'employeeId', 'attendanceDate', 'requiredMinutes', 'checkInAt',
+      'id', 'employeeId', 'branchId', 'attendanceDate', 'requiredMinutes', 'checkInAt',
       'checkOutAt', 'openEmployeeId', 'workedMinutes', 'overtimeMinutes', 'shortageMinutes',
       'automaticTimeoutAt', 'automaticTimeoutCorrectedAt', 'flagged',
       'createdAt', 'updatedAt',
     ]));
+    expect(columns.branchId.notNull).toBe(true);
     const config = getTableConfig(attendanceSessions);
     expect(config.indexes.some((index) => (
       index.config.name === 'attendance_sessions_employee_date_unique'

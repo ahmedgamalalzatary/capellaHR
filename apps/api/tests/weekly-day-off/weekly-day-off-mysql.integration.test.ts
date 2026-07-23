@@ -7,12 +7,13 @@ import {
   deviceHistory,
   devicePairingRequests,
   devices,
+  employeeBranchAssignments,
   employeeCodeSequence,
   employeeImages,
   employeePhoneReservations,
   employees,
 } from '@capella/database/schema';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -68,7 +69,9 @@ const createEmployee = async (
     createdAt: fixedNow,
     updatedAt: fixedNow,
   });
-  return Number(result[0].insertId);
+  const employeeId = Number(result[0].insertId);
+  await database.insert(employeeBranchAssignments).values({ employeeId, branchId, effectiveFrom: fixedNow, createdAt: fixedNow });
+  return employeeId;
 };
 
 const createAbsence = async (
@@ -97,12 +100,30 @@ beforeEach(async () => {
   await database.delete(authSessions);
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
+  await database.delete(employeeBranchAssignments);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
 });
 
 describe('MySQL-backed weekly day off', () => {
+  it('keeps a historical daily record under its original branch after reassignment', async () => {
+    const oldBranch = await createBranch('Old branch');
+    const newBranch = await createBranch('New branch');
+    const employeeId = await createEmployee(oldBranch, 1, 'Employee');
+    await createAbsence(employeeId, '2026-07-10');
+    const reassignedAt = new Date(fixedNow.getTime() + 60_000);
+    await database.update(employeeBranchAssignments).set({ effectiveTo: reassignedAt })
+      .where(and(eq(employeeBranchAssignments.employeeId, employeeId), eq(employeeBranchAssignments.branchId, oldBranch)));
+    await database.insert(employeeBranchAssignments).values({ employeeId, branchId: newBranch, effectiveFrom: reassignedAt, createdAt: reassignedAt });
+    await database.update(employees).set({ branchId: newBranch, updatedAt: reassignedAt }).where(eq(employees.id, employeeId));
+    const module = createWeeklyDayOffModule(database, { now: () => reassignedAt, isFinanciallyLocked: isFinanciallyUnlocked });
+
+    await expect(module.service.list({ branchId: oldBranch, page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 1, items: [{ employeeId, branchId: oldBranch }] });
+    await expect(module.service.list({ branchId: newBranch, page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 0, items: [] });
+  });
   it('lists active employee records with literal search and all filters', async () => {
     const cairo = await createBranch('القاهرة');
     const giza = await createBranch('الجيزة');

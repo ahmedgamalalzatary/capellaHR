@@ -190,6 +190,20 @@
       "when": 1784829855890,
       "tag": "0026_damp_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1784831599306,
+      "tag": "0027_chief_squadron_supreme",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1784832647502,
+      "tag": "0028_gigantic_steel_serpent",
+      "breakpoints": true
     }
   ]
 }

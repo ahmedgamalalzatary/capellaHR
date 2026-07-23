@@ -3,10 +3,11 @@ import {
   advanceInstallments,
   advances,
   branches,
+  employeeBranchAssignments,
   employees,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, count, eq, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
 
 import {
   createFinancialContext,
@@ -26,16 +27,23 @@ import {
 } from '../payroll/payroll-domain.js';
 import type { AdvanceRecord, AdvanceRepository } from './advances-service.js';
 
+const branchIdAtCreation = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
+const assignmentAtCreation = and(
+  eq(employeeBranchAssignments.employeeId, advances.employeeId),
+  lte(employeeBranchAssignments.effectiveFrom, advances.createdAt),
+  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, advances.createdAt)),
+);
 const fields = {
   id: advances.id, employeeId: advances.employeeId, employeeCode: employees.employeeCode,
-  employeeName: employees.fullName, branchId: employees.branchId, branchName: branches.name,
+  employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
   amount: advances.amount, installmentCount: advances.installmentCount, startMonth: advances.startMonth,
   employeeDeletedAt: employees.deletedAt, createdAt: advances.createdAt, updatedAt: advances.updatedAt,
 };
 const rawFind = async (executor: Executor, id: number) => (
   await executor.select(fields).from(advances)
     .innerJoin(employees, eq(employees.id, advances.employeeId))
-    .innerJoin(branches, eq(branches.id, employees.branchId))
+    .leftJoin(employeeBranchAssignments, assignmentAtCreation)
+    .innerJoin(branches, eq(branches.id, branchIdAtCreation))
     .where(eq(advances.id, id)).limit(1)
 )[0] ?? null;
 const findRecord = async (executor: Executor, id: number): Promise<AdvanceRecord | null> => {
@@ -132,7 +140,7 @@ export const createDrizzleAdvanceRepository = (
     async list(query: ListAdvancesQuery) {
       const filters = [];
       if (query.employeeId !== undefined) filters.push(eq(advances.employeeId, query.employeeId));
-      if (query.branchId !== undefined) filters.push(eq(employees.branchId, query.branchId));
+      if (query.branchId !== undefined) filters.push(eq(branchIdAtCreation, query.branchId));
       if (query.payrollMonth !== undefined) filters.push(sql`exists (
         select 1 from ${advanceInstallments}
         where ${advanceInstallments.advanceId} = ${advances.id}
@@ -144,11 +152,13 @@ export const createDrizzleAdvanceRepository = (
       )!);
       const where = filters.length ? and(...filters) : undefined;
       const rows = await database.select({ id: advances.id }).from(advances)
-        .innerJoin(employees, eq(employees.id, advances.employeeId)).where(where)
+        .innerJoin(employees, eq(employees.id, advances.employeeId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where)
         .orderBy(asc(advances.startMonth), asc(advances.id))
         .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
       const totals = await database.select({ value: count() }).from(advances)
-        .innerJoin(employees, eq(employees.id, advances.employeeId)).where(where);
+        .innerJoin(employees, eq(employees.id, advances.employeeId))
+        .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where);
       const items = await Promise.all(rows.map(({ id }) => findRecord(database, id)));
       return { items: items.filter((item): item is AdvanceRecord => item !== null), total: totals[0]?.value ?? 0 };
     },

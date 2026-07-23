@@ -44,6 +44,7 @@ const makeService = (): AttendanceService => ({
   listSessions: vi.fn(async () => ({ items: [session], total: 1 })),
   listDeniedAttempts: vi.fn(async () => ({ items: [], total: 0 })),
   hasOpenSession: vi.fn(async () => true),
+  hasAnyOpenSession: vi.fn(async () => true),
 });
 
 describe('attendance HTTP API', () => {
