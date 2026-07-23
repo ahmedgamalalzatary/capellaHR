@@ -116,8 +116,9 @@ describe('report worker loop', () => {
 
   it('contains iteration errors, waits, and continues polling', async () => {
     const controller = new AbortController();
+    const iterationError = new Error('temporary database failure');
     const processNext = vi.fn()
-      .mockRejectedValueOnce(new Error('temporary database failure'))
+      .mockRejectedValueOnce(iterationError)
       .mockResolvedValueOnce(null);
     const onIterationError = vi.fn();
     const sleep = vi.fn(async () => {
@@ -132,7 +133,8 @@ describe('report worker loop', () => {
     });
 
     expect(processNext).toHaveBeenCalledTimes(2);
-    expect(onIterationError).toHaveBeenCalledTimes(1);
+    expect(onIterationError).toHaveBeenCalledOnce();
+    expect(onIterationError).toHaveBeenCalledWith(iterationError);
     expect(sleep).toHaveBeenCalledTimes(2);
   });
 

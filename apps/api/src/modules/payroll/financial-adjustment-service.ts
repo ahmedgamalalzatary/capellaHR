@@ -7,6 +7,7 @@ export type FinancialAdjustmentRecord = {
   branchName: string;
   payrollMonth: string;
   amount: string;
+  reason?: string | null;
   employeeDeletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

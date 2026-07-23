@@ -110,7 +110,7 @@ Current branch endpoints:
 - [x] Preserve active employee self-service after device revocation until checkout, while blocking new verification/login; checkout and timeout now end the exception through the Attendance integration.
 - [x] Verify personal and branch devices silently by hashing the browser's installation marker and matching it to the assigned active device.
 - [x] Wire marker-only personal-device verification into Auth and marker-only branch-device verification into Attendance.
-- [x] Add admin-only device list/detail/status/history endpoints, assignment/browser/platform search, filters, and assignment identity without exposing credentials or secrets.
+- [x] Add admin-only device list/detail/status/history endpoints, assignment/browser/platform search, filters, and assignment identity without exposing installation-marker data or other secrets.
 - [x] Require online API access for pairing; implement no offline queue.
 - [x] Add pairing-request concurrency, single-use storage, replacement, revocation, authorization, and MySQL integration tests.
 - [x] Keep one-time pairing links valid until used, cancelled, or superseded; pairing requires only the browser's local installation marker.

@@ -119,8 +119,8 @@ describe('MySQL-backed employee self-service', () => {
 
     const payrollMonth = currentCairoMonth();
     const payrollDate = `${payrollMonth}-01`;
-    await bonusModule.service.create({ employeeId: owner.id, amount: '100.00', payrollMonth });
-    await bonusModule.service.create({ employeeId: other.id, amount: '999.00', payrollMonth });
+    await bonusModule.service.create({ employeeId: owner.id, amount: '100.00', payrollMonth, reason: 'سبب' });
+    await bonusModule.service.create({ employeeId: other.id, amount: '999.00', payrollMonth, reason: 'سبب آخر' });
     await deductionModule.service.create({ employeeId: owner.id, amount: '20.00', payrollMonth });
     await deductionModule.service.create({ employeeId: other.id, amount: '888.00', payrollMonth });
     await advanceModule.service.create({ employeeId: owner.id, amount: '200.00', installmentCount: 2, startMonth: payrollMonth });
@@ -216,6 +216,7 @@ describe('MySQL-backed employee self-service', () => {
     ]));
     expect(JSON.stringify(attendanceResponse.body)).not.toMatch(/employeeId|employeeCode|employeeName|branchId|branchName|flagged/);
     expect(responseData<{ amount: string }>(bonusesResponse.body).map((item) => item.amount)).toEqual(['100.00']);
+    expect(responseData<{ reason: string }>(bonusesResponse.body).map((item) => item.reason)).toEqual(['سبب']);
     expect(responseData<{ amount: string }>(deductionsResponse.body).map((item) => item.amount)).toEqual(['20.00']);
     expect(responseData<{ amount: string }>(advancesResponse.body).map((item) => item.amount)).toEqual(['200.00']);
     expect(responseData<{ attendanceDate: string }>(daysResponse.body).map((item) => item.attendanceDate)).toEqual([payrollDate]);

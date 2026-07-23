@@ -15,6 +15,7 @@ const makeAuth = (actorType: 'admin' | 'employee' | null = 'admin') => ({
   }),
 }) as unknown as AuthService;
 const adjustment = {
+  reason: 'أداء استثنائي',
   id: 1, employeeId: 7, employeeCode: 10, employeeName: 'موظف', branchId: 2,
   branchName: 'فرع', payrollMonth: '2026-07', amount: '100.00', employeeDeletedAt: null,
   createdAt: new Date(), updatedAt: new Date(),
@@ -59,8 +60,12 @@ describe('financial HTTP APIs', () => {
       advanceService: advanceService(),
     });
     const cookie = { Cookie: 'capella_session=x' };
+    const createdBonus = await request(app).post('/api/v1/bonuses').set(cookie)
+      .send({ employeeId: 7, amount: '100', payrollMonth: '2026-07', reason: 'أداء استثنائي' });
+    expect(createdBonus.status).toBe(201);
+    expect(createdBonus.body.data.reason).toBe('أداء استثنائي');
     expect((await request(app).post('/api/v1/bonuses').set(cookie)
-      .send({ employeeId: 7, amount: '100', payrollMonth: '2026-07' })).status).toBe(201);
+      .send({ employeeId: 7, amount: '100', payrollMonth: '2026-07' })).status).toBe(400);
     expect((await request(app).post('/api/v1/deductions').set(cookie)
       .send({ employeeId: 7, amount: '10', payrollMonth: '2026-07' })).status).toBe(201);
     expect((await request(app).post('/api/v1/advances').set(cookie)

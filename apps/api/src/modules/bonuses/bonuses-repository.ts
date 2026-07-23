@@ -16,7 +16,8 @@ import type { BonusRecord, BonusRepository } from './bonuses-service.js';
 const fields = {
   id: bonuses.id, employeeId: bonuses.employeeId, employeeCode: employees.employeeCode,
   employeeName: employees.fullName, branchId: employees.branchId, branchName: branches.name,
-  payrollMonth: bonuses.payrollMonth, amount: bonuses.amount, employeeDeletedAt: employees.deletedAt,
+  payrollMonth: bonuses.payrollMonth, amount: bonuses.amount, reason: bonuses.reason,
+  employeeDeletedAt: employees.deletedAt,
   createdAt: bonuses.createdAt, updatedAt: bonuses.updatedAt,
 };
 const expose = (record: typeof fields extends never ? never : Awaited<ReturnType<typeof rawFind>>) => record
@@ -47,7 +48,7 @@ export const createDrizzleBonusRepository = (
         const at = context.now();
         const inserted = await transaction.insert(bonuses).values({
           employeeId: input.employeeId, payrollMonth: payrollMonthStart(input.payrollMonth),
-          amount: input.amount, createdAt: at, updatedAt: at,
+          amount: input.amount, reason: input.reason, createdAt: at, updatedAt: at,
         });
         const id = Number(inserted[0].insertId);
         const record = (await findRecord(transaction, id))!;
@@ -94,6 +95,7 @@ export const createDrizzleBonusRepository = (
         await transaction.update(bonuses).set({
           ...(input.amount === undefined ? {} : { amount: input.amount }),
           ...(input.payrollMonth === undefined ? {} : { payrollMonth: payrollMonthStart(input.payrollMonth) }),
+          reason: input.reason,
           updatedAt: context.now(),
         }).where(eq(bonuses.id, id));
         const record = (await findRecord(transaction, id))!;

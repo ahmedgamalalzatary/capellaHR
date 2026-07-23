@@ -1,0 +1,1 @@
+ALTER TABLE `bonuses` ADD `reason` varchar(500);

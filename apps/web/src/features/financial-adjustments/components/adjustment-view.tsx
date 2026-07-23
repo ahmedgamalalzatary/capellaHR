@@ -19,6 +19,8 @@ import { employeeQueryKeys } from '../../employees/query-keys';
 import {
   adjustmentCreateFormSchema,
   adjustmentUpdateFormSchema,
+  bonusAdjustmentCreateFormSchema,
+  bonusAdjustmentUpdateFormSchema,
   type AdjustmentCreateFormValues,
   type AdjustmentUpdateFormValues,
 } from '../schemas/adjustment-form';
@@ -40,23 +42,26 @@ const serverErrorMessage = (error: unknown): string | null => {
       error.fieldErrors.amount?.[0]
       ?? error.fieldErrors.payrollMonth?.[0]
       ?? error.fieldErrors.employeeId?.[0]
+      ?? error.fieldErrors.reason?.[0]
       ?? error.message
     );
   }
   return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
-type CreateFormInput = import('zod').input<typeof adjustmentCreateFormSchema>;
+type CreateFormInput = import('zod').input<typeof adjustmentCreateFormSchema> & { reason?: string };
 
 function AdjustmentCreateForm({
   api,
   queryKeys,
   title,
+  reasonLabel,
   onDone,
 }: {
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
   title: string;
+  reasonLabel: string | undefined;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -71,8 +76,8 @@ function AdjustmentCreateForm({
     handleSubmit,
     formState: { errors },
   } = useForm<CreateFormInput, unknown, AdjustmentCreateFormValues>({
-    resolver: zodResolver(adjustmentCreateFormSchema),
-    defaultValues: { employeeId: '', amount: '', payrollMonth: '' },
+    resolver: zodResolver(reasonLabel ? bonusAdjustmentCreateFormSchema : adjustmentCreateFormSchema),
+    defaultValues: { employeeId: '', amount: '', payrollMonth: '', reason: '' },
   });
 
   const save = useMutation({
@@ -136,6 +141,23 @@ function AdjustmentCreateForm({
           <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
             <Input id="adjustment-month" type="month" dir="ltr" {...register('payrollMonth')} />
           </Field>
+          {reasonLabel ? (
+            <Field
+              label={reasonLabel}
+              htmlFor="adjustment-reason"
+              required
+              error={errors.reason?.message}
+              className="sm:col-span-2 lg:col-span-3"
+            >
+              <textarea
+                id="adjustment-reason"
+                rows={3}
+                maxLength={500}
+                className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
+                {...register('reason')}
+              />
+            </Field>
+          ) : null}
         </div>
         {save.error ? (
           <p role="alert" className="text-[13px] text-danger">
@@ -160,12 +182,14 @@ function AdjustmentEditForm({
   queryKeys,
   record,
   title,
+  reasonLabel,
   onDone,
 }: {
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
   record: FinancialAdjustment;
   title: string;
+  reasonLabel: string | undefined;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -174,8 +198,12 @@ function AdjustmentEditForm({
     handleSubmit,
     formState: { errors },
   } = useForm<AdjustmentUpdateFormValues>({
-    resolver: zodResolver(adjustmentUpdateFormSchema),
-    defaultValues: { amount: record.amount, payrollMonth: record.payrollMonth },
+    resolver: zodResolver(reasonLabel ? bonusAdjustmentUpdateFormSchema : adjustmentUpdateFormSchema),
+    defaultValues: {
+      amount: record.amount,
+      payrollMonth: record.payrollMonth,
+      reason: record.reason ?? '',
+    },
   });
 
   const save = useMutation({
@@ -209,6 +237,23 @@ function AdjustmentEditForm({
           <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
             <Input id="adjustment-month" type="month" dir="ltr" {...register('payrollMonth')} />
           </Field>
+          {reasonLabel ? (
+            <Field
+              label={reasonLabel}
+              htmlFor="adjustment-reason"
+              required
+              error={errors.reason?.message}
+              className="sm:col-span-2 lg:col-span-3"
+            >
+              <textarea
+                id="adjustment-reason"
+                rows={3}
+                maxLength={500}
+                className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
+                {...register('reason')}
+              />
+            </Field>
+          ) : null}
         </div>
         {save.error ? (
           <p role="alert" className="text-[13px] text-danger">
@@ -232,10 +277,12 @@ export function AdjustmentView({
   api,
   queryKeys,
   labels,
+  reasonLabel,
 }: {
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
   labels: AdjustmentLabels;
+  reasonLabel?: string;
 }) {
   const queryClient = useQueryClient();
   const formatters = useDisplayFormatters();
@@ -352,6 +399,7 @@ export function AdjustmentView({
           api={api}
           queryKeys={queryKeys}
           title={labels.formTitleCreate}
+          reasonLabel={reasonLabel}
           onDone={closeForm}
         />
       ) : editing ? (
@@ -361,6 +409,7 @@ export function AdjustmentView({
           queryKeys={queryKeys}
           record={editing}
           title={labels.formTitleEdit}
+          reasonLabel={reasonLabel}
           onDone={closeForm}
         />
       ) : null}
@@ -396,6 +445,7 @@ export function AdjustmentView({
                   <th className="hidden px-4 py-2.5 text-start font-medium md:table-cell">الفرع</th>
                   <th className="px-4 py-2.5 text-start font-medium">شهر الراتب</th>
                   <th className="px-4 py-2.5 text-start font-medium">المبلغ</th>
+                  {reasonLabel ? <th className="px-4 py-2.5 text-start font-medium">السبب</th> : null}
                   <th className="px-4 py-2.5 text-start font-medium">إجراءات</th>
                 </tr>
               </thead>
@@ -420,6 +470,11 @@ export function AdjustmentView({
                     <td className="px-4 py-3">
                       <span className="tabular">{formatMoney(record.amount)}</span>
                     </td>
+                    {reasonLabel ? (
+                      <td className="max-w-80 whitespace-normal px-4 py-3 text-muted">
+                        {record.reason ?? '—'}
+                      </td>
+                    ) : null}
                     <td className="px-4 py-3">
                       {record.employeeDeletedAt !== null ? (
                         <Badge variant="neutral">موظف محذوف</Badge>

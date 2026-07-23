@@ -126,6 +126,7 @@ const seed = async () => {
     employeeId,
     payrollMonth: '2026-07-01',
     amount: '100.00',
+    reason: 'أداء استثنائي',
     createdAt: now,
     updatedAt: now,
   });
@@ -194,6 +195,8 @@ describe('MySQL-backed reports', () => {
       }
       if (reportType === 'bonuses') {
         expect(result.snapshot.rows[0]?.amount).toBe('100.00');
+        expect(result.snapshot.rows[0]?.reason).toBe('أداء استثنائي');
+        expect(result.snapshot.columns).toContainEqual({ key: 'reason', label: 'سبب المكافأة' });
         expect(result.snapshot.summary.totalAmount).toBe('100.00');
       }
       if (reportType === 'deductions') {

@@ -8,13 +8,18 @@ import {
 import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.js';
 
 export const bonusParamsSchema = z.object({ bonusId: coercedMysqlIntSchema });
+export const bonusReasonSchema = z.string().trim().min(1).max(500);
 export const createBonusSchema = z.object({
   employeeId: coercedMysqlIntSchema,
   amount: moneyAmountSchema,
   payrollMonth: payrollMonthSchema,
+  reason: bonusReasonSchema,
 }).strict();
-export const updateBonusSchema = createBonusSchema.omit({ employeeId: true })
-  .partial().strict().refine((value) => Object.keys(value).length > 0, 'يجب إرسال تعديل واحد على الأقل');
+export const updateBonusSchema = z.object({
+  amount: moneyAmountSchema.optional(),
+  payrollMonth: payrollMonthSchema.optional(),
+  reason: bonusReasonSchema,
+}).strict();
 export const listBonusesQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
   branchId: coercedMysqlIntSchema.optional(),

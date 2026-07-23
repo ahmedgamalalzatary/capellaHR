@@ -1,4 +1,4 @@
-/** Bonus and deduction records share one wire shape on the financial API. */
+/** Bonus and deduction records share a wire shape; only bonuses include a reason. */
 export interface FinancialAdjustment {
   id: number;
   employeeId: number;
@@ -8,6 +8,7 @@ export interface FinancialAdjustment {
   branchName: string;
   payrollMonth: string;
   amount: string;
+  reason?: string | null;
   employeeDeletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -26,11 +27,13 @@ export interface CreateAdjustmentInput {
   employeeId: number;
   amount: string;
   payrollMonth: string;
+  reason?: string;
 }
 
 export interface UpdateAdjustmentInput {
   amount?: string;
   payrollMonth?: string;
+  reason?: string;
 }
 
 export interface AdjustmentApi {

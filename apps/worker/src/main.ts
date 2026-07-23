@@ -54,6 +54,7 @@ const closeDatabase = () => new Promise<void>((resolve, reject) => {
 });
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);
+logger.info({ pollIntervalMs: env.REPORT_WORKER_POLL_MS }, 'Background worker started');
 
 try {
   const maintainAttendance = async () => {
@@ -83,13 +84,14 @@ try {
     maintenanceIntervalMs: maintenanceIntervalMilliseconds,
     maintain: maintainAttendance,
     reportMaintain: maintainReports,
-    onIterationError: () => logger.error('Background worker iteration failed'),
+    onIterationError: (error) => logger.error({ err: error }, 'Background worker iteration failed'),
   });
-} catch {
-  logger.fatal('Background worker stopped unexpectedly');
+} catch (error) {
+  logger.fatal({ err: error }, 'Background worker stopped unexpectedly');
   process.exitCode = 1;
 } finally {
   process.removeListener('SIGINT', stop);
   process.removeListener('SIGTERM', stop);
   await closeDatabase();
+  logger.info('Background worker stopped');
 }

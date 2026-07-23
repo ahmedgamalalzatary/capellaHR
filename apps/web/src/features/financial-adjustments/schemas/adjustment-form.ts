@@ -37,5 +37,23 @@ export const adjustmentUpdateFormSchema = z.object({
   payrollMonth,
 });
 
-export type AdjustmentCreateFormValues = z.infer<typeof adjustmentCreateFormSchema>;
-export type AdjustmentUpdateFormValues = z.infer<typeof adjustmentUpdateFormSchema>;
+const bonusReason = z
+  .string()
+  .trim()
+  .min(1, 'أدخل سبب المكافأة')
+  .max(500, 'يجب ألا يزيد سبب المكافأة عن 500 حرف');
+
+export const bonusAdjustmentCreateFormSchema = adjustmentCreateFormSchema.extend({
+  reason: bonusReason,
+});
+
+export const bonusAdjustmentUpdateFormSchema = adjustmentUpdateFormSchema.extend({
+  reason: bonusReason,
+});
+
+export type AdjustmentCreateFormValues = z.infer<typeof adjustmentCreateFormSchema> & {
+  reason?: string;
+};
+export type AdjustmentUpdateFormValues = z.infer<typeof adjustmentUpdateFormSchema> & {
+  reason?: string;
+};

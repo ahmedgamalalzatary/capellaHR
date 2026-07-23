@@ -40,6 +40,7 @@ const bonus = {
   branchName: 'فرع القاهرة',
   payrollMonth: '2026-06',
   amount: '250.00',
+  reason: 'أداء استثنائي',
   employeeDeletedAt: null,
   createdAt: '2026-06-10T00:00:00.000Z',
   updatedAt: '2026-06-10T00:00:00.000Z',
@@ -51,6 +52,7 @@ const readOnly = {
   employeeId: 2,
   employeeCode: 1002,
   employeeName: 'منى علي',
+  reason: null,
   employeeDeletedAt: '2026-06-15T00:00:00.000Z',
 };
 
@@ -86,13 +88,15 @@ afterEach(() => {
 });
 
 describe('BonusesView', () => {
-  test('lists bonuses with code, branch, month, and amount', async () => {
+  test('lists bonuses with code, branch, month, amount, and reason', async () => {
     renderView();
     const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
     expect(within(row).getByText('1001')).toBeDefined();
     expect(within(row).getByText('فرع القاهرة')).toBeDefined();
     expect(within(row).getByText('2026-06')).toBeDefined();
     expect(within(row).getByText(/250\.00/)).toBeDefined();
+    expect(within(row).getByText('أداء استثنائي')).toBeDefined();
+    expect(within(rowOf('منى علي')).getByText('—')).toBeDefined();
   });
 
   test('filters by month, branch, and search', async () => {
@@ -118,12 +122,14 @@ describe('BonusesView', () => {
     fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
     fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '250' } });
     fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'أداء استثنائي' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createBonus).toHaveBeenCalledWith({
         employeeId: 1,
         amount: '250',
         payrollMonth: '2026-06',
+        reason: 'أداء استثنائي',
       }),
     );
   });
@@ -141,6 +147,19 @@ describe('BonusesView', () => {
     expect(mocks.createBonus).not.toHaveBeenCalled();
   });
 
+  test('requires a reason before calling the API', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
+    await screen.findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '250' } });
+    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    expect(await screen.findByText('أدخل سبب المكافأة')).toBeDefined();
+    expect(mocks.createBonus).not.toHaveBeenCalled();
+  });
+
   test('edits amount and month but never the employee', async () => {
     mocks.updateBonus.mockResolvedValue({ ...bonus, amount: '300.00' });
     renderView();
@@ -148,11 +167,13 @@ describe('BonusesView', () => {
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
     expect(screen.queryByLabelText(/الموظف/)).toBeNull();
     fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '300' } });
+    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'تحقيق الهدف' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.updateBonus).toHaveBeenCalledWith(5, {
         amount: '300',
         payrollMonth: '2026-06',
+        reason: 'تحقيق الهدف',
       }),
     );
   });
@@ -188,6 +209,7 @@ describe('BonusesView', () => {
     fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
     fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '10' } });
     fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'أداء استثنائي' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',

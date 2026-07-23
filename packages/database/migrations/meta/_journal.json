@@ -183,6 +183,13 @@
       "when": 1784697605367,
       "tag": "0025_first_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1784829855890,
+      "tag": "0026_damp_shockwave",
+      "breakpoints": true
     }
   ]
 }

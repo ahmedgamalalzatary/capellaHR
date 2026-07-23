@@ -23,7 +23,7 @@ export const runReportWorker = async (
     maintain?: () => Promise<void>;
     now?: () => number;
     sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-    onIterationError?: () => void;
+    onIterationError?: (error: unknown) => void;
   },
 ) => {
   const sleep = options.sleep ?? abortableSleep;
@@ -37,8 +37,8 @@ export const runReportWorker = async (
       }
       const result = await processor.processNext();
       if (result === null) await sleep(options.idleDelayMs, options.signal);
-    } catch {
-      options.onIterationError?.();
+    } catch (error) {
+      options.onIterationError?.(error);
       await sleep(options.idleDelayMs, options.signal);
     }
   }

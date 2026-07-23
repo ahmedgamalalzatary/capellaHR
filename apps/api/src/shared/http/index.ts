@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import pino, { type DestinationStream, type Logger } from 'pino';
+import { pinoHttp } from 'pino-http';
 
 import { runWithAuditContext } from '../../modules/audit/index.js';
 
@@ -21,13 +23,51 @@ export const responseRequestId = (response: { locals: Record<string, unknown> })
   typeof response.locals.requestId === 'string' ? response.locals.requestId : randomUUID()
 );
 
+export const createApiLogger = (level: string, destination?: DestinationStream) => pino({
+  level,
+  redact: {
+    paths: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+    censor: '[REDACTED]',
+  },
+}, destination);
+
+export const createRequestLogger = (logger: Logger): RequestHandler => pinoHttp({
+  logger,
+  quietReqLogger: true,
+  quietResLogger: true,
+  genReqId: (_request, response) => responseRequestId(response),
+  customAttributeKeys: { reqId: 'requestId' },
+  customLogLevel: (_request, response, error) => {
+    if (error || response.statusCode >= 500) return 'error';
+    if (response.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+  customSuccessMessage: () => 'API request completed',
+  customErrorMessage: () => 'API request failed',
+  customSuccessObject: (request, response, value) => ({
+    method: request.method,
+    url: (request as typeof request & { originalUrl?: string }).originalUrl ?? request.url,
+    requestId: responseRequestId(response),
+    statusCode: response.statusCode,
+    responseTime: (value as { responseTime: number }).responseTime,
+  }),
+  customErrorObject: (request, response, error, value) => ({
+    err: error,
+    method: request.method,
+    url: (request as typeof request & { originalUrl?: string }).originalUrl ?? request.url,
+    requestId: responseRequestId(response),
+    statusCode: response.statusCode,
+    responseTime: (value as { responseTime: number }).responseTime,
+  }),
+});
+
 export const notFoundHandler: RequestHandler = (_request, response) => {
   response.status(404).json({
     error: { code: 'NOT_FOUND', message: 'المورد غير موجود', requestId: responseRequestId(response) },
   });
 };
 
-export const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+export const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
   if (response.headersSent) {
     _next(error);
     return;
@@ -43,5 +83,10 @@ export const errorHandler: ErrorRequestHandler = (error, _request, response, _ne
     : payloadTooLarge
       ? 'حجم الطلب أكبر من الحد المسموح'
       : 'حدث خطأ داخلي';
+  if (status === 500) {
+    const requestId = responseRequestId(response);
+    request.log?.error({ err: error, requestId }, 'Unhandled API request error');
+    response.err = error instanceof Error ? error : new Error(String(error));
+  }
   response.status(status).json({ error: { code, message, requestId: responseRequestId(response) } });
 };

@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 import {
   adjustmentCreateFormSchema,
   adjustmentUpdateFormSchema,
+  bonusAdjustmentCreateFormSchema,
+  bonusAdjustmentUpdateFormSchema,
 } from '../src/features/financial-adjustments/schemas/adjustment-form';
 
 describe('adjustmentCreateFormSchema', () => {
@@ -26,5 +28,18 @@ describe('adjustmentUpdateFormSchema', () => {
   test('accepts amount and month without an employee', () => {
     expect(adjustmentUpdateFormSchema.parse({ amount: '99.90', payrollMonth: '2026-05' }))
       .toEqual({ amount: '99.90', payrollMonth: '2026-05' });
+  });
+});
+
+describe('bonus adjustment form schemas', () => {
+  test('require and trim a reason without changing deduction forms', () => {
+    const create = { employeeId: '1', amount: '100', payrollMonth: '2026-06' };
+    const update = { amount: '100', payrollMonth: '2026-06' };
+
+    expect(bonusAdjustmentCreateFormSchema.safeParse(create).success).toBe(false);
+    expect(bonusAdjustmentUpdateFormSchema.safeParse(update).success).toBe(false);
+    expect(bonusAdjustmentCreateFormSchema.parse({ ...create, reason: '  أداء استثنائي  ' }))
+      .toEqual({ employeeId: 1, amount: '100', payrollMonth: '2026-06', reason: 'أداء استثنائي' });
+    expect(adjustmentCreateFormSchema.safeParse(create).success).toBe(true);
   });
 });

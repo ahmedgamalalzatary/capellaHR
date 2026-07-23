@@ -623,6 +623,7 @@ export const createDrizzleReportReader = (
 
     if (reportType === 'bonuses' || reportType === 'deductions') {
       const table = reportType === 'bonuses' ? bonuses : deductions;
+      const reason = reportType === 'bonuses' ? bonuses.reason : sql<null>`null`;
       const conditions = [
         ...employeeFilters(filters, selection),
         ...(filters.monthFrom === undefined ? [] : [gte(table.payrollMonth, monthStart(filters.monthFrom))]),
@@ -640,6 +641,7 @@ export const createDrizzleReportReader = (
         branchName: branches.name,
         payrollMonth: table.payrollMonth,
         amount: table.amount,
+        reason,
         employeeDeletedAt: employees.deletedAt,
         createdAt: table.createdAt,
         updatedAt: table.updatedAt,
@@ -652,8 +654,9 @@ export const createDrizzleReportReader = (
           .innerJoin(employees, eq(employees.id, table.employeeId)).where(where),
       ]);
       const total = aggregate[0]?.value ?? 0;
-      const rows = records.map((row) => ({
+      const rows = records.map(({ reason: rowReason, ...row }) => ({
         ...row,
+        ...(reportType === 'bonuses' ? { reason: rowReason } : {}),
         payrollMonth: row.payrollMonth.slice(0, 7),
         amount: row.amount,
         isEmployeeDeleted: Boolean(row.employeeDeletedAt),
@@ -664,7 +667,9 @@ export const createDrizzleReportReader = (
       return { kind: 'success', total, snapshot: snapshot(reportType, columns(
         ['id', 'الرقم'], ['employeeId', 'رقم الموظف'], ['employeeCode', 'كود الموظف'],
         ['employeeName', 'اسم الموظف'], ['branchId', 'رقم الفرع'], ['branchName', 'اسم الفرع'],
-        ['payrollMonth', 'شهر الراتب'], ['amount', 'المبلغ'], ['isEmployeeDeleted', 'موظف محذوف'],
+        ['payrollMonth', 'شهر الراتب'], ['amount', 'المبلغ'],
+        ...(reportType === 'bonuses' ? [['reason', 'سبب المكافأة'] as [string, string]] : []),
+        ['isEmployeeDeleted', 'موظف محذوف'],
         ['createdAt', 'تاريخ الإنشاء'], ['updatedAt', 'آخر تحديث'],
       ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt) };
     }

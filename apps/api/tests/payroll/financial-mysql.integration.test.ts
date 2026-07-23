@@ -125,11 +125,11 @@ describe('MySQL-backed salary domain', () => {
     const bonusModule = createBonusModule(database, { now: () => fixedNow });
     const deductionModule = createDeductionModule(database, { now: () => fixedNow });
 
-    const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07' });
+    const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07', reason: 'سبب' });
     const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-06' });
-    await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-05' }))
+    await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-05', reason: 'سبب' }))
       .rejects.toMatchObject({ code: 'BONUS_MONTH_NOT_ELIGIBLE' });
-    await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-08' }))
+    await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-08', reason: 'سبب' }))
       .rejects.toMatchObject({ code: 'BONUS_FUTURE_MONTH' });
 
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
@@ -139,9 +139,9 @@ describe('MySQL-backed salary domain', () => {
 
     await database.update(employees).set({ deletedAt: fixedNow }).where(eq(employees.id, employeeId));
     await expect(bonusModule.service.get(bonus.id)).resolves.toMatchObject({ employeeDeletedAt: fixedNow });
-    await expect(bonusModule.service.update(bonus.id, { amount: '110.00' }))
+    await expect(bonusModule.service.update(bonus.id, { amount: '110.00', reason: 'سبب محدث' }))
       .rejects.toMatchObject({ code: 'BONUS_EMPLOYEE_DELETED' });
-    await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-07' }))
+    await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-07', reason: 'سبب' }))
       .rejects.toMatchObject({ code: 'BONUS_EMPLOYEE_DELETED' });
   });
 
@@ -310,7 +310,7 @@ describe('MySQL-backed salary domain', () => {
     const branchId = await createBranch();
     const employeeId = await createEmployee(branchId, 1);
     await createBonusModule(database, { now: () => fixedNow }).service.create({
-      employeeId, amount: '100.00', payrollMonth: '2026-06',
+      employeeId, amount: '100.00', payrollMonth: '2026-06', reason: 'سبب',
     });
     await createDeductionModule(database, { now: () => fixedNow }).service.create({
       employeeId, amount: '50.00', payrollMonth: '2026-06',
@@ -461,8 +461,8 @@ describe('MySQL-backed salary domain', () => {
     const branchId = await createBranch();
     const employeeId = await createEmployee(branchId, 1);
     const bonusesModule = createBonusModule(database, { now: () => fixedNow });
-    const created = await bonusesModule.service.create({ employeeId, amount: '10.00', payrollMonth: '2026-07' });
-    await bonusesModule.service.update(created.id, { amount: '20.00' });
+    const created = await bonusesModule.service.create({ employeeId, amount: '10.00', payrollMonth: '2026-07', reason: 'سبب' });
+    await bonusesModule.service.update(created.id, { amount: '20.00', reason: 'سبب محدث' });
     await bonusesModule.service.remove(created.id);
     const events = await database.select().from(financialAuditEvents)
       .where(eq(financialAuditEvents.entityType, 'bonus')).orderBy(asc(financialAuditEvents.id));

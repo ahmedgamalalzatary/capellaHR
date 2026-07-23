@@ -44,12 +44,20 @@ const projectWeeklyDay = (record: WeeklyDayRecord) => ({
   dayOffConvertedAt: record.dayOffConvertedAt,
 });
 
-const projectAdjustment = (record: BonusRecord) => ({
+const projectAdjustment = (record: Pick<
+  BonusRecord,
+  'id' | 'payrollMonth' | 'amount' | 'createdAt' | 'updatedAt'
+>) => ({
   id: record.id,
   payrollMonth: record.payrollMonth,
   amount: record.amount,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
+});
+
+const projectBonus = (record: BonusRecord) => ({
+  ...projectAdjustment(record),
+  reason: record.reason,
 });
 
 const projectAdvance = (record: AdvanceRecord) => ({
@@ -127,7 +135,7 @@ export const createSelfServiceService = (dependencies: SelfServiceDependencies) 
   },
 
   async listBonuses(employeeId: number, query: SelfServiceFinancialListQuery) {
-    return projectPage(await dependencies.bonuses.list({ ...query, employeeId }), projectAdjustment);
+    return projectPage(await dependencies.bonuses.list({ ...query, employeeId }), projectBonus);
   },
 
   async listDeductions(employeeId: number, query: SelfServiceFinancialListQuery) {

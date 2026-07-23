@@ -30,7 +30,7 @@ const makeService = (): SelfServiceService => ({
   listAttendance: vi.fn(async () => ({ items: [], total: 0 })),
   listWeeklyDays: vi.fn(async () => ({ items: [], total: 0 })),
   getPayrollMonth: vi.fn(async () => ({ payrollMonth: '2026-06' } as never)),
-  listBonuses: vi.fn(async () => ({ items: [{ id: 1, payrollMonth: '2026-06', amount: '100.00', createdAt: new Date(), updatedAt: new Date() }], total: 1 })),
+  listBonuses: vi.fn(async () => ({ items: [{ id: 1, payrollMonth: '2026-06', amount: '100.00', reason: 'سبب', createdAt: new Date(), updatedAt: new Date() }], total: 1 })),
   listDeductions: vi.fn(async () => ({ items: [], total: 0 })),
   listAdvances: vi.fn(async () => ({ items: [], total: 0 })),
 });

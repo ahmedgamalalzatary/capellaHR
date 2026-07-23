@@ -9,11 +9,12 @@ export function BonusesView() {
     <AdjustmentView
       api={{
         list: listBonuses,
-        create: createBonus,
-        update: updateBonus,
+        create: (input) => createBonus({ ...input, reason: input.reason ?? '' }),
+        update: (id, input) => updateBonus(id, { ...input, reason: input.reason ?? '' }),
         remove: deleteBonus,
       }}
       queryKeys={bonusQueryKeys}
+      reasonLabel="سبب المكافأة"
       labels={{
         addLabel: 'إضافة مكافأة',
         formTitleCreate: 'مكافأة جديدة',

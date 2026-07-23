@@ -14,6 +14,12 @@ import {
 const config = (table: Parameters<typeof getTableConfig>[0]) => getTableConfig(table);
 
 describe('payroll schema', () => {
+  it('stores an optional historical reason on bonus rows', () => {
+    const reason = config(bonuses).columns.find((column) => column.name === 'reason');
+    expect(reason).toBeDefined();
+    expect(reason?.notNull).toBe(false);
+  });
+
   it('supports month-first dashboard financial scans', () => {
     expect(config(bonuses).indexes.some((item) => item.config.name === 'bonuses_month_employee_idx')).toBe(true);
     expect(config(deductions).indexes.some((item) => item.config.name === 'deductions_month_employee_idx')).toBe(true);

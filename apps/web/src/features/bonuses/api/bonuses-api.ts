@@ -7,7 +7,7 @@ import type {
   ListAdjustmentsParams,
 } from '../../financial-adjustments/types';
 
-export type Bonus = FinancialAdjustment;
+export type Bonus = FinancialAdjustment & { reason: string | null };
 
 export function listBonuses(
   params: ListAdjustmentsParams = {},
@@ -27,7 +27,7 @@ export function createBonus(input: CreateBonusInput): Promise<Bonus> {
   return api.post<Bonus>('/bonuses', input);
 }
 
-/** The employee is immutable; only amount and payroll month may change. */
+/** The employee is immutable; amount, payroll month, and reason may change. */
 export function updateBonus(id: number, input: UpdateBonusInput): Promise<Bonus> {
   return api.patch<Bonus>(`/bonuses/${id}`, input);
 }

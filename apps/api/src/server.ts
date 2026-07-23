@@ -21,8 +21,10 @@ import {
   type AttendanceShiftChangeReconciler,
 } from './modules/attendance/index.js';
 import { createDashboardModule } from './modules/dashboard/index.js';
+import { createApiLogger } from './shared/http/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
+const logger = createApiLogger(env.LOG_LEVEL);
 let reconcileAbsencesBeforeShiftChange: AttendanceShiftChangeReconciler = () => Promise.resolve(0);
 const employeeRepository = createDrizzleEmployeeRepository(
   database,
@@ -140,4 +142,7 @@ createApp({
   readinessCheck: async () => {
     await database.execute(sql`SELECT 1`);
   },
-}).listen(env.API_PORT);
+  logger,
+}).listen(env.API_PORT, () => {
+  logger.info({ port: env.API_PORT }, 'API server started');
+});

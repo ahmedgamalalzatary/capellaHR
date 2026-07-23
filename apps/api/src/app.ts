@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import type { Logger } from 'pino';
 
 import type { AuthService } from './modules/auth/index.js';
 import type { BranchService } from './modules/branches/index.js';
@@ -18,7 +19,12 @@ import type { AuditService } from './modules/audit/index.js';
 import type { AttendanceService } from './modules/attendance/index.js';
 import type { DashboardService } from './modules/dashboard/index.js';
 import { createApiRouter } from './routes/index.js';
-import { errorHandler, notFoundHandler, requestContext } from './shared/http/index.js';
+import {
+  createRequestLogger,
+  errorHandler,
+  notFoundHandler,
+  requestContext,
+} from './shared/http/index.js';
 
 export const createApp = (dependencies: {
   authService?: AuthService;
@@ -43,11 +49,13 @@ export const createApp = (dependencies: {
   corsOrigin?: string;
   trustProxyHops?: number;
   readinessCheck?: () => Promise<void>;
+  logger?: Logger;
 } = {}) => {
   const app = express();
 
   if (dependencies.trustProxyHops !== undefined) app.set('trust proxy', dependencies.trustProxyHops);
   app.use(requestContext);
+  if (dependencies.logger) app.use(createRequestLogger(dependencies.logger));
   app.use(helmet());
   if (dependencies.corsOrigin) {
     app.use(cors({ origin: dependencies.corsOrigin, credentials: true }));
