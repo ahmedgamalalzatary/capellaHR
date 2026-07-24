@@ -29,6 +29,19 @@ describe('weekly day-off contracts', () => {
     });
   });
 
+  it('reads the without-permission filter from query strings without truthy coercion', () => {
+    const parse = (withoutPermission: unknown) => listWeeklyDayRecordsQuerySchema
+      .safeParse({ withoutPermission });
+
+    expect(parse('true').data?.withoutPermission).toBe(true);
+    expect(parse('false').data?.withoutPermission).toBe(false);
+    // An absent filter must stay absent rather than collapsing into `false`,
+    // which would silently hide every marked absence from the register.
+    expect(parse(undefined).data?.withoutPermission).toBeUndefined();
+    expect(parse('yes').success).toBe(false);
+    expect(parse('1').success).toBe(false);
+  });
+
   it('rejects impossible dates, inverted ranges, and boolean numeric values', () => {
     expect(listWeeklyDayRecordsQuerySchema.safeParse({ dateFrom: '2026-02-30' }).success).toBe(false);
     expect(listWeeklyDayRecordsQuerySchema.safeParse({

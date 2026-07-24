@@ -27,7 +27,7 @@ import {
   payrollMonths,
   reportExports,
 } from '@capella/database/schema';
-import type { SQL } from 'drizzle-orm';
+import { eq, type SQL } from 'drizzle-orm';
 import { MySqlDialect } from 'drizzle-orm/mysql-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -331,6 +331,46 @@ describe('MySQL-backed Dashboard snapshot', () => {
     const snapshot = await createModule(fixedNow).service.getSnapshot();
     const blocker = snapshot.payrollBlockers.items.find((item) => item.employeeCode === 3);
     expect(blocker?.reasons).toEqual(['ATTENDANCE_RECONCILIATION_PENDING']);
+  });
+
+  it('predicts the payroll amount-range blocker using the doubled unpermitted absence cost', async () => {
+    const { branchId } = await seed();
+    // Salary 5000 over a 30-day June of nothing but absences: the prorated base is 5000.00
+    // and the attendance deduction is 5000.00 unmarked but 10000.00 once marked. Parking the
+    // prior carry on the largest representable negative keeps the projected net exactly at the
+    // snapshot limit while single-charged, so only the doubled charge may cross it.
+    const employeeId = Number((await database.insert(employees).values({
+      employeeCode: 90, fullName: 'غياب بدون إذن',
+      personalPhone: '01000000090', whatsappPhone: '01100000090',
+      pinHash: 'secret-90', credentialVersion: 1, age: 30, address: 'القاهرة',
+      branchId, shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
+      deletedAt: null, createdAt: new Date('2026-05-01T06:00:00.000Z'), updatedAt: fixedNow,
+    }))[0].insertId);
+    await database.insert(payrollMonths).values({
+      employeeId, payrollMonth: '2026-05-01', status: 'finalized',
+      baseSalary: '5000.00', proratedBase: '0.00', overtimeAmount: '0.00', bonusAmount: '0.00',
+      attendanceDeductionAmount: '0.00', manualDeductionAmount: '0.00', advanceAmount: '0.00',
+      priorNegativeCarry: '0.00', netSalary: '-999999999999.99',
+      eligibleWorkdays: 0, fullMonthWorkdays: 0, requiredMinutes: 0,
+      overtimeMinutes: 0, shortageMinutes: 0,
+      finalizedAt: fixedNow, createdAt: fixedNow, updatedAt: fixedNow,
+    });
+    const juneDates = Array.from({ length: 30 }, (_, index) => `2026-06-${String(index + 1).padStart(2, '0')}`);
+    await database.insert(attendanceDailyRecords).values(juneDates.map((attendanceDate) => ({
+      employeeId, branchId, attendanceDate, status: 'absence' as const,
+      absenceRequiredMinutes: 480, withoutPermissionAt: fixedNow,
+      createdAt: fixedNow, updatedAt: fixedNow,
+    })));
+
+    const marked = await createModule(fixedNow).service.getSnapshot();
+    await database.update(attendanceDailyRecords).set({ withoutPermissionAt: null })
+      .where(eq(attendanceDailyRecords.employeeId, employeeId));
+    const unmarked = await createModule(fixedNow).service.getSnapshot();
+
+    expect(marked.payrollBlockers.items.find((item) => item.employeeCode === 90)?.reasons)
+      .toEqual(['PAYROLL_AMOUNT_OUT_OF_RANGE']);
+    expect(unmarked.payrollBlockers.items.find((item) => item.employeeCode === 90))
+      .toBeUndefined();
   });
 
   it('returns each pending pairing once when an assignment has multiple active devices', async () => {

@@ -252,6 +252,56 @@ describe('MySQL-backed attendance', () => {
     ))).resolves.toMatchObject({ kind: 'ready' });
   });
 
+  it('charges an absence marked without permission twice without shifting the per-minute rate', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    await database.update(employees).set({
+      createdAt: new Date('2026-05-31T21:00:00.000Z'),
+    }).where(eq(employees.id, employeeId));
+    const workedDates = Array.from({ length: 28 }, (_, index) => `2026-06-${String(index + 1).padStart(2, '0')}`);
+    await database.insert(attendanceSessions).values(workedDates.map((attendanceDate) => ({
+      employeeId,
+      branchId,
+      attendanceDate,
+      requiredMinutes: 480,
+      checkInAt: new Date(`${attendanceDate}T06:00:00.000Z`),
+      checkOutAt: new Date(`${attendanceDate}T14:00:00.000Z`),
+      workedMinutes: 480,
+      overtimeMinutes: 0,
+      shortageMinutes: 0,
+      automaticTimeoutAt: null,
+      automaticTimeoutCorrectedAt: null,
+      flagged: false,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    })));
+    await database.insert(attendanceDailyRecords).values([
+      {
+        employeeId, branchId, attendanceDate: '2026-06-29', status: 'absence' as const,
+        absenceRequiredMinutes: 480, withoutPermissionAt: null,
+        createdAt: fixedNow, updatedAt: fixedNow,
+      },
+      {
+        employeeId, branchId, attendanceDate: '2026-06-30', status: 'absence' as const,
+        absenceRequiredMinutes: 480, withoutPermissionAt: fixedNow,
+        createdAt: fixedNow, updatedAt: fixedNow,
+      },
+    ]);
+    const repo = repository();
+
+    await expect(database.transaction((transaction) => (
+      repo.readPayrollFacts(employeeId, '2026-06', transaction, 'finalize')
+    ))).resolves.toEqual({
+      kind: 'ready',
+      facts: {
+        fullMonthWorkdays: 30,
+        eligibleWorkdays: 30,
+        requiredMinutes: 14_400,
+        overtimeMinutes: 0,
+        shortageMinutes: 1_440,
+      },
+    });
+  });
+
   it('blocks Payroll when an ended eligible attendance date has not been reconciled', async () => {
     const { employeeId } = await createFixtures();
     await database.update(employees).set({
@@ -454,6 +504,35 @@ describe('MySQL-backed attendance', () => {
       createdAt: fixedNow,
       updatedAt: fixedNow,
     })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+  });
+
+  it('confines the without-permission mark to absences at the database layer', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    const attendanceDate = '2026-07-19';
+    const sessionResult = await database.insert(attendanceSessions).values({
+      employeeId, branchId, attendanceDate, requiredMinutes: 480,
+      checkInAt: new Date(`${attendanceDate}T06:00:00.000Z`),
+      checkOutAt: new Date(`${attendanceDate}T14:00:00.000Z`),
+      workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
+      automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
+      createdAt: fixedNow, updatedAt: fixedNow,
+    });
+    const record = {
+      employeeId, branchId, attendanceDate,
+      absenceRequiredMinutes: 480, withoutPermissionAt: fixedNow,
+      createdAt: fixedNow, updatedAt: fixedNow,
+    };
+
+    await expect(database.insert(attendanceDailyRecords).values({
+      ...record, status: 'weekly_day_off' as const, dayOffConvertedAt: fixedNow,
+    })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+    await expect(database.insert(attendanceDailyRecords).values({
+      ...record, status: 'attendance_replaced' as const,
+      replacedBySessionId: Number(sessionResult[0].insertId), replacedAt: fixedNow,
+    })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+    await expect(database.insert(attendanceDailyRecords).values({
+      ...record, status: 'absence' as const,
+    })).resolves.toBeDefined();
   });
 
   it('rejects cross-owner and cross-date attendance links at the database layer', async () => {
@@ -665,6 +744,22 @@ describe('MySQL-backed attendance', () => {
 
     expect(result).toBe('device_invalid');
     expect(await database.select().from(authSessions)).toHaveLength(0);
+  });
+
+  it('clears the without-permission mark when backdated attendance replaces the absence', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    const absenceResult = await database.insert(attendanceDailyRecords).values({
+      employeeId, branchId, attendanceDate: '2026-07-10', status: 'absence',
+      absenceRequiredMinutes: 480, withoutPermissionAt: fixedNow,
+      createdAt: fixedNow, updatedAt: fixedNow,
+    });
+
+    await expect(repository().manualCheckIn({
+      employeeId, occurredAt: new Date('2026-07-10T07:00:00.000Z'),
+    })).resolves.toMatchObject({ kind: 'success' });
+    expect((await database.select().from(attendanceDailyRecords)
+      .where(eq(attendanceDailyRecords.id, Number(absenceResult[0].insertId))))[0])
+      .toMatchObject({ status: 'attendance_replaced', withoutPermissionAt: null });
   });
 
   it('replaces an automatic absence with backdated manual attendance but protects a day off', async () => {

@@ -29,6 +29,10 @@ export const listWeeklyDayRecordsQuerySchema = z.object({
   employeeId: coercedMysqlIntSchema.optional(),
   branchId: coercedMysqlIntSchema.optional(),
   status: weeklyDayRecordStatusSchema.optional(),
+  withoutPermission: z.preprocess(
+    (value) => value === 'true' ? true : value === 'false' ? false : value,
+    z.boolean(),
+  ).optional(),
   dateFrom: cairoDateSchema.optional(),
   dateTo: cairoDateSchema.optional(),
   page: paginationPageSchema.default(1),

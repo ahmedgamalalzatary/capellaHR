@@ -99,5 +99,23 @@ export const createWeeklyDayOffRouter = (
     }
   });
 
+  router.post('/:recordId/mark-without-permission', async (request: Request, response: Response) => {
+    try {
+      const { recordId } = weeklyDayRecordParamsSchema.parse(request.params);
+      response.json({ data: await service.markWithoutPermission(recordId) });
+    } catch (error) {
+      handleError(error, response);
+    }
+  });
+
+  router.post('/:recordId/clear-without-permission', async (request: Request, response: Response) => {
+    try {
+      const { recordId } = weeklyDayRecordParamsSchema.parse(request.params);
+      response.json({ data: await service.clearWithoutPermission(recordId) });
+    } catch (error) {
+      handleError(error, response);
+    }
+  });
+
   return router;
 };

@@ -43,9 +43,12 @@ describe('attendance daily-record schema', () => {
     const columns = getTableColumns(attendanceDailyRecords);
     expect(Object.keys(columns)).toEqual(expect.arrayContaining([
       'id', 'employeeId', 'branchId', 'attendanceDate', 'status', 'absenceRequiredMinutes',
-      'dayOffConvertedAt', 'replacedBySessionId', 'replacedAt', 'createdAt', 'updatedAt',
+      'withoutPermissionAt', 'dayOffConvertedAt', 'replacedBySessionId', 'replacedAt',
+      'createdAt', 'updatedAt',
     ]));
     expect(columns.branchId.notNull).toBe(true);
+    // The mark is an admin judgement rather than generated state, so it stays nullable.
+    expect(columns.withoutPermissionAt.notNull).toBe(false);
   });
 
   it('enforces one record per employee/date and a valid duration snapshot', () => {

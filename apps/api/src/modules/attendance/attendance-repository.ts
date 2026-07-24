@@ -464,6 +464,7 @@ export const createDrizzleAttendanceRepository = (
       status: attendanceDailyRecords.status,
       attendanceDate: attendanceDailyRecords.attendanceDate,
       absenceRequiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
+      withoutPermissionAt: attendanceDailyRecords.withoutPermissionAt,
       dayOffConvertedAt: attendanceDailyRecords.dayOffConvertedAt,
       replacedBySessionId: attendanceDailyRecords.replacedBySessionId,
       replacedAt: attendanceDailyRecords.replacedAt,
@@ -517,6 +518,8 @@ export const createDrizzleAttendanceRepository = (
     if (daily?.status === 'absence') {
       await transaction.update(attendanceDailyRecords).set({
         status: 'attendance_replaced',
+        // The day is attended, so an unpermitted-absence mark no longer applies.
+        withoutPermissionAt: null,
         replacedBySessionId: sessionId,
         replacedAt: createdAt,
         updatedAt: createdAt,
@@ -535,6 +538,7 @@ export const createDrizzleAttendanceRepository = (
         afterState: {
           ...daily,
           status: 'attendance_replaced',
+          withoutPermissionAt: null,
           replacedBySessionId: sessionId,
           replacedAt: createdAt,
           updatedAt: createdAt,
@@ -781,6 +785,7 @@ export const createDrizzleAttendanceRepository = (
         attendanceDate: attendanceDailyRecords.attendanceDate,
         status: attendanceDailyRecords.status,
         requiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
+        withoutPermissionAt: attendanceDailyRecords.withoutPermissionAt,
       }).from(attendanceDailyRecords).where(and(
         eq(attendanceDailyRecords.employeeId, employeeId),
         gte(attendanceDailyRecords.attendanceDate, monthStart),
@@ -845,8 +850,10 @@ export const createDrizzleAttendanceRepository = (
       for (const record of dailyRecords) {
         if (record.status !== 'absence') continue;
         eligibleWorkdays += 1;
+        // Required minutes stay single so the per-minute rate is untouched; only the
+        // deducted side doubles, making an unpermitted absence cost exactly two days.
         requiredMinutes += record.requiredMinutes;
-        shortageMinutes += record.requiredMinutes;
+        shortageMinutes += record.requiredMinutes * (record.withoutPermissionAt === null ? 1 : 2);
       }
       const weeklyDays = new Set(dailyRecords
         .filter(({ status }) => status === 'weekly_day_off')

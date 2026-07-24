@@ -256,6 +256,7 @@ export const createDrizzleReportReader = (
         attendanceDate: attendanceDailyRecords.attendanceDate,
         status: attendanceDailyRecords.status,
         requiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
+        withoutPermissionAt: attendanceDailyRecords.withoutPermissionAt,
         employeeDeletedAt: employees.deletedAt,
       }).from(attendanceDailyRecords)
         .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
@@ -274,7 +275,7 @@ export const createDrizzleReportReader = (
           value: count(),
           absenceRecords: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'absence' then 1 else 0 end)`,
           weeklyDayOffRecords: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'weekly_day_off' then 1 else 0 end)`,
-          shortageMinutes: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'absence' then ${attendanceDailyRecords.absenceRequiredMinutes} else 0 end)`,
+          shortageMinutes: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'absence' then ${attendanceDailyRecords.absenceRequiredMinutes} * (case when ${attendanceDailyRecords.withoutPermissionAt} is null then 1 else 2 end) else 0 end)`,
         }).from(attendanceDailyRecords)
           .innerJoin(employees, eq(employees.id, attendanceDailyRecords.employeeId))
           .where(dailyWhere),
@@ -300,7 +301,8 @@ export const createDrizzleReportReader = (
           attendanceDate: row.attendanceDate, status: 'attendance', requiredMinutes: row.requiredMinutes,
           checkInAt: dateTime(row.checkInAt), checkOutAt: dateTime(row.checkOutAt),
           workedMinutes: row.workedMinutes, overtimeMinutes: row.overtimeMinutes,
-          shortageMinutes: row.shortageMinutes, automaticTimeoutAt: dateTime(row.automaticTimeoutAt),
+          shortageMinutes: row.shortageMinutes, withoutPermission: false,
+          automaticTimeoutAt: dateTime(row.automaticTimeoutAt),
           flagged: row.flagged, isEmployeeDeleted: Boolean(row.employeeDeletedAt),
         })),
         ...dailyRows.map((row) => ({
@@ -309,7 +311,10 @@ export const createDrizzleReportReader = (
           branchId: row.branchId, branchName: row.branchName,
           attendanceDate: row.attendanceDate, status: row.status, requiredMinutes: row.requiredMinutes,
           checkInAt: null, checkOutAt: null, workedMinutes: null, overtimeMinutes: 0,
-          shortageMinutes: row.status === 'absence' ? row.requiredMinutes : 0,
+          shortageMinutes: row.status === 'absence'
+            ? row.requiredMinutes * (row.withoutPermissionAt === null ? 1 : 2)
+            : 0,
+          withoutPermission: row.withoutPermissionAt !== null,
           automaticTimeoutAt: null, flagged: false, isEmployeeDeleted: Boolean(row.employeeDeletedAt),
         })),
       ];
@@ -322,7 +327,8 @@ export const createDrizzleReportReader = (
         ['branchName', 'اسم الفرع'], ['attendanceDate', 'تاريخ الحضور'], ['status', 'الحالة'],
         ['requiredMinutes', 'الدقائق المطلوبة'], ['checkInAt', 'وقت الحضور'], ['checkOutAt', 'وقت الانصراف'],
         ['workedMinutes', 'دقائق العمل'], ['overtimeMinutes', 'دقائق إضافية'],
-        ['shortageMinutes', 'دقائق النقص'], ['automaticTimeoutAt', 'وقت الانصراف التلقائي'],
+        ['shortageMinutes', 'دقائق النقص'], ['withoutPermission', 'غياب بدون إذن'],
+        ['automaticTimeoutAt', 'وقت الانصراف التلقائي'],
         ['flagged', 'معلّم للمراجعة'], ['isEmployeeDeleted', 'موظف محذوف'],
       ), rows, {
         totalRecords: total, attendanceRecords, absenceRecords, weeklyDayOffRecords,

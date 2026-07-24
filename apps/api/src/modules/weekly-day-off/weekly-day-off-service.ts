@@ -14,6 +14,7 @@ export type WeeklyDayRecord = {
   status: WeeklyDayRecordStatus;
   absenceRequiredMinutes: number;
   requiredMinutes: number;
+  withoutPermissionAt: Date | null;
   dayOffConvertedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -32,10 +33,18 @@ type ConvertResult =
 type RevertResult =
   | { kind: 'success'; record: WeeklyDayRecord }
   | { kind: 'not_found' | 'not_day_off' | 'financially_locked' };
+type WithoutPermissionResult =
+  | { kind: 'success'; record: WeeklyDayRecord }
+  | { kind: 'not_found' | 'not_absence' | 'financially_locked' };
 
 export interface WeeklyDayOffRepository {
   findById(id: number): Promise<WeeklyDayRecord | null>;
   list(query: ListWeeklyDayRecordsQuery): Promise<{ items: WeeklyDayRecord[]; total: number }>;
+  setWithoutPermission(
+    id: number,
+    marked: boolean,
+    isFinanciallyLocked: WeeklyDayOffFinancialLockCheck,
+  ): Promise<WithoutPermissionResult>;
   convertToDayOff(
     id: number,
     today: string,
@@ -52,7 +61,9 @@ export type WeeklyDayOffErrorCode =
   | 'WEEKLY_DAY_OFF_DATE_NOT_PAST'
   | 'WEEKLY_DAY_OFF_INVALID_STATE'
   | 'WEEKLY_DAY_OFF_SPACING_CONFLICT'
-  | 'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED';
+  | 'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED'
+  | 'ABSENCE_WITHOUT_PERMISSION_INVALID_STATE'
+  | 'ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED';
 
 export class WeeklyDayOffError extends Error {
   constructor(public readonly code: WeeklyDayOffErrorCode, message: string) {
@@ -80,6 +91,14 @@ const errors = {
   financiallyLocked: () => new WeeklyDayOffError(
     'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED',
     'لا يمكن تعديل يوم الراحة بعد اعتماد الشهر ماليًا',
+  ),
+  withoutPermissionInvalidState: () => new WeeklyDayOffError(
+    'ABSENCE_WITHOUT_PERMISSION_INVALID_STATE',
+    'يمكن تعليم الغياب بدون إذن على سجل غياب فقط',
+  ),
+  withoutPermissionLocked: () => new WeeklyDayOffError(
+    'ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED',
+    'لا يمكن تعديل الغياب بدون إذن بعد اعتماد الشهر ماليًا',
   ),
 };
 
@@ -111,6 +130,14 @@ export const createWeeklyDayOffService = (
   ));
   const { isFinanciallyLocked } = options;
 
+  const setWithoutPermission = async (id: number, marked: boolean) => {
+    const result = await repository.setWithoutPermission(id, marked, isFinanciallyLocked);
+    if (result.kind === 'success') return result.record;
+    if (result.kind === 'not_found') throw errors.notFound();
+    if (result.kind === 'not_absence') throw errors.withoutPermissionInvalidState();
+    throw errors.withoutPermissionLocked();
+  };
+
   return {
     async get(id: number) {
       const record = await repository.findById(id);
@@ -120,6 +147,16 @@ export const createWeeklyDayOffService = (
 
     list(query: ListWeeklyDayRecordsQuery) {
       return repository.list(query);
+    },
+
+    /** Records the admin's judgement that this absence had no prior permission. */
+    markWithoutPermission(id: number) {
+      return setWithoutPermission(id, true);
+    },
+
+    /** Withdraws the mark, returning the absence to its ordinary single cost. */
+    clearWithoutPermission(id: number) {
+      return setWithoutPermission(id, false);
     },
 
     async convert(id: number) {

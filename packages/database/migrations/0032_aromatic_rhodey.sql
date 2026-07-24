@@ -1,0 +1,1 @@
+ALTER TABLE `attendance_daily_records` ADD `without_permission_at` timestamp(3);

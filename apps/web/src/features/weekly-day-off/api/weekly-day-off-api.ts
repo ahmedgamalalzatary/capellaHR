@@ -17,6 +17,7 @@ export interface WeeklyDayRecord {
   status: WeeklyDayRecordStatus;
   absenceRequiredMinutes: number;
   requiredMinutes: number;
+  withoutPermissionAt: string | null;
   dayOffConvertedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -27,6 +28,7 @@ export interface ListWeeklyDayRecordsParams {
   employeeId?: number;
   branchId?: number;
   status?: WeeklyDayRecordStatus;
+  withoutPermission?: boolean;
   dateFrom?: string;
   dateTo?: string;
   page?: number;
@@ -41,6 +43,7 @@ export function listWeeklyDayRecords(
   if (params.employeeId !== undefined) query.set('employeeId', String(params.employeeId));
   if (params.branchId !== undefined) query.set('branchId', String(params.branchId));
   if (params.status !== undefined) query.set('status', params.status);
+  if (params.withoutPermission !== undefined) query.set('withoutPermission', String(params.withoutPermission));
   if (params.dateFrom !== undefined) query.set('dateFrom', params.dateFrom);
   if (params.dateTo !== undefined) query.set('dateTo', params.dateTo);
   if (params.page !== undefined) query.set('page', String(params.page));
@@ -57,4 +60,14 @@ export function convertWeeklyDayRecord(recordId: number): Promise<WeeklyDayRecor
 /** Restores a weekly day off to its original absence snapshot. */
 export function revertWeeklyDayRecord(recordId: number): Promise<WeeklyDayRecord> {
   return api.post<WeeklyDayRecord>(`/weekly-day-offs/${recordId}/revert`);
+}
+
+/** Records that this absence had no prior permission, doubling what it deducts. */
+export function markWeeklyDayRecordWithoutPermission(recordId: number): Promise<WeeklyDayRecord> {
+  return api.post<WeeklyDayRecord>(`/weekly-day-offs/${recordId}/mark-without-permission`);
+}
+
+/** Withdraws the mark, returning the absence to its ordinary single cost. */
+export function clearWeeklyDayRecordWithoutPermission(recordId: number): Promise<WeeklyDayRecord> {
+  return api.post<WeeklyDayRecord>(`/weekly-day-offs/${recordId}/clear-without-permission`);
 }

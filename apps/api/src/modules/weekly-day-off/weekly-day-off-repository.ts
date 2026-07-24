@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   gte,
+  isNotNull,
   isNull,
   lte,
   ne,
@@ -42,6 +43,7 @@ const recordFields = {
   status: sql<WeeklyDayRecord['status']>`${attendanceDailyRecords.status}`,
   absenceRequiredMinutes: attendanceDailyRecords.absenceRequiredMinutes,
   requiredMinutes: sql<number>`case when ${attendanceDailyRecords.status} = 'weekly_day_off' then 0 else ${attendanceDailyRecords.absenceRequiredMinutes} end`.mapWith(Number),
+  withoutPermissionAt: attendanceDailyRecords.withoutPermissionAt,
   dayOffConvertedAt: attendanceDailyRecords.dayOffConvertedAt,
   createdAt: attendanceDailyRecords.createdAt,
   updatedAt: attendanceDailyRecords.updatedAt,
@@ -85,6 +87,7 @@ const lockRecord = async (transaction: Transaction, id: number, employeeId: numb
     employeeId: attendanceDailyRecords.employeeId,
     attendanceDate: attendanceDailyRecords.attendanceDate,
     status: attendanceDailyRecords.status,
+    withoutPermissionAt: attendanceDailyRecords.withoutPermissionAt,
   })
     .from(attendanceDailyRecords)
     .where(and(
@@ -118,6 +121,11 @@ export const createDrizzleWeeklyDayOffRepository = (
     if (query.employeeId !== undefined) filters.push(eq(employees.id, query.employeeId));
     if (query.branchId !== undefined) filters.push(eq(historicalBranchId, query.branchId));
     if (query.status !== undefined) filters.push(eq(attendanceDailyRecords.status, query.status));
+    if (query.withoutPermission !== undefined) {
+      filters.push(query.withoutPermission
+        ? isNotNull(attendanceDailyRecords.withoutPermissionAt)
+        : isNull(attendanceDailyRecords.withoutPermissionAt));
+    }
     if (query.dateFrom !== undefined) filters.push(gte(attendanceDailyRecords.attendanceDate, query.dateFrom));
     if (query.dateTo !== undefined) filters.push(lte(attendanceDailyRecords.attendanceDate, query.dateTo));
     if (query.search !== undefined) {
@@ -145,6 +153,51 @@ export const createDrizzleWeeklyDayOffRepository = (
       .innerJoin(branches, eq(branches.id, historicalBranchId))
       .where(where);
     return { items, total: totals[0]?.value ?? 0 };
+  },
+
+  setWithoutPermission(id, marked, isFinanciallyLocked) {
+    return database.transaction(async (transaction) => {
+      const employeeId = await findRecordEmployeeId(transaction, id);
+      if (employeeId === undefined || !await lockActiveEmployee(transaction, employeeId)) {
+        return { kind: 'not_found' as const };
+      }
+      const record = await lockRecord(transaction, id, employeeId);
+      if (!record) return { kind: 'not_found' as const };
+      if (record.status !== 'absence') return { kind: 'not_absence' as const };
+
+      const current = await findActiveRecord(transaction, id);
+      if (!current) return { kind: 'not_found' as const };
+      // Re-marking an already-marked absence is a no-op, so a double click neither
+      // moves the recorded instant nor writes a second audit entry.
+      if ((current.withoutPermissionAt !== null) === marked) {
+        return { kind: 'success' as const, record: current };
+      }
+      if (await financiallyLocked(
+        isFinanciallyLocked,
+        employeeId,
+        record.attendanceDate,
+        transaction,
+      )) return { kind: 'financially_locked' as const };
+
+      const markedAt = now();
+      await transaction.update(attendanceDailyRecords).set({
+        withoutPermissionAt: marked ? markedAt : null,
+        updatedAt: markedAt,
+      }).where(and(
+        eq(attendanceDailyRecords.id, id),
+        eq(attendanceDailyRecords.status, 'absence'),
+      ));
+      const updated = await findActiveRecord(transaction, id);
+      if (!updated) throw new Error('Absence record disappeared while marking without permission');
+      await writeAudit(transaction, {
+        module: 'weekly-day-off',
+        action: marked ? 'mark_without_permission' : 'clear_without_permission',
+        entityType: 'attendance_daily_record', entityId: id,
+        beforeState: current, afterState: updated,
+        relatedIds: { employeeId }, createdAt: markedAt,
+      });
+      return { kind: 'success' as const, record: updated };
+    });
   },
 
   convertToDayOff(id, today, isFinanciallyLocked) {
@@ -179,6 +232,8 @@ export const createDrizzleWeeklyDayOffRepository = (
       const convertedAt = now();
       await transaction.update(attendanceDailyRecords).set({
         status: 'weekly_day_off',
+        // A day off costs no minutes, so an unpermitted-absence mark cannot survive it.
+        withoutPermissionAt: null,
         dayOffConvertedAt: convertedAt,
         updatedAt: convertedAt,
       }).where(and(

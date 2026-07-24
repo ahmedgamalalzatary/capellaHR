@@ -288,6 +288,135 @@ describe('MySQL-backed weekly day off', () => {
     });
   });
 
+  it('marks and clears an absence without permission and audits both transitions', async () => {
+    const branchId = await createBranch('القاهرة');
+    const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
+    const recordId = await createAbsence(employeeId, '2026-07-10', 480);
+    const module = createWeeklyDayOffModule(database, {
+      isFinanciallyLocked: isFinanciallyUnlocked,
+      now: () => fixedNow,
+    });
+
+    await expect(module.service.markWithoutPermission(recordId)).resolves.toMatchObject({
+      status: 'absence', withoutPermissionAt: fixedNow, requiredMinutes: 480,
+    });
+    await expect(module.service.clearWithoutPermission(recordId)).resolves.toMatchObject({
+      status: 'absence', withoutPermissionAt: null, requiredMinutes: 480,
+    });
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'weekly-day-off')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action))
+      .toEqual(['mark_without_permission', 'clear_without_permission']);
+    expect(events[0]).toMatchObject({
+      entityType: 'attendance_daily_record', entityId: String(recordId),
+      beforeState: expect.objectContaining({ withoutPermissionAt: null }),
+      afterState: expect.objectContaining({ withoutPermissionAt: fixedNow.toISOString() }),
+    });
+  });
+
+  it('refuses to mark anything that is not an open absence', async () => {
+    const branchId = await createBranch('القاهرة');
+    const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
+    const recordId = await createAbsence(employeeId, '2026-07-10');
+    const module = createWeeklyDayOffModule(database, {
+      isFinanciallyLocked: isFinanciallyUnlocked,
+      now: () => fixedNow,
+    });
+    await module.service.convert(recordId);
+
+    await expect(module.service.markWithoutPermission(recordId)).rejects.toMatchObject({
+      code: 'ABSENCE_WITHOUT_PERMISSION_INVALID_STATE',
+    });
+    await expect(module.service.markWithoutPermission(recordId + 1000)).rejects.toMatchObject({
+      code: 'WEEKLY_DAY_RECORD_NOT_FOUND',
+    });
+  });
+
+  it('rolls back a without-permission mark when payroll has financially locked the date', async () => {
+    const branchId = await createBranch('القاهرة');
+    const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
+    const recordId = await createAbsence(employeeId, '2026-07-10');
+    const module = createWeeklyDayOffModule(database, {
+      now: () => fixedNow,
+      isFinanciallyLocked: async (lockedEmployeeId, date, transaction) => {
+        expect(lockedEmployeeId).toBe(employeeId);
+        expect(date).toBe('2026-07-10');
+        expect(transaction).toBeDefined();
+        return true;
+      },
+    });
+
+    await expect(module.service.markWithoutPermission(recordId)).rejects.toMatchObject({
+      code: 'ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED',
+    });
+    expect((await database.select().from(attendanceDailyRecords)
+      .where(eq(attendanceDailyRecords.id, recordId)))[0])
+      .toMatchObject({ status: 'absence', withoutPermissionAt: null });
+  });
+
+  it('keeps repeated marking and clearing idempotent without duplicating audit history', async () => {
+    const branchId = await createBranch('القاهرة');
+    const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
+    const recordId = await createAbsence(employeeId, '2026-07-10');
+    const later = new Date(fixedNow.getTime() + 3_600_000);
+    let clock = fixedNow;
+    const module = createWeeklyDayOffModule(database, {
+      isFinanciallyLocked: isFinanciallyUnlocked,
+      now: () => clock,
+    });
+
+    await module.service.markWithoutPermission(recordId);
+    clock = later;
+    await expect(module.service.markWithoutPermission(recordId)).resolves.toMatchObject({
+      withoutPermissionAt: fixedNow,
+    });
+    await module.service.clearWithoutPermission(recordId);
+    await expect(module.service.clearWithoutPermission(recordId)).resolves.toMatchObject({
+      withoutPermissionAt: null,
+    });
+    const events = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'weekly-day-off')).orderBy(asc(auditEvents.id));
+    expect(events.map(({ action }) => action))
+      .toEqual(['mark_without_permission', 'clear_without_permission']);
+  });
+
+  it('drops the without-permission mark when the absence becomes a weekly day off', async () => {
+    const branchId = await createBranch('القاهرة');
+    const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
+    const recordId = await createAbsence(employeeId, '2026-07-10', 437);
+    const module = createWeeklyDayOffModule(database, {
+      isFinanciallyLocked: isFinanciallyUnlocked,
+      now: () => fixedNow,
+    });
+    await module.service.markWithoutPermission(recordId);
+
+    await expect(module.service.convert(recordId)).resolves.toMatchObject({
+      status: 'weekly_day_off', withoutPermissionAt: null, requiredMinutes: 0,
+    });
+    await expect(module.service.revert(recordId)).resolves.toMatchObject({
+      status: 'absence', withoutPermissionAt: null, absenceRequiredMinutes: 437,
+    });
+  });
+
+  it('filters the record list by without-permission state', async () => {
+    const branchId = await createBranch('القاهرة');
+    const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
+    const marked = await createAbsence(employeeId, '2026-07-10');
+    await createAbsence(employeeId, '2026-07-11');
+    const module = createWeeklyDayOffModule(database, {
+      isFinanciallyLocked: isFinanciallyUnlocked,
+      now: () => fixedNow,
+    });
+    await module.service.markWithoutPermission(marked);
+
+    await expect(module.service.list({ withoutPermission: true, page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 1, items: [{ id: marked }] });
+    await expect(module.service.list({ withoutPermission: false, page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 1, items: [{ attendanceDate: '2026-07-11' }] });
+    await expect(module.service.list({ page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 2 });
+  });
+
   it('hides records belonging to soft-deleted employees', async () => {
     const branchId = await createBranch('القاهرة');
     const employeeId = await createEmployee(branchId, 1, 'موظف محذوف', fixedNow);

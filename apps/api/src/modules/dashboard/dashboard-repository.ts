@@ -137,7 +137,10 @@ const payrollBlockerQuery = (
       select employee_id,
         sum(status = 'weekly_day_off') weekly_days,
         sum(status = 'absence') absence_days,
-        coalesce(sum(case when status = 'absence' then absence_required_minutes else 0 end), 0) absence_required_minutes
+        coalesce(sum(case when status = 'absence' then absence_required_minutes else 0 end), 0) absence_required_minutes,
+        coalesce(sum(case when status = 'absence'
+          then absence_required_minutes * (case when without_permission_at is null then 1 else 2 end)
+          else 0 end), 0) absence_shortage_minutes
       from attendance_daily_records
       where attendance_date >= ${monthStart} and attendance_date < ${nextMonthStart}
       group by employee_id
@@ -170,6 +173,7 @@ const payrollBlockerQuery = (
         coalesce(daily.weekly_days, 0) weekly_days,
         coalesce(daily.absence_days, 0) absence_days,
         coalesce(daily.absence_required_minutes, 0) absence_required_minutes,
+        coalesce(daily.absence_shortage_minutes, 0) absence_shortage_minutes,
         coalesce(bonus.bonus_amount, 0.00) bonus_amount,
         coalesce(deduction.deduction_amount, 0.00) deduction_amount,
         coalesce(advance_payment.advance_amount, 0.00) advance_amount,
@@ -274,7 +278,7 @@ const payrollBlockerQuery = (
         case when (${daysInMonth} - flags.weekly_days) > 0
           and (flags.session_required_minutes + flags.absence_required_minutes) > 0
           then round(flags.base_salary * (flags.session_count + flags.absence_days)
-            * (flags.session_shortage_minutes + flags.absence_required_minutes)
+            * (flags.session_shortage_minutes + flags.absence_shortage_minutes)
             / ((${daysInMonth} - flags.weekly_days)
               * (flags.session_required_minutes + flags.absence_required_minutes)), 2) else 0.00 end attendance_deduction_amount
       from blocker_flags flags

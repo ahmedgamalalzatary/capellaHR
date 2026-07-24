@@ -410,6 +410,40 @@ describe('MySQL-backed reports', () => {
     expect(payrollPreviewCount).toBe(0);
   });
 
+  it('doubles the reported shortage of an absence marked without permission', async () => {
+    const { branchId, employeeId } = await seed();
+    await database.delete(attendanceSessions).where(eq(attendanceSessions.employeeId, employeeId));
+    await database.delete(attendanceDailyRecords);
+    await database.insert(attendanceDailyRecords).values([
+      {
+        employeeId, branchId, attendanceDate: '2026-07-10', status: 'absence',
+        absenceRequiredMinutes: 480, withoutPermissionAt: null,
+        createdAt: now, updatedAt: now,
+      },
+      {
+        employeeId, branchId, attendanceDate: '2026-07-11', status: 'absence',
+        absenceRequiredMinutes: 480, withoutPermissionAt: now,
+        createdAt: now, updatedAt: now,
+      },
+    ]);
+    const reader = createDrizzleReportReader(database, { now: () => now });
+
+    const result = await reader.read('attendance', {
+      dateFrom: '2026-07-01', dateTo: '2026-07-31',
+    }, { mode: 'all' }, null, now);
+
+    expect(result).toMatchObject({
+      kind: 'success',
+      snapshot: {
+        summary: { absenceRecords: 2, totalShortageMinutes: 1440 },
+        rows: expect.arrayContaining([
+          expect.objectContaining({ attendanceDate: '2026-07-10', shortageMinutes: 480, withoutPermission: false }),
+          expect.objectContaining({ attendanceDate: '2026-07-11', shortageMinutes: 960, withoutPermission: true }),
+        ]),
+      },
+    });
+  });
+
   it('uses Cairo calendar boundaries for timestamp filters', async () => {
     await seed();
     const insideId = Number((await database.insert(branches).values({

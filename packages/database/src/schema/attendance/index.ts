@@ -101,6 +101,7 @@ export const attendanceDailyRecords = mysqlTable('attendance_daily_records', {
   attendanceDate: date('attendance_date', { mode: 'string' }).notNull(),
   status: mysqlEnum('status', ['absence', 'weekly_day_off', 'attendance_replaced']).notNull().default('absence'),
   absenceRequiredMinutes: int('absence_required_minutes').notNull(),
+  withoutPermissionAt: timestamp('without_permission_at', { mode: 'date', fsp: 3 }),
   dayOffConvertedAt: timestamp('day_off_converted_at', { mode: 'date', fsp: 3 }),
   replacedBySessionId: int('replaced_by_session_id'),
   replacedAt: timestamp('replaced_at', { mode: 'date', fsp: 3 }),
@@ -122,7 +123,7 @@ export const attendanceDailyRecords = mysqlTable('attendance_daily_records', {
   ),
   check(
     'attendance_daily_records_conversion_state',
-    sql`(${table.status} = 'absence' and ${table.dayOffConvertedAt} is null and ${table.replacedBySessionId} is null and ${table.replacedAt} is null) or (${table.status} = 'weekly_day_off' and ${table.dayOffConvertedAt} is not null and ${table.replacedBySessionId} is null and ${table.replacedAt} is null) or (${table.status} = 'attendance_replaced' and ${table.dayOffConvertedAt} is null and ${table.replacedBySessionId} is not null and ${table.replacedAt} is not null)`,
+    sql`(${table.status} = 'absence' and ${table.dayOffConvertedAt} is null and ${table.replacedBySessionId} is null and ${table.replacedAt} is null) or (${table.status} = 'weekly_day_off' and ${table.dayOffConvertedAt} is not null and ${table.replacedBySessionId} is null and ${table.replacedAt} is null and ${table.withoutPermissionAt} is null) or (${table.status} = 'attendance_replaced' and ${table.dayOffConvertedAt} is null and ${table.replacedBySessionId} is not null and ${table.replacedAt} is not null and ${table.withoutPermissionAt} is null)`,
   ),
 ]);
 

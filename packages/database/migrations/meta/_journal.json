@@ -225,6 +225,20 @@
       "when": 1784900143336,
       "tag": "0031_outgoing_jimmy_woo",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1784916588479,
+      "tag": "0032_aromatic_rhodey",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1784916713898,
+      "tag": "0033_outgoing_rafael_vega",
+      "breakpoints": true
     }
   ]
 }

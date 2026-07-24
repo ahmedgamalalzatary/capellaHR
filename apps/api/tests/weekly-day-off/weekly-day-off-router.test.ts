@@ -21,6 +21,7 @@ const record: WeeklyDayRecord = {
   status: 'weekly_day_off',
   absenceRequiredMinutes: 600,
   requiredMinutes: 0,
+  withoutPermissionAt: null,
   dayOffConvertedAt: new Date('2026-07-18T09:00:00.000Z'),
   createdAt: new Date('2026-07-11T00:00:00.000Z'),
   updatedAt: new Date('2026-07-18T09:00:00.000Z'),
@@ -38,6 +39,17 @@ const makeService = (): WeeklyDayOffService => ({
   list: vi.fn(async () => ({ items: [record], total: 1 })),
   convert: vi.fn(async () => record),
   revert: vi.fn(async () => ({
+    ...record,
+    status: 'absence' as const,
+    requiredMinutes: 600,
+  })),
+  markWithoutPermission: vi.fn(async () => ({
+    ...record,
+    status: 'absence' as const,
+    requiredMinutes: 600,
+    withoutPermissionAt: new Date('2026-07-18T09:00:00.000Z'),
+  })),
+  clearWithoutPermission: vi.fn(async () => ({
     ...record,
     status: 'absence' as const,
     requiredMinutes: 600,
@@ -106,6 +118,51 @@ describe('weekly day-off HTTP API', () => {
     });
     expect(invalid.status).toBe(400);
     expect(invalid.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('marks and clears the without-permission state of an absence', async () => {
+    const service = makeService();
+    const app = createApp({ authService: makeAuth(), weeklyDayOffService: service });
+    const cookie = { Cookie: 'capella_session=x' };
+
+    const marked = await request(app)
+      .post('/api/v1/weekly-day-offs/11/mark-without-permission').set(cookie);
+    const cleared = await request(app)
+      .post('/api/v1/weekly-day-offs/11/clear-without-permission').set(cookie);
+
+    expect(marked.status).toBe(200);
+    expect(cleared.status).toBe(200);
+    expect(vi.mocked(service.markWithoutPermission)).toHaveBeenCalledWith(11);
+    expect(vi.mocked(service.clearWithoutPermission)).toHaveBeenCalledWith(11);
+  });
+
+  it('rejects a without-permission mark on a financially locked month', async () => {
+    const service = makeService();
+    vi.mocked(service.markWithoutPermission).mockRejectedValue(new WeeklyDayOffError(
+      'ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED',
+      'لا يمكن تعديل الغياب بدون إذن بعد اعتماد الشهر ماليًا',
+    ));
+    const app = createApp({ authService: makeAuth(), weeklyDayOffService: service });
+
+    const response = await request(app)
+      .post('/api/v1/weekly-day-offs/11/mark-without-permission')
+      .set('Cookie', 'capella_session=x');
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED');
+  });
+
+  it('passes the without-permission filter through to the service', async () => {
+    const service = makeService();
+    const response = await request(createApp({
+      authService: makeAuth(), weeklyDayOffService: service,
+    })).get('/api/v1/weekly-day-offs?status=absence&withoutPermission=true')
+      .set('Cookie', 'capella_session=x');
+
+    expect(response.status).toBe(200);
+    expect(vi.mocked(service.list)).toHaveBeenCalledWith({
+      status: 'absence', withoutPermission: true, page: 1, pageSize: 20,
+    });
   });
 
   it('does not expose arbitrary create, update, or delete operations', async () => {

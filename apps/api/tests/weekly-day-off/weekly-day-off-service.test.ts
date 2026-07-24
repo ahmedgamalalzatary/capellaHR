@@ -18,6 +18,7 @@ const absence: WeeklyDayRecord = {
   status: 'absence',
   absenceRequiredMinutes: 600,
   requiredMinutes: 600,
+  withoutPermissionAt: null,
   dayOffConvertedAt: null,
   createdAt: new Date('2026-07-11T00:00:00.000Z'),
   updatedAt: new Date('2026-07-11T00:00:00.000Z'),
@@ -30,11 +31,19 @@ const dayOff: WeeklyDayRecord = {
   dayOffConvertedAt: new Date('2026-07-18T09:00:00.000Z'),
 };
 
+const markedAbsence: WeeklyDayRecord = {
+  ...absence,
+  withoutPermissionAt: new Date('2026-07-18T09:00:00.000Z'),
+};
+
 const makeRepository = (): WeeklyDayOffRepository => ({
   findById: vi.fn(async () => absence),
   list: vi.fn(async () => ({ items: [absence], total: 1 })),
   convertToDayOff: vi.fn(async () => ({ kind: 'success' as const, record: dayOff })),
   revertToAbsence: vi.fn(async () => ({ kind: 'success' as const, record: absence })),
+  setWithoutPermission: vi.fn(async (_id: number, marked: boolean) => ({
+    kind: 'success' as const, record: marked ? markedAbsence : absence,
+  })),
 });
 const isFinanciallyUnlocked = () => Promise.resolve(false);
 
@@ -84,6 +93,33 @@ describe('weekly day-off service', () => {
       isFinanciallyLocked: isFinanciallyUnlocked,
       today: () => '2026-07-18',
     }).convert(11)).rejects.toMatchObject({ code });
+  });
+
+  it('routes both without-permission verbs through one financially guarded call', async () => {
+    const repository = makeRepository();
+    const isLocked = vi.fn(async () => false);
+    const service = createWeeklyDayOffService(repository, {
+      today: () => '2026-07-18', isFinanciallyLocked: isLocked,
+    });
+
+    await expect(service.markWithoutPermission(11)).resolves.toEqual(markedAbsence);
+    await expect(service.clearWithoutPermission(11)).resolves.toEqual(absence);
+    expect(vi.mocked(repository.setWithoutPermission).mock.calls)
+      .toEqual([[11, true, isLocked], [11, false, isLocked]]);
+  });
+
+  it.each([
+    ['not_found', 'WEEKLY_DAY_RECORD_NOT_FOUND'],
+    ['not_absence', 'ABSENCE_WITHOUT_PERMISSION_INVALID_STATE'],
+    ['financially_locked', 'ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED'],
+  ] as const)('maps without-permission result %s to %s', async (kind, code) => {
+    const repository = makeRepository();
+    vi.mocked(repository.setWithoutPermission).mockResolvedValue({ kind });
+
+    await expect(createWeeklyDayOffService(repository, {
+      isFinanciallyLocked: isFinanciallyUnlocked,
+      today: () => '2026-07-18',
+    }).markWithoutPermission(11)).rejects.toMatchObject({ code });
   });
 
   it('reverts a day off and restores its preserved absence snapshot', async () => {
