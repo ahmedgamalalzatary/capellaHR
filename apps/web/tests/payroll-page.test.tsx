@@ -168,6 +168,45 @@ describe('PayrollView', () => {
     await waitFor(() => expect(mocks.finalizeBranchPayroll).toHaveBeenCalledWith(3, '2026-06'));
   });
 
+  test('names the branch and month it is about to finalize', async () => {
+    mocks.listBranches.mockResolvedValue(pageOf([
+      { id: 3, name: 'فرع القاهرة' },
+      { id: 4, name: 'فرع الجيزة' },
+    ]));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '4' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
+
+    const prompt = screen.getByText(/اعتماد نهائي لرواتب/);
+    expect(prompt.textContent).toContain('فرع الجيزة');
+    expect(prompt.textContent).toContain('2026-06');
+  });
+
+  test('drops a pending branch confirmation when the branch or month changes', async () => {
+    mocks.listBranches.mockResolvedValue(pageOf([
+      { id: 3, name: 'فرع القاهرة' },
+      { id: 4, name: 'فرع الجيزة' },
+    ]));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
+    expect(screen.getByRole('button', { name: 'تأكيد اعتماد الفرع' })).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '4' } });
+
+    expect(screen.queryByRole('button', { name: 'تأكيد اعتماد الفرع' })).toBeNull();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
+    expect(screen.getByRole('button', { name: 'تأكيد اعتماد الفرع' })).toBeDefined();
+    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-05' } });
+
+    expect(screen.queryByRole('button', { name: 'تأكيد اعتماد الفرع' })).toBeNull();
+    expect(mocks.finalizeBranchPayroll).not.toHaveBeenCalled();
+  });
+
   test('surfaces the Arabic error when attendance facts are unavailable', async () => {
     mocks.listPayrollMonths.mockRejectedValue(new ApiError(503, {
       code: 'PAYROLL_ATTENDANCE_UNAVAILABLE',

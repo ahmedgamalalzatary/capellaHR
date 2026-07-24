@@ -342,6 +342,20 @@ describe('ReportsView', () => {
     expect(within(exportRow(11)).getByText('تم حذف الملف')).toBeDefined();
   });
 
+  test('renders an export whose status and type the client does not know', async () => {
+    mocks.listReportExports.mockResolvedValue(pageOf([
+      { ...completedExport, id: 12, status: 'archived', reportType: 'tenure' },
+    ]));
+    renderView();
+    await screen.findByText('فرع المعادى');
+
+    const row = exportRow(12);
+    expect(within(row).getByText('archived')).toBeDefined();
+    expect(within(row).getByText('tenure')).toBeDefined();
+    // An unknown status is not treated as a completed export.
+    expect(within(row).queryByRole('button', { name: 'تنزيل PDF' })).toBeNull();
+  });
+
   test('downloads a completed export as a PDF file', async () => {
     mocks.downloadReportExport.mockResolvedValue(new Blob(['pdf']));
     renderView();

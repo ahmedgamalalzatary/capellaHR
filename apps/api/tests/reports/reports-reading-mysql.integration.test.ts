@@ -1,176 +1,34 @@
-import { createDatabase } from '@capella/database';
-import { employeeEmploymentPeriods } from '@capella/database/schema';
 import {
   advanceInstallments,
   advances,
-  auditEvents,
   attendanceDailyRecords,
   attendanceDeniedAttempts,
   attendanceSessions,
-  authSessions,
-  bonuses,
   branches,
-  deductions,
-  deviceHistory,
-  devicePairingRequests,
-  devices,
   employeeBranchAssignments,
-  employeeCodeSequence,
   employeeImages,
-  employeePhoneReservations,
-  employeeSalaryPeriods,
   employees,
   payrollMonths,
-  reportExports,
 } from '@capella/database/schema';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  createDrizzleReportExportRepository,
   createDrizzleReportReader,
 } from '../../src/modules/reports/index.js';
-import { runWithAuditContext } from '../../src/modules/audit/index.js';
 import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/index.js';
 import { createPayrollModule } from '../../src/modules/payroll/index.js';
+import {
+  database,
+  now,
+  clear,
+  seed,
+} from './reports-mysql-fixtures.js';
 
-const database = createDatabase(process.env.DATABASE_URL ?? '');
-const now = new Date('2026-07-19T08:00:00.000Z');
-
-const clear = async () => {
-  await database.delete(auditEvents);
-  await database.delete(reportExports);
-  await database.delete(advanceInstallments);
-  await database.delete(advances);
-  await database.delete(bonuses);
-  await database.delete(deductions);
-  await database.delete(payrollMonths);
-  await database.delete(employeeSalaryPeriods);
-  await database.delete(attendanceDeniedAttempts);
-  await database.delete(attendanceDailyRecords);
-  await database.delete(attendanceSessions);
-  await database.delete(deviceHistory);
-  await database.delete(devices);
-  await database.delete(devicePairingRequests);
-  await database.delete(authSessions);
-  await database.delete(employeeImages);
-  await database.delete(employeePhoneReservations);
-  await database.delete(employeeBranchAssignments);
-  await database.delete(employeeEmploymentPeriods);
-  await database.delete(employees);
-  await database.delete(employeeCodeSequence);
-  await database.delete(branches);
-};
 beforeEach(clear);
 afterAll(clear);
 
-const seed = async () => {
-  const branchId = Number((await database.insert(branches).values({
-    name: 'فرع القاهرة',
-    nameNormalized: 'cairo-report-branch',
-    location: 'وسط البلد',
-    latitude: 30.0444,
-    longitude: 31.2357,
-    gpsAccuracyMeters: 4,
-    attendanceRadiusMeters: 50,
-    hasEverBeenReferenced: true,
-    createdAt: now,
-    updatedAt: now,
-  }))[0].insertId);
-  const employeeId = Number((await database.insert(employees).values({
-    employeeCode: 1,
-    fullName: 'أحمد علي',
-    personalPhone: '01000000001',
-    whatsappPhone: '01100000001',
-    pinHash: 'must-never-appear',
-    credentialVersion: 1,
-    age: 30,
-    address: 'القاهرة',
-    branchId,
-    shiftDurationMinutes: 600,
-    monthlyBaseSalary: '6000.00',
-    createdAt: now,
-    updatedAt: now,
-  }))[0].insertId);
-  const deletedEmployeeId = Number((await database.insert(employees).values({
-    employeeCode: 2,
-    fullName: 'موظف محذوف',
-    personalPhone: '01000000002',
-    whatsappPhone: '01100000002',
-    pinHash: 'deleted-pin-hash',
-    credentialVersion: 2,
-    age: 35,
-    address: 'الجيزة',
-    branchId,
-    shiftDurationMinutes: 480,
-    monthlyBaseSalary: '5000.00',
-    deletedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  }))[0].insertId);
-  await database.insert(employeeBranchAssignments).values([
-    { employeeId, branchId, effectiveFrom: now, createdAt: now },
-    { employeeId: deletedEmployeeId, branchId, effectiveFrom: now, createdAt: now },
-  ]);
-  await database.insert(devices).values({
-    assignmentType: 'employee',
-    employeeId,
-    installationMarkerHash: 'b'.repeat(64),
-    browser: 'Mobile Safari',
-    platform: 'iOS',
-    status: 'active',
-    pairedAt: now,
-  });
-  await database.insert(attendanceDailyRecords).values({
-    employeeId: deletedEmployeeId,
-    branchId,
-    attendanceDate: '2026-07-12',
-    status: 'weekly_day_off',
-    absenceRequiredMinutes: 480,
-    dayOffConvertedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await database.insert(attendanceSessions).values({
-    employeeId,
-    branchId,
-    attendanceDate: '2026-07-19',
-    requiredMinutes: 600,
-    checkInAt: now,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await database.insert(bonuses).values({
-    employeeId,
-    payrollMonth: '2026-07-01',
-    amount: '100.00',
-    reason: 'أداء استثنائي',
-    createdAt: now,
-    updatedAt: now,
-  });
-  await database.insert(deductions).values({
-    employeeId: deletedEmployeeId,
-    payrollMonth: '2026-07-01',
-    amount: '25.00',
-    createdAt: now,
-    updatedAt: now,
-  });
-  const advanceId = Number((await database.insert(advances).values({
-    employeeId,
-    amount: '80.00',
-    installmentCount: 2,
-    startMonth: '2026-07-01',
-    createdAt: now,
-    updatedAt: now,
-  }))[0].insertId);
-  await database.insert(advanceInstallments).values([
-    { advanceId, employeeId, ordinal: 1, payrollMonth: '2026-07-01', amount: '40.00', createdAt: now },
-    { advanceId, employeeId, ordinal: 2, payrollMonth: '2026-08-01', amount: '40.00', createdAt: now },
-  ]);
-  return { branchId, employeeId, deletedEmployeeId, advanceId };
-};
-
-describe('MySQL-backed reports', () => {
+describe('MySQL-backed reports reading', () => {
   it('keeps historical report rows and branch filters under the original branch', async () => {
     const { branchId, employeeId, deletedEmployeeId } = await seed();
     const newBranchId = Number((await database.insert(branches).values({
@@ -199,6 +57,68 @@ describe('MySQL-backed reports', () => {
         .resolves.toMatchObject({ kind: 'success', total: 0 });
     }
   });
+  it('exports payroll rows under the historical branch of the month like the interactive report', async () => {
+    const { branchId, employeeId, deletedEmployeeId } = await seed();
+    const newBranchId = Number((await database.insert(branches).values({
+      name: 'Later payroll branch', nameNormalized: 'later-payroll-branch', location: 'Giza',
+      latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50,
+      hasEverBeenReferenced: true, createdAt: now, updatedAt: now,
+    }))[0].insertId);
+    // The employees move branch only in August, so July payroll still belongs to the old branch.
+    const movedAt = new Date('2026-08-01T00:00:00.000Z');
+    for (const movedEmployeeId of [employeeId, deletedEmployeeId]) {
+      await database.update(employeeBranchAssignments).set({ effectiveTo: movedAt })
+        .where(and(
+          eq(employeeBranchAssignments.employeeId, movedEmployeeId),
+          eq(employeeBranchAssignments.branchId, branchId),
+        ));
+      await database.insert(employeeBranchAssignments)
+        .values({ employeeId: movedEmployeeId, branchId: newBranchId, effectiveFrom: movedAt, createdAt: movedAt });
+      await database.update(employees).set({ branchId: newBranchId, updatedAt: movedAt })
+        .where(eq(employees.id, movedEmployeeId));
+    }
+    const attendance = createDrizzleAttendanceRepository(database, {
+      now: () => now,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: () => Promise.resolve(600),
+    });
+    const payroll = createPayrollModule(database, { now: () => now, attendance });
+    const reader = createDrizzleReportReader(database, {
+      now: () => now,
+      payroll: {
+        preview: (targetEmployeeId, month, context) =>
+          payroll.repository.previewInContext(targetEmployeeId, month, attendance, context),
+      },
+    });
+    const filters = { monthFrom: '2026-07', monthTo: '2026-07', branchId } as const;
+
+    const interactive = await reader.read('payroll', filters, { mode: 'all' }, null, now);
+    expect(interactive).toMatchObject({
+      kind: 'success',
+      total: 2,
+      snapshot: { rows: expect.arrayContaining([expect.objectContaining({ branchId })]) },
+    });
+    if (interactive.kind !== 'success') return;
+
+    const exported: Array<Record<string, unknown>> = [];
+    const batched = await reader.readBatches(
+      'payroll', filters, { mode: 'all' }, 1, now,
+      async (rows) => { exported.push(...rows); },
+    );
+
+    expect(batched).toMatchObject({ kind: 'success', total: interactive.total, rowCount: interactive.total });
+    expect(exported).toEqual(interactive.snapshot.rows);
+    if (batched.kind !== 'success') return;
+    expect(batched.snapshot.summary).toEqual(interactive.snapshot.summary);
+
+    // The August branch must claim the same rows once the month moves with the assignment.
+    await expect(reader.readBatches(
+      'payroll', { ...filters, branchId: newBranchId }, { mode: 'all' }, 1, now,
+      async () => {},
+    )).resolves.toMatchObject({ kind: 'success', total: 0, rowCount: 0 });
+  });
+
   it('cleans employee-owned residue before deleting shared fixtures', async () => {
     const { employeeId } = await seed();
     await database.insert(employeeImages).values({
@@ -593,183 +513,5 @@ describe('MySQL-backed reports', () => {
       .resolves.toMatchObject({ kind: 'success', total: 1 });
     expect(transactionCount).toBe(1);
     expect(transactionOptions).toMatchObject({ isolationLevel: 'repeatable read', accessMode: 'read only' });
-  });
-
-  it('walks an unrestricted export in bounded batches inside one snapshot transaction', async () => {
-    await seed();
-    await database.insert(branches).values(Array.from({ length: 125 }, (_, index) => ({
-      name: `Export branch ${index}`,
-      nameNormalized: `export-branch-${index}`,
-      location: 'Cairo',
-      latitude: 30,
-      longitude: 31,
-      gpsAccuracyMeters: 5,
-      attendanceRadiusMeters: 50,
-      createdAt: now,
-      updatedAt: now,
-    })));
-    const reader = createDrizzleReportReader(database);
-    const batchSizes: number[] = [];
-
-    const result = await reader.readBatches(
-      'branches', {}, { mode: 'all' }, 25, now,
-      async (rows) => { batchSizes.push(rows.length); },
-    );
-
-    expect(result).toMatchObject({ kind: 'success', total: 126, rowCount: 126 });
-    expect(Math.max(...batchSizes)).toBeLessThanOrEqual(25);
-    expect(batchSizes.length).toBeGreaterThan(1);
-  });
-
-  it('claims exports once, retries three times, and retains metadata after file deletion', async () => {
-    await seed();
-    const repository = createDrizzleReportExportRepository(database);
-    const created = await repository.create({
-      reportType: 'employees', filters: {}, selection: { mode: 'all' },
-    }, now);
-
-    const claims = await Promise.all([
-      repository.claimNext(now),
-      repository.claimNext(now),
-    ]);
-    expect(claims.filter(Boolean)).toHaveLength(1);
-    expect(claims.filter((claim) => claim === null)).toHaveLength(1);
-
-    await expect(repository.recordFailure(created.id, 'PDF_EXPORT_FAILED', now))
-      .resolves.toMatchObject({ status: 'queued', attemptCount: 1, cycleAttemptCount: 1 });
-    await repository.claimNext(now);
-    await expect(repository.recordFailure(created.id, 'PDF_EXPORT_FAILED', now))
-      .resolves.toMatchObject({ status: 'queued', attemptCount: 2, cycleAttemptCount: 2 });
-    await repository.claimNext(now);
-    await expect(repository.recordFailure(created.id, 'PDF_EXPORT_FAILED', now))
-      .resolves.toMatchObject({ status: 'failed', attemptCount: 3, cycleAttemptCount: 3 });
-
-    const manualRetries = await Promise.all([
-      repository.retryFailed(created.id, now),
-      repository.retryFailed(created.id, now),
-    ]);
-    expect(manualRetries.filter(Boolean)).toHaveLength(1);
-    expect(manualRetries.filter((record) => record === null)).toHaveLength(1);
-    await expect(repository.findById(created.id)).resolves.toMatchObject({
-      status: 'queued',
-      attemptCount: 3,
-      cycleAttemptCount: 0,
-      retryCount: 1,
-      failureReason: 'PDF_EXPORT_FAILED',
-      startedAt: null,
-      failedAt: now,
-    });
-
-    await database.update(reportExports).set({
-      status: 'completed',
-      filePath: 'reports/1.pdf',
-      fileSha256: 'c'.repeat(64),
-      fileSizeBytes: 123,
-      rowCount: 2,
-      completedAt: now,
-    });
-    const deleted = await repository.markFileDeleted(created.id, now);
-    expect(deleted).toMatchObject({
-      status: 'completed',
-      filePath: 'reports/1.pdf',
-      fileSha256: 'c'.repeat(64),
-      fileSizeBytes: 123,
-      rowCount: 2,
-      fileDeletedAt: now,
-    });
-    await expect(repository.listPendingFileDeletes()).resolves.toEqual([
-      { id: created.id, filePath: 'reports/1.pdf' },
-    ]);
-    await expect(repository.clearDeletedFilePath(created.id, 'reports/1.pdf', now))
-      .resolves.toMatchObject({ filePath: null, fileDeletedAt: now });
-    const events = await database.select().from(auditEvents)
-      .where(eq(auditEvents.module, 'reports')).orderBy(asc(auditEvents.id));
-    expect(events.map(({ action }) => action)).toEqual([
-      'export_create',
-      'export_processing', 'export_failure',
-      'export_processing', 'export_failure',
-      'export_processing', 'export_failure',
-      'export_retry', 'file_delete_mark', 'file_delete_complete',
-    ]);
-    expect(events.at(-1)).toMatchObject({
-      entityType: 'report_export', entityId: String(created.id),
-    });
-    expect(events.at(-1)?.afterState).not.toHaveProperty('filePath');
-  });
-
-  it('keeps the initiating request ID on background export transitions', async () => {
-    await seed();
-    const repository = createDrizzleReportExportRepository(database);
-    const created = await runWithAuditContext({
-      actorType: 'admin', actorIdentifier: 'admin', requestId: 'request-export-17',
-      ipAddress: '127.0.0.1', userAgent: 'Vitest',
-    }, () => repository.create({
-      reportType: 'employees', filters: {}, selection: { mode: 'all' },
-    }, now));
-
-    await repository.claimNext(now);
-    await repository.recordFailure(created.id, 'PDF_EXPORT_FAILED', now);
-
-    const events = await database.select().from(auditEvents)
-      .where(eq(auditEvents.entityId, String(created.id))).orderBy(asc(auditEvents.id));
-    expect(events.map(({ action, requestId }) => ({ action, requestId }))).toEqual([
-      { action: 'export_create', requestId: 'request-export-17' },
-      { action: 'export_processing', requestId: 'request-export-17' },
-      { action: 'export_failure', requestId: 'request-export-17' },
-    ]);
-  });
-
-  it('keeps a file-deletion request ID when maintenance completes deletion later', async () => {
-    await seed();
-    const repository = createDrizzleReportExportRepository(database);
-    const created = await runWithAuditContext({
-      actorType: 'admin', actorIdentifier: 'admin', requestId: 'request-export-create',
-      ipAddress: '127.0.0.1', userAgent: 'Vitest',
-    }, () => repository.create({
-      reportType: 'employees', filters: {}, selection: { mode: 'all' },
-    }, now));
-    await database.update(reportExports).set({
-      status: 'completed', filePath: 'reports/correlated.pdf', fileSha256: 'a'.repeat(64),
-      fileSizeBytes: 10, rowCount: 1, completedAt: now,
-    }).where(eq(reportExports.id, created.id));
-
-    await runWithAuditContext({
-      actorType: 'admin', actorIdentifier: 'admin', requestId: 'request-file-delete',
-      ipAddress: '127.0.0.1', userAgent: 'Vitest',
-    }, () => repository.markFileDeleted(created.id, now));
-    await repository.clearDeletedFilePath(created.id, 'reports/correlated.pdf', now);
-
-    const events = await database.select().from(auditEvents)
-      .where(eq(auditEvents.entityId, String(created.id))).orderBy(asc(auditEvents.id));
-    expect(events.slice(-2).map(({ action, requestId }) => ({ action, requestId }))).toEqual([
-      { action: 'file_delete_mark', requestId: 'request-file-delete' },
-      { action: 'file_delete_complete', requestId: 'request-file-delete' },
-    ]);
-  });
-
-  it('recovers interrupted jobs without exceeding the three-attempt ceiling', async () => {
-    await seed();
-    const repository = createDrizzleReportExportRepository(database);
-    const retryable = await repository.create({
-      reportType: 'employees', filters: {}, selection: { mode: 'all' },
-    }, now);
-    const exhausted = await repository.create({
-      reportType: 'branches', filters: {}, selection: { mode: 'all' },
-    }, now);
-    const stale = new Date('2026-07-19T07:00:00.000Z');
-    await database.update(reportExports).set({
-      status: 'processing', attemptCount: 1, cycleAttemptCount: 1, startedAt: stale,
-    }).where(eq(reportExports.id, retryable.id));
-    await database.update(reportExports).set({
-      status: 'processing', attemptCount: 3, cycleAttemptCount: 3, startedAt: stale,
-    }).where(eq(reportExports.id, exhausted.id));
-
-    await expect(repository.recoverStale(now, now)).resolves.toBe(2);
-    await expect(repository.findById(retryable.id)).resolves.toMatchObject({
-      status: 'queued', attemptCount: 1, cycleAttemptCount: 1, failureReason: 'WORKER_INTERRUPTED',
-    });
-    await expect(repository.findById(exhausted.id)).resolves.toMatchObject({
-      status: 'failed', attemptCount: 3, cycleAttemptCount: 3, failureReason: 'WORKER_INTERRUPTED',
-    });
   });
 });

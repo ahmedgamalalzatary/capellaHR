@@ -79,6 +79,7 @@ export type AttendanceDeniedAttempt = {
 type AttendanceMutationFailure =
   | 'employee_not_found'
   | 'credentials_changed'
+  | 'employment_inactive'
   | 'device_invalid'
   | 'out_of_range'
   | 'weekly_day_off'
@@ -198,6 +199,7 @@ const failures: Record<AttendanceMutationFailure, {
 }> = {
   employee_not_found: { code: 'ATTENDANCE_EMPLOYEE_NOT_FOUND', reason: 'EMPLOYEE_NOT_FOUND', message: 'الموظف غير موجود', suspicious: false },
   credentials_changed: { code: 'ATTENDANCE_INVALID_CREDENTIALS', reason: 'INVALID_CREDENTIALS', message: 'بيانات الموظف غير صحيحة', suspicious: true },
+  employment_inactive: { code: 'ATTENDANCE_EMPLOYMENT_INACTIVE', reason: 'EMPLOYMENT_INACTIVE', message: 'الموظف غير مُعيَّن في هذا التاريخ', suspicious: false },
   device_invalid: { code: 'ATTENDANCE_DEVICE_INVALID', reason: 'DEVICE_INVALID', message: 'الجهاز غير مسجل أو ملغى', suspicious: true },
   out_of_range: { code: 'ATTENDANCE_OUT_OF_RANGE', reason: 'OUT_OF_RANGE', message: 'الموقع خارج نطاق الفرع المسموح', suspicious: true },
   weekly_day_off: { code: 'ATTENDANCE_WEEKLY_DAY_OFF', reason: 'WEEKLY_DAY_OFF', message: 'يجب إعادة يوم الراحة إلى غياب أولاً', suspicious: false },
