@@ -2,15 +2,30 @@ import { getTableColumns } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
-import { employeeBranchAssignments, employeeCodeSequence, employeeImages, employees } from './index.js';
+import {
+  employeeBranchAssignments,
+  employeeCodeSequence,
+  employeeEmploymentPeriods,
+  employeeImages,
+  employees,
+} from './index.js';
 
 describe('employee schema', () => {
   it('stores immutable identity, payroll/shift foundation and soft deletion', () => {
     expect(Object.keys(getTableColumns(employees))).toEqual(expect.arrayContaining([
       'id', 'employeeCode', 'fullName', 'personalPhone', 'whatsappPhone', 'pinHash', 'age',
-      'address', 'branchId', 'shiftDurationMinutes', 'monthlyBaseSalary', 'deletedAt',
+      'address', 'branchId', 'shiftDurationMinutes', 'monthlyBaseSalary', 'employmentStatus', 'deletedAt',
     ]));
     expect(getTableConfig(employees).indexes.some((index) => index.config.name === 'employees_employee_code_unique')).toBe(true);
+  });
+
+  it('stores every active employment period for reversible mid-month cutoffs', () => {
+    expect(Object.keys(getTableColumns(employeeEmploymentPeriods))).toEqual(expect.arrayContaining([
+      'id', 'employeeId', 'activeFrom', 'activeTo', 'currentEmployeeId', 'createdAt',
+    ]));
+    const indexes = getTableConfig(employeeEmploymentPeriods).indexes.map((index) => index.config.name);
+    expect(indexes).toContain('employee_employment_periods_employee_period_idx');
+    expect(indexes).toContain('employee_employment_periods_current_employee_unique');
   });
 
   it('stores private image metadata and a singleton code allocator', () => {

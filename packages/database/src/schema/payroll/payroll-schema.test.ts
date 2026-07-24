@@ -6,6 +6,7 @@ import {
   advances,
   bonuses,
   deductions,
+  employeeDeactivationPayments,
   employeeSalaryPeriods,
   financialAuditEvents,
   payrollMonths,
@@ -70,5 +71,13 @@ describe('payroll schema', () => {
     expect(config(financialAuditEvents).columns.map((column) => column.name)).toEqual(expect.arrayContaining([
       'entity_type', 'entity_id', 'action', 'before_state', 'after_state', 'created_at',
     ]));
+  });
+
+  it('stores deactivation cash payments separately from bonuses and snapshots them in payroll', () => {
+    expect(config(employeeDeactivationPayments).name).toBe('employee_deactivation_payments');
+    expect(config(employeeDeactivationPayments).checks
+      .some((check) => check.name === 'employee_deactivation_payments_amount_positive')).toBe(true);
+    expect(config(payrollMonths).columns
+      .some((column) => column.name === 'deactivation_payment_amount')).toBe(true);
   });
 });

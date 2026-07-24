@@ -8,6 +8,7 @@ export const employees = mysqlTable('employees', {
   credentialVersion: int('credential_version').notNull().default(1),
   age: int('age').notNull(), address: varchar('address', { length: 1000 }).notNull(), branchId: int('branch_id').notNull().references(() => branches.id),
   shiftDurationMinutes: int('shift_duration_minutes').notNull(), monthlyBaseSalary: decimal('monthly_base_salary', { precision: 12, scale: 2 }).notNull(),
+  employmentStatus: mysqlEnum('employment_status', ['active', 'inactive']).notNull().default('active'),
   deletedAt: timestamp('deleted_at', { mode: 'date', fsp: 3 }), createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(), updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   uniqueIndex('employees_employee_code_unique').on(table.employeeCode),
@@ -40,4 +41,17 @@ export const employeeBranchAssignments = mysqlTable('employee_branch_assignments
   index('employee_branch_assignments_employee_period_idx').on(table.employeeId, table.effectiveFrom, table.effectiveTo),
   index('employee_branch_assignments_branch_period_idx').on(table.branchId, table.effectiveFrom, table.effectiveTo),
   check('employee_branch_assignments_period_valid', sql`${table.effectiveTo} is null or ${table.effectiveTo} >= ${table.effectiveFrom}`),
+]);
+export const employeeEmploymentPeriods = mysqlTable('employee_employment_periods', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  activeFrom: timestamp('active_from', { mode: 'date', fsp: 3 }).notNull(),
+  activeTo: timestamp('active_to', { mode: 'date', fsp: 3 }),
+  currentEmployeeId: int('current_employee_id')
+    .generatedAlwaysAs(sql`case when active_to is null then employee_id else null end`, { mode: 'stored' }),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('employee_employment_periods_current_employee_unique').on(table.currentEmployeeId),
+  index('employee_employment_periods_employee_period_idx').on(table.employeeId, table.activeFrom, table.activeTo),
+  check('employee_employment_periods_period_valid', sql`${table.activeTo} is null or ${table.activeTo} >= ${table.activeFrom}`),
 ]);

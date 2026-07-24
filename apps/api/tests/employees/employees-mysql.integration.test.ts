@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -13,7 +13,7 @@ const branchModule = createBranchesModule(database); const employeeModule = crea
 const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, originalName: `${name}.jpg`, mimeType: 'image/jpeg', sizeBytes: 10 });
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
 
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
   it('atomically reassigns a checked-out employee and preserves branch history', async () => {
     const oldBranch = await branchModule.service.create({ name: 'Old branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -47,6 +47,8 @@ describe('MySQL-backed employees', () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const created = await employeeModule.service.create(employee(branch.id, '01012345678')); await employeeModule.service.remove(created.id);
     expect((await employeeModule.service.list({ page: 1, pageSize: 20 })).total).toBe(0);
+    expect((await database.select().from(employeeEmploymentPeriods)
+      .where(eq(employeeEmploymentPeriods.employeeId, created.id)))[0]?.activeTo).not.toBeNull();
     await expect(employeeModule.service.create({ ...employee(branch.id, '01112345678'), whatsappPhone: '01012345678' })).rejects.toMatchObject({ code: 'EMPLOYEE_PHONE_EXISTS' });
   });
   it('atomically revokes sessions on PIN reset and deletion', async () => {

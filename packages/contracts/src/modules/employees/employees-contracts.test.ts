@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createEmployeeFieldsSchema, listEmployeesQuerySchema, updateEmployeeFieldsSchema } from './index.js';
+import {
+  createEmployeeFieldsSchema,
+  employeeDeactivationSchema,
+  listEmployeesQuerySchema,
+  updateEmployeeFieldsSchema,
+} from './index.js';
 
 const valid = {
   fullName: 'أحمد محمد', personalPhone: '010 1234 5678', whatsappPhone: '01012345678',
@@ -52,7 +57,27 @@ describe('employee contracts', () => {
   });
 
   it('parses employee list filters', () => {
-    expect(listEmployeesQuerySchema.parse({ branchId: '2', page: '2' })).toMatchObject({ branchId: 2, page: 2, pageSize: 20 });
+    expect(listEmployeesQuerySchema.parse({ branchId: '2', status: 'inactive', page: '2' }))
+      .toMatchObject({ branchId: 2, status: 'inactive', page: 2, pageSize: 20 });
+  });
+
+  it('requires an explicit advance and negative-balance decision for deactivation', () => {
+    expect(employeeDeactivationSchema.parse({
+      advanceDecision: 'accelerate',
+      negativeBalanceDecision: 'keep_debt',
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '1500.00',
+      expectedProjectedNetSalary: '-500.00',
+      expectedAmountOwed: '500.00',
+    })).toEqual({
+      advanceDecision: 'accelerate',
+      negativeBalanceDecision: 'keep_debt',
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '1500.00',
+      expectedProjectedNetSalary: '-500.00',
+      expectedAmountOwed: '500.00',
+    });
+    expect(employeeDeactivationSchema.safeParse({}).success).toBe(false);
   });
 
   it('rejects filters outside safe MySQL and pagination ranges', () => {

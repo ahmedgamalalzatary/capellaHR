@@ -46,7 +46,7 @@ export const createDrizzleBonusRepository = (
       return database.transaction(async (transaction) => {
         const employee = await lockEmployee(transaction, input.employeeId);
         if (!employee) return { kind: 'employee_not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         if (input.payrollMonth < calendarMonthInTimeZone(employee.createdAt, timeZone)) return { kind: 'ineligible_month' as const };
         if (input.payrollMonth > context.currentMonth()) return { kind: 'future_month' as const };
         if (await isFinalized(transaction, input.employeeId, input.payrollMonth)) return { kind: 'finalized' as const };
@@ -91,7 +91,7 @@ export const createDrizzleBonusRepository = (
         if (!employee) return { kind: 'not_found' as const };
         const current = await rawFind(transaction, id);
         if (!current) return { kind: 'not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         const currentMonth = current.payrollMonth.slice(0, 7);
         if (await isFinalized(transaction, employee.id, currentMonth)) return { kind: 'finalized' as const };
         const targetMonth = input.payrollMonth ?? currentMonth;
@@ -117,7 +117,7 @@ export const createDrizzleBonusRepository = (
         const employee = await lockEmployee(transaction, owner.employeeId);
         const current = await rawFind(transaction, id);
         if (!employee || !current) return { kind: 'not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         if (await isFinalized(transaction, employee.id, current.payrollMonth.slice(0, 7))) return { kind: 'finalized' as const };
         const before = expose(current)!;
         await transaction.delete(bonuses).where(eq(bonuses.id, id));

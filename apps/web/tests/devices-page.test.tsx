@@ -80,6 +80,15 @@ afterEach(() => {
 });
 
 describe('DevicesView', () => {
+  test('loads inactive employees for existing device assignments', async () => {
+    renderView();
+    await waitFor(() => {
+      expect(mocks.listEmployees).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 1, status: 'all' }),
+      );
+    });
+  });
+
   test('lists devices with resolved assignment names and status badges', async () => {
     renderView();
     const employeeRow = (await screen.findByText('أحمد جمال')).closest('tr')!;

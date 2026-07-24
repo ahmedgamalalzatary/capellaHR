@@ -397,6 +397,7 @@ export const createDrizzleDashboardRepository = (
         )));
       const notCheckedCondition = and(
         isNull(employees.deletedAt),
+        eq(employees.employmentStatus, 'active'),
         lt(employees.createdAt, startOfDate(cairoDate, timeZone)),
         noCurrentSession,
         noOpenSession,

@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
+import { Pencil, Plus, Power, PowerOff, Search, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useForm, type FieldError } from 'react-hook-form';
 
@@ -15,8 +15,11 @@ import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
 import {
   createEmployee,
+  activateEmployee,
+  deactivateEmployee,
   deleteEmployee,
   listEmployees,
+  previewEmployeeDeactivation,
   updateEmployee,
   type Employee,
   type EmployeeImageKind,
@@ -342,6 +345,7 @@ export function EmployeesView() {
         ...(search ? { search } : {}),
         ...(branchFilter !== null ? { branchId: branchFilter } : {}),
         page,
+        status: 'all',
       }),
   });
 
@@ -357,6 +361,27 @@ export function EmployeesView() {
     onSuccess: async () => {
       setConfirmDeleteId(null);
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+    },
+  });
+  const employmentState = useMutation({
+    mutationFn: async (employee: Employee) => {
+      if (employee.employmentStatus === 'inactive') return activateEmployee(employee.id);
+      const preview = await previewEmployeeDeactivation(employee.id);
+      if (preview.unpaidInstallmentCount > 0 && !window.confirm(
+        `لدى الموظف ${preview.unpaidInstallmentCount} أقساط غير مدفوعة بإجمالي ${preview.unpaidAdvanceAmount} جنيه. سيتم جمعها في الشهر الحالي. هل تريد المتابعة؟`,
+      )) return null;
+      let decision: 'keep_debt' | 'paid' = 'keep_debt';
+      if (Number(preview.amountOwed) > 0) {
+        if (window.confirm(
+          `سيصبح الموظف مدينًا للشركة بمبلغ ${preview.amountOwed} جنيه. اضغط موافق للتعطيل مع تسجيل الدين، أو إلغاء لاختيار السداد.`,
+        )) decision = 'keep_debt';
+        else if (window.confirm(`هل دفع الموظف مبلغ ${preview.amountOwed} جنيه لتصفير المديونية؟`)) decision = 'paid';
+        else return null;
+      }
+      return deactivateEmployee(employee.id, decision, preview);
+    },
+    onSuccess: async (result) => {
+      if (result) await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
     },
   });
 
@@ -511,6 +536,17 @@ export function EmployeesView() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={employmentState.isPending}
+                          onClick={() => employmentState.mutate(employee)}
+                        >
+                          {employee.employmentStatus === 'active'
+                            ? <PowerOff className="size-4" aria-hidden />
+                            : <Power className="size-4" aria-hidden />}
+                          {employee.employmentStatus === 'active' ? 'تعطيل' : 'تفعيل'}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

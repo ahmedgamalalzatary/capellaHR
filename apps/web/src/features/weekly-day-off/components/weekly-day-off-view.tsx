@@ -59,7 +59,8 @@ export function WeeklyDayOffView() {
 
   const employeesQuery = useQuery({
     queryKey: employeeQueryKeys.options(),
-    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage })),
+    queryFn: () =>
+      fetchAllPages((optionsPage) => listEmployees({ page: optionsPage, status: 'all' })),
   });
   const employees = employeesQuery.data ?? [];
 

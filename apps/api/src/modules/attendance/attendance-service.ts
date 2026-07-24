@@ -14,6 +14,7 @@ type AttendanceIdentity = {
   pinHash: string;
   credentialVersion: number;
   deletedAt: Date | null;
+  employmentStatus: 'active' | 'inactive';
   branchId: number;
   branchLatitude: number;
   branchLongitude: number;
@@ -279,6 +280,14 @@ export const createAttendanceService = (
     const pinValid = await verifyPin(identity?.pinHash ?? ATTENDANCE_TIMING_DUMMY_HASH, input.pin);
     if (!identity || identity.deletedAt || !pinValid) {
       return deny(failures.credentials_changed);
+    }
+    if (eventType === 'check_in' && identity.employmentStatus === 'inactive') {
+      return deny({
+        code: 'ATTENDANCE_EMPLOYEE_INACTIVE',
+        reason: 'EMPLOYEE_INACTIVE',
+        message: 'الموظف غير نشط',
+        suspicious: false,
+      });
     }
     const assignment = input.source === 'personal_device'
       ? { assignmentType: 'employee' as const, assignmentId: identity.id }

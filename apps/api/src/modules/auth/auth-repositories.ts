@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { type createDatabase } from '@capella/database';
 import { adminCredentials, authAttempts, authSessions, employees } from '@capella/database/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import type { AdminCredentialRepository, AttemptRepository, SessionRepository } from './auth-service.js';
@@ -41,8 +41,8 @@ export const createDrizzleAuthRepositories = (
     },
     async createEmployeeIfCurrent(session, credentialVersion, deviceEligible, attendanceEligible) {
       return database.transaction(async (tx) => {
-        const employee = (await tx.select({ credentialVersion: employees.credentialVersion, deletedAt: employees.deletedAt }).from(employees).where(eq(employees.id, session.employeeId!)).for('update').limit(1))[0];
-        if (!employee || employee.deletedAt || employee.credentialVersion !== credentialVersion) return 'credentials_changed';
+        const employee = (await tx.select({ credentialVersion: employees.credentialVersion, employmentStatus: employees.employmentStatus, deletedAt: employees.deletedAt }).from(employees).where(eq(employees.id, session.employeeId!)).for('update').limit(1))[0];
+        if (!employee || employee.deletedAt || employee.employmentStatus === 'inactive' || employee.credentialVersion !== credentialVersion) return 'credentials_changed';
         if (!await deviceEligible(tx)) return 'device_invalid';
         if (!await attendanceEligible(tx)) return 'attendance_required';
         const createdAt = now();
@@ -57,10 +57,25 @@ export const createDrizzleAuthRepositories = (
       });
     },
     async findActiveByTokenHash(tokenHash) {
-      const rows = await database.select().from(authSessions).where(and(
-        eq(authSessions.tokenHash, tokenHash),
-        isNull(authSessions.revokedAt),
-      )).limit(1);
+      const rows = await database.select({
+        id: authSessions.id,
+        tokenHash: authSessions.tokenHash,
+        actorType: authSessions.actorType,
+        employeeId: authSessions.employeeId,
+        revokedAt: authSessions.revokedAt,
+      }).from(authSessions)
+        .leftJoin(employees, eq(employees.id, authSessions.employeeId))
+        .where(and(
+          eq(authSessions.tokenHash, tokenHash),
+          isNull(authSessions.revokedAt),
+          or(
+            eq(authSessions.actorType, 'admin'),
+            and(
+              eq(employees.employmentStatus, 'active'),
+              isNull(employees.deletedAt),
+            ),
+          ),
+        )).limit(1);
       const row = rows[0];
       return row
         ? {

@@ -83,4 +83,35 @@ describe('employee router', () => {
     expect(remove).not.toHaveBeenCalledWith('employees/new.png');
     expect(recordCleanupFailure).toHaveBeenCalledWith('employees/old.png', expect.any(Error));
   });
+
+  it('previews, confirms deactivation, and reactivates through explicit admin endpoints', async () => {
+    const lifecycleService = {
+      previewDeactivation: vi.fn(async () => ({
+        unpaidInstallmentCount: 3,
+        unpaidAdvanceAmount: '1500.00',
+        projectedNetSalary: '-500.00',
+        amountOwed: '500.00',
+      })),
+      deactivate: vi.fn(async () => ({ id: 1, employmentStatus: 'inactive' })),
+      activate: vi.fn(async () => ({ id: 1, employmentStatus: 'active' })),
+    } as unknown as EmployeeService;
+    const app = createApp({
+      authService: auth,
+      employeeService: lifecycleService,
+      employeeUploadMaxBytes: 16_777_216,
+    });
+
+    expect((await request(app).get('/api/v1/employees/1/deactivation-preview')).body.data)
+      .toMatchObject({ unpaidInstallmentCount: 3, amountOwed: '500.00' });
+    expect((await request(app).post('/api/v1/employees/1/deactivate').send({
+      advanceDecision: 'accelerate',
+      negativeBalanceDecision: 'keep_debt',
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '1500.00',
+      expectedProjectedNetSalary: '-500.00',
+      expectedAmountOwed: '500.00',
+    })).body.data).toMatchObject({ employmentStatus: 'inactive' });
+    expect((await request(app).post('/api/v1/employees/1/activate')).body.data)
+      .toMatchObject({ employmentStatus: 'active' });
+  });
 });

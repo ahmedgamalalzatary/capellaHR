@@ -48,6 +48,7 @@ interface EmployeeIdentity {
   pinHash: string;
   credentialVersion: number;
   deletedAt: Date | null;
+  employmentStatus: 'active' | 'inactive';
 }
 
 export interface AuthServiceDependencies {
@@ -136,6 +137,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       const identity = await dependencies.employees.findByCode(input.employeeCode);
       const identityValid = identity !== null
         && identity.deletedAt === null
+        && identity.employmentStatus === 'active'
         && identity.personalPhone === input.personalPhone
         && await safelyVerifyHash(identity.pinHash, input.pin);
       const verifiedDevice = await dependencies.personalDevices.verify(
@@ -143,7 +145,9 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
         input.installationMarker,
       );
 
-      let reason: string | null = identityValid ? null : 'INVALID_CREDENTIALS';
+      let reason: string | null = identity?.deletedAt === null && identity.employmentStatus === 'inactive'
+        ? 'EMPLOYEE_INACTIVE'
+        : identityValid ? null : 'INVALID_CREDENTIALS';
       if (identityValid && !verifiedDevice) {
         reason = 'DEVICE_NOT_REGISTERED';
       }

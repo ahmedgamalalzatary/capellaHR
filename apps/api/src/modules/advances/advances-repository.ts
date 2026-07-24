@@ -4,6 +4,7 @@ import {
   advances,
   branches,
   employeeBranchAssignments,
+  employeeDeactivationPayments,
   employees,
   payrollMonths,
 } from '@capella/database/schema';
@@ -103,6 +104,11 @@ const firstUnfinalizedMonth = async (
   }
   return month;
 };
+const amountFromCents = (value: bigint) => `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
+const amountToCents = (value: string) => {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'));
+};
 
 export const createDrizzleAdvanceRepository = (
   database: Database,
@@ -115,7 +121,7 @@ export const createDrizzleAdvanceRepository = (
       return database.transaction(async (transaction) => {
         const employee = await lockEmployee(transaction, input.employeeId);
         if (!employee) return { kind: 'employee_not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         if (!isValidInstallmentSchedule(input.amount, input.installmentCount, input.startMonth)) {
           return { kind: 'invalid_schedule' as const };
         }
@@ -168,7 +174,7 @@ export const createDrizzleAdvanceRepository = (
         if (!employee) return { kind: 'not_found' as const };
         const current = await findRecord(transaction, id);
         if (!current) return { kind: 'not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         if (await hasFinalizedInstallment(transaction, id)) return { kind: 'finalized' as const };
         const amount = input.amount ?? current.amount;
         const installmentCount = input.installmentCount ?? current.installmentCount;
@@ -197,7 +203,7 @@ export const createDrizzleAdvanceRepository = (
         const employee = await lockEmployee(transaction, owner.employeeId);
         const current = await findRecord(transaction, id);
         if (!employee || !current) return { kind: 'not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         if (await hasFinalizedInstallment(transaction, id)) return { kind: 'finalized' as const };
         await transaction.delete(advanceInstallments).where(eq(advanceInstallments.advanceId, id));
         await transaction.delete(advances).where(eq(advances.id, id));
@@ -244,6 +250,42 @@ export const createDrizzleAdvanceRepository = (
           beforeState: before, afterState: after, createdAt: deletedAt,
         });
       }
+    },
+    async deactivationImpact(employeeId, at, transactionContext) {
+      const executor = (transactionContext as Executor | undefined) ?? database;
+      const currentMonth = payrollMonthStart(calendarMonthInTimeZone(at, timeZone));
+      const rows = await executor.select({
+        amount: advanceInstallments.amount,
+        payrollMonth: advanceInstallments.payrollMonth,
+      }).from(advanceInstallments)
+        .leftJoin(payrollMonths, and(
+          eq(payrollMonths.employeeId, advanceInstallments.employeeId),
+          eq(payrollMonths.payrollMonth, advanceInstallments.payrollMonth),
+        ))
+        .where(and(eq(advanceInstallments.employeeId, employeeId), sql`${payrollMonths.id} is null`));
+      const total = rows.reduce((sum, row) => sum + amountToCents(row.amount), 0n);
+      const current = rows.filter((row) => row.payrollMonth === currentMonth)
+        .reduce((sum, row) => sum + amountToCents(row.amount), 0n);
+      return {
+        unpaidInstallmentCount: rows.length,
+        unpaidAdvanceAmount: amountFromCents(total),
+        currentMonthAdvanceAmount: amountFromCents(current),
+      };
+    },
+    async settleDeactivationPayment(employeeId, at, amount, transactionContext) {
+      const transaction = transactionContext as Transaction;
+      const month = payrollMonthStart(calendarMonthInTimeZone(at, timeZone));
+      if (amountToCents(amount) <= 0n) throw new Error('Deactivation payment must be positive');
+      await transaction.insert(employeeDeactivationPayments).values({
+        employeeId,
+        payrollMonth: month,
+        amount,
+        createdAt: at,
+      }).onDuplicateKeyUpdate({
+        set: {
+          amount: sql`${employeeDeactivationPayments.amount} + values(${employeeDeactivationPayments.amount})`,
+        },
+      });
     },
   };
 };

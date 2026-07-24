@@ -9,6 +9,7 @@ export type PayrollCalculationInput = {
   deductions: string;
   advances: string;
   priorNegativeCarry: string;
+  deactivationPayment?: string;
 };
 
 const toCents = (amount: string) => {
@@ -60,7 +61,8 @@ export const calculatePayroll = (input: PayrollCalculationInput) => {
     - attendanceDeductionAmount
     - toCents(input.deductions)
     - toCents(input.advances)
-    + toCents(input.priorNegativeCarry);
+    + toCents(input.priorNegativeCarry)
+    + toCents(input.deactivationPayment ?? '0.00');
 
   return {
     proratedBase: fromCents(proratedBase),

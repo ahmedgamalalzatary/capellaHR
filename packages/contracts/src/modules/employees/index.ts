@@ -27,7 +27,16 @@ export const createEmployeeFieldsSchema = z.object({
 export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ monthlyBaseSalary: true }).partial().strict().refine((value) => Object.keys(value).length > 0);
 export const employeeIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
 export const employeeImageParamsSchema = employeeIdParamsSchema.extend({ kind: z.enum(['personal', 'idFront', 'idBack']) });
-export const listEmployeesQuerySchema = z.object({ search: z.string().trim().min(1).max(255).optional(), branchId: coercedMysqlIntSchema.optional(), page: paginationPageSchema.default(1), pageSize: paginationPageSizeSchema.default(20) });
+export const listEmployeesQuerySchema = z.object({ search: z.string().trim().min(1).max(255).optional(), branchId: coercedMysqlIntSchema.optional(), status: z.enum(['active', 'inactive', 'all']).optional(), page: paginationPageSchema.default(1), pageSize: paginationPageSizeSchema.default(20) });
+export const employeeDeactivationSchema = z.object({
+  advanceDecision: z.literal('accelerate'),
+  negativeBalanceDecision: z.enum(['keep_debt', 'paid']),
+  expectedUnpaidInstallmentCount: z.number().int().nonnegative(),
+  expectedUnpaidAdvanceAmount: z.string().regex(/^\d{1,12}\.\d{2}$/),
+  expectedProjectedNetSalary: z.string().regex(/^-?\d{1,12}\.\d{2}$/),
+  expectedAmountOwed: z.string().regex(/^\d{1,12}\.\d{2}$/),
+}).strict();
 export type CreateEmployeeFields = z.infer<typeof createEmployeeFieldsSchema>;
 export type UpdateEmployeeFields = z.infer<typeof updateEmployeeFieldsSchema>;
 export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;
+export type EmployeeDeactivationInput = z.infer<typeof employeeDeactivationSchema>;

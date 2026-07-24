@@ -1,4 +1,5 @@
 import { createDatabase } from '@capella/database';
+import { employeeEmploymentPeriods } from '@capella/database/schema';
 import {
   attendanceDailyRecords,
   auditEvents,
@@ -105,6 +106,7 @@ beforeEach(async () => {
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
   await database.delete(employeeBranchAssignments);
+  await database.delete(employeeEmploymentPeriods);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);

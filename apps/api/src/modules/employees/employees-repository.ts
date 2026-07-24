@@ -1,5 +1,5 @@
 import { type createDatabase } from '@capella/database';
-import { authSessions, branches, employeeBranchAssignments, employeeCodeSequence, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { advanceInstallments, authSessions, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePhoneReservations, employees, payrollMonths } from '@capella/database/schema';
 import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
 import type { EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
@@ -39,6 +39,7 @@ export const createDrizzleEmployeeRepository = (
       await tx.insert(employeePhoneReservations).values([...new Set([fields.personalPhone, fields.whatsappPhone])].map((phone) => ({ phone, employeeId: id })));
       await tx.insert(employeeImages).values((Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]).map(([kind, image]) => ({ employeeId: id, kind, ...image, createdAt, updatedAt: createdAt })));
       await tx.insert(employeeBranchAssignments).values({ employeeId: id, branchId: fields.branchId, effectiveFrom: createdAt, createdAt });
+      await tx.insert(employeeEmploymentPeriods).values({ employeeId: id, activeFrom: createdAt, createdAt });
       await tx.update(branches).set({ hasEverBeenReferenced: true, updatedAt: createdAt }).where(eq(branches.id, fields.branchId));
       if (!branch[0].hasEverBeenReferenced) {
         await writeAudit(tx, {
@@ -56,11 +57,12 @@ export const createDrizzleEmployeeRepository = (
     });
   },
   async findActiveById(id) { const row = (await database.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).limit(1))[0]; return row ? hydrate(database, row) : null; },
-  async findIdentityByCode(code) { const row = (await database.select().from(employees).where(eq(employees.employeeCode, code)).limit(1))[0]; return row ? { id: row.id, code: row.employeeCode, personalPhone: row.personalPhone, pinHash: row.pinHash, credentialVersion: row.credentialVersion, deletedAt: row.deletedAt } : null; },
+  async findIdentityByCode(code) { const row = (await database.select().from(employees).where(eq(employees.employeeCode, code)).limit(1))[0]; return row ? { id: row.id, code: row.employeeCode, personalPhone: row.personalPhone, pinHash: row.pinHash, credentialVersion: row.credentialVersion, employmentStatus: row.employmentStatus, deletedAt: row.deletedAt } : null; },
   async findPhoneOwner(phone, excludeId) { const conditions = [eq(employeePhoneReservations.phone, phone)]; if (excludeId) conditions.push(ne(employeePhoneReservations.employeeId, excludeId)); return (await database.select({ id: employeePhoneReservations.employeeId }).from(employeePhoneReservations).where(and(...conditions)).limit(1))[0] ?? null; },
   async branchExists(id) { return Boolean((await database.select({ id: branches.id }).from(branches).where(eq(branches.id, id)).limit(1))[0]); },
   async list(query) {
     const filters = [isNull(employees.deletedAt)]; if (query.branchId) filters.push(eq(employees.branchId, query.branchId));
+    if (query.status !== 'all') filters.push(eq(employees.employmentStatus, query.status ?? 'active'));
     if (query.search) { filters.push(or(sql`locate(${query.search}, ${employees.fullName}) > 0`, sql`locate(${query.search}, ${employees.personalPhone}) > 0`, sql`locate(${query.search}, ${employees.whatsappPhone}) > 0`, sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`)!); }
     const where = and(...filters); const rows = await database.select().from(employees).where(where).orderBy(asc(employees.employeeCode)).limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const totals = await database.select({ value: count() }).from(employees).where(where);
@@ -135,6 +137,8 @@ export const createDrizzleEmployeeRepository = (
       if (await hasOpenSession(id, tx)) return 'checked_in';
       const at = now();
       if (prepareFinancials) await prepareFinancials(id, at, tx);
+      await tx.update(employeeEmploymentPeriods).set({ activeTo: at })
+        .where(and(eq(employeeEmploymentPeriods.employeeId, id), isNull(employeeEmploymentPeriods.activeTo)));
       const result = await tx.update(employees).set({ deletedAt: at, credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
       if (result[0].affectedRows !== 1) return 'not_found';
       const sessions = revokeSessions
@@ -154,6 +158,74 @@ export const createDrizzleEmployeeRepository = (
         relatedIds: { branchId: before.branchId }, createdAt: at,
       });
       return 'deleted';
+    });
+  },
+  async previewDeactivation(id) {
+    const employee = (await database.select({
+      id: employees.id,
+      employmentStatus: employees.employmentStatus,
+    }).from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).limit(1))[0];
+    if (!employee) return { kind: 'not_found' };
+    if (employee.employmentStatus === 'inactive') return { kind: 'already_inactive' };
+    const unpaid = await database.select({ amount: advanceInstallments.amount })
+      .from(advanceInstallments)
+      .leftJoin(payrollMonths, and(
+        eq(payrollMonths.employeeId, advanceInstallments.employeeId),
+        eq(payrollMonths.payrollMonth, advanceInstallments.payrollMonth),
+      ))
+      .where(and(eq(advanceInstallments.employeeId, id), isNull(payrollMonths.id)));
+    const unpaidCents = unpaid.reduce((total, installment) => {
+      const [whole, fraction = ''] = installment.amount.split('.');
+      return total + BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'));
+    }, 0n);
+    const unpaidAdvanceAmount = `${unpaidCents / 100n}.${String(unpaidCents % 100n).padStart(2, '0')}`;
+    return {
+      kind: 'success',
+      unpaidInstallmentCount: unpaid.length,
+      unpaidAdvanceAmount,
+      projectedNetSalary: '0.00',
+      amountOwed: '0.00',
+    };
+  },
+  deactivate(id, _input, prepareFinancials) {
+    return database.transaction(async (tx) => {
+      const current = (await tx.select().from(employees)
+        .where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0];
+      if (!current) return { kind: 'not_found' as const };
+      if (current.employmentStatus === 'inactive') return { kind: 'already_inactive' as const };
+      const at = now();
+      if (prepareFinancials) await prepareFinancials(id, at, _input, tx);
+      await tx.update(employeeEmploymentPeriods).set({ activeTo: at })
+        .where(and(eq(employeeEmploymentPeriods.employeeId, id), isNull(employeeEmploymentPeriods.activeTo)));
+      await tx.update(employees).set({ employmentStatus: 'inactive', updatedAt: at })
+        .where(eq(employees.id, id));
+      const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      await writeAudit(tx, {
+        module: 'employees', action: 'deactivate', entityType: 'employee', entityId: id,
+        beforeState: await hydrate(tx, current),
+        afterState: { ...record, negativeBalanceDecision: _input.negativeBalanceDecision },
+        relatedIds: { branchId: current.branchId }, createdAt: at,
+      });
+      return { kind: 'success' as const, record };
+    });
+  },
+  activate(id) {
+    return database.transaction(async (tx) => {
+      const current = (await tx.select().from(employees)
+        .where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0];
+      if (!current) return { kind: 'not_found' as const };
+      if (current.employmentStatus === 'active') return { kind: 'already_active' as const };
+      const at = now();
+      await tx.insert(employeeEmploymentPeriods).values({ employeeId: id, activeFrom: at, createdAt: at });
+      await tx.update(employees).set({ employmentStatus: 'active', updatedAt: at })
+        .where(eq(employees.id, id));
+      const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      await writeAudit(tx, {
+        module: 'employees', action: 'activate', entityType: 'employee', entityId: id,
+        beforeState: await hydrate(tx, current), afterState: record,
+        relatedIds: { branchId: current.branchId }, createdAt: at,
+      });
+      return { kind: 'success' as const, record };
     });
   },
 });

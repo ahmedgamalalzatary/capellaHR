@@ -12,6 +12,8 @@ const repo = (): AdvanceRepository => ({
   update: vi.fn(async () => ({ kind: 'success' as const, record })),
   remove: vi.fn(async () => ({ kind: 'success' as const })),
   accelerateForDeletion: vi.fn(async () => undefined),
+  deactivationImpact: vi.fn(async () => ({ unpaidInstallmentCount: 0, unpaidAdvanceAmount: '0.00', currentMonthAdvanceAmount: '0.00' })),
+  settleDeactivationPayment: vi.fn(async () => undefined),
 });
 
 describe('advance service', () => {

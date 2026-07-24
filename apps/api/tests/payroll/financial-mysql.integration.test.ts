@@ -1,4 +1,5 @@
 import { createDatabase } from '@capella/database';
+import { employeeDeactivationPayments, employeeEmploymentPeriods } from '@capella/database/schema';
 import {
   advanceInstallments,
   advances,
@@ -53,6 +54,7 @@ const clear = async () => {
   await database.delete(deductions);
   await database.delete(payrollMonths);
   await database.delete(employeeSalaryPeriods);
+  await database.delete(employeeDeactivationPayments);
   await database.delete(attendanceDailyRecords);
   await database.delete(deviceHistory);
   await database.delete(devices);
@@ -61,6 +63,7 @@ const clear = async () => {
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
   await database.delete(employeeBranchAssignments);
+  await database.delete(employeeEmploymentPeriods);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
@@ -335,6 +338,40 @@ describe('MySQL-backed salary domain', () => {
     ]);
   });
 
+  it('collapses unpaid installments into the deactivation month and records a cash settlement', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1, new Date('2026-06-01T09:00:00.000Z'));
+    const augustNow = new Date('2026-08-16T10:00:00.000Z');
+    const advanceModule = createAdvanceModule(database, { now: () => augustNow });
+    const created = await advanceModule.service.create({
+      employeeId, amount: '2000.00', installmentCount: 4, startMonth: '2026-07',
+    });
+    const payroll = createPayrollModule(database, { now: () => augustNow, attendance });
+    await payroll.service.finalize(employeeId, '2026-06');
+    await payroll.service.finalize(employeeId, '2026-07');
+
+    await expect(advanceModule.service.deactivationImpact(employeeId, augustNow)).resolves.toEqual({
+      unpaidInstallmentCount: 3,
+      unpaidAdvanceAmount: '1500.00',
+      currentMonthAdvanceAmount: '500.00',
+    });
+    await database.transaction(async (transaction) => {
+      await advanceModule.service.accelerateForDeletion(employeeId, augustNow, transaction);
+      await advanceModule.service.settleDeactivationPayment(employeeId, augustNow, '500.00', transaction);
+    });
+
+    await expect(advanceModule.service.get(created.id)).resolves.toMatchObject({
+      installments: [
+        { payrollMonth: '2026-07', amount: '500.00' },
+        { payrollMonth: '2026-08', amount: '1500.00' },
+      ],
+    });
+    await expect(database.select({ amount: employeeDeactivationPayments.amount })
+      .from(employeeDeactivationPayments)
+      .where(eq(employeeDeactivationPayments.employeeId, employeeId)))
+      .resolves.toEqual([{ amount: '500.00' }]);
+  });
+
   it('uses the employee deletion instant for the final accelerated payroll month', async () => {
     const branchId = await createBranch();
     const employeeId = await createEmployee(branchId, 1);
@@ -484,6 +521,34 @@ describe('MySQL-backed salary domain', () => {
       .resolves.toEqual({ items: [], total: 0 });
     await expect(payroll.service.finalizeBranch(branchId, '2026-05')).resolves.toEqual([]);
     expect(await database.select().from(payrollMonths)).toHaveLength(0);
+  });
+
+  it('skips entirely inactive months when enforcing payroll chronology after reactivation', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1, new Date('2026-04-01T09:00:00.000Z'));
+    await database.insert(employeeEmploymentPeriods).values([
+      {
+        employeeId,
+        activeFrom: new Date('2026-04-01T09:00:00.000Z'),
+        activeTo: new Date('2026-04-30T09:00:00.000Z'),
+        createdAt: new Date('2026-04-01T09:00:00.000Z'),
+      },
+      {
+        employeeId,
+        activeFrom: new Date('2026-06-01T09:00:00.000Z'),
+        activeTo: null,
+        createdAt: new Date('2026-06-01T09:00:00.000Z'),
+      },
+    ]);
+    const payroll = createPayrollModule(database, {
+      now: () => new Date('2026-07-18T09:00:00.000Z'),
+      attendance,
+    });
+    await payroll.service.finalize(employeeId, '2026-04');
+
+    await expect(payroll.service.finalize(employeeId, '2026-06')).resolves.toMatchObject({
+      payrollMonth: '2026-06',
+    });
   });
 
   it('collects every employee-scoped branch blocker before rolling back', async () => {

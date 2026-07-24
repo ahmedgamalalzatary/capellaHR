@@ -91,6 +91,15 @@ afterEach(() => {
 });
 
 describe('WeeklyDayOffView', () => {
+  test('loads inactive employees for historical filtering', async () => {
+    renderView();
+    await waitFor(() => {
+      expect(mocks.listEmployees).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 1, status: 'all' }),
+      );
+    });
+  });
+
   test('lists each record with code, branch, date, status, and duration', async () => {
     renderView();
     const row = (await screen.findByText('أحمد جمال')).closest('tr')!;

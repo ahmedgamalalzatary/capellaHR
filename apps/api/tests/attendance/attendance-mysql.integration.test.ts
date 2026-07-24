@@ -1,4 +1,5 @@
 import { createDatabase } from '@capella/database';
+import { employeeEmploymentPeriods } from '@capella/database/schema';
 import {
   attendanceDailyRecords,
   attendanceDeniedAttempts,
@@ -97,6 +98,7 @@ const cleanDatabase = async () => {
   await database.delete(employeeImages);
   await database.delete(employeePhoneReservations);
   await database.delete(employeeBranchAssignments);
+  await database.delete(employeeEmploymentPeriods);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
@@ -919,7 +921,7 @@ describe('MySQL-backed attendance', () => {
       .toEqual(expect.arrayContaining(['job_schedule', 'job_claim', 'job_complete']));
   });
 
-  it('generates only lifecycle-eligible absences and is idempotent', async () => {
+  it('includes activation and deactivation dates when generating absences and remains idempotent', async () => {
     const { branchId, employeeId } = await createFixtures();
     await database.insert(employees).values([
       {
@@ -944,17 +946,21 @@ describe('MySQL-backed attendance', () => {
     ]);
     const repo = repository();
 
-    await expect(repo.generateAbsences('2026-07-19')).resolves.toBe(1);
+    await expect(repo.generateAbsences('2026-07-19')).resolves.toBe(2);
     await expect(repo.generateAbsences('2026-07-19')).resolves.toBe(0);
 
-    expect(await database.select().from(attendanceDailyRecords)).toEqual([
+    expect(await database.select().from(attendanceDailyRecords)).toEqual(expect.arrayContaining([
       expect.objectContaining({
         employeeId,
         attendanceDate: '2026-07-19',
         status: 'absence',
         absenceRequiredMinutes: 480,
       }),
-    ]);
+      expect.objectContaining({
+        attendanceDate: '2026-07-19',
+        status: 'absence',
+      }),
+    ]));
     expect((await database.select().from(auditEvents)
       .where(eq(auditEvents.action, 'automatic_absence')))[0]).toMatchObject({
       actorType: 'system',

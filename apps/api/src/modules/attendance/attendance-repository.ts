@@ -9,6 +9,7 @@ import {
   branches,
   devices,
   employeeBranchAssignments,
+  employeeEmploymentPeriods,
   employeeImages,
   employees,
 } from '@capella/database/schema';
@@ -29,6 +30,7 @@ import {
 } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
+import { employmentDateIsActive } from '../employees/employment-period.js';
 import { branchIdAt } from '../../shared/database/branch-id-at.js';
 import type { PayrollAttendanceGateway } from '../payroll/index.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
@@ -171,6 +173,7 @@ const employeeLockFields = {
   id: employees.id,
   employeeCode: employees.employeeCode,
   credentialVersion: employees.credentialVersion,
+  employmentStatus: employees.employmentStatus,
   deletedAt: employees.deletedAt,
   createdAt: employees.createdAt,
   branchId: employees.branchId,
@@ -413,6 +416,7 @@ export const createDrizzleAttendanceRepository = (
   ): Promise<AttendanceMutationResult> => {
     const employee = await lockEmployee(transaction, input.employeeId);
     if (!employee) return { kind: 'employee_not_found' };
+    if (employee.employmentStatus === 'inactive') return { kind: 'credentials_changed' };
     if (input.expectedCredentialVersion !== undefined && (
       employee.deletedAt !== null
       || employee.credentialVersion !== input.expectedCredentialVersion
@@ -597,7 +601,8 @@ export const createDrizzleAttendanceRepository = (
     input: EmployeeAttendanceMutation,
   ) => {
     const employee = await lockEmployee(transaction, input.employeeId);
-    if (!employee || employee.deletedAt || employee.credentialVersion !== input.expectedCredentialVersion) {
+    if (!employee || employee.deletedAt || employee.credentialVersion !== input.expectedCredentialVersion
+      || (input.eventType === 'check_in' && employee.employmentStatus === 'inactive')) {
       return { failure: { kind: 'credentials_changed' } as const };
     }
     const assignmentType = input.source === 'personal_device' ? 'employee' as const : 'branch' as const;
@@ -655,13 +660,14 @@ export const createDrizzleAttendanceRepository = (
   ) => {
     const employee = await lockEmployee(transaction, employeeId);
     if (!employee) return 0;
-    const creationDate = calendarDateInTimeZone(employee.createdAt, timeZone);
-    const deletionDate = employee.deletedAt
-      ? calendarDateInTimeZone(employee.deletedAt, timeZone)
-      : null;
-    if (creationDate >= attendanceDate || (deletionDate !== null && deletionDate <= attendanceDate)) {
-      return 0;
-    }
+    const storedEmploymentPeriods = await transaction.select({
+      activeFrom: employeeEmploymentPeriods.activeFrom,
+      activeTo: employeeEmploymentPeriods.activeTo,
+    }).from(employeeEmploymentPeriods).where(eq(employeeEmploymentPeriods.employeeId, employeeId));
+    const employmentPeriods = storedEmploymentPeriods.length
+      ? storedEmploymentPeriods
+      : [{ activeFrom: employee.createdAt, activeTo: employee.deletedAt }];
+    if (!employmentDateIsActive(attendanceDate, employmentPeriods, timeZone)) return 0;
     const existingSession = (await transaction.select({ id: attendanceSessions.id })
       .from(attendanceSessions).where(and(
         eq(attendanceSessions.employeeId, employee.id),
@@ -748,6 +754,13 @@ export const createDrizzleAttendanceRepository = (
         deletedAt: employees.deletedAt,
       }).from(employees).where(eq(employees.id, employeeId)).limit(1))[0];
       if (!employee) return { kind: 'blocked', reasons: ['ATTENDANCE_EMPLOYEE_NOT_FOUND'] };
+      const storedEmploymentPeriods = await executor.select({
+        activeFrom: employeeEmploymentPeriods.activeFrom,
+        activeTo: employeeEmploymentPeriods.activeTo,
+      }).from(employeeEmploymentPeriods).where(eq(employeeEmploymentPeriods.employeeId, employeeId));
+      const employmentPeriods = storedEmploymentPeriods.length
+        ? storedEmploymentPeriods
+        : [{ activeFrom: employee.createdAt, activeTo: employee.deletedAt }];
 
       const [year, monthNumber] = payrollMonth.split('-').map(Number) as [number, number];
       const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
@@ -807,16 +820,11 @@ export const createDrizzleAttendanceRepository = (
         });
         if (actionableDenied) reasons.push('DENIED_ATTEMPT');
       }
-      const creationDate = calendarDateInTimeZone(employee.createdAt, timeZone);
-      const deletionDate = employee.deletedAt
-        ? calendarDateInTimeZone(employee.deletedAt, timeZone)
-        : null;
       const currentDate = calendarDateInTimeZone(now(), timeZone);
       for (let day = 1; day <= daysInMonth; day += 1) {
         const attendanceDate = `${payrollMonth}-${String(day).padStart(2, '0')}`;
-        const employmentInterior = attendanceDate > creationDate
-          && (deletionDate === null || attendanceDate < deletionDate);
-        if (attendanceDate < currentDate && employmentInterior
+        if (attendanceDate < currentDate
+          && employmentDateIsActive(attendanceDate, employmentPeriods, timeZone)
           && !sessionByDate.has(attendanceDate) && !dailyByDate.has(attendanceDate)) {
           reasons.push('ATTENDANCE_RECONCILIATION_PENDING');
           break;
@@ -861,6 +869,7 @@ export const createDrizzleAttendanceRepository = (
         employeeCode: employees.employeeCode,
         pinHash: employees.pinHash,
         credentialVersion: employees.credentialVersion,
+        employmentStatus: employees.employmentStatus,
         deletedAt: employees.deletedAt,
         branchId: employees.branchId,
         branchLatitude: branches.latitude,
@@ -1299,20 +1308,10 @@ export const createDrizzleAttendanceRepository = (
       if (endOfDate(attendanceDate, timeZone).getTime() >= now().getTime()) {
         throw new Error('Absence generation date has not ended');
       }
-      const candidates = await database.select({
-        id: employees.id,
-        createdAt: employees.createdAt,
-        deletedAt: employees.deletedAt,
-      }).from(employees);
+      const candidates = await database.select({ id: employees.id }).from(employees)
+        .where(isNull(employees.deletedAt));
       let createdCount = 0;
       for (const candidate of candidates) {
-        const creationDate = calendarDateInTimeZone(candidate.createdAt, timeZone);
-        const deletionDate = candidate.deletedAt
-          ? calendarDateInTimeZone(candidate.deletedAt, timeZone)
-          : null;
-        if (creationDate >= attendanceDate || (deletionDate !== null && deletionDate <= attendanceDate)) {
-          continue;
-        }
         createdCount += await database.transaction((transaction) => (
           createAbsenceForEmployee(transaction, candidate.id, attendanceDate)
         ));

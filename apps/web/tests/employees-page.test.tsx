@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   createEmployee: vi.fn(),
   updateEmployee: vi.fn(),
   deleteEmployee: vi.fn(),
+  previewEmployeeDeactivation: vi.fn(),
+  deactivateEmployee: vi.fn(),
+  activateEmployee: vi.fn(),
   listBranches: vi.fn(),
 }));
 
@@ -18,6 +21,9 @@ vi.mock('../src/features/employees/api/employees-api', async (importOriginal) =>
   createEmployee: mocks.createEmployee,
   updateEmployee: mocks.updateEmployee,
   deleteEmployee: mocks.deleteEmployee,
+  previewEmployeeDeactivation: mocks.previewEmployeeDeactivation,
+  deactivateEmployee: mocks.deactivateEmployee,
+  activateEmployee: mocks.activateEmployee,
 }));
 
 vi.mock('../src/features/branches/api/branches-api', () => ({
@@ -37,6 +43,7 @@ const employee = {
   branchId: 3,
   shiftDurationMinutes: 480,
   monthlyBaseSalary: '6500.00',
+  employmentStatus: 'active' as const,
   images: {
     personal: { originalName: 'p.jpg', mimeType: 'image/jpeg', sizeBytes: 100 },
     idFront: { originalName: 'f.jpg', mimeType: 'image/jpeg', sizeBytes: 100 },
@@ -77,6 +84,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -293,6 +301,44 @@ describe('EmployeesView', () => {
       'textContent',
       'يجب تسجيل خروج الموظف أولاً',
     );
+  });
+
+  test('loads all employment states, accelerates installments, and keeps the negative balance', async () => {
+    mocks.previewEmployeeDeactivation.mockResolvedValue({
+      unpaidInstallmentCount: 3,
+      unpaidAdvanceAmount: '1500.00',
+      projectedNetSalary: '-500.00',
+      amountOwed: '500.00',
+    });
+    mocks.deactivateEmployee.mockResolvedValue({ ...employee, employmentStatus: 'inactive' });
+    const confirm = vi.spyOn(window, 'confirm')
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true);
+    renderView();
+    const deactivate = await screen.findByRole('button', { name: 'تعطيل' });
+
+    expect(mocks.listEmployees).toHaveBeenCalledWith(expect.objectContaining({ status: 'all' }));
+    fireEvent.click(deactivate);
+
+    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(1, 'keep_debt', {
+      unpaidInstallmentCount: 3,
+      unpaidAdvanceAmount: '1500.00',
+      projectedNetSalary: '-500.00',
+      amountOwed: '500.00',
+    }));
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  test('reactivates an inactive employee without starting the deactivation flow', async () => {
+    mocks.listEmployees.mockResolvedValue(pageOf([{ ...employee, employmentStatus: 'inactive' }]));
+    mocks.activateEmployee.mockResolvedValue(employee);
+    renderView();
+    const activate = await screen.findByRole('button', { name: 'تفعيل' });
+
+    fireEvent.click(activate);
+
+    await waitFor(() => expect(mocks.activateEmployee).toHaveBeenCalledWith(1));
+    expect(mocks.previewEmployeeDeactivation).not.toHaveBeenCalled();
   });
 
   test('paginates with the next button', async () => {

@@ -35,6 +35,15 @@ describe('payroll exact arithmetic', () => {
     })).toMatchObject({ proratedBase: '0.00', netSalary: '15.00' });
   });
 
+  it('applies a separately recorded deactivation payment to any negative source', () => {
+    expect(calculatePayroll({
+      baseSalary: '0.00', fullMonthWorkdays: 0, eligibleWorkdays: 0,
+      requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0,
+      bonuses: '0.00', deductions: '125.00', advances: '50.00',
+      priorNegativeCarry: '-25.00', deactivationPayment: '200.00',
+    }).netSalary).toBe('0.00');
+  });
+
   it('does not double-round the prorated base before overtime and shortage', () => {
     expect(calculatePayroll({
       baseSalary: '100.00', fullMonthWorkdays: 3, eligibleWorkdays: 1,

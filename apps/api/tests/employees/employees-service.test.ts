@@ -15,8 +15,9 @@ const input = {
 };
 
 const repository = (): EmployeeRepository => ({
-  create: vi.fn(async (value) => ({ id: 1, employeeCode: 1, credentialVersion: 1, ...value, pinHash: value.pinHash, deletedAt: null, createdAt: new Date(), updatedAt: new Date() })),
+  create: vi.fn(async (value) => ({ id: 1, employeeCode: 1, credentialVersion: 1, employmentStatus: 'active' as const, ...value, pinHash: value.pinHash, deletedAt: null, createdAt: new Date(), updatedAt: new Date() })),
   findActiveById: vi.fn(), findIdentityByCode: vi.fn(), list: vi.fn(), update: vi.fn(), softDeleteIfAttendanceClosed: vi.fn(),
+  previewDeactivation: vi.fn(), deactivate: vi.fn(), activate: vi.fn(),
   findPhoneOwner: vi.fn(), branchExists: vi.fn(async () => true),
 });
 
@@ -141,5 +142,119 @@ describe('employee service', () => {
     const deletedAt = new Date('2026-07-31T21:00:00.000Z');
     await prepareDeletion(1, deletedAt, context);
     expect(financialLifecycle.prepareEmployeeDeletion).toHaveBeenCalledWith(1, deletedAt, context);
+  });
+
+  it('returns the financial impact before deactivation without changing employee state', async () => {
+    const repo = repository();
+    vi.mocked(repo.previewDeactivation).mockResolvedValue({
+      kind: 'success',
+      unpaidInstallmentCount: 3,
+      unpaidAdvanceAmount: '1500.00',
+      projectedNetSalary: '-500.00',
+      amountOwed: '500.00',
+    });
+
+    const result = await createEmployeeService(repo).previewDeactivation(1);
+
+    expect(result).toMatchObject({
+      unpaidInstallmentCount: 3,
+      unpaidAdvanceAmount: '1500.00',
+      amountOwed: '500.00',
+    });
+    expect(repo.deactivate).not.toHaveBeenCalled();
+  });
+
+  it('deactivates with explicit advance and negative-balance decisions', async () => {
+    const repo = repository();
+    vi.mocked(repo.deactivate).mockResolvedValue({
+      kind: 'success',
+      record: { id: 1, employmentStatus: 'inactive' } as never,
+    });
+
+    const employee = await createEmployeeService(repo).deactivate(1, {
+      advanceDecision: 'accelerate' as const,
+      negativeBalanceDecision: 'keep_debt',
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '1500.00',
+      expectedProjectedNetSalary: '-500.00',
+      expectedAmountOwed: '500.00',
+    });
+
+    expect(repo.deactivate).toHaveBeenCalledWith(1, {
+      advanceDecision: 'accelerate',
+      negativeBalanceDecision: 'keep_debt',
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '1500.00',
+      expectedProjectedNetSalary: '-500.00',
+      expectedAmountOwed: '500.00',
+    });
+    expect(employee.employmentStatus).toBe('inactive');
+  });
+
+  it('passes the selected negative-balance decision into the atomic financial lifecycle', async () => {
+    const repo = repository();
+    const prepareEmployeeDeactivation = vi.fn(async () => undefined);
+    vi.mocked(repo.deactivate).mockImplementation(async (id, input, prepare) => {
+      await prepare?.(id, new Date('2026-07-16T10:00:00.000Z'), input, { tx: true });
+      return { kind: 'success', record: { id, employmentStatus: 'inactive' } as never };
+    });
+    const lifecycle = {
+      prepareEmployeeDeletion: vi.fn(async () => undefined),
+      prepareEmployeeDeactivation,
+    };
+
+    const input = {
+      advanceDecision: 'accelerate' as const,
+      negativeBalanceDecision: 'paid' as const,
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '1500.00',
+      expectedProjectedNetSalary: '-500.00',
+      expectedAmountOwed: '500.00',
+    };
+    await createEmployeeService(repo, undefined, undefined, lifecycle).deactivate(1, input);
+
+    expect(prepareEmployeeDeactivation).toHaveBeenCalledWith(
+      1,
+      new Date('2026-07-16T10:00:00.000Z'),
+      input,
+      { tx: true },
+    );
+  });
+
+  it('reactivates while preserving employee schedule and configuration fields', async () => {
+    const repo = repository();
+    const existingRecord = {
+      id: 1,
+      employeeCode: 1001,
+      credentialVersion: 7,
+      employmentStatus: 'active' as const,
+      fullName: 'أحمد',
+      personalPhone: '01012345678',
+      whatsappPhone: '01112345678',
+      age: 30,
+      address: 'القاهرة',
+      branchId: 3,
+      shiftDurationMinutes: 480,
+      monthlyBaseSalary: '6500.00',
+      images: input.images,
+      pinHash: 'stored-hash',
+      deletedAt: null,
+      createdAt: new Date('2026-07-01T08:00:00.000Z'),
+      updatedAt: new Date('2026-07-24T08:00:00.000Z'),
+    };
+    vi.mocked(repo.activate).mockResolvedValue({
+      kind: 'success',
+      record: existingRecord,
+    });
+
+    const employee = await createEmployeeService(repo).activate(1);
+
+    expect(repo.activate).toHaveBeenCalledWith(1);
+    expect(employee.employmentStatus).toBe('active');
+    expect(employee).toMatchObject({
+      branchId: existingRecord.branchId,
+      shiftDurationMinutes: existingRecord.shiftDurationMinutes,
+      images: existingRecord.images,
+    });
   });
 });

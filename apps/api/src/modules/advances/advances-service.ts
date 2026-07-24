@@ -27,6 +27,12 @@ export interface AdvanceRepository {
   update(id: number, input: UpdateAdvanceInput): Promise<MutationResult>;
   remove(id: number): Promise<DeleteResult>;
   accelerateForDeletion(employeeId: number, deletedAt: Date, context: unknown): Promise<void>;
+  deactivationImpact(employeeId: number, at: Date, context?: unknown): Promise<{
+    unpaidInstallmentCount: number;
+    unpaidAdvanceAmount: string;
+    currentMonthAdvanceAmount: string;
+  }>;
+  settleDeactivationPayment(employeeId: number, at: Date, amount: string, context: unknown): Promise<void>;
 }
 export type AdvanceErrorCode =
   | 'ADVANCE_NOT_FOUND' | 'ADVANCE_EMPLOYEE_NOT_FOUND' | 'ADVANCE_EMPLOYEE_DELETED'
@@ -50,6 +56,12 @@ export const createAdvanceService = (repository: AdvanceRepository) => ({
   async remove(id: number) { const result = await repository.remove(id); if (result.kind !== 'success') fail(result.kind); },
   accelerateForDeletion(employeeId: number, deletedAt: Date, context: unknown) {
     return repository.accelerateForDeletion(employeeId, deletedAt, context);
+  },
+  deactivationImpact(employeeId: number, at: Date, context?: unknown) {
+    return repository.deactivationImpact(employeeId, at, context);
+  },
+  settleDeactivationPayment(employeeId: number, at: Date, amount: string, context: unknown) {
+    return repository.settleDeactivationPayment(employeeId, at, amount, context);
   },
 });
 export type AdvanceService = ReturnType<typeof createAdvanceService>;

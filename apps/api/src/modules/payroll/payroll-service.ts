@@ -27,6 +27,7 @@ export type PayrollRecord = {
   manualDeductionAmount: string;
   advanceAmount: string;
   priorNegativeCarry: string;
+  deactivationPaymentAmount?: string;
   netSalary: string;
   eligibleWorkdays: number;
   fullMonthWorkdays: number;

@@ -46,6 +46,7 @@ export const payrollMonths = mysqlTable('payroll_months', {
   manualDeductionAmount: decimal('manual_deduction_amount', { precision: 14, scale: 2 }).notNull(),
   advanceAmount: decimal('advance_amount', { precision: 14, scale: 2 }).notNull(),
   priorNegativeCarry: decimal('prior_negative_carry', { precision: 14, scale: 2 }).notNull(),
+  deactivationPaymentAmount: decimal('deactivation_payment_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
   netSalary: decimal('net_salary', { precision: 14, scale: 2 }).notNull(),
   eligibleWorkdays: int('eligible_workdays').notNull(),
   fullMonthWorkdays: int('full_month_workdays').notNull(),
@@ -60,6 +61,19 @@ export const payrollMonths = mysqlTable('payroll_months', {
   index('payroll_months_month_status_idx').on(table.payrollMonth, table.status),
   check('payroll_months_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
   check('payroll_months_counts_nonnegative', sql`${table.eligibleWorkdays} >= 0 and ${table.fullMonthWorkdays} >= 0 and ${table.requiredMinutes} >= 0 and ${table.overtimeMinutes} >= 0 and ${table.shortageMinutes} >= 0`),
+]);
+
+export const employeeDeactivationPayments = mysqlTable('employee_deactivation_payments', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('employee_deactivation_payments_employee_month_unique')
+    .on(table.employeeId, table.payrollMonth),
+  check('employee_deactivation_payments_amount_positive', sql`${table.amount} > 0`),
+  check('employee_deactivation_payments_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 
 export const bonuses = mysqlTable('bonuses', {

@@ -61,6 +61,7 @@ const employee = {
   personalPhone: '01012345678',
   pinHash: '',
   deletedAt: null,
+  employmentStatus: 'active' as const,
   credentialVersion: 1,
 };
 const installationMarker = 'marker-marker-123';
@@ -73,7 +74,7 @@ beforeAll(async () => {
   employeePinHash = await hash('0123');
 });
 
-const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolean; attendanceOpen?: boolean; employeeCurrent?: boolean } = {}) => {
+const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolean; attendanceOpen?: boolean; employeeCurrent?: boolean; employmentStatus?: 'active' | 'inactive' } = {}) => {
   const sessions = new MemorySessions();
   sessions.employeeCurrent = overrides.employeeCurrent ?? true;
   const attempts = new MemoryAttempts();
@@ -102,7 +103,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
       attempts,
       employees: {
         async findByCode(code: number) {
-          return code === employee.code ? { ...employee, pinHash: employeePinHash } : null;
+          return code === employee.code ? { ...employee, employmentStatus: overrides.employmentStatus ?? 'active', pinHash: employeePinHash } : null;
         },
       },
       personalDevices: {
@@ -211,6 +212,20 @@ describe('authentication service', () => {
 
     expect(attempts.rows).toHaveLength(1);
     expect(attempts.rows[0]?.succeeded).toBe(false);
+  });
+
+  it('rejects login for an inactive employee while leaving the paired device unchanged', async () => {
+    const { service, sessions, attempts } = makeService({ employmentStatus: 'inactive' });
+
+    await expect(service.loginEmployee({
+      employeeCode: 12,
+      pin: '0123',
+      personalPhone: '01012345678',
+      installationMarker,
+    })).rejects.toMatchObject({ code: 'EMPLOYEE_INACTIVE' });
+
+    expect(sessions.rows).toHaveLength(0);
+    expect(attempts.rows[0]).toMatchObject({ reason: 'EMPLOYEE_INACTIVE' });
   });
 
   it.each([

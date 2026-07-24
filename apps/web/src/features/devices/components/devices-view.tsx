@@ -274,7 +274,8 @@ export function DevicesView() {
 
   const employeesQuery = useQuery({
     queryKey: employeeQueryKeys.options(),
-    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage })),
+    queryFn: () =>
+      fetchAllPages((optionsPage) => listEmployees({ page: optionsPage, status: 'all' })),
   });
   const branchesQuery = useQuery({
     queryKey: branchQueryKeys.options(),

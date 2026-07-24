@@ -28,6 +28,7 @@ export const lockEmployee = async (transaction: Transaction, employeeId: number)
     fullName: employees.fullName,
     branchId: employees.branchId,
     monthlyBaseSalary: employees.monthlyBaseSalary,
+    employmentStatus: employees.employmentStatus,
     createdAt: employees.createdAt,
     deletedAt: employees.deletedAt,
   }).from(employees).where(eq(employees.id, employeeId)).for('update').limit(1)

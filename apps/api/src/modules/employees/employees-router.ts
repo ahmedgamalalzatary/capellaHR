@@ -1,4 +1,4 @@
-import { createEmployeeFieldsSchema, employeeIdParamsSchema, employeeImageParamsSchema, listEmployeesQuerySchema, updateEmployeeFieldsSchema } from '@capella/contracts';
+import { createEmployeeFieldsSchema, employeeDeactivationSchema, employeeIdParamsSchema, employeeImageParamsSchema, listEmployeesQuerySchema, updateEmployeeFieldsSchema } from '@capella/contracts';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { ZodError } from 'zod';
@@ -39,6 +39,9 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
     }
   };
   router.get('/', async (req, res) => { try { const query = listEmployeesQuerySchema.parse(req.query); const result = await service.list(query); res.json({ data: result.items, meta: { page: query.page, pageSize: query.pageSize, total: result.total, totalPages: Math.ceil(result.total / query.pageSize) } }); } catch (e) { handle(e, res); } });
+  router.get('/:id/deactivation-preview', async (req, res) => { try { res.json({ data: await service.previewDeactivation(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
+  router.post('/:id/deactivate', async (req, res) => { try { res.json({ data: await service.deactivate(employeeIdParamsSchema.parse(req.params).id, employeeDeactivationSchema.parse(req.body)) }); } catch (e) { handle(e, res); } });
+  router.post('/:id/activate', async (req, res) => { try { res.json({ data: await service.activate(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
   router.get('/:id', async (req, res) => { try { res.json({ data: await service.get(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
   router.post('/', acceptUploads, async (req, res) => {
     const saved: string[] = [];

@@ -37,6 +37,8 @@ const advanceService = (): AdvanceService => ({
   list: vi.fn(async () => ({ items: [advance], total: 1 })),
   update: vi.fn(async () => advance), remove: vi.fn(async () => undefined),
   accelerateForDeletion: vi.fn(async () => undefined),
+  deactivationImpact: vi.fn(async () => ({ unpaidInstallmentCount: 0, unpaidAdvanceAmount: '0.00', currentMonthAdvanceAmount: '0.00' })),
+  settleDeactivationPayment: vi.fn(async () => undefined),
 });
 const salary = { employeeId: 7, employeeCode: 10, employeeName: 'موظف', branchId: 2, branchName: 'فرع', amount: '5000.00', deletedAt: null };
 const payrollService = (): PayrollService => ({

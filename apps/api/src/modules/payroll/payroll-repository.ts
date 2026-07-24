@@ -4,7 +4,9 @@ import {
   bonuses,
   branches,
   deductions,
+  employeeDeactivationPayments,
   employeeBranchAssignments,
+  employeeEmploymentPeriods,
   employeeSalaryPeriods,
   employees,
   payrollMonths,
@@ -32,6 +34,7 @@ import type {
   PayrollRecord,
   PayrollRepository,
 } from './payroll-service.js';
+import { employmentMonthIsActive } from '../employees/employment-period.js';
 
 const salaryFields = {
   employeeId: employees.id, employeeCode: employees.employeeCode, employeeName: employees.fullName,
@@ -54,6 +57,7 @@ const payrollFields = {
   attendanceDeductionAmount: payrollMonths.attendanceDeductionAmount,
   manualDeductionAmount: payrollMonths.manualDeductionAmount,
   advanceAmount: payrollMonths.advanceAmount, priorNegativeCarry: payrollMonths.priorNegativeCarry,
+  deactivationPaymentAmount: payrollMonths.deactivationPaymentAmount,
   netSalary: payrollMonths.netSalary, eligibleWorkdays: payrollMonths.eligibleWorkdays,
   fullMonthWorkdays: payrollMonths.fullMonthWorkdays, requiredMinutes: payrollMonths.requiredMinutes,
   overtimeMinutes: payrollMonths.overtimeMinutes, shortageMinutes: payrollMonths.shortageMinutes,
@@ -95,7 +99,7 @@ const rawFinalized = async (executor: Executor, employeeId: number, month: strin
 
 const sumAmount = async (
   executor: Executor,
-  table: typeof bonuses | typeof deductions | typeof advanceInstallments,
+  table: typeof bonuses | typeof deductions | typeof advanceInstallments | typeof employeeDeactivationPayments,
   employeeId: number,
   month: string,
 ) => (await executor.select({ value: sql<string>`coalesce(sum(${table.amount}), 0.00)` })
@@ -152,12 +156,13 @@ const compute = async (
   if (existing) return { kind: 'success', payroll: existing };
   const attendanceResult = await attendance.readPayrollFacts(employee.id, month, transaction, mode);
   if (attendanceResult.kind === 'blocked') return attendanceResult;
-  const [baseSalary, bonusAmount, manualDeductionAmount, advanceAmount, carry] = await Promise.all([
+  const [baseSalary, bonusAmount, manualDeductionAmount, advanceAmount, carry, deactivationPaymentAmount] = await Promise.all([
     salaryForMonth(transaction, employee, month),
     sumAmount(transaction, bonuses, employee.id, month),
     sumAmount(transaction, deductions, employee.id, month),
     sumAmount(transaction, advanceInstallments, employee.id, month),
     priorCarry(transaction, employee.id, month),
+    sumAmount(transaction, employeeDeactivationPayments, employee.id, month),
   ]);
   const calculated = calculatePayroll({
     baseSalary,
@@ -166,6 +171,7 @@ const compute = async (
     deductions: manualDeductionAmount,
     advances: advanceAmount,
     priorNegativeCarry: carry,
+    deactivationPayment: deactivationPaymentAmount,
   });
   const snapshotAmounts = [
     baseSalary,
@@ -176,6 +182,7 @@ const compute = async (
     manualDeductionAmount,
     advanceAmount,
     carry,
+    deactivationPaymentAmount,
     calculated.netSalary,
   ];
   if (!snapshotAmounts.every(isPayrollSnapshotAmount)) {
@@ -191,7 +198,7 @@ const compute = async (
       employeeName: employee.fullName, branchId, branchName,
       payrollMonth: month, status: 'open', baseSalary,
       ...calculated, bonusAmount, manualDeductionAmount, advanceAmount,
-      priorNegativeCarry: carry, ...attendanceResult.facts, finalizedAt: null,
+      priorNegativeCarry: carry, deactivationPaymentAmount, ...attendanceResult.facts, finalizedAt: null,
     },
   };
 };
@@ -208,7 +215,9 @@ const insertFinalized = async (
     overtimeAmount: payroll.overtimeAmount, bonusAmount: payroll.bonusAmount,
     attendanceDeductionAmount: payroll.attendanceDeductionAmount,
     manualDeductionAmount: payroll.manualDeductionAmount, advanceAmount: payroll.advanceAmount,
-    priorNegativeCarry: payroll.priorNegativeCarry, netSalary: payroll.netSalary,
+    priorNegativeCarry: payroll.priorNegativeCarry,
+    deactivationPaymentAmount: payroll.deactivationPaymentAmount ?? '0.00',
+    netSalary: payroll.netSalary,
     eligibleWorkdays: payroll.eligibleWorkdays, fullMonthWorkdays: payroll.fullMonthWorkdays,
     requiredMinutes: payroll.requiredMinutes, overtimeMinutes: payroll.overtimeMinutes,
     shortageMinutes: payroll.shortageMinutes, finalizedAt: at, createdAt: at, updatedAt: at,
@@ -221,6 +230,22 @@ const insertFinalized = async (
   return stored;
 };
 
+const employeeEligibleForMonth = async (
+  executor: Executor,
+  employee: { id: number; createdAt: Date; deletedAt: Date | null },
+  month: string,
+  timeZone: string,
+) => {
+  const storedPeriods = await executor.select({
+    activeFrom: employeeEmploymentPeriods.activeFrom,
+    activeTo: employeeEmploymentPeriods.activeTo,
+  }).from(employeeEmploymentPeriods).where(eq(employeeEmploymentPeriods.employeeId, employee.id));
+  const periods = storedPeriods.length
+    ? storedPeriods
+    : [{ activeFrom: employee.createdAt, activeTo: employee.deletedAt }];
+  return employmentMonthIsActive(month, periods, timeZone);
+};
+
 const chronological = async (
   transaction: Transaction,
   employee: NonNullable<Awaited<ReturnType<typeof lockEmployee>>>,
@@ -229,21 +254,13 @@ const chronological = async (
 ) => {
   let cursor = calendarMonthInTimeZone(employee.createdAt, timeZone);
   while (cursor < month) {
-    if (!await isFinalized(transaction, employee.id, cursor)) return false;
+    if (await employeeEligibleForMonth(transaction, employee, cursor, timeZone)
+      && !await isFinalized(transaction, employee.id, cursor)) return false;
     const [year, monthNumber] = cursor.split('-').map(Number) as [number, number];
     const next = monthNumber === 12 ? [year + 1, 1] : [year, monthNumber + 1];
     cursor = `${next[0]}-${String(next[1]).padStart(2, '0')}`;
   }
   return true;
-};
-
-const employeeEligibleForMonth = (
-  employee: { createdAt: Date; deletedAt: Date | null },
-  month: string,
-  timeZone: string,
-) => {
-  if (month < calendarMonthInTimeZone(employee.createdAt, timeZone)) return false;
-  return !employee.deletedAt || month <= calendarMonthInTimeZone(employee.deletedAt, timeZone);
 };
 
 export const createDrizzlePayrollRepository = (
@@ -261,7 +278,7 @@ export const createDrizzlePayrollRepository = (
       return database.transaction(async (transaction) => {
         const employee = await lockEmployee(transaction, employeeId);
         if (!employee) return { kind: 'employee_not_found' as const };
-        if (employee.deletedAt) return { kind: 'employee_deleted' as const };
+        if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         const at = context.now();
         const creationMonth = calendarMonthInTimeZone(employee.createdAt, timeZone);
         const currentMonth = context.currentMonth();
@@ -297,7 +314,10 @@ export const createDrizzlePayrollRepository = (
         createdAt: employees.createdAt,
         deletedAt: employees.deletedAt,
       }).from(employees).where(where).orderBy(asc(employees.employeeCode));
-      const eligible = candidates.filter((employee) => employeeEligibleForMonth(employee, query.month, timeZone));
+      const eligible = [];
+      for (const employee of candidates) {
+        if (await employeeEligibleForMonth(database, employee, query.month, timeZone)) eligible.push(employee);
+      }
       const matching: PayrollRecord[] = [];
       const reasons: string[] = [];
       for (const row of eligible) {
@@ -322,7 +342,7 @@ export const createDrizzlePayrollRepository = (
       return database.transaction(async (transaction) => {
         const employee = await lockEmployee(transaction, employeeId);
         if (!employee) return { kind: 'employee_not_found' as const };
-        if (!employeeEligibleForMonth(employee, month, timeZone)) return { kind: 'month_not_eligible' as const };
+        if (!await employeeEligibleForMonth(transaction, employee, month, timeZone)) return { kind: 'month_not_eligible' as const };
         if (month > context.currentMonth()) return { kind: 'month_not_ended' as const };
         const result = await compute(transaction, employee, month, attendance, 'preview', timeZone);
         return result.kind === 'success' ? result : { kind: 'blocked' as const, reasons: result.reasons };
@@ -336,11 +356,12 @@ export const createDrizzlePayrollRepository = (
         fullName: employees.fullName,
         branchId: employees.branchId,
         monthlyBaseSalary: employees.monthlyBaseSalary,
+        employmentStatus: employees.employmentStatus,
         createdAt: employees.createdAt,
         deletedAt: employees.deletedAt,
       }).from(employees).where(eq(employees.id, employeeId)).limit(1))[0];
       if (!employee) return { kind: 'employee_not_found' };
-      if (!employeeEligibleForMonth(employee, month, timeZone)) return { kind: 'month_not_eligible' };
+      if (!await employeeEligibleForMonth(transaction, employee, month, timeZone)) return { kind: 'month_not_eligible' };
       if (month > context.currentMonth()) return { kind: 'month_not_ended' };
       return compute(transaction, employee, month, attendance, 'preview', timeZone);
     },
@@ -348,7 +369,7 @@ export const createDrizzlePayrollRepository = (
       return database.transaction(async (transaction) => {
         const employee = await lockEmployee(transaction, employeeId);
         if (!employee) return { kind: 'employee_not_found' as const };
-        if (!employeeEligibleForMonth(employee, month, timeZone)) return { kind: 'month_not_eligible' as const };
+        if (!await employeeEligibleForMonth(transaction, employee, month, timeZone)) return { kind: 'month_not_eligible' as const };
         if (month >= context.currentMonth()) return { kind: 'month_not_ended' as const };
         if (await isFinalized(transaction, employeeId, month)) return { kind: 'already_finalized' as const };
         if (!await chronological(transaction, employee, month, timeZone)) return { kind: 'chronology_conflict' as const };
@@ -396,7 +417,7 @@ export const createDrizzlePayrollRepository = (
         for (const row of employeeRows) {
           const employee = await lockEmployee(transaction, row.id);
           if (!employee) continue;
-          if (!employeeEligibleForMonth(employee, month, timeZone)) continue;
+          if (!await employeeEligibleForMonth(transaction, employee, month, timeZone)) continue;
           const existing = exposeFinalized(await rawFinalized(transaction, row.id, month, timeZone));
           if (existing) {
             existingPayrolls.push(existing);

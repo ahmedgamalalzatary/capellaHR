@@ -18,7 +18,8 @@ const employee = {
     idFront: { storagePath: 'secret-front', originalName: 'f.jpg', mimeType: 'image/jpeg', sizeBytes: 10 },
     idBack: { storagePath: 'secret-back', originalName: 'b.jpg', mimeType: 'image/jpeg', sizeBytes: 10 },
   },
-  deletedAt: null,
+      employmentStatus: 'active' as const,
+      deletedAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
 };

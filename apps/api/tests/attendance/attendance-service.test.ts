@@ -18,6 +18,7 @@ const identity = {
   pinHash: 'stored-pin-hash',
   credentialVersion: 3,
   deletedAt: null,
+  employmentStatus: 'active' as const,
   branchId: 2,
   branchLatitude: 30.0444,
   branchLongitude: 31.2357,
@@ -145,6 +146,24 @@ describe('attendance service', () => {
       branchLongitude: 31.2357,
       branchRadiusMeters: 150,
     }));
+  });
+
+  it('rejects a new check-in for an inactive employee', async () => {
+    const repository = makeRepository();
+    vi.mocked(repository.findIdentityByCode).mockResolvedValue({ ...identity, employmentStatus: 'inactive' });
+    const { service } = createService(repository);
+
+    await expect(service.checkIn(event)).rejects.toMatchObject({ code: 'ATTENDANCE_EMPLOYEE_INACTIVE' });
+    expect(repository.checkIn).not.toHaveBeenCalled();
+  });
+
+  it('allows an inactive employee to complete their already-open session', async () => {
+    const repository = makeRepository();
+    vi.mocked(repository.findIdentityByCode).mockResolvedValue({ ...identity, employmentStatus: 'inactive' });
+    const { service } = createService(repository);
+
+    await expect(service.checkOut(event)).resolves.toMatchObject({ checkOutAt: now });
+    expect(repository.checkOut).toHaveBeenCalledOnce();
   });
 
   it('uses the assigned branch device for a branch-phone event', async () => {
