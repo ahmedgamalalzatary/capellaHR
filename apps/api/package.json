@@ -15,11 +15,15 @@
     }
   },
   "scripts": {
+    "prebuild": "node scripts/download-face-assets.mjs models",
     "build": "tsc -p tsconfig.build.json",
+    "predev": "node scripts/download-face-assets.mjs models",
     "dev": "tsx watch --conditions=development --env-file=../../.env src/server.ts",
     "start": "node --env-file=../../.env dist/server.js",
     "lint": "eslint .",
+    "pretest": "node scripts/download-face-assets.mjs all",
     "test": "vitest run && pnpm test:runtime:development",
+    "face-assets:models": "node scripts/download-face-assets.mjs models",
     "test:runtime": "node --env-file=../../.env.test production-runtime-smoke.mjs",
     "test:runtime:development": "tsx --conditions=development --env-file=../../.env.test production-runtime-smoke.mjs",
     "typecheck": "tsc --noEmit",
@@ -37,8 +41,10 @@
     "file-type": "^22.0.1",
     "helmet": "^8.1.0",
     "multer": "^2.2.0",
+    "onnxruntime-node": "^1.27.0",
     "pino": "^9.7.0",
     "pino-http": "^10.5.0",
+    "sharp": "^0.35.3",
     "zod": "catalog:"
   },
   "devDependencies": {

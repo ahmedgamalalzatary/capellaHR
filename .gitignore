@@ -10,8 +10,10 @@ coverage/
 .env.*
 !.env.example
 *.log
+**/.tmp-*
 .DS_Store
 Thumbs.db
 .idea/
 next-env.d.ts
 apps/api/uploads/*
+apps/api/assets/face-models/

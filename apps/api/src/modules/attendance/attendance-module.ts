@@ -7,12 +7,14 @@ import {
 } from './attendance-repository.js';
 import {
   createAttendanceService,
+  type AttendanceFaceGateway,
   type AttendanceDeviceGateway,
 } from './attendance-service.js';
 
 export const createAttendanceModule = (
   database: ReturnType<typeof createDatabase>,
   devices: AttendanceDeviceGateway,
+  faces: AttendanceFaceGateway,
   options: {
     isFinanciallyLocked: AttendanceFinancialLockCheck;
     readRequiredDuration: AttendanceRequiredDurationReader;
@@ -23,6 +25,6 @@ export const createAttendanceModule = (
   const repository = createDrizzleAttendanceRepository(database, options);
   return {
     repository,
-    service: createAttendanceService(repository, devices, options),
+    service: createAttendanceService(repository, devices, faces, options),
   };
 };

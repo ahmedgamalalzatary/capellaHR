@@ -1,11 +1,13 @@
 import { env } from '@capella/config/server';
 import { createDatabase } from '@capella/database';
 import { sql } from 'drizzle-orm';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { createApp } from './app.js';
 import { createAuthModule } from './modules/auth/index.js';
 import { createBranchesModule } from './modules/branches/index.js';
-import { createDrizzleEmployeeRepository, createEmployeesModule } from './modules/employees/index.js';
+import { createDrizzleEmployeeRepository, createEmployeeUploadStore, createEmployeesModule } from './modules/employees/index.js';
 import { createDevicesModule } from './modules/devices/index.js';
 import { createShiftsModule } from './modules/shifts/index.js';
 import { createWeeklyDayOffModule } from './modules/weekly-day-off/index.js';
@@ -18,6 +20,7 @@ import { createSelfServiceModule } from './modules/self-service/index.js';
 import { createAuditModule } from './modules/audit/index.js';
 import {
   createAttendanceModule,
+  createOnnxFaceGateway,
   type AttendanceShiftChangeReconciler,
 } from './modules/attendance/index.js';
 import { createDashboardModule } from './modules/dashboard/index.js';
@@ -32,6 +35,11 @@ const employeeRepository = createDrizzleEmployeeRepository(
   (...input) => reconcileAbsencesBeforeShiftChange(...input),
 );
 const deviceModule = createDevicesModule(database);
+const employeeUploadStore = createEmployeeUploadStore(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads/employees'),
+  env.MAX_EMPLOYEE_IMAGE_BYTES,
+);
+const faceGateway = createOnnxFaceGateway((storagePath) => employeeUploadStore.read(storagePath));
 const branchModule = createBranchesModule(database);
 const shiftModule = createShiftsModule(database, {
   beforeDurationChange: (employeeId, previousDurationMinutes, context) => (
@@ -52,15 +60,20 @@ const payrollModule = createPayrollModule(database, {
     },
   },
 });
-const attendanceModule = createAttendanceModule(database, deviceModule.attendanceDevices, {
-  isFinanciallyLocked: (employeeId, attendanceDate, context) => (
-    payrollModule.service.isFinanciallyLocked(employeeId, attendanceDate, context)
-  ),
-  readRequiredDuration: (employeeId, context, includeDeleted) => (
-    shiftModule.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
-  ),
-  timeZone: env.APP_TIME_ZONE,
-});
+const attendanceModule = createAttendanceModule(
+  database,
+  deviceModule.attendanceDevices,
+  faceGateway,
+  {
+    isFinanciallyLocked: (employeeId, attendanceDate, context) => (
+      payrollModule.service.isFinanciallyLocked(employeeId, attendanceDate, context)
+    ),
+    readRequiredDuration: (employeeId, context, includeDeleted) => (
+      shiftModule.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
+    ),
+    timeZone: env.APP_TIME_ZONE,
+  },
+);
 attendanceForPayroll.current = attendanceModule.repository;
 reconcileAbsencesBeforeShiftChange = attendanceModule.repository.reconcileDueAbsencesForEmployee;
 const auth = createAuthModule({
@@ -98,6 +111,7 @@ const employeeModule = createEmployeesModule(
   employeeRepository,
   deviceModule.lifecycle,
   advanceModule.lifecycle,
+  employeeUploadStore,
 );
 const weeklyDayOffModule = createWeeklyDayOffModule(database, {
   isFinanciallyLocked: (employeeId, attendanceDate, context) => (

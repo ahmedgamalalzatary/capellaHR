@@ -18,7 +18,18 @@ export type AttendanceIdentity = {
   branchLatitude: number;
   branchLongitude: number;
   branchRadiusMeters: number;
+  personalPhotoPath: string | null;
 };
+
+export type FaceComparisonResult =
+  | { kind: 'match' }
+  | { kind: 'mismatch' | 'face_not_found' | 'multiple_faces' | 'invalid_image' | 'failed' };
+
+export interface AttendanceFaceGateway {
+  compare(personalPhotoPath: string, liveImage: Buffer): Promise<FaceComparisonResult>;
+}
+
+export type EmployeeAttendanceSubmission = EmployeeAttendanceEvent & { faceImage: Buffer };
 
 export type AttendanceSession = {
   id: number;
@@ -209,6 +220,7 @@ const mutationValue = (result: AttendanceMutationResult) => {
 export const createAttendanceService = (
   repository: AttendanceRepository,
   devices: AttendanceDeviceGateway,
+  faces: AttendanceFaceGateway,
   options: {
     now?: () => Date;
     verifyPin?: (pinHash: string, pin: string) => Promise<boolean>;
@@ -219,7 +231,7 @@ export const createAttendanceService = (
 
   const employeeEvent = async (
     eventType: AttendanceEventType,
-    input: EmployeeAttendanceEvent,
+    input: EmployeeAttendanceSubmission,
   ) => {
     const occurredAt = now();
     const identity = await repository.findIdentityByCode(input.employeeCode);
@@ -264,16 +276,17 @@ export const createAttendanceService = (
       throw new AttendanceError(failure.code, failure.message);
     };
 
-    const assignment = input.source === 'personal_device'
-      ? { assignmentType: 'employee' as const, assignmentId: identity?.id ?? 0 }
-      : { assignmentType: 'branch' as const, assignmentId: identity?.branchId ?? 0 };
-    const [pinValid, verifiedDevice] = await Promise.all([
-      verifyPin(identity?.pinHash ?? ATTENDANCE_TIMING_DUMMY_HASH, input.pin),
-      devices.verify(assignment, input.installationMarker),
-    ]);
-    deviceId = verifiedDevice?.id ?? null;
+    const pinValid = await verifyPin(identity?.pinHash ?? ATTENDANCE_TIMING_DUMMY_HASH, input.pin);
     if (!identity || identity.deletedAt || !pinValid) {
       return deny(failures.credentials_changed);
+    }
+    const assignment = input.source === 'personal_device'
+      ? { assignmentType: 'employee' as const, assignmentId: identity.id }
+      : { assignmentType: 'branch' as const, assignmentId: identity.branchId };
+    const verifiedDevice = await devices.verify(assignment, input.installationMarker);
+    deviceId = verifiedDevice?.id ?? null;
+    if (!verifiedDevice?.verified) {
+      return deny(failures.device_invalid);
     }
     if (distanceMeters === null || !Number.isFinite(distanceMeters) || distanceMeters > identity.branchRadiusMeters) {
       return deny({
@@ -284,8 +297,22 @@ export const createAttendanceService = (
       });
     }
 
-    if (!verifiedDevice?.verified) {
-      return deny(failures.device_invalid);
+    if (!identity.personalPhotoPath) {
+      return deny({
+        code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED',
+        message: 'لا توجد صورة شخصية صالحة للموظف', suspicious: false,
+      });
+    }
+    const faceResult = await faces.compare(identity.personalPhotoPath, input.faceImage);
+    if (faceResult.kind !== 'match') {
+      const faceFailures = {
+        mismatch: { code: 'ATTENDANCE_FACE_MISMATCH', reason: 'FACE_MISMATCH', message: 'الصورة لا تطابق صورة الموظف', suspicious: true },
+        face_not_found: { code: 'ATTENDANCE_FACE_NOT_FOUND', reason: 'FACE_NOT_FOUND', message: 'لم يتم العثور على وجه واضح في الصورة', suspicious: false },
+        multiple_faces: { code: 'ATTENDANCE_MULTIPLE_FACES', reason: 'MULTIPLE_FACES', message: 'يجب أن يظهر وجه واحد فقط في الصورة', suspicious: true },
+        invalid_image: { code: 'ATTENDANCE_FACE_IMAGE_INVALID', reason: 'FACE_IMAGE_INVALID', message: 'صورة الكاميرا غير صالحة', suspicious: false },
+        failed: { code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED', message: 'تعذر التحقق من الصورة الآن', suspicious: false },
+      } as const;
+      return deny(faceFailures[faceResult.kind]);
     }
     const mutation: EmployeeAttendanceMutation = {
       employeeId: identity.id,
@@ -322,8 +349,8 @@ export const createAttendanceService = (
   };
 
   return {
-    checkIn: (input: EmployeeAttendanceEvent) => employeeEvent('check_in', input),
-    checkOut: (input: EmployeeAttendanceEvent) => employeeEvent('check_out', input),
+    checkIn: (input: EmployeeAttendanceSubmission) => employeeEvent('check_in', input),
+    checkOut: (input: EmployeeAttendanceSubmission) => employeeEvent('check_out', input),
     async manualCheckIn(input: ManualAttendanceEvent) {
       ensureNotFuture(input.occurredAt);
       return mutationValue(await repository.manualCheckIn(input));

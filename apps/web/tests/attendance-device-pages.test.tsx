@@ -30,12 +30,22 @@ function renderPage(page: React.ReactNode) {
   return render(<QueryClientProvider client={queryClient}>{page}</QueryClientProvider>);
 }
 
-function fillCredentials() {
+async function fillCredentials() {
   fireEvent.change(screen.getByLabelText('كود الموظف'), { target: { value: '42' } });
   fireEvent.change(screen.getByLabelText('الرقم السري'), { target: { value: '1234' } });
+  fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
 }
 
 beforeEach(() => {
+  const stream = { getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream;
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: vi.fn(async () => stream) },
+  });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob(['face'], { type: 'image/jpeg' })));
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
     value: { getItem: vi.fn(() => 'installation-marker-123'), setItem: vi.fn() },
@@ -66,18 +76,20 @@ describe('personal-device attendance', () => {
   it('captures GPS, sends the paired browser marker, and checks in', async () => {
     renderPage(<PersonalDevicePage />);
     expect(screen.getByRole('heading', { name: 'الحضور من جهازي', level: 1 })).toBeDefined();
-    fillCredentials();
+    expect(screen.getByRole('link', { name: 'الانتقال إلى هاتف الفرع' }).getAttribute('href')).toBe('/branch-kiosk');
+    await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
 
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining('/attendance/check-in'),
       expect.objectContaining({
         method: 'POST',
-        body: expect.stringContaining('"source":"personal_device"'),
+        body: expect.any(FormData),
       }),
     ));
     const attendanceCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/attendance/check-in'))!;
-    expect(JSON.parse(String((attendanceCall[1] as RequestInit).body))).toEqual({
+    const attendanceForm = (attendanceCall[1] as RequestInit).body as FormData;
+    expect(JSON.parse(String(attendanceForm.get('payload')))).toEqual({
       employeeCode: 42,
       pin: '1234',
       source: 'personal_device',
@@ -86,14 +98,16 @@ describe('personal-device attendance', () => {
       gpsAccuracyMeters: 8,
       installationMarker: 'installation-marker-123',
     });
-    expect((await screen.findByRole('status')).textContent).toContain('تم تسجيل الحضور');
+    expect(attendanceForm.get('faceImage')).toMatchObject({ type: 'image/jpeg' });
+    await screen.findByText('أحمد سالم');
+    expect(screen.getByRole('status').textContent).toContain('تم تسجيل الحضور');
     expect(screen.getByText('أحمد سالم')).toBeDefined();
   });
 
   it('supports check-out as an explicit separate action', async () => {
     renderPage(<PersonalDevicePage />);
     fireEvent.click(screen.getByRole('tab', { name: 'تسجيل الانصراف' }));
-    fillCredentials();
+    await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الانصراف' }));
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining('/attendance/check-out'),
@@ -111,7 +125,7 @@ describe('personal-device attendance', () => {
       }));
     }));
     renderPage(<PersonalDevicePage />);
-    fillCredentials();
+    await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());
     const checkoutTab = screen.getByRole('tab', { name: 'تسجيل الانصراف' });
@@ -142,7 +156,7 @@ describe('personal-device attendance', () => {
       error?.({ code: 1, message: 'denied', PERMISSION_DENIED: 1 } as GeolocationPositionError);
     });
     renderPage(<PersonalDevicePage />);
-    fillCredentials();
+    await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
     expect((await screen.findByRole('alert')).textContent).toContain('اسمح للموقع');
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
@@ -153,11 +167,13 @@ describe('shared branch kiosk', () => {
   it('uses the branch-device marker and clears employee identity after success', async () => {
     renderPage(<BranchKioskPage />);
     expect(screen.getByRole('heading', { name: 'هاتف الفرع', level: 1 })).toBeDefined();
-    fillCredentials();
+    expect(screen.getByRole('link', { name: 'الانتقال إلى جهازي الشخصي' }).getAttribute('href')).toBe('/personal-device');
+    await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
-    expect((await screen.findByRole('status')).textContent).toContain('تم تسجيل الحضور');
+    await screen.findByText('أحمد سالم');
+    expect(screen.getByRole('status').textContent).toContain('تم تسجيل الحضور');
     const eventCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/attendance/check-in'))!;
-    expect((eventCall[1] as RequestInit).body).toContain('"source":"branch_device"');
+    expect(JSON.parse(String(((eventCall[1] as RequestInit).body as FormData).get('payload'))).source).toBe('branch_device');
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل موظف آخر' }));
     expect((screen.getByLabelText('كود الموظف') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('الرقم السري') as HTMLInputElement).value).toBe('');
@@ -168,7 +184,7 @@ describe('shared branch kiosk', () => {
       error: { code: 'ATTENDANCE_OUT_OF_RANGE', message: 'الموقع خارج نطاق الفرع المسموح' },
     }, 409));
     renderPage(<BranchKioskPage />);
-    fillCredentials();
+    await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
     expect((await screen.findByRole('alert')).textContent).toContain('الموقع خارج نطاق الفرع المسموح');
     expect((screen.getByLabelText('كود الموظف') as HTMLInputElement).value).toBe('');

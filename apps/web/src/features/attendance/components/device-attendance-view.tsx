@@ -1,7 +1,8 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, LocateFixed, LockKeyhole, MapPin, ShieldCheck, Smartphone } from 'lucide-react';
+import { Check, LockKeyhole, MapPin, Repeat2, ShieldCheck, Smartphone } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 
 import { Button, Card, Field, Input } from '@capella/ui';
@@ -18,6 +19,7 @@ import {
 import { AttendanceLocationError, currentAttendanceLocation } from '../lib/current-location';
 import { invalidateAttendanceDependents } from '../lib/invalidate-attendance';
 import { handleRtlTabKey } from '../lib/tab-keyboard';
+import { AttendanceCameraCapture } from './attendance-camera-capture';
 
 interface DeviceAttendanceViewProps {
   source: AttendanceDeviceSource;
@@ -44,11 +46,14 @@ const errorMessage = (error: unknown) => {
   if (error instanceof Error && error.message === 'INVALID_PIN') {
     return 'الرقم السري يجب أن يتكون من أربعة أرقام إنجليزية.';
   }
+  if (error instanceof Error && error.message === 'FACE_REQUIRED') {
+    return 'التقط صورة مباشرة قبل تسجيل الحضور.';
+  }
   return 'تعذر إتمام العملية. تحقق من الاتصال وأعد المحاولة.';
 };
 
-function TrustStep({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
-  return <li className="flex gap-3 border-b border-paper/10 py-3 last:border-0"><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full border border-paper/20 text-paper/75">{icon}</span><span><strong className="block text-sm font-medium text-paper">{title}</strong><span className="text-[12px] leading-5 text-paper/55">{detail}</span></span></li>;
+function TrustStep({ icon, label }: { icon: ReactNode; label: string }) {
+  return <li className="flex items-center gap-2 text-[12px] text-muted"><span className="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-paper text-muted">{icon}</span>{label}</li>;
 }
 
 export function DeviceAttendanceView({ source, title, eyebrow, description }: DeviceAttendanceViewProps) {
@@ -56,6 +61,8 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
   const [eventType, setEventType] = useState<AttendanceEventType>('check_in');
   const [employeeCode, setEmployeeCode] = useState('');
   const [pin, setPin] = useState('');
+  const [faceImage, setFaceImage] = useState<Blob | null>(null);
+  const [failure, setFailure] = useState<unknown>(null);
   const [success, setSuccess] = useState<{
     session: AttendanceSession;
     eventType: AttendanceEventType;
@@ -64,13 +71,17 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
   const isKiosk = source === 'branch_device';
 
   const attendance = useMutation({
+    gcTime: 0,
+    onMutate: () => setFailure(null),
     mutationFn: async (request: {
       eventType: AttendanceEventType;
       employeeCode: string;
       pin: string;
+      faceImage: Blob | null;
     }) => {
       if (!/^\d+$/.test(request.employeeCode) || Number(request.employeeCode) <= 0) throw new Error('INVALID_EMPLOYEE_CODE');
       if (!/^\d{4}$/.test(request.pin)) throw new Error('INVALID_PIN');
+      if (!request.faceImage) throw new Error('FACE_REQUIRED');
       const location = await currentAttendanceLocation();
       const marker = installationMarker();
       const session = await recordEmployeeAttendance(request.eventType, {
@@ -79,6 +90,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
         source,
         ...location,
         installationMarker: marker,
+        faceImage: request.faceImage,
       });
       return { session, eventType: request.eventType };
     },
@@ -86,11 +98,17 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
       setSuccess(result);
       setEmployeeCode('');
       setPin('');
+      setFaceImage(null);
       void invalidateAttendanceDependents(queryClient);
     },
     onError: () => {
       setPin('');
+      setFaceImage(null);
       if (isKiosk) setEmployeeCode('');
+    },
+    onSettled: (_data, error) => {
+      if (error) setFailure(error);
+      queueMicrotask(() => attendance.reset());
     },
   });
 
@@ -102,16 +120,20 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
 
   const reset = () => {
     attendance.reset();
+    setFailure(null);
     setSuccess(null);
     setEmployeeCode('');
     setPin('');
+    setFaceImage(null);
   };
   const selectEvent = (next: AttendanceEventType) => {
     setEventType(next);
     attendance.reset();
+    setFailure(null);
     if (isKiosk) {
       setEmployeeCode('');
       setPin('');
+      setFaceImage(null);
     }
   };
   const eventTypes = ['check_in', 'check_out'] as const;
@@ -134,30 +156,45 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
   }
 
   return (
-    <main className="min-h-dvh bg-surface px-4 py-6 sm:grid sm:place-items-center sm:px-6">
-      <div className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-card border border-line bg-paper shadow-sm lg:grid-cols-[minmax(0,1fr)_21rem]">
-        <section className="p-5 sm:p-8 lg:p-10">
-          <header className="mb-7"><p className="text-[12px] font-semibold tracking-[0.14em] text-muted">{eyebrow}</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1><p className="mt-3 max-w-xl text-sm leading-7 text-muted">{description}</p></header>
+    <main className="grid min-h-dvh place-items-center bg-surface px-4 py-8 sm:px-6">
+      <Card className="w-full max-w-xl overflow-hidden">
+        <header className="border-b border-line px-5 py-6 sm:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[12px] font-semibold tracking-[0.14em] text-muted">{eyebrow}</p>
+            <Link href={isKiosk ? '/personal-device' : '/branch-kiosk'} className="inline-flex h-8 items-center justify-center gap-2 rounded-control border border-line bg-paper px-3 text-[12px] font-medium text-ink transition-colors hover:bg-surface">
+              <Repeat2 className="size-4" aria-hidden />
+              {isKiosk ? 'الانتقال إلى جهازي الشخصي' : 'الانتقال إلى هاتف الفرع'}
+            </Link>
+          </div>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1><p className="mt-2 text-sm leading-7 text-muted">{description}</p>
+        </header>
 
+        <div className="px-5 py-6 sm:px-8">
           <div className="mb-6 grid grid-cols-2 gap-2" role="tablist" aria-label="نوع عملية الحضور">
             <Button id={`${inputPrefix}-check-in-tab`} role="tab" aria-selected={eventType === 'check_in'} aria-controls={`${inputPrefix}-attendance-form`} tabIndex={eventType === 'check_in' ? 0 : -1} size="lg" variant={eventType === 'check_in' ? 'primary' : 'secondary'} disabled={attendance.isPending} onKeyDown={(event) => handleRtlTabKey(event, 0, eventTypes, selectEvent)} onClick={() => selectEvent('check_in')}>تسجيل الحضور</Button>
             <Button id={`${inputPrefix}-check-out-tab`} role="tab" aria-selected={eventType === 'check_out'} aria-controls={`${inputPrefix}-attendance-form`} tabIndex={eventType === 'check_out' ? 0 : -1} size="lg" variant={eventType === 'check_out' ? 'primary' : 'secondary'} disabled={attendance.isPending} onKeyDown={(event) => handleRtlTabKey(event, 1, eventTypes, selectEvent)} onClick={() => selectEvent('check_out')}>تسجيل الانصراف</Button>
           </div>
 
-          <form id={`${inputPrefix}-attendance-form`} role="tabpanel" aria-labelledby={`${inputPrefix}-${eventType === 'check_in' ? 'check-in' : 'check-out'}-tab`} autoComplete={isKiosk ? 'off' : 'on'} noValidate className="space-y-5" onSubmit={(event) => { event.preventDefault(); attendance.mutate({ eventType, employeeCode, pin }); }}>
-            <Field label="كود الموظف" htmlFor={`${inputPrefix}-employee-code`} required><Input id={`${inputPrefix}-employee-code`} aria-label="كود الموظف" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'username'} className="tabular text-lg" disabled={attendance.isPending} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} /></Field>
-            <Field label="الرقم السري" htmlFor={`${inputPrefix}-pin`} required><Input id={`${inputPrefix}-pin`} aria-label="الرقم السري" type="password" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'current-password'} maxLength={4} className="tabular text-lg tracking-[0.35em]" disabled={attendance.isPending} value={pin} onChange={(event) => setPin(event.target.value)} /></Field>
-            {attendance.error ? <div role="alert" className="rounded-control border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"><p>{errorMessage(attendance.error)}</p><Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => attendance.reset()}>إعادة المحاولة</Button></div> : null}
+          <form id={`${inputPrefix}-attendance-form`} role="tabpanel" aria-labelledby={`${inputPrefix}-${eventType === 'check_in' ? 'check-in' : 'check-out'}-tab`} autoComplete={isKiosk ? 'off' : 'on'} noValidate className="space-y-5" onSubmit={(event) => { event.preventDefault(); attendance.mutate({ eventType, employeeCode, pin, faceImage }); }}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="كود الموظف" htmlFor={`${inputPrefix}-employee-code`} required><Input id={`${inputPrefix}-employee-code`} aria-label="كود الموظف" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'username'} className="tabular text-lg" disabled={attendance.isPending} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} /></Field>
+              <Field label="الرقم السري" htmlFor={`${inputPrefix}-pin`} required><Input id={`${inputPrefix}-pin`} aria-label="الرقم السري" type="password" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'current-password'} maxLength={4} className="tabular text-lg tracking-[0.35em]" disabled={attendance.isPending} value={pin} onChange={(event) => setPin(event.target.value)} /></Field>
+            </div>
+            <AttendanceCameraCapture value={faceImage} onChange={setFaceImage} disabled={attendance.isPending} />
+            {failure ? <div role="alert" className="rounded-control border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"><p>{errorMessage(failure)}</p><Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => setFailure(null)}>إعادة المحاولة</Button></div> : null}
             <Button type="submit" size="lg" className="w-full" disabled={attendance.isPending}>{attendance.isPending ? 'جارٍ التحقق…' : eventType === 'check_in' ? 'تسجيل الحضور' : 'تسجيل الانصراف'}</Button>
-            <p className="flex items-center justify-center gap-2 text-center text-[12px] text-muted"><ShieldCheck className="size-4" aria-hidden />لا تُنشئ هذه العملية جلسة إدارية أو تكشف بيانات الموظف.</p>
           </form>
-        </section>
+        </div>
 
-        <aside className="bg-ink p-6 text-paper sm:p-8 lg:flex lg:flex-col lg:justify-between">
-          <div><Smartphone className="size-8 text-paper/80" aria-hidden /><h2 className="mt-5 text-xl font-semibold">ثلاث خطوات للتحقق</h2><ul className="mt-4"><TrustStep icon={<LockKeyhole className="size-4" aria-hidden />} title="هوية الموظف" detail="الكود والرقم السري المكوّن من أربعة أرقام" /><TrustStep icon={<LocateFixed className="size-4" aria-hidden />} title="الموقع الحالي" detail="داخل نطاق الفرع المعيّن للموظف" /><TrustStep icon={<Smartphone className="size-4" aria-hidden />} title="الجهاز المسجل" detail={isKiosk ? 'متصفح هاتف الفرع المرتبط مسبقًا' : 'متصفح هاتفك الشخصي المرتبط مسبقًا'} /></ul></div>
-          <p className="mt-7 flex gap-2 border-t border-paper/10 pt-5 text-[12px] leading-6 text-paper/50"><MapPin className="mt-1 size-4 shrink-0" aria-hidden />يُستخدم موقعك فقط للتحقق من نطاق الحضور ويُحفظ مع محاولة الحضور وفق سياسة النظام.</p>
-        </aside>
-      </div>
+        <footer className="border-t border-line bg-surface px-5 py-4 sm:px-8">
+          <ul className="grid gap-3 sm:grid-cols-3">
+            <TrustStep icon={<LockKeyhole className="size-3.5" aria-hidden />} label="كود ورقم سري" />
+            <TrustStep icon={<MapPin className="size-3.5" aria-hidden />} label="موقع الفرع" />
+            <TrustStep icon={<Smartphone className="size-3.5" aria-hidden />} label={isKiosk ? 'هاتف الفرع المعتمد' : 'إثبات هذا الجهاز'} />
+          </ul>
+          <p className="mt-4 flex items-center justify-center gap-2 text-center text-[12px] text-muted"><ShieldCheck className="size-4 shrink-0" aria-hidden />لا تُنشئ هذه العملية جلسة إدارية أو تكشف بيانات الموظف.</p>
+        </footer>
+      </Card>
     </main>
   );
 }

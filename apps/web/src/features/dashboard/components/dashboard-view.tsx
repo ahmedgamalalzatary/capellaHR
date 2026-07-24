@@ -31,6 +31,11 @@ import { getDashboardSnapshot } from '../api/dashboard-api';
 import { dashboardQueryKeys } from '../query-keys';
 
 const FAILURE_LABELS: Record<string, string> = {
+  FACE_MISMATCH: 'الصورة لا تطابق صورة الموظف',
+  FACE_NOT_FOUND: 'لم يتم العثور على وجه واضح',
+  MULTIPLE_FACES: 'ظهر أكثر من وجه في الصورة',
+  FACE_IMAGE_INVALID: 'صورة الكاميرا غير صالحة',
+  FACE_COMPARISON_FAILED: 'تعذر التحقق من الصورة',
   INVALID_CREDENTIALS: 'كود الموظف أو الرقم السري غير صحيح',
   DEVICE_INVALID: 'تعذر التحقق من الجهاز',
   DEVICE_REVOKED: 'الجهاز ملغى',

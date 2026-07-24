@@ -9,6 +9,7 @@ import {
   branches,
   devices,
   employeeBranchAssignments,
+  employeeImages,
   employees,
 } from '@capella/database/schema';
 import {
@@ -865,7 +866,12 @@ export const createDrizzleAttendanceRepository = (
         branchLatitude: branches.latitude,
         branchLongitude: branches.longitude,
         branchRadiusMeters: branches.attendanceRadiusMeters,
+        personalPhotoPath: employeeImages.storagePath,
       }).from(employees).innerJoin(branches, eq(branches.id, employees.branchId))
+        .leftJoin(employeeImages, and(
+          eq(employeeImages.employeeId, employees.id),
+          eq(employeeImages.kind, 'personal'),
+        ))
         .where(eq(employees.employeeCode, code)).limit(1))[0] ?? null;
     },
 

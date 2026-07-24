@@ -21,6 +21,7 @@ const identity = {
   branchLatitude: 30.0444,
   branchLongitude: 31.2357,
   branchRadiusMeters: 150,
+  personalPhotoPath: 'employees/personal.jpg',
 };
 const session = {
   id: 11,
@@ -75,6 +76,7 @@ const event = {
   longitude: 31.2357,
   gpsAccuracyMeters: 8,
   installationMarker,
+  faceImage: Buffer.from('live-face'),
 };
 
 const createService = (repository = makeRepository()) => {
@@ -82,11 +84,15 @@ const createService = (repository = makeRepository()) => {
     verify: vi.fn(async () => ({ id: 9, verified: true })),
   };
   const verifyPin = vi.fn(async () => true);
+  const faces = {
+    compare: vi.fn(async () => ({ kind: 'match' as const })),
+  };
   return {
     repository,
     devices,
     verifyPin,
-    service: createAttendanceService(repository, devices, {
+    faces,
+    service: createAttendanceService(repository, devices, faces, {
       now: () => now,
       verifyPin,
     }),
@@ -140,12 +146,30 @@ describe('attendance service', () => {
     );
   });
 
-  it('records and flags a wrong PIN after checking the paired browser marker', async () => {
+  it('records a face mismatch and does not create attendance', async () => {
+    const setup = createService();
+    setup.faces.compare.mockResolvedValue({ kind: 'mismatch' });
+
+    await expect(setup.service.checkIn(event)).rejects.toMatchObject({
+      code: 'ATTENDANCE_FACE_MISMATCH',
+    });
+    expect(setup.faces.compare).toHaveBeenCalledWith(
+      'employees/personal.jpg',
+      event.faceImage,
+    );
+    expect(setup.repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      failureReason: 'FACE_MISMATCH',
+      suspicious: true,
+    }));
+    expect(setup.repository.checkIn).not.toHaveBeenCalled();
+  });
+
+  it('records and flags a wrong PIN without checking later factors', async () => {
     const repository = makeRepository();
     const devices = {
       verify: vi.fn(async () => ({ id: 9, verified: true })),
     };
-    const service = createAttendanceService(repository, devices, {
+    const service = createAttendanceService(repository, devices, { compare: vi.fn() }, {
       now: () => now,
       verifyPin: vi.fn(async () => false),
     });
@@ -156,14 +180,11 @@ describe('attendance service', () => {
     expect(repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
       eventType: 'check_in',
       employeeId: 7,
-      deviceId: 9,
+      deviceId: null,
       failureReason: 'INVALID_CREDENTIALS',
       suspicious: true,
     }));
-    expect(devices.verify).toHaveBeenCalledWith(
-      { assignmentType: 'employee', assignmentId: 7 },
-      installationMarker,
-    );
+    expect(devices.verify).not.toHaveBeenCalled();
   });
 
   it('records and flags a point outside the exact assigned-branch radius', async () => {
@@ -212,13 +233,13 @@ describe('attendance service', () => {
     expect(devices.verify).toHaveBeenCalledOnce();
   });
 
-  it('checks a submitted marker even when the claimed employee code is unknown', async () => {
+  it('does not check later factors when the claimed employee credentials are invalid', async () => {
     const repository = makeRepository();
     vi.mocked(repository.findIdentityByCode).mockResolvedValue(null);
     const devices = {
       verify: vi.fn(async () => null),
     };
-    const service = createAttendanceService(repository, devices, {
+    const service = createAttendanceService(repository, devices, { compare: vi.fn() }, {
       now: () => now,
       verifyPin: vi.fn(async () => false),
     });
@@ -226,10 +247,7 @@ describe('attendance service', () => {
     await expect(service.checkIn(event)).rejects.toMatchObject({
       code: 'ATTENDANCE_INVALID_CREDENTIALS',
     });
-    expect(devices.verify).toHaveBeenCalledWith(
-      { assignmentType: 'employee', assignmentId: 0 },
-      installationMarker,
-    );
+    expect(devices.verify).not.toHaveBeenCalled();
   });
 
   it('records repository state conflicts as denied attempts', async () => {
@@ -250,7 +268,7 @@ describe('attendance service', () => {
     const devices = {
       verify: vi.fn(async () => ({ id: 9, verified: false })),
     };
-    const service = createAttendanceService(repository, devices, {
+    const service = createAttendanceService(repository, devices, { compare: vi.fn() }, {
       now: () => now,
       verifyPin: vi.fn(async () => true),
     });
