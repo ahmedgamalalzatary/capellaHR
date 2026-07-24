@@ -7,7 +7,7 @@ import {
   employees,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, count, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
 import {
   createFinancialContext,
@@ -26,12 +26,10 @@ import {
   splitInstallments,
 } from '../payroll/payroll-domain.js';
 import type { AdvanceRecord, AdvanceRepository } from './advances-service.js';
+import { branchIdAt } from '../../shared/database/branch-id-at.js';
 
-const branchIdAtCreation = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
-const assignmentAtCreation = and(
-  eq(employeeBranchAssignments.employeeId, advances.employeeId),
-  lte(employeeBranchAssignments.effectiveFrom, advances.createdAt),
-  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, advances.createdAt)),
+const { branchId: branchIdAtCreation, assignment: assignmentAtCreation } = branchIdAt(
+  employeeBranchAssignments, advances.employeeId, advances.createdAt,
 );
 const fields = {
   id: advances.id, employeeId: advances.employeeId, employeeCode: employees.employeeCode,

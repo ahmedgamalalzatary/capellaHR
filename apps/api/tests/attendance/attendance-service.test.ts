@@ -65,6 +65,7 @@ const makeRepository = (): AttendanceRepository => ({
   listSessions: vi.fn(async () => ({ items: [session], total: 1 })),
   listDeniedAttempts: vi.fn(async () => ({ items: [], total: 0 })),
   hasOpenSession: vi.fn(async () => true),
+  hasAnyOpenSession: vi.fn(async () => true),
 });
 
 const installationMarker = 'installation-marker-123';
@@ -100,6 +101,15 @@ const createService = (repository = makeRepository()) => {
 };
 
 describe('attendance service', () => {
+  it('delegates the full open-session check without falling back', async () => {
+    const repository = makeRepository();
+    vi.mocked(repository.hasAnyOpenSession).mockResolvedValue(false);
+    const { service } = createService(repository);
+
+    await expect(service.hasAnyOpenSession(7)).resolves.toBe(false);
+    expect(repository.hasAnyOpenSession).toHaveBeenCalledWith(7, undefined);
+    expect(repository.hasOpenSession).not.toHaveBeenCalled();
+  });
   it('calculates inclusive GPS distance and whole completed attendance minutes', () => {
     expect(calculateDistanceMeters(30.0444, 31.2357, 30.0444, 31.2357)).toBe(0);
     expect(calculateDistanceMeters(

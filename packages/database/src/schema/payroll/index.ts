@@ -103,7 +103,7 @@ export const advances = mysqlTable('advances', {
   uniqueIndex('advances_id_employee_unique').on(table.id, table.employeeId),
   index('advances_employee_idx').on(table.employeeId),
   check('advances_amount_positive', sql`${table.amount} > 0`),
-  check('advances_installment_count_range', sql`${table.installmentCount} between 1 and 4`),
+  check('advances_installment_count_range', sql`${table.installmentCount} between 1 and 12`),
   check('advances_month_first_day', sql`dayofmonth(${table.startMonth}) = 1`),
 ]);
 
@@ -126,7 +126,7 @@ export const advanceInstallments = mysqlTable('advance_installments', {
   index('advance_installments_employee_month_idx').on(table.employeeId, table.payrollMonth),
   index('advance_installments_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('advance_installments_amount_positive', sql`${table.amount} > 0`),
-  check('advance_installments_ordinal_range', sql`${table.ordinal} between 1 and 4`),
+  check('advance_installments_ordinal_range', sql`${table.ordinal} between 1 and 12`),
   check('advance_installments_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 

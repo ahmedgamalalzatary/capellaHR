@@ -129,6 +129,15 @@ const seed = async () => {
     createdAt: now,
     updatedAt: now,
   });
+  await database.insert(attendanceSessions).values({
+    employeeId,
+    branchId,
+    attendanceDate: '2026-07-19',
+    requiredMinutes: 600,
+    checkInAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
   await database.insert(bonuses).values({
     employeeId,
     payrollMonth: '2026-07-01',
@@ -177,9 +186,13 @@ describe('MySQL-backed reports', () => {
     }
     const reader = createDrizzleReportReader(database);
 
-    for (const reportType of ['weekly-day-off', 'bonuses', 'deductions', 'advances'] as const) {
+    for (const reportType of ['attendance', 'weekly-day-off', 'bonuses', 'deductions', 'advances'] as const) {
       const oldBranch = await reader.read(reportType, { branchId }, { mode: 'all' }, null, reassignedAt);
-      expect(oldBranch).toMatchObject({ kind: 'success', total: 1, snapshot: { rows: [{ branchId }] } });
+      expect(oldBranch).toMatchObject({
+        kind: 'success',
+        total: reportType === 'attendance' ? 2 : 1,
+        snapshot: { rows: expect.arrayContaining([expect.objectContaining({ branchId })]) },
+      });
       await expect(reader.read(reportType, { branchId: newBranchId }, { mode: 'all' }, null, reassignedAt))
         .resolves.toMatchObject({ kind: 'success', total: 0 });
     }

@@ -6,7 +6,6 @@ import {
   count,
   desc,
   eq,
-  gt,
   gte,
   isNull,
   lte,
@@ -16,6 +15,7 @@ import {
 } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
+import { branchIdAt } from '../../shared/database/branch-id-at.js';
 import type {
   WeeklyDayOffFinancialLockCheck,
   WeeklyDayOffRepository,
@@ -26,12 +26,11 @@ type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Transaction;
 
-const historicalBranchId = sql<number>`coalesce(${attendanceDailyRecords.branchId}, ${employeeBranchAssignments.branchId}, ${employees.branchId})`;
-const assignmentAtCreation = and(
-  eq(employeeBranchAssignments.employeeId, attendanceDailyRecords.employeeId),
-  lte(employeeBranchAssignments.effectiveFrom, attendanceDailyRecords.createdAt),
-  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, attendanceDailyRecords.createdAt)),
+const historicalAssignment = branchIdAt(
+  employeeBranchAssignments, attendanceDailyRecords.employeeId, attendanceDailyRecords.createdAt,
 );
+const historicalBranchId = sql<number>`coalesce(${attendanceDailyRecords.branchId}, ${historicalAssignment.branchId})`;
+const assignmentAtCreation = historicalAssignment.assignment;
 const recordFields = {
   id: attendanceDailyRecords.id,
   employeeId: employees.id,

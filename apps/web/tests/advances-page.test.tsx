@@ -131,6 +131,15 @@ describe('AdvancesView', () => {
     );
   });
 
+  test('offers installment schedules through twelve months', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة سلفة' }));
+    const installments = screen.getByLabelText(/عدد الأقساط/) as HTMLSelectElement;
+    expect(within(installments).getAllByRole('option')).toHaveLength(12);
+    expect(within(installments).getByRole('option', { name: '12' })).toBeDefined();
+  });
+
   test('edits the schedule but never the employee', async () => {
     mocks.updateAdvance.mockResolvedValue(advance);
     renderView();

@@ -9,7 +9,9 @@ import {
   employees,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, lte, notExists, or, sql } from 'drizzle-orm';
+
+import { branchIdAt } from '../../shared/database/branch-id-at.js';
 
 import {
   calculatePayroll,
@@ -44,11 +46,8 @@ const findSalary = async (executor: Executor, employeeId: number): Promise<BaseS
     .where(eq(employees.id, employeeId)).limit(1)
 )[0] ?? null;
 
-const finalizedBranchId = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
-const assignmentAtFinalization = and(
-  eq(employeeBranchAssignments.employeeId, payrollMonths.employeeId),
-  lte(employeeBranchAssignments.effectiveFrom, payrollMonths.createdAt),
-  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, payrollMonths.createdAt)),
+const { branchId: finalizedBranchId, assignment: assignmentAtFinalization } = branchIdAt(
+  employeeBranchAssignments, payrollMonths.employeeId, payrollMonths.payrollMonth,
 );
 const payrollFields = {
   id: payrollMonths.id, employeeId: payrollMonths.employeeId,

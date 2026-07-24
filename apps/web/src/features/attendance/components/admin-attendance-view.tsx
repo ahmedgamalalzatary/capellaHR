@@ -34,6 +34,7 @@ import {
   type AttendanceSessionFilters,
 } from '../api/attendance-api';
 import { cairoLocalDateTimeToIso } from '../lib/cairo-time';
+import { FACE_FAILURE_LABELS } from '../lib/failure-labels';
 import { invalidateAttendanceDependents } from '../lib/invalidate-attendance';
 import { handleRtlTabKey } from '../lib/tab-keyboard';
 import { attendanceQueryKeys } from '../query-keys';
@@ -184,11 +185,7 @@ function SessionSection() {
 }
 
 const failureLabels: Record<string, string> = {
-  FACE_MISMATCH: 'الصورة لا تطابق صورة الموظف',
-  FACE_NOT_FOUND: 'لم يتم العثور على وجه واضح',
-  MULTIPLE_FACES: 'ظهر أكثر من وجه في الصورة',
-  FACE_IMAGE_INVALID: 'صورة الكاميرا غير صالحة',
-  FACE_COMPARISON_FAILED: 'تعذر التحقق من الصورة',
+  ...FACE_FAILURE_LABELS,
   EMPLOYEE_NOT_FOUND: 'الموظف غير موجود',
   INVALID_CREDENTIALS: 'بيانات الموظف غير صحيحة', DEVICE_INVALID: 'الجهاز غير مسجل أو ملغى',
   OUT_OF_RANGE: 'خارج نطاق الفرع', WEEKLY_DAY_OFF: 'يوم راحة أسبوعي',

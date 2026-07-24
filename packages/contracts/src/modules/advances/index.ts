@@ -7,7 +7,7 @@ import {
 } from '../../common/index.js';
 import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.js';
 
-export const installmentCountSchema = z.number().int().min(1).max(4);
+export const installmentCountSchema = z.number().int().min(1).max(12);
 export const advanceParamsSchema = z.object({ advanceId: coercedMysqlIntSchema });
 const validateSchedule = (
   value: {

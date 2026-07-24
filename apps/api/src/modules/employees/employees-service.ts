@@ -21,7 +21,7 @@ export interface EmployeeRepository {
 export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession?(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: { prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void> }) => ({
+export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: { prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void> }) => ({
   async create(input: CreateEmployeeFields & { images: EmployeeImages }) {
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
@@ -48,7 +48,7 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
       { ...changes, ...(pin ? { pinHash: await hash(pin) } : {}) },
       Boolean(pin),
       branchSubmitted
-        ? (employeeId, context) => (attendance!.hasAnyOpenSession ?? attendance!.hasOpenSession)(employeeId, context)
+        ? (employeeId, context) => attendance!.hasAnyOpenSession(employeeId, context)
         : undefined,
     ); }
     catch (error) { if (isDuplicate(error)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل'); throw error; }

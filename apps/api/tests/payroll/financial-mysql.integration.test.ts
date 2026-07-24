@@ -102,6 +102,35 @@ const createEmployee = async (
 }))[0].insertId);
 
 describe('MySQL-backed salary domain', () => {
+  it('keeps finalized payroll under the branch active during its payroll period', async () => {
+    const oldBranchId = await createBranch('Payroll period branch');
+    const newBranchId = await createBranch('Later branch');
+    const employeeCreatedAt = new Date('2026-05-01T09:00:00.000Z');
+    const employeeId = await createEmployee(oldBranchId, 1, employeeCreatedAt);
+    const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
+    await database.insert(employeeBranchAssignments).values({
+      employeeId, branchId: oldBranchId, effectiveFrom: employeeCreatedAt,
+      createdAt: employeeCreatedAt,
+    });
+    await payroll.service.finalize(employeeId, '2026-05');
+    const reassignedAt = new Date('2026-07-01T00:00:00.000Z');
+    await database.update(employeeBranchAssignments).set({ effectiveTo: reassignedAt })
+      .where(and(
+        eq(employeeBranchAssignments.employeeId, employeeId),
+        eq(employeeBranchAssignments.branchId, oldBranchId),
+      ));
+    await database.insert(employeeBranchAssignments).values({
+      employeeId, branchId: newBranchId, effectiveFrom: reassignedAt, createdAt: reassignedAt,
+    });
+    await database.update(employees).set({ branchId: newBranchId, updatedAt: reassignedAt })
+      .where(eq(employees.id, employeeId));
+
+    await expect(payroll.service.finalize(employeeId, '2026-06')).resolves.toMatchObject({
+      branchId: oldBranchId,
+      branchName: 'Payroll period branch',
+    });
+  });
+
   it('keeps financial records under the branch where they were created after reassignment', async () => {
     const oldBranchId = await createBranch('Old branch');
     const newBranchId = await createBranch('New branch');
@@ -252,7 +281,7 @@ describe('MySQL-backed salary domain', () => {
     const employeeModule = createEmployeesModule(
       database,
       16_777_216,
-      { hasOpenSession: async () => false },
+      { hasOpenSession: async () => false, hasAnyOpenSession: async () => false },
       createDrizzleEmployeeRepository(database, () => fixedNow),
       undefined,
       advanceModule.lifecycle,
@@ -280,7 +309,7 @@ describe('MySQL-backed salary domain', () => {
     const employeeModule = createEmployeesModule(
       database,
       16_777_216,
-      { hasOpenSession: async () => false },
+      { hasOpenSession: async () => false, hasAnyOpenSession: async () => false },
       createDrizzleEmployeeRepository(database, () => deletionInstant),
       undefined,
       advanceModule.lifecycle,
@@ -309,7 +338,7 @@ describe('MySQL-backed salary domain', () => {
     const employeeModule = createEmployeesModule(
       database,
       16_777_216,
-      { hasOpenSession: async () => false },
+      { hasOpenSession: async () => false, hasAnyOpenSession: async () => false },
       createDrizzleEmployeeRepository(database, () => deletionInstant),
       undefined,
       advanceModule.lifecycle,

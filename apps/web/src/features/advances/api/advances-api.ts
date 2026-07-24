@@ -9,7 +9,7 @@ export interface AdvanceInstallment {
   amount: string;
 }
 
-/** A disbursed advance repaid over one to four consecutive monthly installments. */
+/** A disbursed advance repaid over one to twelve consecutive monthly installments. */
 export interface Advance {
   id: number;
   employeeId: number;

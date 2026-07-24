@@ -1,4 +1,4 @@
-import { getTableConfig } from 'drizzle-orm/mysql-core';
+import { getTableConfig, MySqlDialect } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -12,6 +12,11 @@ import {
 } from './index.js';
 
 const config = (table: Parameters<typeof getTableConfig>[0]) => getTableConfig(table);
+const dialect = new MySqlDialect();
+const checkSql = (table: Parameters<typeof getTableConfig>[0], name: string) => {
+  const constraint = config(table).checks.find((check) => check.name === name);
+  return constraint ? dialect.sqlToQuery(constraint.value).sql : null;
+};
 
 describe('payroll schema', () => {
   it('stores an optional historical reason on bonus rows', () => {
@@ -45,7 +50,10 @@ describe('payroll schema', () => {
   });
 
   it('constrains advance count and installment uniqueness', () => {
-    expect(config(advances).checks.some((check) => check.name === 'advances_installment_count_range')).toBe(true);
+    expect(checkSql(advances, 'advances_installment_count_range'))
+      .toBe('`advances`.`installment_count` between 1 and 12');
+    expect(checkSql(advanceInstallments, 'advance_installments_ordinal_range'))
+      .toBe('`advance_installments`.`ordinal` between 1 and 12');
     expect(config(advances).indexes.some((index) => index.config.name === 'advances_id_employee_unique')).toBe(true);
     expect(config(advanceInstallments).indexes.some((index) => index.config.name === 'advance_installments_advance_ordinal_unique')).toBe(true);
     expect(config(advanceInstallments).indexes.some((index) => index.config.name === 'advance_installments_advance_month_unique')).toBe(true);

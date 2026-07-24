@@ -20,7 +20,8 @@ describe('advanceCreateFormSchema', () => {
   test('rejects out-of-range installment counts and bad amounts', () => {
     const valid = { employeeId: '1', amount: '1200', installmentCount: '2', startMonth: '2026-08' };
     expect(advanceCreateFormSchema.safeParse({ ...valid, installmentCount: '0' }).success).toBe(false);
-    expect(advanceCreateFormSchema.safeParse({ ...valid, installmentCount: '5' }).success).toBe(false);
+    expect(advanceCreateFormSchema.safeParse({ ...valid, installmentCount: '12' }).success).toBe(true);
+    expect(advanceCreateFormSchema.safeParse({ ...valid, installmentCount: '13' }).success).toBe(false);
     expect(advanceCreateFormSchema.safeParse({ ...valid, installmentCount: '' }).success).toBe(false);
     expect(advanceCreateFormSchema.safeParse({ ...valid, amount: '0' }).success).toBe(false);
     expect(advanceCreateFormSchema.safeParse({ ...valid, startMonth: '' }).success).toBe(false);

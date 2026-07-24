@@ -29,6 +29,7 @@ import {
 } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
+import { branchIdAt } from '../../shared/database/branch-id-at.js';
 import type { PayrollAttendanceGateway } from '../payroll/index.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import {
@@ -64,12 +65,11 @@ export type AttendanceShiftChangeReconciler = (
   context: Transaction,
 ) => Promise<number>;
 
-const sessionBranchId = sql<number>`coalesce(${attendanceSessions.branchId}, ${employeeBranchAssignments.branchId}, ${employees.branchId})`;
-const sessionBranchAssignment = and(
-  eq(employeeBranchAssignments.employeeId, attendanceSessions.employeeId),
-  lte(employeeBranchAssignments.effectiveFrom, attendanceSessions.checkInAt),
-  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, attendanceSessions.checkInAt)),
+const sessionAssignment = branchIdAt(
+  employeeBranchAssignments, attendanceSessions.employeeId, attendanceSessions.checkInAt,
 );
+const sessionBranchId = sql<number>`coalesce(${attendanceSessions.branchId}, ${sessionAssignment.branchId})`;
+const sessionBranchAssignment = sessionAssignment.assignment;
 const branchAt = async (
   executor: Executor,
   employeeId: number,

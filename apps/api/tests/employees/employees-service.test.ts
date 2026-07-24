@@ -47,7 +47,7 @@ describe('employee service', () => {
     const repo = repository();
     vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1 } as never);
     vi.mocked(repo.update).mockImplementation(async (_id, value) => ({ record: { id: 1, employeeCode: 1, credentialVersion: 1, fullName: 'x', personalPhone: '01012345678', whatsappPhone: '01112345678', age: 1, address: 'x', branchId: 1, shiftDurationMinutes: 1, monthlyBaseSalary: '1.00', images: input.images, deletedAt: null, createdAt: new Date(), updatedAt: new Date(), ...value }, replacedImages: {} } as never));
-    await createEmployeeService(repo, { hasOpenSession: vi.fn(async () => false) }).update(1, { pin: '4321' });
+    await createEmployeeService(repo, { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) }).update(1, { pin: '4321' });
     expect(await verify(vi.mocked(repo.update).mock.calls[0]![1].pinHash!, '4321')).toBe(true);
     expect(vi.mocked(repo.update).mock.calls[0]![2]).toBe(true);
   });
@@ -56,7 +56,7 @@ describe('employee service', () => {
     const repo = repository();
     vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1, branchId: 1 } as never);
     vi.mocked(repo.update).mockResolvedValue({ record: { id: 1, branchId: 2 } as never, replacedImages: {} });
-    const attendance = { hasOpenSession: vi.fn(async () => false) };
+    const attendance = { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) };
 
     await createEmployeeService(repo, attendance).update(1, { branchId: 2 });
 
@@ -64,7 +64,7 @@ describe('employee service', () => {
     const check = vi.mocked(repo.update).mock.calls[0]![3]!;
     const context = { transaction: true };
     await check(1, context);
-    expect(attendance.hasOpenSession).toHaveBeenCalledWith(1, context);
+    expect(attendance.hasAnyOpenSession).toHaveBeenCalledWith(1, context);
   });
 
   it('passes the transfer guard whenever branchId is submitted so the locked row decides', async () => {
@@ -72,7 +72,7 @@ describe('employee service', () => {
     vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1, branchId: 2 } as never);
     vi.mocked(repo.update).mockResolvedValue({ record: { id: 1, branchId: 2 } as never, replacedImages: {} });
 
-    await createEmployeeService(repo, { hasOpenSession: vi.fn(async () => false) }).update(1, { branchId: 2 });
+    await createEmployeeService(repo, { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) }).update(1, { branchId: 2 });
 
     expect(vi.mocked(repo.update).mock.calls[0]![3]).toEqual(expect.any(Function));
   });
@@ -80,11 +80,19 @@ describe('employee service', () => {
   it('rejects branch reassignment while the employee is checked in', async () => {
     const repo = repository();
     vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1, branchId: 1 } as never);
-    vi.mocked(repo.update).mockResolvedValue('checked_in');
+    vi.mocked(repo.update).mockImplementation(async (id, _changes, _revoke, hasOpenSession) => (
+      await hasOpenSession!(id, {}) ? 'checked_in' : null
+    ));
+    const attendance = {
+      hasOpenSession: vi.fn(async () => false),
+      hasAnyOpenSession: vi.fn(async () => true),
+    };
 
-    await expect(createEmployeeService(repo, { hasOpenSession: vi.fn(async () => true) })
+    await expect(createEmployeeService(repo, attendance)
       .update(1, { branchId: 2 }))
       .rejects.toMatchObject({ code: 'EMPLOYEE_CHECKED_IN' });
+    expect(attendance.hasAnyOpenSession).toHaveBeenCalledWith(1, expect.anything());
+    expect(attendance.hasOpenSession).not.toHaveBeenCalled();
   });
 
   it('rejects reassignment to an unknown branch', async () => {
@@ -92,7 +100,7 @@ describe('employee service', () => {
     vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1, branchId: 1 } as never);
     vi.mocked(repo.update).mockResolvedValue('branch_not_found');
 
-    await expect(createEmployeeService(repo, { hasOpenSession: vi.fn(async () => false) })
+    await expect(createEmployeeService(repo, { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) })
       .update(1, { branchId: 2 }))
       .rejects.toMatchObject({ code: 'EMPLOYEE_BRANCH_NOT_FOUND' });
   });
@@ -104,7 +112,7 @@ describe('employee service', () => {
 
   it('checks attendance and soft deletes through one atomic repository operation', async () => {
     const repo = repository();
-    const attendance = { hasOpenSession: vi.fn(async () => false) };
+    const attendance = { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) };
     vi.mocked(repo.softDeleteIfAttendanceClosed).mockResolvedValue('deleted');
 
     await createEmployeeService(repo, attendance).remove(1);
@@ -119,7 +127,7 @@ describe('employee service', () => {
 
   it('runs advance acceleration inside the atomic employee deletion transaction', async () => {
     const repo = repository();
-    const attendance = { hasOpenSession: vi.fn(async () => false) };
+    const attendance = { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) };
     const financialLifecycle = { prepareEmployeeDeletion: vi.fn(async () => undefined) };
     vi.mocked(repo.softDeleteIfAttendanceClosed).mockResolvedValue('deleted');
 

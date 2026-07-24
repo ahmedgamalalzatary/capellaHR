@@ -10,7 +10,7 @@ import { createDevicesModule } from '../../src/modules/devices/index.js';
 import { createDrizzleDeviceRepository } from '../../src/modules/devices/devices-repository.js';
 import { createEmployeesModule } from '../../src/modules/employees/index.js';
 
-const database = createDatabase(process.env.DATABASE_URL ?? ''); const module = createDevicesModule(database); const branchesModule = createBranchesModule(database); const employeesModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false }, undefined, module.lifecycle);
+const database = createDatabase(process.env.DATABASE_URL ?? ''); const module = createDevicesModule(database); const branchesModule = createBranchesModule(database); const employeesModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false, hasAnyOpenSession: async () => false }, undefined, module.lifecycle);
 beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 const complete = (token: string, marker: string) => module.service.completePairing(token, { installationMarker: `marker-${marker}`.padEnd(16, 'x'), browser: 'Chrome', platform: 'Android' });
 

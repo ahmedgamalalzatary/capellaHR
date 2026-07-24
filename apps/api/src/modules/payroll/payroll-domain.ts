@@ -79,7 +79,7 @@ export const addPayrollMonths = (month: string, offset: number) => {
 };
 
 export const isValidInstallmentSchedule = (amount: string, count: number, startMonth: string) => {
-  if (!Number.isInteger(count) || count < 1 || count > 4) return false;
+  if (!Number.isInteger(count) || count < 1 || count > 12) return false;
   const [year, monthNumber] = startMonth.split('-').map(Number) as [number, number];
   if (year < 1 || year > 9999 || monthNumber < 1 || monthNumber > 12) return false;
   if (toCents(amount) < BigInt(count)) return false;

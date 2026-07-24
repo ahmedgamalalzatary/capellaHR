@@ -1,6 +1,6 @@
 import type { ListDeductionsQuery } from '@capella/contracts';
 import { branches, deductions, employeeBranchAssignments, employees } from '@capella/database/schema';
-import { and, asc, count, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
 import {
   createFinancialContext,
@@ -12,12 +12,10 @@ import {
 } from '../payroll/financial-repository-helpers.js';
 import { calendarMonthInTimeZone, payrollMonthStart } from '../payroll/payroll-domain.js';
 import type { DeductionRecord, DeductionRepository } from './deductions-service.js';
+import { branchIdAt } from '../../shared/database/branch-id-at.js';
 
-const branchIdAtCreation = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
-const assignmentAtCreation = and(
-  eq(employeeBranchAssignments.employeeId, deductions.employeeId),
-  lte(employeeBranchAssignments.effectiveFrom, deductions.createdAt),
-  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, deductions.createdAt)),
+const { branchId: branchIdAtCreation, assignment: assignmentAtCreation } = branchIdAt(
+  employeeBranchAssignments, deductions.employeeId, deductions.createdAt,
 );
 const fields = {
   id: deductions.id, employeeId: deductions.employeeId, employeeCode: employees.employeeCode,

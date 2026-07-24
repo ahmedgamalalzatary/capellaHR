@@ -56,6 +56,13 @@ describe('payroll exact arithmetic', () => {
     expect(addPayrollMonths('2026-12', 1)).toBe('2027-01');
   });
 
+  it('supports a twelve-month advance schedule and rejects thirteen months', () => {
+    const schedule = splitInstallments('1200.00', 12, '2026-07');
+    expect(schedule).toHaveLength(12);
+    expect(schedule.at(-1)).toEqual({ ordinal: 12, payrollMonth: '2027-06', amount: '100.00' });
+    expect(() => splitInstallments('1300.00', 13, '2026-07')).toThrow(RangeError);
+  });
+
   it('rejects schedules with zero-value installments or out-of-range months', () => {
     expect(() => splitInstallments('0.01', 2, '2026-07')).toThrow(RangeError);
     expect(() => splitInstallments('10.00', 2, '9999-12')).toThrow(RangeError);

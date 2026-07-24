@@ -8,13 +8,13 @@ import {
 } from './index.js';
 
 describe('advance contracts', () => {
-  it('parses one-to-four installment create and update inputs', () => {
+  it('parses one-to-twelve installment create and update inputs', () => {
     expect(createAdvanceSchema.parse({
       employeeId: 2,
       amount: '1000',
-      installmentCount: 4,
+      installmentCount: 12,
       startMonth: '2026-07',
-    })).toEqual({ employeeId: 2, amount: '1000.00', installmentCount: 4, startMonth: '2026-07' });
+    })).toEqual({ employeeId: 2, amount: '1000.00', installmentCount: 12, startMonth: '2026-07' });
     expect(updateAdvanceSchema.parse({ amount: '900.5', installmentCount: 3 }))
       .toEqual({ amount: '900.50', installmentCount: 3 });
     expect(advanceParamsSchema.parse({ advanceId: '5' })).toEqual({ advanceId: 5 });
@@ -22,7 +22,7 @@ describe('advance contracts', () => {
       .toEqual({ employeeId: 2, payrollMonth: '2026-08', page: 1, pageSize: 20 });
   });
 
-  it.each([0, 5, 1.5])('rejects installment count %s', (installmentCount) => {
+  it.each([0, 13, 1.5])('rejects installment count %s', (installmentCount) => {
     expect(() => createAdvanceSchema.parse({
       employeeId: 2, amount: '100.00', installmentCount, startMonth: '2026-07',
     })).toThrow();

@@ -147,14 +147,19 @@ const descriptor = async (session: ort.InferenceSession, image: Buffer, box: Box
   return values;
 };
 
+export const markPromiseHandled = <T>(promise: Promise<T>) => {
+  void promise.catch(() => undefined);
+  return promise;
+};
+
 export const createOnnxFaceGateway = (
   readPersonalPhoto: (storagePath: string) => Promise<Buffer>,
   modelRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../assets/face-models'),
 ): AttendanceFaceGateway => {
-  const sessions = Promise.all([
+  const sessions = markPromiseHandled(Promise.all([
     ort.InferenceSession.create(path.join(modelRoot, 'yunet.onnx'), onnxSessionOptions),
     ort.InferenceSession.create(path.join(modelRoot, 'sface.onnx'), onnxSessionOptions),
-  ]);
+  ]));
   let activeComparisons = 0;
   const waiters: Array<() => void> = [];
   const enter = () => new Promise<boolean>((resolve) => {

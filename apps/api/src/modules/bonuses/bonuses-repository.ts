@@ -1,6 +1,6 @@
 import type { ListBonusesQuery } from '@capella/contracts';
 import { bonuses, branches, employeeBranchAssignments, employees } from '@capella/database/schema';
-import { and, asc, count, eq, gt, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
 import {
   createFinancialContext,
@@ -12,12 +12,10 @@ import {
 } from '../payroll/financial-repository-helpers.js';
 import { calendarMonthInTimeZone, payrollMonthStart } from '../payroll/payroll-domain.js';
 import type { BonusRecord, BonusRepository } from './bonuses-service.js';
+import { branchIdAt } from '../../shared/database/branch-id-at.js';
 
-const branchIdAtCreation = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
-const assignmentAtCreation = and(
-  eq(employeeBranchAssignments.employeeId, bonuses.employeeId),
-  lte(employeeBranchAssignments.effectiveFrom, bonuses.createdAt),
-  or(isNull(employeeBranchAssignments.effectiveTo), gt(employeeBranchAssignments.effectiveTo, bonuses.createdAt)),
+const { branchId: branchIdAtCreation, assignment: assignmentAtCreation } = branchIdAt(
+  employeeBranchAssignments, bonuses.employeeId, bonuses.createdAt,
 );
 const fields = {
   id: bonuses.id, employeeId: bonuses.employeeId, employeeCode: employees.employeeCode,

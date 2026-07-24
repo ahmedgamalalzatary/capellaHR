@@ -9,6 +9,7 @@ import {
   cosineSimilarity,
   createOnnxFaceGateway,
   onnxSessionOptions,
+  markPromiseHandled,
 } from '../../src/modules/attendance/onnx-face-gateway.js';
 
 describe('ONNX face gateway helpers', () => {
@@ -28,6 +29,12 @@ describe('ONNX face gateway helpers', () => {
   it('suppresses ONNX informational and warning logs while preserving errors', () => {
     expect(onnxSessionOptions).toEqual({ logSeverityLevel: 3 });
     expect(Object.isFrozen(onnxSessionOptions)).toBe(true);
+  });
+
+  it('marks initialization rejection handled while preserving rejection for awaiters', async () => {
+    const failure = new Error('model load failed');
+    const promise = markPromiseHandled(Promise.reject(failure));
+    await expect(promise).rejects.toBe(failure);
   });
 });
 

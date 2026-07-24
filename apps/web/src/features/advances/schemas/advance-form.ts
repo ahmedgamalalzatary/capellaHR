@@ -22,7 +22,7 @@ const amount = z
   .refine((value) => Number(value) > 0, 'أدخل مبلغًا أكبر من صفر');
 
 const installmentCount = requiredNumber('اختر عدد الأقساط').pipe(
-  z.number().min(1, 'اختر عدد الأقساط').max(4, 'اختر عدد الأقساط'),
+  z.number().min(1, 'اختر عدد الأقساط').max(12, 'اختر عدد الأقساط'),
 );
 
 const startMonth = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, FORM_MESSAGES.required);

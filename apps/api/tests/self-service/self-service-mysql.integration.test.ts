@@ -106,7 +106,7 @@ afterEach(cleanupDatabase);
 describe('MySQL-backed employee self-service', () => {
   it('returns only the authenticated employee records and never exposes secret or image fields', async () => {
     const branchModule = createBranchesModule(database);
-    const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false });
+    const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false, hasAnyOpenSession: async () => false });
     const payrollModule = createPayrollModule(database);
     const bonusModule = createBonusModule(database);
     const deductionModule = createDeductionModule(database);
@@ -233,7 +233,7 @@ describe('MySQL-backed employee self-service', () => {
   it('serves an open Attendance-backed payroll preview to an authenticated checked-in employee while finalization stays blocked', async () => {
     const now = new Date('2026-08-01T09:00:00.000Z');
     const branchModule = createBranchesModule(database);
-    const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => true });
+    const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => true, hasAnyOpenSession: async () => true });
     const bonusModule = createBonusModule(database, { now: () => now });
     const deductionModule = createDeductionModule(database, { now: () => now });
     const advanceModule = createAdvanceModule(database, { now: () => now });

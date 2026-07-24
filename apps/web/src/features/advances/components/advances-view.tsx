@@ -78,7 +78,7 @@ function ScheduleFields({
           className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
           {...register('installmentCount')}
         >
-          {[1, 2, 3, 4].map((count) => (
+          {Array.from({ length: 12 }, (_, index) => index + 1).map((count) => (
             <option key={count} value={count}>{count}</option>
           ))}
         </select>
@@ -403,7 +403,7 @@ export function AdvancesView() {
         ) : items.length === 0 ? (
           <EmptyState
             title="لا توجد سلف"
-            description="يمكن إضافة سلفة للموظف وتقسيطها من شهر إلى أربعة أشهر متتالية."
+            description="يمكن إضافة سلفة للموظف وتقسيطها من شهر إلى اثني عشر شهرًا متتاليًا."
           />
         ) : (
           <div className="overflow-x-auto">
