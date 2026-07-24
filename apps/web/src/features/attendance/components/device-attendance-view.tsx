@@ -124,7 +124,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
             <span className="mx-auto grid size-16 place-items-center rounded-full bg-success-soft text-success"><Check className="size-8" aria-hidden /></span>
             <p className="mt-5 text-[12px] font-semibold tracking-[0.14em] text-success">{operationMessage(success.eventType)}</p>
             <h1 className="mt-2 text-3xl font-bold">{success.session.employeeName}</h1>
-            <p className="mt-2 text-sm text-muted"><span className="tabular" dir="ltr">{success.session.employeeCode}</span> · {success.session.branchName}</p>
+            <p className="mt-2 text-sm text-muted"><span className="tabular">{success.session.employeeCode}</span> · {success.session.branchName}</p>
             <p className="mt-5 text-sm text-muted">{success.eventType === 'check_in' ? 'نتمنى لك يوم عمل موفقًا.' : 'تم إغلاق جلسة العمل بنجاح.'}</p>
           </div>
           <div className="border-t border-line bg-surface px-6 py-4"><Button className="w-full" size="lg" onClick={reset}>{isKiosk ? 'تسجيل موظف آخر' : 'عملية حضور أخرى'}</Button>{isKiosk ? <p className="mt-2 text-[12px] text-muted">تعود الشاشة تلقائيًا بعد عشر ثوانٍ.</p> : null}</div>
@@ -145,8 +145,8 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
           </div>
 
           <form id={`${inputPrefix}-attendance-form`} role="tabpanel" aria-labelledby={`${inputPrefix}-${eventType === 'check_in' ? 'check-in' : 'check-out'}-tab`} autoComplete={isKiosk ? 'off' : 'on'} noValidate className="space-y-5" onSubmit={(event) => { event.preventDefault(); attendance.mutate({ eventType, employeeCode, pin }); }}>
-            <Field label="كود الموظف" htmlFor={`${inputPrefix}-employee-code`} required><Input id={`${inputPrefix}-employee-code`} aria-label="كود الموظف" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'username'} dir="ltr" className="tabular text-lg" disabled={attendance.isPending} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} /></Field>
-            <Field label="الرقم السري" htmlFor={`${inputPrefix}-pin`} required><Input id={`${inputPrefix}-pin`} aria-label="الرقم السري" type="password" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'current-password'} maxLength={4} dir="ltr" className="tabular text-lg tracking-[0.35em]" disabled={attendance.isPending} value={pin} onChange={(event) => setPin(event.target.value)} /></Field>
+            <Field label="كود الموظف" htmlFor={`${inputPrefix}-employee-code`} required><Input id={`${inputPrefix}-employee-code`} aria-label="كود الموظف" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'username'} className="tabular text-lg" disabled={attendance.isPending} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} /></Field>
+            <Field label="الرقم السري" htmlFor={`${inputPrefix}-pin`} required><Input id={`${inputPrefix}-pin`} aria-label="الرقم السري" type="password" inputMode="numeric" autoComplete={isKiosk ? 'off' : 'current-password'} maxLength={4} className="tabular text-lg tracking-[0.35em]" disabled={attendance.isPending} value={pin} onChange={(event) => setPin(event.target.value)} /></Field>
             {attendance.error ? <div role="alert" className="rounded-control border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"><p>{errorMessage(attendance.error)}</p><Button type="button" variant="ghost" size="sm" className="mt-2" onClick={() => attendance.reset()}>إعادة المحاولة</Button></div> : null}
             <Button type="submit" size="lg" className="w-full" disabled={attendance.isPending}>{attendance.isPending ? 'جارٍ التحقق…' : eventType === 'check_in' ? 'تسجيل الحضور' : 'تسجيل الانصراف'}</Button>
             <p className="flex items-center justify-center gap-2 text-center text-[12px] text-muted"><ShieldCheck className="size-4" aria-hidden />لا تُنشئ هذه العملية جلسة إدارية أو تكشف بيانات الموظف.</p>

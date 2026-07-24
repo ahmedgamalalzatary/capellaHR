@@ -247,7 +247,6 @@ export function AuditView() {
               <Input
                 type="date"
                 aria-label="من تاريخ"
-                dir="ltr"
                 className="w-full tabular"
                 value={dateFrom}
                 onChange={(changeEvent) => {
@@ -262,7 +261,6 @@ export function AuditView() {
               <Input
                 type="date"
                 aria-label="إلى تاريخ"
-                dir="ltr"
                 className="w-full tabular"
                 value={dateTo}
                 onChange={(changeEvent) => {
@@ -355,7 +353,7 @@ export function AuditView() {
                         }`}
                       >
                         <td className="whitespace-nowrap px-4 py-3 text-muted">
-                          <span dir="ltr" className="inline-block tabular">
+                          <span className="inline-block tabular">
                             {formatters?.formatDateTime(auditEvent.createdAt) ?? auditEvent.createdAt}
                           </span>
                         </td>
@@ -365,7 +363,7 @@ export function AuditView() {
                           </Badge>
                           {redundantIdentifier(auditEvent) ? null : (
                             <span className="mt-1 block text-[12px] text-muted">
-                              <span dir="ltr" className="inline-block">{auditEvent.actorIdentifier}</span>
+                              <span className="inline-block">{auditEvent.actorIdentifier}</span>
                             </span>
                           )}
                         </td>
@@ -378,13 +376,13 @@ export function AuditView() {
                           </Badge>
                         </td>
                         <td className="hidden whitespace-nowrap px-4 py-3 lg:table-cell">
-                          <span dir="ltr" className="inline-block">
+                          <span className="inline-block">
                             <span className="text-ink">{auditEvent.entityType}</span>
                             <span className="tabular text-muted"> #{auditEvent.entityId}</span>
                           </span>
                         </td>
                         <td className="hidden px-4 py-3 text-[12px] text-muted xl:table-cell">
-                          <span dir="ltr" className="inline-block">{auditEvent.requestId ?? '—'}</span>
+                          <span className="inline-block">{auditEvent.requestId ?? '—'}</span>
                         </td>
                         <td className="px-4 py-3">
                           <Button
@@ -405,7 +403,6 @@ export function AuditView() {
                           <td colSpan={7} className="px-4 pb-4">
                             <pre
                               className="max-h-80 overflow-auto rounded-control border border-line bg-paper p-3 text-[12px] leading-relaxed whitespace-pre-wrap"
-                              dir="ltr"
                             >
                               {jsonDetails(auditEvent)}
                             </pre>

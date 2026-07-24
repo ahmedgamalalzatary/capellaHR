@@ -54,7 +54,6 @@ export function AdminLoginForm() {
             <Input
               id="email"
               type="email"
-              dir="ltr"
               autoComplete="email"
               aria-invalid={errors.email ? true : undefined}
               {...register('email')}
@@ -65,7 +64,6 @@ export function AdminLoginForm() {
             <Input
               id="password"
               type="password"
-              dir="ltr"
               autoComplete="current-password"
               aria-invalid={errors.password ? true : undefined}
               {...register('password')}

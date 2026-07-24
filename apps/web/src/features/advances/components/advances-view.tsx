@@ -62,7 +62,6 @@ function ScheduleFields({
       <Field label="المبلغ (ج.م)" htmlFor="advance-amount" required error={errors.amount?.message}>
         <Input
           id="advance-amount"
-          dir="ltr"
           inputMode="decimal"
           className="tabular"
           {...register('amount')}
@@ -90,7 +89,7 @@ function ScheduleFields({
         required
         error={errors.startMonth?.message}
       >
-        <Input id="advance-start-month" type="month" dir="ltr" {...register('startMonth')} />
+        <Input id="advance-start-month" type="month" {...register('startMonth')} />
       </Field>
     </>
   );
@@ -254,9 +253,9 @@ function InstallmentsRow({ advance }: { advance: Advance }) {
             <div key={installment.id} className="flex items-center justify-between gap-4">
               <dt className="text-muted">
                 قسط <span className="tabular">{installment.ordinal}</span> —{' '}
-                <span className="tabular" dir="ltr">{installment.payrollMonth}</span>
+                <span className="tabular">{installment.payrollMonth}</span>
               </dt>
-              <dd className="tabular" dir="ltr">{formatMoney(installment.amount)}</dd>
+              <dd className="tabular">{formatMoney(installment.amount)}</dd>
             </div>
           ))}
         </dl>
@@ -356,7 +355,6 @@ export function AdvancesView() {
         <Input
           type="month"
           aria-label="تصفية حسب الشهر"
-          dir="ltr"
           className="w-44"
           value={monthFilter}
           onChange={(event) => {
@@ -426,7 +424,7 @@ export function AdvancesView() {
                   <Fragment key={advance.id}>
                     <tr className="border-b border-line/60 last:border-b-0">
                       <td className="px-4 py-3">
-                        <span className="tabular" dir="ltr">{advance.employeeCode}</span>
+                        <span className="tabular">{advance.employeeCode}</span>
                       </td>
                       <td className="px-4 py-3 font-medium">
                         <span className="flex items-center gap-2">
@@ -448,7 +446,7 @@ export function AdvancesView() {
                             : `${advance.installmentCount} أقساط`}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="tabular" dir="ltr">{advance.startMonth}</span>
+                        <span className="tabular">{advance.startMonth}</span>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">

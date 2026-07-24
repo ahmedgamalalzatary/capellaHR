@@ -160,7 +160,6 @@ export function WeeklyDayOffView() {
           <Input
             type="date"
             aria-label="من تاريخ"
-            dir="ltr"
             className="w-40"
             value={dateFrom}
             onChange={(event) => {
@@ -174,7 +173,6 @@ export function WeeklyDayOffView() {
           <Input
             type="date"
             aria-label="إلى تاريخ"
-            dir="ltr"
             className="w-40"
             value={dateTo}
             onChange={(event) => {
@@ -231,7 +229,7 @@ export function WeeklyDayOffView() {
                 {items.map((record) => (
                   <tr key={record.id} className="border-b border-line/60 last:border-b-0">
                     <td className="px-4 py-3">
-                      <span className="tabular" dir="ltr">{record.employeeCode}</span>
+                      <span className="tabular">{record.employeeCode}</span>
                     </td>
                     <td className="px-4 py-3 font-medium">
                       <span className="flex items-center gap-2">
@@ -243,7 +241,7 @@ export function WeeklyDayOffView() {
                       {record.branchName}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="tabular" dir="ltr">{record.attendanceDate}</span>
+                      <span className="tabular">{record.attendanceDate}</span>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -257,7 +255,7 @@ export function WeeklyDayOffView() {
                       </span>
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
-                      <span className="tabular" dir="ltr">
+                      <span className="tabular">
                         {formatDuration(record.absenceRequiredMinutes)}
                       </span>
                     </td>

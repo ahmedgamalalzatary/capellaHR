@@ -101,7 +101,7 @@ function OverviewSection() {
           <p className="text-[11px] font-medium tracking-wide text-paper/65">سجل الموظف</p>
           <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
             <h2 className="text-2xl font-bold">{profile.fullName}</h2>
-            <span className="tabular text-sm" dir="ltr">#{profile.employeeCode}</span>
+            <span className="tabular text-sm">#{profile.employeeCode}</span>
           </div>
         </div>
         <dl className="grid gap-px bg-line sm:grid-cols-2">
@@ -134,7 +134,7 @@ function OverviewSection() {
         <Card className="p-4">
           <WalletCards className="size-4 text-muted" aria-hidden />
           <p className="mt-3 text-[12px] text-muted">الراتب الأساسي</p>
-          <p className="tabular mt-1 font-semibold" dir="ltr">{formatMoney(baseSalary.amount)}</p>
+          <p className="tabular mt-1 font-semibold">{formatMoney(baseSalary.amount)}</p>
         </Card>
       </div>
     </div>
@@ -168,14 +168,14 @@ function AttendanceSection() {
           </tr></thead>
           <tbody>{query.data.items.map((record) => (
             <tr key={record.id} className="border-b border-line/60 last:border-0">
-              <td className="tabular px-4 py-3" dir="ltr">{record.attendanceDate}</td>
+              <td className="tabular px-4 py-3">{record.attendanceDate}</td>
               <td className="px-4 py-3">
                 <Badge variant={record.state === 'open' ? 'success' : 'neutral'}>
                   {record.state === 'open' ? 'مفتوح' : 'مغلق'}
                 </Badge>
               </td>
-              <td className="tabular px-4 py-3" dir="ltr">{formatAttendanceTime(record.checkInAt)}</td>
-              <td className="tabular px-4 py-3" dir="ltr">{formatAttendanceTime(record.checkOutAt)}</td>
+              <td className="tabular px-4 py-3">{formatAttendanceTime(record.checkInAt)}</td>
+              <td className="tabular px-4 py-3">{formatAttendanceTime(record.checkOutAt)}</td>
               <td className="tabular px-4 py-3">{record.requiredMinutes}</td>
               <td className="tabular px-4 py-3">{record.workedMinutes ?? '—'}</td>
               <td className="tabular px-4 py-3">{record.overtimeMinutes ?? '—'}</td>
@@ -211,7 +211,7 @@ function WeeklyDaysSection() {
         </tr></thead>
         <tbody>{query.data.items.map((record) => (
           <tr key={record.id} className="border-b border-line/60 last:border-0">
-            <td className="tabular px-4 py-3" dir="ltr">{record.attendanceDate}</td>
+            <td className="tabular px-4 py-3">{record.attendanceDate}</td>
             <td className="px-4 py-3"><Badge variant={record.status === 'weekly_day_off' ? 'success' : 'neutral'}>{record.status === 'weekly_day_off' ? 'يوم راحة' : 'غياب'}</Badge></td>
             <td className="tabular px-4 py-3">{record.requiredMinutes}</td>
           </tr>
@@ -246,8 +246,8 @@ function AdjustmentSection({ kind }: { kind: 'bonuses' | 'deductions' }) {
         </tr></thead>
         <tbody>{query.data.items.map((record) => (
           <tr key={record.id} className="border-b border-line/60 last:border-0">
-            <td className="tabular px-4 py-3" dir="ltr">{record.payrollMonth}</td>
-            <td className="tabular px-4 py-3" dir="ltr">{formatMoney(record.amount)}</td>
+            <td className="tabular px-4 py-3">{record.payrollMonth}</td>
+            <td className="tabular px-4 py-3">{formatMoney(record.amount)}</td>
           </tr>
         ))}</tbody>
       </table>
@@ -271,14 +271,14 @@ function AdvancesSection() {
   return <div className="space-y-3"><div className="space-y-3">{query.data.items.map((advance) => (
     <Card key={advance.id} className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
-        <div><p className="text-[12px] text-muted">إجمالي السلفة</p><p className="tabular mt-1 font-semibold" dir="ltr">{formatMoney(advance.amount)}</p></div>
+        <div><p className="text-[12px] text-muted">إجمالي السلفة</p><p className="tabular mt-1 font-semibold">{formatMoney(advance.amount)}</p></div>
         <Badge variant="neutral">{advance.installmentCount} أقساط</Badge>
       </div>
       <ul className="divide-y divide-line/60">{advance.installments.map((installment) => (
         <li key={installment.ordinal} className="flex items-center justify-between gap-3 py-3 text-sm">
           <span>قسط {installment.ordinal}</span>
-          <span className="tabular" dir="ltr">{installment.payrollMonth}</span>
-          <span className="tabular" dir="ltr">{formatMoney(installment.amount)}</span>
+          <span className="tabular">{installment.payrollMonth}</span>
+          <span className="tabular">{formatMoney(installment.amount)}</span>
         </li>
       ))}</ul>
     </Card>
@@ -301,7 +301,7 @@ function PayrollSection() {
         <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); setMonth(monthInput); }}>
           <label className="space-y-1.5 text-sm" htmlFor="self-service-payroll-month">
             <span className="block font-medium">شهر الراتب</span>
-            <Input id="self-service-payroll-month" type="month" dir="ltr" value={monthInput} onChange={(event) => setMonthInput(event.target.value)} required />
+            <Input id="self-service-payroll-month" type="month" value={monthInput} onChange={(event) => setMonthInput(event.target.value)} required />
           </label>
           <Button type="submit">عرض الراتب</Button>
         </form>
@@ -312,7 +312,7 @@ function PayrollSection() {
             : query.data ? (
               <Card className="p-5">
                 <div className="flex items-end justify-between gap-3 border-b border-line pb-4">
-                  <div><p className="text-[12px] text-muted">صافي الراتب</p><p className="tabular mt-1 text-2xl font-bold" dir="ltr">{formatMoney(query.data.netSalary)}</p></div>
+                  <div><p className="text-[12px] text-muted">صافي الراتب</p><p className="tabular mt-1 text-2xl font-bold">{formatMoney(query.data.netSalary)}</p></div>
                   <Badge variant={query.data.status === 'finalized' ? 'success' : 'neutral'}>{query.data.status === 'finalized' ? 'معتمد نهائيًا' : 'مفتوح'}</Badge>
                 </div>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -321,7 +321,7 @@ function PayrollSection() {
                     ['الوقت الإضافي', query.data.overtimeAmount], ['المكافآت', query.data.bonusAmount],
                     ['خصم الحضور', query.data.attendanceDeductionAmount], ['الخصومات اليدوية', query.data.manualDeductionAmount],
                     ['السلف', query.data.advanceAmount], ['الترحيل السابق', query.data.priorNegativeCarry],
-                  ] as Array<[string, string]>).map(([label, amount]) => <div key={label} className="flex justify-between gap-3"><dt className="text-muted">{label}</dt><dd className="tabular" dir="ltr">{formatMoney(amount)}</dd></div>)}
+                  ] as Array<[string, string]>).map(([label, amount]) => <div key={label} className="flex justify-between gap-3"><dt className="text-muted">{label}</dt><dd className="tabular">{formatMoney(amount)}</dd></div>)}
                 </dl>
               </Card>
             ) : null}

@@ -60,7 +60,8 @@ describe('AuditPage', () => {
     const row = (await screen.findByText('إعادة تعيين الرقم السري')).closest('tr')!;
     expect(within(row).getByText('الموظفون')).toBeDefined();
     expect(within(row).getByText('المشرف')).toBeDefined();
-    expect(within(row).getByText('employee').closest('[dir="ltr"]')?.textContent).toBe('employee #17');
+    expect(row.querySelector('[dir]')).toBeNull();
+    expect(row.textContent).toContain('employee #17');
     expect(within(row).getByText('request-17')).toBeDefined();
     fireEvent.click(within(row).getByRole('button', { name: 'عرض التفاصيل' }));
     expect(await screen.findByText(/أحمد علي/)).toBeDefined();

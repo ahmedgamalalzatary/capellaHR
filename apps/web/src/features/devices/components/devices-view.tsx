@@ -128,7 +128,7 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
             </p>
             <PairingQr link={pairingLink} />
             <Field label="رابط الربط" htmlFor="pairing-link">
-              <Input id="pairing-link" dir="ltr" readOnly value={pairingLink} />
+              <Input id="pairing-link" readOnly value={pairingLink} />
             </Field>
             {cancel.error ? (
               <p role="alert" className="text-[13px] text-danger">
@@ -406,7 +406,7 @@ export function DevicesView() {
                           <Badge variant="neutral">ملغي</Badge>
                         )}
                       </td>
-                      <td className="hidden px-4 py-3 text-muted md:table-cell" dir="ltr">
+                      <td className="hidden px-4 py-3 text-muted md:table-cell">
                         {device.browser} — {device.platform}
                       </td>
                       <td className="hidden px-4 py-3 lg:table-cell">

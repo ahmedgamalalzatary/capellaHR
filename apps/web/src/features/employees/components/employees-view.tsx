@@ -65,13 +65,11 @@ function TextField({
   form,
   name,
   label,
-  ltr = false,
   type = 'text',
 }: {
   form: EmployeeFieldsApi;
   name: string;
   label: string;
-  ltr?: boolean;
   type?: string;
 }) {
   return (
@@ -79,7 +77,6 @@ function TextField({
       <Input
         id={`employee-${name}`}
         type={type}
-        {...(ltr ? { dir: 'ltr' as const, className: 'tabular' } : {})}
         {...form.register(name as never)}
       />
     </Field>
@@ -158,10 +155,10 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField form={form} name="personalPhone" label="الهاتف الشخصي" ltr />
-            <TextField form={form} name="whatsappPhone" label="هاتف واتساب" ltr />
-            <TextField form={form} name="pin" label="الرقم السري (PIN)" ltr type="password" />
-            <TextField form={form} name="age" label="العمر" ltr />
+            <TextField form={form} name="personalPhone" label="الهاتف الشخصي" />
+            <TextField form={form} name="whatsappPhone" label="هاتف واتساب" />
+            <TextField form={form} name="pin" label="الرقم السري (PIN)" type="password" />
+            <TextField form={form} name="age" label="العمر" />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -174,8 +171,8 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
             >
               <Input id="employee-address" {...register('address')} />
             </Field>
-            <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" ltr />
-            <TextField form={form} name="monthlyBaseSalary" label="الراتب الأساسي (جنيه)" ltr />
+            <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
+            <TextField form={form} name="monthlyBaseSalary" label="الراتب الأساسي (جنيه)" />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
@@ -279,20 +276,20 @@ function EditEmployeeForm({
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField form={form} name="personalPhone" label="الهاتف الشخصي" ltr />
-            <TextField form={form} name="whatsappPhone" label="هاتف واتساب" ltr />
+            <TextField form={form} name="personalPhone" label="الهاتف الشخصي" />
+            <TextField form={form} name="whatsappPhone" label="هاتف واتساب" />
             <Field
               label="رقم سري جديد (اختياري)"
               htmlFor="employee-pin"
               error={errors.pin?.message}
             >
-              <Input id="employee-pin" dir="ltr" type="password" className="tabular" {...register('pin')} />
+              <Input id="employee-pin" type="password" className="tabular" {...register('pin')} />
             </Field>
-            <TextField form={form} name="age" label="العمر" ltr />
+            <TextField form={form} name="age" label="العمر" />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" ltr />
+            <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
@@ -492,7 +489,7 @@ export function EmployeesView() {
                 {items.map((employee) => (
                   <tr key={employee.id} className="border-b border-line/60 last:border-b-0">
                     <td className="px-4 py-3">
-                      <span className="tabular" dir="ltr">{employee.employeeCode}</span>
+                      <span className="tabular">{employee.employeeCode}</span>
                     </td>
                     <td className="px-4 py-3 font-medium">
                       <span className="flex items-center gap-2">
@@ -501,16 +498,16 @@ export function EmployeesView() {
                       </span>
                     </td>
                     <td className="hidden px-4 py-3 sm:table-cell">
-                      <span className="tabular" dir="ltr">{employee.personalPhone}</span>
+                      <span className="tabular">{employee.personalPhone}</span>
                     </td>
                     <td className="hidden px-4 py-3 text-muted md:table-cell">
                       {branchNameOf(employee.branchId) ?? '—'}
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell">
-                      <span className="tabular" dir="ltr">{employee.shiftDurationMinutes} د</span>
+                      <span className="tabular">{employee.shiftDurationMinutes} د</span>
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell">
-                      <span className="tabular" dir="ltr">{employee.monthlyBaseSalary} ج</span>
+                      <span className="tabular">{employee.monthlyBaseSalary} ج</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">

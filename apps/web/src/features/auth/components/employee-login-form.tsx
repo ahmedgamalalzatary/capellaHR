@@ -57,7 +57,6 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
             <Input
               id="employeeCode"
               inputMode="numeric"
-              dir="ltr"
               className="tabular"
               aria-invalid={errors.employeeCode ? true : undefined}
               {...register('employeeCode')}
@@ -70,7 +69,6 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
               type="password"
               inputMode="numeric"
               maxLength={4}
-              dir="ltr"
               className="tabular"
               aria-invalid={errors.pin ? true : undefined}
               {...register('pin')}
@@ -81,7 +79,6 @@ export function EmployeeLoginForm({ onSuccess }: { onSuccess?: () => void }) {
             <Input
               id="personalPhone"
               inputMode="numeric"
-              dir="ltr"
               className="tabular"
               placeholder="01012345678"
               aria-invalid={errors.personalPhone ? true : undefined}

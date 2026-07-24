@@ -127,7 +127,7 @@ function EmployeeLine({ employee, detail, danger = false }: {
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">
           {employee.employeeName}
-          <span className="tabular ms-1.5 text-[12px] text-muted" dir="ltr">#{employee.employeeCode}</span>
+          <span className="tabular ms-1.5 text-[12px] text-muted">#{employee.employeeCode}</span>
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted">{employee.branchName}</p>
       </div>
@@ -164,7 +164,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
     ?? new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
   const attendanceDetail = (item: DashboardEmployeeRef) => {
     const attendance = item as DashboardAttendanceItem;
-    return <span className="tabular" dir="ltr">{formatTime(attendance.checkInAt)}</span>;
+    return <span className="tabular">{formatTime(attendance.checkInAt)}</span>;
   };
 
   return (
@@ -174,7 +174,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
           <div>
             <p className="text-[11px] font-semibold tracking-wide text-paper/55">تشغيل حي · بتوقيت القاهرة</p>
             <h1 className="mt-2 text-2xl font-bold sm:text-3xl">لوحة عمليات اليوم</h1>
-            <p className="tabular mt-2 text-sm text-paper/65" dir="ltr">{snapshot.cairoDate}</p>
+            <p className="tabular mt-2 text-sm text-paper/65">{snapshot.cairoDate}</p>
           </div>
           <div className="grid grid-cols-3 divide-x divide-x-reverse divide-paper/15 rounded-control border border-paper/15">
             {[
@@ -190,7 +190,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-paper/10 px-5 py-2.5 text-[11px] text-paper/55 lg:px-7">
-          <span>آخر تحديث <span dir="ltr" className="tabular inline-block">{formatDateTime(snapshot.generatedAt)}</span></span>
+          <span>آخر تحديث <span className="tabular inline-block">{formatDateTime(snapshot.generatedAt)}</span></span>
           <Button variant="ghost" size="sm" className="text-paper hover:bg-paper/10 hover:text-paper" disabled={refreshing} onClick={refresh}>
             <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
             تحديث الآن
@@ -223,7 +223,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{item.employeeName ?? `كود ${item.claimedEmployeeCode}`}</p>
                     <p className="mt-0.5 text-[12px] text-muted">{FAILURE_LABELS[item.failureReason] ?? item.failureReason}</p>
-                    <p className="tabular mt-1 text-[11px] text-muted" dir="ltr">{formatDateTime(item.occurredAt)}</p>
+                    <p className="tabular mt-1 text-[11px] text-muted">{formatDateTime(item.occurredAt)}</p>
                   </div>
                   {item.suspicious ? <Badge variant="danger">معلّمة</Badge> : <Badge variant="warning">مرفوضة</Badge>}
                 </li>
@@ -234,7 +234,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
                 <EmployeeLine key={item.employeeId} employee={item} danger detail={(
                   <span>{item.reasons.map((reason) => BLOCKER_LABELS[reason] ?? reason).join('، ')}</span>
                 )} />
-              ))}</ul> : <EmptyMini>لا توجد عوائق في شهر الراتب <span className="tabular" dir="ltr">{snapshot.payrollMonth}</span>.</EmptyMini>}
+              ))}</ul> : <EmptyMini>لا توجد عوائق في شهر الراتب <span className="tabular">{snapshot.payrollMonth}</span>.</EmptyMini>}
             </SummaryBlock>
           </CardContent>
         </Card>
@@ -244,12 +244,12 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
           <CardContent className="grid gap-6 md:grid-cols-2">
             <SummaryBlock title="آخر الغياب وأيام الراحة" icon={<CalendarCheck className="size-4" />} link={{ href: '/weekly-day-off', label: 'فتح أيام الراحة' }}>
               {snapshot.latestDailyRecords.items.length ? <ul className="divide-y divide-line/70">{snapshot.latestDailyRecords.items.map((item) => (
-                <EmployeeLine key={item.id} employee={item} detail={<span className="grid justify-items-end gap-1"><span className="tabular" dir="ltr">{item.attendanceDate}</span><Badge variant={item.status === 'absence' ? 'danger' : 'success'}>{item.status === 'absence' ? 'غياب' : 'يوم راحة'}</Badge></span>} />
+                <EmployeeLine key={item.id} employee={item} detail={<span className="grid justify-items-end gap-1"><span className="tabular">{item.attendanceDate}</span><Badge variant={item.status === 'absence' ? 'danger' : 'success'}>{item.status === 'absence' ? 'غياب' : 'يوم راحة'}</Badge></span>} />
               ))}</ul> : <EmptyMini>لا توجد سجلات غياب أو تحويلات حديثة.</EmptyMini>}
             </SummaryBlock>
             <SummaryBlock title="الخروج التلقائي" count={snapshot.automaticTimeouts.total} icon={<Clock3 className="size-4" />} link={{ href: '/attendance', label: 'مراجعة الخروج التلقائي' }}>
               {snapshot.automaticTimeouts.items.length ? <ul className="divide-y divide-line/70">{snapshot.automaticTimeouts.items.map((item) => (
-                <EmployeeLine key={item.sessionId} employee={item} detail={<span className="grid justify-items-end gap-1"><span className="tabular" dir="ltr">{formatDateTime(item.automaticTimeoutAt)}</span><span>{item.correctedAt ? 'تم التصحيح' : 'بعد 16 ساعة'}</span></span>} />
+                <EmployeeLine key={item.sessionId} employee={item} detail={<span className="grid justify-items-end gap-1"><span className="tabular">{formatDateTime(item.automaticTimeoutAt)}</span><span>{item.correctedAt ? 'تم التصحيح' : 'بعد 16 ساعة'}</span></span>} />
               ))}</ul> : <EmptyMini>لا توجد حالات خروج تلقائي مسجلة.</EmptyMini>}
             </SummaryBlock>
           </CardContent>
@@ -274,7 +274,7 @@ function DashboardContent({ snapshot, refresh, refreshing }: {
               </div>
               {snapshot.pdfExports.items.length ? <ul className="divide-y divide-line/70">{snapshot.pdfExports.items.map((item) => (
                 <li key={item.id} className="flex items-center justify-between gap-3 py-2.5">
-                  <div><p className="text-sm font-medium">{REPORT_LABELS[item.reportType] ?? item.reportType}</p><p className="tabular mt-0.5 text-[12px] text-muted" dir="ltr">#{item.id} · {formatDateTime(item.updatedAt)}</p></div>
+                  <div><p className="text-sm font-medium">{REPORT_LABELS[item.reportType] ?? item.reportType}</p><p className="tabular mt-0.5 text-[12px] text-muted">#{item.id} · {formatDateTime(item.updatedAt)}</p></div>
                   <Badge variant={PDF_STATUS[item.status].variant}>{PDF_STATUS[item.status].label}</Badge>
                 </li>
               ))}</ul> : <EmptyMini>لا توجد مهام تصدير مسجلة.</EmptyMini>}

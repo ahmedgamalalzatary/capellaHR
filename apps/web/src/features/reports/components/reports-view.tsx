@@ -231,7 +231,7 @@ function ExportsHistory() {
                 {record.fileDeletedAt !== null ? (
                   <Badge variant="neutral">تم حذف الملف</Badge>
                 ) : null}
-                <span className="text-[12px] text-muted" dir="ltr">
+                <span className="text-[12px] text-muted">
                   {formatDateTime(record.queuedAt)}
                 </span>
                 {record.rowCount !== null ? (
@@ -478,7 +478,6 @@ export function ReportsView() {
               <Input
                 type="date"
                 aria-label="من تاريخ"
-                dir="ltr"
                 className="w-40"
                 value={dateFrom}
                 onChange={(event) => {
@@ -492,7 +491,6 @@ export function ReportsView() {
               <Input
                 type="date"
                 aria-label="إلى تاريخ"
-                dir="ltr"
                 className="w-40"
                 value={dateTo}
                 onChange={(event) => {
@@ -510,7 +508,6 @@ export function ReportsView() {
               <Input
                 type="month"
                 aria-label="من شهر"
-                dir="ltr"
                 className="w-40"
                 value={monthFrom}
                 onChange={(event) => {
@@ -524,7 +521,6 @@ export function ReportsView() {
               <Input
                 type="month"
                 aria-label="إلى شهر"
-                dir="ltr"
                 className="w-40"
                 value={monthTo}
                 onChange={(event) => {
@@ -652,7 +648,7 @@ export function ReportsView() {
             {Object.entries(snapshot.summary).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between gap-4">
                 <dt className="text-muted">{SUMMARY_LABELS[key] ?? key}</dt>
-                <dd className="tabular" dir="ltr">{cellText(value)}</dd>
+                <dd className="tabular">{cellText(value)}</dd>
               </div>
             ))}
           </dl>

@@ -96,16 +96,16 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="خط العرض" htmlFor="branch-latitude" required error={errors.latitude?.message}>
-              <Input id="branch-latitude" dir="ltr" inputMode="decimal" className="tabular" {...register('latitude')} />
+              <Input id="branch-latitude" inputMode="decimal" className="tabular" {...register('latitude')} />
             </Field>
             <Field label="خط الطول" htmlFor="branch-longitude" required error={errors.longitude?.message}>
-              <Input id="branch-longitude" dir="ltr" inputMode="decimal" className="tabular" {...register('longitude')} />
+              <Input id="branch-longitude" inputMode="decimal" className="tabular" {...register('longitude')} />
             </Field>
             <Field label="دقة التحديد (متر)" htmlFor="branch-accuracy" required error={errors.gpsAccuracyMeters?.message}>
-              <Input id="branch-accuracy" dir="ltr" inputMode="decimal" className="tabular" {...register('gpsAccuracyMeters')} />
+              <Input id="branch-accuracy" inputMode="decimal" className="tabular" {...register('gpsAccuracyMeters')} />
             </Field>
             <Field label="نطاق الحضور (متر)" htmlFor="branch-radius" required error={errors.attendanceRadiusMeters?.message}>
-              <Input id="branch-radius" dir="ltr" inputMode="decimal" className="tabular" {...register('attendanceRadiusMeters')} />
+              <Input id="branch-radius" inputMode="decimal" className="tabular" {...register('attendanceRadiusMeters')} />
             </Field>
           </div>
 
@@ -255,10 +255,10 @@ export function BranchesView() {
                     </td>
                     <td className="px-4 py-3 text-muted">{branch.location}</td>
                     <td className="hidden px-4 py-3 md:table-cell">
-                      <span className="tabular" dir="ltr">{branch.attendanceRadiusMeters} م</span>
+                      <span className="tabular">{branch.attendanceRadiusMeters} م</span>
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell">
-                      <span className="tabular text-muted" dir="ltr">
+                      <span className="tabular text-muted">
                         {branch.latitude.toFixed(4)}, {branch.longitude.toFixed(4)}
                       </span>
                     </td>

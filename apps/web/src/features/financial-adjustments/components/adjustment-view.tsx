@@ -132,14 +132,13 @@ function AdjustmentCreateForm({
           <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
             <Input
               id="adjustment-amount"
-              dir="ltr"
               inputMode="decimal"
               className="tabular"
               {...register('amount')}
             />
           </Field>
           <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
-            <Input id="adjustment-month" type="month" dir="ltr" {...register('payrollMonth')} />
+            <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
           </Field>
           {reasonLabel ? (
             <Field
@@ -228,14 +227,13 @@ function AdjustmentEditForm({
           <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
             <Input
               id="adjustment-amount"
-              dir="ltr"
               inputMode="decimal"
               className="tabular"
               {...register('amount')}
             />
           </Field>
           <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
-            <Input id="adjustment-month" type="month" dir="ltr" {...register('payrollMonth')} />
+            <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
           </Field>
           {reasonLabel ? (
             <Field
@@ -373,7 +371,6 @@ export function AdjustmentView({
         <Input
           type="month"
           aria-label="تصفية حسب الشهر"
-          dir="ltr"
           className="w-44"
           value={monthFilter}
           onChange={(event) => {
@@ -453,7 +450,7 @@ export function AdjustmentView({
                 {items.map((record) => (
                   <tr key={record.id} className="border-b border-line/60 last:border-b-0">
                     <td className="px-4 py-3">
-                      <span className="tabular" dir="ltr">{record.employeeCode}</span>
+                      <span className="tabular">{record.employeeCode}</span>
                     </td>
                     <td className="px-4 py-3 font-medium">
                       <span className="flex items-center gap-2">
@@ -465,7 +462,7 @@ export function AdjustmentView({
                       {record.branchName}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="tabular" dir="ltr">{record.payrollMonth}</span>
+                      <span className="tabular">{record.payrollMonth}</span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="tabular">{formatMoney(record.amount)}</span>

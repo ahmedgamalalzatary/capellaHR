@@ -83,7 +83,6 @@ function ShiftEditorRow({
             <Field label="ساعات" htmlFor="shift-hours" required error={errors.hours?.message}>
               <Input
                 id="shift-hours"
-                dir="ltr"
                 inputMode="numeric"
                 className="tabular"
                 {...register('hours')}
@@ -92,7 +91,6 @@ function ShiftEditorRow({
             <Field label="دقائق" htmlFor="shift-minutes" required error={errors.minutes?.message}>
               <Input
                 id="shift-minutes"
-                dir="ltr"
                 inputMode="numeric"
                 className="tabular"
                 {...register('minutes')}
@@ -252,7 +250,7 @@ export function ShiftsView() {
                   <Fragment key={assignment.employeeId}>
                     <tr className="border-b border-line/60 last:border-b-0">
                       <td className="px-4 py-3">
-                        <span className="tabular" dir="ltr">{assignment.employeeCode}</span>
+                        <span className="tabular">{assignment.employeeCode}</span>
                       </td>
                       <td className="px-4 py-3 font-medium">
                         <span className="flex items-center gap-2">
@@ -266,7 +264,7 @@ export function ShiftsView() {
                       <td className="px-4 py-3">
                         <span className="flex items-center gap-2">
                           <Clock className="size-4 shrink-0 text-muted" aria-hidden />
-                          <span className="tabular" dir="ltr">
+                          <span className="tabular">
                             {formatDuration(assignment.durationMinutes)}
                           </span>
                         </span>

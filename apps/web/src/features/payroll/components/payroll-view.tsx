@@ -93,7 +93,6 @@ function BaseSalaryEditorRow({
             >
               <Input
                 id="base-salary-amount"
-                dir="ltr"
                 inputMode="decimal"
                 className="tabular"
                 {...register('amount')}
@@ -201,7 +200,7 @@ function BaseSalariesSection() {
                   <Fragment key={employee.id}>
                     <tr className="border-b border-line/60 last:border-b-0">
                       <td className="px-4 py-3">
-                        <span className="tabular" dir="ltr">{employee.employeeCode}</span>
+                        <span className="tabular">{employee.employeeCode}</span>
                       </td>
                       <td className="px-4 py-3 font-medium">
                         <span className="flex items-center gap-2">
@@ -305,7 +304,7 @@ function PayrollBreakdownRow({ record }: { record: PayrollRecord }) {
           {entries.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-4">
               <dt className="text-muted">{label}</dt>
-              <dd className="tabular" dir="ltr">{value}</dd>
+              <dd className="tabular">{value}</dd>
             </div>
           ))}
         </dl>
@@ -370,7 +369,6 @@ function MonthlyPayrollSection() {
           <Input
             type="month"
             aria-label="شهر الراتب"
-            dir="ltr"
             className="w-44"
             value={month}
             onChange={(event) => {
@@ -423,7 +421,7 @@ function MonthlyPayrollSection() {
           confirmBranchFinalize ? (
             <>
               <span className="text-[13px] text-muted">
-                اعتماد نهائي لرواتب شهر <span className="tabular" dir="ltr">{month}</span>؟
+                اعتماد نهائي لرواتب شهر <span className="tabular">{month}</span>؟
               </span>
               <Button
                 variant="danger"
@@ -502,7 +500,7 @@ function MonthlyPayrollSection() {
                   <Fragment key={record.id}>
                     <tr className="border-b border-line/60 last:border-b-0">
                       <td className="px-4 py-3">
-                        <span className="tabular" dir="ltr">{record.employeeCode}</span>
+                        <span className="tabular">{record.employeeCode}</span>
                       </td>
                       <td className="px-4 py-3 font-medium">
                         <span className="flex items-center gap-2">
