@@ -19,7 +19,7 @@ export type WeeklyDayRecord = {
   updatedAt: Date;
 };
 
-export type WeeklyDayOffTransactionContext = unknown;
+type WeeklyDayOffTransactionContext = unknown;
 export type WeeklyDayOffFinancialLockCheck = (
   employeeId: number,
   attendanceDate: string,

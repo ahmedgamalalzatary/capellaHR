@@ -23,14 +23,14 @@ export interface ListAdjustmentsParams {
   pageSize?: number;
 }
 
-export interface CreateAdjustmentInput {
+interface CreateAdjustmentInput {
   employeeId: number;
   amount: string;
   payrollMonth: string;
   reason?: string;
 }
 
-export interface UpdateAdjustmentInput {
+interface UpdateAdjustmentInput {
   amount?: string;
   payrollMonth?: string;
   reason?: string;

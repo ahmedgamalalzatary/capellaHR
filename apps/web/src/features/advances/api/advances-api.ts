@@ -2,7 +2,7 @@ import type { CreateAdvanceInput, UpdateAdvanceInput } from '@capella/contracts'
 
 import { api, type PageMeta } from '@/lib/api/client';
 
-export interface AdvanceInstallment {
+interface AdvanceInstallment {
   id: number;
   ordinal: number;
   payrollMonth: string;

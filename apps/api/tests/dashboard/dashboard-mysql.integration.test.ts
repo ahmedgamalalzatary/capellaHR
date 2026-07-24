@@ -185,21 +185,21 @@ const seed = async () => {
 
   await database.insert(attendanceSessions).values([
     {
-      employeeId: current, attendanceDate: '2026-07-20', requiredMinutes: 480,
+      employeeId: current, branchId, attendanceDate: '2026-07-20', requiredMinutes: 480,
       checkInAt: new Date('2026-07-20T06:00:00.000Z'), checkOutAt: null,
       workedMinutes: null, overtimeMinutes: null, shortageMinutes: null,
       automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
       createdAt: fixedNow, updatedAt: fixedNow,
     },
     {
-      employeeId: stale, attendanceDate: '2026-07-19', requiredMinutes: 480,
+      employeeId: stale, branchId, attendanceDate: '2026-07-19', requiredMinutes: 480,
       checkInAt: new Date('2026-07-19T18:00:00.000Z'), checkOutAt: null,
       workedMinutes: null, overtimeMinutes: null, shortageMinutes: null,
       automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
       createdAt: fixedNow, updatedAt: fixedNow,
     },
     {
-      employeeId: timedOut, attendanceDate: '2026-07-18', requiredMinutes: 480,
+      employeeId: timedOut, branchId, attendanceDate: '2026-07-18', requiredMinutes: 480,
       checkInAt: new Date('2026-07-18T05:00:00.000Z'),
       checkOutAt: new Date('2026-07-18T21:00:00.000Z'),
       workedMinutes: 960, overtimeMinutes: 480, shortageMinutes: 0,
@@ -210,12 +210,12 @@ const seed = async () => {
   ]);
   await database.insert(attendanceDailyRecords).values([
     {
-      employeeId: missing, attendanceDate: '2026-07-18', status: 'absence',
+      employeeId: missing, branchId, attendanceDate: '2026-07-18', status: 'absence',
       absenceRequiredMinutes: 480, dayOffConvertedAt: null,
       createdAt: new Date('2026-07-19T00:00:00.000Z'), updatedAt: fixedNow,
     },
     {
-      employeeId: timedOut, attendanceDate: '2026-07-17', status: 'weekly_day_off',
+      employeeId: timedOut, branchId, attendanceDate: '2026-07-17', status: 'weekly_day_off',
       absenceRequiredMinutes: 480, dayOffConvertedAt: new Date('2026-07-19T08:00:00.000Z'),
       createdAt: new Date('2026-07-18T00:00:00.000Z'), updatedAt: fixedNow,
     },
@@ -377,14 +377,14 @@ describe('MySQL-backed Dashboard snapshot', () => {
     }))[0].insertId);
     const historyMonths = Array.from({ length: 8 }, (_, index) => `2025-${String(index + 1).padStart(2, '0')}`);
     await database.insert(attendanceSessions).values(historyMonths.map((month) => ({
-      employeeId: historyEmployee, attendanceDate: `${month}-01`, requiredMinutes: 480,
+      employeeId: historyEmployee, branchId, attendanceDate: `${month}-01`, requiredMinutes: 480,
       checkInAt: new Date(`${month}-01T06:00:00.000Z`), checkOutAt: new Date(`${month}-01T14:00:00.000Z`),
       workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
       automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
       createdAt: fixedNow, updatedAt: fixedNow,
     })));
     await database.insert(attendanceDailyRecords).values(historyMonths.map((month) => ({
-      employeeId: historyEmployee, attendanceDate: `${month}-02`, status: 'absence' as const,
+      employeeId: historyEmployee, branchId, attendanceDate: `${month}-02`, status: 'absence' as const,
       absenceRequiredMinutes: 480, dayOffConvertedAt: null, createdAt: fixedNow, updatedAt: fixedNow,
     })));
     await database.insert(bonuses).values(historyMonths.map((month) => ({

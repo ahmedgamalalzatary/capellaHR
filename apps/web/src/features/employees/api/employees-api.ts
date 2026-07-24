@@ -7,7 +7,7 @@ import type {
 
 export type EmployeeImageKind = 'personal' | 'idFront' | 'idBack';
 
-export interface EmployeeImageMeta {
+interface EmployeeImageMeta {
   originalName: string;
   mimeType: string;
   sizeBytes: number;
@@ -38,13 +38,6 @@ export interface ListEmployeesParams {
   pageSize?: number;
 }
 
-// Binary image URLs cannot use the JSON API helper, so they share its env-backed base URL.
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
-
-/** Cookie-authenticated binary endpoint; usable directly as an <img> source. */
-export const employeeImageUrl = (id: number, kind: EmployeeImageKind) =>
-  `${API_BASE_URL}/employees/${id}/images/${kind}`;
-
 export function listEmployees(params: ListEmployeesParams = {}) {
   const query = new URLSearchParams();
   if (params.search) query.set('search', params.search);
@@ -53,10 +46,6 @@ export function listEmployees(params: ListEmployeesParams = {}) {
   if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
   return api.getPage<Employee>(`/employees${suffix}`);
-}
-
-export function getEmployee(id: number) {
-  return api.get<Employee>(`/employees/${id}`);
 }
 
 /** The API accepts employees as multipart: scalar fields plus the image files. */

@@ -46,7 +46,9 @@ const faceUpload = multer({
 });
 
 const receiveFaceImage = (request: Request, response: Response) => new Promise<void>((resolve, reject) => {
-  faceUpload.single('faceImage')(request, response, (error) => error ? reject(error) : resolve());
+  faceUpload.single('faceImage')(request, response, (error) => (
+    error ? reject(error instanceof Error ? error : new Error(String(error))) : resolve()
+  ));
 });
 
 const employeeSubmission = async (request: Request) => {
@@ -62,7 +64,11 @@ const employeeSubmission = async (request: Request) => {
     throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'صورة الكاميرا غير صالحة');
   }
   let payload: unknown;
-  try { payload = JSON.parse(String(request.body.payload)); } catch {
+  const body: unknown = request.body;
+  const rawPayload: unknown = typeof body === 'object' && body !== null
+    ? Reflect.get(body, 'payload')
+    : undefined;
+  try { payload = JSON.parse(String(rawPayload)); } catch {
     throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'بيانات طلب الحضور غير صالحة');
   }
   return { ...employeeAttendanceEventSchema.parse(payload), faceImage: request.file.buffer };

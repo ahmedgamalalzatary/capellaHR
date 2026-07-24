@@ -7,6 +7,7 @@ import {
   createAttendanceService,
   type DeniedAttendanceInput,
   type AttendanceDeviceGateway,
+  type AttendanceFaceGateway,
   type AttendanceRepository,
 } from '../../src/modules/attendance/attendance-service.js';
 
@@ -85,9 +86,8 @@ const createService = (repository = makeRepository()) => {
     verify: vi.fn(async () => ({ id: 9, verified: true })),
   };
   const verifyPin = vi.fn(async () => true);
-  const faces = {
-    compare: vi.fn(async () => ({ kind: 'match' as const })),
-  };
+  const compare = vi.fn<AttendanceFaceGateway['compare']>(async () => ({ kind: 'match' }));
+  const faces = { compare };
   return {
     repository,
     devices,

@@ -10,7 +10,6 @@
     "clean": "rimraf .next coverage"
   },
   "dependencies": {
-    "@capella/config": "workspace:*",
     "@capella/contracts": "workspace:*",
     "@capella/shared": "workspace:*",
     "@capella/ui": "workspace:*",
@@ -18,10 +17,6 @@
     "@hookform/resolvers": "^5.4.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@tanstack/react-query": "^5.101.2",
-    "@tanstack/react-table": "^8.21.3",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.4.0",
     "lucide-react": "^1.25.0",
     "next": "^15.4.2",
     "qrcode": "^1.5.4",
@@ -29,7 +24,6 @@
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.81.0",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
     "zod": "catalog:"
   },
@@ -44,7 +38,6 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "eslint": "^9.31.0",
-    "eslint-config-next": "^15.4.2",
     "jsdom": "^26.1.0",
     "rimraf": "^6.0.1",
     "typescript": "catalog:",

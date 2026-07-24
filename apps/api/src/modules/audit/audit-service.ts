@@ -1,6 +1,6 @@
 import type { ListAuditEventsQuery } from '@capella/contracts';
 
-export interface AuditEventRecord {
+interface AuditEventRecord {
   id: number;
   actorType: 'admin' | 'employee' | 'system';
   actorIdentifier: string;

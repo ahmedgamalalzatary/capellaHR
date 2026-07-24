@@ -8,7 +8,7 @@ import type {
 
 import { verifyEmployeePin } from '../auth/index.js';
 
-export type AttendanceIdentity = {
+type AttendanceIdentity = {
   id: number;
   employeeCode: number;
   pinHash: string;
@@ -75,7 +75,7 @@ export type AttendanceDeniedAttempt = {
   createdAt: Date;
 };
 
-export type AttendanceMutationFailure =
+type AttendanceMutationFailure =
   | 'employee_not_found'
   | 'credentials_changed'
   | 'device_invalid'

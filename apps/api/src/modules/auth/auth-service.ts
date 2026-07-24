@@ -4,7 +4,7 @@ import { verify } from 'argon2';
 
 export type ActorType = 'admin' | 'employee';
 
-export type StoredSession = {
+type StoredSession = {
   id: string;
   tokenHash: string;
   actorType: ActorType;
@@ -41,7 +41,7 @@ export interface AdminCredentialRepository {
   findByEmail(email: string): Promise<{ email: string; passwordHash: string } | null>;
 }
 
-export interface EmployeeIdentity {
+interface EmployeeIdentity {
   id: number;
   code: number;
   personalPhone: string;

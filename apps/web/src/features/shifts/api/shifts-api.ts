@@ -31,10 +31,6 @@ export function listShiftAssignments(
   return api.getPage<ShiftAssignment>(`/shifts${suffix}`);
 }
 
-export function getShiftAssignment(employeeId: number): Promise<ShiftAssignment> {
-  return api.get<ShiftAssignment>(`/shifts/employees/${employeeId}`);
-}
-
 /** Single-employee update; bulk shift updates are out of scope by design. */
 export function updateShiftAssignment(
   employeeId: number,

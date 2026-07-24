@@ -20,7 +20,7 @@ import {
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAdvanceModule } from '../../src/modules/advances/index.js';
@@ -102,6 +102,44 @@ const createEmployee = async (
 }))[0].insertId);
 
 describe('MySQL-backed salary domain', () => {
+  it('uses the configured payroll time zone for finalized branch boundaries', async () => {
+    const payrollTimeZone = 'Africa/Cairo';
+    const sessionZoneResult = await database.execute(sql`select @@session.time_zone as timeZone`);
+    expect((sessionZoneResult[0] as unknown as Array<{ timeZone: string }>)[0]?.timeZone)
+      .not.toBe(payrollTimeZone);
+
+    const oldBranchId = await createBranch('Boundary old branch');
+    const newBranchId = await createBranch('Boundary new branch');
+    const employeeCreatedAt = new Date('2026-06-01T09:00:00.000Z');
+    const reassignedAt = new Date('2026-06-30T22:30:00.000Z');
+    const employeeId = await createEmployee(newBranchId, 1, employeeCreatedAt);
+    await database.insert(employeeBranchAssignments).values([
+      {
+        employeeId, branchId: oldBranchId, effectiveFrom: employeeCreatedAt,
+        effectiveTo: reassignedAt, createdAt: employeeCreatedAt,
+      },
+      {
+        employeeId, branchId: newBranchId, effectiveFrom: reassignedAt,
+        createdAt: reassignedAt,
+      },
+    ]);
+    const payroll = createPayrollModule(database, {
+      now: () => fixedNow,
+      timeZone: payrollTimeZone,
+      attendance,
+    });
+
+    await expect(payroll.service.preview(employeeId, '2026-06')).resolves.toMatchObject({
+      status: 'open', branchId: oldBranchId, branchName: 'Boundary old branch',
+    });
+    await expect(payroll.service.finalize(employeeId, '2026-06')).resolves.toMatchObject({
+      status: 'finalized', branchId: oldBranchId, branchName: 'Boundary old branch',
+    });
+    await expect(payroll.service.preview(employeeId, '2026-06')).resolves.toMatchObject({
+      status: 'finalized', branchId: oldBranchId, branchName: 'Boundary old branch',
+    });
+  });
+
   it('keeps finalized payroll under the branch active during its payroll period', async () => {
     const oldBranchId = await createBranch('Payroll period branch');
     const newBranchId = await createBranch('Later branch');

@@ -36,7 +36,7 @@ export type PayrollRecord = {
   finalizedAt: Date | null;
 };
 
-export type PayrollAttendanceFacts = {
+type PayrollAttendanceFacts = {
   fullMonthWorkdays: number;
   eligibleWorkdays: number;
   requiredMinutes: number;

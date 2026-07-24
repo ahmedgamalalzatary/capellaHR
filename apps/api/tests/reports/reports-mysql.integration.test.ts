@@ -268,9 +268,11 @@ describe('MySQL-backed reports', () => {
   });
 
   it('reports attendance facts without denied attempts and includes open and finalized payroll status', async () => {
-    const { employeeId, deletedEmployeeId } = await seed();
+    const { branchId, employeeId, deletedEmployeeId } = await seed();
+    await database.delete(attendanceSessions).where(eq(attendanceSessions.employeeId, employeeId));
     await database.insert(attendanceSessions).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-19',
       requiredMinutes: 600,
       checkInAt: new Date('2026-07-19T05:00:00.000Z'),
@@ -286,6 +288,7 @@ describe('MySQL-backed reports', () => {
     });
     await database.insert(attendanceDailyRecords).values({
       employeeId: deletedEmployeeId,
+      branchId,
       attendanceDate: '2026-07-11',
       status: 'absence',
       absenceRequiredMinutes: 480,

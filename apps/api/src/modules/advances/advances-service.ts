@@ -1,6 +1,6 @@
 import type { CreateAdvanceInput, ListAdvancesQuery, UpdateAdvanceInput } from '@capella/contracts';
 
-export type AdvanceInstallmentRecord = { id: number; ordinal: number; payrollMonth: string; amount: string };
+type AdvanceInstallmentRecord = { id: number; ordinal: number; payrollMonth: string; amount: string };
 export type AdvanceRecord = {
   id: number;
   employeeId: number;

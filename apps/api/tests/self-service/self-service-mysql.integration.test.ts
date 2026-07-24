@@ -129,26 +129,26 @@ describe('MySQL-backed employee self-service', () => {
     await advanceModule.service.create({ employeeId: other.id, amount: '777.00', installmentCount: 1, startMonth: payrollMonth });
     const now = new Date();
     await database.insert(attendanceDailyRecords).values([
-      { employeeId: owner.id, attendanceDate: payrollDate, status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: now, createdAt: now, updatedAt: now },
-      { employeeId: other.id, attendanceDate: `${payrollMonth}-02`, status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: now, createdAt: now, updatedAt: now },
+      { employeeId: owner.id, branchId: branch.id, attendanceDate: payrollDate, status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: now, createdAt: now, updatedAt: now },
+      { employeeId: other.id, branchId: branch.id, attendanceDate: `${payrollMonth}-02`, status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: now, createdAt: now, updatedAt: now },
     ]);
     await database.insert(attendanceSessions).values([
       {
-        employeeId: owner.id, attendanceDate: currentCairoDate(now), requiredMinutes: 480,
+        employeeId: owner.id, branchId: branch.id, attendanceDate: currentCairoDate(now), requiredMinutes: 480,
         checkInAt: new Date(now.valueOf() - 60_000), checkOutAt: null,
         workedMinutes: null, overtimeMinutes: null, shortageMinutes: null,
         automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
         createdAt: now, updatedAt: now,
       },
       {
-        employeeId: owner.id, attendanceDate: `${payrollMonth}-03`, requiredMinutes: 480,
+        employeeId: owner.id, branchId: branch.id, attendanceDate: `${payrollMonth}-03`, requiredMinutes: 480,
         checkInAt: new Date(`${payrollMonth}-03T06:00:00.000Z`), checkOutAt: new Date(`${payrollMonth}-03T14:00:00.000Z`),
         workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
         automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
         createdAt: now, updatedAt: now,
       },
       {
-        employeeId: other.id, attendanceDate: `${payrollMonth}-04`, requiredMinutes: 480,
+        employeeId: other.id, branchId: branch.id, attendanceDate: `${payrollMonth}-04`, requiredMinutes: 480,
         checkInAt: new Date(`${payrollMonth}-04T06:00:00.000Z`), checkOutAt: new Date(`${payrollMonth}-04T14:00:00.000Z`),
         workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
         automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
@@ -248,6 +248,7 @@ describe('MySQL-backed employee self-service', () => {
 
     await database.insert(attendanceSessions).values({
       employeeId: owner.id,
+      branchId: branch.id,
       attendanceDate: '2026-07-31',
       requiredMinutes: 480,
       checkInAt: new Date('2026-07-31T20:00:00.000Z'),
@@ -265,6 +266,7 @@ describe('MySQL-backed employee self-service', () => {
       .filter((day) => day !== 31)
       .map((day) => ({
         employeeId: owner.id,
+        branchId: branch.id,
         attendanceDate: `2026-07-${String(day).padStart(2, '0')}`,
         status: 'absence' as const,
         absenceRequiredMinutes: 480,

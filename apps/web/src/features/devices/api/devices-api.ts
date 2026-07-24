@@ -45,10 +45,6 @@ export function listDevices(params: ListDevicesParams = {}) {
   return api.getPage<Device>(`/devices${suffix}`);
 }
 
-export function getDevice(id: number) {
-  return api.get<Device>(`/devices/${id}`);
-}
-
 export function getDeviceHistory(id: number) {
   return api.get<DeviceHistoryEvent[]>(`/devices/${id}/history`);
 }

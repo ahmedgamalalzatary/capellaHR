@@ -49,10 +49,6 @@ export function listWeeklyDayRecords(
   return api.getPage<WeeklyDayRecord>(`/weekly-day-offs${suffix}`);
 }
 
-export function getWeeklyDayRecord(recordId: number): Promise<WeeklyDayRecord> {
-  return api.get<WeeklyDayRecord>(`/weekly-day-offs/${recordId}`);
-}
-
 /** Marks an eligible past absence as the employee's weekly day off. */
 export function convertWeeklyDayRecord(recordId: number): Promise<WeeklyDayRecord> {
   return api.post<WeeklyDayRecord>(`/weekly-day-offs/${recordId}/convert`);

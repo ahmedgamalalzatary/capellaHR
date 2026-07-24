@@ -59,20 +59,12 @@ export function listPayrollMonths(
   return api.getPage<PayrollRecord>(`/payroll?${query.toString()}`);
 }
 
-export function getBaseSalary(employeeId: number): Promise<BaseSalaryRecord> {
-  return api.get<BaseSalaryRecord>(`/payroll/employees/${employeeId}/base-salary`);
-}
-
 /** Applies to the whole current Cairo month and future months; past months keep their periods. */
 export function updateBaseSalary(
   employeeId: number,
   input: UpdateBaseSalaryInput,
 ): Promise<BaseSalaryRecord> {
   return api.patch<BaseSalaryRecord>(`/payroll/employees/${employeeId}/base-salary`, input);
-}
-
-export function getPayrollPreview(employeeId: number, month: string): Promise<PayrollRecord> {
-  return api.get<PayrollRecord>(`/payroll/employees/${employeeId}/months/${month}`);
 }
 
 /** Permanently locks the employee-month; there is no unfinalize. */

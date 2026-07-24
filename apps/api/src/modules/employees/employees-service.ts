@@ -6,8 +6,8 @@ export type EmployeeImages = Record<ImageKind, ImageMetadata>;
 export type EmployeeRecord = Omit<CreateEmployeeFields, 'pin'> & { id: number; employeeCode: number; pinHash: string; credentialVersion: number; images: EmployeeImages; deletedAt: Date | null; createdAt: Date; updatedAt: Date };
 export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion'>;
 export type EmployeeTransactionContext = unknown;
-export type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
-export type EmployeeUpdateResult = { record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | 'branch_not_found' | 'checked_in';
+type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
+type EmployeeUpdateResult = { record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | 'branch_not_found' | 'checked_in';
 export interface EmployeeRepository {
   create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord | 'branch_not_found'>;
   findActiveById(id: number): Promise<EmployeeRecord | null>;

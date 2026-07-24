@@ -79,8 +79,12 @@ const createAbsence = async (
   attendanceDate: string,
   absenceRequiredMinutes = 600,
 ) => {
+  const [employee] = await database.select({ branchId: employees.branchId })
+    .from(employees).where(eq(employees.id, employeeId)).limit(1);
+  if (!employee) throw new Error('Employee fixture not found');
   const result = await database.insert(attendanceDailyRecords).values({
     employeeId,
+    branchId: employee.branchId,
     attendanceDate,
     status: 'absence',
     absenceRequiredMinutes,

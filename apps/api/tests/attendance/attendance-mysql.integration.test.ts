@@ -153,7 +153,7 @@ describe('MySQL-backed attendance', () => {
     expect((await repository().listSessions({ branchId: newBranchId, page: 1, pageSize: 20 })).total).toBe(0);
   });
   it('supplies transaction-aware monthly facts and blockers to Payroll', async () => {
-    const { employeeId } = await createFixtures();
+    const { branchId, employeeId } = await createFixtures();
     await database.update(employees).set({
       createdAt: new Date('2026-05-31T21:00:00.000Z'),
       deletedAt: new Date('2026-06-28T09:00:00.000Z'),
@@ -161,6 +161,7 @@ describe('MySQL-backed attendance', () => {
     const sessionDates = ['2026-06-01', '2026-06-10', '2026-06-28'] as const;
     await database.insert(attendanceSessions).values(sessionDates.map((attendanceDate, index) => ({
       employeeId,
+      branchId,
       attendanceDate,
       requiredMinutes: 480,
       checkInAt: new Date(`${attendanceDate}T06:00:00.000Z`),
@@ -179,6 +180,7 @@ describe('MySQL-backed attendance', () => {
       .filter((date) => date !== '2026-06-10');
     await database.insert(attendanceDailyRecords).values(dailyDates.map((attendanceDate) => ({
       employeeId,
+      branchId,
       attendanceDate,
       status: weeklyDays.has(attendanceDate) ? 'weekly_day_off' as const : 'absence' as const,
       absenceRequiredMinutes: 480,
@@ -264,12 +266,13 @@ describe('MySQL-backed attendance', () => {
   });
 
   it('keeps provisional previews available while reserving open-session blockers for finalization', async () => {
-    const { employeeId } = await createFixtures();
+    const { branchId, employeeId } = await createFixtures();
     await database.update(employees).set({
       createdAt: new Date('2026-06-30T06:00:00.000Z'),
     }).where(eq(employees.id, employeeId));
     await database.insert(attendanceSessions).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-06-30',
       requiredMinutes: 480,
       checkInAt: new Date('2026-06-30T07:00:00.000Z'),
@@ -356,9 +359,10 @@ describe('MySQL-backed attendance', () => {
   });
 
   it('enforces one open session per employee across different dates at the database layer', async () => {
-    const { employeeId } = await createFixtures();
+    const { branchId, employeeId } = await createFixtures();
     const base = {
       employeeId,
+      branchId,
       requiredMinutes: 480,
       checkOutAt: null,
       workedMinutes: null,
@@ -384,9 +388,10 @@ describe('MySQL-backed attendance', () => {
   });
 
   it('rejects closed sessions whose minute totals do not match their timestamps', async () => {
-    const { employeeId } = await createFixtures();
+    const { branchId, employeeId } = await createFixtures();
     const values = {
       employeeId,
+      branchId,
       attendanceDate: '2026-07-19',
       requiredMinutes: 480,
       checkInAt: new Date('2026-07-19T06:00:00.000Z'),
@@ -413,10 +418,11 @@ describe('MySQL-backed attendance', () => {
   });
 
   it('rejects inconsistent automatic-timeout state at the database layer', async () => {
-    const { employeeId } = await createFixtures();
+    const { branchId, employeeId } = await createFixtures();
 
     await expect(database.insert(attendanceSessions).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-19',
       requiredMinutes: 480,
       checkInAt: new Date('2026-07-19T06:00:00.000Z'),
@@ -432,6 +438,7 @@ describe('MySQL-backed attendance', () => {
     })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
     await expect(database.insert(attendanceSessions).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-19',
       requiredMinutes: 480,
       checkInAt: new Date('2026-07-19T06:00:00.000Z'),
@@ -468,6 +475,7 @@ describe('MySQL-backed attendance', () => {
     const secondEmployeeId = Number(secondResult[0].insertId);
     const sessionResult = await database.insert(attendanceSessions).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-19',
       requiredMinutes: 480,
       checkInAt: new Date('2026-07-19T06:00:00.000Z'),
@@ -488,6 +496,7 @@ describe('MySQL-backed attendance', () => {
     })).rejects.toMatchObject(foreignKeyFailure);
     await expect(database.insert(attendanceDailyRecords).values({
       employeeId: secondEmployeeId,
+      branchId,
       attendanceDate: '2026-07-19',
       status: 'attendance_replaced',
       absenceRequiredMinutes: 480,
@@ -498,6 +507,7 @@ describe('MySQL-backed attendance', () => {
     })).rejects.toMatchObject(foreignKeyFailure);
     await expect(database.insert(attendanceDailyRecords).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-20',
       status: 'attendance_replaced',
       absenceRequiredMinutes: 480,
@@ -656,9 +666,10 @@ describe('MySQL-backed attendance', () => {
   });
 
   it('replaces an automatic absence with backdated manual attendance but protects a day off', async () => {
-    const { employeeId } = await createFixtures();
+    const { branchId, employeeId } = await createFixtures();
     const absenceResult = await database.insert(attendanceDailyRecords).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-10',
       status: 'absence',
       absenceRequiredMinutes: 480,
@@ -667,6 +678,7 @@ describe('MySQL-backed attendance', () => {
     });
     await database.insert(attendanceDailyRecords).values({
       employeeId,
+      branchId,
       attendanceDate: '2026-07-11',
       status: 'weekly_day_off',
       absenceRequiredMinutes: 480,
@@ -860,7 +872,7 @@ describe('MySQL-backed attendance', () => {
     });
 
     await expect(overdueRepository.hasOpenSession(employeeId)).resolves.toBe(false);
-    await expect(overdueRepository.hasAnyOpenSession!(employeeId)).resolves.toBe(true);
+    await expect(overdueRepository.hasAnyOpenSession(employeeId)).resolves.toBe(true);
   });
 
   it('executes a due timeout at check-in plus exactly 16 hours and remains idempotent', async () => {

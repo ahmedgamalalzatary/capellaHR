@@ -15,7 +15,7 @@ export type FinancialAdjustmentRecord = {
 export type AdjustmentMutationResult<T> =
   | { kind: 'success'; record: T }
   | { kind: 'not_found' | 'employee_not_found' | 'employee_deleted' | 'future_month' | 'ineligible_month' | 'finalized' };
-export type AdjustmentDeleteResult =
+type AdjustmentDeleteResult =
   | { kind: 'success' }
   | { kind: 'not_found' | 'employee_deleted' | 'finalized' };
 

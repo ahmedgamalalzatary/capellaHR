@@ -2,7 +2,7 @@ import type { AdminLoginInput, EmployeeLoginInput } from '@capella/contracts';
 
 import { api } from '@/lib/api/client';
 
-export type SessionActor =
+type SessionActor =
   | { type: 'admin' }
   | { type: 'employee' };
 
