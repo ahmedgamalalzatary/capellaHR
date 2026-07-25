@@ -1,18 +1,27 @@
 'use client';
 
 import { CheckCircle2, Smartphone } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Button, Card, CardContent } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 
-import { completeDevicePairing } from '../api/devices-api';
+import { completeDevicePairing, type DeviceAssignmentType } from '../api/devices-api';
 import { detectBrowser, detectPlatform, installationMarker } from '../lib/device-identity';
 
 type PairingStatus = 'pending' | 'success' | 'error';
 
+/** Where a freshly paired device lands; branch kiosk is the default route. */
+const DEFAULT_ROUTE = '/branch-kiosk';
+
+function routeForDevice(device: { assignmentType?: DeviceAssignmentType }) {
+  return device.assignmentType === 'employee' ? '/personal-device' : DEFAULT_ROUTE;
+}
+
 export function PairDeviceView({ token }: { token: string }) {
+  const router = useRouter();
   const started = useRef(false);
   const [status, setStatus] = useState<PairingStatus>('pending');
   const [error, setError] = useState<string | null>(null);
@@ -23,19 +32,20 @@ export function PairDeviceView({ token }: { token: string }) {
     setStatus('pending');
     setError(null);
     try {
-      await completeDevicePairing(token, {
+      const device = await completeDevicePairing(token, {
         installationMarker: installationMarker(),
         browser: detectBrowser(navigator.userAgent),
         platform: detectPlatform(navigator.userAgent),
       });
       setStatus('success');
+      router.replace(routeForDevice(device));
     } catch (caught) {
       setStatus('error');
       setError(caught instanceof ApiError
         ? caught.message
         : 'تعذر إتمام الربط. حاول مرة أخرى أو اطلب رابطًا جديدًا من الإدارة.');
     }
-  }, [token]);
+  }, [router, token]);
 
   useEffect(() => { void pair(); }, [pair]);
 
@@ -53,7 +63,7 @@ export function PairDeviceView({ token }: { token: string }) {
               <CheckCircle2 className="mx-auto size-10 text-success" aria-hidden />
               <h1 className="text-lg font-bold">تم ربط الجهاز بنجاح</h1>
               <p className="text-sm text-muted">
-                أصبح هذا المتصفح مسجلًا لدى إدارة كابيلا ويمكن استخدامه لتسجيل الحضور. يمكنك إغلاق هذه الصفحة.
+                أصبح هذا المتصفح مسجلًا لدى إدارة كابيلا ويمكن استخدامه لتسجيل الحضور. جارٍ تحويلك إلى صفحة الحضور…
               </p>
             </>
           ) : (

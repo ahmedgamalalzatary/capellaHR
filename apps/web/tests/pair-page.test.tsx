@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { ApiError } from '../src/lib/api/client';
 
-const mocks = vi.hoisted(() => ({ completeDevicePairing: vi.fn() }));
+const mocks = vi.hoisted(() => ({ completeDevicePairing: vi.fn(), replace: vi.fn() }));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mocks.replace, replace: mocks.replace }),
+}));
 
 vi.mock('../src/features/devices/api/devices-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -57,6 +61,37 @@ describe('PairDeviceView', () => {
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'طلب ربط الجهاز غير صالح');
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     expect(await screen.findByText('تم ربط الجهاز بنجاح')).toBeDefined();
+  });
+
+  test('sends a paired branch device to the branch kiosk', async () => {
+    mocks.completeDevicePairing.mockResolvedValue({ id: 7, status: 'active', assignmentType: 'branch' });
+    render(<PairDeviceView token="tok-branch" />);
+
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith('/branch-kiosk'));
+  });
+
+  test('sends a paired employee device to the personal device page', async () => {
+    mocks.completeDevicePairing.mockResolvedValue({ id: 8, status: 'active', assignmentType: 'employee' });
+    render(<PairDeviceView token="tok-personal" />);
+
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith('/personal-device'));
+  });
+
+  test('falls back to the default route when the device kind is unknown', async () => {
+    mocks.completeDevicePairing.mockResolvedValue({ id: 9, status: 'active' });
+    render(<PairDeviceView token="tok-unknown" />);
+
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith('/branch-kiosk'));
+  });
+
+  test('stays on the pairing page when pairing fails', async () => {
+    mocks.completeDevicePairing.mockRejectedValueOnce(
+      new ApiError(409, { code: 'DEVICE_PAIRING_INVALID', message: 'طلب ربط الجهاز غير صالح' }),
+    );
+    render(<PairDeviceView token="tok-bad" />);
+
+    await screen.findByRole('alert');
+    expect(mocks.replace).not.toHaveBeenCalled();
   });
 
   test('never exposes the raw pairing token on the page', async () => {
