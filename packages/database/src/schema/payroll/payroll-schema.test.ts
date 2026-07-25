@@ -6,7 +6,9 @@ import {
   advances,
   bonuses,
   deductions,
-  employeeDeactivationPayments,
+  employeeDeactivationAdjustments,
+  employeeOutstandingDebts,
+  employeePendingDeactivations,
   employeeSalaryPeriods,
   financialAuditEvents,
   payrollMonths,
@@ -73,11 +75,33 @@ describe('payroll schema', () => {
     ]));
   });
 
-  it('stores deactivation cash payments separately from bonuses and snapshots them in payroll', () => {
-    expect(config(employeeDeactivationPayments).name).toBe('employee_deactivation_payments');
-    expect(config(employeeDeactivationPayments).checks
-      .some((check) => check.name === 'employee_deactivation_payments_amount_positive')).toBe(true);
+  it('stores signed deactivation adjustments separately and snapshots them in payroll', () => {
+    expect(config(employeeDeactivationAdjustments).name).toBe('employee_deactivation_adjustments');
+    // Signed on purpose: a write-off or cash payment credits the employee, a forfeited salary
+    // debits it, so a positivity check would reject half the decision tree.
+    expect(config(employeeDeactivationAdjustments).checks
+      .some((check) => check.name === 'employee_deactivation_adjustments_amount_nonzero')).toBe(true);
+    expect(config(employeeDeactivationAdjustments).indexes
+      .some((index) => index.config.name === 'employee_deactivation_adjustments_employee_month_reason_unique')).toBe(true);
     expect(config(payrollMonths).columns
-      .some((column) => column.name === 'deactivation_payment_amount')).toBe(true);
+      .some((column) => column.name === 'deactivation_adjustment_amount')).toBe(true);
+  });
+
+  it('records an outstanding debt that survives deactivation without touching payroll', () => {
+    expect(config(employeeOutstandingDebts).name).toBe('employee_outstanding_debts');
+    expect(config(employeeOutstandingDebts).checks
+      .some((check) => check.name === 'employee_outstanding_debts_amount_positive')).toBe(true);
+    expect(config(employeeOutstandingDebts).indexes
+      .some((index) => index.config.name === 'employee_outstanding_debts_employee_month_unique')).toBe(true);
+  });
+
+  it('holds a pending deactivation until the open session closes', () => {
+    expect(config(employeePendingDeactivations).name).toBe('employee_pending_deactivations');
+    expect(config(employeePendingDeactivations).columns.map((column) => column.name))
+      .toEqual(expect.arrayContaining([
+        'employee_id', 'advance_decision', 'negative_balance_decision', 'requested_at',
+      ]));
+    expect(config(employeePendingDeactivations).indexes
+      .some((index) => index.config.name === 'employee_pending_deactivations_employee_unique')).toBe(true);
   });
 });

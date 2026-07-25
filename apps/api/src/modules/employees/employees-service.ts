@@ -8,11 +8,36 @@ export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion
 export type EmployeeTransactionContext = unknown;
 type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
 type EmployeeUpdateResult = { record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | 'branch_not_found' | 'checked_in';
-export type EmployeeDeactivationPreview = { unpaidInstallmentCount: number; unpaidAdvanceAmount: string; projectedNetSalary: string; amountOwed: string };
+export type EmployeeDeactivationPreview = { unpaidInstallmentCount: number; unpaidAdvanceAmount: string; currentNetSalary: string; projectedNetSalary: string; amountOwed: string; canZeroSalary: boolean };
+/**
+ * The admin's decisions, plus the figures they were shown. `expected` is absent when a deferred
+ * deactivation is replayed at check-out: the closing shift is allowed to have moved the amounts,
+ * which is precisely what the admin was warned about, so re-checking them would only fail.
+ */
+export type EmployeeDeactivationDecisions = {
+  advanceDecision: EmployeeDeactivationInput['advanceDecision'];
+  negativeBalanceDecision?: EmployeeDeactivationInput['negativeBalanceDecision'];
+  expected?: {
+    unpaidInstallmentCount: number;
+    unpaidAdvanceAmount: string;
+    projectedNetSalary: string;
+    amountOwed: string;
+  };
+};
+export const toDeactivationDecisions = (input: EmployeeDeactivationInput): EmployeeDeactivationDecisions => ({
+  advanceDecision: input.advanceDecision,
+  ...(input.negativeBalanceDecision === undefined ? {} : { negativeBalanceDecision: input.negativeBalanceDecision }),
+  expected: {
+    unpaidInstallmentCount: input.expectedUnpaidInstallmentCount,
+    unpaidAdvanceAmount: input.expectedUnpaidAdvanceAmount,
+    projectedNetSalary: input.expectedProjectedNetSalary,
+    amountOwed: input.expectedAmountOwed,
+  },
+});
 export type EmployeeFinancialLifecycle = {
   prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void>;
   previewEmployeeDeactivation?(id: number): Promise<EmployeeDeactivationPreview>;
-  prepareEmployeeDeactivation?(id: number, at: Date, input: EmployeeDeactivationInput, context: EmployeeTransactionContext): Promise<void>;
+  prepareEmployeeDeactivation?(id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext): Promise<void>;
 };
 export interface EmployeeRepository {
   create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord | 'branch_not_found'>;
@@ -23,11 +48,13 @@ export interface EmployeeRepository {
   list(query: ListEmployeesQuery): Promise<{ items: EmployeeRecord[]; total: number }>;
   update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<EmployeeUpdateResult | null>;
   softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, cleanupDevices?: (id: number, context: EmployeeTransactionContext) => Promise<void>, prepareFinancials?: (id: number, deletedAt: Date, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeDeleteResult>;
-  previewDeactivation(id: number): Promise<({ kind: 'success' } & EmployeeDeactivationPreview) | { kind: 'not_found' } | { kind: 'already_inactive' }>;
-  deactivate(id: number, input: EmployeeDeactivationInput, prepareFinancials?: (id: number, at: Date, input: EmployeeDeactivationInput, context: EmployeeTransactionContext) => Promise<void>): Promise<{ kind: 'success'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
+  previewDeactivation(id: number): Promise<{ kind: 'success' } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
+  deactivate(id: number, decisions: EmployeeDeactivationDecisions, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<void>, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<{ kind: 'success' | 'pending'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
+  /** Runs the deactivation a checked-in employee deferred, once their session closes. */
+  applyPendingDeactivation(id: number, at: Date, context: EmployeeTransactionContext, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<void>): Promise<boolean>;
   activate(id: number): Promise<{ kind: 'success'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_active' }>;
 }
-export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' | 'EMPLOYEE_ALREADY_ACTIVE' | 'EMPLOYEE_ALREADY_INACTIVE' | 'EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED' | 'EMPLOYEE_PAYROLL_FINALIZED', message: string) { super(message); } }
+export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' | 'EMPLOYEE_FINANCIALS_UNAVAILABLE' | 'EMPLOYEE_ALREADY_ACTIVE' | 'EMPLOYEE_ALREADY_INACTIVE' | 'EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED' | 'EMPLOYEE_PAYROLL_FINALIZED' | 'EMPLOYEE_PAYROLL_BLOCKED' | 'EMPLOYEE_NEGATIVE_BALANCE_DECISION_REQUIRED' | 'EMPLOYEE_ZERO_SALARY_NOT_ALLOWED', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
 export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: EmployeeFinancialLifecycle) => ({
@@ -84,26 +111,43 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
     if (result === 'not_found') throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
   },
   async previewDeactivation(id: number) {
+    // Without attendance there is no way to know whether the deactivation would be deferred, and
+    // reporting `hasOpenSession: false` would silently promise it takes effect immediately.
+    if (!attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
     const result = await repository.previewDeactivation(id);
     if (result.kind === 'not_found') throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
     if (result.kind === 'already_inactive') throw new EmployeeError('EMPLOYEE_ALREADY_INACTIVE', 'الموظف غير نشط بالفعل');
-    if (financialLifecycle?.previewEmployeeDeactivation) {
-      return financialLifecycle.previewEmployeeDeactivation(id);
+    // Only the financial lifecycle can reach payroll and advances, so without it there is no
+    // honest preview to give: fail loudly instead of reporting zeroed amounts.
+    if (!financialLifecycle?.previewEmployeeDeactivation) {
+      throw new EmployeeError('EMPLOYEE_FINANCIALS_UNAVAILABLE', 'تعذر حساب الأثر المالي للتعطيل');
     }
-    const { kind, ...preview } = result;
-    void kind;
-    return preview;
+    const preview = await financialLifecycle.previewEmployeeDeactivation(id);
+    // Surfaced so the admin is warned up front that the deactivation will wait for check-out.
+    return { ...preview, hasOpenSession: await attendance.hasOpenSession(id) };
   },
   async deactivate(id: number, input: EmployeeDeactivationInput) {
+    // Fail closed like `remove`: without attendance a checked-in employee would be deactivated
+    // mid-shift instead of being deferred to check-out.
+    if (!attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
     const prepareFinancials = financialLifecycle?.prepareEmployeeDeactivation
-      ? (employeeId: number, at: Date, deactivationInput: EmployeeDeactivationInput, context: EmployeeTransactionContext) => financialLifecycle.prepareEmployeeDeactivation!(employeeId, at, deactivationInput, context)
+      ? (employeeId: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => financialLifecycle.prepareEmployeeDeactivation!(employeeId, at, decisions, context)
       : undefined;
-    const result = prepareFinancials
-      ? await repository.deactivate(id, input, prepareFinancials)
-      : await repository.deactivate(id, input);
+    // A checked-in employee keeps working: the repository stores the decisions and the
+    // deactivation is replayed when the session closes.
+    const openSessionCheck = (employeeId: number, context: EmployeeTransactionContext) => (
+      attendance.hasOpenSession(employeeId, context)
+    );
+    const result = await repository.deactivate(id, toDeactivationDecisions(input), prepareFinancials, openSessionCheck);
     if (result.kind === 'not_found') throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
     if (result.kind === 'already_inactive') throw new EmployeeError('EMPLOYEE_ALREADY_INACTIVE', 'الموظف غير نشط بالفعل');
-    return expose(result.record);
+    return { employee: expose(result.record), pendingUntilCheckOut: result.kind === 'pending' };
+  },
+  applyPendingDeactivation(id: number, at: Date, context: EmployeeTransactionContext) {
+    const prepareFinancials = financialLifecycle?.prepareEmployeeDeactivation
+      ? (employeeId: number, instant: Date, decisions: EmployeeDeactivationDecisions, transaction: EmployeeTransactionContext) => financialLifecycle.prepareEmployeeDeactivation!(employeeId, instant, decisions, transaction)
+      : undefined;
+    return repository.applyPendingDeactivation(id, at, context, prepareFinancials);
   },
   async activate(id: number) {
     const result = await repository.activate(id);

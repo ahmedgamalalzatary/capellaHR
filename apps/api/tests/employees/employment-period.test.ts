@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { employmentDateIsActive, employmentMonthIsActive } from '../../src/modules/employees/employment-period.js';
+import { employmentDateAccruesAbsence, employmentDateIsActive, employmentMonthIsActive } from '../../src/modules/employees/employment-period.js';
 
 describe('employment periods', () => {
   const periods = [
@@ -16,6 +16,18 @@ describe('employment periods', () => {
   it('excludes the inactive gap and resumes on reactivation day', () => {
     expect(employmentDateIsActive('2026-07-15', periods, 'Africa/Cairo')).toBe(false);
     expect(employmentDateIsActive('2026-07-21', periods, 'Africa/Cairo')).toBe(true);
+  });
+
+  it('never accrues an absence on the day employment ends', () => {
+    // The employee stays employed for the whole calendar day so a session worked that morning
+    // still counts, but an absence written after deactivation would reopen a settled balance.
+    expect(employmentDateAccruesAbsence('2026-07-10', periods, 'Africa/Cairo')).toBe(false);
+    expect(employmentDateAccruesAbsence('2026-07-09', periods, 'Africa/Cairo')).toBe(true);
+  });
+
+  it('keeps accruing absences for an open-ended period', () => {
+    expect(employmentDateAccruesAbsence('2026-07-21', periods, 'Africa/Cairo')).toBe(true);
+    expect(employmentDateAccruesAbsence('2026-07-15', periods, 'Africa/Cairo')).toBe(false);
   });
 
   it('includes only payroll months overlapping an active period', () => {

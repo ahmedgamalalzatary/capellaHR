@@ -20,6 +20,18 @@ export const employmentDateIsActive = (
   && (period.activeTo === null || calendarDate(period.activeTo, timeZone) >= attendanceDate)
 ));
 
+// An employee stays employed for the whole calendar day their employment ends, so a session
+// worked that day still counts. An absence must not be generated for it: reconciliation runs
+// after the fact and would reopen a balance that deactivation already settled.
+export const employmentDateAccruesAbsence = (
+  attendanceDate: string,
+  periods: readonly EmploymentPeriod[],
+  timeZone: string,
+) => periods.some((period) => (
+  calendarDate(period.activeFrom, timeZone) <= attendanceDate
+  && (period.activeTo === null || calendarDate(period.activeTo, timeZone) > attendanceDate)
+));
+
 export const employmentMonthIsActive = (
   month: string,
   periods: readonly EmploymentPeriod[],

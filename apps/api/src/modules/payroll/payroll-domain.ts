@@ -9,7 +9,8 @@ export type PayrollCalculationInput = {
   deductions: string;
   advances: string;
   priorNegativeCarry: string;
-  deactivationPayment?: string;
+  /** Signed: credits the employee for a write-off or cash payment, debits a forfeited salary. */
+  deactivationAdjustment?: string;
 };
 
 const toCents = (amount: string) => {
@@ -62,7 +63,7 @@ export const calculatePayroll = (input: PayrollCalculationInput) => {
     - toCents(input.deductions)
     - toCents(input.advances)
     + toCents(input.priorNegativeCarry)
-    + toCents(input.deactivationPayment ?? '0.00');
+    + toCents(input.deactivationAdjustment ?? '0.00');
 
   return {
     proratedBase: fromCents(proratedBase),

@@ -1,8 +1,8 @@
 import { type createDatabase } from '@capella/database';
-import { advanceInstallments, authSessions, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePhoneReservations, employees, payrollMonths } from '@capella/database/schema';
+import { authSessions, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePendingDeactivations, employeePhoneReservations, employees } from '@capella/database/schema';
 import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
-import type { EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
+import type { EmployeeDeactivationDecisions, EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
 type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 export type EmployeeBeforeDurationChange = (
@@ -15,6 +15,51 @@ const hydrate = async (db: Database | Parameters<Parameters<Database['transactio
   const files = await db.select().from(employeeImages).where(eq(employeeImages.employeeId, employee.id));
   return { ...employee, images: Object.fromEntries(files.map((file) => [file.kind, { storagePath: file.storagePath, originalName: file.originalName, mimeType: file.mimeType, sizeBytes: file.sizeBytes }])) as EmployeeImages };
 };
+/**
+ * The irreversible half of a deactivation, shared by the immediate path and the replay that runs
+ * when a checked-in employee finally clocks out, so both settle money and credentials identically.
+ */
+const commitDeactivation = async (
+  tx: Transaction,
+  current: typeof employees.$inferSelect,
+  at: Date,
+  decisions: EmployeeDeactivationDecisions,
+  prepareFinancials?: (
+    id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: Transaction,
+  ) => Promise<void>,
+) => {
+  const id = current.id;
+  const before = await hydrate(tx, current);
+  if (prepareFinancials) await prepareFinancials(id, at, decisions, tx);
+  await tx.update(employeeEmploymentPeriods).set({ activeTo: at })
+    .where(and(eq(employeeEmploymentPeriods.employeeId, id), isNull(employeeEmploymentPeriods.activeTo)));
+  // Inactive employees are only filtered out of session lookups, so without bumping the
+  // credential version a later reactivation would make pre-deactivation tokens valid again.
+  const sessions = await tx.select({ id: authSessions.id }).from(authSessions)
+    .where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt))).for('update');
+  await tx.update(employees)
+    .set({ employmentStatus: 'inactive', credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at })
+    .where(eq(employees.id, id));
+  await tx.update(authSessions).set({ revokedAt: at })
+    .where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
+  for (const session of sessions) await writeAudit(tx, {
+    module: 'auth', action: 'session_revoke', entityType: 'session', entityId: session.id,
+    relatedIds: { employeeId: id }, createdAt: at,
+  });
+  const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+  await writeAudit(tx, {
+    module: 'employees', action: 'deactivate', entityType: 'employee', entityId: id,
+    beforeState: before,
+    afterState: {
+      ...record,
+      advanceDecision: decisions.advanceDecision,
+      negativeBalanceDecision: decisions.negativeBalanceDecision ?? null,
+    },
+    relatedIds: { branchId: current.branchId }, createdAt: at,
+  });
+  return record;
+};
+
 export const createDrizzleEmployeeRepository = (
   database: Database,
   now: () => Date = () => new Date(),
@@ -167,47 +212,86 @@ export const createDrizzleEmployeeRepository = (
     }).from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).limit(1))[0];
     if (!employee) return { kind: 'not_found' };
     if (employee.employmentStatus === 'inactive') return { kind: 'already_inactive' };
-    const unpaid = await database.select({ amount: advanceInstallments.amount })
-      .from(advanceInstallments)
-      .leftJoin(payrollMonths, and(
-        eq(payrollMonths.employeeId, advanceInstallments.employeeId),
-        eq(payrollMonths.payrollMonth, advanceInstallments.payrollMonth),
-      ))
-      .where(and(eq(advanceInstallments.employeeId, id), isNull(payrollMonths.id)));
-    const unpaidCents = unpaid.reduce((total, installment) => {
-      const [whole, fraction = ''] = installment.amount.split('.');
-      return total + BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'));
-    }, 0n);
-    const unpaidAdvanceAmount = `${unpaidCents / 100n}.${String(unpaidCents % 100n).padStart(2, '0')}`;
-    return {
-      kind: 'success',
-      unpaidInstallmentCount: unpaid.length,
-      unpaidAdvanceAmount,
-      projectedNetSalary: '0.00',
-      amountOwed: '0.00',
-    };
+    // Eligibility only: the amounts come from the financial lifecycle, which can see payroll.
+    return { kind: 'success' };
   },
-  deactivate(id, _input, prepareFinancials) {
+  deactivate(id, input, prepareFinancials, hasOpenSession) {
     return database.transaction(async (tx) => {
       const current = (await tx.select().from(employees)
         .where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0];
       if (!current) return { kind: 'not_found' as const };
       if (current.employmentStatus === 'inactive') return { kind: 'already_inactive' as const };
       const at = now();
-      if (prepareFinancials) await prepareFinancials(id, at, _input, tx);
-      await tx.update(employeeEmploymentPeriods).set({ activeTo: at })
-        .where(and(eq(employeeEmploymentPeriods.employeeId, id), isNull(employeeEmploymentPeriods.activeTo)));
-      await tx.update(employees).set({ employmentStatus: 'inactive', updatedAt: at })
-        .where(eq(employees.id, id));
-      const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      if (hasOpenSession && await hasOpenSession(id, tx)) {
+        // Deliberately does not touch employment state: he finishes the shift he is on, and the
+        // amounts are recomputed at check-out because that shift can still move them.
+        await tx.insert(employeePendingDeactivations).values({
+          employeeId: id,
+          advanceDecision: input.advanceDecision,
+          negativeBalanceDecision: input.negativeBalanceDecision ?? null,
+          requestedAt: at,
+          createdAt: at,
+        }).onDuplicateKeyUpdate({
+          set: {
+            advanceDecision: input.advanceDecision,
+            negativeBalanceDecision: input.negativeBalanceDecision ?? null,
+            requestedAt: at,
+          },
+        });
+        await writeAudit(tx, {
+          module: 'employees', action: 'deactivate_scheduled', entityType: 'employee', entityId: id,
+          afterState: {
+            advanceDecision: input.advanceDecision,
+            negativeBalanceDecision: input.negativeBalanceDecision ?? null,
+          },
+          relatedIds: { branchId: current.branchId }, createdAt: at,
+        });
+        return { kind: 'pending' as const, record: await hydrate(tx, current) };
+      }
+      return { kind: 'success' as const, record: await commitDeactivation(tx, current, at, input, prepareFinancials) };
+    });
+  },
+  async applyPendingDeactivation(id, at, transactionContext, prepareFinancials) {
+    const tx = transactionContext as Transaction;
+    const pending = (await tx.select().from(employeePendingDeactivations)
+      .where(eq(employeePendingDeactivations.employeeId, id)).for('update').limit(1))[0];
+    if (!pending) return false;
+    const current = (await tx.select().from(employees)
+      .where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0];
+    if (!current || current.employmentStatus === 'inactive') {
+      await tx.delete(employeePendingDeactivations)
+        .where(eq(employeePendingDeactivations.employeeId, id));
+      return false;
+    }
+    const decisions: EmployeeDeactivationDecisions = {
+      advanceDecision: pending.advanceDecision,
+      ...(pending.negativeBalanceDecision === null
+        ? {}
+        : { negativeBalanceDecision: pending.negativeBalanceDecision }),
+    };
+    try {
+      // A savepoint, because this replay is a passenger on the employee's check-out: a payroll
+      // month finalized since the request must not stop them from clocking out.
+      // Replayed without expectations: the shift that just ended is exactly what the admin was
+      // warned could move the amounts, so re-checking them here would only ever fail.
+      await tx.transaction((nested) => commitDeactivation(nested, current, at, decisions, prepareFinancials));
+    }
+    catch (error) {
+      // The row survives so the next close — or a retried deactivation — can settle it.
       await writeAudit(tx, {
-        module: 'employees', action: 'deactivate', entityType: 'employee', entityId: id,
-        beforeState: await hydrate(tx, current),
-        afterState: { ...record, negativeBalanceDecision: _input.negativeBalanceDecision },
+        module: 'employees', action: 'deactivate_deferred_failed', entityType: 'employee', entityId: id,
+        afterState: {
+          ...decisions,
+          negativeBalanceDecision: decisions.negativeBalanceDecision ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
         relatedIds: { branchId: current.branchId }, createdAt: at,
       });
-      return { kind: 'success' as const, record };
-    });
+      return false;
+    }
+    await tx.delete(employeePendingDeactivations)
+      .where(eq(employeePendingDeactivations.employeeId, id));
+    return true;
   },
   activate(id) {
     return database.transaction(async (tx) => {

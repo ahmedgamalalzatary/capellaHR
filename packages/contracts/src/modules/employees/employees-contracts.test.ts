@@ -61,23 +61,45 @@ describe('employee contracts', () => {
       .toMatchObject({ branchId: 2, status: 'inactive', page: 2, pageSize: 20 });
   });
 
-  it('requires an explicit advance and negative-balance decision for deactivation', () => {
-    expect(employeeDeactivationSchema.parse({
-      advanceDecision: 'accelerate',
-      negativeBalanceDecision: 'keep_debt',
+  it('carries the advance decision and the negative-balance decision for deactivation', () => {
+    const decisions = {
+      advanceDecision: 'sum_all',
+      negativeBalanceDecision: 'record_debt',
       expectedUnpaidInstallmentCount: 3,
-      expectedUnpaidAdvanceAmount: '1500.00',
-      expectedProjectedNetSalary: '-500.00',
-      expectedAmountOwed: '500.00',
-    })).toEqual({
-      advanceDecision: 'accelerate',
-      negativeBalanceDecision: 'keep_debt',
-      expectedUnpaidInstallmentCount: 3,
-      expectedUnpaidAdvanceAmount: '1500.00',
-      expectedProjectedNetSalary: '-500.00',
-      expectedAmountOwed: '500.00',
-    });
+      expectedUnpaidAdvanceAmount: '3000.00',
+      expectedProjectedNetSalary: '-1000.00',
+      expectedAmountOwed: '1000.00',
+    };
+    expect(employeeDeactivationSchema.parse(decisions)).toEqual(decisions);
     expect(employeeDeactivationSchema.safeParse({}).success).toBe(false);
+  });
+
+  it.each(['zero_salary', 'ignore_debt'] as const)('accepts %s without a negative-balance decision', (advanceDecision) => {
+    // Both terminate the flow at modal 2: the balance is settled by the decision itself, so
+    // there is no shortfall left for modal 3 to resolve.
+    expect(employeeDeactivationSchema.parse({
+      advanceDecision,
+      expectedUnpaidInstallmentCount: 3,
+      expectedUnpaidAdvanceAmount: '3000.00',
+      expectedProjectedNetSalary: '-1000.00',
+      expectedAmountOwed: '1000.00',
+    })).toMatchObject({ advanceDecision });
+  });
+
+  it('rejects decisions that are no longer part of the deactivation flow', () => {
+    const base = {
+      expectedUnpaidInstallmentCount: 0,
+      expectedUnpaidAdvanceAmount: '0.00',
+      expectedProjectedNetSalary: '0.00',
+      expectedAmountOwed: '0.00',
+    };
+    expect(employeeDeactivationSchema.safeParse({ ...base, advanceDecision: 'accelerate' }).success).toBe(false);
+    expect(employeeDeactivationSchema.safeParse({
+      ...base, advanceDecision: 'sum_all', negativeBalanceDecision: 'keep_debt',
+    }).success).toBe(false);
+    expect(employeeDeactivationSchema.safeParse({
+      ...base, advanceDecision: 'sum_all', negativeBalanceDecision: 'paid',
+    }).success).toBe(false);
   });
 
   it('rejects filters outside safe MySQL and pagination ranges', () => {

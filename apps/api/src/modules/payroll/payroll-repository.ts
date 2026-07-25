@@ -4,7 +4,7 @@ import {
   bonuses,
   branches,
   deductions,
-  employeeDeactivationPayments,
+  employeeDeactivationAdjustments,
   employeeBranchAssignments,
   employeeEmploymentPeriods,
   employeeSalaryPeriods,
@@ -57,7 +57,7 @@ const payrollFields = {
   attendanceDeductionAmount: payrollMonths.attendanceDeductionAmount,
   manualDeductionAmount: payrollMonths.manualDeductionAmount,
   advanceAmount: payrollMonths.advanceAmount, priorNegativeCarry: payrollMonths.priorNegativeCarry,
-  deactivationPaymentAmount: payrollMonths.deactivationPaymentAmount,
+  deactivationAdjustmentAmount: payrollMonths.deactivationAdjustmentAmount,
   netSalary: payrollMonths.netSalary, eligibleWorkdays: payrollMonths.eligibleWorkdays,
   fullMonthWorkdays: payrollMonths.fullMonthWorkdays, requiredMinutes: payrollMonths.requiredMinutes,
   overtimeMinutes: payrollMonths.overtimeMinutes, shortageMinutes: payrollMonths.shortageMinutes,
@@ -99,7 +99,7 @@ const rawFinalized = async (executor: Executor, employeeId: number, month: strin
 
 const sumAmount = async (
   executor: Executor,
-  table: typeof bonuses | typeof deductions | typeof advanceInstallments | typeof employeeDeactivationPayments,
+  table: typeof bonuses | typeof deductions | typeof advanceInstallments | typeof employeeDeactivationAdjustments,
   employeeId: number,
   month: string,
 ) => (await executor.select({ value: sql<string>`coalesce(sum(${table.amount}), 0.00)` })
@@ -156,13 +156,13 @@ const compute = async (
   if (existing) return { kind: 'success', payroll: existing };
   const attendanceResult = await attendance.readPayrollFacts(employee.id, month, transaction, mode);
   if (attendanceResult.kind === 'blocked') return attendanceResult;
-  const [baseSalary, bonusAmount, manualDeductionAmount, advanceAmount, carry, deactivationPaymentAmount] = await Promise.all([
+  const [baseSalary, bonusAmount, manualDeductionAmount, advanceAmount, carry, deactivationAdjustmentAmount] = await Promise.all([
     salaryForMonth(transaction, employee, month),
     sumAmount(transaction, bonuses, employee.id, month),
     sumAmount(transaction, deductions, employee.id, month),
     sumAmount(transaction, advanceInstallments, employee.id, month),
     priorCarry(transaction, employee.id, month),
-    sumAmount(transaction, employeeDeactivationPayments, employee.id, month),
+    sumAmount(transaction, employeeDeactivationAdjustments, employee.id, month),
   ]);
   const calculated = calculatePayroll({
     baseSalary,
@@ -171,7 +171,7 @@ const compute = async (
     deductions: manualDeductionAmount,
     advances: advanceAmount,
     priorNegativeCarry: carry,
-    deactivationPayment: deactivationPaymentAmount,
+    deactivationAdjustment: deactivationAdjustmentAmount,
   });
   const snapshotAmounts = [
     baseSalary,
@@ -182,7 +182,7 @@ const compute = async (
     manualDeductionAmount,
     advanceAmount,
     carry,
-    deactivationPaymentAmount,
+    deactivationAdjustmentAmount,
     calculated.netSalary,
   ];
   if (!snapshotAmounts.every(isPayrollSnapshotAmount)) {
@@ -198,7 +198,7 @@ const compute = async (
       employeeName: employee.fullName, branchId, branchName,
       payrollMonth: month, status: 'open', baseSalary,
       ...calculated, bonusAmount, manualDeductionAmount, advanceAmount,
-      priorNegativeCarry: carry, deactivationPaymentAmount, ...attendanceResult.facts, finalizedAt: null,
+      priorNegativeCarry: carry, deactivationAdjustmentAmount, ...attendanceResult.facts, finalizedAt: null,
     },
   };
 };
@@ -216,7 +216,7 @@ const insertFinalized = async (
     attendanceDeductionAmount: payroll.attendanceDeductionAmount,
     manualDeductionAmount: payroll.manualDeductionAmount, advanceAmount: payroll.advanceAmount,
     priorNegativeCarry: payroll.priorNegativeCarry,
-    deactivationPaymentAmount: payroll.deactivationPaymentAmount ?? '0.00',
+    deactivationAdjustmentAmount: payroll.deactivationAdjustmentAmount ?? '0.00',
     netSalary: payroll.netSalary,
     eligibleWorkdays: payroll.eligibleWorkdays, fullMonthWorkdays: payroll.fullMonthWorkdays,
     requiredMinutes: payroll.requiredMinutes, overtimeMinutes: payroll.overtimeMinutes,

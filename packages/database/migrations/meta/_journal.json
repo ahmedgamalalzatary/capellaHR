@@ -239,6 +239,20 @@
       "when": 1784916713898,
       "tag": "0033_outgoing_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1784968074569,
+      "tag": "0034_deactivation_settlement_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1784968101806,
+      "tag": "0035_drop_legacy_deactivation_payments",
+      "breakpoints": true
     }
   ]
 }

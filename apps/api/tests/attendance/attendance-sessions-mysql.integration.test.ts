@@ -342,6 +342,25 @@ describe('MySQL-backed attendance sessions', () => {
     })).resolves.toMatchObject({ kind: 'success' });
   });
 
+  it('runs a deferred deactivation when the employee finally checks out', async () => {
+    const { employeeId } = await createFixtures();
+    const applied: { employeeId: number; at: Date }[] = [];
+    const repo = createDrizzleAttendanceRepository(database, {
+      now: () => fixedNow,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(false),
+      readRequiredDuration: () => Promise.resolve(480),
+      afterSessionClosed: async (id, at) => { applied.push({ employeeId: id, at }); },
+    });
+    await repo.manualCheckIn({ employeeId, occurredAt: new Date('2026-07-20T06:00:00.000Z') });
+
+    await repo.manualCheckOut({ employeeId, occurredAt: new Date('2026-07-20T08:00:00.000Z') });
+
+    expect(applied).toEqual([
+      { employeeId, at: new Date('2026-07-20T08:00:00.000Z') },
+    ]);
+  });
+
   it('reports a deactivated employee as inactive employment rather than bad credentials', async () => {
     const { employeeId } = await createFixtures();
     const repo = repository();

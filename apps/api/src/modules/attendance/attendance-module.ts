@@ -5,6 +5,7 @@ import {
   type AttendanceFinancialLockCheck,
   type AttendanceRequiredDurationReader,
 } from './attendance-repository.js';
+import type { AttendanceSessionClosedHook } from './attendance-session-writer.js';
 import {
   createAttendanceService,
   type AttendanceFaceGateway,
@@ -18,6 +19,7 @@ export const createAttendanceModule = (
   options: {
     isFinanciallyLocked: AttendanceFinancialLockCheck;
     readRequiredDuration: AttendanceRequiredDurationReader;
+    afterSessionClosed?: AttendanceSessionClosedHook;
     now?: () => Date;
     timeZone?: string;
   },

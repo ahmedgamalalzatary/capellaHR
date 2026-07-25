@@ -17,8 +17,14 @@ const input = {
 const repository = (): EmployeeRepository => ({
   create: vi.fn(async (value) => ({ id: 1, employeeCode: 1, credentialVersion: 1, employmentStatus: 'active' as const, ...value, pinHash: value.pinHash, deletedAt: null, createdAt: new Date(), updatedAt: new Date() })),
   findActiveById: vi.fn(), findIdentityByCode: vi.fn(), list: vi.fn(), update: vi.fn(), softDeleteIfAttendanceClosed: vi.fn(),
-  previewDeactivation: vi.fn(), deactivate: vi.fn(), activate: vi.fn(),
+  previewDeactivation: vi.fn(), deactivate: vi.fn(), applyPendingDeactivation: vi.fn(), activate: vi.fn(),
   findPhoneOwner: vi.fn(), branchExists: vi.fn(async () => true),
+});
+
+/** Deactivation now requires attendance, so tests about anything else stub it as idle. */
+const closedAttendance = () => ({
+  hasOpenSession: vi.fn(async () => false),
+  hasAnyOpenSession: vi.fn(async () => false),
 });
 
 describe('employee service', () => {
@@ -111,6 +117,28 @@ describe('employee service', () => {
     await expect(createEmployeeService(repo).remove(1)).rejects.toMatchObject({ code: 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' });
   });
 
+  it('fails closed when attendance state is unavailable for deactivation', async () => {
+    const repo = repository();
+    const service = createEmployeeService(repo, undefined, undefined, {
+      prepareEmployeeDeletion: vi.fn(async () => undefined),
+      previewEmployeeDeactivation: vi.fn(async () => ({
+        unpaidInstallmentCount: 0, unpaidAdvanceAmount: '0.00', currentNetSalary: '0.00',
+        projectedNetSalary: '0.00', amountOwed: '0.00', canZeroSalary: false,
+      })),
+    });
+
+    await expect(service.previewDeactivation(1)).rejects.toMatchObject({ code: 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' });
+    await expect(service.deactivate(1, {
+      advanceDecision: 'sum_all',
+      expectedUnpaidInstallmentCount: 0,
+      expectedUnpaidAdvanceAmount: '0.00',
+      expectedProjectedNetSalary: '0.00',
+      expectedAmountOwed: '0.00',
+    })).rejects.toMatchObject({ code: 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' });
+    expect(repo.previewDeactivation).not.toHaveBeenCalled();
+    expect(repo.deactivate).not.toHaveBeenCalled();
+  });
+
   it('checks attendance and soft deletes through one atomic repository operation', async () => {
     const repo = repository();
     const attendance = { hasOpenSession: vi.fn(async () => false), hasAnyOpenSession: vi.fn(async () => false) };
@@ -146,15 +174,21 @@ describe('employee service', () => {
 
   it('returns the financial impact before deactivation without changing employee state', async () => {
     const repo = repository();
-    vi.mocked(repo.previewDeactivation).mockResolvedValue({
-      kind: 'success',
-      unpaidInstallmentCount: 3,
-      unpaidAdvanceAmount: '1500.00',
-      projectedNetSalary: '-500.00',
-      amountOwed: '500.00',
-    });
+    vi.mocked(repo.previewDeactivation).mockResolvedValue({ kind: 'success' });
+    const financialLifecycle = {
+      prepareEmployeeDeletion: vi.fn(async () => undefined),
+      previewEmployeeDeactivation: vi.fn(async () => ({
+        unpaidInstallmentCount: 3,
+        unpaidAdvanceAmount: '1500.00',
+        currentNetSalary: '2000.00',
+        projectedNetSalary: '-500.00',
+        amountOwed: '500.00',
+        canZeroSalary: true,
+      })),
+    };
 
-    const result = await createEmployeeService(repo).previewDeactivation(1);
+    const result = await createEmployeeService(repo, closedAttendance(), undefined, financialLifecycle)
+      .previewDeactivation(1);
 
     expect(result).toMatchObject({
       unpaidInstallmentCount: 3,
@@ -164,6 +198,54 @@ describe('employee service', () => {
     expect(repo.deactivate).not.toHaveBeenCalled();
   });
 
+  it('flags an open session in the preview so the admin is warned before confirming', async () => {
+    const repo = repository();
+    vi.mocked(repo.previewDeactivation).mockResolvedValue({ kind: 'success' });
+    const attendance = {
+      hasOpenSession: vi.fn(async () => true),
+      hasAnyOpenSession: vi.fn(async () => true),
+    };
+    const financialLifecycle = {
+      prepareEmployeeDeletion: vi.fn(async () => undefined),
+      previewEmployeeDeactivation: vi.fn(async () => ({
+        unpaidInstallmentCount: 0,
+        unpaidAdvanceAmount: '0.00',
+        currentNetSalary: '2000.00',
+        projectedNetSalary: '2000.00',
+        amountOwed: '0.00',
+        canZeroSalary: false,
+      })),
+    };
+
+    await expect(createEmployeeService(repo, attendance, undefined, financialLifecycle)
+      .previewDeactivation(1)).resolves.toMatchObject({ hasOpenSession: true });
+  });
+
+  it('reports financials unavailable rather than inventing a zeroed preview', async () => {
+    const repo = repository();
+    vi.mocked(repo.previewDeactivation).mockResolvedValue({ kind: 'success' });
+
+    await expect(createEmployeeService(repo, closedAttendance()).previewDeactivation(1))
+      .rejects.toMatchObject({ code: 'EMPLOYEE_FINANCIALS_UNAVAILABLE' });
+  });
+
+  it.each([
+    ['not_found', 'EMPLOYEE_NOT_FOUND'],
+    ['already_inactive', 'EMPLOYEE_ALREADY_INACTIVE'],
+  ] as const)('rejects a %s preview before consulting financials', async (kind, code) => {
+    const repo = repository();
+    vi.mocked(repo.previewDeactivation).mockResolvedValue({ kind });
+    const previewEmployeeDeactivation = vi.fn();
+    const financialLifecycle = {
+      prepareEmployeeDeletion: vi.fn(async () => undefined),
+      previewEmployeeDeactivation,
+    };
+
+    await expect(createEmployeeService(repo, closedAttendance(), undefined, financialLifecycle)
+      .previewDeactivation(1)).rejects.toMatchObject({ code });
+    expect(previewEmployeeDeactivation).not.toHaveBeenCalled();
+  });
+
   it('deactivates with explicit advance and negative-balance decisions', async () => {
     const repo = repository();
     vi.mocked(repo.deactivate).mockResolvedValue({
@@ -171,9 +253,9 @@ describe('employee service', () => {
       record: { id: 1, employmentStatus: 'inactive' } as never,
     });
 
-    const employee = await createEmployeeService(repo).deactivate(1, {
-      advanceDecision: 'accelerate' as const,
-      negativeBalanceDecision: 'keep_debt',
+    const employee = await createEmployeeService(repo, closedAttendance()).deactivate(1, {
+      advanceDecision: 'sum_all' as const,
+      negativeBalanceDecision: 'record_debt',
       expectedUnpaidInstallmentCount: 3,
       expectedUnpaidAdvanceAmount: '1500.00',
       expectedProjectedNetSalary: '-500.00',
@@ -181,14 +263,17 @@ describe('employee service', () => {
     });
 
     expect(repo.deactivate).toHaveBeenCalledWith(1, {
-      advanceDecision: 'accelerate',
-      negativeBalanceDecision: 'keep_debt',
-      expectedUnpaidInstallmentCount: 3,
-      expectedUnpaidAdvanceAmount: '1500.00',
-      expectedProjectedNetSalary: '-500.00',
-      expectedAmountOwed: '500.00',
-    });
-    expect(employee.employmentStatus).toBe('inactive');
+      advanceDecision: 'sum_all',
+      negativeBalanceDecision: 'record_debt',
+      expected: {
+        unpaidInstallmentCount: 3,
+        unpaidAdvanceAmount: '1500.00',
+        projectedNetSalary: '-500.00',
+        amountOwed: '500.00',
+      },
+    }, undefined, expect.any(Function));
+    expect(employee.employee.employmentStatus).toBe('inactive');
+    expect(employee.pendingUntilCheckOut).toBe(false);
   });
 
   it('passes the selected negative-balance decision into the atomic financial lifecycle', async () => {
@@ -204,21 +289,55 @@ describe('employee service', () => {
     };
 
     const input = {
-      advanceDecision: 'accelerate' as const,
-      negativeBalanceDecision: 'paid' as const,
+      advanceDecision: 'sum_all' as const,
+      negativeBalanceDecision: 'collect_cash' as const,
       expectedUnpaidInstallmentCount: 3,
       expectedUnpaidAdvanceAmount: '1500.00',
       expectedProjectedNetSalary: '-500.00',
       expectedAmountOwed: '500.00',
     };
-    await createEmployeeService(repo, undefined, undefined, lifecycle).deactivate(1, input);
+    await createEmployeeService(repo, closedAttendance(), undefined, lifecycle).deactivate(1, input);
 
     expect(prepareEmployeeDeactivation).toHaveBeenCalledWith(
       1,
       new Date('2026-07-16T10:00:00.000Z'),
-      input,
+      {
+        advanceDecision: 'sum_all',
+        negativeBalanceDecision: 'collect_cash',
+        expected: {
+          unpaidInstallmentCount: 3,
+          unpaidAdvanceAmount: '1500.00',
+          projectedNetSalary: '-500.00',
+          amountOwed: '500.00',
+        },
+      },
       { tx: true },
     );
+  });
+
+  it('schedules the deactivation instead of applying it while the employee is checked in', async () => {
+    const repo = repository();
+    const attendance = {
+      hasOpenSession: vi.fn(async () => true),
+      hasAnyOpenSession: vi.fn(async () => true),
+    };
+    vi.mocked(repo.deactivate).mockResolvedValue({
+      kind: 'pending',
+      record: { id: 1, employmentStatus: 'active' } as never,
+    });
+
+    const result = await createEmployeeService(repo, attendance).deactivate(1, {
+      advanceDecision: 'sum_all' as const,
+      negativeBalanceDecision: 'record_debt' as const,
+      expectedUnpaidInstallmentCount: 0,
+      expectedUnpaidAdvanceAmount: '0.00',
+      expectedProjectedNetSalary: '0.00',
+      expectedAmountOwed: '0.00',
+    });
+
+    // He keeps working until check-out, so the employee is deliberately still active here.
+    expect(result.pendingUntilCheckOut).toBe(true);
+    expect(result.employee.employmentStatus).toBe('active');
   });
 
   it('reactivates while preserving employee schedule and configuration fields', async () => {

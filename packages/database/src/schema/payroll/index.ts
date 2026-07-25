@@ -46,7 +46,7 @@ export const payrollMonths = mysqlTable('payroll_months', {
   manualDeductionAmount: decimal('manual_deduction_amount', { precision: 14, scale: 2 }).notNull(),
   advanceAmount: decimal('advance_amount', { precision: 14, scale: 2 }).notNull(),
   priorNegativeCarry: decimal('prior_negative_carry', { precision: 14, scale: 2 }).notNull(),
-  deactivationPaymentAmount: decimal('deactivation_payment_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+  deactivationAdjustmentAmount: decimal('deactivation_adjustment_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
   netSalary: decimal('net_salary', { precision: 14, scale: 2 }).notNull(),
   eligibleWorkdays: int('eligible_workdays').notNull(),
   fullMonthWorkdays: int('full_month_workdays').notNull(),
@@ -63,17 +63,71 @@ export const payrollMonths = mysqlTable('payroll_months', {
   check('payroll_months_counts_nonnegative', sql`${table.eligibleWorkdays} >= 0 and ${table.fullMonthWorkdays} >= 0 and ${table.requiredMinutes} >= 0 and ${table.overtimeMinutes} >= 0 and ${table.shortageMinutes} >= 0`),
 ]);
 
-export const employeeDeactivationPayments = mysqlTable('employee_deactivation_payments', {
+export const deactivationAdjustmentReasons = [
+  'cash_payment',
+  'write_off',
+  'forfeited_salary',
+] as const;
+
+/**
+ * Payroll-affecting corrections applied when an employee is deactivated mid-cycle. The amount is
+ * signed: `cash_payment` and `write_off` credit the employee's net salary, while
+ * `forfeited_salary` debits it, so the sum can be added to the net without branching on reason.
+ */
+export const employeeDeactivationAdjustments = mysqlTable('employee_deactivation_adjustments', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
+  reason: mysqlEnum('reason', deactivationAdjustmentReasons).notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('employee_deactivation_adjustments_employee_month_reason_unique')
+    .on(table.employeeId, table.payrollMonth, table.reason),
+  check('employee_deactivation_adjustments_amount_nonzero', sql`${table.amount} <> 0`),
+  check('employee_deactivation_adjustments_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
+]);
+
+/**
+ * Money an employee still owes after deactivation. Deliberately outside payroll: the debt is a
+ * receivable that outlives employment, and the month's negative net salary already records the
+ * shortfall, so adding it to the net would cancel the very balance being tracked.
+ */
+export const employeeOutstandingDebts = mysqlTable('employee_outstanding_debts', {
   id: int('id').autoincrement().primaryKey(),
   employeeId: int('employee_id').notNull().references(() => employees.id),
   payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+  settledAt: timestamp('settled_at', { mode: 'date', fsp: 3 }),
 }, (table) => [
-  uniqueIndex('employee_deactivation_payments_employee_month_unique')
+  uniqueIndex('employee_outstanding_debts_employee_month_unique')
     .on(table.employeeId, table.payrollMonth),
-  check('employee_deactivation_payments_amount_positive', sql`${table.amount} > 0`),
-  check('employee_deactivation_payments_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
+  check('employee_outstanding_debts_amount_positive', sql`${table.amount} > 0`),
+  check('employee_outstanding_debts_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
+]);
+
+export const pendingDeactivationAdvanceDecisions = [
+  'sum_all',
+  'zero_salary',
+  'ignore_debt',
+] as const;
+export const pendingDeactivationNegativeDecisions = ['collect_cash', 'record_debt'] as const;
+
+/**
+ * A deactivation requested while the employee was still checked in. The admin's decisions are
+ * captured up front and replayed when the session closes; the amounts are recomputed at that
+ * point, because the closing shift can still change the month's totals.
+ */
+export const employeePendingDeactivations = mysqlTable('employee_pending_deactivations', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  advanceDecision: mysqlEnum('advance_decision', pendingDeactivationAdvanceDecisions).notNull(),
+  negativeBalanceDecision: mysqlEnum('negative_balance_decision', pendingDeactivationNegativeDecisions),
+  requestedAt: timestamp('requested_at', { mode: 'date', fsp: 3 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('employee_pending_deactivations_employee_unique').on(table.employeeId),
 ]);
 
 export const bonuses = mysqlTable('bonuses', {

@@ -28,9 +28,21 @@ export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ mont
 export const employeeIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
 export const employeeImageParamsSchema = employeeIdParamsSchema.extend({ kind: z.enum(['personal', 'idFront', 'idBack']) });
 export const listEmployeesQuerySchema = z.object({ search: z.string().trim().min(1).max(255).optional(), branchId: coercedMysqlIntSchema.optional(), status: z.enum(['active', 'inactive', 'all']).optional(), page: paginationPageSchema.default(1), pageSize: paginationPageSizeSchema.default(20) });
+/**
+ * What to do with the advances an employee still owes when they are deactivated.
+ * - `sum_all` collapses the remaining installments onto the current month and deducts them,
+ *   which may leave a shortfall for {@link employeeNegativeBalanceDecisions} to resolve.
+ * - `zero_salary` settles the debt against the salary so neither side owes anything.
+ * - `ignore_debt` writes the debt off and pays the salary untouched.
+ */
+export const employeeAdvanceDecisions = ['sum_all', 'zero_salary', 'ignore_debt'] as const;
+/** How to resolve a shortfall that remains after `sum_all`. */
+export const employeeNegativeBalanceDecisions = ['collect_cash', 'record_debt'] as const;
+
 export const employeeDeactivationSchema = z.object({
-  advanceDecision: z.literal('accelerate'),
-  negativeBalanceDecision: z.enum(['keep_debt', 'paid']),
+  advanceDecision: z.enum(employeeAdvanceDecisions),
+  // Only `sum_all` can leave a shortfall; the other decisions settle the balance themselves.
+  negativeBalanceDecision: z.enum(employeeNegativeBalanceDecisions).optional(),
   expectedUnpaidInstallmentCount: z.number().int().nonnegative(),
   expectedUnpaidAdvanceAmount: z.string().regex(/^\d{1,12}\.\d{2}$/),
   expectedProjectedNetSalary: z.string().regex(/^-?\d{1,12}\.\d{2}$/),
@@ -40,3 +52,20 @@ export type CreateEmployeeFields = z.infer<typeof createEmployeeFieldsSchema>;
 export type UpdateEmployeeFields = z.infer<typeof updateEmployeeFieldsSchema>;
 export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;
 export type EmployeeDeactivationInput = z.infer<typeof employeeDeactivationSchema>;
+export type EmployeeAdvanceDecision = (typeof employeeAdvanceDecisions)[number];
+export type EmployeeNegativeBalanceDecision = (typeof employeeNegativeBalanceDecisions)[number];
+
+/**
+ * Drives which confirmation the admin is shown: the advance decision is only offered when
+ * installments are outstanding, and `canZeroSalary` gates the option that would otherwise
+ * forfeit money the employee is genuinely owed.
+ */
+export type EmployeeDeactivationPreview = {
+  unpaidInstallmentCount: number;
+  unpaidAdvanceAmount: string;
+  currentNetSalary: string;
+  projectedNetSalary: string;
+  amountOwed: string;
+  canZeroSalary: boolean;
+  hasOpenSession: boolean;
+};

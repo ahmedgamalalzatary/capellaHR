@@ -1,4 +1,7 @@
 import type { CreateAdvanceInput, ListAdvancesQuery, UpdateAdvanceInput } from '@capella/contracts';
+import type { deactivationAdjustmentReasons } from '@capella/database/schema';
+
+export type DeactivationAdjustmentReason = (typeof deactivationAdjustmentReasons)[number];
 
 type AdvanceInstallmentRecord = { id: number; ordinal: number; payrollMonth: string; amount: string };
 export type AdvanceRecord = {
@@ -32,7 +35,13 @@ export interface AdvanceRepository {
     unpaidAdvanceAmount: string;
     currentMonthAdvanceAmount: string;
   }>;
-  settleDeactivationPayment(employeeId: number, at: Date, amount: string, context: unknown): Promise<void>;
+  recordDeactivationAdjustment(
+    employeeId: number, at: Date, reason: DeactivationAdjustmentReason, amount: string,
+    context: unknown,
+  ): Promise<void>;
+  recordOutstandingDebt(
+    employeeId: number, at: Date, amount: string, context: unknown,
+  ): Promise<void>;
 }
 export type AdvanceErrorCode =
   | 'ADVANCE_NOT_FOUND' | 'ADVANCE_EMPLOYEE_NOT_FOUND' | 'ADVANCE_EMPLOYEE_DELETED'
@@ -60,8 +69,14 @@ export const createAdvanceService = (repository: AdvanceRepository) => ({
   deactivationImpact(employeeId: number, at: Date, context?: unknown) {
     return repository.deactivationImpact(employeeId, at, context);
   },
-  settleDeactivationPayment(employeeId: number, at: Date, amount: string, context: unknown) {
-    return repository.settleDeactivationPayment(employeeId, at, amount, context);
+  recordDeactivationAdjustment(
+    employeeId: number, at: Date, reason: DeactivationAdjustmentReason, amount: string,
+    context: unknown,
+  ) {
+    return repository.recordDeactivationAdjustment(employeeId, at, reason, amount, context);
+  },
+  recordOutstandingDebt(employeeId: number, at: Date, amount: string, context: unknown) {
+    return repository.recordOutstandingDebt(employeeId, at, amount, context);
   },
 });
 export type AdvanceService = ReturnType<typeof createAdvanceService>;

@@ -8,7 +8,7 @@ import {
   type AttendanceShiftChangeReconciler,
   type Database,
 } from './attendance-repository-support.js';
-import { createAttendanceSessionWriter } from './attendance-session-writer.js';
+import { createAttendanceSessionWriter, type AttendanceSessionClosedHook } from './attendance-session-writer.js';
 import { createAttendanceSessionsRepository } from './attendance-sessions-repository.js';
 import type { AttendanceRepository } from './attendance-service.js';
 import type { AttendanceJobRepository } from './attendance-jobs.js';
@@ -26,6 +26,7 @@ export const createDrizzleAttendanceRepository = (
     timeZone?: string;
     isFinanciallyLocked: AttendanceFinancialLockCheck;
     readRequiredDuration: AttendanceRequiredDurationReader;
+    afterSessionClosed?: AttendanceSessionClosedHook;
   },
 ): AttendanceRepository & AttendanceJobRepository & {
   reconcileDueAbsencesForEmployee: AttendanceShiftChangeReconciler;
@@ -36,7 +37,13 @@ export const createDrizzleAttendanceRepository = (
   new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date(0));
 
   const writer = createAttendanceSessionWriter({
-    now, timeZone, isFinanciallyLocked, readRequiredDuration,
+    now,
+    timeZone,
+    isFinanciallyLocked,
+    readRequiredDuration,
+    ...(options.afterSessionClosed === undefined
+      ? {}
+      : { afterSessionClosed: options.afterSessionClosed }),
   });
 
   return {

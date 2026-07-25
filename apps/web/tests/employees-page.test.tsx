@@ -303,30 +303,166 @@ describe('EmployeesView', () => {
     );
   });
 
-  test('loads all employment states, accelerates installments, and keeps the negative balance', async () => {
-    mocks.previewEmployeeDeactivation.mockResolvedValue({
-      unpaidInstallmentCount: 3,
-      unpaidAdvanceAmount: '1500.00',
-      projectedNetSalary: '-500.00',
-      amountOwed: '500.00',
-    });
+  const previewOf = (overrides: Record<string, unknown> = {}) => ({
+    unpaidInstallmentCount: 3,
+    unpaidAdvanceAmount: '3000.00',
+    currentNetSalary: '2000.00',
+    projectedNetSalary: '-1000.00',
+    amountOwed: '1000.00',
+    canZeroSalary: true,
+    hasOpenSession: false,
+    ...overrides,
+  });
+
+  const openDeactivation = async (preview = previewOf()) => {
+    mocks.previewEmployeeDeactivation.mockResolvedValue(preview);
     mocks.deactivateEmployee.mockResolvedValue({ ...employee, employmentStatus: 'inactive' });
-    const confirm = vi.spyOn(window, 'confirm')
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true);
     renderView();
-    const deactivate = await screen.findByRole('button', { name: 'تعطيل' });
+    fireEvent.click(await screen.findByRole('button', { name: 'تعطيل' }));
+    return screen.findByRole('dialog');
+  };
+
+  test('walks confirm, advance decision, and shortfall decision before deactivating', async () => {
+    await openDeactivation();
 
     expect(mocks.listEmployees).toHaveBeenCalledWith(expect.objectContaining({ status: 'all' }));
-    fireEvent.click(deactivate);
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+    fireEvent.click(await screen.findByRole('button', { name: /تجميع الأقساط/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /تسجيل المبلغ كمديونية/ }));
 
-    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(1, 'keep_debt', {
-      unpaidInstallmentCount: 3,
-      unpaidAdvanceAmount: '1500.00',
-      projectedNetSalary: '-500.00',
-      amountOwed: '500.00',
+    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
+      1, 'sum_all', 'record_debt', previewOf(),
+    ));
+  });
+
+  test('settles the shortfall in cash when the admin collected it', async () => {
+    await openDeactivation();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+    fireEvent.click(await screen.findByRole('button', { name: /تجميع الأقساط/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /استلام المبلغ نقدًا/ }));
+
+    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
+      1, 'sum_all', 'collect_cash', previewOf(),
+    ));
+  });
+
+  test.each([
+    [/تصفية الراتب مقابل المديونية/, 'zero_salary'],
+    [/إلغاء المديونية وصرف الراتب/, 'ignore_debt'],
+  ] as const)('terminates at the advance decision for %s', async (label, decision) => {
+    await openDeactivation();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+    fireEvent.click(await screen.findByRole('button', { name: label }));
+
+    // Both settle the balance themselves, so no shortfall decision is ever requested.
+    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
+      1, decision, undefined, previewOf(),
+    ));
+  });
+
+  test('hides the zero-salary option when the debt is smaller than the salary', async () => {
+    await openDeactivation(previewOf({
+      unpaidAdvanceAmount: '500.00', projectedNetSalary: '1500.00', amountOwed: '0.00',
+      canZeroSalary: false,
     }));
-    expect(confirm).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+
+    expect(await screen.findByRole('button', { name: /تجميع الأقساط/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /تصفية الراتب مقابل المديونية/ })).toBeNull();
+  });
+
+  test('skips the advance decision when the shortfall has no advances behind it', async () => {
+    await openDeactivation(previewOf({
+      unpaidInstallmentCount: 0, unpaidAdvanceAmount: '0.00',
+      currentNetSalary: '-200.00', projectedNetSalary: '-200.00', amountOwed: '200.00',
+      canZeroSalary: false,
+    }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+
+    // Nothing to accelerate, so the admin goes straight to resolving the shortfall.
+    expect(screen.queryByRole('button', { name: /تجميع الأقساط/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /تسجيل المبلغ كمديونية/ }));
+    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
+      1, 'sum_all', 'record_debt', expect.objectContaining({ amountOwed: '200.00' }),
+    ));
+  });
+
+  test('deactivates directly when nothing is owed either way', async () => {
+    await openDeactivation(previewOf({
+      unpaidInstallmentCount: 0, unpaidAdvanceAmount: '0.00',
+      currentNetSalary: '2000.00', projectedNetSalary: '2000.00', amountOwed: '0.00',
+      canZeroSalary: false,
+    }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+
+    await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
+      1, 'sum_all', undefined, expect.objectContaining({ amountOwed: '0.00' }),
+    ));
+  });
+
+  test('warns that a checked-in employee is deactivated only after check-out', async () => {
+    const dialog = await openDeactivation(previewOf({ hasOpenSession: true }));
+
+    expect(within(dialog).getByText(/مسجّل حضور حاليًا/)).toBeTruthy();
+  });
+
+  test('abandons the deactivation without calling the API', async () => {
+    await openDeactivation();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+    fireEvent.click(await screen.findByRole('button', { name: /تجميع الأقساط/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'إلغاء التعطيل' }));
+
+    expect(mocks.deactivateEmployee).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  test('surfaces a failed deactivation instead of silently re-enabling the button', async () => {
+    mocks.previewEmployeeDeactivation.mockResolvedValue({
+      unpaidInstallmentCount: 0,
+      unpaidAdvanceAmount: '0.00',
+      currentNetSalary: '1000.00',
+      projectedNetSalary: '1000.00',
+      amountOwed: '0.00',
+      canZeroSalary: false,
+      hasOpenSession: false,
+    });
+    mocks.deactivateEmployee.mockRejectedValue(
+      new ApiError(409, { code: 'EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED', message: 'تغيرت بيانات المعاينة. راجع القيم وأكد مرة أخرى' }),
+    );
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'تعطيل' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
+
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'تغيرت بيانات المعاينة. راجع القيم وأكد مرة أخرى',
+    );
+  });
+
+  test('surfaces a failed reactivation', async () => {
+    mocks.listEmployees.mockResolvedValue(pageOf([{ ...employee, employmentStatus: 'inactive' }]));
+    mocks.activateEmployee.mockRejectedValue(
+      new ApiError(409, { code: 'EMPLOYEE_ALREADY_ACTIVE', message: 'الموظف نشط بالفعل' }),
+    );
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'تفعيل' }));
+
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'الموظف نشط بالفعل');
+  });
+
+  test('marks inactive employees in the list', async () => {
+    mocks.listEmployees.mockResolvedValue(pageOf([{ ...employee, employmentStatus: 'inactive' }]));
+    renderView();
+
+    expect(await screen.findByText('غير نشط')).toBeTruthy();
   });
 
   test('reactivates an inactive employee without starting the deactivation flow', async () => {

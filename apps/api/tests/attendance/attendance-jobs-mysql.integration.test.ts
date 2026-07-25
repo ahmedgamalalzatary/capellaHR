@@ -5,6 +5,7 @@ import {
   attendanceSessions,
   auditEvents,
   authSessions,
+  employeeEmploymentPeriods,
   employees,
 } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
@@ -122,6 +123,35 @@ describe('MySQL-backed attendance jobs and absences', () => {
     expect((await database.select().from(auditEvents)
       .where(eq(auditEvents.entityType, 'attendance_job'))).map(({ action }) => action))
       .toEqual(expect.arrayContaining(['job_schedule', 'job_claim', 'job_complete']));
+  });
+
+  it('does not accrue an absence on the day an employee was deactivated', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    await database.insert(employees).values({
+      employeeCode: 45,
+      fullName: 'موظف تم تعطيله في اليوم',
+      personalPhone: '01000000045',
+      whatsappPhone: '01000000045',
+      pinHash: 'hash', credentialVersion: 1, age: 30, address: 'القاهرة', branchId,
+      shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
+      employmentStatus: 'inactive', deletedAt: null,
+      createdAt: new Date('2026-07-01T08:00:00.000Z'), updatedAt: fixedNow,
+    });
+    const deactivated = (await database.select({ id: employees.id }).from(employees)
+      .where(eq(employees.employeeCode, 45)))[0]!.id;
+    await database.insert(employeeEmploymentPeriods).values({
+      employeeId: deactivated,
+      activeFrom: new Date('2026-07-01T08:00:00.000Z'),
+      activeTo: new Date('2026-07-19T14:00:00.000Z'),
+      createdAt: new Date('2026-07-01T08:00:00.000Z'),
+    });
+
+    await repository().generateAbsences('2026-07-19');
+
+    // The still-employed fixture employee is absent; the deactivated one must not be, or the
+    // deduction would reopen a balance that deactivation already settled.
+    const records = await database.select().from(attendanceDailyRecords);
+    expect(records.map(({ employeeId: id }) => id)).toEqual([employeeId]);
   });
 
   it('includes activation and deactivation dates when generating absences and remains idempotent', async () => {

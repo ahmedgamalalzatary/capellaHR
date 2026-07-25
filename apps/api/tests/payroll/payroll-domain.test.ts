@@ -35,12 +35,23 @@ describe('payroll exact arithmetic', () => {
     })).toMatchObject({ proratedBase: '0.00', netSalary: '15.00' });
   });
 
-  it('applies a separately recorded deactivation payment to any negative source', () => {
+  it('applies a separately recorded deactivation adjustment to any negative source', () => {
     expect(calculatePayroll({
       baseSalary: '0.00', fullMonthWorkdays: 0, eligibleWorkdays: 0,
       requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0,
       bonuses: '0.00', deductions: '125.00', advances: '50.00',
-      priorNegativeCarry: '-25.00', deactivationPayment: '200.00',
+      priorNegativeCarry: '-25.00', deactivationAdjustment: '200.00',
+    }).netSalary).toBe('0.00');
+  });
+
+  it('subtracts a negative deactivation adjustment when the salary is forfeited', () => {
+    // `zero_salary` on an employee whose debt is smaller than the month's earnings lands here:
+    // the adjustment has to be able to pull the net down to exactly zero, not only up.
+    expect(calculatePayroll({
+      baseSalary: '0.00', fullMonthWorkdays: 0, eligibleWorkdays: 0,
+      requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0,
+      bonuses: '500.00', deductions: '0.00', advances: '0.00',
+      priorNegativeCarry: '0.00', deactivationAdjustment: '-500.00',
     }).netSalary).toBe('0.00');
   });
 

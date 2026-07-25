@@ -6,11 +6,12 @@ import { Pencil, Plus, Power, PowerOff, Search, Trash2, UserRound } from 'lucide
 import { useState } from 'react';
 import { useForm, type FieldError } from 'react-hook-form';
 
-import { Button, Card, CardContent, EmptyState, Field, Input } from '@capella/ui';
+import { Button, Card, CardContent, ConfirmDialog, EmptyState, Field, Input } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
+import { DeactivationDialog } from './deactivation-dialog';
 import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
 import {
@@ -21,8 +22,11 @@ import {
   listEmployees,
   previewEmployeeDeactivation,
   updateEmployee,
+  type AdvanceDecision,
   type Employee,
+  type EmployeeDeactivationPreview,
   type EmployeeImageKind,
+  type NegativeBalanceDecision,
 } from '../api/employees-api';
 import {
   employeeCreateFormSchema,
@@ -363,27 +367,46 @@ export function EmployeesView() {
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
     },
   });
-  const employmentState = useMutation({
-    mutationFn: async (employee: Employee) => {
-      if (employee.employmentStatus === 'inactive') return activateEmployee(employee.id);
-      const preview = await previewEmployeeDeactivation(employee.id);
-      if (preview.unpaidInstallmentCount > 0 && !window.confirm(
-        `لدى الموظف ${preview.unpaidInstallmentCount} أقساط غير مدفوعة بإجمالي ${preview.unpaidAdvanceAmount} جنيه. سيتم جمعها في الشهر الحالي. هل تريد المتابعة؟`,
-      )) return null;
-      let decision: 'keep_debt' | 'paid' = 'keep_debt';
-      if (Number(preview.amountOwed) > 0) {
-        if (window.confirm(
-          `سيصبح الموظف مدينًا للشركة بمبلغ ${preview.amountOwed} جنيه. اضغط موافق للتعطيل مع تسجيل الدين، أو إلغاء لاختيار السداد.`,
-        )) decision = 'keep_debt';
-        else if (window.confirm(`هل دفع الموظف مبلغ ${preview.amountOwed} جنيه لتصفير المديونية؟`)) decision = 'paid';
-        else return null;
-      }
-      return deactivateEmployee(employee.id, decision, preview);
-    },
-    onSuccess: async (result) => {
-      if (result) await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+  // Deactivation is a guided decision, so the preview is loaded first and the dialog drives the
+  // rest; reactivation has nothing to decide and applies straight away.
+  const [deactivating, setDeactivating] = useState<
+    { employee: Employee; preview: EmployeeDeactivationPreview } | null
+  >(null);
+
+  const reactivation = useMutation({
+    mutationFn: (employee: Employee) => activateEmployee(employee.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
     },
   });
+
+  const startDeactivation = useMutation({
+    mutationFn: async (employee: Employee) => ({
+      employee,
+      preview: await previewEmployeeDeactivation(employee.id),
+    }),
+    onSuccess: setDeactivating,
+  });
+
+  const deactivation = useMutation({
+    mutationFn: ({ employee, preview, advanceDecision, negativeBalanceDecision }: {
+      employee: Employee;
+      preview: EmployeeDeactivationPreview;
+      advanceDecision: AdvanceDecision;
+      negativeBalanceDecision: NegativeBalanceDecision | undefined;
+    }) => deactivateEmployee(employee.id, advanceDecision, negativeBalanceDecision, preview),
+    onSuccess: async () => {
+      setDeactivating(null);
+      await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+    },
+  });
+
+  const employmentStateError = reactivation.error
+    ?? startDeactivation.error
+    ?? deactivation.error;
+  const employmentStatePending = reactivation.isPending
+    || startDeactivation.isPending
+    || deactivation.isPending;
 
   const closeForm = () => {
     setCreating(false);
@@ -468,10 +491,37 @@ export function EmployeesView() {
         />
       ) : null}
 
-      {removal.error ? (
+      {removal.error || employmentStateError ? (
         <p role="alert" className="text-[13px] text-danger">
-          {serverErrorMessage(removal.error)}
+          {serverErrorMessage(removal.error ?? employmentStateError)}
         </p>
+      ) : null}
+
+      {confirmDeleteId !== null ? (
+        <ConfirmDialog
+          title="حذف الموظف"
+          description="سيتم إخفاء الموظف مع الاحتفاظ بسجلاته. لا يمكن التراجع عن الحذف."
+          confirmLabel="تأكيد الحذف"
+          tone="danger"
+          pending={removal.isPending}
+          onConfirm={() => removal.mutate(confirmDeleteId)}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      ) : null}
+
+      {deactivating ? (
+        <DeactivationDialog
+          key={deactivating.employee.id}
+          employee={deactivating.employee}
+          preview={deactivating.preview}
+          pending={deactivation.isPending}
+          onCancel={() => setDeactivating(null)}
+          onConfirm={(advanceDecision, negativeBalanceDecision) => deactivation.mutate({
+            ...deactivating,
+            advanceDecision,
+            negativeBalanceDecision,
+          })}
+        />
       ) : null}
 
       <Card>
@@ -520,6 +570,11 @@ export function EmployeesView() {
                       <span className="flex items-center gap-2">
                         <UserRound className="size-4 shrink-0 text-muted" aria-hidden />
                         {employee.fullName}
+                        {employee.employmentStatus === 'inactive' ? (
+                          <span className="rounded-full bg-danger/10 px-2 py-0.5 text-[11px] font-normal text-danger">
+                            غير نشط
+                          </span>
+                        ) : null}
                       </span>
                     </td>
                     <td className="hidden px-4 py-3 sm:table-cell">
@@ -539,8 +594,11 @@ export function EmployeesView() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={employmentState.isPending}
-                          onClick={() => employmentState.mutate(employee)}
+                          disabled={employmentStatePending}
+                          onClick={() => {
+                            if (employee.employmentStatus === 'inactive') reactivation.mutate(employee);
+                            else startDeactivation.mutate(employee);
+                          }}
                         >
                           {employee.employmentStatus === 'active'
                             ? <PowerOff className="size-4" aria-hidden />
@@ -559,21 +617,7 @@ export function EmployeesView() {
                           <Pencil className="size-4" aria-hidden />
                           تعديل
                         </Button>
-                        {confirmDeleteId === employee.id ? (
-                          <>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={removal.isPending}
-                              onClick={() => removal.mutate(employee.id)}
-                            >
-                              تأكيد الحذف
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
-                              إلغاء
-                            </Button>
-                          </>
-                        ) : (
+                        {confirmDeleteId === employee.id ? null : (
                           <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(employee.id)}>
                             <Trash2 className="size-4" aria-hidden />
                             حذف

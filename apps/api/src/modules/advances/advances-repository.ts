@@ -4,7 +4,8 @@ import {
   advances,
   branches,
   employeeBranchAssignments,
-  employeeDeactivationPayments,
+  employeeDeactivationAdjustments,
+  employeeOutstandingDebts,
   employees,
   payrollMonths,
 } from '@capella/database/schema';
@@ -104,10 +105,17 @@ const firstUnfinalizedMonth = async (
   }
   return month;
 };
-const amountFromCents = (value: bigint) => `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
+// Sign lives on the value as a whole, not on its parts: `-400.50` is -40050 cents, and the
+// fractional digits are always printed unsigned behind a single leading minus.
+const amountFromCents = (value: bigint) => {
+  const magnitude = value < 0n ? -value : value;
+  return `${value < 0n ? '-' : ''}${magnitude / 100n}.${String(magnitude % 100n).padStart(2, '0')}`;
+};
 const amountToCents = (value: string) => {
-  const [whole, fraction = ''] = value.split('.');
-  return BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'));
+  const negative = value.startsWith('-');
+  const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
+  const magnitude = BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'));
+  return negative ? -magnitude : magnitude;
 };
 
 export const createDrizzleAdvanceRepository = (
@@ -272,18 +280,35 @@ export const createDrizzleAdvanceRepository = (
         currentMonthAdvanceAmount: amountFromCents(current),
       };
     },
-    async settleDeactivationPayment(employeeId, at, amount, transactionContext) {
+    async recordDeactivationAdjustment(employeeId, at, reason, amount, transactionContext) {
       const transaction = transactionContext as Transaction;
       const month = payrollMonthStart(calendarMonthInTimeZone(at, timeZone));
-      if (amountToCents(amount) <= 0n) throw new Error('Deactivation payment must be positive');
-      await transaction.insert(employeeDeactivationPayments).values({
+      // Signed, but never zero: a no-op adjustment would only add noise to the ledger.
+      if (amountToCents(amount) === 0n) throw new Error('Deactivation adjustment must be non-zero');
+      await transaction.insert(employeeDeactivationAdjustments).values({
+        employeeId,
+        payrollMonth: month,
+        reason,
+        amount,
+        createdAt: at,
+      }).onDuplicateKeyUpdate({
+        set: {
+          amount: sql`${employeeDeactivationAdjustments.amount} + values(${employeeDeactivationAdjustments.amount})`,
+        },
+      });
+    },
+    async recordOutstandingDebt(employeeId, at, amount, transactionContext) {
+      const transaction = transactionContext as Transaction;
+      const month = payrollMonthStart(calendarMonthInTimeZone(at, timeZone));
+      if (amountToCents(amount) <= 0n) throw new Error('Outstanding debt must be positive');
+      await transaction.insert(employeeOutstandingDebts).values({
         employeeId,
         payrollMonth: month,
         amount,
         createdAt: at,
       }).onDuplicateKeyUpdate({
         set: {
-          amount: sql`${employeeDeactivationPayments.amount} + values(${employeeDeactivationPayments.amount})`,
+          amount: sql`${employeeOutstandingDebts.amount} + values(${employeeOutstandingDebts.amount})`,
         },
       });
     },

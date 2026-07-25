@@ -8,7 +8,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
-import { employmentDateIsActive } from '../employees/employment-period.js';
+import { employmentDateAccruesAbsence, employmentDateIsActive } from '../employees/employment-period.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import { endOfDate } from './attendance-calendar.js';
 import {
@@ -32,15 +32,31 @@ import {
 } from './attendance-service.js';
 
 export type AttendanceSessionWriter = ReturnType<typeof createAttendanceSessionWriter>;
+/** Runs inside the closing transaction, so anything it writes commits with the check-out. */
+export type AttendanceSessionClosedHook = (
+  employeeId: number,
+  at: Date,
+  context: Transaction,
+) => Promise<void>;
 
 export const createAttendanceSessionWriter = (options: {
   now: () => Date;
   timeZone: string;
   isFinanciallyLocked: AttendanceFinancialLockCheck;
   readRequiredDuration: AttendanceRequiredDurationReader;
+  afterSessionClosed?: AttendanceSessionClosedHook;
 }) => {
-  const { now, timeZone, isFinanciallyLocked, readRequiredDuration } = options;
-  const { insertEvent, closeSession } = createAttendanceSessionCloser({ now, isFinanciallyLocked });
+  const { now, timeZone, isFinanciallyLocked, readRequiredDuration, afterSessionClosed } = options;
+  const { insertEvent, closeSession: closeSessionOnly } = createAttendanceSessionCloser({ now, isFinanciallyLocked });
+  // Wrapped once here so every way a session can end — employee check-out, admin manual
+  // check-out, automatic timeout — runs whatever was deferred until the employee clocked out.
+  const closeSession: typeof closeSessionOnly = async (transaction, session, at, snapshot, ...rest) => {
+    const result = await closeSessionOnly(transaction, session, at, snapshot, ...rest);
+    if (result.kind === 'success' && afterSessionClosed) {
+      await afterSessionClosed(session.employeeId, at, transaction);
+    }
+    return result;
+  };
 
   const readEmploymentPeriods = async (
     transaction: Transaction,
@@ -320,7 +336,7 @@ export const createAttendanceSessionWriter = (options: {
     const employee = await lockEmployee(transaction, employeeId);
     if (!employee) return 0;
     const employmentPeriods = await readEmploymentPeriods(transaction, employee);
-    if (!employmentDateIsActive(attendanceDate, employmentPeriods, timeZone)) return 0;
+    if (!employmentDateAccruesAbsence(attendanceDate, employmentPeriods, timeZone)) return 0;
     const existingSession = (await transaction.select({ id: attendanceSessions.id })
       .from(attendanceSessions).where(and(
         eq(attendanceSessions.employeeId, employee.id),

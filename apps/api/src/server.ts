@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { createAuthModule } from './modules/auth/index.js';
 import { createBranchesModule } from './modules/branches/index.js';
-import { createDrizzleEmployeeRepository, createEmployeeUploadStore, createEmployeesModule, EmployeeError, projectDeactivationBalance } from './modules/employees/index.js';
+import { createDrizzleEmployeeRepository, createEmployeeFinancialLifecycle, createEmployeeUploadStore, createEmployeesModule } from './modules/employees/index.js';
 import { createDevicesModule } from './modules/devices/index.js';
 import { createShiftsModule } from './modules/shifts/index.js';
 import { createWeeklyDayOffModule } from './modules/weekly-day-off/index.js';
-import { calendarMonthInTimeZone, createPayrollModule, type PayrollAttendanceGateway } from './modules/payroll/index.js';
+import { createPayrollModule, type PayrollAttendanceGateway } from './modules/payroll/index.js';
 import { createBonusModule } from './modules/bonuses/index.js';
 import { createDeductionModule } from './modules/deductions/index.js';
 import { createAdvanceModule } from './modules/advances/index.js';
@@ -29,6 +29,11 @@ import { createApiLogger } from './shared/http/index.js';
 const database = createDatabase(env.DATABASE_URL);
 const logger = createApiLogger(env.LOG_LEVEL);
 let reconcileAbsencesBeforeShiftChange: AttendanceShiftChangeReconciler = () => Promise.resolve(0);
+// Assigned once the employee module exists; attendance is constructed first because the
+// employee financial lifecycle needs the attendance gateway to price the deactivation.
+let applyPendingDeactivation: (
+  employeeId: number, at: Date, context: unknown,
+) => Promise<void> = () => Promise.resolve();
 const employeeRepository = createDrizzleEmployeeRepository(
   database,
   () => new Date(),
@@ -71,6 +76,11 @@ const attendanceModule = createAttendanceModule(
     readRequiredDuration: (employeeId, context, includeDeleted) => (
       shiftModule.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
     ),
+    // A deactivation requested while the employee was checked in runs here, in the same
+    // transaction as the check-out that finally allows it.
+    afterSessionClosed: (employeeId, at, context) => (
+      applyPendingDeactivation(employeeId, at, context)
+    ),
     timeZone: env.APP_TIME_ZONE,
   },
 );
@@ -86,80 +96,37 @@ await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWOR
 const bonusModule = createBonusModule(database, { timeZone: env.APP_TIME_ZONE });
 const deductionModule = createDeductionModule(database, { timeZone: env.APP_TIME_ZONE });
 const advanceModule = createAdvanceModule(database, { timeZone: env.APP_TIME_ZONE });
-const employeeFinancialLifecycle = {
-  prepareEmployeeDeletion: advanceModule.lifecycle.prepareEmployeeDeletion,
-  async previewEmployeeDeactivation(employeeId: number) {
-    const at = new Date();
-    const month = calendarMonthInTimeZone(at, env.APP_TIME_ZONE);
-    const [impact, payroll] = await Promise.all([
-      advanceModule.service.deactivationImpact(employeeId, at),
-      payrollModule.service.preview(employeeId, month),
-    ]);
-    return {
-      unpaidInstallmentCount: impact.unpaidInstallmentCount,
-      unpaidAdvanceAmount: impact.unpaidAdvanceAmount,
-      ...projectDeactivationBalance(
-        payroll.netSalary,
-        impact.unpaidAdvanceAmount,
-        impact.currentMonthAdvanceAmount,
-      ),
-    };
+const employeeFinancialLifecycle = createEmployeeFinancialLifecycle({
+  timeZone: env.APP_TIME_ZONE,
+  now: () => new Date(),
+  attendance: attendanceModule.repository,
+  advances: {
+    prepareEmployeeDeletion: advanceModule.lifecycle.prepareEmployeeDeletion,
+    deactivationImpact: (employeeId, at, context) => (
+      advanceModule.service.deactivationImpact(employeeId, at, context)
+    ),
+    accelerateForDeletion: (employeeId, at, context) => (
+      advanceModule.service.accelerateForDeletion(employeeId, at, context)
+    ),
   },
-  async prepareEmployeeDeactivation(
-    employeeId: number,
-    at: Date,
-    input: import('@capella/contracts').EmployeeDeactivationInput,
-    context: unknown,
-  ) {
-    const month = calendarMonthInTimeZone(at, env.APP_TIME_ZONE);
-    if (await payrollModule.repository.isFinalized(employeeId, `${month}-01`, context)) {
-      throw new EmployeeError('EMPLOYEE_PAYROLL_FINALIZED', 'لا يمكن تعطيل الموظف بعد اعتماد راتب الشهر الحالي');
-    }
-    const impact = await advanceModule.service.deactivationImpact(employeeId, at, context);
-    if (
-      impact.unpaidInstallmentCount !== input.expectedUnpaidInstallmentCount
-      || impact.unpaidAdvanceAmount !== input.expectedUnpaidAdvanceAmount
-    ) {
-      throw new EmployeeError('EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED', 'تغيرت بيانات المعاينة. راجع القيم وأكد مرة أخرى');
-    }
-    await advanceModule.service.accelerateForDeletion(employeeId, at, context);
-    const result = await payrollModule.repository.previewInContext(
-      employeeId,
-      month,
-      attendanceModule.repository,
-      context,
-    );
-    if (result.kind !== 'success') {
-      throw new Error(`Deactivation payroll preview failed: ${result.kind}`);
-    }
-    const amountOwed = result.payroll.netSalary.startsWith('-')
-      ? result.payroll.netSalary.slice(1)
-      : '0.00';
-    if (
-      result.payroll.netSalary !== input.expectedProjectedNetSalary
-      || amountOwed !== input.expectedAmountOwed
-    ) {
-      throw new EmployeeError('EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED', 'تغيرت بيانات المعاينة. راجع القيم وأكد مرة أخرى');
-    }
-    if (input.negativeBalanceDecision === 'paid' && result.payroll.netSalary.startsWith('-')) {
-      await advanceModule.service.settleDeactivationPayment(
-        employeeId,
-        at,
-        result.payroll.netSalary.slice(1),
-        context,
-      );
-      const paidResult = await payrollModule.repository.previewInContext(
-        employeeId,
-        month,
-        attendanceModule.repository,
-        context,
-      );
-      if (paidResult.kind !== 'success' || paidResult.payroll.netSalary !== '0.00') {
-        throw new Error('Deactivation payment did not settle payroll to zero');
-      }
-    }
+  settlements: {
+    recordAdjustment: (employeeId, at, reason, amount, context) => (
+      advanceModule.service.recordDeactivationAdjustment(employeeId, at, reason, amount, context)
+    ),
+    recordOutstandingDebt: (employeeId, at, amount, context) => (
+      advanceModule.service.recordOutstandingDebt(employeeId, at, amount, context)
+    ),
   },
-};
+  payroll: {
+    preview: (employeeId, month) => payrollModule.service.preview(employeeId, month),
+    previewInContext: (employeeId, month, attendance, context) => (
+      payrollModule.repository.previewInContext(employeeId, month, attendance, context)
+    ),
+    isFinalized: (employeeId, attendanceDate, context) => (
+      payrollModule.repository.isFinalized(employeeId, attendanceDate, context)
+    ),
+  },
+});
 const reportsModule = createReportsModule(database, {
   ...(env.REPORT_FILES_ROOT === undefined ? {} : { filesRoot: env.REPORT_FILES_ROOT }),
   timeZone: env.APP_TIME_ZONE,
@@ -187,6 +154,9 @@ const employeeModule = createEmployeesModule(
   employeeFinancialLifecycle,
   employeeUploadStore,
 );
+applyPendingDeactivation = async (employeeId, at, context) => {
+  await employeeModule.service.applyPendingDeactivation(employeeId, at, context);
+};
 const weeklyDayOffModule = createWeeklyDayOffModule(database, {
   isFinanciallyLocked: (employeeId, attendanceDate, context) => (
     payrollModule.service.isFinanciallyLocked(employeeId, attendanceDate, context)

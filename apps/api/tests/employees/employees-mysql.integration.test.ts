@@ -12,6 +12,9 @@ const database = createDatabase(process.env.DATABASE_URL ?? '');
 const branchModule = createBranchesModule(database); const employeeModule = createEmployeesModule(database, 16_777_216, { hasOpenSession: async () => false, hasAnyOpenSession: async () => false });
 const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, originalName: `${name}.jpg`, mimeType: 'image/jpeg', sizeBytes: 10 });
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
+// This module is wired without a financial lifecycle, so the repository ignores the decision
+// fields and only the deactivation itself is under test.
+const deactivation = { advanceDecision: 'sum_all', negativeBalanceDecision: 'record_debt', expectedUnpaidInstallmentCount: 0, expectedUnpaidAdvanceAmount: '0.00', expectedProjectedNetSalary: '0.00', expectedAmountOwed: '0.00' } as const;
 
 beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
@@ -50,6 +53,30 @@ describe('MySQL-backed employees', () => {
     expect((await database.select().from(employeeEmploymentPeriods)
       .where(eq(employeeEmploymentPeriods.employeeId, created.id)))[0]?.activeTo).not.toBeNull();
     await expect(employeeModule.service.create({ ...employee(branch.id, '01112345678'), whatsappPhone: '01012345678' })).rejects.toMatchObject({ code: 'EMPLOYEE_PHONE_EXISTS' });
+  });
+  it('revokes sessions on deactivation so reactivation cannot resurrect them', async () => {
+    const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const created = await employeeModule.service.create(employee(branch.id, '01012345678'));
+    await database.insert(authSessions).values({ id: 'deactivate-session', tokenHash: 'd'.repeat(64), actorType: 'employee', employeeId: created.id, createdAt: new Date(), revokedAt: null });
+
+    await employeeModule.service.deactivate(created.id, deactivation);
+
+    expect((await database.select().from(authSessions).where(eq(authSessions.id, 'deactivate-session')))[0]!.revokedAt).not.toBeNull();
+    await employeeModule.service.activate(created.id);
+    // Reactivation must not restore access: the session stays revoked and the pre-deactivation
+    // credential version is stale, so tokens minted before deactivation cannot be replayed.
+    expect((await database.select().from(authSessions).where(eq(authSessions.id, 'deactivate-session')))[0]!.revokedAt).not.toBeNull();
+    await expect(createDrizzleAuthRepositories(database).sessions.createEmployeeIfCurrent(
+      { id: 'stale-after-reactivation', tokenHash: 'e'.repeat(64), actorType: 'employee', employeeId: created.id, revokedAt: null },
+      1,
+      () => Promise.resolve(true),
+      () => Promise.resolve(true),
+    )).resolves.toBe('credentials_changed');
+    const sessionEvents = await database.select().from(auditEvents)
+      .where(eq(auditEvents.module, 'auth')).orderBy(asc(auditEvents.id));
+    expect(sessionEvents.map(({ action, entityId, relatedIds }) => ({ action, entityId, relatedIds }))).toEqual([
+      { action: 'session_revoke', entityId: 'deactivate-session', relatedIds: { employeeId: String(created.id) } },
+    ]);
   });
   it('atomically revokes sessions on PIN reset and deletion', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

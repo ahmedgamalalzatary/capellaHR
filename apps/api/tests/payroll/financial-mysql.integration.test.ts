@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { employeeDeactivationPayments, employeeEmploymentPeriods } from '@capella/database/schema';
+import { employeeDeactivationAdjustments, employeeEmploymentPeriods, employeeOutstandingDebts, employeePendingDeactivations } from '@capella/database/schema';
 import {
   advanceInstallments,
   advances,
@@ -54,7 +54,9 @@ const clear = async () => {
   await database.delete(deductions);
   await database.delete(payrollMonths);
   await database.delete(employeeSalaryPeriods);
-  await database.delete(employeeDeactivationPayments);
+  await database.delete(employeeDeactivationAdjustments);
+  await database.delete(employeeOutstandingDebts);
+  await database.delete(employeePendingDeactivations);
   await database.delete(attendanceDailyRecords);
   await database.delete(deviceHistory);
   await database.delete(devices);
@@ -357,7 +359,9 @@ describe('MySQL-backed salary domain', () => {
     });
     await database.transaction(async (transaction) => {
       await advanceModule.service.accelerateForDeletion(employeeId, augustNow, transaction);
-      await advanceModule.service.settleDeactivationPayment(employeeId, augustNow, '500.00', transaction);
+      await advanceModule.service.recordDeactivationAdjustment(
+        employeeId, augustNow, 'cash_payment', '500.00', transaction,
+      );
     });
 
     await expect(advanceModule.service.get(created.id)).resolves.toMatchObject({
@@ -366,10 +370,44 @@ describe('MySQL-backed salary domain', () => {
         { payrollMonth: '2026-08', amount: '1500.00' },
       ],
     });
-    await expect(database.select({ amount: employeeDeactivationPayments.amount })
-      .from(employeeDeactivationPayments)
-      .where(eq(employeeDeactivationPayments.employeeId, employeeId)))
-      .resolves.toEqual([{ amount: '500.00' }]);
+    await expect(database.select({
+      reason: employeeDeactivationAdjustments.reason,
+      amount: employeeDeactivationAdjustments.amount,
+    })
+      .from(employeeDeactivationAdjustments)
+      .where(eq(employeeDeactivationAdjustments.employeeId, employeeId)))
+      .resolves.toEqual([{ reason: 'cash_payment', amount: '500.00' }]);
+  });
+
+  it('stores a forfeited salary as a negative adjustment and a debt outside payroll', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1);
+    const augustNow = new Date('2026-08-10T09:00:00.000Z');
+    const advanceModule = createAdvanceModule(database, { now: () => augustNow });
+
+    await database.transaction(async (transaction) => {
+      await advanceModule.service.recordDeactivationAdjustment(
+        employeeId, augustNow, 'forfeited_salary', '-400.00', transaction,
+      );
+      await advanceModule.service.recordOutstandingDebt(
+        employeeId, augustNow, '1000.00', transaction,
+      );
+    });
+
+    // Sub-unit negatives are where an unsigned parse silently flips the sign: `-0.50` must not
+    // read as +50 cents and slip past the positivity guard.
+    await expect(database.transaction((transaction) => advanceModule.service.recordOutstandingDebt(
+      employeeId, augustNow, '-0.50', transaction,
+    ))).rejects.toThrow('Outstanding debt must be positive');
+
+    await expect(database.select({ amount: employeeDeactivationAdjustments.amount })
+      .from(employeeDeactivationAdjustments)
+      .where(eq(employeeDeactivationAdjustments.employeeId, employeeId)))
+      .resolves.toEqual([{ amount: '-400.00' }]);
+    await expect(database.select({ amount: employeeOutstandingDebts.amount })
+      .from(employeeOutstandingDebts)
+      .where(eq(employeeOutstandingDebts.employeeId, employeeId)))
+      .resolves.toEqual([{ amount: '1000.00' }]);
   });
 
   it('uses the employee deletion instant for the final accelerated payroll month', async () => {

@@ -5,4 +5,6 @@ export { Label, type LabelProps } from './components/label';
 export { Badge, type BadgeProps } from './components/badge';
 export { Card, CardHeader, CardTitle, CardContent } from './components/card';
 export { EmptyState, type EmptyStateProps } from './components/empty-state';
+export { Modal, type ModalProps } from './components/modal';
+export { ConfirmDialog, type ConfirmDialogProps } from './components/confirm-dialog';
 export { Field, type FieldProps } from './components/field';
