@@ -188,7 +188,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
                 key={kind}
                 kind={kind}
                 label={label}
-                required
+                required={false}
                 error={errors[kind]?.message}
                 onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
               />

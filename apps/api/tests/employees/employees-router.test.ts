@@ -27,6 +27,29 @@ describe('employee router', () => {
     expect(response.body.error.code).toBe('INVALID_IMAGE');
   });
 
+  it('creates an employee without image uploads or an image store', async () => {
+    const create = vi.fn(async (input) => ({ id: 1, employeeCode: 1, ...input }));
+    const createService = { create } as unknown as EmployeeService;
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: createService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).post('/api/v1/employees').send({
+      fullName: 'موظف جديد',
+      personalPhone: '01012345678',
+      whatsappPhone: '01112345678',
+      pin: '1234',
+      age: 30,
+      address: 'القاهرة',
+      branchId: 1,
+      shiftDurationMinutes: 480,
+      monthlyBaseSalary: '5000.00',
+    });
+
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ images: {} }));
+  });
+
   it('maps the injected Multer size limit to IMAGE_TOO_LARGE', async () => {
     const response = await request(createApp({
       authService: auth,

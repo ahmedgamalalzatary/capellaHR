@@ -166,7 +166,7 @@ describe('EmployeesView', () => {
     expect(payload['idBack']).toBeInstanceOf(File);
   });
 
-  test('clearing a selected image removes it so a stale file cannot be uploaded', async () => {
+  test('clearing an optional selected image removes it so a stale file is not uploaded', async () => {
     mocks.createEmployee.mockResolvedValue({ ...employee, id: 2 });
     renderView();
     await screen.findByText('أحمد جمال');
@@ -188,14 +188,11 @@ describe('EmployeesView', () => {
     fireEvent.change(screen.getByLabelText(/الصورة الشخصية/), { target: { files: [] } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
 
-    expect(await screen.findByText('هذا الحقل مطلوب')).toBeDefined();
-    expect(mocks.createEmployee).not.toHaveBeenCalled();
-
-    setFile(/الصورة الشخصية/, image('personal-2.jpg'));
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
     await waitFor(() => expect(mocks.createEmployee).toHaveBeenCalledTimes(1));
-    const payload = mocks.createEmployee.mock.calls[0]?.[0] as Record<string, File>;
-    expect(payload['personal']?.name).toBe('personal-2.jpg');
+    const payload = mocks.createEmployee.mock.calls[0]?.[0] as Record<string, File | undefined>;
+    expect(payload['personal']).toBeUndefined();
+    expect(payload['idFront']?.name).toBe('front.jpg');
+    expect(payload['idBack']?.name).toBe('back.jpg');
   });
 
   test('blocks adding an employee until branches load, with a retry path', async () => {

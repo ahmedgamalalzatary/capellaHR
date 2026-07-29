@@ -2,7 +2,7 @@ import type { CreateEmployeeFields, EmployeeDeactivationInput, ListEmployeesQuer
 import { hash } from 'argon2';
 export type ImageKind = 'personal' | 'idFront' | 'idBack';
 export type ImageMetadata = { storagePath: string; originalName: string; mimeType: string; sizeBytes: number };
-export type EmployeeImages = Record<ImageKind, ImageMetadata>;
+export type EmployeeImages = Partial<Record<ImageKind, ImageMetadata>>;
 export type EmployeeRecord = Omit<CreateEmployeeFields, 'pin'> & { id: number; employeeCode: number; pinHash: string; credentialVersion: number; employmentStatus: 'active' | 'inactive'; images: EmployeeImages; deletedAt: Date | null; createdAt: Date; updatedAt: Date };
 export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion'>;
 export type EmployeeTransactionContext = unknown;

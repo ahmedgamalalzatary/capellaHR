@@ -82,7 +82,9 @@ export const createDrizzleEmployeeRepository = (
       const result = await tx.insert(employees).values({ ...fields, employeeCode: code, createdAt, updatedAt: createdAt });
       const id = Number(result[0].insertId);
       await tx.insert(employeePhoneReservations).values([...new Set([fields.personalPhone, fields.whatsappPhone])].map((phone) => ({ phone, employeeId: id })));
-      await tx.insert(employeeImages).values((Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]).map(([kind, image]) => ({ employeeId: id, kind, ...image, createdAt, updatedAt: createdAt })));
+      const imageValues = (Object.entries(images) as [ImageKind, NonNullable<EmployeeImages[ImageKind]>][])
+        .map(([kind, image]) => ({ employeeId: id, kind, ...image, createdAt, updatedAt: createdAt }));
+      if (imageValues.length > 0) await tx.insert(employeeImages).values(imageValues);
       await tx.insert(employeeBranchAssignments).values({ employeeId: id, branchId: fields.branchId, effectiveFrom: createdAt, createdAt });
       await tx.insert(employeeEmploymentPeriods).values({ employeeId: id, activeFrom: createdAt, createdAt });
       await tx.update(branches).set({ hasEverBeenReferenced: true, updatedAt: createdAt }).where(eq(branches.id, fields.branchId));

@@ -83,9 +83,17 @@ describe('employeeCreateFormSchema', () => {
     ).toBe(false);
   });
 
-  test('requires all three images and rejects non-image files', () => {
-    const { personal: _personal, ...missing } = validCreate;
-    expect(employeeCreateFormSchema.safeParse(missing).success).toBe(false);
+  test('allows all three images to be omitted and rejects provided non-image files', () => {
+    const {
+      personal: _personal,
+      idFront: _idFront,
+      idBack: _idBack,
+      ...withoutImages
+    } = validCreate;
+    const parsed = employeeCreateFormSchema.parse(withoutImages);
+    expect(parsed.personal).toBeUndefined();
+    expect(parsed.idFront).toBeUndefined();
+    expect(parsed.idBack).toBeUndefined();
     expect(
       employeeCreateFormSchema.safeParse({
         ...validCreate,

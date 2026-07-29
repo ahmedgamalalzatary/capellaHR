@@ -57,16 +57,16 @@ const editableFields = {
 
 /**
  * Client-side mirror of the contracts' create/update employee schemas, with
- * Arabic messages, coercion for text inputs, and the three required images.
+ * Arabic messages, coercion for text inputs, and three optional images.
  */
 export const employeeCreateFormSchema = z.object({
   ...editableFields,
   pin,
   branchId: requiredNumber('اختر الفرع').pipe(z.number().int('اختر الفرع').positive('اختر الفرع')),
   monthlyBaseSalary: salary,
-  personal: imageFile,
-  idFront: imageFile,
-  idBack: imageFile,
+  personal: imageFile.optional(),
+  idFront: imageFile.optional(),
+  idBack: imageFile.optional(),
 });
 
 /** Salary remains immutable; branch is required and pin/images are optional. */
