@@ -13,6 +13,11 @@ import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { formatDuration } from '@/lib/utils/format';
 import { useDisplayFormatters } from '@/providers/runtime-config';
+import {
+  isProtectedAreaUnlocked,
+  ProtectedAreaUnlockDialog,
+  type ProtectedArea,
+} from '@/features/protected-area';
 
 import { listBranches } from '../../branches/api/branches-api';
 import { listEmployees } from '../../employees/api/employees-api';
@@ -292,9 +297,33 @@ function AbsenceSection() {
 
 export function AdminAttendanceView() {
   const [section, setSection] = useState<Section>('sessions');
+  const [pendingSection, setPendingSection] = useState<'manual' | 'absence' | null>(null);
+  const selectSection = (next: Section) => {
+    if (next === 'manual' || next === 'absence') {
+      const area: ProtectedArea = next === 'manual'
+        ? 'attendance-manual'
+        : 'attendance-absence';
+      if (!isProtectedAreaUnlocked(area)) {
+        setPendingSection(next);
+        return;
+      }
+    }
+    setSection(next);
+  };
   return <div className="space-y-5">
     <header className="relative overflow-hidden rounded-card bg-ink px-5 py-6 text-paper sm:px-7"><div className="absolute inset-y-0 start-0 w-1 bg-success" aria-hidden /><p className="text-[12px] font-medium tracking-[0.18em] text-paper/55">سجل العمليات اليومية</p><h1 className="mt-2 text-2xl font-bold sm:text-3xl">الحضور والغياب</h1><p className="mt-2 max-w-2xl text-sm leading-7 text-paper/70">راجع الجلسات والمحاولات المرفوضة، وسجّل الاستثناءات الإدارية وصحّح الخروج التلقائي من مكان واحد.</p></header>
-    <nav className="overflow-x-auto" aria-label="أقسام الحضور"><div className="flex min-w-max gap-2" role="tablist">{sections.map((item, index) => <Button key={item.id} id={tabId(item.id)} role="tab" aria-selected={section === item.id} aria-controls={panelId(item.id)} tabIndex={section === item.id ? 0 : -1} variant={section === item.id ? 'primary' : 'secondary'} size="sm" onKeyDown={(event) => handleRtlTabKey(event, index, sectionIds, setSection)} onClick={() => setSection(item.id)}>{item.id === 'sessions' ? <CalendarDays className="size-4" aria-hidden /> : item.id === 'denied' ? <ShieldAlert className="size-4" aria-hidden /> : item.id === 'manual' ? <UserCheck className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}{item.label}</Button>)}</div></nav>
+    <nav className="overflow-x-auto" aria-label="أقسام الحضور"><div className="flex min-w-max gap-2" role="tablist">{sections.map((item, index) => <Button key={item.id} id={tabId(item.id)} role="tab" aria-selected={section === item.id} aria-controls={panelId(item.id)} tabIndex={section === item.id ? 0 : -1} variant={section === item.id ? 'primary' : 'secondary'} size="sm" onKeyDown={(event) => handleRtlTabKey(event, index, sectionIds, selectSection)} onClick={() => selectSection(item.id)}>{item.id === 'sessions' ? <CalendarDays className="size-4" aria-hidden /> : item.id === 'denied' ? <ShieldAlert className="size-4" aria-hidden /> : item.id === 'manual' ? <UserCheck className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}{item.label}</Button>)}</div></nav>
     <section id={panelId(section)} role="tabpanel" aria-labelledby={tabId(section)}>{section === 'sessions' ? <SessionSection /> : section === 'denied' ? <DeniedSection /> : section === 'manual' ? <ManualSection /> : <AbsenceSection />}</section>
+    {pendingSection ? (
+      <ProtectedAreaUnlockDialog
+        area={pendingSection === 'manual' ? 'attendance-manual' : 'attendance-absence'}
+        title={pendingSection === 'manual' ? 'فتح تسجيل يدوي' : 'فتح الغياب وأيام الراحة'}
+        onClose={() => setPendingSection(null)}
+        onUnlocked={() => {
+          setSection(pendingSection);
+          setPendingSection(null);
+        }}
+      />
+    ) : null}
   </div>;
 }

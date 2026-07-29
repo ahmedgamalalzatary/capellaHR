@@ -156,7 +156,11 @@ function renderPage() {
   };
 }
 
-beforeEach(installFetch);
+beforeEach(() => {
+  sessionStorage.setItem('capella:protected-area:attendance-manual', 'unlocked');
+  sessionStorage.setItem('capella:protected-area:attendance-absence', 'unlocked');
+  installFetch();
+});
 
 afterEach(() => {
   cleanup();
@@ -165,6 +169,31 @@ afterEach(() => {
 });
 
 describe('AttendancePage', () => {
+  it('requires separate access before opening each protected attendance tab', async () => {
+    sessionStorage.clear();
+    renderPage();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'تسجيل يدوي' }));
+    expect(await screen.findByRole('dialog', { name: 'فتح تسجيل يدوي' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'سجل الحضور' }).getAttribute('aria-selected')).toBe('true');
+
+    vi.mocked(fetch).mockImplementation((input) => (
+      String(input) === '/api/protected-area-access'
+        ? response({ unlocked: true })
+        : response({ data: null })
+    ));
+    fireEvent.change(screen.getByLabelText('كلمة مرور الوصول'), {
+      target: { value: 'Cap2255' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'فتح القسم' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: 'تسجيل يدوي' }).getAttribute('aria-selected')).toBe('true');
+    });
+    expect(sessionStorage.getItem('capella:protected-area:attendance-manual')).toBe('unlocked');
+    expect(sessionStorage.getItem('capella:protected-area:attendance-absence')).toBeNull();
+  });
+
   it('renders an accessible attendance operations ledger with real session data', async () => {
     renderPage();
 

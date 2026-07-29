@@ -134,6 +134,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      PROTECTED_TAB_PASSWORD: ${PROTECTED_TAB_PASSWORD:?PROTECTED_TAB_PASSWORD is required}
     depends_on:
       api:
         condition: service_healthy
