@@ -178,7 +178,7 @@ describe('AttendancePage', () => {
     expect(screen.getByRole('tab', { name: 'سجل الحضور' }).getAttribute('aria-selected')).toBe('true');
 
     vi.mocked(fetch).mockImplementation((input) => (
-      String(input) === '/api/protected-area-access'
+      String(input) === '/protected-area-access'
         ? response({ unlocked: true })
         : response({ data: null })
     ));

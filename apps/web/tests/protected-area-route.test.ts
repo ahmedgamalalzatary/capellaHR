@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { POST } from '../src/app/api/protected-area-access/route';
+import { POST } from '../src/app/protected-area-access/route';
 
 const originalPassword = process.env['PROTECTED_TAB_PASSWORD'];
 
@@ -12,11 +12,11 @@ afterEach(() => {
   }
 });
 
-describe('POST /api/protected-area-access', () => {
+describe('POST /protected-area-access', () => {
   it('accepts the configured password', async () => {
     process.env['PROTECTED_TAB_PASSWORD'] = 'Cap2255';
 
-    const response = await POST(new Request('http://localhost/api/protected-area-access', {
+    const response = await POST(new Request('http://localhost/protected-area-access', {
       method: 'POST',
       body: JSON.stringify({ password: 'Cap2255' }),
     }));
@@ -28,7 +28,7 @@ describe('POST /api/protected-area-access', () => {
   it('rejects a wrong password', async () => {
     process.env['PROTECTED_TAB_PASSWORD'] = 'Cap2255';
 
-    const response = await POST(new Request('http://localhost/api/protected-area-access', {
+    const response = await POST(new Request('http://localhost/protected-area-access', {
       method: 'POST',
       body: JSON.stringify({ password: 'wrong' }),
     }));
@@ -40,7 +40,7 @@ describe('POST /api/protected-area-access', () => {
   it('fails closed when no password is configured', async () => {
     delete process.env['PROTECTED_TAB_PASSWORD'];
 
-    const response = await POST(new Request('http://localhost/api/protected-area-access', {
+    const response = await POST(new Request('http://localhost/protected-area-access', {
       method: 'POST',
       body: JSON.stringify({ password: 'anything' }),
     }));

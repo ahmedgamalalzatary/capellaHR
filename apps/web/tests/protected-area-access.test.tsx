@@ -36,6 +36,7 @@ describe('ProtectedAreaGate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'فتح القسم' }));
 
     expect(await screen.findByText('employee content')).toBeDefined();
+    expect(fetch).toHaveBeenCalledWith('/protected-area-access', expect.anything());
     expect(sessionStorage.getItem('capella:protected-area:employees')).toBe('unlocked');
     expect(sessionStorage.getItem('capella:protected-area:reports')).toBeNull();
 
