@@ -188,6 +188,7 @@ export const createDrizzleEmployeeRepository = (
         .where(and(eq(employeeEmploymentPeriods.employeeId, id), isNull(employeeEmploymentPeriods.activeTo)));
       const result = await tx.update(employees).set({ deletedAt: at, credentialVersion: sql`${employees.credentialVersion} + 1`, updatedAt: at }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
       if (result[0].affectedRows !== 1) return 'not_found';
+      await tx.delete(employeePhoneReservations).where(eq(employeePhoneReservations.employeeId, id));
       const sessions = revokeSessions
         ? await tx.select({ id: authSessions.id }).from(authSessions)
           .where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt))).for('update')

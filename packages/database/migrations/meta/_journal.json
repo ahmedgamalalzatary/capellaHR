@@ -253,6 +253,13 @@
       "when": 1784968101806,
       "tag": "0035_drop_legacy_deactivation_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1785313962365,
+      "tag": "0036_release_deleted_employee_phones",
+      "breakpoints": true
     }
   ]
 }

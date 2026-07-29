@@ -46,13 +46,19 @@ describe('MySQL-backed employees', () => {
     expect((await employeeModule.service.list({ search: '%', page: 1, pageSize: 20 })).total).toBe(0);
     await expect(branchModule.service.remove(branch.id)).rejects.toMatchObject({ code: 'BRANCH_REFERENCED' });
   });
-  it('reserves deleted employee phones and hides the employee', async () => {
+  it('releases deleted employee phones while preserving the employee history', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const created = await employeeModule.service.create(employee(branch.id, '01012345678')); await employeeModule.service.remove(created.id);
     expect((await employeeModule.service.list({ page: 1, pageSize: 20 })).total).toBe(0);
+    expect((await database.select().from(employees).where(eq(employees.id, created.id)))[0]?.deletedAt).not.toBeNull();
     expect((await database.select().from(employeeEmploymentPeriods)
       .where(eq(employeeEmploymentPeriods.employeeId, created.id)))[0]?.activeTo).not.toBeNull();
-    await expect(employeeModule.service.create({ ...employee(branch.id, '01112345678'), whatsappPhone: '01012345678' })).rejects.toMatchObject({ code: 'EMPLOYEE_PHONE_EXISTS' });
+    expect(await database.select().from(employeePhoneReservations)
+      .where(eq(employeePhoneReservations.employeeId, created.id))).toHaveLength(0);
+    await expect(employeeModule.service.create({
+      ...employee(branch.id, '01112345678'),
+      whatsappPhone: '01012345678',
+    })).resolves.toMatchObject({ personalPhone: '01112345678', whatsappPhone: '01012345678' });
   });
   it('revokes sessions on deactivation so reactivation cannot resurrect them', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -62,6 +68,10 @@ describe('MySQL-backed employees', () => {
     await employeeModule.service.deactivate(created.id, deactivation);
 
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'deactivate-session')))[0]!.revokedAt).not.toBeNull();
+    await expect(employeeModule.service.create({
+      ...employee(branch.id, '01112345678'),
+      whatsappPhone: '01012345678',
+    })).rejects.toMatchObject({ code: 'EMPLOYEE_PHONE_EXISTS' });
     await employeeModule.service.activate(created.id);
     // Reactivation must not restore access: the session stays revoked and the pre-deactivation
     // credential version is stale, so tokens minted before deactivation cannot be replayed.
