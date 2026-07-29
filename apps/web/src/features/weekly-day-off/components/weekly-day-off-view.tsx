@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarOff, RotateCcw, UserRound } from 'lucide-react';
+import { CalendarOff, RotateCcw, ShieldAlert, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Card, EmptyState, Input } from '@capella/ui';
@@ -15,8 +15,10 @@ import { branchQueryKeys } from '../../branches/query-keys';
 import { listEmployees } from '../../employees/api/employees-api';
 import { employeeQueryKeys } from '../../employees/query-keys';
 import {
+  clearWeeklyDayRecordWithoutPermission,
   convertWeeklyDayRecord,
   listWeeklyDayRecords,
+  markWeeklyDayRecordWithoutPermission,
   revertWeeklyDayRecord,
   type WeeklyDayRecord,
 } from '../api/weekly-day-off-api';
@@ -77,6 +79,16 @@ export function WeeklyDayOffView() {
         : revertWeeklyDayRecord(record.id),
     onSuccess: async () => {
       setPage(1);
+      await queryClient.invalidateQueries({ queryKey: weeklyDayOffQueryKeys.all });
+    },
+  });
+
+  const permission = useMutation({
+    mutationFn: ({ record }: { record: WeeklyDayRecord }) =>
+      record.withoutPermissionAt === null
+        ? markWeeklyDayRecordWithoutPermission(record.id)
+        : clearWeeklyDayRecordWithoutPermission(record.id),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: weeklyDayOffQueryKeys.all });
     },
   });
@@ -184,9 +196,9 @@ export function WeeklyDayOffView() {
         </label>
       </div>
 
-      {transition.error ? (
+      {transition.error || permission.error ? (
         <p role="alert" className="text-[13px] text-danger">
-          {serverErrorMessage(transition.error)}
+          {serverErrorMessage(transition.error ?? permission.error)}
         </p>
       ) : null}
 
@@ -254,31 +266,60 @@ export function WeeklyDayOffView() {
                       >
                         {STATUS_LABELS[record.status]}
                       </span>
+                      {record.withoutPermissionAt ? (
+                        <span className="ms-1 rounded-full bg-danger/10 px-2 py-0.5 text-[12px] text-danger">
+                          بدون إذن
+                        </span>
+                      ) : null}
                     </td>
                     <td className="hidden px-4 py-3 md:table-cell">
                       <span className="tabular">
-                        {formatDuration(record.absenceRequiredMinutes)}
+                        {formatDuration(
+                          record.absenceRequiredMinutes * (record.withoutPermissionAt ? 2 : 1),
+                        )}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={transition.isPending}
-                        onClick={() => transition.mutate({ record })}
-                      >
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <div className="flex flex-col items-start gap-1 md:flex-row md:flex-wrap md:items-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={transition.isPending}
+                          onClick={() => transition.mutate({ record })}
+                        >
+                          {record.status === 'absence' ? (
+                            <>
+                              <CalendarOff className="size-4" aria-hidden />
+                              تعيين يوم راحة
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="size-4" aria-hidden />
+                              إعادة إلى غياب
+                            </>
+                          )}
+                        </Button>
                         {record.status === 'absence' ? (
-                          <>
-                            <CalendarOff className="size-4" aria-hidden />
-                            تعيين يوم راحة
-                          </>
-                        ) : (
-                          <>
-                            <RotateCcw className="size-4" aria-hidden />
-                            إعادة إلى غياب
-                          </>
-                        )}
-                      </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={permission.isPending}
+                            onClick={() => permission.mutate({ record })}
+                          >
+                            {record.withoutPermissionAt ? (
+                              <>
+                                <RotateCcw className="size-4" aria-hidden />
+                                إلغاء تعليم الغياب بدون إذن
+                              </>
+                            ) : (
+                              <>
+                                <ShieldAlert className="size-4" aria-hidden />
+                                تعليم كغياب بدون إذن
+                              </>
+                            )}
+                          </Button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

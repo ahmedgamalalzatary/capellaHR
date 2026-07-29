@@ -365,62 +365,25 @@ describe('AttendancePage', () => {
     expect((screen.getByLabelText('حالة الغياب') as HTMLSelectElement).value).toBe('');
   });
 
-  it('flags a marked absence inside the general absence register too', async () => {
+  it('has no without-permission tab; that action lives on the weekly day off page', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: 'غياب بدون إذن' }));
-    const row = (await screen.findByText('منى علي')).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'تعليم كغياب بدون إذن' }));
-    await screen.findByRole('button', { name: 'إلغاء تعليم الغياب بدون إذن' });
+    expect(screen.queryByRole('tab', { name: 'غياب بدون إذن' })).toBeNull();
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+  });
 
+  it('still flags a marked absence inside the general absence register', async () => {
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.includes('/weekly-day-offs')) {
+        return response(page([{ ...absence, withoutPermissionAt: '2026-07-21T08:00:00.000Z' }]));
+      }
+      return normalFetch(input, init);
+    });
+    renderPage();
     fireEvent.click(screen.getByRole('tab', { name: 'الغياب وأيام الراحة' }));
-    const registerRow = (await screen.findByText('منى علي')).closest('tr')!;
-    expect(within(registerRow).getByText('بدون إذن')).toBeDefined();
-  });
-
-  it('marks an absence as without permission and shows its doubled cost', async () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: 'غياب بدون إذن' }));
     const row = (await screen.findByText('منى علي')).closest('tr')!;
-
-    expect(within(row).getByText('بإذن')).toBeDefined();
-    fireEvent.click(within(row).getByRole('button', { name: 'تعليم كغياب بدون إذن' }));
-    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      expect.stringContaining('/weekly-day-offs/31/mark-without-permission'),
-      expect.objectContaining({ method: 'POST' }),
-    ));
-    const marked = (await screen.findByText('منى علي')).closest('tr')!;
-    expect(within(marked).getByText('بدون إذن')).toBeDefined();
-    expect(within(marked).getByText('×2')).toBeDefined();
-  });
-
-  it('clears the without-permission mark again', async () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: 'غياب بدون إذن' }));
-    const row = (await screen.findByText('منى علي')).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'تعليم كغياب بدون إذن' }));
-
-    const marked = await screen.findByRole('button', { name: 'إلغاء تعليم الغياب بدون إذن' });
-    fireEvent.click(marked);
-    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      expect.stringContaining('/weekly-day-offs/31/clear-without-permission'),
-      expect.objectContaining({ method: 'POST' }),
-    ));
-  });
-
-  it('requests only absences and filters them by permission state', async () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: 'غياب بدون إذن' }));
-    await screen.findByText('منى علي');
-    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      expect.stringContaining('status=absence'),
-      expect.anything(),
-    ));
-
-    fireEvent.change(screen.getByLabelText('حالة الإذن'), { target: { value: 'true' } });
-    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      expect.stringContaining('withoutPermission=true'),
-      expect.anything(),
-    ));
+    expect(within(row).getByText('بدون إذن')).toBeDefined();
   });
 
   it('shows a retry state when loading fails instead of hiding the error', async () => {

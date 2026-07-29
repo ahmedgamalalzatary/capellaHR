@@ -13,7 +13,7 @@ export type EmployeeBeforeDurationChange = (
 
 const hydrate = async (db: Database | Parameters<Parameters<Database['transaction']>[0]>[0], employee: typeof employees.$inferSelect): Promise<EmployeeRecord> => {
   const files = await db.select().from(employeeImages).where(eq(employeeImages.employeeId, employee.id));
-  return { ...employee, images: Object.fromEntries(files.map((file) => [file.kind, { storagePath: file.storagePath, originalName: file.originalName, mimeType: file.mimeType, sizeBytes: file.sizeBytes }])) as EmployeeImages };
+  return { ...employee, images: Object.fromEntries(files.map((file) => [file.kind, { storagePath: file.storagePath, originalName: file.originalName, mimeType: file.mimeType, sizeBytes: file.sizeBytes }])) };
 };
 /**
  * The irreversible half of a deactivation, shared by the immediate path and the replay that runs

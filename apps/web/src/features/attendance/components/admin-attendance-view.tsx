@@ -17,9 +17,7 @@ import { useDisplayFormatters } from '@/providers/runtime-config';
 import { listBranches } from '../../branches/api/branches-api';
 import { listEmployees } from '../../employees/api/employees-api';
 import {
-  clearWeeklyDayRecordWithoutPermission,
   listWeeklyDayRecords,
-  markWeeklyDayRecordWithoutPermission,
   type ListWeeklyDayRecordsParams,
 } from '../../weekly-day-off/api/weekly-day-off-api';
 import {
@@ -41,13 +39,12 @@ import { invalidateAttendanceDependents } from '../lib/invalidate-attendance';
 import { handleRtlTabKey } from '../lib/tab-keyboard';
 import { attendanceQueryKeys } from '../query-keys';
 
-type Section = 'sessions' | 'denied' | 'manual' | 'absence' | 'without-permission';
+type Section = 'sessions' | 'denied' | 'manual' | 'absence';
 const sections: Array<{ id: Section; label: string }> = [
   { id: 'sessions', label: 'سجل الحضور' },
   { id: 'denied', label: 'المحاولات المرفوضة' },
   { id: 'manual', label: 'تسجيل يدوي' },
   { id: 'absence', label: 'الغياب وأيام الراحة' },
-  { id: 'without-permission', label: 'غياب بدون إذن' },
 ];
 const sectionIds = sections.map((section) => section.id);
 const attendanceEventTypes = ['check_in', 'check_out'] as const;
@@ -293,60 +290,11 @@ function AbsenceSection() {
   </div>;
 }
 
-function WithoutPermissionSection() {
-  type PermissionFilters = {
-    search?: string | undefined;
-    branchId?: number | undefined;
-    withoutPermission?: boolean | undefined;
-    dateFrom?: string | undefined;
-    dateTo?: string | undefined;
-    page?: number | undefined;
-  };
-  const queryClient = useQueryClient();
-  const [searchInput, setSearchInput] = useState('');
-  const [filters, setFilters] = useState<PermissionFilters>({ page: 1 });
-  const query = useQuery({
-    queryKey: ['weekly-day-off', 'without-permission', filters],
-    queryFn: () => listWeeklyDayRecords({
-      ...(filters.search ? { search: filters.search } : {}),
-      ...(filters.branchId !== undefined ? { branchId: filters.branchId } : {}),
-      ...(filters.withoutPermission !== undefined ? { withoutPermission: filters.withoutPermission } : {}),
-      ...(filters.dateFrom ? { dateFrom: filters.dateFrom } : {}),
-      ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
-      status: 'absence',
-      page: filters.page ?? 1,
-    }),
-    retry: false,
-  });
-  const review = useMutation({
-    mutationFn: ({ id, marked }: { id: number; marked: boolean }) => (
-      marked ? markWeeklyDayRecordWithoutPermission(id) : clearWeeklyDayRecordWithoutPermission(id)
-    ),
-    onSuccess: async () => { await invalidateAttendanceDependents(queryClient); },
-  });
-  const items = query.data?.items ?? [];
-  const update = (next: Partial<PermissionFilters>) => setFilters((current) => ({ ...current, ...next, page: 1 }));
-  const reset = () => { setSearchInput(''); setFilters({ page: 1 }); };
-  return <div className="space-y-4">
-    <Filters searchLabel="بحث في الغياب بدون إذن" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
-      <Field label="حالة الإذن" htmlFor="without-permission-state"><select id="without-permission-state" aria-label="حالة الإذن" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.withoutPermission === undefined ? '' : String(filters.withoutPermission)} onChange={(event) => update({ withoutPermission: event.target.value === '' ? undefined : event.target.value === 'true' })}><option value="">كل حالات الغياب</option><option value="true">بدون إذن</option><option value="false">بإذن</option></select></Field>
-    </Filters>
-    <p className="rounded-card border border-line bg-paper px-4 py-3 text-[13px] leading-6 text-muted">الغياب بدون إذن يُخصم ضعف الغياب العادي. لا يظهر غياب اليوم الجاري إلا بعد انتهاء اليوم بتوقيت القاهرة، ولا يمكن التعديل بعد اعتماد الشهر ماليًا.</p>
-    {review.error ? <p role="alert" className="text-[13px] text-danger">{errorMessage(review.error)}</p> : null}
-    <Card><QueryState pending={query.isPending} error={query.error} empty={!items.length} emptyTitle="لا توجد سجلات غياب مطابقة" onRetry={() => void query.refetch()}>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-line text-[12px] text-muted"><th className="px-4 py-2.5 text-start font-medium">الموظف</th><th className="px-4 py-2.5 text-start font-medium">الفرع</th><th className="px-4 py-2.5 text-start font-medium">التاريخ</th><th className="px-4 py-2.5 text-start font-medium">حالة الإذن</th><th className="px-4 py-2.5 text-start font-medium">الدقائق المخصومة</th><th className="px-4 py-2.5 text-start font-medium">إجراء</th></tr></thead>
-        <tbody>{items.map((item) => { const marked = item.withoutPermissionAt !== null; return <tr key={item.id} className="border-b border-line/60 last:border-0"><td className="px-4 py-3"><span className="font-medium">{item.employeeName}</span><span className="ms-2 tabular text-muted">{item.employeeCode}</span></td><td className="px-4 py-3 text-muted">{item.branchName}</td><td className="tabular px-4 py-3">{item.attendanceDate}</td><td className="px-4 py-3"><Badge variant={marked ? 'danger' : 'neutral'}>{marked ? 'بدون إذن' : 'بإذن'}</Badge></td><td className="px-4 py-3"><span className="tabular">{formatDuration(item.requiredMinutes * (marked ? 2 : 1))}</span>{marked ? <Badge variant="danger" className="ms-2">×2</Badge> : null}</td><td className="px-4 py-3"><Button variant={marked ? 'ghost' : 'secondary'} size="sm" disabled={review.isPending} onClick={() => review.mutate({ id: item.id, marked: !marked })}>{marked ? <><RotateCcw className="size-4" aria-hidden />إلغاء تعليم الغياب بدون إذن</> : <><ShieldAlert className="size-4" aria-hidden />تعليم كغياب بدون إذن</>}</Button></td></tr>; })}</tbody>
-      </table></div>
-    </QueryState></Card>
-    <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} />
-  </div>;
-}
-
 export function AdminAttendanceView() {
   const [section, setSection] = useState<Section>('sessions');
   return <div className="space-y-5">
     <header className="relative overflow-hidden rounded-card bg-ink px-5 py-6 text-paper sm:px-7"><div className="absolute inset-y-0 start-0 w-1 bg-success" aria-hidden /><p className="text-[12px] font-medium tracking-[0.18em] text-paper/55">سجل العمليات اليومية</p><h1 className="mt-2 text-2xl font-bold sm:text-3xl">الحضور والغياب</h1><p className="mt-2 max-w-2xl text-sm leading-7 text-paper/70">راجع الجلسات والمحاولات المرفوضة، وسجّل الاستثناءات الإدارية وصحّح الخروج التلقائي من مكان واحد.</p></header>
-    <nav className="overflow-x-auto" aria-label="أقسام الحضور"><div className="flex min-w-max gap-2" role="tablist">{sections.map((item, index) => <Button key={item.id} id={tabId(item.id)} role="tab" aria-selected={section === item.id} aria-controls={panelId(item.id)} tabIndex={section === item.id ? 0 : -1} variant={section === item.id ? 'primary' : 'secondary'} size="sm" onKeyDown={(event) => handleRtlTabKey(event, index, sectionIds, setSection)} onClick={() => setSection(item.id)}>{item.id === 'sessions' ? <CalendarDays className="size-4" aria-hidden /> : item.id === 'denied' ? <ShieldAlert className="size-4" aria-hidden /> : item.id === 'manual' ? <UserCheck className="size-4" aria-hidden /> : item.id === 'absence' ? <AlertTriangle className="size-4" aria-hidden /> : <UserRoundX className="size-4" aria-hidden />}{item.label}</Button>)}</div></nav>
-    <section id={panelId(section)} role="tabpanel" aria-labelledby={tabId(section)}>{section === 'sessions' ? <SessionSection /> : section === 'denied' ? <DeniedSection /> : section === 'manual' ? <ManualSection /> : section === 'absence' ? <AbsenceSection /> : <WithoutPermissionSection />}</section>
+    <nav className="overflow-x-auto" aria-label="أقسام الحضور"><div className="flex min-w-max gap-2" role="tablist">{sections.map((item, index) => <Button key={item.id} id={tabId(item.id)} role="tab" aria-selected={section === item.id} aria-controls={panelId(item.id)} tabIndex={section === item.id ? 0 : -1} variant={section === item.id ? 'primary' : 'secondary'} size="sm" onKeyDown={(event) => handleRtlTabKey(event, index, sectionIds, setSection)} onClick={() => setSection(item.id)}>{item.id === 'sessions' ? <CalendarDays className="size-4" aria-hidden /> : item.id === 'denied' ? <ShieldAlert className="size-4" aria-hidden /> : item.id === 'manual' ? <UserCheck className="size-4" aria-hidden /> : <AlertTriangle className="size-4" aria-hidden />}{item.label}</Button>)}</div></nav>
+    <section id={panelId(section)} role="tabpanel" aria-labelledby={tabId(section)}>{section === 'sessions' ? <SessionSection /> : section === 'denied' ? <DeniedSection /> : section === 'manual' ? <ManualSection /> : <AbsenceSection />}</section>
   </div>;
 }

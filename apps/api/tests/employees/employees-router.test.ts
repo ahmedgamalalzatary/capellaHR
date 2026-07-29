@@ -28,7 +28,7 @@ describe('employee router', () => {
   });
 
   it('creates an employee without image uploads or an image store', async () => {
-    const create = vi.fn(async (input) => ({ id: 1, employeeCode: 1, ...input }));
+    const create = vi.fn(async (input: Record<string, unknown>) => ({ id: 1, employeeCode: 1, ...input }));
     const createService = { create } as unknown as EmployeeService;
     const response = await request(createApp({
       authService: auth,

@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   listWeeklyDayRecords: vi.fn(),
   convertWeeklyDayRecord: vi.fn(),
   revertWeeklyDayRecord: vi.fn(),
+  markWeeklyDayRecordWithoutPermission: vi.fn(),
+  clearWeeklyDayRecordWithoutPermission: vi.fn(),
   listBranches: vi.fn(),
   listEmployees: vi.fn(),
 }));
@@ -16,6 +18,8 @@ vi.mock('../src/features/weekly-day-off/api/weekly-day-off-api', () => ({
   listWeeklyDayRecords: mocks.listWeeklyDayRecords,
   convertWeeklyDayRecord: mocks.convertWeeklyDayRecord,
   revertWeeklyDayRecord: mocks.revertWeeklyDayRecord,
+  markWeeklyDayRecordWithoutPermission: mocks.markWeeklyDayRecordWithoutPermission,
+  clearWeeklyDayRecordWithoutPermission: mocks.clearWeeklyDayRecordWithoutPermission,
 }));
 
 vi.mock('../src/features/branches/api/branches-api', () => ({
@@ -39,6 +43,7 @@ const absence = {
   status: 'absence' as const,
   absenceRequiredMinutes: 480,
   requiredMinutes: 480,
+  withoutPermissionAt: null,
   dayOffConvertedAt: null,
   createdAt: '2026-07-11T00:00:00.000Z',
   updatedAt: '2026-07-11T00:00:00.000Z',
@@ -180,6 +185,69 @@ describe('WeeklyDayOffView', () => {
     await screen.findByText('أحمد جمال');
     expect(within(rowOf('أحمد جمال')).queryByRole('button', { name: 'إعادة إلى غياب' })).toBeNull();
     expect(within(rowOf('منى علي')).queryByRole('button', { name: 'تعيين يوم راحة' })).toBeNull();
+  });
+
+  test('marks an absence as without permission from the actions column', async () => {
+    mocks.markWeeklyDayRecordWithoutPermission.mockResolvedValue({
+      ...absence,
+      withoutPermissionAt: '2026-07-29T09:00:00.000Z',
+    });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(
+      within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعليم كغياب بدون إذن' }),
+    );
+    await waitFor(() =>
+      expect(mocks.markWeeklyDayRecordWithoutPermission).toHaveBeenCalledWith(11),
+    );
+  });
+
+  test('clears the without-permission mark on an already marked absence', async () => {
+    const marked = { ...absence, withoutPermissionAt: '2026-07-29T09:00:00.000Z' };
+    mocks.listWeeklyDayRecords.mockResolvedValue(pageOf([marked, dayOff]));
+    mocks.clearWeeklyDayRecordWithoutPermission.mockResolvedValue(absence);
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(
+      within(rowOf('أحمد جمال')).getByRole('button', { name: 'إلغاء تعليم الغياب بدون إذن' }),
+    );
+    await waitFor(() =>
+      expect(mocks.clearWeeklyDayRecordWithoutPermission).toHaveBeenCalledWith(11),
+    );
+  });
+
+  test('a marked absence shows the without-permission badge and its doubled cost', async () => {
+    mocks.listWeeklyDayRecords.mockResolvedValue(
+      pageOf([{ ...absence, withoutPermissionAt: '2026-07-29T09:00:00.000Z' }]),
+    );
+    renderView();
+    const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
+    expect(within(row).getByText('بدون إذن')).toBeDefined();
+    expect(within(row).getByText('16:00')).toBeDefined();
+  });
+
+  test('a day-off row has no without-permission action', async () => {
+    renderView();
+    await screen.findByText('منى علي');
+    expect(
+      within(rowOf('منى علي')).queryByRole('button', { name: 'تعليم كغياب بدون إذن' }),
+    ).toBeNull();
+  });
+
+  test('surfaces the Arabic server error when the mark is rejected', async () => {
+    mocks.markWeeklyDayRecordWithoutPermission.mockRejectedValue(new ApiError(409, {
+      code: 'FINANCIALLY_LOCKED',
+      message: 'الفترة معتمدة ماليًا ولا يمكن تعديلها',
+    }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(
+      within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعليم كغياب بدون إذن' }),
+    );
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'الفترة معتمدة ماليًا ولا يمكن تعديلها',
+    );
   });
 
   test('surfaces the Arabic server error when spacing rejects the conversion', async () => {
