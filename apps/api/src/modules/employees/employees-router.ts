@@ -49,7 +49,8 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
     const saved: string[] = [];
     try {
       const files = req.files as Record<ImageKind, Express.Multer.File[]>; const images: EmployeeImages = {};
-      if (files && !store) throw new EmployeeUploadError('INVALID_IMAGE', 'مخزن الصور غير متاح');
+      const hasUploads = (['personal', 'idFront', 'idBack'] as const).some((kind) => Boolean(files?.[kind]?.[0]));
+      if (hasUploads && !store) throw new EmployeeUploadError('INVALID_IMAGE', 'مخزن الصور غير متاح');
       if (store) for (const kind of ['personal', 'idFront', 'idBack'] as const) if (files?.[kind]?.[0]) {
         images[kind] = await store.save(files[kind][0]);
         saved.push(images[kind].storagePath);
@@ -62,7 +63,8 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
     let committed = false;
     try {
       const id = employeeIdParamsSchema.parse(req.params).id; const files = req.files as Record<ImageKind, Express.Multer.File[]>; const images: Partial<EmployeeImages> = {};
-      if (files && !store) throw new EmployeeUploadError('INVALID_IMAGE', 'مخزن الصور غير متاح');
+      const hasUploads = (['personal', 'idFront', 'idBack'] as const).some((kind) => Boolean(files?.[kind]?.[0]));
+      if (hasUploads && !store) throw new EmployeeUploadError('INVALID_IMAGE', 'مخزن الصور غير متاح');
       if (store) for (const kind of ['personal', 'idFront', 'idBack'] as const) if (files?.[kind]?.[0]) { images[kind] = await store.save(files[kind][0]); saved.push(images[kind].storagePath); }
       const body: unknown = req.body; const hasBodyFields = body !== null && typeof body === 'object' && Object.keys(body).length > 0;
       const parsed = hasBodyFields ? updateEmployeeFieldsSchema.parse(body) : {};

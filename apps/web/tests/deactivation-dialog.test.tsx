@@ -33,7 +33,9 @@ describe('DeactivationDialog', () => {
     );
 
     // Confirm stage: the only way forward is disabled, so the way out must be too.
-    expect(enabledCancels().every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    const confirmStageCancels = enabledCancels();
+    expect(confirmStageCancels.length).toBeGreaterThan(0);
+    expect(confirmStageCancels.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
 
     // Advancing needs a non-pending dialog, then pending is re-applied on the later stages.
     rerender(
@@ -59,6 +61,8 @@ describe('DeactivationDialog', () => {
       />,
     );
 
-    expect(enabledCancels().every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    const decisionStageCancels = enabledCancels();
+    expect(decisionStageCancels.length).toBeGreaterThan(0);
+    expect(decisionStageCancels.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
   });
 });

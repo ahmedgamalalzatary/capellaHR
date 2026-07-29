@@ -92,6 +92,7 @@ export function WeeklyDayOffView() {
       await queryClient.invalidateQueries({ queryKey: weeklyDayOffQueryKeys.all });
     },
   });
+  const actionPending = transition.isPending || permission.isPending;
 
   const items = recordsQuery.data?.items ?? [];
   const meta = recordsQuery.data?.meta;
@@ -284,8 +285,10 @@ export function WeeklyDayOffView() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={transition.isPending}
-                          onClick={() => transition.mutate({ record })}
+                          disabled={actionPending}
+                          onClick={() => {
+                            if (!actionPending) transition.mutate({ record });
+                          }}
                         >
                           {record.status === 'absence' ? (
                             <>
@@ -303,8 +306,10 @@ export function WeeklyDayOffView() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            disabled={permission.isPending}
-                            onClick={() => permission.mutate({ record })}
+                            disabled={actionPending}
+                            onClick={() => {
+                              if (!actionPending) permission.mutate({ record });
+                            }}
                           >
                             {record.withoutPermissionAt ? (
                               <>

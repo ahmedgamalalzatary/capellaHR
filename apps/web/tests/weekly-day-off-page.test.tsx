@@ -202,6 +202,48 @@ describe('WeeklyDayOffView', () => {
     );
   });
 
+  test('blocks the status transition while the permission mutation is pending', async () => {
+    let resolvePermission!: (value: typeof absence) => void;
+    mocks.markWeeklyDayRecordWithoutPermission.mockImplementation(
+      () => new Promise((resolve) => { resolvePermission = resolve; }),
+    );
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const row = rowOf('أحمد جمال');
+    const transitionButton = within(row).getByRole('button', { name: 'تعيين يوم راحة' });
+    const permissionButton = within(row).getByRole('button', { name: 'تعليم كغياب بدون إذن' });
+
+    fireEvent.click(permissionButton);
+    await waitFor(() => {
+      expect(transitionButton).toHaveProperty('disabled', true);
+      expect(permissionButton).toHaveProperty('disabled', true);
+    });
+    fireEvent.click(transitionButton);
+    expect(mocks.convertWeeklyDayRecord).not.toHaveBeenCalled();
+    resolvePermission(absence);
+  });
+
+  test('blocks the permission mutation while the status transition is pending', async () => {
+    let resolveTransition!: (value: typeof dayOff) => void;
+    mocks.convertWeeklyDayRecord.mockImplementation(
+      () => new Promise((resolve) => { resolveTransition = resolve; }),
+    );
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const row = rowOf('أحمد جمال');
+    const transitionButton = within(row).getByRole('button', { name: 'تعيين يوم راحة' });
+    const permissionButton = within(row).getByRole('button', { name: 'تعليم كغياب بدون إذن' });
+
+    fireEvent.click(transitionButton);
+    await waitFor(() => {
+      expect(transitionButton).toHaveProperty('disabled', true);
+      expect(permissionButton).toHaveProperty('disabled', true);
+    });
+    fireEvent.click(permissionButton);
+    expect(mocks.markWeeklyDayRecordWithoutPermission).not.toHaveBeenCalled();
+    resolveTransition(dayOff);
+  });
+
   test('clears the without-permission mark on an already marked absence', async () => {
     const marked = { ...absence, withoutPermissionAt: '2026-07-29T09:00:00.000Z' };
     mocks.listWeeklyDayRecords.mockResolvedValue(pageOf([marked, dayOff]));

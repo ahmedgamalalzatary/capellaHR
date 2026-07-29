@@ -50,6 +50,29 @@ describe('employee router', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ images: {} }));
   });
 
+  it('creates an employee from text-only multipart fields without an image store', async () => {
+    const create = vi.fn(async (input: Record<string, unknown>) => ({ id: 1, employeeCode: 1, ...input }));
+    const createService = { create } as unknown as EmployeeService;
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: createService,
+      employeeUploadMaxBytes: 16_777_216,
+    }))
+      .post('/api/v1/employees')
+      .field('fullName', 'موظف جديد')
+      .field('personalPhone', '01012345678')
+      .field('whatsappPhone', '01112345678')
+      .field('pin', '1234')
+      .field('age', '30')
+      .field('address', 'القاهرة')
+      .field('branchId', '1')
+      .field('shiftDurationMinutes', '480')
+      .field('monthlyBaseSalary', '5000.00');
+
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ images: {} }));
+  });
+
   it('maps the injected Multer size limit to IMAGE_TOO_LARGE', async () => {
     const response = await request(createApp({
       authService: auth,
