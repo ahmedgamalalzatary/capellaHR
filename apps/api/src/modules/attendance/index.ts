@@ -4,3 +4,4 @@ export * from './attendance-router.js';
 export * from './attendance-module.js';
 export * from './attendance-jobs.js';
 export * from './onnx-face-gateway.js';
+export * from './erp-attendance-capability.js';

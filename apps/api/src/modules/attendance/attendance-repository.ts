@@ -12,6 +12,7 @@ import { createAttendanceSessionWriter, type AttendanceSessionClosedHook } from 
 import { createAttendanceSessionsRepository } from './attendance-sessions-repository.js';
 import type { AttendanceRepository } from './attendance-service.js';
 import type { AttendanceJobRepository } from './attendance-jobs.js';
+import type { ErpAttendanceCapability } from './erp-attendance-capability.js';
 
 export type {
   AttendanceFinancialLockCheck,
@@ -30,7 +31,7 @@ export const createDrizzleAttendanceRepository = (
   },
 ): AttendanceRepository & AttendanceJobRepository & {
   reconcileDueAbsencesForEmployee: AttendanceShiftChangeReconciler;
-} & PayrollAttendanceGateway => {
+} & PayrollAttendanceGateway & ErpAttendanceCapability => {
   const now = options.now ?? (() => new Date());
   const timeZone = options.timeZone ?? 'Africa/Cairo';
   const { isFinanciallyLocked, readRequiredDuration } = options;

@@ -8,6 +8,7 @@ import { createDrizzleAuthRepositories } from './auth-repositories.js';
 import { createAuthService, type AuthServiceDependencies } from './auth-service.js';
 import { createDrizzleCashierAccountRepository } from './cashier-accounts-repository.js';
 import { createCashierAccountsService } from './cashier-accounts-service.js';
+import { createErpAuthCapability } from './erp-auth-capability.js';
 
 type Database = ReturnType<typeof createDatabase>;
 
@@ -54,6 +55,7 @@ export const createAuthModule = (dependencies: {
 
   return {
     service,
+    erp: createErpAuthCapability(service),
     cashierAccounts,
     repositories,
     async initializeAdmin(admin: { email: string; password: string }) {

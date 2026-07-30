@@ -5,3 +5,4 @@ export * from './employees-module.js';
 export * from './employees-repository.js';
 export * from './employees-router.js';
 export * from './employees-service.js';
+export * from './erp-employee-capability.js';

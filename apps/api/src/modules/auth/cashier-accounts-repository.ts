@@ -40,6 +40,25 @@ export const createDrizzleCashierAccountRepository = (
       : null;
   };
 
+  const selectCashierForUpdate = async (
+    executor: Parameters<Parameters<Database['transaction']>[0]>[0],
+    accountId: number,
+  ) => {
+    const row = (await executor.select({
+      id: accounts.id,
+      username: accounts.username,
+      role: accounts.role,
+      employeeId: accounts.employeeId,
+      active: accounts.active,
+    }).from(accounts).where(and(
+      eq(accounts.id, accountId),
+      eq(accounts.role, 'cashier'),
+    )).for('update').limit(1))[0];
+    return row?.role === 'cashier' && row.employeeId !== null
+      ? { ...row, role: 'cashier' as const, employeeId: row.employeeId }
+      : null;
+  };
+
   return {
   promoteEmployeeToCashier(input) {
     return database.transaction(async (tx) => {
@@ -126,10 +145,11 @@ export const createDrizzleCashierAccountRepository = (
     },
     setCashierActive(input) {
       return database.transaction(async (tx) => {
-        const before = await selectPublic(tx, input.accountId);
+        let before = await selectPublic(tx, input.accountId);
         if (!before) return { kind: 'not_found' as const };
         if (input.active) {
           const employee = (await tx.select({
+            branchId: employees.branchId,
             employmentStatus: employees.employmentStatus,
             deletedAt: employees.deletedAt,
           }).from(employees).where(eq(employees.id, before.employeeId))
@@ -137,6 +157,11 @@ export const createDrizzleCashierAccountRepository = (
           if (!employee || employee.deletedAt || employee.employmentStatus !== 'active') {
             return { kind: 'employee_inactive' as const };
           }
+          const lockedAccount = await selectCashierForUpdate(tx, input.accountId);
+          if (!lockedAccount || lockedAccount.employeeId !== before.employeeId) {
+            return { kind: 'not_found' as const };
+          }
+          before = { ...lockedAccount, branchId: employee.branchId };
         }
         await tx.update(accounts).set({ active: input.active, updatedAt: input.updatedAt })
           .where(eq(accounts.id, input.accountId));

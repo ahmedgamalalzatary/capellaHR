@@ -19,6 +19,7 @@ import {
 } from './attendance-repository-support.js';
 import { type AttendanceSessionWriter } from './attendance-session-writer.js';
 import { calculateAttendanceMinutes, type AttendanceRepository } from './attendance-service.js';
+import type { ErpAttendanceCapability } from './erp-attendance-capability.js';
 
 export const createAttendanceSessionsRepository = (
   database: Database,
@@ -42,7 +43,7 @@ export const createAttendanceSessionsRepository = (
   | 'listSessions'
   | 'hasOpenSession'
   | 'hasAnyOpenSession'
-> => {
+> & ErpAttendanceCapability => {
   const { now, isFinanciallyLocked } = options;
 
   return {
@@ -236,6 +237,25 @@ export const createAttendanceSessionsRepository = (
         .leftJoin(employeeBranchAssignments, sessionBranchAssignment)
         .innerJoin(branches, eq(branches.id, sessionBranchId)).where(where);
       return { items, total: totals[0]?.value ?? 0 };
+    },
+
+    listPresentEmployees(branchId) {
+      const activeAfter = new Date(now().getTime() - 16 * 60 * 60_000);
+      return database.select({
+        id: employees.id,
+        employeeCode: employees.employeeCode,
+        fullName: employees.fullName,
+        branchId: attendanceSessions.branchId,
+      }).from(attendanceSessions)
+        .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
+        .where(and(
+          eq(attendanceSessions.branchId, branchId),
+          isNotNull(attendanceSessions.openEmployeeId),
+          gt(attendanceSessions.checkInAt, activeAfter),
+          eq(employees.employmentStatus, 'active'),
+          isNull(employees.deletedAt),
+        ))
+        .orderBy(asc(employees.employeeCode));
     },
 
     async hasOpenSession(employeeId, context) {

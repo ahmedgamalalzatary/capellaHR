@@ -23,3 +23,4 @@ export * from './auth-middleware.js';
 export * from './auth-module.js';
 export * from './cashier-accounts-service.js';
 export * from './cashier-accounts-repository.js';
+export * from './erp-auth-capability.js';

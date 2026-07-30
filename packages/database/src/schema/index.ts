@@ -6,3 +6,4 @@ export * from './attendance/index.js';
 export * from './audit/index.js';
 export * from './payroll/index.js';
 export * from './reports/index.js';
+export * from './erp/index.js';

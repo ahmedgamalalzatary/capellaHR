@@ -11,6 +11,7 @@ import {
   type AttendanceFaceGateway,
   type AttendanceDeviceGateway,
 } from './attendance-service.js';
+import { createErpAttendanceCapability } from './erp-attendance-capability.js';
 
 export const createAttendanceModule = (
   database: ReturnType<typeof createDatabase>,
@@ -32,5 +33,6 @@ export const createAttendanceModule = (
   return {
     repository,
     service: createAttendanceService(repository, devices, faces, resolvedOptions),
+    erp: createErpAttendanceCapability(repository),
   };
 };

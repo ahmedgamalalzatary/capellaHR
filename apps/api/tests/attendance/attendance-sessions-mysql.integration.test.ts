@@ -33,6 +33,32 @@ beforeEach(cleanDatabase);
 afterEach(cleanDatabase);
 
 describe('MySQL-backed attendance sessions', () => {
+  it('lists only active, non-deleted employees with an open session in the branch', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    const repo = repository();
+    await database.update(employees).set({ fullName: 'Present Employee' })
+      .where(eq(employees.id, employeeId));
+    await repo.manualCheckIn({ employeeId, occurredAt: fixedNow });
+
+    await expect(repo.listPresentEmployees(branchId)).resolves.toEqual([{
+      id: employeeId,
+      employeeCode: 42,
+      fullName: 'Present Employee',
+      branchId,
+    }]);
+    await expect(repo.listPresentEmployees(branchId + 1)).resolves.toEqual([]);
+
+    await database.update(employees).set({ employmentStatus: 'inactive' })
+      .where(eq(employees.id, employeeId));
+    await expect(repo.listPresentEmployees(branchId)).resolves.toEqual([]);
+
+    await database.update(employees).set({
+      employmentStatus: 'active',
+      deletedAt: fixedNow,
+    }).where(eq(employees.id, employeeId));
+    await expect(repo.listPresentEmployees(branchId)).resolves.toEqual([]);
+  });
+
   it('runs without a payroll financial-lock capability', async () => {
     const { employeeId } = await createFixtures();
     const module = createAttendanceModule(
