@@ -13,6 +13,7 @@ import {
 import { and, asc, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createAttendanceModule } from '../../src/modules/attendance/attendance-module.js';
 import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/attendance-repository.js';
 import { createDrizzleAuthRepositories } from '../../src/modules/auth/auth-repositories.js';
 import {
@@ -32,6 +33,25 @@ beforeEach(cleanDatabase);
 afterEach(cleanDatabase);
 
 describe('MySQL-backed attendance sessions', () => {
+  it('runs without a payroll financial-lock capability', async () => {
+    const { employeeId } = await createFixtures();
+    const module = createAttendanceModule(
+      database,
+      { verify: () => Promise.resolve(null) },
+      { compare: () => Promise.resolve({ kind: 'failed' }) },
+      {
+        readRequiredDuration: () => Promise.resolve(480),
+        now: () => fixedNow,
+        timeZone: 'Africa/Cairo',
+      },
+    );
+
+    await expect(module.repository.manualCheckIn({
+      employeeId,
+      occurredAt: fixedNow,
+    })).resolves.toMatchObject({ kind: 'success' });
+  });
+
   it('snapshots the original branch for backdated attendance created after reassignment', async () => {
     const { branchId, employeeId } = await createFixtures();
     const sessionAt = new Date('2026-07-19T06:00:00.000Z');

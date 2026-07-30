@@ -19,7 +19,7 @@ const makeApp = () => {
       return { token: 'employee-token', actor: { type: 'employee' as const, employeeId: 7 } };
     },
     async loginCashier(username: string, password: string) {
-      if (username !== 'cashier.one' || password !== 'correct') {
+      if (username.toLowerCase() !== 'cashier.one' || password !== 'correct') {
         throw new auth.AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
       }
       return {

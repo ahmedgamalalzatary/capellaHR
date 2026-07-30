@@ -461,27 +461,29 @@ Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of tru
 - [x] Enforce non-empty passwords with the shared 1024-character maximum.
 - [x] Add the Cashier account promotion domain service with stable errors and password-hash-safe responses.
 - [x] Add focused account schema, contract, service, and migration tests.
-- [ ] Implement the production Drizzle account repository.
-- [ ] Wire employee-to-Cashier promotion atomically to MySQL.
-- [ ] Add an Admin-only Cashier promotion endpoint.
+- [x] Implement the production Drizzle account repository.
+- [x] Wire employee-to-Cashier promotion atomically to MySQL.
+- [x] Add an Admin-only Cashier promotion endpoint.
 - [ ] Add Admin account-management endpoints for listing, enabling, and disabling Cashier accounts.
-- [ ] Define and enforce username uniqueness and concurrent-promotion behavior at database and service levels.
+- [x] Define and enforce username uniqueness and concurrent-promotion behavior at database and service levels.
 - [ ] Revoke active account sessions when an account is disabled or its credentials change.
 
 ## ERP 2. Account authentication and authorization
 
 - [ ] Migrate the `.env` Admin seed from `admin_credentials` into the Admin account model without breaking existing installations.
 - [ ] Retire the `admin_credentials` singleton after the migration path is verified.
-- [ ] Extend persistent sessions to support acting accounts without turning Cashier into an employee `actor_type`.
-- [ ] Implement database-backed Admin and Cashier username/password login.
-- [ ] Keep employee code/PIN login exclusively for HR attendance and read-only self-service.
+- [x] Extend persistent sessions to support acting accounts without turning Cashier into an employee `actor_type`.
+- [x] Implement database-backed Admin and Cashier username/password login.
+- [x] Keep employee code/PIN login exclusively for HR attendance and read-only self-service.
 - [ ] Allow Admin accounts into both HR and ERP applications.
-- [ ] Allow Cashier accounts into ERP only and reject them from HR.
-- [ ] Reject employee self-service credentials from every ERP business operation.
-- [ ] Add current-account lookup, logout, expiry, revocation, and restart-persistence behavior.
+- [x] Allow Cashier accounts through the ERP account boundary only and reject them from Admin/HR boundaries.
+- [x] Reject employee self-service credentials from the ERP account boundary.
+- [x] Add current-account lookup, logout, invalid-account revocation, and restart-persistence behavior.
+- [ ] Define and enforce account-session expiry.
 - [ ] Record the acting account on every sensitive ERP operation.
-- [ ] Add login throttling and stable authentication errors to the account login flow.
-- [ ] Test invalid credentials, disabled accounts, role separation, session expiry, revocation, persistence, and secret non-disclosure.
+- [x] Add login throttling and stable authentication errors to the account login flow.
+- [x] Test invalid credentials, role separation, invalid-account revocation, restart persistence, and secret non-disclosure for the delivered account flow.
+- [ ] Add disabled-account lifecycle and session-expiry coverage with the remaining account-management work.
 
 ## ERP 3. Module boundaries and shared capabilities
 

@@ -11,7 +11,7 @@ import { createDrizzleEmployeeRepository, createEmployeeFinancialLifecycle, crea
 import { createDevicesModule } from './modules/devices/index.js';
 import { createShiftsModule } from './modules/shifts/index.js';
 import { createWeeklyDayOffModule } from './modules/weekly-day-off/index.js';
-import { createPayrollModule, type PayrollAttendanceGateway } from './modules/payroll/index.js';
+import { createPayrollModule } from './modules/payroll/index.js';
 import { createBonusModule } from './modules/bonuses/index.js';
 import { createDeductionModule } from './modules/deductions/index.js';
 import { createAdvanceModule } from './modules/advances/index.js';
@@ -55,23 +55,17 @@ const shiftModule = createShiftsModule(database, {
     )
   ),
 });
-const attendanceForPayroll: { current?: PayrollAttendanceGateway } = {};
-const payrollModule = createPayrollModule(database, {
-  timeZone: env.APP_TIME_ZONE,
-  attendance: {
-    readPayrollFacts: (...input) => {
-      if (!attendanceForPayroll.current) throw new Error('Attendance payroll gateway is not initialized');
-      return attendanceForPayroll.current.readPayrollFacts(...input);
-    },
-  },
-});
+const payrollForAttendance: {
+  current?: ReturnType<typeof createPayrollModule>['service'];
+} = {};
 const attendanceModule = createAttendanceModule(
   database,
   deviceModule.attendanceDevices,
   faceGateway,
   {
     isFinanciallyLocked: (employeeId, attendanceDate, context) => (
-      payrollModule.service.isFinanciallyLocked(employeeId, attendanceDate, context)
+      payrollForAttendance.current?.isFinanciallyLocked(employeeId, attendanceDate, context)
+      ?? Promise.resolve(false)
     ),
     readRequiredDuration: (employeeId, context, includeDeleted) => (
       shiftModule.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
@@ -84,7 +78,11 @@ const attendanceModule = createAttendanceModule(
     timeZone: env.APP_TIME_ZONE,
   },
 );
-attendanceForPayroll.current = attendanceModule.repository;
+const payrollModule = createPayrollModule(database, {
+  timeZone: env.APP_TIME_ZONE,
+  attendance: attendanceModule.repository,
+});
+payrollForAttendance.current = payrollModule.service;
 reconcileAbsencesBeforeShiftChange = attendanceModule.repository.reconcileDueAbsencesForEmployee;
 const auth = createAuthModule({
   database,

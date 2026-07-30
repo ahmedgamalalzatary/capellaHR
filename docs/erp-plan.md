@@ -99,15 +99,15 @@ EDITION=full    # HR + ERP (Capella)
 
 Under the hood, an edition resolves to a set of module names through a startup registry in which modules have one of three natures:
 
-- **Core — always on, cannot be disabled:** `auth` (nothing mounts without it), `branches`, `employees`, `audit`. Core is implicit. Even a misconfigured edition yields a working app (login + branches + employees) — the floor is never zero.
+- **Core — always on, cannot be disabled:** `auth` (nothing mounts without it), `branches`, `employees`, `audit`. Core is implicit. When `EDITION` is missing, startup resolves to this core floor so the installation still provides login, branches, and employees.
 - **Sellable — grouped into editions:** each declares `requires: [...]`. At boot the edition's set is dependency-expanded (e.g. `bonuses → payroll → attendance → shifts, devices`), so no supported configuration can produce a half-wired server.
 - **Support — never sold alone, pulled in automatically:** `shifts`, `devices` (arrive with `attendance`).
 
-Final set = **core ∪ expand(edition)**. Unknown edition names **fail the boot loudly** with a clear error — never a silently misconfigured customer server. The resolved module list is logged at startup.
+Final set = **core ∪ expand(edition)** when `EDITION` names a supported edition; when it is missing, final set = **core**. Any explicitly supplied unknown edition name **fails boot loudly** with a clear error — it never falls back to core. The resolved module list is logged at startup.
 
 **Granular per-module combinations** (e.g. "attendance + payroll only") remain possible through the same registry but are **internal/experimental, not an official product promise** — every additional supported combination multiplies the testing matrix. If a custom combination is ever sold, it gets promoted to a named, smoke-tested edition first.
 
-Known coupling: `attendance` and `payroll` are mutually wired in `server.ts` today, so they ship together until that seam is loosened (commercially irrelevant — payroll without attendance is never sold).
+The Attendance construction boundary accepts the Payroll financial-lock capability optionally. ERP-only construction omits it and treats Attendance records as not payroll-locked because Payroll is absent; full-HR construction explicitly supplies `payrollModule.service.isFinanciallyLocked`, preserving finalized-payroll protection. Payroll still requires Attendance for payroll facts, so the dependency is one-way: `payroll → attendance`.
 
 ### The three planes an edition controls
 
@@ -117,7 +117,7 @@ An edition affects three distinct things, deliberately kept separate:
 2. **UI/container availability** — Docker Compose **profiles**: the HR `web` container carries the `hr` profile, the new `pos` container carries the `erp` profile. An HR-only customer's server never even pulls the POS image.
 3. **Database migrations** — **all schemas migrate on every installation regardless of edition.** Disabled modules' tables exist and stay empty. This is intentional: one migration history, no per-edition migration forks, and upgrading a customer to a bigger edition is config-only. The cost (unused empty tables) is accepted.
 
-**The "ERP only" nuance (intentional):** ERP-only still runs the always-on core plus `attendance` — because client-assignment requires knowing who is present. HR-exclusive modules (payroll, advances, deductions, self-service, the HR frontend) stay off. Commercially this is a selling point ("a salon POS with staff check-in built in") and a natural upsell path to full HR via a config change.
+**The "ERP only" nuance (intentional):** ERP-only resolves to the always-on core plus `attendance` and its support dependencies, with `payroll` excluded — because client-assignment requires knowing who is present, while Attendance no longer requires Payroll to be constructed. HR-exclusive modules (payroll, advances, deductions, self-service, the HR frontend) stay off. Full HR continues to enable Payroll and inject its financial-lock capability into Attendance. Commercially this is a selling point ("a salon POS with staff check-in built in") and a natural upsell path to full HR via a config change.
 
 **Licensing:** because the owner installs and controls every deployment, `.env` + compose profiles are sufficient. Signed license keys only become relevant if self-service installers are ever distributed — deliberately out of scope now.
 
@@ -200,7 +200,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Stock operations | Recommended defaults (owner delegated): stock **adjustments** with reasons (count correction, wastage, damage) via stocktaking; **no** inter-branch transfers; one unit per product; **no** variants |
 | Costing | **Last purchase cost** is the cost basis |
 | Suppliers | **No returns; purchases always fully paid** — no supplier balances or credit |
-| Negative stock | **Never allowed**, no override |
+| Negative stock | **Never allowed, with no override** |
 | Appointments | **Out of scope** |
 | Backup/restore | **No in-app backup feature.** (Strong ops recommendation, separate from the product: automated server-level MySQL dumps per installation) |
 | Categories | **One table** with a type flag (`service` / `expense`), name unique per type — chosen as the production-ready option (single CRUD, single audit path) |
@@ -234,7 +234,7 @@ Either the whole sale exists or none of it does. Receipt **printing is outside t
 ### Idempotency and concurrency
 
 - Every POS sale submission carries a **client-generated idempotency key**; double-clicks, network retries, and API retries all resolve to the same single invoice. The same mechanism powers offline degradation (§7): a sale completed during a network loss is queued locally and replayed on reconnect, and the key guarantees replay can never duplicate an invoice.
-- Concurrent sales of the last stock item are decided at transaction commit (row-level locking on stock); the loser gets a clear "out of stock" outcome, never negative stock by accident. (Whether controlled negative stock is ever allowed is an open question — §10.)
+- Concurrent sales of the last stock item are decided at transaction commit (row-level locking on stock); the loser gets a clear "out of stock" outcome. Negative stock is never allowed, with no override.
 - **Exactly one open POS cashier session per branch** is a database-enforced invariant (a unique open-session index, the same pattern attendance uses for `open_employee_id`). Opening a second session while one is open is rejected.
 
 ### Historical snapshots on every invoice line

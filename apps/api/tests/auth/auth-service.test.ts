@@ -22,7 +22,7 @@ class MemorySessions {
 
   async create(session: Session) { this.rows.push(session); }
   async createAccountIfCurrent(session: Session) {
-    this.rows.push({ ...session, accountRole: 'cashier', employeeId: 7 });
+    this.rows.push(session);
     return 'created' as const;
   }
   async createEmployeeIfCurrent(
@@ -168,8 +168,7 @@ describe('authentication service', () => {
       expect.objectContaining({
         actorType: 'account',
         accountId: 21,
-        accountRole: 'cashier',
-        employeeId: 7,
+        employeeId: null,
       }),
     ]);
     expect(attempts.rows).toEqual([

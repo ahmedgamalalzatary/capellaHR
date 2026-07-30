@@ -17,16 +17,20 @@ export const createAttendanceModule = (
   devices: AttendanceDeviceGateway,
   faces: AttendanceFaceGateway,
   options: {
-    isFinanciallyLocked: AttendanceFinancialLockCheck;
+    isFinanciallyLocked?: AttendanceFinancialLockCheck;
     readRequiredDuration: AttendanceRequiredDurationReader;
     afterSessionClosed?: AttendanceSessionClosedHook;
     now?: () => Date;
     timeZone?: string;
   },
 ) => {
-  const repository = createDrizzleAttendanceRepository(database, options);
+  const resolvedOptions = {
+    ...options,
+    isFinanciallyLocked: options.isFinanciallyLocked ?? (() => Promise.resolve(false)),
+  };
+  const repository = createDrizzleAttendanceRepository(database, resolvedOptions);
   return {
     repository,
-    service: createAttendanceService(repository, devices, faces, options),
+    service: createAttendanceService(repository, devices, faces, resolvedOptions),
   };
 };
