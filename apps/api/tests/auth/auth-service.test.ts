@@ -9,7 +9,8 @@ type Session = {
   actorType: 'admin' | 'employee' | 'account';
   employeeId: number | null;
   accountId: number | null;
-  accountRole?: 'cashier' | null;
+  accountRole?: 'admin' | 'cashier' | null;
+  expiresAt: Date;
   revokedAt: Date | null;
 };
 
@@ -105,14 +106,15 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
     get attendanceContext() { return attendanceContext; },
     setAttendanceOpen(value: boolean) { attendanceOpen = value; },
     service: createAuthService({
-      adminCredentials: {
-        async findByEmail(email: string) {
-          return email.toLowerCase() === 'admin@capella.test'
-            ? { email: 'admin@capella.test', passwordHash: adminHash }
+      accounts: {
+        async findAdminByUsername(username: string) {
+          return username === 'admin@capella.test'
+            ? {
+                id: 1, username, passwordHash: adminHash,
+                role: 'admin' as const, employeeId: null, active: true,
+              }
             : null;
         },
-      },
-      accounts: {
         async findCashierByUsername(username: string) {
           return username === 'cashier.one'
             ? {
@@ -209,7 +211,7 @@ describe('authentication service', () => {
     expect(sessions.rows).toHaveLength(0);
   });
 
-  it('creates independent sessions for valid admin logins', async () => {
+  it('creates expiring account sessions for valid admin logins', async () => {
     const { service, sessions } = makeService();
 
     const first = await service.loginAdmin('admin@capella.test', 'correct horse battery staple');
@@ -217,7 +219,8 @@ describe('authentication service', () => {
 
     expect(first.token).not.toBe(second.token);
     expect(sessions.rows).toHaveLength(2);
-    expect(sessions.rows.every((row) => row.actorType === 'admin')).toBe(true);
+    expect(sessions.rows.every((row) => row.actorType === 'account' && row.accountId === 1)).toBe(true);
+    expect(sessions.rows[0]?.expiresAt).toEqual(new Date('2026-07-18T10:00:00.000Z'));
     expect(sessions.rows.some((row) => row.tokenHash === first.token)).toBe(false);
   });
 
@@ -239,7 +242,7 @@ describe('authentication service', () => {
 
     expect(sessions.rows).toHaveLength(0);
     expect(attempts.rows).toEqual([
-      { actorType: 'admin', identifier: 'nobody@capella.test', succeeded: false, reason: 'INVALID_CREDENTIALS' },
+      { actorType: 'account', identifier: 'nobody@capella.test', succeeded: false, reason: 'INVALID_CREDENTIALS' },
     ]);
   });
 
@@ -251,7 +254,10 @@ describe('authentication service', () => {
     await service.logout(first.token);
 
     await expect(service.authenticate(first.token)).resolves.toBeNull();
-    await expect(service.authenticate(second.token)).resolves.toMatchObject({ actorType: 'admin' });
+    await expect(service.authenticate(second.token)).resolves.toMatchObject({
+      actorType: 'account',
+      accountId: 1,
+    });
     expect(sessions.rows.filter((row) => row.revokedAt)).toHaveLength(1);
   });
 

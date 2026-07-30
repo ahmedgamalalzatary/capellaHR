@@ -10,7 +10,8 @@ type StoredSession = {
   actorType: ActorType;
   employeeId: number | null;
   accountId?: number | null;
-  accountRole?: 'cashier' | null;
+  accountRole?: 'admin' | 'cashier' | null;
+  expiresAt?: Date;
   revokedAt: Date | null;
 };
 
@@ -53,11 +54,15 @@ export interface AttemptRepository {
   }): Promise<void>;
 }
 
-export interface AdminCredentialRepository {
-  findByEmail(email: string): Promise<{ email: string; passwordHash: string } | null>;
-}
-
 export interface AccountCredentialRepository {
+  findAdminByUsername(username: string): Promise<{
+    id: number;
+    username: string;
+    passwordHash: string;
+    role: 'admin';
+    employeeId: null;
+    active: boolean;
+  } | null>;
   findCashierByUsername(username: string): Promise<{
     id: number;
     username: string;
@@ -79,7 +84,6 @@ interface EmployeeIdentity {
 }
 
 export interface AuthServiceDependencies {
-  adminCredentials: AdminCredentialRepository;
   accounts: AccountCredentialRepository;
   sessions: SessionRepository;
   attempts: AttemptRepository;
@@ -122,6 +126,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   type AttemptContext = { ipAddress?: string | null; userAgent?: string | null; requestId?: string | null };
   const now = dependencies.now ?? (() => new Date());
   const tokenFactory = dependencies.tokenFactory ?? (() => randomBytes(32).toString('base64url'));
+  const sessionLifetimeMs = 24 * 60 * 60_000;
 
   const createSession = async (
     actorType: ActorType,
@@ -137,6 +142,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       actorType,
       employeeId,
       accountId,
+      expiresAt: new Date(now().valueOf() + sessionLifetimeMs),
       revokedAt: null,
     };
     if (actorType === 'employee') {
@@ -162,14 +168,18 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
 
   return {
     async loginAdmin(email: string, password: string, context: AttemptContext = {}) {
-      const credential = await dependencies.adminCredentials.findByEmail(email);
+      const normalizedUsername = email.trim().toLowerCase();
+      const credential = await dependencies.accounts.findAdminByUsername(normalizedUsername);
       const passwordMatches = await safelyVerifyHash(credential?.passwordHash ?? TIMING_DUMMY_HASH, password);
-      const valid = credential !== null && passwordMatches;
+      const valid = credential !== null && credential.active && passwordMatches;
       await dependencies.attempts.record({
-        actorType: 'admin', identifier: email, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS', ...context,
+        actorType: 'account', identifier: normalizedUsername, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS', ...context,
       });
       if (!valid) throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
-      return { token: await createSession('admin', null), actor: { type: 'admin' as const } };
+      return {
+        token: await createSession('account', null, credential.id),
+        actor: { type: 'admin' as const },
+      };
     },
 
     async loginCashier(username: string, password: string, context: AttemptContext = {}) {

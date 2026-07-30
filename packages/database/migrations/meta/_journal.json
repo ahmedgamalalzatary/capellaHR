@@ -295,6 +295,20 @@
       "when": 1785341541707,
       "tag": "0041_exotic_human_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1785406431526,
+      "tag": "0042_parched_omega_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1785406844541,
+      "tag": "0043_true_richard_fisk",
+      "breakpoints": true
     }
   ]
 }

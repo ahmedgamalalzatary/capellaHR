@@ -1,7 +1,6 @@
 import { createDatabase } from '@capella/database';
 import {
   accounts,
-  adminCredentials,
   auditEvents,
   authAttempts,
   authLoginLimits,
@@ -24,7 +23,6 @@ beforeEach(async () => {
   await database.delete(authLoginLimits);
   await database.delete(authSessions);
   await database.delete(accounts);
-  await database.delete(adminCredentials);
   await database.delete(employees).where(eq(employees.employeeCode, 900001));
   await database.delete(branches).where(eq(branches.nameNormalized, 'cashier-auth-integration'));
 });
@@ -267,6 +265,78 @@ describe('MySQL-backed authentication', () => {
       .where(eq(auditEvents.actorType, 'account'))).length).toBeGreaterThan(0);
   });
 
+  it('revokes Cashier sessions on disable and password reset', async () => {
+    const createAuthModule = Reflect.get(auth, 'createAuthModule');
+    const module = createAuthModule({ database });
+    await module.initializeAdmin({ email: 'admin@capella.test', password: 'admin-password' });
+    const branch = await database.insert(branches).values({
+      name: 'Cashier auth integration', nameNormalized: 'cashier-auth-integration',
+      location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5,
+      attendanceRadiusMeters: 100, hasEverBeenReferenced: true,
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+    const employee = await database.insert(employees).values({
+      employeeCode: 900001, fullName: 'Cashier', personalPhone: '01009000001',
+      whatsappPhone: '01009000001', pinHash: 'hash', credentialVersion: 1,
+      age: 25, address: 'Cairo', branchId: Number(branch[0].insertId),
+      shiftDurationMinutes: 480, monthlyBaseSalary: '1000.00', employmentStatus: 'active',
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+    const app = createApp({
+      authService: module.service,
+      cashierAccountsService: module.cashierAccounts,
+      secureCookies: false,
+    });
+    const adminLogin = await request(app).post('/api/v1/auth/admin/login')
+      .send({ email: 'admin@capella.test', password: 'admin-password' });
+    const adminCookie = adminLogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+    const promoted = await request(app).post('/api/v1/auth/cashier-accounts')
+      .set('Cookie', adminCookie)
+      .send({ employeeId: Number(employee[0].insertId), username: 'cashier.one', password: 'old-password' });
+    const accountId = promoted.body.data.id as number;
+    const cashierLogin = await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'old-password' });
+    const cashierCookie = cashierLogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+
+    await request(app).patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
+      .set('Cookie', adminCookie).send({ active: false }).expect(200);
+    await request(app).get('/api/v1/auth/session').set('Cookie', cashierCookie).expect(401);
+    const employeeId = Number(employee[0].insertId);
+    await database.update(employees).set({ employmentStatus: 'inactive' })
+      .where(eq(employees.id, employeeId));
+    const inactiveEnable = await request(app)
+      .patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
+      .set('Cookie', adminCookie).send({ active: true }).expect(409);
+    expect(inactiveEnable.body.error).toMatchObject({ code: 'EMPLOYEE_INACTIVE' });
+
+    await database.update(employees).set({
+      employmentStatus: 'active',
+      deletedAt: new Date(),
+    }).where(eq(employees.id, employeeId));
+    const deletedEnable = await request(app)
+      .patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
+      .set('Cookie', adminCookie).send({ active: true }).expect(409);
+    expect(deletedEnable.body.error).toMatchObject({ code: 'EMPLOYEE_INACTIVE' });
+    expect((await database.select({ active: accounts.active }).from(accounts)
+      .where(eq(accounts.id, accountId)).limit(1))[0]?.active).toBe(false);
+
+    await database.update(employees).set({ deletedAt: null })
+      .where(eq(employees.id, employeeId));
+    await request(app).patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
+      .set('Cookie', adminCookie).send({ active: true }).expect(200);
+    const relogin = await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'old-password' });
+    const secondCookie = relogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+    await request(app).patch(`/api/v1/auth/cashier-accounts/${accountId}/password`)
+      .set('Cookie', adminCookie).send({ password: 'new-password' }).expect(200);
+
+    await request(app).get('/api/v1/auth/session').set('Cookie', secondCookie).expect(401);
+    await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'old-password' }).expect(401);
+    await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'new-password' }).expect(200);
+  });
+
   it('keeps an admin session valid across independent app instances', async () => {
     const createAuthModule = Reflect.get(auth, 'createAuthModule');
     expect(createAuthModule).toBeTypeOf('function');
@@ -299,6 +369,18 @@ describe('MySQL-backed authentication', () => {
     expect(events.slice(1).every((event) => event.requestId !== null)).toBe(true);
     expect(JSON.stringify(events)).not.toContain(cookie ?? 'capella_session=missing');
     expect(JSON.stringify(events)).not.toContain('integration-password');
+  });
+
+  it('rejects an expired account session', async () => {
+    const module = auth.createAuthModule({ database });
+    await module.initializeAdmin({ email: 'admin@capella.test', password: 'integration-password' });
+    const app = createApp({ authService: module.service, secureCookies: false });
+    const login = await request(app).post('/api/v1/auth/admin/login')
+      .send({ email: 'admin@capella.test', password: 'integration-password' });
+    const cookie = login.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+    await database.update(authSessions).set({ expiresAt: new Date('2000-01-01T00:00:00.000Z') });
+
+    await request(app).get('/api/v1/auth/session').set('Cookie', cookie).expect(401);
   });
 
   it('replaces the stored hash when the env password changes on restart', async () => {

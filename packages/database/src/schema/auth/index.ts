@@ -19,26 +19,19 @@ export const accounts = mysqlTable('accounts', {
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   role: mysqlEnum('role', ['admin', 'cashier']).notNull(),
   employeeId: int('employee_id').references(() => employees.id),
+  adminSingleton: int('admin_singleton')
+    .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'admin' then 1 else null end`, { mode: 'stored' }),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   uniqueIndex('accounts_username_unique').on(table.username),
   uniqueIndex('accounts_employee_unique').on(table.employeeId),
+  uniqueIndex('accounts_admin_singleton_unique').on(table.adminSingleton),
   check(
     'accounts_role_scope_consistency',
     sql`(${table.role} = 'admin' and ${table.employeeId} is null) or (${table.role} = 'cashier' and ${table.employeeId} is not null)`,
   ),
-]);
-
-export const adminCredentials = mysqlTable('admin_credentials', {
-  id: int('id').primaryKey(),
-  email: varchar('email', { length: 255 }).notNull().unique(),
-  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
-}, (table) => [
-  // Single-admin system: the table can only ever hold the singleton row.
-  check('admin_credentials_singleton', sql`${table.id} = 1`),
 ]);
 
 export const authSessions = mysqlTable('auth_sessions', {
@@ -48,6 +41,8 @@ export const authSessions = mysqlTable('auth_sessions', {
   employeeId: int('employee_id').references(() => employees.id),
   accountId: int('account_id').references(() => accounts.id),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+  expiresAt: timestamp('expires_at', { mode: 'date', fsp: 3 }).notNull()
+    .$defaultFn(() => new Date(Date.now() + 24 * 60 * 60_000)),
   revokedAt: timestamp('revoked_at', { mode: 'date', fsp: 3 }),
 }, (table) => [
   index('auth_sessions_employee_active_idx').on(table.employeeId, table.revokedAt),

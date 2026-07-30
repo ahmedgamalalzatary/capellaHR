@@ -1,8 +1,12 @@
 import {
   adminLoginSchema,
+  cashierAccountStatusSchema,
   cashierLoginSchema,
   employeeLoginSchema,
+  listCashierAccountsSchema,
+  positiveMysqlIntSchema,
   promoteCashierSchema,
+  resetCashierPasswordSchema,
 } from '@capella/contracts';
 import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
@@ -51,6 +55,7 @@ export const createAuthRouter = (
     secure: options.secureCookies ?? true,
     sameSite: 'strict',
     path: '/',
+    maxAge: 24 * 60 * 60_000,
   };
 
   router.post('/admin/login', async (request, response) => {
@@ -90,6 +95,44 @@ export const createAuthRouter = (
         response.status(201).json({ data: account });
       },
     );
+    router.get(
+      '/cashier-accounts',
+      middleware.authenticate,
+      middleware.requireAdmin,
+      async (request, response) => {
+        const query = listCashierAccountsSchema.parse(request.query);
+        const result = await options.cashierAccounts!.list(query);
+        response.json({
+          data: result.items,
+          meta: {
+            page: query.page,
+            pageSize: query.pageSize,
+            total: result.total,
+            totalPages: Math.ceil(result.total / query.pageSize),
+          },
+        });
+      },
+    );
+    router.patch(
+      '/cashier-accounts/:accountId/status',
+      middleware.authenticate,
+      middleware.requireAdmin,
+      async (request, response) => {
+        const accountId = positiveMysqlIntSchema.parse(Number(request.params.accountId));
+        const input = cashierAccountStatusSchema.parse(request.body);
+        response.json({ data: await options.cashierAccounts!.setActive(accountId, input.active) });
+      },
+    );
+    router.patch(
+      '/cashier-accounts/:accountId/password',
+      middleware.authenticate,
+      middleware.requireAdmin,
+      async (request, response) => {
+        const accountId = positiveMysqlIntSchema.parse(Number(request.params.accountId));
+        const input = resetCashierPasswordSchema.parse(request.body);
+        response.json({ data: await options.cashierAccounts!.resetPassword(accountId, input.password) });
+      },
+    );
   }
 
   router.get('/session', async (request, response) => {
@@ -97,11 +140,13 @@ export const createAuthRouter = (
     const session = await service.authenticate(token);
     if (!session) throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
     const actor = session.actorType === 'account'
-      ? publicActor({
-          type: 'cashier',
-          accountId: session.accountId!,
-          employeeId: session.employeeId!,
-        })
+      ? session.accountRole === 'admin'
+        ? publicActor({ type: 'admin' })
+        : publicActor({
+            type: 'cashier',
+            accountId: session.accountId!,
+            employeeId: session.employeeId!,
+          })
       : publicActor({ type: session.actorType });
     response.json({ data: { actor } });
   });
@@ -137,7 +182,7 @@ export const createAuthRouter = (
       return;
     }
     if (error instanceof CashierAccountError) {
-      const status = error.code === 'EMPLOYEE_NOT_FOUND' ? 404 : 409;
+      const status = error.code === 'EMPLOYEE_NOT_FOUND' || error.code === 'ACCOUNT_NOT_FOUND' ? 404 : 409;
       response.status(status).json({
         error: { code: error.code, message: error.message, requestId },
       });

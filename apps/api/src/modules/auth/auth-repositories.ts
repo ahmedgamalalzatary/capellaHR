@@ -3,18 +3,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { type createDatabase } from '@capella/database';
 import {
   accounts,
-  adminCredentials,
   authAttempts,
   authLoginLimits,
   authSessions,
   employees,
 } from '@capella/database/schema';
-import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import type {
   AccountCredentialRepository,
-  AdminCredentialRepository,
   AttemptRepository,
   SessionRepository,
 } from './auth-service.js';
@@ -37,11 +35,22 @@ export const createDrizzleAuthRepositories = (
   } = {},
 ): {
   accountCredentials: AccountCredentialRepository;
-  adminCredentials: AdminCredentialRepository;
   sessions: SessionRepository;
   attempts: AttemptRepository;
 } => ({
   accountCredentials: {
+    async findAdminByUsername(username) {
+      const row = (await database.select({
+        id: accounts.id, username: accounts.username, passwordHash: accounts.passwordHash,
+        role: accounts.role, employeeId: accounts.employeeId, active: accounts.active,
+      }).from(accounts).where(and(
+        eq(accounts.username, username),
+        eq(accounts.role, 'admin'),
+      )).limit(1))[0];
+      return row?.role === 'admin' && row.employeeId === null
+        ? { ...row, role: 'admin' as const, employeeId: null }
+        : null;
+    },
     async findCashierByUsername(username) {
       const row = (await database.select({
         id: accounts.id,
@@ -57,15 +66,6 @@ export const createDrizzleAuthRepositories = (
       return row?.role === 'cashier' && row.employeeId !== null
         ? { ...row, role: 'cashier' as const, employeeId: row.employeeId }
         : null;
-    },
-  },
-  adminCredentials: {
-    async findByEmail(email) {
-      const rows = await database.select({
-        email: adminCredentials.email,
-        passwordHash: adminCredentials.passwordHash,
-      }).from(adminCredentials).where(eq(adminCredentials.email, email.toLowerCase())).limit(1);
-      return rows[0] ?? null;
     },
   },
   sessions: {
@@ -93,16 +93,19 @@ export const createDrizzleAuthRepositories = (
           employeeId: accounts.employeeId,
           active: accounts.active,
         }).from(accounts).where(eq(accounts.id, session.accountId!)).for('update').limit(1))[0];
-        if (!account || !account.active || account.role !== 'cashier' || account.employeeId === null) {
+        if (!account || !account.active) {
           return 'account_invalid';
         }
-        const employee = (await tx.select({
-          id: employees.id,
-          employmentStatus: employees.employmentStatus,
-          deletedAt: employees.deletedAt,
-        }).from(employees).where(eq(employees.id, account.employeeId)).for('update').limit(1))[0];
-        if (!employee || employee.deletedAt || employee.employmentStatus !== 'active') {
-          return 'account_invalid';
+        if (account.role === 'cashier') {
+          if (account.employeeId === null) return 'account_invalid';
+          const employee = (await tx.select({
+            id: employees.id,
+            employmentStatus: employees.employmentStatus,
+            deletedAt: employees.deletedAt,
+          }).from(employees).where(eq(employees.id, account.employeeId)).for('update').limit(1))[0];
+          if (!employee || employee.deletedAt || employee.employmentStatus !== 'active') {
+            return 'account_invalid';
+          }
         }
         const createdAt = now();
         await tx.insert(authSessions).values({ ...session, createdAt });
@@ -119,7 +122,7 @@ export const createDrizzleAuthRepositories = (
           },
           relatedIds: {
             accountId: account.id,
-            employeeId: account.employeeId,
+            ...(account.employeeId === null ? {} : { employeeId: account.employeeId }),
           },
           createdAt,
         });
@@ -150,11 +153,13 @@ export const createDrizzleAuthRepositories = (
         actorType: authSessions.actorType,
         employeeId: authSessions.employeeId,
         accountId: authSessions.accountId,
+        expiresAt: authSessions.expiresAt,
         revokedAt: authSessions.revokedAt,
       }).from(authSessions)
         .where(and(
           eq(authSessions.tokenHash, tokenHash),
           isNull(authSessions.revokedAt),
+          gt(authSessions.expiresAt, now()),
         )).limit(1))[0];
       if (!row) return null;
       if (row.actorType === 'admin') return { ...row, accountRole: null };
@@ -169,14 +174,19 @@ export const createDrizzleAuthRepositories = (
       const account = (await database.select({
         role: accounts.role,
         employeeId: accounts.employeeId,
-      }).from(accounts).innerJoin(employees, eq(employees.id, accounts.employeeId)).where(and(
+      }).from(accounts).leftJoin(employees, eq(employees.id, accounts.employeeId)).where(and(
         eq(accounts.id, row.accountId!),
         eq(accounts.active, true),
-        eq(accounts.role, 'cashier'),
-        eq(employees.employmentStatus, 'active'),
-        isNull(employees.deletedAt),
+        or(
+          eq(accounts.role, 'admin'),
+          and(
+            eq(accounts.role, 'cashier'),
+            eq(employees.employmentStatus, 'active'),
+            isNull(employees.deletedAt),
+          ),
+        ),
       )).limit(1))[0];
-      if (!account || account.role !== 'cashier' || account.employeeId === null) {
+      if (!account || (account.role === 'cashier' && account.employeeId === null)) {
         await database.transaction(async (tx) => {
           const revokedAt = now();
           const result = await tx.update(authSessions).set({ revokedAt }).where(and(
@@ -202,7 +212,7 @@ export const createDrizzleAuthRepositories = (
       return {
         ...row,
         employeeId: account.employeeId,
-        accountRole: 'cashier',
+        accountRole: account.role,
       };
     },
     async revokeByTokenHash(tokenHash, at) {

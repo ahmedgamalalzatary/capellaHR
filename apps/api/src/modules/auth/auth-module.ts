@@ -1,7 +1,7 @@
 import type { createDatabase } from '@capella/database';
-import { adminCredentials } from '@capella/database/schema';
-import { hash } from 'argon2';
-import { eq } from 'drizzle-orm';
+import { accounts, authSessions } from '@capella/database/schema';
+import { hash, verify } from 'argon2';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import { createDrizzleAuthRepositories } from './auth-repositories.js';
@@ -45,7 +45,6 @@ export const createAuthModule = (dependencies: {
   });
   const service = createAuthService({
     accounts: repositories.accountCredentials,
-    adminCredentials: repositories.adminCredentials,
     sessions: repositories.sessions,
     attempts: repositories.attempts,
     employees: dependencies.employees ?? unavailableEmployees,
@@ -58,24 +57,41 @@ export const createAuthModule = (dependencies: {
     cashierAccounts,
     repositories,
     async initializeAdmin(admin: { email: string; password: string }) {
-      const passwordHash = await hash(admin.password);
       await dependencies.database.transaction(async (transaction) => {
-        const before = (await transaction.select({ email: adminCredentials.email })
-          .from(adminCredentials).where(eq(adminCredentials.id, 1)).for('update').limit(1))[0] ?? null;
+        const before = (await transaction.select({
+          id: accounts.id,
+          username: accounts.username,
+          passwordHash: accounts.passwordHash,
+        }).from(accounts).where(eq(accounts.role, 'admin')).for('update').limit(1))[0] ?? null;
         const updatedAt = new Date();
-        const email = admin.email.toLowerCase();
-        await transaction.insert(adminCredentials).values({
-          id: 1,
-          email,
-          passwordHash,
-          updatedAt,
-        }).onDuplicateKeyUpdate({
-          set: { email, passwordHash, updatedAt },
-        });
+        const username = admin.email.trim().toLowerCase();
+        if (before && before.username === username && await verify(before.passwordHash, admin.password)) {
+          return;
+        }
+        const passwordHash = await hash(admin.password);
+        let accountId: number;
+        if (before) {
+          accountId = before.id;
+          await transaction.update(accounts).set({ username, passwordHash, updatedAt })
+            .where(eq(accounts.id, before.id));
+          await transaction.update(authSessions).set({ revokedAt: updatedAt }).where(and(
+            eq(authSessions.accountId, before.id),
+            isNull(authSessions.revokedAt),
+          ));
+        } else {
+          const inserted = await transaction.insert(accounts).values({
+            username, passwordHash, role: 'admin', employeeId: null,
+            active: true, createdAt: updatedAt, updatedAt,
+          });
+          accountId = Number(inserted[0].insertId);
+        }
         await writeAudit(transaction, {
           module: 'auth', action: 'credential_sync',
-          entityType: 'admin_credential', entityId: 1,
-          beforeState: before, afterState: { email }, createdAt: updatedAt,
+          entityType: 'account', entityId: accountId,
+          beforeState: before ? { username: before.username } : null,
+          afterState: { username, role: 'admin' },
+          relatedIds: { accountId },
+          createdAt: updatedAt,
         });
       });
     },

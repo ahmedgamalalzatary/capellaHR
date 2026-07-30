@@ -77,7 +77,7 @@ These were confirmed by reading the code on 2026-07-29 (not assumptions):
 - **Arabic RTL is already the house style.** `apps/web` renders `lang="ar" dir="rtl"` with IBM Plex Sans Arabic; locale `ar-EG`, timezone `Africa/Cairo`. The POS app follows the same.
 - **PDF machinery already exists.** `apps/worker` polls DB-queued report jobs and renders PDFs via `packages/reporting` (`report-pdf.ts`). Invoice/report PDF export reuses this pattern instead of introducing a new one.
 - **Branches with GPS geofencing exist**; the beauty center is one branch. All ERP data is branch-scoped from day one, so multi-branch POS is cheap later.
-- **Auth today:** singleton `admin_credentials` row (seeded at boot from `ADMIN_EMAIL` / `ADMIN_PASSWORD` env), and `auth_sessions.actor_type ∈ {admin, employee}`; employees log in with employee code + PIN for self-service. There are **no roles yet** — replaced by the account model in §6. Session cookie is `capella_session`, `SameSite=strict`, host-only (no `domain` attribute), and CORS accepts exactly one origin (`WEB_ORIGIN`) — this matters for §5.
+- **Auth at the start of planning:** the repository used a singleton `admin_credentials` row and `auth_sessions.actor_type ∈ {admin, employee}`. The completed account slice has since migrated the seeded Admin and Cashiers into `accounts`, migrated persistent Admin sessions to account identity, added expiry, and retired `admin_credentials`. Employee code + PIN remains limited to self-service. The session cookie remains `capella_session`, `SameSite=strict`, and host-only.
 
 ---
 
@@ -155,7 +155,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
   - **Cashier** — can log into the **ERP/POS only**; the HR app rejects cashier accounts. Within the ERP: all counter operations (sales, invoices, discounts, voids/refunds, clients, stock views).
   - **Employees** — code+PIN login to **HR only** (attendance/self-service); never a business actor in the ERP.
 - **An employee may optionally own an account.** Employee stays a business entity (a person who works and gets paid); an account is the ability to operate the system. A person can be both a service provider *and* a cashier without any modeling pain — the two facts live in different tables linked optionally.
-- The `.env` admin seed is kept: it now seeds the first **Admin account** (replacing the `admin_credentials` singleton mechanism; migration path designed in Step 2). Employee PIN-based self-service login remains as-is.
+- The `.env` admin seed is kept and now synchronizes the first **Admin account**. Migration `0042` copies the legacy singleton credential and sessions into account identity before dropping `admin_credentials`. Employee PIN-based self-service login remains as-is.
 - **Every sensitive operation records the acting account.** Invoices record the acting account as "authorized by" (requirement 8). There is **no approval hierarchy** (owner decision: voids/refunds may be done by cashier or admin alike); the data model keeps an optional approving-account field for the future, but nothing requires it today.
 
 ---

@@ -33,6 +33,10 @@ describe('authentication database schema', () => {
     expect(Reflect.get(accounts, 'branchId')).toBeUndefined();
     expect(accounts.passwordHash).toBeDefined();
     expect(accounts.active).toBeDefined();
+    expect(accounts.adminSingleton).toBeDefined();
+    expect(getTableConfig(accounts).indexes.some(
+      (item) => item.config.name === 'accounts_admin_singleton_unique',
+    )).toBe(true);
   });
 
   it('links account sessions to accounts without storing a duplicate employee identity', () => {

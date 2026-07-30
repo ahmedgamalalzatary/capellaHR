@@ -1,0 +1,2 @@
+ALTER TABLE `accounts` ADD `admin_singleton` int GENERATED ALWAYS AS (case when role = 'admin' then 1 else null end) STORED;--> statement-breakpoint
+ALTER TABLE `accounts` ADD CONSTRAINT `accounts_admin_singleton_unique` UNIQUE(`admin_singleton`);

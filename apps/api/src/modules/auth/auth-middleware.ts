@@ -24,8 +24,8 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
       reject(401, 'UNAUTHENTICATED', 'يجب تسجيل الدخول')(request, response, next);
       return;
     }
-    response.locals.actor = session.actorType === 'admin'
-      ? { type: 'admin' as const }
+    response.locals.actor = session.actorType === 'admin' || session.accountRole === 'admin'
+      ? { type: 'admin' as const, ...(session.accountId ? { accountId: session.accountId } : {}) }
       : session.actorType === 'employee'
         ? { type: 'employee' as const, employeeId: session.employeeId }
         : {

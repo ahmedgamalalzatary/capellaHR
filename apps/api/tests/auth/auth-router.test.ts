@@ -56,6 +56,13 @@ const makeApp = () => {
         active: true,
       };
     },
+    async list() { return { items: [], total: 0 }; },
+    async setActive(accountId: number, active: boolean) {
+      return { id: accountId, username: 'cashier.one', role: 'cashier' as const, employeeId: 7, branchId: 3, active };
+    },
+    async resetPassword(accountId: number) {
+      return { id: accountId, username: 'cashier.one', role: 'cashier' as const, employeeId: 7, branchId: 3, active: true };
+    },
   };
   app.use('/api/v1/auth', createAuthRouter(service, {
     secureCookies: true,
@@ -165,6 +172,17 @@ describe('authentication HTTP API', () => {
     });
   });
 
+  it('allows Admins to list, disable, and reset Cashier credentials', async () => {
+    const app = makeApp();
+    const cookie = { Cookie: 'capella_session=admin-token' };
+
+    expect((await request(app).get('/api/v1/auth/cashier-accounts').set(cookie)).status).toBe(200);
+    expect((await request(app).patch('/api/v1/auth/cashier-accounts/21/status')
+      .set(cookie).send({ active: false })).body.data).toMatchObject({ id: 21, active: false });
+    expect((await request(app).patch('/api/v1/auth/cashier-accounts/21/password')
+      .set(cookie).send({ password: 'new-secret' })).status).toBe(200);
+  });
+
   it('maps Cashier promotion conflicts to stable HTTP errors', async () => {
     const createAuthRouter = Reflect.get(auth, 'createAuthRouter');
     const app = express();
@@ -191,6 +209,9 @@ describe('authentication HTTP API', () => {
         async promote() {
           throw new auth.CashierAccountError('USERNAME_TAKEN', 'Username is already in use');
         },
+        async list() { return { items: [], total: 0 }; },
+        async setActive() { throw new Error('unused'); },
+        async resetPassword() { throw new Error('unused'); },
       },
     }));
 
