@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 import * as auditContracts from './index.js';
 
 describe('audit contracts', () => {
+  it('accepts account actors for ERP actions', () => {
+    expect(auditContracts.auditActorTypeSchema.safeParse('account').success).toBe(true);
+  });
+
   it('exposes a paginated combined audit filter contract', () => {
     expect(auditContracts).toHaveProperty('listAuditEventsQuerySchema');
 

@@ -26,10 +26,18 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
     }
     response.locals.actor = session.actorType === 'admin'
       ? { type: 'admin' as const }
-      : { type: 'employee' as const, employeeId: session.employeeId };
+      : session.actorType === 'employee'
+        ? { type: 'employee' as const, employeeId: session.employeeId }
+        : {
+            type: 'cashier' as const,
+            accountId: session.accountId,
+            employeeId: session.employeeId,
+          };
     setAuditActor(session.actorType === 'admin'
       ? { type: 'admin', identifier: 'admin' }
-      : { type: 'employee', identifier: String(session.employeeId) });
+      : session.actorType === 'employee'
+        ? { type: 'employee', identifier: String(session.employeeId) }
+        : { type: 'account', identifier: String(session.accountId) });
     next();
   };
 
@@ -51,5 +59,14 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
     next();
   };
 
-  return { authenticate, requireAdmin, requireEmployee };
+  const requireErpAccount: RequestHandler = (request, response, next) => {
+    const actor = response.locals.actor as { type?: string } | undefined;
+    if (actor?.type !== 'admin' && actor?.type !== 'cashier') {
+      reject(403, 'FORBIDDEN', 'غير مصرح لك بتنفيذ هذا الإجراء')(request, response, next);
+      return;
+    }
+    next();
+  };
+
+  return { authenticate, requireAdmin, requireEmployee, requireErpAccount };
 };

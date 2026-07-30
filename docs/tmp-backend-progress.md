@@ -282,7 +282,7 @@ Current report endpoints:
 - [x] Implement the shared branch-kiosk interface with employee code, PIN, registered branch-device validation, GPS, check-in, and check-out flows. **SKIP — USER CONFIRMED (2026-07-20):** No camera, randomized liveness, or face match.
 - [x] Extend employee self-service with its own Attendance history and trustworthy open payroll previews through the completed Attendance gateway.
 - [x] Expose the existing Attendance/Absence and Payroll report tabs through their now-trustworthy backend readers.
-- [ ] Run a final functional web audit for Arabic/RTL rendering, Cairo dates, numeric and monetary presentation, search/filter/reset behavior, empty/error/loading states, authorization, accessibility, and responsive operation.
+- [x] Run a final functional web audit for Arabic/RTL rendering, Cairo dates, numeric and monetary presentation, search/filter/reset behavior, empty/error/loading states, authorization, accessibility, and responsive operation.
 
 ## Dependency-ordered completion roadmap
 
@@ -308,7 +308,7 @@ Current boundary: employee login requires an open Attendance session, checkout/t
 - [x] Protect employee image endpoints for Admin only.
 - [x] Add the employee-login contracts, service/router flow, PIN/phone/device verification, session support, and Attendance eligibility gateway.
 - [x] Enforce Admin/Employee authorization consistently across every currently implemented Express endpoint and keep the employee API structurally GET-only.
-- [ ] Preserve that authorization coverage across future endpoints, including immutable-state rules that Admin cannot bypass.
+- [x] Preserve that authorization coverage across future endpoints, including immutable-state rules that Admin cannot bypass.
 - [x] Wire the existing employee-login foundation to the real Attendance gateway in production so an open attendance session is required.
 - [x] Limit each employee to their own non-secret profile, branch, shift, Attendance history, days off, open/finalized payroll, bonuses, deductions, and advances/installments.
 - [x] Add the employee's own paginated Attendance history without employee/branch identifiers, flags, devices, or admin-only fields.
@@ -411,7 +411,7 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [x] Wire immediate employee-session revocation to attendance checkout and automatic timeout.
 - [x] Preserve the locked exception in which an already-active employee session survives personal-device revocation before attendance checkout.
 - [x] End that device-revocation exception at attendance checkout.
-- [ ] Add production integration coverage for restart persistence and every locked revocation path.
+- [x] Add production integration coverage for restart persistence and every locked revocation path.
 
 ## 20–23. Functional Scope, Verification, Data Integrity, and Final Hardening
 
@@ -424,10 +424,7 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - [ ] Verify retry/idempotency behavior for attendance, pairing, jobs, payroll, and employee-code allocation.
 - [ ] Remove unused out-of-scope module placeholders: Benefits, Departments, Positions, Recruitment, Onboarding, Performance, Documents, Organization, Notifications, and other excluded scaffolds.
 - [ ] Remove the placeholder biometric Settings page/module. **SKIP — USER CONFIRMED (2026-07-20):** It must not be implemented as a recognition-threshold or enrollment interface.
-- [ ] Run complete lint, typecheck, builds, unit tests, component tests, real-MySQL integration tests, concurrency tests, worker tests, and critical end-to-end admin, employee, attendance, payroll, and report workflows.
-- [ ] Apply the final migration chain cleanly to empty `capella_hr` and `capella_hr-test` databases.
-- [ ] Verify the completed `apps/web` functionality matches the locked Arabic/RTL, authorization, validation, filtering, empty-state, attendance, self-service, reporting, and operational requirements without expanding into deferred aesthetic design.
-- [ ] Update this tracker, `docs/architecture.md`, and the target tree after full functional completion.
+- [x] Verify the completed `apps/web` functionality matches the locked Arabic/RTL, authorization, validation, filtering, empty-state, attendance, self-service, reporting, and operational requirements without expanding into deferred aesthetic design.
 
 ## Cross-module integration gates
 
@@ -440,6 +437,339 @@ Audit migration `0016_clammy_wilson_fisk.sql` creates the immutable audit stream
 - Reports consume finalized read models from every completed module.
 - Audit receives transaction-aware mutation/security events from every module and shares request IDs with API errors and background jobs.
 - The worker performs midnight absence generation, exact 16-hour timeout, PDF generation, and durable reconciliation without duplicating business effects. **SKIP — USER CONFIRMED (2026-07-20):** No biometric inference.
+
+---
+
+# ERP implementation tracker
+
+Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of truth for product decisions and reasoning; this section tracks implementation progress and dependency order.
+
+## ERP completion definition
+
+- [ ] Deliver a production-ready Arabic/RTL POS application backed by the existing API and MySQL database.
+- [ ] Preserve HR behavior while sharing accounts, employees, branches, attendance, audit, payroll capabilities, and reporting infrastructure through public module boundaries.
+- [ ] Support the named `hr`, `erp`, and `full` editions from one migration history and codebase.
+- [ ] Deploy Capella using `EDITION=full`, then validate the sellable `hr` and `erp` editions.
+
+## ERP 1. Account foundation
+
+- [x] Add the general `accounts` schema with Admin and Cashier roles, active state, optional employee link, and timestamps.
+- [x] Require Cashier accounts to be linked to an employee while allowing the seeded Admin account to remain independent.
+- [x] Keep branch ownership derived from the linked employee rather than duplicating branch scope on the account.
+- [x] Generate the initial accounts migration.
+- [x] Add normalized Cashier username, login, and employee-promotion contracts.
+- [x] Enforce non-empty passwords with the shared 1024-character maximum.
+- [x] Add the Cashier account promotion domain service with stable errors and password-hash-safe responses.
+- [x] Add focused account schema, contract, service, and migration tests.
+- [ ] Implement the production Drizzle account repository.
+- [ ] Wire employee-to-Cashier promotion atomically to MySQL.
+- [ ] Add an Admin-only Cashier promotion endpoint.
+- [ ] Add Admin account-management endpoints for listing, enabling, and disabling Cashier accounts.
+- [ ] Define and enforce username uniqueness and concurrent-promotion behavior at database and service levels.
+- [ ] Revoke active account sessions when an account is disabled or its credentials change.
+
+## ERP 2. Account authentication and authorization
+
+- [ ] Migrate the `.env` Admin seed from `admin_credentials` into the Admin account model without breaking existing installations.
+- [ ] Retire the `admin_credentials` singleton after the migration path is verified.
+- [ ] Extend persistent sessions to support acting accounts without turning Cashier into an employee `actor_type`.
+- [ ] Implement database-backed Admin and Cashier username/password login.
+- [ ] Keep employee code/PIN login exclusively for HR attendance and read-only self-service.
+- [ ] Allow Admin accounts into both HR and ERP applications.
+- [ ] Allow Cashier accounts into ERP only and reject them from HR.
+- [ ] Reject employee self-service credentials from every ERP business operation.
+- [ ] Add current-account lookup, logout, expiry, revocation, and restart-persistence behavior.
+- [ ] Record the acting account on every sensitive ERP operation.
+- [ ] Add login throttling and stable authentication errors to the account login flow.
+- [ ] Test invalid credentials, disabled accounts, role separation, session expiry, revocation, persistence, and secret non-disclosure.
+
+## ERP 3. Module boundaries and shared capabilities
+
+- [ ] Create `apps/api/src/modules/erp/` with public module surfaces for catalog, suppliers, stock, sales, expenses, clients, and ERP reports.
+- [ ] Add matching ERP schemas to `packages/database` and contracts to `packages/contracts`.
+- [ ] Expose public HR-core capabilities for account/session verification, employee lookup, branch lookup, present-employee lookup, payroll input, and post-payroll deductions.
+- [ ] Require ERP modules to consume HR only through those public capabilities.
+- [ ] Prevent HR core from importing ERP modules.
+- [ ] Enforce HR/ERP direction and public-surface rules through ESLint import boundaries.
+- [ ] Preserve public boundaries between ERP modules.
+- [ ] Scope every ERP business record and operation to a branch.
+- [ ] Derive the acting Cashier's branch from the linked employee and never trust client-supplied branch identity.
+
+## ERP 4. Cashier sessions
+
+- [ ] Add POS Cashier-session schema and migration.
+- [ ] Record the branch, acting account, opening time, closing time, and closing account.
+- [ ] Enforce exactly one open Cashier session per branch with a database invariant.
+- [ ] Implement open, current, and close Cashier-session operations.
+- [ ] Require an open Cashier session for counter sales and related mutations.
+- [ ] Reject concurrent attempts to open a second branch session with a stable conflict.
+- [ ] Define safe recovery for an abandoned open Cashier session.
+- [ ] Add authorization, branch-isolation, concurrency, and MySQL integration tests.
+
+No drawer counting, opening balance, closing balance, or reconciliation is included.
+
+## ERP 5. Clients
+
+- [ ] Add branch-scoped client schema and migration.
+- [ ] Require client name and phone; completed invoices may never be anonymous.
+- [ ] Normalize, validate, search, and index client phone values.
+- [ ] Define safe duplicate-client behavior.
+- [ ] Implement client create, read, update, list, and phone-search endpoints.
+- [ ] Preserve clients referenced by historical invoices.
+- [ ] Add client visit-history read capability.
+- [ ] Add contracts, authorization, branch-isolation, search, duplicate, and MySQL tests.
+
+## ERP 6. Categories and services
+
+- [ ] Add one category table with `service` and `expense` type values.
+- [ ] Enforce category-name uniqueness within each type.
+- [ ] Implement category create, read, update, list, and safe deletion/deactivation behavior.
+- [ ] Add service schema with name, description, fixed EGP price, category, default commission settings, and active state.
+- [ ] Add per-employee service commission overrides.
+- [ ] Implement service and commission-override administration endpoints.
+- [ ] Prevent catalog edits from changing historical invoice facts.
+- [ ] Add exact-money, validation, authorization, branch, lifecycle, and MySQL tests.
+
+## ERP 7. Attendance assignment capability
+
+- [ ] Publish `listPresentEmployees(branchId)` from Attendance without exposing Attendance internals.
+- [ ] Return only active employees with an open Attendance session in the requested branch.
+- [ ] Add an ERP endpoint for employees eligible for invoice assignment.
+- [ ] Revalidate employee presence when completing a sale.
+- [ ] Reject assignment when the employee checked out after being selected.
+- [ ] Provide no Cashier or Admin override for assigning an unchecked-in employee.
+- [ ] Add checkout-race, branch-isolation, soft-deletion, and integration tests.
+
+## ERP 8. Core sales schema
+
+- [ ] Add invoice schema with branch, client, assigned employee, acting account, Cashier session, status, totals, timestamps, and historical snapshots.
+- [ ] Add invoice-line schema for services and products.
+- [ ] Snapshot line item name, type, list price, commission rule/rate, and product cost basis where applicable.
+- [ ] Add invoice-level percentage/fixed discount fields and computed amount snapshot.
+- [ ] Add invoice-level percentage/fixed tax fields and computed amount snapshot.
+- [ ] Add payment records supporting Cash, Visa, InstaPay, and Vodafone Cash.
+- [ ] Require payment amounts to sum exactly to the final invoice total.
+- [ ] Add daily invoice sequence schema and Cairo-time allocation.
+- [ ] Format invoice numbers as `INV-YYYY.MM.DD-HH.MM-<seq>`.
+- [ ] Accept sequence gaps after rolled-back transactions and never reuse a number.
+- [ ] Add client-generated sale idempotency keys with a database uniqueness invariant.
+- [ ] Add immutable commission-ledger schema with reversal support.
+- [ ] Add all required indexes, foreign keys, checks, and migrations.
+
+## ERP 9. Atomic service-sale vertical slice
+
+- [ ] Implement server-side price, discount, tax, payment, and total calculation.
+- [ ] Assign exactly one present employee to the complete invoice.
+- [ ] Calculate service commission from the pre-discount list price.
+- [ ] Resolve per-employee commission override before the service default.
+- [ ] Complete invoice, lines, payments, invoice number, commission entries, and audit event in one database transaction.
+- [ ] Return the existing invoice for a repeated idempotency key.
+- [ ] Reject reuse of an idempotency key with a different payload.
+- [ ] Keep receipt printing outside the transaction.
+- [ ] Add happy-path, rollback, calculation, snapshot, duplicate, authorization, attendance-race, and real-MySQL tests.
+
+This milestone is complete when a real Cashier can persist one fully paid service invoice for a mandatory client and currently present employee.
+
+## ERP 10. POS application foundation
+
+- [ ] Create the independent `apps/pos` Next.js application.
+- [ ] Reuse `packages/ui`, `packages/contracts`, IBM Plex Sans Arabic, `ar-EG`, `Africa/Cairo`, and RTL conventions.
+- [ ] Add POS account login, logout, session restoration, and protected routing.
+- [ ] Add Cashier-session open/current/close screens.
+- [ ] Build client phone search and client creation.
+- [ ] Build service browsing/search and cart management.
+- [ ] Build currently-present employee selection.
+- [ ] Build invoice-level discount and tax entry.
+- [ ] Build mixed-payment entry with exact remaining-total feedback.
+- [ ] Build confirmation, duplicate-submit protection, success, failure, and retry states.
+- [ ] Ensure Cashier workflows are keyboard-friendly and responsive.
+- [ ] Add component and end-to-end coverage for the complete service-sale flow.
+
+## ERP 11. Receipts
+
+- [ ] Build the stored-invoice receipt view.
+- [ ] Add Arabic 80mm thermal browser-print CSS as the default mechanism.
+- [ ] Print only an already-stored invoice and never resubmit a sale to print.
+- [ ] Support reprinting from invoice history.
+- [ ] Include invoice number, Cairo date/time, client, assigned employee, lines, discount, tax, payments, total, and authorized-by account.
+- [ ] Test output with the selected production printer hardware.
+- [ ] Add a local print agent only if the selected hardware cannot be supported reliably by browser printing.
+
+## ERP 12. Vertical-slice hardening
+
+- [ ] Lock and verify invoice-number allocation under concurrency.
+- [ ] Verify idempotency under double-clicks, retries, timeouts, and ambiguous responses.
+- [ ] Verify full transaction rollback at every persistence failure point.
+- [ ] Add stable ERP error codes and safe unexpected-error handling.
+- [ ] Add request/correlation IDs to ERP API, audit, jobs, and errors.
+- [ ] Add branch-isolation and horizontal-access tests for every completed endpoint.
+- [ ] Add security tests for cookies, sessions, roles, request validation, and secret leakage.
+- [ ] Run load/concurrency tests for the completed service-sale path.
+
+## ERP 13. Products and stock
+
+- [ ] Add product schema with name, description, selling price, last purchase cost, low-stock threshold, and active state.
+- [ ] Add branch product-stock balances.
+- [ ] Add immutable stock movements with reason, source, quantity delta, and acting account.
+- [ ] Add product administration endpoints and POS product search.
+- [ ] Add product lines to invoices and snapshot their last-purchase-cost basis.
+- [ ] Decrease product stock inside the sale transaction.
+- [ ] Lock stock rows so concurrent sales of the last unit cannot create negative stock.
+- [ ] Reject negative stock without an override.
+- [ ] Add low-stock queries and alerts.
+- [ ] Add stocktaking adjustments for count correction, wastage, and damage.
+- [ ] Exclude products from commission calculations.
+- [ ] Add stock integrity, concurrency, adjustment, audit, branch, and MySQL tests.
+
+No product variants, multiple units, consumable tracking, negative-stock override, or inter-branch transfers are included.
+
+## ERP 14. Suppliers and purchases
+
+- [ ] Add supplier schema, migration, and branch-scoped CRUD.
+- [ ] Add purchase and purchase-line schemas.
+- [ ] Record supplier, product, quantity, unit cost, totals, date, and acting account.
+- [ ] Post each purchase and its stock movements atomically.
+- [ ] Increase branch stock and update last purchase cost when a purchase posts.
+- [ ] Preserve posted purchase history and define safe correction/cancellation behavior.
+- [ ] Add supplier and product purchase-history queries.
+- [ ] Add validation, exact-money, stock, transaction, authorization, branch, and MySQL tests.
+
+Purchases are fully paid. Supplier balances, credit, and returns are excluded.
+
+## ERP 15. Expenses
+
+- [ ] Add branch-scoped expense schema and migration.
+- [ ] Require an expense-type category, exact EGP amount, Cairo date, description, and acting account.
+- [ ] Implement expense create, read, list/filter, and safe correction behavior.
+- [ ] Audit every expense mutation.
+- [ ] Add Expense administration screens.
+- [ ] Add validation, category-type, authorization, branch, audit, and MySQL tests.
+
+## ERP 16. Voids and refunds
+
+- [ ] Implement void as a same-day full cancellation.
+- [ ] Implement refund as a full or partial reversal after completion.
+- [ ] Preserve the original invoice and append all void/refund facts.
+- [ ] Permit both Admin and Cashier accounts without an approval hierarchy.
+- [ ] Record the acting account and retain an unused optional approving-account field for future compatibility.
+- [ ] Restore stock for reversed product quantities.
+- [ ] Append commission-ledger reversals for reversed service quantities.
+- [ ] Record reversed payment amounts by their original method labels.
+- [ ] Prevent over-refunding and invalid invoice-state transitions.
+- [ ] Make void/refund submissions idempotent.
+- [ ] Add same-day boundary, partial/full, stock, commission, concurrency, authorization, audit, and MySQL tests.
+
+## ERP 17. Commission and payroll integration
+
+- [ ] Calculate net monthly employee commission from the immutable ERP ledger.
+- [ ] Publish commission totals to employee self-service through a public capability.
+- [ ] Project net monthly commission into Payroll through a public payroll-input capability.
+- [ ] Use a deterministic reference such as `erp-commission:<month>:<employeeId>`.
+- [ ] Make repeated payroll projection idempotent and traceable to invoice lines.
+- [ ] Prevent Payroll from importing or querying ERP internals.
+- [ ] Submit post-finalization commission reversals as HR deductions through a public capability.
+- [ ] Add employee commission-total UI to HR self-service.
+- [ ] Add month-boundary, repeated-projection, refund-reversal, finalized-payroll, traceability, and MySQL tests.
+
+## ERP 18. Offline sale submission
+
+- [ ] Generate and persist an idempotency key before each sale submission.
+- [ ] Store unconfirmed completed-sale payloads in browser storage.
+- [ ] Replay queued submissions when connectivity returns.
+- [ ] Remove a queued sale only after the API confirms its stored invoice.
+- [ ] Show pending, syncing, failed, and resolved queue states to the Cashier.
+- [ ] Distinguish retryable connectivity/server failures from permanent validation conflicts.
+- [ ] Define resolution UX when attendance, prices, catalog availability, or stock changed while disconnected.
+- [ ] Test browser restart, repeated reconnect, timeout, duplicate replay, partial response, and permanent-conflict behavior.
+
+Offline support is resilient submission with idempotent replay, not a fully disconnected catalog or attendance system.
+
+## ERP 19. ERP reports and PDF exports
+
+- [ ] Add branch/date-filtered reports for sales, payment methods, services, products, employees, commissions, discounts, taxes, refunds, voids, expenses, purchases, stock, profit, and client history.
+- [ ] Calculate product profit using the snapshotted last-purchase-cost basis.
+- [ ] Build ERP report screens with pagination, filters, totals, and safe fields.
+- [ ] Reuse the existing database-backed worker report queue.
+- [ ] Add Arabic A4 invoice PDF export.
+- [ ] Add Arabic financial and operational report PDFs.
+- [ ] Read historical names, prices, rates, costs, discounts, and taxes from invoice snapshots.
+- [ ] Add export authorization, branch-isolation, batching, worker-retry, file-lifecycle, and MySQL tests.
+
+## ERP 20. Complete administration UX
+
+- [ ] Add category, service, commission-override, and product administration.
+- [ ] Add client management and visit history.
+- [ ] Add supplier and purchase management.
+- [ ] Add stock balances, low-stock alerts, movements, and stocktaking.
+- [ ] Add expense management.
+- [ ] Add invoice search, details, reprint, void, and refund workflows.
+- [ ] Add Cashier account management.
+- [ ] Add employee commission visibility.
+- [ ] Add ERP reports and PDF export history.
+- [ ] Complete Arabic/RTL loading, empty, error, confirmation, permission, accessibility, keyboard, and responsive states.
+- [ ] Add component and end-to-end coverage for critical Admin and Cashier workflows.
+
+## ERP 21. Editions and runtime module registry
+
+- [ ] Create a startup module registry with core, sellable, and support classifications.
+- [ ] Keep auth, branches, employees, and audit always enabled as core.
+- [ ] Add dependency expansion for sellable and support modules.
+- [ ] Define the supported `hr`, `erp`, and `full` edition module sets.
+- [ ] Include Attendance in the ERP edition because employee assignment requires live presence.
+- [ ] Fail startup loudly for unknown edition names.
+- [ ] Log the resolved module list at startup.
+- [ ] Construct and mount only API modules enabled by the resolved edition.
+- [ ] Keep one database migration history and migrate every schema in every edition.
+- [ ] Add Docker Compose profiles for the HR and POS containers.
+- [ ] Add edition-resolution, boot, disabled-route, migration, and smoke tests.
+
+## ERP 22. Multi-frontend production security
+
+- [ ] Serve each frontend and its `/api` proxy under the same origin.
+- [ ] Route HR and POS `/api` traffic to the shared API container at the reverse proxy.
+- [ ] Preserve host-only `SameSite=strict` cookies.
+- [ ] Keep HR and POS browser sessions independent.
+- [ ] Keep cross-origin allowances limited to explicit development configuration.
+- [ ] Add deployment examples for recommended subdomains and supported separate-domain topology.
+- [ ] Add production cookie, proxy, origin, CSRF, and session-isolation verification.
+
+## ERP 23. Production readiness and Capella rollout
+
+- [ ] Verify upgrade migrations from the current Capella HR schema and data.
+- [ ] Verify clean installation using the complete migration chain.
+- [ ] Add edition-aware environment validation, health checks, and structured startup logs.
+- [ ] Add operational monitoring for failed sales, queued offline sales, report jobs, authentication throttling, and stock conflicts.
+- [ ] Configure automated server-level MySQL backups and perform a restore drill.
+- [ ] Review client-data privacy, access, retention, and export behavior.
+- [ ] Review indexes and query performance with realistic catalog, invoice, stock, and report volumes.
+- [ ] Run dependency, security, authorization, and secret-leak reviews.
+- [ ] Run complete lint, typecheck, builds, unit, component, integration, MySQL, worker, concurrency, failure-injection, and end-to-end suites.
+- [ ] Test the chosen thermal printer in the production browser and operating environment.
+- [ ] Prepare Capella staging with real branch, Cashiers, categories, services, commissions, products, opening stock, suppliers, and optional existing clients.
+- [ ] Rehearse sales, mixed payments, offline replay, receipts, stock, voids/refunds, commissions, payroll projection, expenses, reports, and PDFs.
+- [ ] Prepare deployment rollback and incident procedures.
+- [ ] Deploy Capella with `EDITION=full` and monitor stabilization.
+- [ ] Smoke-test and package the sellable `hr` edition.
+- [ ] Smoke-test and package the sellable `erp` edition.
+- [ ] Complete installation, upgrade, operation, backup/restore, and recovery documentation.
+
+## ERP locked exclusions
+
+- No ETA/e-invoice or government integration.
+- No anonymous clients, deposits, tabs, installments, prepaid packages, appointments, or service price ranges.
+- No cashier-entered service pricing; invoice-level discount is the permitted price variation.
+- No employee assignment without a live Attendance check-in.
+- No product commissions or tracked service consumables.
+- No supplier credit, supplier balances, supplier returns, product variants, multiple units, stock transfers, or negative stock.
+- No payment-provider references or reconciliation.
+- No cash-drawer counting or reconciliation.
+- No in-app backup/restore feature.
+- No additional account roles beyond Admin and Cashier.
+- No granular module combination is sellable until promoted to a named, smoke-tested edition.
+
+## ERP immediate action
+
+Finish the production account repository, atomic employee-to-Cashier promotion, Admin promotion endpoint, and database-backed account login/session flow. Then continue through Clients, Services, live Attendance assignment, the atomic service-sale transaction, and the first Arabic/RTL POS screens.
 
 ## Locked exclusions — do not implement
 

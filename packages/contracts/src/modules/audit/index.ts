@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { paginationPageSchema, paginationPageSizeSchema } from '../../common/index.js';
 
-export const auditActorTypeSchema = z.enum(['admin', 'employee', 'system']);
+export const auditActorTypeSchema = z.enum(['admin', 'employee', 'account', 'system']);
 
 const calendarDateSchema = z.string()
   .regex(/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/)

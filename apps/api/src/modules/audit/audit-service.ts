@@ -2,7 +2,7 @@ import type { ListAuditEventsQuery } from '@capella/contracts';
 
 interface AuditEventRecord {
   id: number;
-  actorType: 'admin' | 'employee' | 'system';
+  actorType: 'admin' | 'employee' | 'account' | 'system';
   actorIdentifier: string;
   action: string;
   module: string;

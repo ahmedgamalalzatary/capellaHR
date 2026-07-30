@@ -1,0 +1,1 @@
+CREATE INDEX `auth_attempts_ip_actor_created_idx` ON `auth_attempts` (`ip_address`,`actor_type`,`created_at`);

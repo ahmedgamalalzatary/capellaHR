@@ -10,7 +10,7 @@ import {
 
 export const auditEvents = mysqlTable('audit_events', {
   id: bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
-  actorType: mysqlEnum('actor_type', ['admin', 'employee', 'system']).notNull(),
+  actorType: mysqlEnum('actor_type', ['admin', 'employee', 'account', 'system']).notNull(),
   actorIdentifier: varchar('actor_identifier', { length: 128 }).notNull(),
   action: varchar('action', { length: 64 }).notNull(),
   module: varchar('module', { length: 64 }).notNull(),

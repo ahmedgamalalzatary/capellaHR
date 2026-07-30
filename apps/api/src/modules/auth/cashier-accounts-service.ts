@@ -1,4 +1,4 @@
-type CashierAccountInput = {
+export type CashierAccountInput = {
   username: string;
   passwordHash: string;
   role: 'cashier';
@@ -7,7 +7,7 @@ type CashierAccountInput = {
   updatedAt: Date;
 };
 
-type PublicCashierAccount = {
+export type PublicCashierAccount = {
   id: number;
   username: string;
   role: 'cashier';
@@ -23,16 +23,18 @@ export class CashierAccountError extends Error {
   }
 }
 
+export interface CashierAccountRepository {
+  promoteEmployeeToCashier(input: CashierAccountInput): Promise<
+    | { kind: 'created'; account: PublicCashierAccount }
+    | { kind: 'employee_not_found' }
+    | { kind: 'employee_inactive' }
+    | { kind: 'username_taken' }
+    | { kind: 'employee_already_has_account' }
+  >;
+}
+
 export const createCashierAccountsService = (dependencies: {
-  accounts: {
-    promoteEmployeeToCashier(input: CashierAccountInput): Promise<
-      | { kind: 'created'; account: PublicCashierAccount }
-      | { kind: 'employee_not_found' }
-      | { kind: 'employee_inactive' }
-      | { kind: 'username_taken' }
-      | { kind: 'employee_already_has_account' }
-    >;
-  };
+  accounts: CashierAccountRepository;
   hashPassword(password: string): Promise<string>;
   now?: () => Date;
 }) => ({
@@ -62,3 +64,5 @@ export const createCashierAccountsService = (dependencies: {
     return { id, username, role, employeeId, branchId, active };
   },
 });
+
+export type CashierAccountsService = ReturnType<typeof createCashierAccountsService>;

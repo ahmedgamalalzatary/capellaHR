@@ -1,6 +1,10 @@
 import { Router } from 'express';
 
-import { createAuthRouter, type AuthService } from '../modules/auth/index.js';
+import {
+  createAuthRouter,
+  type AuthService,
+  type CashierAccountsService,
+} from '../modules/auth/index.js';
 import { createBranchesRouter, type BranchService } from '../modules/branches/index.js';
 import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore } from '../modules/employees/index.js';
 import { createDevicesRouter, type DeviceService } from '../modules/devices/index.js';
@@ -18,6 +22,7 @@ import { createDashboardRouter, type DashboardService } from '../modules/dashboa
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
+  cashierAccountsService?: CashierAccountsService;
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
@@ -62,9 +67,14 @@ export const createApiRouter = (dependencies: {
   }
 
   if (dependencies.authService) {
-    const authOptions = dependencies.secureCookies === undefined
-      ? {}
-      : { secureCookies: dependencies.secureCookies };
+    const authOptions = {
+      ...(dependencies.secureCookies === undefined
+        ? {}
+        : { secureCookies: dependencies.secureCookies }),
+      ...(dependencies.cashierAccountsService === undefined
+        ? {}
+        : { cashierAccounts: dependencies.cashierAccountsService }),
+    };
     router.use('/auth', createAuthRouter(dependencies.authService, authOptions));
     if (dependencies.branchService) {
       router.use('/branches', createBranchesRouter(dependencies.branchService, dependencies.authService));

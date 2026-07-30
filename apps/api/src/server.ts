@@ -91,6 +91,9 @@ const auth = createAuthModule({
   employees: { findByCode: (code) => employeeRepository.findIdentityByCode(code) },
   personalDevices: deviceModule.personalDevices,
   attendance: attendanceModule.service,
+  onLoginLimitCleanupError: (error) => {
+    logger.warn({ err: error }, 'Cashier login-limit retention cleanup failed');
+  },
 });
 await auth.initializeAdmin({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD });
 const bonusModule = createBonusModule(database, { timeZone: env.APP_TIME_ZONE });
@@ -177,6 +180,7 @@ await employeeModule.uploadStore.retryPendingCleanup();
 
 createApp({
   authService: auth.service,
+  cashierAccountsService: auth.cashierAccounts,
   branchService: branchModule.service,
   employeeService: employeeModule.service,
   employeeUploadStore: employeeModule.uploadStore,

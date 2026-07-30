@@ -15,6 +15,7 @@ import { auditQueryKeys } from '../query-keys';
 
 const ACTOR_LABELS: Record<AuditActorType, string> = {
   admin: 'المشرف',
+  account: 'الحساب',
   employee: 'الموظف',
   system: 'النظام',
 };
@@ -22,6 +23,7 @@ const ACTOR_LABELS: Record<AuditActorType, string> = {
 /** Actor type is colour-coded so a scan separates human actions from automated ones. */
 const ACTOR_VARIANTS: Record<AuditActorType, 'neutral' | 'success' | 'warning'> = {
   admin: 'warning',
+  account: 'warning',
   employee: 'success',
   system: 'neutral',
 };

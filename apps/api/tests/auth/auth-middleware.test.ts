@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as auth from '../../src/modules/auth/index.js';
 
-const makeApp = (actorType: 'admin' | 'employee' | null) => {
+const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
   const createAuthMiddleware = Reflect.get(auth, 'createAuthMiddleware');
   expect(createAuthMiddleware).toBeTypeOf('function');
 
@@ -13,7 +13,9 @@ const makeApp = (actorType: 'admin' | 'employee' | null) => {
       if (!actorType || token !== 'valid-token') return null;
       return {
         id: 'session-id', tokenHash: 'hash', actorType,
-        employeeId: actorType === 'employee' ? 7 : null, revokedAt: null,
+        employeeId: actorType === 'employee' || actorType === 'account' ? 7 : null, revokedAt: null,
+        accountId: actorType === 'account' ? 21 : null,
+        accountRole: actorType === 'account' ? 'cashier' as const : null,
       };
     },
   };
@@ -23,6 +25,9 @@ const makeApp = (actorType: 'admin' | 'employee' | null) => {
     response.json({ actor: response.locals.actor });
   });
   app.get('/employee', middleware.authenticate, middleware.requireEmployee, (_request: express.Request, response: express.Response) => {
+    response.json({ actor: response.locals.actor });
+  });
+  app.get('/erp', middleware.authenticate, middleware.requireErpAccount, (_request: express.Request, response: express.Response) => {
     response.json({ actor: response.locals.actor });
   });
   return app;
@@ -55,5 +60,19 @@ describe('authorization middleware', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.actor).toEqual({ type: 'employee', employeeId: 7 });
+  });
+
+  it('allows a cashier through the ERP account boundary but not the Admin boundary', async () => {
+    const app = makeApp('account');
+    const erp = await request(app).get('/erp').set('Cookie', 'capella_session=valid-token');
+    const admin = await request(app).get('/admin').set('Cookie', 'capella_session=valid-token');
+
+    expect(erp.status).toBe(200);
+    expect(erp.body.actor).toEqual({
+      type: 'cashier',
+      accountId: 21,
+      employeeId: 7,
+    });
+    expect(admin.status).toBe(403);
   });
 });

@@ -6,8 +6,10 @@ import * as auth from '../../src/modules/auth/index.js';
 type Session = {
   id: string;
   tokenHash: string;
-  actorType: 'admin' | 'employee';
+  actorType: 'admin' | 'employee' | 'account';
   employeeId: number | null;
+  accountId: number | null;
+  accountRole?: 'cashier' | null;
   revokedAt: Date | null;
 };
 
@@ -19,6 +21,10 @@ class MemorySessions {
   readonly transactionContext = { kind: 'auth-transaction' };
 
   async create(session: Session) { this.rows.push(session); }
+  async createAccountIfCurrent(session: Session) {
+    this.rows.push({ ...session, accountRole: 'cashier', employeeId: 7 });
+    return 'created' as const;
+  }
   async createEmployeeIfCurrent(
     session: Session,
     _credentialVersion?: number,
@@ -52,6 +58,13 @@ class MemorySessions {
 
 class MemoryAttempts {
   readonly rows: Array<{ actorType: string; identifier: string; succeeded: boolean; reason: string | null }> = [];
+  accountLoginAllowed = true;
+  async reserveAccountLoginAttempt() {
+    return this.accountLoginAllowed
+      ? { allowed: true as const, reservation: [] }
+      : { allowed: false as const, retryAfterSeconds: 42 };
+  }
+  async resetAccountLoginLimits() {}
   async record(attempt: (typeof this.rows)[number]) { this.rows.push(attempt); }
 }
 
@@ -99,6 +112,20 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
             : null;
         },
       },
+      accounts: {
+        async findCashierByUsername(username: string) {
+          return username === 'cashier.one'
+            ? {
+                id: 21,
+                username,
+                passwordHash: adminHash,
+                role: 'cashier' as const,
+                employeeId: 7,
+                active: true,
+              }
+            : null;
+        },
+      },
       sessions,
       attempts,
       employees: {
@@ -131,6 +158,58 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
 };
 
 describe('authentication service', () => {
+  it('creates an account session for a valid cashier login', async () => {
+    const { service, sessions, attempts } = makeService();
+
+    const result = await service.loginCashier('CASHIER.ONE', 'correct horse battery staple');
+
+    expect(result.actor).toEqual({ type: 'cashier', accountId: 21, employeeId: 7 });
+    expect(sessions.rows).toEqual([
+      expect.objectContaining({
+        actorType: 'account',
+        accountId: 21,
+        accountRole: 'cashier',
+        employeeId: 7,
+      }),
+    ]);
+    expect(attempts.rows).toEqual([
+      expect.objectContaining({
+        actorType: 'account',
+        identifier: 'cashier.one',
+        succeeded: true,
+      }),
+    ]);
+  });
+
+  it('returns the same invalid-credentials error for unknown and wrong cashier credentials', async () => {
+    const { service, sessions, attempts } = makeService();
+
+    await expect(service.loginCashier('missing', 'wrong')).rejects.toMatchObject({
+      code: 'INVALID_CREDENTIALS',
+    });
+    await expect(service.loginCashier('cashier.one', 'wrong')).rejects.toMatchObject({
+      code: 'INVALID_CREDENTIALS',
+    });
+
+    expect(sessions.rows).toHaveLength(0);
+    expect(attempts.rows).toHaveLength(2);
+  });
+
+  it('rejects a rate-limited cashier login before creating a session', async () => {
+    const { service, sessions, attempts } = makeService();
+    attempts.accountLoginAllowed = false;
+
+    await expect(service.loginCashier(
+      'cashier.one',
+      'correct horse battery staple',
+      { ipAddress: '203.0.113.7' },
+    )).rejects.toMatchObject({
+      code: 'TOO_MANY_ATTEMPTS',
+      retryAfterSeconds: 42,
+    });
+    expect(sessions.rows).toHaveLength(0);
+  });
+
   it('creates independent sessions for valid admin logins', async () => {
     const { service, sessions } = makeService();
 

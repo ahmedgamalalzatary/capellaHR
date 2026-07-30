@@ -15,6 +15,26 @@ export const adminLoginSchema = z.object({
   password: z.string().min(1),
 }).strict();
 
+const codePoints = (value: string) => [...value].length;
+
+export const cashierUsernameSchema = z.string().trim().min(1)
+  .refine((username) => (
+    codePoints(username) <= 255
+    && codePoints(username.toLowerCase()) <= 255
+  ), { message: 'Username is too long' })
+  .transform((username) => username.toLowerCase());
+
+export const cashierLoginSchema = z.object({
+  username: cashierUsernameSchema,
+  password: z.string().min(1).max(1024),
+}).strict();
+
+export const promoteCashierSchema = z.object({
+  employeeId: positiveMysqlIntSchema,
+  username: cashierUsernameSchema,
+  password: z.string().min(1).max(1024),
+}).strict();
+
 export const employeeLoginSchema = z.object({
   employeeCode: positiveMysqlIntSchema,
   pin: z.string().regex(/^\d{4}$/),
@@ -23,4 +43,6 @@ export const employeeLoginSchema = z.object({
 }).strict();
 
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
+export type CashierLoginInput = z.infer<typeof cashierLoginSchema>;
+export type PromoteCashierInput = z.infer<typeof promoteCashierSchema>;
 export type EmployeeLoginInput = z.infer<typeof employeeLoginSchema>;

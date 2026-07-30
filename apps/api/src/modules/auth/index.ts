@@ -21,3 +21,5 @@ export * from './auth-router.js';
 export * from './auth-repositories.js';
 export * from './auth-middleware.js';
 export * from './auth-module.js';
+export * from './cashier-accounts-service.js';
+export * from './cashier-accounts-repository.js';

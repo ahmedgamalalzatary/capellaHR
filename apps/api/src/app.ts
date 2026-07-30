@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import type { Logger } from 'pino';
 
-import type { AuthService } from './modules/auth/index.js';
+import type { AuthService, CashierAccountsService } from './modules/auth/index.js';
 import type { BranchService } from './modules/branches/index.js';
 import type { EmployeeService, EmployeeUploadStore } from './modules/employees/index.js';
 import type { DeviceService } from './modules/devices/index.js';
@@ -28,6 +28,7 @@ import {
 
 export const createApp = (dependencies: {
   authService?: AuthService;
+  cashierAccountsService?: CashierAccountsService;
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;

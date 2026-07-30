@@ -2,18 +2,21 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { verify } from 'argon2';
 
-export type ActorType = 'admin' | 'employee';
+export type ActorType = 'admin' | 'employee' | 'account';
 
 type StoredSession = {
   id: string;
   tokenHash: string;
   actorType: ActorType;
   employeeId: number | null;
+  accountId?: number | null;
+  accountRole?: 'cashier' | null;
   revokedAt: Date | null;
 };
 
 export interface SessionRepository {
   create(session: StoredSession): Promise<void>;
+  createAccountIfCurrent(session: StoredSession): Promise<'created' | 'account_invalid'>;
   createEmployeeIfCurrent(
     session: StoredSession,
     credentialVersion: number,
@@ -26,6 +29,19 @@ export interface SessionRepository {
 }
 
 export interface AttemptRepository {
+  reserveAccountLoginAttempt(input: {
+    identifier: string;
+    ipAddress: string | null;
+    now: Date;
+    maximumAttempts: number;
+    windowMs: number;
+  }): Promise<
+    | { allowed: true; reservation: Array<{ key: string; version: number }> }
+    | { allowed: false; retryAfterSeconds: number }
+  >;
+  resetAccountLoginLimits(
+    reservation: Array<{ key: string; version: number }>,
+  ): Promise<void>;
   record(attempt: {
     actorType: ActorType;
     identifier: string;
@@ -41,6 +57,17 @@ export interface AdminCredentialRepository {
   findByEmail(email: string): Promise<{ email: string; passwordHash: string } | null>;
 }
 
+export interface AccountCredentialRepository {
+  findCashierByUsername(username: string): Promise<{
+    id: number;
+    username: string;
+    passwordHash: string;
+    role: 'cashier';
+    employeeId: number;
+    active: boolean;
+  } | null>;
+}
+
 interface EmployeeIdentity {
   id: number;
   code: number;
@@ -53,6 +80,7 @@ interface EmployeeIdentity {
 
 export interface AuthServiceDependencies {
   adminCredentials: AdminCredentialRepository;
+  accounts: AccountCredentialRepository;
   sessions: SessionRepository;
   attempts: AttemptRepository;
   employees: { findByCode(code: number): Promise<EmployeeIdentity | null> };
@@ -66,7 +94,11 @@ export interface AuthServiceDependencies {
 }
 
 export class AuthError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly retryAfterSeconds?: number,
+  ) {
     super(message);
     this.name = 'AuthError';
   }
@@ -94,6 +126,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   const createSession = async (
     actorType: ActorType,
     employeeId: number | null,
+    accountId: number | null = null,
     credentialVersion?: number,
     deviceId?: number,
   ) => {
@@ -103,6 +136,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       tokenHash: hashToken(token),
       actorType,
       employeeId,
+      accountId,
       revokedAt: null,
     };
     if (actorType === 'employee') {
@@ -115,6 +149,11 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       if (result === 'credentials_changed') throw new AuthError('INVALID_CREDENTIALS', 'تعذر تسجيل الدخول');
       if (result === 'device_invalid') throw new AuthError('DEVICE_NOT_REGISTERED', 'تعذر تسجيل الدخول');
       if (result === 'attendance_required') throw new AuthError('ACTIVE_ATTENDANCE_REQUIRED', 'تعذر تسجيل الدخول');
+    } else if (actorType === 'account') {
+      const result = await dependencies.sessions.createAccountIfCurrent(session);
+      if (result === 'account_invalid') {
+        throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
+      }
     } else {
       await dependencies.sessions.create(session);
     }
@@ -131,6 +170,55 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       });
       if (!valid) throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
       return { token: await createSession('admin', null), actor: { type: 'admin' as const } };
+    },
+
+    async loginCashier(username: string, password: string, context: AttemptContext = {}) {
+      const normalizedUsername = username.trim().toLowerCase();
+      const limit = await dependencies.attempts.reserveAccountLoginAttempt({
+        identifier: normalizedUsername,
+        ipAddress: context.ipAddress ?? null,
+        now: now(),
+        maximumAttempts: 5,
+        windowMs: 5 * 60_000,
+      });
+      if (!limit.allowed) {
+        throw new AuthError(
+          'TOO_MANY_ATTEMPTS',
+          'محاولات كثيرة، حاول مرة أخرى لاحقاً',
+          limit.retryAfterSeconds,
+        );
+      }
+      const account = await dependencies.accounts.findCashierByUsername(normalizedUsername);
+      const passwordMatches = await safelyVerifyHash(account?.passwordHash ?? TIMING_DUMMY_HASH, password);
+      const valid = account !== null && account.active && passwordMatches;
+      const recordAttempt = (succeeded: boolean) => dependencies.attempts.record({
+        actorType: 'account',
+        identifier: normalizedUsername,
+        succeeded,
+        reason: succeeded ? null : 'INVALID_CREDENTIALS',
+        ...context,
+      });
+      if (!valid) {
+        await recordAttempt(false);
+        throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
+      }
+      let token: string;
+      try {
+        token = await createSession('account', null, account.id);
+      } catch (error) {
+        if (error instanceof AuthError) await recordAttempt(false);
+        throw error;
+      }
+      await recordAttempt(true);
+      await dependencies.attempts.resetAccountLoginLimits(limit.reservation);
+      return {
+        token,
+        actor: {
+          type: 'cashier' as const,
+          accountId: account.id,
+          employeeId: account.employeeId,
+        },
+      };
     },
 
     async loginEmployee(input: { employeeCode: number; pin: string; personalPhone: string; installationMarker: string }, context: AttemptContext = {}) {
@@ -158,7 +246,15 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
 
       const employeeId = identity!.id;
       let token: string;
-      try { token = await createSession('employee', employeeId, identity!.credentialVersion, verifiedDevice!.id); }
+      try {
+        token = await createSession(
+          'employee',
+          employeeId,
+          null,
+          identity!.credentialVersion,
+          verifiedDevice!.id,
+        );
+      }
       catch (error) { if (error instanceof AuthError) await recordAttempt(false, error.code); throw error; }
       await recordAttempt(true, null);
       return {

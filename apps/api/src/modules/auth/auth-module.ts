@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
 import { createDrizzleAuthRepositories } from './auth-repositories.js';
 import { createAuthService, type AuthServiceDependencies } from './auth-service.js';
+import { createDrizzleCashierAccountRepository } from './cashier-accounts-repository.js';
+import { createCashierAccountsService } from './cashier-accounts-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
 
@@ -27,9 +29,22 @@ export const createAuthModule = (dependencies: {
   employees?: AuthServiceDependencies['employees'];
   personalDevices?: AuthServiceDependencies['personalDevices'];
   attendance?: AuthServiceDependencies['attendance'];
+  onLoginLimitCleanupError?: (error: unknown) => void;
 }) => {
-  const repositories = createDrizzleAuthRepositories(dependencies.database);
+  const repositories = createDrizzleAuthRepositories(
+    dependencies.database,
+    undefined,
+    dependencies.onLoginLimitCleanupError
+      ? { onLoginLimitCleanupError: dependencies.onLoginLimitCleanupError }
+      : {},
+  );
+  const cashierAccountRepository = createDrizzleCashierAccountRepository(dependencies.database);
+  const cashierAccounts = createCashierAccountsService({
+    accounts: cashierAccountRepository,
+    hashPassword: hash,
+  });
   const service = createAuthService({
+    accounts: repositories.accountCredentials,
     adminCredentials: repositories.adminCredentials,
     sessions: repositories.sessions,
     attempts: repositories.attempts,
@@ -40,6 +55,7 @@ export const createAuthModule = (dependencies: {
 
   return {
     service,
+    cashierAccounts,
     repositories,
     async initializeAdmin(admin: { email: string; password: string }) {
       const passwordHash = await hash(admin.password);

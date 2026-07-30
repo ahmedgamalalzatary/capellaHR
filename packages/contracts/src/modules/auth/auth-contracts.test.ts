@@ -11,6 +11,42 @@ describe('authentication contracts', () => {
     });
   });
 
+  it('accepts a cashier username and password without employee self-service fields', () => {
+    const schema = Reflect.get(contracts, 'cashierLoginSchema');
+
+    expect(schema).toBeDefined();
+    expect(schema.parse({ username: ' Cashier.One ', password: 'secret' })).toEqual({
+      username: 'cashier.one',
+      password: 'secret',
+    });
+    expect(schema.safeParse({
+      username: 'cashier.one',
+      password: 'secret',
+      employeeCode: 12,
+    }).success).toBe(false);
+    expect(schema.safeParse({
+      username: 'cashier.one',
+      password: 'x'.repeat(1025),
+    }).success).toBe(false);
+  });
+
+  it('validates cashier promotion credentials at the boundary', () => {
+    const schema = Reflect.get(contracts, 'promoteCashierSchema');
+
+    expect(schema.parse({ employeeId: 7, username: ' Cashier.One ', password: 'long-secret' }))
+      .toEqual({ employeeId: 7, username: 'cashier.one', password: 'long-secret' });
+    expect(schema.safeParse({ employeeId: 7, username: ' ', password: 'long-secret' }).success).toBe(false);
+    expect(schema.safeParse({ employeeId: 7, username: 'cashier', password: '' }).success).toBe(false);
+    expect(schema.safeParse({ employeeId: 7, username: 'x'.repeat(256), password: 'long-secret' }).success).toBe(false);
+  });
+
+  it('measures cashier usernames using MySQL Unicode character semantics', () => {
+    const astral = '\u{1E900}';
+    expect(contracts.cashierUsernameSchema.safeParse(astral.repeat(255)).success).toBe(true);
+    expect(contracts.cashierUsernameSchema.safeParse(astral.repeat(256)).success).toBe(false);
+    expect(contracts.cashierUsernameSchema.safeParse('\u0130'.repeat(255)).success).toBe(false);
+  });
+
   it('rejects employee login PINs that are not exactly four digits', () => {
     const schema = Reflect.get(contracts, 'employeeLoginSchema');
     expect(schema).toBeDefined();

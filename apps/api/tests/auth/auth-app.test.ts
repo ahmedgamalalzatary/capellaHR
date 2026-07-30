@@ -26,6 +26,7 @@ describe('authentication application composition', () => {
   it('mounts the admin login endpoint under API v1', async () => {
     const service = {
       async loginAdmin() { return { token: 'token', actor: { type: 'admin' as const } }; },
+      async loginCashier() { throw new Error('not used'); },
       async beginEmployeeDeviceAuthentication() { throw new Error('not used'); },
       async loginEmployee() { throw new Error('not used'); },
       async logout() { return true; },
@@ -115,6 +116,7 @@ describe('authentication application composition', () => {
     const { logger, records } = captureLogs();
     const service = {
       async loginAdmin() { throw new Error('database insert failed'); },
+      async loginCashier() { throw new Error('not used'); },
       async loginEmployee() { throw new Error('not used'); },
       async logout() { return true; },
       async authenticate() { return null; },

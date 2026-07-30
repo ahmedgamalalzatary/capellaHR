@@ -1,14 +1,30 @@
-import { adminLoginSchema, employeeLoginSchema } from '@capella/contracts';
+import {
+  adminLoginSchema,
+  cashierLoginSchema,
+  employeeLoginSchema,
+  promoteCashierSchema,
+} from '@capella/contracts';
 import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 
 import { AuthError, type AuthService } from './auth-service.js';
+import {
+  CashierAccountError,
+  type CashierAccountsService,
+} from './cashier-accounts-service.js';
+import { createAuthMiddleware } from './auth-middleware.js';
 import { responseRequestId } from '../../shared/http/index.js';
 
 // Stable protocol name shared by issuing, reading, and clearing the session cookie.
 const SESSION_COOKIE = 'capella_session';
 
-const publicActor = (actor: { type: 'admin' | 'employee' }) => ({ type: actor.type });
+const publicActor = (
+  actor:
+    | { type: 'admin' | 'employee' }
+    | { type: 'cashier'; accountId: number; employeeId: number },
+) => actor.type === 'cashier'
+  ? { type: actor.type, accountId: actor.accountId, employeeId: actor.employeeId }
+  : { type: actor.type };
 
 const readCookie = (cookieHeader: string | undefined, name: string) => {
   if (!cookieHeader) return null;
@@ -24,14 +40,17 @@ const readCookie = (cookieHeader: string | undefined, name: string) => {
 
 export const createAuthRouter = (
   service: AuthService,
-  options: { secureCookies?: boolean } = {},
+  options: {
+    secureCookies?: boolean;
+    cashierAccounts?: CashierAccountsService;
+  } = {},
 ) => {
   const router = Router();
   const cookieOptions: CookieOptions = {
     httpOnly: true,
     secure: options.secureCookies ?? true,
     sameSite: 'strict',
-    path: '/api/v1',
+    path: '/',
   };
 
   router.post('/admin/login', async (request, response) => {
@@ -48,11 +67,42 @@ export const createAuthRouter = (
     response.json({ data: { actor: publicActor(result.actor) } });
   });
 
+  router.post('/cashier/login', async (request, response) => {
+    const input = cashierLoginSchema.parse(request.body);
+    const result = await service.loginCashier(input.username, input.password, {
+      ipAddress: request.ip?.slice(0, 45) ?? null,
+      userAgent: request.header('user-agent')?.slice(0, 1024) ?? null,
+      requestId: responseRequestId(response),
+    });
+    response.cookie(SESSION_COOKIE, result.token, cookieOptions);
+    response.json({ data: { actor: publicActor(result.actor) } });
+  });
+
+  if (options.cashierAccounts) {
+    const middleware = createAuthMiddleware(service);
+    router.post(
+      '/cashier-accounts',
+      middleware.authenticate,
+      middleware.requireAdmin,
+      async (request, response) => {
+        const input = promoteCashierSchema.parse(request.body);
+        const account = await options.cashierAccounts!.promote(input);
+        response.status(201).json({ data: account });
+      },
+    );
+  }
+
   router.get('/session', async (request, response) => {
     const token = readCookie(request.headers.cookie, SESSION_COOKIE) ?? '';
     const session = await service.authenticate(token);
     if (!session) throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
-    const actor = publicActor({ type: session.actorType });
+    const actor = session.actorType === 'account'
+      ? publicActor({
+          type: 'cashier',
+          accountId: session.accountId!,
+          employeeId: session.employeeId!,
+        })
+      : publicActor({ type: session.actorType });
     response.json({ data: { actor } });
   });
 
@@ -77,7 +127,18 @@ export const createAuthRouter = (
       return;
     }
     if (error instanceof AuthError) {
-      response.status(401).json({
+      const status = error.code === 'TOO_MANY_ATTEMPTS' ? 429 : 401;
+      if (error.retryAfterSeconds !== undefined) {
+        response.setHeader('Retry-After', String(error.retryAfterSeconds));
+      }
+      response.status(status).json({
+        error: { code: error.code, message: error.message, requestId },
+      });
+      return;
+    }
+    if (error instanceof CashierAccountError) {
+      const status = error.code === 'EMPLOYEE_NOT_FOUND' ? 404 : 409;
+      response.status(status).json({
         error: { code: error.code, message: error.message, requestId },
       });
       return;
