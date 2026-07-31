@@ -72,4 +72,28 @@ describe('MySQL-backed authentication', () => {
       .where(eq(auditEvents.module, 'auth'))).map(({ action }) => action);
     expect(actions).toEqual(expect.arrayContaining(['login_failed', 'login_succeeded']));
   });
+
+  it('rejects a persisted session at the exact expiry boundary', async () => {
+    const createDrizzleAuthRepositories = Reflect.get(auth, 'createDrizzleAuthRepositories');
+    expect(createDrizzleAuthRepositories).toBeTypeOf('function');
+    const repositories = createDrizzleAuthRepositories(database);
+    const expiresAt = new Date('2026-07-31T10:00:00.000Z');
+    await repositories.sessions.create({
+      id: 'expiry-boundary-session',
+      tokenHash: 'e'.repeat(64),
+      actorType: 'admin',
+      employeeId: null,
+      expiresAt,
+      revokedAt: null,
+    });
+
+    await expect(repositories.sessions.findActiveByTokenHash(
+      'e'.repeat(64),
+      new Date(expiresAt.getTime() - 1),
+    )).resolves.toMatchObject({ id: 'expiry-boundary-session' });
+    await expect(repositories.sessions.findActiveByTokenHash(
+      'e'.repeat(64),
+      expiresAt,
+    )).resolves.toBeNull();
+  });
 });

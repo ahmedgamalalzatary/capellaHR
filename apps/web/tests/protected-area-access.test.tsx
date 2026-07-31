@@ -3,6 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProtectedAreaGate } from '../src/features/protected-area/components/protected-area-gate';
 
+const router = vi.hoisted(() => ({
+  back: vi.fn(),
+  replace: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => router,
+}));
+
 const response = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), {
   status,
   headers: { 'Content-Type': 'application/json' },
@@ -10,6 +19,8 @@ const response = (body: unknown, status = 200) => Promise.resolve(new Response(J
 
 beforeEach(() => {
   sessionStorage.clear();
+  router.back.mockReset();
+  router.replace.mockReset();
   vi.stubGlobal('fetch', vi.fn());
 });
 
@@ -20,6 +31,36 @@ afterEach(() => {
 });
 
 describe('ProtectedAreaGate', () => {
+  it('returns to the previous page from the protected-area prompt', async () => {
+    vi.spyOn(window.history, 'length', 'get').mockReturnValue(2);
+
+    render(
+      <ProtectedAreaGate area="employees">
+        <p>employee content</p>
+      </ProtectedAreaGate>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'رجوع' }));
+
+    expect(router.back).toHaveBeenCalledOnce();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('returns to the dashboard when the protected page has no previous history', async () => {
+    vi.spyOn(window.history, 'length', 'get').mockReturnValue(1);
+
+    render(
+      <ProtectedAreaGate area="employees">
+        <p>employee content</p>
+      </ProtectedAreaGate>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'رجوع' }));
+
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/dashboard');
+  });
+
   it('unlocks only the requested area for the current browser tab', async () => {
     vi.mocked(fetch).mockReturnValue(response({ unlocked: true }));
 

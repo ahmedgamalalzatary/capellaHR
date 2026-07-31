@@ -8,6 +8,7 @@ type Session = {
   tokenHash: string;
   actorType: 'admin' | 'employee';
   employeeId: number | null;
+  expiresAt: Date;
   revokedAt: Date | null;
 };
 
@@ -45,8 +46,12 @@ class MemorySessions {
   async revokeEmployee(employeeId: number, at: Date) {
     for (const row of this.rows) if (row.employeeId === employeeId) row.revokedAt = at;
   }
-  async findActiveByTokenHash(tokenHash: string) {
-    return this.rows.find((row) => row.tokenHash === tokenHash && row.revokedAt === null) ?? null;
+  async findActiveByTokenHash(tokenHash: string, at: Date) {
+    return this.rows.find((row) =>
+      row.tokenHash === tokenHash
+      && row.revokedAt === null
+      && row.expiresAt > at
+    ) ?? null;
   }
 }
 
@@ -82,6 +87,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
   let deviceVerificationCount = 0;
   let attendanceContext: unknown;
   let attendanceOpen = overrides.attendanceOpen ?? true;
+  let currentTime = new Date('2026-07-17T10:00:00.000Z');
   const createAuthService = Reflect.get(auth, 'createAuthService');
   expect(createAuthService).toBeTypeOf('function');
 
@@ -91,6 +97,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
     get deviceVerificationCount() { return deviceVerificationCount; },
     get attendanceContext() { return attendanceContext; },
     setAttendanceOpen(value: boolean) { attendanceOpen = value; },
+    setNow(value: Date) { currentTime = value; },
     service: createAuthService({
       adminCredentials: {
         async findByEmail(email: string) {
@@ -125,7 +132,7 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
         },
       },
       tokenFactory: () => `opaque-token-${++tokenNumber}`,
-      now: () => new Date('2026-07-17T10:00:00.000Z'),
+      now: () => currentTime,
     }),
   };
 };
@@ -141,6 +148,28 @@ describe('authentication service', () => {
     expect(sessions.rows).toHaveLength(2);
     expect(sessions.rows.every((row) => row.actorType === 'admin')).toBe(true);
     expect(sessions.rows.some((row) => row.tokenHash === first.token)).toBe(false);
+  });
+
+  it('sets an absolute seven-day expiry when a session is created', async () => {
+    const { service, sessions } = makeService();
+
+    await service.loginAdmin('admin@capella.test', 'correct horse battery staple');
+
+    expect(Reflect.get(sessions.rows[0]!, 'expiresAt')).toEqual(
+      new Date('2026-07-24T10:00:00.000Z'),
+    );
+  });
+
+  it('rejects a session at its absolute expiry time', async () => {
+    const setup = makeService();
+    const login = await setup.service.loginAdmin(
+      'admin@capella.test',
+      'correct horse battery staple',
+    );
+    Reflect.set(setup.sessions.rows[0]!, 'expiresAt', new Date('2026-07-24T10:00:00.000Z'));
+    setup.setNow(new Date('2026-07-24T10:00:00.000Z'));
+
+    await expect(setup.service.authenticate(login.token)).resolves.toBeNull();
   });
 
   it('rejects invalid admin credentials and records every attempt without locking', async () => {

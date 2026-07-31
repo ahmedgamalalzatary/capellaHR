@@ -45,6 +45,7 @@ describe('authentication HTTP API', () => {
     expect(response.headers['set-cookie']?.[0]).toContain('HttpOnly');
     expect(response.headers['set-cookie']?.[0]).toContain('Secure');
     expect(response.headers['set-cookie']?.[0]).toContain('SameSite=Strict');
+    expect(response.headers['set-cookie']?.[0]).toContain('Max-Age=604800');
     expect(response.body).not.toHaveProperty('data.token');
   });
 
@@ -76,6 +77,7 @@ describe('authentication HTTP API', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ data: { actor: { type: 'employee' } } });
     expect(response.headers['set-cookie']?.[0]).toContain('capella_session=employee-token');
+    expect(response.headers['set-cookie']?.[0]).not.toContain('Max-Age');
     expect(response.body).not.toHaveProperty('data.token');
   });
 
@@ -86,6 +88,15 @@ describe('authentication HTTP API', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ data: { actor: { type: 'admin' } } });
+  });
+
+  it('clears an expired or otherwise invalid session cookie', async () => {
+    const response = await request(makeApp())
+      .get('/api/v1/auth/session')
+      .set('Cookie', 'capella_session=expired-token');
+
+    expect(response.status).toBe(401);
+    expect(response.headers['set-cookie']?.[0]).toContain('capella_session=;');
   });
 
   it('revokes and clears only the supplied session on logout', async () => {

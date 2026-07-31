@@ -28,6 +28,9 @@ export const authSessions = mysqlTable('auth_sessions', {
   actorType: mysqlEnum('actor_type', ['admin', 'employee']).notNull(),
   employeeId: int('employee_id').references(() => employees.id),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+  expiresAt: timestamp('expires_at', { mode: 'date', fsp: 3 })
+    .default(sql`(CURRENT_TIMESTAMP(3) + INTERVAL 7 DAY)`)
+    .notNull(),
   revokedAt: timestamp('revoked_at', { mode: 'date', fsp: 3 }),
 }, (table) => [
   index('auth_sessions_employee_active_idx').on(table.employeeId, table.revokedAt),

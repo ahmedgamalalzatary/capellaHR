@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { type createDatabase } from '@capella/database';
 import { adminCredentials, authAttempts, authSessions, employees } from '@capella/database/schema';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import type { AdminCredentialRepository, AttemptRepository, SessionRepository } from './auth-service.js';
@@ -56,18 +56,20 @@ export const createDrizzleAuthRepositories = (
         return 'created';
       });
     },
-    async findActiveByTokenHash(tokenHash) {
+    async findActiveByTokenHash(tokenHash, at) {
       const rows = await database.select({
         id: authSessions.id,
         tokenHash: authSessions.tokenHash,
         actorType: authSessions.actorType,
         employeeId: authSessions.employeeId,
+        expiresAt: authSessions.expiresAt,
         revokedAt: authSessions.revokedAt,
       }).from(authSessions)
         .leftJoin(employees, eq(employees.id, authSessions.employeeId))
         .where(and(
           eq(authSessions.tokenHash, tokenHash),
           isNull(authSessions.revokedAt),
+          gt(authSessions.expiresAt, at),
           or(
             eq(authSessions.actorType, 'admin'),
             and(
@@ -83,6 +85,7 @@ export const createDrizzleAuthRepositories = (
             tokenHash: row.tokenHash,
             actorType: row.actorType,
             employeeId: row.employeeId,
+            expiresAt: row.expiresAt,
             revokedAt: row.revokedAt,
           }
         : null;

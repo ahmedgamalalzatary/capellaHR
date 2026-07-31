@@ -77,7 +77,7 @@ describe('MySQL-backed employees', () => {
     // credential version is stale, so tokens minted before deactivation cannot be replayed.
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'deactivate-session')))[0]!.revokedAt).not.toBeNull();
     await expect(createDrizzleAuthRepositories(database).sessions.createEmployeeIfCurrent(
-      { id: 'stale-after-reactivation', tokenHash: 'e'.repeat(64), actorType: 'employee', employeeId: created.id, revokedAt: null },
+      { id: 'stale-after-reactivation', tokenHash: 'e'.repeat(64), actorType: 'employee', employeeId: created.id, expiresAt: new Date('2099-01-01T00:00:00.000Z'), revokedAt: null },
       1,
       () => Promise.resolve(true),
       () => Promise.resolve(true),
@@ -95,7 +95,7 @@ describe('MySQL-backed employees', () => {
     await employeeModule.service.update(created.id, { pin: '4321' });
     expect((await database.select().from(authSessions).where(eq(authSessions.id, 'pin-reset-session')))[0]!.revokedAt).not.toBeNull();
     await expect(createDrizzleAuthRepositories(database).sessions.createEmployeeIfCurrent(
-      { id: 'stale-login', tokenHash: 'c'.repeat(64), actorType: 'employee', employeeId: created.id, revokedAt: null },
+      { id: 'stale-login', tokenHash: 'c'.repeat(64), actorType: 'employee', employeeId: created.id, expiresAt: new Date('2099-01-01T00:00:00.000Z'), revokedAt: null },
       1,
       () => Promise.resolve(true),
       () => Promise.resolve(true),

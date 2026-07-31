@@ -7,6 +7,7 @@ import { responseRequestId } from '../../shared/http/index.js';
 
 // Stable protocol name shared by issuing, reading, and clearing the session cookie.
 const SESSION_COOKIE = 'capella_session';
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 
 const publicActor = (actor: { type: 'admin' | 'employee' }) => ({ type: actor.type });
 
@@ -33,11 +34,15 @@ export const createAuthRouter = (
     sameSite: 'strict',
     path: '/api/v1',
   };
+  const sessionCookieOptions: CookieOptions = {
+    ...cookieOptions,
+    maxAge: SESSION_MAX_AGE_MS,
+  };
 
   router.post('/admin/login', async (request, response) => {
     const input = adminLoginSchema.parse(request.body);
     const result = await service.loginAdmin(input.email, input.password, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
-    response.cookie(SESSION_COOKIE, result.token, cookieOptions);
+    response.cookie(SESSION_COOKIE, result.token, sessionCookieOptions);
     response.json({ data: { actor: publicActor(result.actor) } });
   });
 
@@ -51,7 +56,10 @@ export const createAuthRouter = (
   router.get('/session', async (request, response) => {
     const token = readCookie(request.headers.cookie, SESSION_COOKIE) ?? '';
     const session = await service.authenticate(token);
-    if (!session) throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
+    if (!session) {
+      if (token) response.clearCookie(SESSION_COOKIE, cookieOptions);
+      throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
+    }
     const actor = publicActor({ type: session.actorType });
     response.json({ data: { actor } });
   });

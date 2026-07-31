@@ -9,6 +9,7 @@ type StoredSession = {
   tokenHash: string;
   actorType: ActorType;
   employeeId: number | null;
+  expiresAt: Date;
   revokedAt: Date | null;
 };
 
@@ -20,7 +21,7 @@ export interface SessionRepository {
     deviceEligible: (context: unknown) => Promise<boolean>,
     attendanceEligible: (context: unknown) => Promise<boolean>,
   ): Promise<'created' | 'credentials_changed' | 'device_invalid' | 'attendance_required'>;
-  findActiveByTokenHash(tokenHash: string): Promise<StoredSession | null>;
+  findActiveByTokenHash(tokenHash: string, at: Date): Promise<StoredSession | null>;
   revokeByTokenHash(tokenHash: string, at: Date): Promise<boolean>;
   revokeEmployee(employeeId: number, at: Date): Promise<void>;
 }
@@ -90,6 +91,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   type AttemptContext = { ipAddress?: string | null; userAgent?: string | null; requestId?: string | null };
   const now = dependencies.now ?? (() => new Date());
   const tokenFactory = dependencies.tokenFactory ?? (() => randomBytes(32).toString('base64url'));
+  const sessionLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
   const createSession = async (
     actorType: ActorType,
@@ -98,11 +100,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
     deviceId?: number,
   ) => {
     const token = tokenFactory();
+    const createdAt = now();
     const session = {
       id: randomUUID(),
       tokenHash: hashToken(token),
       actorType,
       employeeId,
+      expiresAt: new Date(createdAt.getTime() + sessionLifetimeMs),
       revokedAt: null,
     };
     if (actorType === 'employee') {
@@ -173,13 +177,21 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
 
     async authenticate(token: string) {
       if (!token) return null;
-      const session = await dependencies.sessions.findActiveByTokenHash(hashToken(token));
+      const session = await dependencies.sessions.findActiveByTokenHash(hashToken(token), now());
       if (session?.actorType === 'employee'
         && !await dependencies.attendance.hasOpenSession(session.employeeId!)) {
         await dependencies.sessions.revokeEmployee(session.employeeId!, now());
         return null;
       }
-      return session;
+      return session
+        ? {
+            id: session.id,
+            tokenHash: session.tokenHash,
+            actorType: session.actorType,
+            employeeId: session.employeeId,
+            revokedAt: session.revokedAt,
+          }
+        : null;
     },
 
     async revokeEmployeeSessions(employeeId: number) {

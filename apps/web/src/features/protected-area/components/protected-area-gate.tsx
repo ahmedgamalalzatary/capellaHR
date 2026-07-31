@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { Button, Field, Input, Modal } from '@capella/ui';
 
@@ -22,6 +23,7 @@ interface ProtectedAreaUnlockDialogProps {
   title: string;
   onUnlocked: () => void;
   onClose?: (() => void) | undefined;
+  closeLabel?: string | undefined;
 }
 
 export function ProtectedAreaUnlockDialog({
@@ -29,6 +31,7 @@ export function ProtectedAreaUnlockDialog({
   title,
   onUnlocked,
   onClose,
+  closeLabel = 'إلغاء',
 }: ProtectedAreaUnlockDialogProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +78,7 @@ export function ProtectedAreaUnlockDialog({
         </Field>
         {error ? <p role="alert" className="text-[13px] text-danger">{error}</p> : null}
         <div className="flex justify-end gap-2">
-          {onClose ? <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>إلغاء</Button> : null}
+          {onClose ? <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>{closeLabel}</Button> : null}
           <Button type="submit" disabled={!password || pending}>
             {pending ? 'جارٍ التحقق…' : 'فتح القسم'}
           </Button>
@@ -92,6 +95,7 @@ export function ProtectedAreaGate({
   area: ProtectedArea;
   children: ReactNode;
 }) {
+  const router = useRouter();
   const [unlocked, setUnlocked] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -108,6 +112,14 @@ export function ProtectedAreaGate({
       area={area}
       title="هذا القسم محمي"
       onUnlocked={() => setUnlocked(true)}
+      onClose={() => {
+        if (window.history.length > 1) {
+          router.back();
+          return;
+        }
+        router.replace('/dashboard');
+      }}
+      closeLabel="رجوع"
     />
   );
 }
