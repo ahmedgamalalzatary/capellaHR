@@ -15,6 +15,13 @@ export interface ModalProps {
   className?: string;
 }
 
+const focusableSelector = 'button, [href], input, select, textarea, [tabindex]';
+const isTabbable = (element: HTMLElement) => (
+  element.tabIndex >= 0
+  && !element.hasAttribute('disabled')
+  && !element.matches('input[type="hidden"]')
+);
+
 /**
  * An in-app replacement for the browser's blocking dialogs: `window.confirm` cannot be styled,
  * localized, or made to carry the amounts and warnings these decisions need.
@@ -32,12 +39,51 @@ export function Modal({
     // Focus moves in so the keyboard lands on the decision, and returns to whatever opened the
     // dialog once it closes, which is where the user was looking.
     const previous = document.activeElement as HTMLElement | null;
-    const target = dialogRef.current?.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
+    const target = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+    ).find(isTabbable);
     (target ?? dialogRef.current)?.focus();
     return () => previous?.focus?.();
   }, []);
+
+  useEffect(() => {
+    const focusableElements = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      focusableSelector,
+    ) ?? []).filter(isTabbable);
+
+    const containKeyboardFocus = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      if (event.key === 'Tab') {
+        const focusable = focusableElements();
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (!first || !last) {
+          event.preventDefault();
+          dialog.focus();
+          return;
+        }
+        const active = document.activeElement;
+        if (!dialog.contains(active)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (event.shiftKey && (active === first || active === dialog)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (active === last || active === dialog)) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        if (dismissOnBackdrop) onClose();
+      }
+    };
+
+    document.addEventListener('keydown', containKeyboardFocus);
+    return () => document.removeEventListener('keydown', containKeyboardFocus);
+  }, [dismissOnBackdrop, onClose]);
 
   return (
     <div
@@ -55,14 +101,6 @@ export function Modal({
           className,
         )}
         onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            // Swallowed either way so Escape never reaches whatever is behind the dialog, but
-            // it only closes when dismissal is allowed at all.
-            event.stopPropagation();
-            if (dismissOnBackdrop) onClose();
-          }
-        }}
       >
         <h2 className="text-sm font-medium">{title}</h2>
         <div className="mt-3 space-y-3">{children}</div>

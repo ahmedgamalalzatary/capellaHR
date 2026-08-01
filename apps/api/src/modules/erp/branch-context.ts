@@ -36,10 +36,10 @@ export const createErpBranchContextResolver = (capabilities: {
 ): Promise<ErpBranchContext> => {
   if (actor.role === 'admin') {
     if (requestedBranchId === undefined) {
-      throw new ErpBranchContextError('ERP_BRANCH_REQUIRED', 'Branch is required');
+      throw new ErpBranchContextError('ERP_BRANCH_REQUIRED', 'يجب اختيار الفرع');
     }
     if (!await capabilities.branches.findById(requestedBranchId)) {
-      throw new ErpBranchContextError('ERP_BRANCH_NOT_FOUND', 'Branch was not found');
+      throw new ErpBranchContextError('ERP_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     }
     return {
       accountId: actor.accountId,
@@ -53,13 +53,13 @@ export const createErpBranchContextResolver = (capabilities: {
   if (!employee) {
     throw new ErpBranchContextError(
       'ERP_CASHIER_EMPLOYEE_UNAVAILABLE',
-      'Cashier employee is unavailable',
+      'الموظف المرتبط بحساب الكاشير غير متاح',
     );
   }
   if (requestedBranchId !== undefined && requestedBranchId !== employee.branchId) {
     throw new ErpBranchContextError(
       'ERP_BRANCH_FORBIDDEN',
-      'Cashier cannot operate another branch',
+      'لا يمكن للكاشير تنفيذ عمليات على فرع آخر',
     );
   }
   return {

@@ -512,19 +512,67 @@ Every functional ERP slice is delivered end to end: database and migration work,
 
 This is an architecture slice: no standalone user screen is required. Complete: both API/package boundaries and the POS frontend boundaries are enforced.
 
+## ERP dependency graph and controlled parallel delivery
+
+The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
+
+```text
+DONE: ERP 1–4
+       │
+       ├── ERP 5  Clients ──────────┐
+       ├── ERP 6  Services/catalog ──┼── ERP 8 Core sales schema
+       └── ERP 7  Attendance assign ─┘
+                                          │
+                                      ERP 9 Atomic sale
+                                       ┌──┴──┐
+                                    ERP 10  ERP 11
+                                      UX    Receipts
+                                       └──┬──┘
+                                      ERP 12 Hardening
+                                          │
+                                      ERP 13 Products/stock
+                         ┌────────────────┼───────────────┐
+                      ERP 14           ERP 16          ERP 18
+                 Suppliers/purchases  Refunds/voids    Offline
+                         │                │
+ERP 6 ───────────────> ERP 15          ERP 17
+                         Expenses      Payroll commission
+                         └────────────────┬───────────────┘
+                                      ERP 19 Reports
+                                          │
+                                      ERP 20 Admin UX
+                                          │
+                                      ERP 21 Editions
+                                          │
+                                      ERP 22 Security
+                                          │
+                                      ERP 23 Rollout
+```
+
+Safe parallel waves:
+
+1. **Current wave:** ERP 4 is complete; ERP 5, 6, and 7 can run in parallel.
+2. **Barrier:** ERP 8, then ERP 9.
+3. **Parallel:** ERP 10 and 11.
+4. **Barrier:** ERP 12, then ERP 13.
+5. **Parallel:** ERP 14, 15, 16, and 18.
+6. ERP 17 starts after ERP 16.
+7. ERP 19 waits for ERP 14–17.
+8. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
+
 ## ERP 4. Cashier sessions
 
-- [ ] Add POS Cashier-session schema and migration.
-- [ ] Record the branch, acting account, opening time, closing time, and closing account.
-- [ ] Enforce exactly one open Cashier session per branch with a database invariant.
-- [ ] Implement open, current, and close Cashier-session operations.
-- [ ] Require an open Cashier session for counter sales and related mutations.
-- [ ] Reject concurrent attempts to open a second branch session with a stable conflict.
-- [ ] Define safe recovery for an abandoned open Cashier session.
-- [ ] Add authorization, branch-isolation, concurrency, and MySQL integration tests.
-- [ ] Add POS open/current/close Cashier-session UI with clear active-session ownership and Cairo timestamps.
-- [ ] Add POS Admin recovery-close UI for an abandoned session with confirmation and audit-visible acting-account context.
-- [ ] Add component and end-to-end coverage for normal open/close, second-session conflict, authorization, session restoration, and abandoned-session recovery.
+- [x] Add POS Cashier-session schema and migration.
+- [x] Record the branch, acting account, opening time, closing time, and closing account.
+- [x] Enforce exactly one open Cashier session per branch with a database invariant.
+- [x] Implement open, current, and close Cashier-session operations.
+- [x] Require an open Cashier session for counter sales and related mutations.
+- [x] Reject concurrent attempts to open a second branch session with a stable conflict.
+- [x] Define safe recovery for an abandoned open Cashier session.
+- [x] Add authorization, branch-isolation, concurrency, and MySQL integration tests.
+- [x] Add POS open/current/close Cashier-session UI with clear active-session ownership and Cairo timestamps.
+- [x] Add POS Admin recovery-close UI for an abandoned session with confirmation and audit-visible acting-account context.
+- [x] Add integration and component coverage for normal open/close, second-session conflict, authorization, session restoration, and abandoned-session recovery.
 
 No drawer counting, opening balance, closing balance, or reconciliation is included.
 
@@ -821,7 +869,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–3 are delivered end to end: backend account/auth work, the ERP 3 API/package boundaries, the ERP 1 POS account-management UI, the ERP 2 POS authentication/session/routing UI, and the ERP 3 POS feature/frontend boundaries. Next: deliver ERP 4 Cashier sessions end to end and continue in dependency order, shipping each slice's backend and Arabic/RTL UI together.
+ERP 1–4 are delivered end to end: backend account/auth work, the ERP 3 API/package boundaries, the ERP 1 POS account-management UI, the ERP 2 POS authentication/session/routing UI, the ERP 3 POS feature/frontend boundaries, and ERP 4 Cashier sessions with Admin recovery. Next: finish ERP 5–7 in parallel, then cross the ERP 8 barrier, continuing to ship each slice's backend and Arabic/RTL UI together.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

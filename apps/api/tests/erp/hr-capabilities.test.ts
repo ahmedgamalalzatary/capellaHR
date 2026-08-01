@@ -3,8 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { createErpAuthCapability } from '../../src/modules/auth/index.js';
 import { createErpBranchCapability } from '../../src/modules/branches/index.js';
 import { createErpEmployeeCapability } from '../../src/modules/employees/index.js';
+import * as auditModule from '../../src/modules/audit/index.js';
 
 describe('public HR capabilities for ERP', () => {
+  it('publishes the transaction-aware Audit writer through an ERP capability', () => {
+    expect(Reflect.get(auditModule, 'createErpAuditCapability')).toBeTypeOf('function');
+  });
+
   it('exposes only an authenticated Admin or Cashier account identity', async () => {
     const capability = createErpAuthCapability({
       authenticate: async (token: string) => token === 'admin'

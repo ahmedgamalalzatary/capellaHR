@@ -18,6 +18,7 @@ import type { SelfServiceService } from './modules/self-service/index.js';
 import type { AuditService } from './modules/audit/index.js';
 import type { AttendanceService } from './modules/attendance/index.js';
 import type { DashboardService } from './modules/dashboard/index.js';
+import type { CashierSessionService } from './modules/erp/sales/index.js';
 import { createApiRouter } from './routes/index.js';
 import {
   createRequestLogger,
@@ -44,6 +45,7 @@ export const createApp = (dependencies: {
   auditService?: AuditService;
   attendanceService?: AttendanceService;
   dashboardService?: DashboardService;
+  cashierSessionService?: CashierSessionService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;

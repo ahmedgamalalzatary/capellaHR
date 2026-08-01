@@ -24,6 +24,7 @@ import {
   type AttendanceShiftChangeReconciler,
 } from './modules/attendance/index.js';
 import { createDashboardModule } from './modules/dashboard/index.js';
+import { createSalesModule } from './modules/erp/sales/index.js';
 import { createApiLogger } from './shared/http/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
@@ -174,6 +175,11 @@ const selfServiceModule = createSelfServiceModule({
   deductions: deductionModule.service,
   advances: advanceModule.service,
 });
+const salesModule = createSalesModule(database, {
+  audit: auditModule.erp,
+  branches: branchModule.erp,
+  employees: employeeModule.erp,
+});
 await employeeModule.uploadStore.retryPendingCleanup();
 
 createApp({
@@ -195,6 +201,7 @@ createApp({
   auditService: auditModule.service,
   attendanceService: attendanceModule.service,
   dashboardService: dashboardModule.service,
+  cashierSessionService: salesModule.cashierSessions,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

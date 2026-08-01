@@ -52,6 +52,7 @@ describe('ERP branch context', () => {
 
     await expect(resolve({ role: 'admin', accountId: 1 })).rejects.toMatchObject({
       code: 'ERP_BRANCH_REQUIRED',
+      message: 'يجب اختيار الفرع',
     });
   });
 
@@ -60,6 +61,7 @@ describe('ERP branch context', () => {
 
     await expect(resolve({ role: 'admin', accountId: 1 }, 99)).rejects.toMatchObject({
       code: 'ERP_BRANCH_NOT_FOUND',
+      message: 'الفرع غير موجود',
     });
   });
 
@@ -87,7 +89,10 @@ describe('ERP branch context', () => {
       role: 'cashier',
       accountId: 8,
       employeeId: 7,
-    }, 4)).rejects.toMatchObject({ code: 'ERP_BRANCH_FORBIDDEN' });
+    }, 4)).rejects.toMatchObject({
+      code: 'ERP_BRANCH_FORBIDDEN',
+      message: 'لا يمكن للكاشير تنفيذ عمليات على فرع آخر',
+    });
   });
 
   it('fails closed when the Cashier employee is unavailable', async () => {
@@ -102,6 +107,9 @@ describe('ERP branch context', () => {
       role: 'cashier',
       accountId: 8,
       employeeId: 7,
-    })).rejects.toMatchObject({ code: 'ERP_CASHIER_EMPLOYEE_UNAVAILABLE' });
+    })).rejects.toMatchObject({
+      code: 'ERP_CASHIER_EMPLOYEE_UNAVAILABLE',
+      message: 'الموظف المرتبط بحساب الكاشير غير متاح',
+    });
   });
 });

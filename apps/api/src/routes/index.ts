@@ -1,10 +1,15 @@
 import { Router } from 'express';
 
 import {
+  createAuthMiddleware,
   createAuthRouter,
   type AuthService,
   type CashierAccountsService,
 } from '../modules/auth/index.js';
+import {
+  createCashierSessionsRouter,
+  type CashierSessionService,
+} from '../modules/erp/sales/index.js';
 import { createBranchesRouter, type BranchService } from '../modules/branches/index.js';
 import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore } from '../modules/employees/index.js';
 import { createDevicesRouter, type DeviceService } from '../modules/devices/index.js';
@@ -38,6 +43,7 @@ export const createApiRouter = (dependencies: {
   auditService?: AuditService;
   attendanceService?: AttendanceService;
   dashboardService?: DashboardService;
+  cashierSessionService?: CashierSessionService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -117,6 +123,15 @@ export const createApiRouter = (dependencies: {
     }
     if (dependencies.dashboardService) {
       router.use('/dashboard', createDashboardRouter(dependencies.dashboardService, dependencies.authService));
+    }
+    if (dependencies.cashierSessionService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/cashier-sessions',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createCashierSessionsRouter(dependencies.cashierSessionService),
+      );
     }
   }
 
