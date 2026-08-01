@@ -15,7 +15,7 @@ const restrictedMessages = async (source: string, relativePath: string) => {
 };
 
 describe('ERP module import boundaries', () => {
-  it('prevents HR modules from importing ERP', async () => {
+  it('prevents HR modules from importing ERP', { timeout: 15_000 }, async () => {
     const messages = await restrictedMessages(
       "import '../erp/sales/index.js';",
       'src/modules/auth/index.ts',

@@ -245,8 +245,10 @@ describe('MySQL-backed employee self-service', () => {
       gpsAccuracyMeters: 5, attendanceRadiusMeters: 100,
     });
     const owner = await employeeModule.service.create(employeeInput(branch.id, 'موظف حاضر', '01087654321'));
-    await database.update(employees).set({ createdAt: new Date('2026-07-01T00:00:00.000Z') })
-      .where(eq(employees.id, owner.id));
+    const employedAt = new Date('2026-07-01T00:00:00.000Z');
+    await database.update(employees).set({ createdAt: employedAt }).where(eq(employees.id, owner.id));
+    await database.update(employeeEmploymentPeriods).set({ activeFrom: employedAt })
+      .where(eq(employeeEmploymentPeriods.employeeId, owner.id));
 
     await database.insert(attendanceSessions).values({
       employeeId: owner.id,

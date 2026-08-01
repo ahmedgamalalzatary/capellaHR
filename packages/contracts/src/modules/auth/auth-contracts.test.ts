@@ -40,6 +40,48 @@ describe('authentication contracts', () => {
     expect(schema.safeParse({ employeeId: 7, username: 'x'.repeat(256), password: 'long-secret' }).success).toBe(false);
   });
 
+  it('validates cashier account-management requests', () => {
+    expect(contracts.listCashierAccountsSchema.parse({ page: '2', pageSize: '50' }))
+      .toEqual({ page: 2, pageSize: 50 });
+    expect(contracts.listCashierAccountsSchema.safeParse({ page: 1, pageSize: 101 }).success)
+      .toBe(false);
+    expect(contracts.cashierAccountStatusSchema.parse({ active: false })).toEqual({ active: false });
+    expect(contracts.cashierAccountStatusSchema.safeParse({ active: false, role: 'admin' }).success)
+      .toBe(false);
+    expect(contracts.resetCashierPasswordSchema.safeParse({ password: '' }).success).toBe(false);
+    expect(contracts.resetCashierPasswordSchema.safeParse({ password: 'x'.repeat(1025) }).success)
+      .toBe(false);
+  });
+
+  it('validates password-safe Cashier account responses', () => {
+    const account = {
+      id: 3,
+      username: 'cashier.one',
+      role: 'cashier' as const,
+      employeeId: 7,
+      branchId: 2,
+      active: true,
+    };
+
+    expect(contracts.publicCashierAccountSchema.parse(account)).toEqual(account);
+    expect(contracts.publicCashierAccountSchema.safeParse({
+      ...account,
+      passwordHash: 'must-not-leak',
+    }).success).toBe(false);
+  });
+
+  it('keeps ERP account sessions distinct from employee self-service sessions', () => {
+    expect(contracts.accountSessionDataSchema.parse({ actor: { type: 'admin' } }))
+      .toEqual({ actor: { type: 'admin' } });
+    expect(contracts.accountSessionDataSchema.parse({
+      actor: { type: 'cashier', accountId: 3, employeeId: 7 },
+    })).toEqual({ actor: { type: 'cashier', accountId: 3, employeeId: 7 } });
+    expect(contracts.accountSessionDataSchema.safeParse({ actor: { type: 'employee' } }).success)
+      .toBe(false);
+    expect(contracts.authSessionDataSchema.parse({ actor: { type: 'employee' } }))
+      .toEqual({ actor: { type: 'employee' } });
+  });
+
   it('measures cashier usernames using MySQL Unicode character semantics', () => {
     const astral = '\u{1E900}';
     expect(contracts.cashierUsernameSchema.safeParse(astral.repeat(255)).success).toBe(true);

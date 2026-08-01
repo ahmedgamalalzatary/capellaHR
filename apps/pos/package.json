@@ -1,0 +1,39 @@
+{
+  "name": "@capella/pos",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev -p 3001",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf .next coverage"
+  },
+  "dependencies": {
+    "@capella/contracts": "workspace:*",
+    "@capella/shared": "workspace:*",
+    "@capella/ui": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@tanstack/react-query": "^5.101.2",
+    "next": "^15.4.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sonner": "^2.0.7",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@capella/eslint-config": "workspace:*",
+    "@capella/testing": "workspace:*",
+    "@capella/typescript-config": "workspace:*",
+    "@next/env": "^16.2.10",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.0.14",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "eslint": "^9.31.0",
+    "jsdom": "^26.1.0",
+    "rimraf": "^6.0.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

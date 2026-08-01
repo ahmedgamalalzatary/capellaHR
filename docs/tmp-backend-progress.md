@@ -452,6 +452,8 @@ Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of tru
 - [ ] Support the named `hr`, `erp`, and `full` editions from one migration history and codebase.
 - [ ] Deploy Capella using `EDITION=full`, then validate the sellable `hr` and `erp` editions.
 
+Every functional ERP slice is delivered end to end: database and migration work, contracts, API/domain behavior, authorization and audit, the owning Arabic/RTL Admin or Cashier workflow, and proportional unit, component, integration, MySQL, and end-to-end coverage. A slice is not complete while its required UI is deferred to a later catch-all phase. ERP administration belongs in `apps/pos` so an `erp` installation remains independently operable; only HR-specific additions such as employee self-service belong in `apps/web`. Explicit foundation, architecture, hardening, security, and rollout slices do not require a standalone screen, but must cover both backend and frontend integration surfaces needed by the user-facing slices.
+
 ## ERP 1. Account foundation
 
 - [x] Add the general `accounts` schema with Admin and Cashier roles, active state, optional employee link, and timestamps.
@@ -468,6 +470,9 @@ Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of tru
 - [x] Add Admin account-management endpoints for listing, enabling, disabling, and resetting Cashier credentials.
 - [x] Define and enforce username uniqueness and concurrent-promotion behavior at database and service levels.
 - [x] Revoke active account sessions when an account is disabled or its credentials change.
+- [ ] Add Arabic/RTL POS Admin UI to promote an employee to Cashier, list Cashier accounts, enable or disable them, and reset credentials.
+- [ ] Add safe confirmation, validation, empty, loading, success, conflict, and error states without exposing password hashes.
+- [ ] Add component and end-to-end coverage for Cashier promotion and account lifecycle workflows.
 
 ## ERP 2. Account authentication and authorization
 
@@ -486,18 +491,26 @@ Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of tru
 - [x] Add login throttling and stable authentication errors to the account login flow.
 - [x] Test invalid credentials, role separation, invalid-account revocation, restart persistence, and secret non-disclosure for the delivered account flow.
 - [x] Add disabled-account lifecycle, credential-reset revocation, and session-expiry coverage.
+- [x] Create the independent `apps/pos` Next.js application using `packages/ui`, `packages/contracts`, IBM Plex Sans Arabic, `ar-EG`, `Africa/Cairo`, and RTL conventions. Infra scaffold only (RTL shell, providers, REST client, Docker); login/routing/session UI is the next phase.
+- [ ] Add Cashier/Admin account login, logout, session restoration, and ERP-protected routing to the POS application.
+- [ ] Provide accessible Arabic loading, invalid-credential, throttled, expired-session, disabled-account, unauthorized-role, and retry states.
+- [ ] Add component and end-to-end coverage for account login, role separation, session restoration, logout, and revocation in the POS application.
 
 ## ERP 3. Module boundaries and shared capabilities
 
-- [ ] Create `apps/api/src/modules/erp/` with public module surfaces for catalog, suppliers, stock, sales, expenses, clients, and ERP reports.
-- [ ] Add matching ERP schemas to `packages/database` and contracts to `packages/contracts`.
-- [ ] Expose public HR-core capabilities for account/session verification, employee lookup, branch lookup, present-employee lookup, payroll input, and post-payroll deductions.
-- [ ] Require ERP modules to consume HR only through those public capabilities.
-- [ ] Prevent HR core from importing ERP modules.
-- [ ] Enforce HR/ERP direction and public-surface rules through ESLint import boundaries.
-- [ ] Preserve public boundaries between ERP modules.
-- [ ] Scope every ERP business record and operation to a branch.
-- [ ] Derive the acting Cashier's branch from the linked employee and never trust client-supplied branch identity.
+- [x] Create `apps/api/src/modules/erp/` with public module surfaces for catalog, suppliers, stock, sales, expenses, clients, and ERP reports.
+- [x] Add matching ERP namespace surfaces to `packages/database` and `packages/contracts`.
+- [x] Expose public HR-core capabilities for account/session verification, employee lookup, branch lookup, present-employee lookup, payroll input, and post-payroll deductions.
+- [x] Require ERP modules to consume HR only through those public capabilities.
+- [x] Prevent HR core from importing ERP modules.
+- [x] Enforce HR/ERP direction and public-surface rules through ESLint import boundaries.
+- [x] Preserve public boundaries between ERP modules.
+- [x] Scope every ERP business record and operation to a branch.
+- [x] Derive the acting Cashier's branch from the linked employee and never trust client-supplied branch identity.
+- [ ] Define matching public-feature boundaries for `apps/pos` so one POS feature cannot import another feature's internals.
+- [ ] Add frontend architecture tests for POS public surfaces and forbidden HR-frontend coupling.
+
+This is an architecture slice: no standalone user screen is required. It is complete only when both API/package boundaries and the POS frontend boundaries are enforced.
 
 ## ERP 4. Cashier sessions
 
@@ -509,6 +522,9 @@ Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of tru
 - [ ] Reject concurrent attempts to open a second branch session with a stable conflict.
 - [ ] Define safe recovery for an abandoned open Cashier session.
 - [ ] Add authorization, branch-isolation, concurrency, and MySQL integration tests.
+- [ ] Add POS open/current/close Cashier-session UI with clear active-session ownership and Cairo timestamps.
+- [ ] Add POS Admin recovery-close UI for an abandoned session with confirmation and audit-visible acting-account context.
+- [ ] Add component and end-to-end coverage for normal open/close, second-session conflict, authorization, session restoration, and abandoned-session recovery.
 
 No drawer counting, opening balance, closing balance, or reconciliation is included.
 
@@ -522,6 +538,9 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [ ] Preserve clients referenced by historical invoices.
 - [ ] Add client visit-history read capability.
 - [ ] Add contracts, authorization, branch-isolation, search, duplicate, and MySQL tests.
+- [ ] Add Arabic/RTL POS Admin client management with create, read, update, list, phone search, and visit history.
+- [ ] Add POS client phone search, selection, duplicate handling, and inline client creation for a sale.
+- [ ] Add component and end-to-end coverage for client administration and the POS client-selection workflow.
 
 ## ERP 6. Categories and services
 
@@ -533,6 +552,9 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [ ] Implement service and commission-override administration endpoints.
 - [ ] Prevent catalog edits from changing historical invoice facts.
 - [ ] Add exact-money, validation, authorization, branch, lifecycle, and MySQL tests.
+- [ ] Add Arabic/RTL POS Admin category, service, and employee commission-override management.
+- [ ] Add POS service browsing and search with active-state, fixed-price, empty, loading, and error behavior.
+- [ ] Add component and end-to-end coverage for catalog administration and POS service discovery.
 
 ## ERP 7. Attendance assignment capability
 
@@ -543,6 +565,8 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [ ] Reject assignment when the employee checked out after being selected.
 - [ ] Provide no Cashier or Admin override for assigning an unchecked-in employee.
 - [ ] Add checkout-race, branch-isolation, soft-deletion, and integration tests.
+- [ ] Add the POS currently-present employee selector with refresh, empty, checked-out, and stale-selection states.
+- [ ] Add component and end-to-end coverage for assignment eligibility, branch isolation, and the select-then-checkout race.
 
 ## ERP 8. Core sales schema
 
@@ -559,6 +583,10 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [ ] Add client-generated sale idempotency keys with a database uniqueness invariant.
 - [ ] Add immutable commission-ledger schema with reversal support.
 - [ ] Add all required indexes, foreign keys, checks, and migrations.
+- [ ] Publish complete sale draft, totals, payment, invoice, and error contracts for the POS application without exposing persistence internals.
+- [ ] Add contract fixtures that support the complete POS service-sale workflow and its validation/error states.
+
+This is a persistence foundation slice: it has no standalone screen, but its contracts must make the following sale slice implementable end to end without duplicating server rules in the browser.
 
 ## ERP 9. Atomic service-sale vertical slice
 
@@ -571,26 +599,27 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [ ] Reject reuse of an idempotency key with a different payload.
 - [ ] Keep receipt printing outside the transaction.
 - [ ] Add happy-path, rollback, calculation, snapshot, duplicate, authorization, attendance-race, and real-MySQL tests.
+- [ ] Build the Arabic/RTL POS service-sale workflow: select or create the mandatory client, add service lines, assign one present employee, enter invoice-level discount/tax, and enter mixed payments.
+- [ ] Show server-calculated totals and exact remaining-payment feedback; never treat browser calculations as authoritative.
+- [ ] Add confirmation, duplicate-submit protection, stored-invoice success, safe failure, ambiguous-response, and retry states.
+- [ ] Add component and end-to-end coverage proving a real Cashier can complete one fully paid service invoice through the POS UI.
 
-This milestone is complete when a real Cashier can persist one fully paid service invoice for a mandatory client and currently present employee.
+This milestone is complete only when a real Cashier can use the POS UI to persist one fully paid service invoice for a mandatory client and currently present employee.
 
-## ERP 10. POS application foundation
+## ERP 10. POS application integration and operational UX
 
-- [ ] Create the independent `apps/pos` Next.js application.
-- [ ] Reuse `packages/ui`, `packages/contracts`, IBM Plex Sans Arabic, `ar-EG`, `Africa/Cairo`, and RTL conventions.
-- [ ] Add POS account login, logout, session restoration, and protected routing.
-- [ ] Add Cashier-session open/current/close screens.
-- [ ] Build client phone search and client creation.
-- [ ] Build service browsing/search and cart management.
-- [ ] Build currently-present employee selection.
-- [ ] Build invoice-level discount and tax entry.
-- [ ] Build mixed-payment entry with exact remaining-total feedback.
-- [ ] Build confirmation, duplicate-submit protection, success, failure, and retry states.
-- [ ] Ensure Cashier workflows are keyboard-friendly and responsive.
-- [ ] Add component and end-to-end coverage for the complete service-sale flow.
+- [ ] Integrate the delivered login, Cashier-session, client, service, employee-assignment, and service-sale features into one coherent POS navigation and work surface.
+- [ ] Preserve authenticated and open-session state across refreshes without bypassing server validation.
+- [ ] Add consistent Arabic/RTL loading, empty, error, conflict, confirmation, success, and retry behavior across the integrated workflow.
+- [ ] Ensure the complete counter workflow is keyboard-friendly, accessible, and responsive at the supported POS display sizes.
+- [ ] Add route-level failure boundaries and recovery that do not lose an in-progress sale draft.
+- [ ] Add cross-feature component and end-to-end coverage for login through completed service sale.
+
+This slice integrates and hardens already-delivered feature UIs; it must not become a holding phase for frontend work omitted from ERP 1–9.
 
 ## ERP 11. Receipts
 
+- [ ] Add authorized stored-invoice history/detail API operations and contracts for receipt display and reprint.
 - [ ] Build the stored-invoice receipt view.
 - [ ] Add Arabic 80mm thermal browser-print CSS as the default mechanism.
 - [ ] Print only an already-stored invoice and never resubmit a sale to print.
@@ -598,6 +627,8 @@ This milestone is complete when a real Cashier can persist one fully paid servic
 - [ ] Include invoice number, Cairo date/time, client, assigned employee, lines, discount, tax, payments, total, and authorized-by account.
 - [ ] Test output with the selected production printer hardware.
 - [ ] Add a local print agent only if the selected hardware cannot be supported reliably by browser printing.
+- [ ] Add receipt loading, unavailable-printer, print failure, reprint, and authorization states to the POS invoice-history workflow.
+- [ ] Add component and end-to-end coverage proving printing and reprinting use stored invoice facts and never resubmit a sale.
 
 ## ERP 12. Vertical-slice hardening
 
@@ -609,6 +640,8 @@ This milestone is complete when a real Cashier can persist one fully paid servic
 - [ ] Add branch-isolation and horizontal-access tests for every completed endpoint.
 - [ ] Add security tests for cookies, sessions, roles, request validation, and secret leakage.
 - [ ] Run load/concurrency tests for the completed service-sale path.
+- [ ] Harden POS behavior for stable ERP errors, correlation IDs, timeouts, ambiguous submissions, expired sessions, and access denial.
+- [ ] Run browser-level failure-injection and concurrency scenarios for all completed workflows.
 
 ## ERP 13. Products and stock
 
@@ -624,6 +657,9 @@ This milestone is complete when a real Cashier can persist one fully paid servic
 - [ ] Add stocktaking adjustments for count correction, wastage, and damage.
 - [ ] Exclude products from commission calculations.
 - [ ] Add stock integrity, concurrency, adjustment, audit, branch, and MySQL tests.
+- [ ] Add Arabic/RTL POS Admin product management, branch stock balances, low-stock alerts, movement history, and stocktaking adjustment workflows.
+- [ ] Add POS product search, cart lines, availability feedback, and stable out-of-stock conflict handling.
+- [ ] Add component and end-to-end coverage for product administration, stock adjustment, product sale, and last-unit concurrency behavior.
 
 No product variants, multiple units, consumable tracking, negative-stock override, or inter-branch transfers are included.
 
@@ -637,6 +673,9 @@ No product variants, multiple units, consumable tracking, negative-stock overrid
 - [ ] Preserve posted purchase history and define safe correction/cancellation behavior.
 - [ ] Add supplier and product purchase-history queries.
 - [ ] Add validation, exact-money, stock, transaction, authorization, branch, and MySQL tests.
+- [ ] Add Arabic/RTL POS Admin supplier management, purchase entry/posting, and supplier/product purchase-history workflows.
+- [ ] Show exact totals, immutable-posted state, correction/cancellation outcomes, and resulting stock changes.
+- [ ] Add component and end-to-end coverage for supplier lifecycle and purchase-to-stock workflows.
 
 Purchases are fully paid. Supplier balances, credit, and returns are excluded.
 
@@ -646,8 +685,9 @@ Purchases are fully paid. Supplier balances, credit, and returns are excluded.
 - [ ] Require an expense-type category, exact EGP amount, Cairo date, description, and acting account.
 - [ ] Implement expense create, read, list/filter, and safe correction behavior.
 - [ ] Audit every expense mutation.
-- [ ] Add Expense administration screens.
+- [ ] Add Arabic/RTL POS Admin expense create, read, list/filter, and safe correction workflows.
 - [ ] Add validation, category-type, authorization, branch, audit, and MySQL tests.
+- [ ] Add component and end-to-end coverage for expense creation, filtering, correction, authorization, and audit behavior.
 
 ## ERP 16. Voids and refunds
 
@@ -662,6 +702,9 @@ Purchases are fully paid. Supplier balances, credit, and returns are excluded.
 - [ ] Prevent over-refunding and invalid invoice-state transitions.
 - [ ] Make void/refund submissions idempotent.
 - [ ] Add same-day boundary, partial/full, stock, commission, concurrency, authorization, audit, and MySQL tests.
+- [ ] Add Arabic/RTL Admin and POS invoice search/detail plus eligible void and partial/full refund workflows.
+- [ ] Show immutable original facts, reversible quantities/payments, confirmation, idempotent result, and invalid-transition states.
+- [ ] Add component and end-to-end coverage for same-day voids, later refunds, stock restoration, commission reversal, and repeat submission.
 
 ## ERP 17. Commission and payroll integration
 
@@ -674,6 +717,8 @@ Purchases are fully paid. Supplier balances, credit, and returns are excluded.
 - [ ] Submit post-finalization commission reversals as HR deductions through a public capability.
 - [ ] Add employee commission-total UI to HR self-service.
 - [ ] Add month-boundary, repeated-projection, refund-reversal, finalized-payroll, traceability, and MySQL tests.
+- [ ] Add authorized Arabic/RTL POS Admin commission drill-down and traceability from employee/month totals to invoice lines and reversals.
+- [ ] Add component and end-to-end coverage for employee self-service totals, Admin traceability, payroll projection, and post-finalization reversal behavior.
 
 ## ERP 18. Offline sale submission
 
@@ -685,6 +730,7 @@ Purchases are fully paid. Supplier balances, credit, and returns are excluded.
 - [ ] Distinguish retryable connectivity/server failures from permanent validation conflicts.
 - [ ] Define resolution UX when attendance, prices, catalog availability, or stock changed while disconnected.
 - [ ] Test browser restart, repeated reconnect, timeout, duplicate replay, partial response, and permanent-conflict behavior.
+- [ ] Add browser-level end-to-end coverage for queue visibility, reconnect replay, permanent-conflict resolution, and exactly-once stored results.
 
 Offline support is resilient submission with idempotent replay, not a fully disconnected catalog or attendance system.
 
@@ -698,20 +744,18 @@ Offline support is resilient submission with idempotent replay, not a fully disc
 - [ ] Add Arabic financial and operational report PDFs.
 - [ ] Read historical names, prices, rates, costs, discounts, and taxes from invoice snapshots.
 - [ ] Add export authorization, branch-isolation, batching, worker-retry, file-lifecycle, and MySQL tests.
+- [ ] Add component and end-to-end coverage for report filtering, pagination, totals, export lifecycle, retry, download, and historical-snapshot rendering.
 
-## ERP 20. Complete administration UX
+## ERP 20. Cross-feature administration UX hardening
 
-- [ ] Add category, service, commission-override, and product administration.
-- [ ] Add client management and visit history.
-- [ ] Add supplier and purchase management.
-- [ ] Add stock balances, low-stock alerts, movements, and stocktaking.
-- [ ] Add expense management.
-- [ ] Add invoice search, details, reprint, void, and refund workflows.
-- [ ] Add Cashier account management.
-- [ ] Add employee commission visibility.
-- [ ] Add ERP reports and PDF export history.
-- [ ] Complete Arabic/RTL loading, empty, error, confirmation, permission, accessibility, keyboard, and responsive states.
-- [ ] Add component and end-to-end coverage for critical Admin and Cashier workflows.
+- [ ] Integrate the delivered Cashier-account, catalog, client, supplier, purchase, stock, expense, invoice, commission, report, and export workflows into coherent Admin navigation.
+- [ ] Remove duplicate or placeholder administration entry points and preserve public feature boundaries.
+- [ ] Standardize Arabic/RTL loading, empty, error, confirmation, conflict, permission, and success states across all Admin ERP features.
+- [ ] Complete accessibility, keyboard, responsive-layout, focus-management, and destructive-action confirmation review.
+- [ ] Verify cross-feature cache invalidation and navigation after mutations without hiding server-side conflicts.
+- [ ] Add end-to-end regression journeys spanning related Admin features.
+
+This slice hardens and integrates administration features already delivered in their owning slices; it must not defer missing feature UI from ERP 1–19.
 
 ## ERP 21. Editions and runtime module registry
 
@@ -724,8 +768,10 @@ Offline support is resilient submission with idempotent replay, not a fully disc
 - [ ] Log the resolved module list at startup.
 - [ ] Construct and mount only API modules enabled by the resolved edition.
 - [ ] Keep one database migration history and migrate every schema in every edition.
+- [ ] Build and expose only the frontend routes/navigation supported by each resolved edition; disabled feature URLs must fail safely.
+- [ ] Keep `apps/web` HR-only, `apps/pos` ERP-only, and enable both containers for `full`.
 - [ ] Add Docker Compose profiles for the HR and POS containers.
-- [ ] Add edition-resolution, boot, disabled-route, migration, and smoke tests.
+- [ ] Add edition-resolution, boot, disabled API/UI route, migration, frontend build, and smoke tests.
 
 ## ERP 22. Multi-frontend production security
 
@@ -735,7 +781,8 @@ Offline support is resilient submission with idempotent replay, not a fully disc
 - [ ] Keep HR and POS browser sessions independent.
 - [ ] Keep cross-origin allowances limited to explicit development configuration.
 - [ ] Add deployment examples for recommended subdomains and supported separate-domain topology.
-- [ ] Add production cookie, proxy, origin, CSRF, and session-isolation verification.
+- [ ] Add safe frontend handling for expired, missing, wrong-role, and cross-application sessions.
+- [ ] Add production cookie, proxy, origin, CSRF, protected-route, and session-isolation verification across both frontends and the API.
 
 ## ERP 23. Production readiness and Capella rollout
 
@@ -748,6 +795,7 @@ Offline support is resilient submission with idempotent replay, not a fully disc
 - [ ] Review indexes and query performance with realistic catalog, invoice, stock, and report volumes.
 - [ ] Run dependency, security, authorization, and secret-leak reviews.
 - [ ] Run complete lint, typecheck, builds, unit, component, integration, MySQL, worker, concurrency, failure-injection, and end-to-end suites.
+- [ ] Verify every functional ERP slice is usable through its shipped Arabic/RTL UI with no backend-only feature gaps.
 - [ ] Test the chosen thermal printer in the production browser and operating environment.
 - [ ] Prepare Capella staging with real branch, Cashiers, categories, services, commissions, products, opening stock, suppliers, and optional existing clients.
 - [ ] Rehearse sales, mixed payments, offline replay, receipts, stock, voids/refunds, commissions, payroll projection, expenses, reports, and PDFs.
@@ -773,7 +821,7 @@ Offline support is resilient submission with idempotent replay, not a fully disc
 
 ## ERP immediate action
 
-The account foundation, authentication, lifecycle, Admin migration, expiry, and authorization slice is complete. Next establish ERP module boundaries and public HR capabilities, then continue through Clients, Services, live Attendance assignment, the atomic service-sale transaction, and the first Arabic/RTL POS screens.
+The ERP 1–2 backend account and authentication work and the ERP 3 API/package boundaries are delivered. Next complete the ERP 1–3 frontend catch-up as one dependency-ordered pass: scaffold the ERP 2 POS application and authentication UI, add the ERP 1 account-management UI to it, then enforce the ERP 3 POS feature boundaries. After that, deliver ERP 4 Cashier sessions end to end and continue in dependency order, shipping each slice's backend and Arabic/RTL UI together.
 
 ## Locked exclusions — do not implement
 
