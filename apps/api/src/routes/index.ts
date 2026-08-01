@@ -19,6 +19,8 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
+import { createAuthMiddleware } from '../modules/auth/auth-middleware.js';
+import { createErpClientsRouter, type ClientService } from '../modules/erp/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -38,6 +40,7 @@ export const createApiRouter = (dependencies: {
   auditService?: AuditService;
   attendanceService?: AttendanceService;
   dashboardService?: DashboardService;
+  erpClientService?: ClientService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -117,6 +120,17 @@ export const createApiRouter = (dependencies: {
     }
     if (dependencies.dashboardService) {
       router.use('/dashboard', createDashboardRouter(dependencies.dashboardService, dependencies.authService));
+    }
+    if (dependencies.erpClientService) {
+      // ERP modules may not import the HR auth middleware, so the composition
+      // root authenticates and the ERP router consumes only the resolved actor.
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/clients',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpClientsRouter(dependencies.erpClientService),
+      );
     }
   }
 

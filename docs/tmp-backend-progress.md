@@ -530,17 +530,25 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 
 ## ERP 5. Clients
 
-- [ ] Add branch-scoped client schema and migration.
-- [ ] Require client name and phone; completed invoices may never be anonymous.
-- [ ] Normalize, validate, search, and index client phone values.
-- [ ] Define safe duplicate-client behavior.
-- [ ] Implement client create, read, update, list, and phone-search endpoints.
-- [ ] Preserve clients referenced by historical invoices.
-- [ ] Add client visit-history read capability.
-- [ ] Add contracts, authorization, branch-isolation, search, duplicate, and MySQL tests.
-- [ ] Add Arabic/RTL POS Admin client management with create, read, update, list, phone search, and visit history.
-- [ ] Add POS client phone search, selection, duplicate handling, and inline client creation for a sale.
-- [ ] Add component and end-to-end coverage for client administration and the POS client-selection workflow.
+- [x] Add branch-scoped client schema and migration.
+- [x] Require client name and phone; completed invoices may never be anonymous.
+- [x] Normalize, validate, search, and index client phone values. Phone reuses the locked `normalizeEgyptianMobile` form, is unique per branch, and is column-checked with the same `^01[0125][0-9]{8}$` regexp Employees uses.
+- [x] Define safe duplicate-client behavior. A duplicate phone within a branch is a stable `CLIENT_PHONE_EXISTS` conflict carrying `existingClientId`, so the counter can continue with the client that already holds the number; the unique index is the real guard and a lost race is translated into the same conflict. The same number in a different branch is a separate client, because ERP records are branch-scoped.
+- [x] Implement client create, read, update, list, and phone-search endpoints (`/api/v1/erp/clients`, plus `GET /erp/clients/by-phone` for exact lookup during a sale).
+- [x] Preserve clients referenced by historical invoices — achieved structurally: there is no delete endpoint and no soft-delete column, so a client can never be removed.
+- [ ] **Add client visit-history read capability — deferred to ERP 8.** Visit history reads invoices, and the invoice tables do not exist yet. Nothing else in ERP 5 depends on it.
+- [x] Add contracts, authorization, branch-isolation, search, duplicate, and MySQL tests.
+- [x] Add Arabic/RTL POS Admin client management with create, read, update, list, and phone search. Visit history is deferred with the capability above.
+- [x] Add POS client phone search, selection, duplicate handling, and inline client creation for a sale (`ClientPicker`, consumed by the ERP 9 sale workflow).
+- [x] Add component coverage for client administration and the POS client-selection workflow (form-schema, view, and picker tests; no dedicated e2e framework exists in this repo, matching `apps/web` and ERP 1–3).
+
+Cross-branch isolation is enforced on every read and write: a client outside the acting branch is reported as missing rather than forbidden, so a Cashier cannot probe another branch's records by id. The acting branch is always derived from the account through `createErpBranchContextResolver` and never taken from the request body.
+
+**Shared ERP foundation added by this slice** (first ERP slice to mount a router, so it had to build the runtime composition that later ERP slices reuse):
+
+- `audit/erp-audit-capability.ts` + `auditModule.erp` — ERP may not import HR internals, and `audit` is on the restricted list, so audit writes now cross the capability bridge. The ERP-facing event omits `actor`, so the acting account always comes from the authenticated request context.
+- `erp/erp-actor.ts` — translates `response.locals.actor` into `ErpAccountIdentity`, and rejects an admin session with no acting account.
+- `ErpBranchContextResolver` type export, ERP wiring in `server.ts`, and ERP router mounting in `routes/index.ts` behind HR's auth middleware.
 
 ## ERP 6. Categories and services
 

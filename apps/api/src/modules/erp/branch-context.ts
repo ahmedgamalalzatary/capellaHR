@@ -27,6 +27,11 @@ export class ErpBranchContextError extends Error {
   }
 }
 
+export type ErpBranchContextResolver = (
+  actor: ErpAccountIdentity,
+  requestedBranchId?: number,
+) => Promise<ErpBranchContext>;
+
 export const createErpBranchContextResolver = (capabilities: {
   branches: ErpBranchCapability;
   employees: ErpEmployeeCapability;

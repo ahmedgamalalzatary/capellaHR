@@ -1,4 +1,5 @@
 export * from './branch-context.js';
+export * from './erp-actor.js';
 export * from './hr-capabilities.js';
 export * from './catalog/index.js';
 export * from './clients/index.js';
