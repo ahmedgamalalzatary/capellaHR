@@ -25,6 +25,7 @@ import {
 } from './modules/attendance/index.js';
 import { createDashboardModule } from './modules/dashboard/index.js';
 import { createSalesModule } from './modules/erp/sales/index.js';
+import { createErpClientsModule } from './modules/erp/index.js';
 import { createApiLogger } from './shared/http/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
@@ -182,6 +183,14 @@ const salesModule = createSalesModule(database, {
 });
 await employeeModule.uploadStore.retryPendingCleanup();
 
+// ERP composition: ERP modules reach HR only through these public capabilities,
+// and resolve the acting branch from the account rather than from the request.
+const erpClientsModule = createErpClientsModule(database, {
+  audit: auditModule.erp,
+  branches: branchModule.erp,
+  employees: employeeModule.erp,
+});
+
 createApp({
   authService: auth.service,
   cashierAccountsService: auth.cashierAccounts,
@@ -202,6 +211,7 @@ createApp({
   attendanceService: attendanceModule.service,
   dashboardService: dashboardModule.service,
   cashierSessionService: salesModule.cashierSessions,
+  erpClientService: erpClientsModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

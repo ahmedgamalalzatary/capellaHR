@@ -1,0 +1,45 @@
+import { api } from '@/lib/api/client';
+
+export interface Client {
+  id: number;
+  branchId: number;
+  fullName: string;
+  phone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListClientsParams {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  /** Admins act on a named branch; a cashier's branch comes from their account. */
+  branchId?: number;
+}
+
+const queryString = (params: Record<string, string | number | undefined>) => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') query.set(key, String(value));
+  }
+  return query.size > 0 ? `?${query.toString()}` : '';
+};
+
+export function listClients(params: ListClientsParams = {}) {
+  return api.getPage<Client>(`/erp/clients${queryString({ ...params })}`);
+}
+
+export function findClientByPhone(phone: string, branchId?: number) {
+  return api.get<Client>(`/erp/clients/by-phone${queryString({ phone, branchId })}`);
+}
+
+export function createClient(input: { fullName: string; phone: string; branchId?: number }) {
+  return api.post<Client>('/erp/clients', input);
+}
+
+export function updateClient(
+  id: number,
+  input: { fullName?: string; phone?: string; branchId?: number },
+) {
+  return api.patch<Client>(`/erp/clients/${id}`, input);
+}

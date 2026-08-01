@@ -68,7 +68,7 @@ export const createDrizzleCashierSessionRepository = (
         const inserted = await transaction.insert(cashierSessions).values(input);
         const id = Number(inserted[0].insertId);
         const session = (await findById(transaction, id))!;
-        await audit.write(transaction, {
+        await audit.record(transaction, {
           module: 'erp_cashier_sessions',
           action: 'open',
           entityType: 'cashier_session',
@@ -113,7 +113,7 @@ export const createDrizzleCashierSessionRepository = (
         isNull(cashierSessions.closedAt),
       ));
       const session = (await findById(transaction, current.id))!;
-      await audit.write(transaction, {
+      await audit.record(transaction, {
         module: 'erp_cashier_sessions',
         action: 'close',
         entityType: 'cashier_session',
@@ -145,7 +145,7 @@ export const createDrizzleCashierSessionRepository = (
         isNull(cashierSessions.closedAt),
       ));
       const session = (await findById(transaction, current.id))!;
-      await audit.write(transaction, {
+      await audit.record(transaction, {
         module: 'erp_cashier_sessions',
         action: 'recovery_close',
         entityType: 'cashier_session',

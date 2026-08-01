@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "f9f0bdf1-a8d4-4e05-8032-681df3d4cb15",
+  "id": "df3e8e9b-67e5-4fc8-9e27-8b6402f33bb1",
   "prevId": "56bc396a-aec1-48ec-a19d-0a49da7f6cb3",
   "tables": {
     "accounts": {
@@ -3939,6 +3939,101 @@
         "report_exports_row_count_nonnegative": {
           "name": "report_exports_row_count_nonnegative",
           "value": "`report_exports`.`row_count` is null or `report_exports`.`row_count` >= 0"
+        }
+      }
+    },
+    "clients": {
+      "name": "clients",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "full_name": {
+          "name": "full_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "clients_branch_phone_unique": {
+          "name": "clients_branch_phone_unique",
+          "columns": [
+            "branch_id",
+            "phone"
+          ],
+          "isUnique": true
+        },
+        "clients_branch_name_idx": {
+          "name": "clients_branch_name_idx",
+          "columns": [
+            "branch_id",
+            "full_name"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "clients_branch_id_branches_id_fk": {
+          "name": "clients_branch_id_branches_id_fk",
+          "tableFrom": "clients",
+          "tableTo": "branches",
+          "columnsFrom": [
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "clients_id": {
+          "name": "clients_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "clients_phone_format": {
+          "name": "clients_phone_format",
+          "value": "`clients`.`phone` regexp '^01[0125][0-9]{8}$'"
         }
       }
     },
