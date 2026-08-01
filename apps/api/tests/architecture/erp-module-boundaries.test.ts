@@ -100,4 +100,31 @@ describe('ERP module import boundaries', () => {
 
     expect(messages).toHaveLength(0);
   });
+
+  it('allows the ERP root to import a submodule public index', async () => {
+    const messages = await restrictedMessages(
+      "import './clients/index.js';",
+      'src/modules/erp/index.ts',
+    );
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('prevents the ERP root from importing submodule internals via the module alias', async () => {
+    const messages = await restrictedMessages(
+      "import '@/modules/erp/clients/clients-repository.js';",
+      'src/modules/erp/index.ts',
+    );
+
+    expect(messages).toHaveLength(1);
+  });
+
+  it('allows the ERP root to import a submodule public index via the module alias', async () => {
+    const messages = await restrictedMessages(
+      "import '@/modules/erp/clients/index.js';",
+      'src/modules/erp/index.ts',
+    );
+
+    expect(messages).toHaveLength(0);
+  });
 });

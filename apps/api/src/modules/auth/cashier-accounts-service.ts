@@ -62,10 +62,10 @@ export const createCashierAccountsService = (dependencies: {
       | { kind: 'employee_inactive' },
   ) => {
     if (result.kind === 'not_found') {
-      throw new CashierAccountError('ACCOUNT_NOT_FOUND', 'Cashier account not found');
+      throw new CashierAccountError('ACCOUNT_NOT_FOUND', 'حساب الكاشير غير موجود');
     }
     if (result.kind === 'employee_inactive') {
-      throw new CashierAccountError('EMPLOYEE_INACTIVE', 'Employee is inactive');
+      throw new CashierAccountError('EMPLOYEE_INACTIVE', 'الموظف غير نشط');
     }
     return result.account;
   };
@@ -82,16 +82,16 @@ export const createCashierAccountsService = (dependencies: {
       updatedAt: timestamp,
     });
     if (result.kind === 'employee_not_found') {
-      throw new CashierAccountError('EMPLOYEE_NOT_FOUND', 'Employee not found');
+      throw new CashierAccountError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
     }
     if (result.kind === 'employee_inactive') {
-      throw new CashierAccountError('EMPLOYEE_INACTIVE', 'Employee is inactive');
+      throw new CashierAccountError('EMPLOYEE_INACTIVE', 'الموظف غير نشط');
     }
     if (result.kind === 'username_taken') {
-      throw new CashierAccountError('USERNAME_TAKEN', 'Username is already in use');
+      throw new CashierAccountError('USERNAME_TAKEN', 'اسم المستخدم مستخدم بالفعل');
     }
     if (result.kind === 'employee_already_has_account') {
-      throw new CashierAccountError('EMPLOYEE_ALREADY_HAS_ACCOUNT', 'Employee already has an account');
+      throw new CashierAccountError('EMPLOYEE_ALREADY_HAS_ACCOUNT', 'يمتلك الموظف حسابًا بالفعل');
     }
     const { id, username, role, employeeId, branchId, active } = result.account;
     return { id, username, role, employeeId, branchId, active };

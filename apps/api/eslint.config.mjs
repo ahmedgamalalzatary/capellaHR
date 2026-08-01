@@ -77,7 +77,7 @@ export default [
             message: 'ERP modules must consume HR through the public capability bridge.',
           },
           {
-            regex: '^\\./(?:catalog|clients|erp-reports|expenses|sales|stock|suppliers)(?!/index\\.js$)(?:/.*|\\.js)?$',
+            regex: '^(?:\\./|@/modules/erp/)(?:catalog|clients|erp-reports|expenses|sales|stock|suppliers)(?!/index\\.js$)(?:/.*|\\.js)?$',
             message: 'The ERP root must import submodules through their public indexes.',
           },
         ],

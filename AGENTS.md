@@ -11,7 +11,9 @@ These instructions apply to the entire repository. Follow the user's explicit in
 - Do not over-engineer or under-engineer the requested work.
 - Always provide the best complete and working solution, without compromises.
 - Be concise.
+- Prefer compact Markdown text diagrams in chat when they make flows, architecture, or decisions easier to understand.
 - Never guess, speculate, or improvise. If confidence is not 100%, stop and ask before answering or acting.
+- Never create a Git commit unless the user explicitly requests it. Each commit authorization is one-time, applies only to the changes explicitly named in that request, and does not authorize any later commit.
 - When adding a feature or fixing a bug, inspect and update every related integration point so the change is complete and the same omission does not recur elsewhere.
 
 ## Brainstorming and small tasks

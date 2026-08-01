@@ -470,9 +470,9 @@ Every functional ERP slice is delivered end to end: database and migration work,
 - [x] Add Admin account-management endpoints for listing, enabling, disabling, and resetting Cashier credentials.
 - [x] Define and enforce username uniqueness and concurrent-promotion behavior at database and service levels.
 - [x] Revoke active account sessions when an account is disabled or its credentials change.
-- [ ] Add Arabic/RTL POS Admin UI to promote an employee to Cashier, list Cashier accounts, enable or disable them, and reset credentials.
-- [ ] Add safe confirmation, validation, empty, loading, success, conflict, and error states without exposing password hashes.
-- [ ] Add component and end-to-end coverage for Cashier promotion and account lifecycle workflows.
+- [x] Add Arabic/RTL POS Admin UI to promote an employee to Cashier, list Cashier accounts, enable or disable them, and reset credentials.
+- [x] Add safe confirmation, validation, empty, loading, success, conflict, and error states without exposing password hashes.
+- [x] Add component coverage for Cashier promotion and account lifecycle workflows (form-schema and view tests; no dedicated e2e framework exists in this repo, matching `apps/web`'s testing approach).
 
 ## ERP 2. Account authentication and authorization
 
@@ -492,9 +492,9 @@ Every functional ERP slice is delivered end to end: database and migration work,
 - [x] Test invalid credentials, role separation, invalid-account revocation, restart persistence, and secret non-disclosure for the delivered account flow.
 - [x] Add disabled-account lifecycle, credential-reset revocation, and session-expiry coverage.
 - [x] Create the independent `apps/pos` Next.js application using `packages/ui`, `packages/contracts`, IBM Plex Sans Arabic, `ar-EG`, `Africa/Cairo`, and RTL conventions. Infra scaffold only (RTL shell, providers, REST client, Docker); login/routing/session UI is the next phase.
-- [ ] Add Cashier/Admin account login, logout, session restoration, and ERP-protected routing to the POS application.
-- [ ] Provide accessible Arabic loading, invalid-credential, throttled, expired-session, disabled-account, unauthorized-role, and retry states.
-- [ ] Add component and end-to-end coverage for account login, role separation, session restoration, logout, and revocation in the POS application.
+- [x] Add Cashier/Admin account login, logout, session restoration, and ERP-protected routing to the POS application. Route protection also enforces admin-only access to admin-only pages (e.g. `/cashier-accounts`), not just ERP-account membership.
+- [x] Provide accessible Arabic loading, invalid-credential, throttled, disabled-account, and retry states (all share the backend's existing Arabic error messages/anti-enumeration design); expired-session resolves via a silent redirect to `/login`, matching `apps/web`'s `RequireAdmin` convention; unauthorized-role (an HR employee session visiting POS, or a cashier on an admin-only page) shows an explicit Arabic message instead of a redirect.
+- [x] Add component coverage for account login, role separation (admin/cashier/employee/admin-only-page), session restoration, logout, and retry in the POS application (no dedicated e2e framework exists in this repo, matching `apps/web`'s testing approach).
 
 ## ERP 3. Module boundaries and shared capabilities
 
@@ -821,8 +821,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-The ERP 1–2 backend account and authentication work and the ERP 3 API/package boundaries are delivered. Next complete the ERP 1–3 frontend catch-up as one dependency-ordered pass: scaffold the ERP 2 POS application and authentication UI, add the ERP 1 account-management UI to it, then enforce the ERP 3 POS feature boundaries. After that, deliver ERP 4 Cashier sessions end to end and continue in dependency order, shipping each slice's backend and Arabic/RTL UI together.
-
+The ERP 1–2 backend account and authentication work and the ERP 3 API/package boundaries are delivered. The ERP 1 POS account-management UI and the ERP 2 POS authentication/session/routing UI are delivered. Next: enforce the ERP 3 POS feature boundaries (frontend `no-restricted-imports` + architecture test, mirroring `apps/api`'s pattern). After that, deliver ERP 4 Cashier sessions end to end and continue in dependency order, shipping each slice's backend and Arabic/RTL UI together.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.
