@@ -507,10 +507,10 @@ Every functional ERP slice is delivered end to end: database and migration work,
 - [x] Preserve public boundaries between ERP modules.
 - [x] Scope every ERP business record and operation to a branch.
 - [x] Derive the acting Cashier's branch from the linked employee and never trust client-supplied branch identity.
-- [ ] Define matching public-feature boundaries for `apps/pos` so one POS feature cannot import another feature's internals.
-- [ ] Add frontend architecture tests for POS public surfaces and forbidden HR-frontend coupling.
+- [x] Define matching public-feature boundaries for `apps/pos` so one POS feature cannot import another feature's internals (enforced via ESLint `no-restricted-imports` banning deep imports into `@/features/<name>/*`; each feature is consumed only through its public `index.ts` barrel).
+- [x] Add frontend architecture tests for POS public surfaces and forbidden HR-frontend coupling (`apps/pos/tests/pos-architecture-boundaries.test.ts`, mirroring `apps/api`'s `ESLint.lintText()`-based architecture test; also bans `apps/pos` ↔ `apps/web` cross-app imports in both directions, since the two are independently deployed frontends sharing only the backend API).
 
-This is an architecture slice: no standalone user screen is required. It is complete only when both API/package boundaries and the POS frontend boundaries are enforced.
+This is an architecture slice: no standalone user screen is required. Complete: both API/package boundaries and the POS frontend boundaries are enforced.
 
 ## ERP 4. Cashier sessions
 
@@ -821,7 +821,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-The ERP 1–2 backend account and authentication work and the ERP 3 API/package boundaries are delivered. The ERP 1 POS account-management UI and the ERP 2 POS authentication/session/routing UI are delivered. Next: enforce the ERP 3 POS feature boundaries (frontend `no-restricted-imports` + architecture test, mirroring `apps/api`'s pattern). After that, deliver ERP 4 Cashier sessions end to end and continue in dependency order, shipping each slice's backend and Arabic/RTL UI together.
+ERP 1–3 are delivered end to end: backend account/auth work, the ERP 3 API/package boundaries, the ERP 1 POS account-management UI, the ERP 2 POS authentication/session/routing UI, and the ERP 3 POS feature/frontend boundaries. Next: deliver ERP 4 Cashier sessions end to end and continue in dependency order, shipping each slice's backend and Arabic/RTL UI together.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.
