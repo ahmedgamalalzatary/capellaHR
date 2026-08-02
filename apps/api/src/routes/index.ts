@@ -25,6 +25,12 @@ import { createAuditRouter, type AuditService } from '../modules/audit/index.js'
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
 import { createErpClientsRouter, type ClientService } from '../modules/erp/index.js';
+import {
+  createErpCategoriesRouter,
+  createErpServicesRouter,
+  type CategoryService,
+  type ServiceCatalogService,
+} from '../modules/erp/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -46,6 +52,8 @@ export const createApiRouter = (dependencies: {
   dashboardService?: DashboardService;
   cashierSessionService?: CashierSessionService;
   erpClientService?: ClientService;
+  erpCategoryService?: CategoryService;
+  erpServiceCatalogService?: ServiceCatalogService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -144,6 +152,24 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createErpClientsRouter(dependencies.erpClientService),
+      );
+    }
+    if (dependencies.erpCategoryService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/categories',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpCategoriesRouter(dependencies.erpCategoryService),
+      );
+    }
+    if (dependencies.erpServiceCatalogService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/services',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpServicesRouter(dependencies.erpServiceCatalogService),
       );
     }
   }

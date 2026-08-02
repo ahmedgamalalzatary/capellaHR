@@ -23,10 +23,20 @@ export function PosShell({ children }: { children: ReactNode }) {
           <Link href="/clients" className="text-sm text-muted hover:text-ink">
             العملاء
           </Link>
+          {/* Cashiers browse the service catalog to build a sale. */}
+          <Link href="/services" className="text-sm text-muted hover:text-ink">
+            الخدمات
+          </Link>
           {isAdmin ? (
-            <Link href="/cashier-accounts" className="text-sm text-muted hover:text-ink">
-              حسابات الكاشير
-            </Link>
+            <>
+              {/* Catalog administration decides what is sellable and what it costs. */}
+              <Link href="/catalog" className="text-sm text-muted hover:text-ink">
+                الكتالوج
+              </Link>
+              <Link href="/cashier-accounts" className="text-sm text-muted hover:text-ink">
+                حسابات الكاشير
+              </Link>
+            </>
           ) : null}
         </div>
         <Button

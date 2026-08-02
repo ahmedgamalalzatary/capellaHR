@@ -56,6 +56,23 @@ describe('PosShell', () => {
     expect(screen.queryByRole('link', { name: 'حسابات الكاشير' })).toBeNull();
   });
 
+  test('shows the catalog-administration link for an admin actor only', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+    expect(await screen.findByRole('link', { name: 'الكتالوج' })).toBeDefined();
+
+    cleanup();
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'الكتالوج' })).toBeNull());
+  });
+
+  test('shows the service-browsing link to a cashier, who needs it to sell', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    expect(await screen.findByRole('link', { name: 'الخدمات' })).toBeDefined();
+  });
+
   test('logs out and redirects to /login', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     logoutMock.mockResolvedValue(undefined);
