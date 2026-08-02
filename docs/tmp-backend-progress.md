@@ -597,19 +597,27 @@ Cross-branch isolation is enforced on every read and write: a client outside the
 - `erp/erp-actor.ts` — translates `response.locals.actor` into `ErpAccountIdentity`, and rejects an admin session with no acting account.
 - `ErpBranchContextResolver` type export, ERP wiring in `server.ts`, and ERP router mounting in `routes/index.ts` behind HR's auth middleware.
 
-## ERP 6. Categories and services
+## ERP 6. Categories and services — Complete
 
-- [ ] Add one category table with `service` and `expense` type values.
-- [ ] Enforce category-name uniqueness within each type.
-- [ ] Implement category create, read, update, list, and safe deletion/deactivation behavior.
-- [ ] Add service schema with name, description, fixed EGP price, category, default commission settings, and active state.
-- [ ] Add per-employee service commission overrides.
-- [ ] Implement service and commission-override administration endpoints.
-- [ ] Prevent catalog edits from changing historical invoice facts.
-- [ ] Add exact-money, validation, authorization, branch, lifecycle, and MySQL tests.
-- [ ] Add Arabic/RTL POS Admin category, service, and employee commission-override management.
-- [ ] Add POS service browsing and search with active-state, fixed-price, empty, loading, and error behavior.
-- [ ] Add component and end-to-end coverage for catalog administration and POS service discovery.
+- [x] Add one category table with `service` and `expense` type values (`erp_categories`, migration `0045_easy_lizard.sql`).
+- [x] Enforce category-name uniqueness within each type. Uniqueness is `(branch_id, type, name_normalized)`: ERP records are branch-scoped, so "unique per type" is enforced inside each branch's own catalog, the same way ERP 5 scopes client phone uniqueness per branch. Normalization reuses the Branches sha256 lower-cased form.
+- [x] Implement category create, read, update, list, and safe deletion/deactivation behavior. `is_active` retires a category; `has_ever_been_referenced` is set transactionally the first time a service points at it and permanently blocks deletion (the Branches protection-hook pattern), so deletion only ever removes a category nothing has used. ERP 15 expenses reuse the same `markCategoryReferenced` hook. Category `type` is immutable.
+- [x] Add service schema with name, description, fixed EGP price, category, default commission settings, and active state (`erp_services`). Price is `decimal(12,2)` with a `> 0` check; the default commission is `decimal(5,2)` percent of the pre-discount list price with a `between 0 and 100` check. Names are unique per branch.
+- [x] Add per-employee service commission overrides (`erp_service_commission_overrides`, unique on `(service_id, employee_id)`, same exact-decimal percentage and range check). Overrides are validated against the acting branch's employees through the HR employee capability.
+- [x] Implement service and commission-override administration endpoints. Writes are Admin-only; reads are open to any ERP account so a Cashier can browse the catalog.
+- [x] Prevent catalog edits from changing historical invoice facts. Structural: services have no delete operation and no soft-delete column, categories cannot be deleted once referenced, and category type cannot change — so every fact an ERP 8 invoice line will snapshot (name, price, commission rate, category) stays resolvable and every edit affects future invoices only.
+- [x] Add exact-money, validation, authorization, branch, lifecycle, and MySQL tests.
+- [x] Add Arabic/RTL POS Admin category, service, and employee commission-override management (`/catalog`, admin-only, with the branch selector an Admin needs because they belong to no branch).
+- [x] Add POS service browsing and search with active-state, fixed-price, empty, loading, and error behavior (`/services`, `ServicePicker`). "Active" means the service *and* its category are live, so retiring a category removes its services from the counter.
+- [x] Add component coverage for catalog administration and POS service discovery (schema, view, and picker tests; no dedicated e2e framework exists in this repo, matching `apps/web` and ERP 1–5).
+
+Current catalog endpoints:
+
+- `POST|GET /api/v1/erp/categories`, `GET|PATCH|DELETE /api/v1/erp/categories/:id`
+- `POST|GET /api/v1/erp/services`, `GET|PATCH /api/v1/erp/services/:id`
+- `GET|PUT /api/v1/erp/services/:id/commission-overrides`, `DELETE /api/v1/erp/services/:id/commission-overrides/:employeeId`
+
+Commission is modelled as a percentage rate only (no fixed-amount commission kind): the locked decisions describe a "configurable **rate** per service" and ERP 9 calculates commission *from the pre-discount list price*, and fixed-amount commission is never mentioned. The "commission rule" ERP 8 must snapshot is therefore which rule applied — the per-employee override or the service default — alongside the rate itself.
 
 ## ERP 7. Attendance assignment capability
 
