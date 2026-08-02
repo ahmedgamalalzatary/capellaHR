@@ -1,3 +1,4 @@
+export * from './assignment/index.js';
 export * from './catalog/index.js';
 export * from './clients/index.js';
 export * from './erp-reports/index.js';

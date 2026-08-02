@@ -25,6 +25,10 @@ import { createAuditRouter, type AuditService } from '../modules/audit/index.js'
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
 import { createErpClientsRouter, type ClientService } from '../modules/erp/index.js';
+import {
+  createErpAssignmentRouter,
+  type EmployeeAssignmentService,
+} from '../modules/erp/assignment/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -46,6 +50,7 @@ export const createApiRouter = (dependencies: {
   dashboardService?: DashboardService;
   cashierSessionService?: CashierSessionService;
   erpClientService?: ClientService;
+  erpAssignmentService?: EmployeeAssignmentService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -144,6 +149,15 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createErpClientsRouter(dependencies.erpClientService),
+      );
+    }
+    if (dependencies.erpAssignmentService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/assignable-employees',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpAssignmentRouter(dependencies.erpAssignmentService),
       );
     }
   }

@@ -611,17 +611,19 @@ Cross-branch isolation is enforced on every read and write: a client outside the
 - [ ] Add POS service browsing and search with active-state, fixed-price, empty, loading, and error behavior.
 - [ ] Add component and end-to-end coverage for catalog administration and POS service discovery.
 
-## ERP 7. Attendance assignment capability
+## ERP 7. Attendance assignment capability — Complete (invoice wiring deferred to ERP 8/9)
 
-- [ ] Publish `listPresentEmployees(branchId)` from Attendance without exposing Attendance internals.
-- [ ] Return only active employees with an open Attendance session in the requested branch.
-- [ ] Add an ERP endpoint for employees eligible for invoice assignment.
-- [ ] Revalidate employee presence when completing a sale.
-- [ ] Reject assignment when the employee checked out after being selected.
-- [ ] Provide no Cashier or Admin override for assigning an unchecked-in employee.
-- [ ] Add checkout-race, branch-isolation, soft-deletion, and integration tests.
-- [ ] Add the POS currently-present employee selector with refresh, empty, checked-out, and stale-selection states.
-- [ ] Add component and end-to-end coverage for assignment eligibility, branch isolation, and the select-then-checkout race.
+- [x] Publish `listPresentEmployees(branchId)` from Attendance without exposing Attendance internals. The capability now projects explicitly to `{ id, employeeCode, fullName, branchId }`, so no session, event, device, GPS, or credential field can reach the ERP even if the reader widens.
+- [x] Return only active employees with an open Attendance session in the requested branch. Presence means an open session of that branch, still inside the locked 16-hour ceiling, for an `active`, non-soft-deleted employee.
+- [x] Add an ERP endpoint for employees eligible for invoice assignment: `GET /api/v1/erp/assignable-employees`. It is read-only, behind the ERP account boundary, and resolves the acting branch through `createErpBranchContextResolver` — an Admin must name the branch, a Cashier's branch comes from their linked employee, and naming another branch is rejected.
+- [x] Revalidate employee presence when completing a sale — delivered as the reusable capability the sale will call: `ErpAttendanceCapability.findPresentEmployee(branchId, employeeId, context?)` and `EmployeeAssignmentService.assertAssignable(actor, { employeeId, branchId? }, context?)`. `context` is the caller's database transaction, so ERP 9's single sale transaction re-checks presence and writes the invoice against one state. **Deferred: the call site itself.** Invoices do not exist until ERP 8, so wiring it into sale completion belongs to ERP 8/9; nothing else in ERP 7 depends on it.
+- [x] Reject assignment when the employee checked out after being selected. `assertAssignable` re-reads live presence on every call and raises `ERP_EMPLOYEE_NOT_PRESENT` (HTTP 409) once the session closes.
+- [x] Provide no Cashier or Admin override for assigning an unchecked-in employee. Structural: both roles run the identical check, `assignEmployeeSchema` is `.strict()` so no override field can be sent, and the service exposes no bypass parameter.
+- [x] Add checkout-race, branch-isolation, soft-deletion, and integration tests. Real-MySQL coverage spans presence, branch isolation, never-checked-in, check-out, deactivation, soft deletion, the 16-hour timeout, and an in-transaction re-check.
+- [x] Add the POS currently-present employee selector with refresh, empty, checked-out, and stale-selection states (`apps/pos/src/features/employee-assignment`, consumed by the ERP 9 sale workflow like ERP 5's `ClientPicker`). A selection that checked out is dropped with an Arabic warning so the counter notices before submitting — never as a replacement for the server check.
+- [x] Add component and end-to-end coverage for assignment eligibility, branch isolation, and the select-then-checkout race (contract, service, router, mounting, component, and real-MySQL tests; no dedicated e2e framework exists in this repo, matching `apps/web` and ERP 1–6).
+
+No migration was needed: assignment eligibility owns no tables and reads live Attendance through the public capability only.
 
 ## ERP 8. Core sales schema
 

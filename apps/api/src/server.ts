@@ -25,7 +25,7 @@ import {
 } from './modules/attendance/index.js';
 import { createDashboardModule } from './modules/dashboard/index.js';
 import { createSalesModule } from './modules/erp/sales/index.js';
-import { createErpClientsModule } from './modules/erp/index.js';
+import { createErpAssignmentModule, createErpClientsModule } from './modules/erp/index.js';
 import { createApiLogger } from './shared/http/index.js';
 
 const database = createDatabase(env.DATABASE_URL);
@@ -190,6 +190,12 @@ const erpClientsModule = createErpClientsModule(database, {
   branches: branchModule.erp,
   employees: employeeModule.erp,
 });
+// Assignment eligibility is read from live Attendance only; it owns no tables.
+const erpAssignmentModule = createErpAssignmentModule({
+  attendance: attendanceModule.erp,
+  branches: branchModule.erp,
+  employees: employeeModule.erp,
+});
 
 createApp({
   authService: auth.service,
@@ -212,6 +218,7 @@ createApp({
   dashboardService: dashboardModule.service,
   cashierSessionService: salesModule.cashierSessions,
   erpClientService: erpClientsModule.service,
+  erpAssignmentService: erpAssignmentModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

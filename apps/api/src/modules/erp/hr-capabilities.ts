@@ -16,6 +16,7 @@ export type ErpHrCapabilities = {
 
 export type {
   ErpAccountIdentity,
+  ErpAttendanceCapability,
   ErpAuditCapability,
   ErpAuditEvent,
   ErpAuditExecutor,
