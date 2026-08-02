@@ -29,9 +29,13 @@ export function ClientsView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
 
+  // Whitespace-only input must read as "no filter", so the trimmed term drives
+  // both the cache key and the request.
+  const trimmedSearch = search.trim();
+
   const clientsQuery = useQuery({
-    queryKey: clientQueryKeys.list({ page, search }),
-    queryFn: () => listClients({ page, ...(search ? { search } : {}) }),
+    queryKey: clientQueryKeys.list({ page, search: trimmedSearch }),
+    queryFn: () => listClients({ page, ...(trimmedSearch ? { search: trimmedSearch } : {}) }),
   });
 
   const items = clientsQuery.data?.items ?? [];
@@ -81,8 +85,8 @@ export function ClientsView() {
           />
         ) : items.length === 0 ? (
           <EmptyState
-            title={search ? 'لا يوجد عميل مطابق' : 'لا يوجد عملاء بعد'}
-            description={search ? 'جرب رقمًا أو اسمًا آخر.' : 'ابدأ بإضافة أول عميل.'}
+            title={trimmedSearch ? 'لا يوجد عميل مطابق' : 'لا يوجد عملاء بعد'}
+            description={trimmedSearch ? 'جرب رقمًا أو اسمًا آخر.' : 'ابدأ بإضافة أول عميل.'}
           />
         ) : (
           <div className="overflow-x-auto">

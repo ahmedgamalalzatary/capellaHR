@@ -59,8 +59,11 @@ const seedBranch = async (label: string) => {
 const page = { page: 1 as const, pageSize: 20 as const };
 
 beforeEach(async () => {
+  // `clients` belongs to this suite alone, so it is cleared wholesale. Audit
+  // events are shared with every other module's suites, so only this module's
+  // rows are removed.
   await database.delete(clients);
-  await database.delete(auditEvents);
+  await database.delete(auditEvents).where(eq(auditEvents.module, 'erp-clients'));
 });
 
 describe('MySQL-backed ERP clients', () => {

@@ -1,6 +1,6 @@
 # Capella HR implementation tracker (temporary)
 
-Last rebuilt: 2026-07-20
+Last verified: 2026-08-02
 
 This is the temporary working checklist for completing the full functional product. The locked product rules remain in `docs/hr-specs.md`; this file tracks implementation progress and dependency order only.
 
@@ -517,11 +517,10 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–4
+DONE: ERP 1–5
        │
-       ├── ERP 5  Clients ──────────┐
-       ├── ERP 6  Services/catalog ──┼── ERP 8 Core sales schema
-       └── ERP 7  Attendance assign ─┘
+       ├── ERP 6  Services/catalog ──┐
+       └── ERP 7  Attendance assign ─┴── ERP 8 Core sales schema
                                           │
                                       ERP 9 Atomic sale
                                        ┌──┴──┐
@@ -551,7 +550,7 @@ ERP 6 ───────────────> ERP 15          ERP 17
 
 Safe parallel waves:
 
-1. **Current wave:** ERP 4 is complete; ERP 5, 6, and 7 can run in parallel.
+1. **Current wave:** ERP 5 is complete; ERP 6 and 7 can run in parallel.
 2. **Barrier:** ERP 8, then ERP 9.
 3. **Parallel:** ERP 10 and 11.
 4. **Barrier:** ERP 12, then ERP 13.
@@ -576,7 +575,7 @@ Safe parallel waves:
 
 No drawer counting, opening balance, closing balance, or reconciliation is included.
 
-## ERP 5. Clients
+## ERP 5. Clients — Complete (visit history deferred to ERP 8)
 
 - [x] Add branch-scoped client schema and migration.
 - [x] Require client name and phone; completed invoices may never be anonymous.
@@ -877,7 +876,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–4 are delivered end to end: backend account/auth work, the ERP 3 API/package boundaries, the ERP 1 POS account-management UI, the ERP 2 POS authentication/session/routing UI, the ERP 3 POS feature/frontend boundaries, and ERP 4 Cashier sessions with Admin recovery. Next: finish ERP 5–7 in parallel, then cross the ERP 8 barrier, continuing to ship each slice's backend and Arabic/RTL UI together.
+ERP 1–5 are delivered end to end: backend account/auth work, the ERP 3 API/package boundaries, the ERP 1 POS account-management UI, the ERP 2 POS authentication/session/routing UI, the ERP 3 POS feature/frontend boundaries, ERP 4 Cashier sessions with Admin recovery, and ERP 5 branch-scoped client management and sale-time client selection. Next: finish ERP 6 and 7 in parallel, then cross the ERP 8 barrier, continuing to ship each slice's backend and Arabic/RTL UI together.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

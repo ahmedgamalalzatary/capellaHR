@@ -86,6 +86,34 @@ describe('ClientsView', () => {
     });
   });
 
+  test('omits the search filter when the typed term is only whitespace', async () => {
+    renderView();
+    await screen.findByText('ندى سمير');
+    fireEvent.change(screen.getByLabelText('بحث بالاسم أو رقم الهاتف'), { target: { value: '   ' } });
+
+    await waitFor(() => {
+      expect(mocks.listClients.mock.calls.at(-1)?.[0]).toEqual({ page: 1 });
+    });
+  });
+
+  test('treats a whitespace-only search as no search in the empty state', async () => {
+    mocks.listClients.mockResolvedValue(pageOf([]));
+    renderView();
+    fireEvent.change(screen.getByLabelText('بحث بالاسم أو رقم الهاتف'), { target: { value: '   ' } });
+
+    expect(await screen.findByText('لا يوجد عملاء بعد')).toBeDefined();
+  });
+
+  test('trims the search term before sending it to the API', async () => {
+    renderView();
+    await screen.findByText('ندى سمير');
+    fireEvent.change(screen.getByLabelText('بحث بالاسم أو رقم الهاتف'), { target: { value: '  ندى  ' } });
+
+    await waitFor(() => {
+      expect(mocks.listClients.mock.calls.at(-1)?.[0]).toMatchObject({ search: 'ندى', page: 1 });
+    });
+  });
+
   test('surfaces the Arabic error when the list fails to load', async () => {
     mocks.listClients.mockRejectedValue(
       new ApiError(500, { code: 'UNEXPECTED_ERROR', message: 'حدث خطأ غير متوقع. حاول مرة أخرى.' }),
