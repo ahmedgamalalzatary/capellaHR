@@ -21,6 +21,28 @@ import { type AttendanceSessionWriter } from './attendance-session-writer.js';
 import { calculateAttendanceMinutes, type AttendanceRepository } from './attendance-service.js';
 import type { ErpAttendanceCapability } from './erp-attendance-capability.js';
 
+/**
+ * An employee counts as present only while a session of that branch is still
+ * open and inside the 16-hour ceiling, and only while the employee is active
+ * and not soft-deleted.
+ */
+const presentInBranch = (branchId: number, at: Date) => and(
+  eq(attendanceSessions.branchId, branchId),
+  isNotNull(attendanceSessions.openEmployeeId),
+  gt(attendanceSessions.checkInAt, new Date(at.getTime() - 16 * 60 * 60_000)),
+  eq(employees.employmentStatus, 'active'),
+  isNull(employees.deletedAt),
+)!;
+
+const presentEmployeeQuery = (executor: Executor, where: SQL) => executor.select({
+  id: employees.id,
+  employeeCode: employees.employeeCode,
+  fullName: employees.fullName,
+  branchId: attendanceSessions.branchId,
+}).from(attendanceSessions)
+  .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
+  .where(where);
+
 export const createAttendanceSessionsRepository = (
   database: Database,
   writer: AttendanceSessionWriter,
@@ -240,22 +262,20 @@ export const createAttendanceSessionsRepository = (
     },
 
     listPresentEmployees(branchId) {
-      const activeAfter = new Date(now().getTime() - 16 * 60 * 60_000);
-      return database.select({
-        id: employees.id,
-        employeeCode: employees.employeeCode,
-        fullName: employees.fullName,
-        branchId: attendanceSessions.branchId,
-      }).from(attendanceSessions)
-        .innerJoin(employees, eq(employees.id, attendanceSessions.employeeId))
-        .where(and(
-          eq(attendanceSessions.branchId, branchId),
-          isNotNull(attendanceSessions.openEmployeeId),
-          gt(attendanceSessions.checkInAt, activeAfter),
-          eq(employees.employmentStatus, 'active'),
-          isNull(employees.deletedAt),
-        ))
+      return presentEmployeeQuery(database, presentInBranch(branchId, now()))
         .orderBy(asc(employees.employeeCode));
+    },
+
+    /**
+     * Single-employee re-check used when a sale is completed. `context` is the
+     * caller's transaction, so the check and the invoice write see one state.
+     */
+    async findPresentEmployee(branchId, employeeId, context) {
+      const executor = (context as Executor | undefined) ?? database;
+      return (await presentEmployeeQuery(executor, and(
+        presentInBranch(branchId, now()),
+        eq(attendanceSessions.employeeId, employeeId),
+      )!).limit(1))[0] ?? null;
     },
 
     async hasOpenSession(employeeId, context) {

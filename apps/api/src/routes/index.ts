@@ -31,6 +31,10 @@ import {
   type CategoryService,
   type ServiceCatalogService,
 } from '../modules/erp/index.js';
+import {
+  createErpAssignmentRouter,
+  type EmployeeAssignmentService,
+} from '../modules/erp/assignment/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -54,6 +58,7 @@ export const createApiRouter = (dependencies: {
   erpClientService?: ClientService;
   erpCategoryService?: CategoryService;
   erpServiceCatalogService?: ServiceCatalogService;
+  erpAssignmentService?: EmployeeAssignmentService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -170,6 +175,15 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createErpServicesRouter(dependencies.erpServiceCatalogService),
+      );
+    }
+    if (dependencies.erpAssignmentService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/assignable-employees',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpAssignmentRouter(dependencies.erpAssignmentService),
       );
     }
   }
