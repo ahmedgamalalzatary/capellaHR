@@ -12,6 +12,7 @@ export const employees = mysqlTable('employees', {
   deletedAt: timestamp('deleted_at', { mode: 'date', fsp: 3 }), createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(), updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   uniqueIndex('employees_employee_code_unique').on(table.employeeCode),
+  uniqueIndex('employees_id_branch_unique').on(table.id, table.branchId),
   check('employees_age_positive', sql`${table.age} > 0`),
   check('employees_code_positive', sql`${table.employeeCode} > 0`),
   check('employees_personal_phone_format', sql`${table.personalPhone} regexp '^01[0125][0-9]{8}$'`),

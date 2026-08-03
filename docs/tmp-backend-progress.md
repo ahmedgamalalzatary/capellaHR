@@ -634,23 +634,23 @@ No migration was needed: assignment eligibility owns no tables and reads live At
 
 ## ERP 8. Core sales schema
 
-- [ ] Add invoice schema with branch, client, assigned employee, acting account, Cashier session, status, totals, timestamps, and historical snapshots.
-- [ ] Add invoice-line schema for services and products.
-- [ ] Snapshot line item name, type, list price, commission rule/rate, and product cost basis where applicable.
-- [ ] Add invoice-level percentage/fixed discount fields and computed amount snapshot.
-- [ ] Add invoice-level percentage/fixed tax fields and computed amount snapshot.
-- [ ] Add payment records supporting Cash, Visa, InstaPay, and Vodafone Cash.
-- [ ] Require payment amounts to sum exactly to the final invoice total.
-- [ ] Add daily invoice sequence schema and Cairo-time allocation.
-- [ ] Format invoice numbers as `INV-YYYY.MM.DD-HH.MM-<seq>`.
-- [ ] Accept sequence gaps after rolled-back transactions and never reuse a number.
-- [ ] Add client-generated sale idempotency keys with a database uniqueness invariant.
-- [ ] Add immutable commission-ledger schema with reversal support.
-- [ ] Add all required indexes, foreign keys, checks, and migrations.
-- [ ] Publish complete sale draft, totals, payment, invoice, and error contracts for the POS application without exposing persistence internals.
-- [ ] Add contract fixtures that support the complete POS service-sale workflow and its validation/error states.
+- [x] Add invoice schema with branch, client, assigned employee, acting account, Cashier session, status, totals, timestamps, and historical snapshots.
+- [x] Add invoice-line schema for services and products.
+- [x] Snapshot line item name, type, list price, commission rule/rate, and product cost basis where applicable.
+- [x] Add invoice-level percentage/fixed discount fields and computed amount snapshot.
+- [x] Add invoice-level percentage/fixed tax fields and computed amount snapshot.
+- [x] Add payment records supporting Cash, Visa, InstaPay, and Vodafone Cash.
+- [x] Require payment amounts to sum exactly to the final invoice total.
+- [x] Add daily invoice sequence schema and Cairo-time allocation.
+- [x] Format invoice numbers as `INV-YYYY.MM.DD-HH.MM-<seq>`.
+- [x] Accept sequence gaps after rolled-back transactions and never reuse a number.
+- [x] Add client-generated sale idempotency keys with a database uniqueness invariant.
+- [x] Add immutable commission-ledger schema with reversal support.
+- [x] Add all required indexes, foreign keys, checks, and migrations.
+- [x] Publish complete sale draft, totals, payment, invoice, and error contracts for the POS application without exposing persistence internals.
+- [x] Add contract fixtures that support the complete POS service-sale workflow and its validation/error states.
 
-This is a persistence foundation slice: it has no standalone screen, but its contracts must make the following sale slice implementable end to end without duplicating server rules in the browser.
+Complete. This persistence foundation intentionally has no standalone screen. The minimal branch-scoped product catalog identity was pulled forward from ERP 13 so product invoice lines have a real foreign key; ERP 13 still owns product administration, stock balances/movements, availability, and POS product workflows. Migrations `0046_tearful_sentry.sql` and `0047_stiff_gideon.sql` create and harden the sales foundation, preserve branch ownership through composite foreign keys, permit completion only after lines, payments, and earned commissions exactly cover the invoice, lock completed snapshots, and enforce cumulative-rounding-safe append-only commission lineage with database triggers. The public contracts carry exact-money sale drafts, authoritative totals, exact payment-sum and snapshot-consistency validation, stored invoice facts, stable errors, and workflow fixtures for ERP 9.
 
 ## ERP 9. Atomic service-sale vertical slice
 
@@ -885,7 +885,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–7 are delivered end to end: backend account/auth work, the ERP 3 API/package boundaries, the ERP 1 POS account-management UI, the ERP 2 POS authentication/session/routing UI, the ERP 3 POS feature/frontend boundaries, ERP 4 Cashier sessions with Admin recovery, ERP 5 branch-scoped client management and sale-time client selection, ERP 6 the branch-scoped category/service catalog with per-employee commission overrides, and ERP 7 the attendance-backed assignable-employee capability. Two ERP 8 dependencies are deliberately deferred and waiting on invoices: client visit history (ERP 5) and the sale-completion call site for presence revalidation (ERP 7). Next: cross the ERP 8 barrier, continuing to ship each slice's backend and Arabic/RTL UI together.
+ERP 1–8 are delivered: backend account/auth work, API/package and POS boundaries, Cashier sessions, branch-scoped clients, the category/service catalog with commission overrides, attendance-backed employee assignment, and the ERP 8 sales persistence/contracts foundation. Client visit-history wiring (ERP 5) and sale-completion presence revalidation (ERP 7) now move into the ERP 9 atomic service-sale call site. Next: ERP 9, the complete backend and Arabic/RTL POS service-sale vertical slice.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

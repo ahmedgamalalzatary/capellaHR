@@ -1,6 +1,7 @@
 'use client';
 
 import { Camera, Check, RefreshCw } from 'lucide-react';
+import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@capella/ui';
@@ -127,7 +128,7 @@ export function AttendanceCameraCapture({
       </div>
       <div className={mediaFrame}>
         {active ? <video ref={videoRef} aria-label="معاينة الكاميرا" muted playsInline className="size-full object-cover" /> : null}
-        {!active && value && preview ? <img src={preview} alt="الصورة الملتقطة" className="size-full object-cover" /> : null}
+        {!active && value && preview ? <Image src={preview} alt="الصورة الملتقطة" width={640} height={480} unoptimized className="size-full object-cover" /> : null}
         {!active && value && !preview ? <p role="status" className="px-3 text-center text-sm text-success">تم التقاط الصورة.</p> : null}
         {!active && !value ? <span className="grid gap-2 text-center text-muted"><Camera className="mx-auto size-7" aria-hidden /><span className="text-[12px]">وجّه الكاميرا نحو وجهك في مكان جيد الإضاءة.</span></span> : null}
       </div>

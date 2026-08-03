@@ -21,6 +21,7 @@ export const clients = mysqlTable('clients', {
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
+  uniqueIndex('clients_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('clients_branch_phone_unique').on(table.branchId, table.phone),
   index('clients_branch_name_idx').on(table.branchId, table.fullName),
   check('clients_phone_format', sql`${table.phone} regexp '^01[0125][0-9]{8}$'`),

@@ -130,21 +130,25 @@ describe('MySQL-backed employee self-service', () => {
     await advanceModule.service.create({ employeeId: owner.id, amount: '200.00', installmentCount: 2, startMonth: payrollMonth });
     await advanceModule.service.create({ employeeId: other.id, amount: '777.00', installmentCount: 1, startMonth: payrollMonth });
     const now = new Date();
+    const currentAttendanceDate = currentCairoDate(now);
+    const closedAttendanceDate = currentAttendanceDate === `${payrollMonth}-03`
+      ? `${payrollMonth}-05`
+      : `${payrollMonth}-03`;
     await database.insert(attendanceDailyRecords).values([
       { employeeId: owner.id, branchId: branch.id, attendanceDate: payrollDate, status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: now, createdAt: now, updatedAt: now },
       { employeeId: other.id, branchId: branch.id, attendanceDate: `${payrollMonth}-02`, status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: now, createdAt: now, updatedAt: now },
     ]);
     await database.insert(attendanceSessions).values([
       {
-        employeeId: owner.id, branchId: branch.id, attendanceDate: currentCairoDate(now), requiredMinutes: 480,
+        employeeId: owner.id, branchId: branch.id, attendanceDate: currentAttendanceDate, requiredMinutes: 480,
         checkInAt: new Date(now.valueOf() - 60_000), checkOutAt: null,
         workedMinutes: null, overtimeMinutes: null, shortageMinutes: null,
         automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
         createdAt: now, updatedAt: now,
       },
       {
-        employeeId: owner.id, branchId: branch.id, attendanceDate: `${payrollMonth}-03`, requiredMinutes: 480,
-        checkInAt: new Date(`${payrollMonth}-03T06:00:00.000Z`), checkOutAt: new Date(`${payrollMonth}-03T14:00:00.000Z`),
+        employeeId: owner.id, branchId: branch.id, attendanceDate: closedAttendanceDate, requiredMinutes: 480,
+        checkInAt: new Date(`${closedAttendanceDate}T06:00:00.000Z`), checkOutAt: new Date(`${closedAttendanceDate}T14:00:00.000Z`),
         workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
         automaticTimeoutAt: null, automaticTimeoutCorrectedAt: null, flagged: false,
         createdAt: now, updatedAt: now,
@@ -215,8 +219,8 @@ describe('MySQL-backed employee self-service', () => {
     expect(overview.body.data.profile.fullName).toBe('صاحب الجلسة');
     expect(JSON.stringify(overview.body)).not.toMatch(/pin|image|storagePath|credential|latitude|longitude|Radius|employeeId/iu);
     expect(responseData<{ attendanceDate: string }>(attendanceResponse.body)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ attendanceDate: `${payrollMonth}-03`, state: 'closed' }),
-      expect.objectContaining({ attendanceDate: currentCairoDate(now), state: 'open' }),
+      expect.objectContaining({ attendanceDate: closedAttendanceDate, state: 'closed' }),
+      expect.objectContaining({ attendanceDate: currentAttendanceDate, state: 'open' }),
     ]));
     expect(JSON.stringify(attendanceResponse.body)).not.toMatch(/employeeId|employeeCode|employeeName|branchId|branchName|flagged/);
     expect(responseData<{ amount: string }>(bonusesResponse.body).map((item) => item.amount)).toEqual(['100.00']);

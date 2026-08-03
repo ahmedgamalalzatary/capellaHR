@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   decimal,
+  foreignKey,
   index,
   int,
   mysqlEnum,
@@ -39,6 +40,7 @@ export const erpCategories = mysqlTable('erp_categories', {
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
+  uniqueIndex('erp_categories_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('erp_categories_branch_type_name_unique')
     .on(table.branchId, table.type, table.nameNormalized),
   index('erp_categories_branch_type_active_idx').on(table.branchId, table.type, table.isActive),
@@ -58,7 +60,7 @@ export const erpCategories = mysqlTable('erp_categories', {
 export const erpServices = mysqlTable('erp_services', {
   id: int('id').autoincrement().primaryKey(),
   branchId: int('branch_id').notNull().references(() => branches.id),
-  categoryId: int('category_id').notNull().references(() => erpCategories.id),
+  categoryId: int('category_id').notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   nameNormalized: varchar('name_normalized', { length: 64 }).notNull(),
   description: varchar('description', { length: 1000 }),
@@ -68,6 +70,12 @@ export const erpServices = mysqlTable('erp_services', {
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
+  foreignKey({
+    name: 'erp_services_category_branch_fk',
+    columns: [table.categoryId, table.branchId],
+    foreignColumns: [erpCategories.id, erpCategories.branchId],
+  }),
+  uniqueIndex('erp_services_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('erp_services_branch_name_unique').on(table.branchId, table.nameNormalized),
   index('erp_services_branch_category_idx').on(table.branchId, table.categoryId),
   index('erp_services_branch_active_idx').on(table.branchId, table.isActive),
@@ -95,4 +103,35 @@ export const erpServiceCommissionOverrides = mysqlTable('erp_service_commission_
     'erp_service_commission_overrides_range',
     sql`${table.commissionPercent} between 0 and 100`,
   ),
+]);
+
+/**
+ * Product identity is introduced with the core invoice schema so a historical
+ * product line always has a real source foreign key. ERP 13 adds stock balances,
+ * movements, administration APIs and POS workflows around this catalog fact.
+ */
+export const erpProducts = mysqlTable('erp_products', {
+  id: int('id').autoincrement().primaryKey(),
+  branchId: int('branch_id').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  nameNormalized: varchar('name_normalized', { length: 64 }).notNull(),
+  description: varchar('description', { length: 1000 }),
+  sellingPrice: decimal('selling_price', { precision: 12, scale: 2 }).notNull(),
+  lastPurchaseCost: decimal('last_purchase_cost', { precision: 12, scale: 2 }).notNull().default('0.00'),
+  lowStockThreshold: int('low_stock_threshold').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({
+    name: 'erp_products_branch_fk',
+    columns: [table.branchId],
+    foreignColumns: [branches.id],
+  }),
+  uniqueIndex('erp_products_id_branch_unique').on(table.id, table.branchId),
+  uniqueIndex('erp_products_branch_name_unique').on(table.branchId, table.nameNormalized),
+  index('erp_products_branch_active_idx').on(table.branchId, table.isActive),
+  check('erp_products_selling_price_positive', sql`${table.sellingPrice} > 0`),
+  check('erp_products_purchase_cost_nonnegative', sql`${table.lastPurchaseCost} >= 0`),
+  check('erp_products_low_stock_nonnegative', sql`${table.lowStockThreshold} >= 0`),
 ]);

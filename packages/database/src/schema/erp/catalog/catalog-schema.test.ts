@@ -25,6 +25,16 @@ describe('erp categories schema', () => {
       .toEqual(['branch_id', 'type', 'name_normalized']);
   });
 
+  it('supports branch-preserving service category references', () => {
+    const categoryIdentity = getTableConfig(erpCategories).indexes
+      .find((entry) => entry.config.name === 'erp_categories_id_branch_unique');
+    expect(categoryIdentity?.config.unique).toBe(true);
+    expect(categoryIdentity?.config.columns.map((column) => ('name' in column ? column.name : null)))
+      .toEqual(['id', 'branch_id']);
+    expect(getTableConfig(erpServices).foreignKeys.map((value) => value.getName()))
+      .toContain('erp_services_category_branch_fk');
+  });
+
   it('carries an active flag so a retired category is deactivated rather than removed', () => {
     const columns = getTableConfig(erpCategories).columns.map((column) => column.name);
 
