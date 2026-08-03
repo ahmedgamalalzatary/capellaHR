@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -29,6 +30,17 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('keeps validation messages as correctly decoded Arabic', () => {
+    const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
+    expect(source).not.toContain('Ã');
+    for (const message of [
+      'قيمة التعديل الثابت غير متسقة',
+      'عمولة الخدمة غير متسقة',
+      'مجموع البنود لا يساوي المجموع الفرعي',
+      'قيمة التعديل غير متسقة',
+    ]) expect(source).toContain(message);
+  });
+
   it('accepts the locked payment methods only', () => {
     expect(paymentMethodSchema.options).toEqual(['cash', 'visa', 'instapay', 'vodafone_cash']);
     expect(paymentMethodSchema.safeParse('mastercard').success).toBe(false);

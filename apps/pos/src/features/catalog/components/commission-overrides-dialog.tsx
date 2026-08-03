@@ -44,8 +44,8 @@ export function CommissionOverridesDialog({
     queryFn: () => listCommissionOverrides(service.id, branchId),
   });
   const employeesQuery = useQuery({
-    queryKey: catalogQueryKeys.employees,
-    queryFn: () => fetchAllPages((page) => listCatalogEmployeeOptions(page)),
+    queryKey: catalogQueryKeys.employees(branchId),
+    queryFn: () => fetchAllPages((page) => listCatalogEmployeeOptions(page, branchId)),
   });
 
   const { register, handleSubmit, reset, formState: { errors } } =
@@ -82,7 +82,8 @@ export function CommissionOverridesDialog({
   const formError = errors.employeeId?.message
     ?? errors.commissionPercent?.message
     ?? serverErrorMessage(save.error)
-    ?? serverErrorMessage(remove.error);
+    ?? serverErrorMessage(remove.error)
+    ?? serverErrorMessage(employeesQuery.error);
 
   return (
     <Modal title={`نسب العمولة — ${service.name}`} onClose={onClose}>

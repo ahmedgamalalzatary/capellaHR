@@ -162,7 +162,7 @@ const storedAdjustmentSchema = z.object({
     context.addIssue({ code: 'custom', path: ['value'], message: 'يجب ألا تتجاوز النسبة 100' });
   }
   if (value.kind === 'fixed' && toCents(value.value) !== toCents(value.amount)) {
-    context.addIssue({ code: 'custom', path: ['amount'], message: 'Ù‚ÙŠÙ…Ø© Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ø«Ø§Ø¨Øª ØºÙŠØ± Ù…ØªØ³Ù‚Ø©' });
+    context.addIssue({ code: 'custom', path: ['amount'], message: 'قيمة التعديل الثابت غير متسقة' });
   }
 });
 
@@ -191,7 +191,7 @@ const invoiceLineSchema = z.object({
   }
   if (value.itemType === 'service'
     && toCents(value.commissionAmount) !== percentageAmount(value.lineTotal, value.commissionRate)) {
-    context.addIssue({ code: 'custom', path: ['commissionAmount'], message: 'Ø¹Ù…ÙˆÙ„Ø© Ø§Ù„Ø®Ø¯Ù…Ø© ØºÙŠØ± Ù…ØªØ³Ù‚Ø©' });
+    context.addIssue({ code: 'custom', path: ['commissionAmount'], message: 'عمولة الخدمة غير متسقة' });
   }
   if (value.itemType === 'product' && (value.productCostBasis === null || value.commissionRule !== 'none')) {
     context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'المنتج لا يحقق عمولة' });
@@ -234,7 +234,7 @@ export const invoiceSchema = z.object({
     BigInt(0),
   );
   if (lineSubtotal !== toCents(value.totals.subtotal)) {
-    context.addIssue({ code: 'custom', path: ['totals', 'subtotal'], message: 'Ù…Ø¬Ù…ÙˆØ¹ Ø§Ù„Ø¨Ù†ÙˆØ¯ Ù„Ø§ ÙŠØ³Ø§ÙˆÙŠ Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹ Ø§Ù„ÙØ±Ø¹ÙŠ' });
+    context.addIssue({ code: 'custom', path: ['totals', 'subtotal'], message: 'مجموع البنود لا يساوي المجموع الفرعي' });
   }
 
   const validateAdjustment = (
@@ -244,7 +244,7 @@ export const invoiceSchema = z.object({
   ) => {
     if (adjustment === null) {
       if (toCents(storedAmount) !== BigInt(0)) {
-        context.addIssue({ code: 'custom', path: [path], message: 'Ù‚ÙŠÙ…Ø© Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ ØºÙŠØ± Ù…ØªØ³Ù‚Ø©' });
+        context.addIssue({ code: 'custom', path: [path], message: 'قيمة التعديل غير متسقة' });
       }
       return;
     }
@@ -252,7 +252,7 @@ export const invoiceSchema = z.object({
       ? toCents(adjustment.value)
       : percentageAmount(value.totals.subtotal, adjustment.value);
     if (toCents(adjustment.amount) !== expected || toCents(storedAmount) !== expected) {
-      context.addIssue({ code: 'custom', path: [path, 'amount'], message: 'Ù‚ÙŠÙ…Ø© Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ ØºÙŠØ± Ù…ØªØ³Ù‚Ø©' });
+      context.addIssue({ code: 'custom', path: [path, 'amount'], message: 'قيمة التعديل غير متسقة' });
     }
   };
   validateAdjustment(value.discount, value.totals.discountAmount, 'discount');

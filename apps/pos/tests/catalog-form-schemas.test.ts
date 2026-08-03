@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 import {
@@ -5,6 +7,11 @@ import {
   commissionOverrideFormSchema,
   serviceFormSchema,
 } from '../src/features/catalog/schemas/catalog-schemas';
+
+test('service descriptions do not assume the contract field is wrapped', () => {
+  const path = resolve('src/features/catalog/schemas/catalog-schemas.ts');
+  expect(readFileSync(path, 'utf8')).not.toContain('createServiceSchema.shape.description.unwrap()');
+});
 
 describe('categoryFormSchema', () => {
   test('trims the name and keeps the chosen type', () => {

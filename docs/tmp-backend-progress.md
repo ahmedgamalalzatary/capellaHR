@@ -517,11 +517,9 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–7
+DONE: ERP 1–8
                                           │
-                                      ERP 8 Core sales schema
-                                          │
-                                      ERP 9 Atomic sale
+                                  NEXT: ERP 9 Atomic sale
                                        ┌──┴──┐
                                     ERP 10  ERP 11
                                       UX    Receipts
@@ -549,8 +547,8 @@ ERP 6 ───────────────> ERP 15          ERP 17
 
 Safe parallel waves:
 
-1. **Current wave:** ERP 6 and 7 are complete and merged; ERP 8 is the next slice.
-2. **Barrier:** ERP 8, then ERP 9.
+1. **Current wave:** ERP 8 is complete; ERP 9 is the next slice.
+2. **Barrier:** Complete ERP 9 before ERP 10 and 11.
 3. **Parallel:** ERP 10 and 11.
 4. **Barrier:** ERP 12, then ERP 13.
 5. **Parallel:** ERP 14, 15, 16, and 18.
@@ -574,7 +572,7 @@ Safe parallel waves:
 
 No drawer counting, opening balance, closing balance, or reconciliation is included.
 
-## ERP 5. Clients — Complete (visit history deferred to ERP 8)
+## ERP 5. Clients — Complete (visit history deferred to ERP 9)
 
 - [x] Add branch-scoped client schema and migration.
 - [x] Require client name and phone; completed invoices may never be anonymous.
@@ -582,7 +580,7 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [x] Define safe duplicate-client behavior. A duplicate phone within a branch is a stable `CLIENT_PHONE_EXISTS` conflict carrying `existingClientId`, so the counter can continue with the client that already holds the number; the unique index is the real guard and a lost race is translated into the same conflict. The same number in a different branch is a separate client, because ERP records are branch-scoped.
 - [x] Implement client create, read, update, list, and phone-search endpoints (`/api/v1/erp/clients`, plus `GET /erp/clients/by-phone` for exact lookup during a sale).
 - [x] Preserve clients referenced by historical invoices — achieved structurally: there is no delete endpoint and no soft-delete column, so a client can never be removed.
-- [ ] **Add client visit-history read capability — deferred to ERP 8.** Visit history reads invoices, and the invoice tables do not exist yet. Nothing else in ERP 5 depends on it.
+- [ ] **Add client visit-history read capability — deferred to ERP 9.** Visit history reads the ERP 8 invoice foundation through the ERP 9 service-sale API. Nothing else in ERP 5 depends on it.
 - [x] Add contracts, authorization, branch-isolation, search, duplicate, and MySQL tests.
 - [x] Add Arabic/RTL POS Admin client management with create, read, update, list, and phone search. Visit history is deferred with the capability above.
 - [x] Add POS client phone search, selection, duplicate handling, and inline client creation for a sale (`ClientPicker`, consumed by the ERP 9 sale workflow).
@@ -618,12 +616,12 @@ Current catalog endpoints:
 
 Commission is modelled as a percentage rate only (no fixed-amount commission kind): the locked decisions describe a "configurable **rate** per service" and ERP 9 calculates commission *from the pre-discount list price*, and fixed-amount commission is never mentioned. The "commission rule" ERP 8 must snapshot is therefore which rule applied — the per-employee override or the service default — alongside the rate itself.
 
-## ERP 7. Attendance assignment capability — Complete (invoice wiring deferred to ERP 8/9)
+## ERP 7. Attendance assignment capability — Complete (invoice wiring deferred to ERP 9)
 
 - [x] Publish `listPresentEmployees(branchId)` from Attendance without exposing Attendance internals. The capability now projects explicitly to `{ id, employeeCode, fullName, branchId }`, so no session, event, device, GPS, or credential field can reach the ERP even if the reader widens.
 - [x] Return only active employees with an open Attendance session in the requested branch. Presence means an open session of that branch, still inside the locked 16-hour ceiling, for an `active`, non-soft-deleted employee.
 - [x] Add an ERP endpoint for employees eligible for invoice assignment: `GET /api/v1/erp/assignable-employees`. It is read-only, behind the ERP account boundary, and resolves the acting branch through `createErpBranchContextResolver` — an Admin must name the branch, a Cashier's branch comes from their linked employee, and naming another branch is rejected.
-- [x] Revalidate employee presence when completing a sale — delivered as the reusable capability the sale will call: `ErpAttendanceCapability.findPresentEmployee(branchId, employeeId, context?)` and `EmployeeAssignmentService.assertAssignable(actor, { employeeId, branchId? }, context?)`. `context` is the caller's database transaction, so ERP 9's single sale transaction re-checks presence and writes the invoice against one state. **Deferred: the call site itself.** Invoices do not exist until ERP 8, so wiring it into sale completion belongs to ERP 8/9; nothing else in ERP 7 depends on it.
+- [x] Revalidate employee presence when completing a sale — delivered as the reusable capability the sale will call: `ErpAttendanceCapability.findPresentEmployee(branchId, employeeId, context?)` and `EmployeeAssignmentService.assertAssignable(actor, { employeeId, branchId? }, context?)`. `context` is the caller's database transaction, so ERP 9's single sale transaction re-checks presence and writes the invoice against one state. **Deferred: the call site itself.** The ERP 8 invoice foundation now exists, and ERP 9 owns wiring this check into atomic sale completion; nothing else in ERP 7 depends on it.
 - [x] Reject assignment when the employee checked out after being selected. `assertAssignable` re-reads live presence on every call and raises `ERP_EMPLOYEE_NOT_PRESENT` (HTTP 409) once the session closes.
 - [x] Provide no Cashier or Admin override for assigning an unchecked-in employee. Structural: both roles run the identical check, `assignEmployeeSchema` is `.strict()` so no override field can be sent, and the service exposes no bypass parameter.
 - [x] Add checkout-race, branch-isolation, soft-deletion, and integration tests. Real-MySQL coverage spans presence, branch isolation, never-checked-in, check-out, deactivation, soft deletion, the 16-hour timeout, and an in-transaction re-check.

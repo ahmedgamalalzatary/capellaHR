@@ -227,6 +227,7 @@ export const createServiceCatalogService = (dependencies: {
       serviceId: number,
       requestedBranchId?: number,
     ) {
+      assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, requestedBranchId);
       await readInBranch(branchId, serviceId);
       return repository.listOverrides(serviceId);

@@ -51,7 +51,8 @@ const queryString = (params: Record<string, string | number | boolean | undefine
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== '') query.set(key, String(value));
   }
-  return query.size > 0 ? `?${query.toString()}` : '';
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : '';
 };
 
 export interface ListCategoriesParams extends BranchScoped {
@@ -143,6 +144,8 @@ export function listCatalogBranches(page = 1) {
 }
 
 /** Admin-only: candidates for a per-employee commission override. */
-export function listCatalogEmployeeOptions(page = 1) {
-  return api.getPage<CatalogEmployeeOption>(`/employees?status=active&page=${page}`);
+export function listCatalogEmployeeOptions(page = 1, branchId?: number) {
+  return api.getPage<CatalogEmployeeOption>(
+    `/employees${queryString({ status: 'active', branchId, page })}`,
+  );
 }

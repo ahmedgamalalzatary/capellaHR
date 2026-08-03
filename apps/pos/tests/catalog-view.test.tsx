@@ -128,6 +128,20 @@ describe('CatalogView branch scope', () => {
 });
 
 describe('CatalogView categories', () => {
+  test('loads every category page', async () => {
+    const secondCategory = { ...hairCategory, id: 2, name: 'أظافر' };
+    mocks.listCategories.mockImplementation(async ({ page = 1 }) => (
+      page === 1
+        ? pageOf([hairCategory], { total: 2, totalPages: 2 })
+        : pageOf([secondCategory], { page: 2, total: 2, totalPages: 2 })
+    ));
+    renderView();
+    await pickBranch();
+
+    expect(await screen.findByText('أظافر')).toBeDefined();
+    expect(mocks.listCategories).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3, page: 2 }));
+  });
+
   test('lists categories with their Arabic type and state', async () => {
     renderView();
     await pickBranch();
@@ -234,6 +248,22 @@ describe('CatalogView categories', () => {
 });
 
 describe('CatalogView services', () => {
+  test('loads every service page', async () => {
+    const secondService = { ...colouring, id: 6, name: 'قص' };
+    mocks.listServices.mockImplementation(async ({ page = 1 }) => (
+      page === 1
+        ? pageOf([colouring], { total: 2, totalPages: 2 })
+        : pageOf([secondService], { page: 2, total: 2, totalPages: 2 })
+    ));
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+
+    expect(await screen.findByText('قص')).toBeDefined();
+    expect(mocks.listServices).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3, page: 2 }));
+  });
+
   test('lists services with their fixed price, commission and category', async () => {
     renderView();
     await pickBranch();
@@ -319,6 +349,31 @@ describe('CatalogView services', () => {
     expect(mocks.updateService.mock.calls[0]?.slice(0, 2))
       .toEqual([5, { isActive: false, branchId: 3 }]);
   });
+
+  test('keeps a retired current category selectable while editing a service', async () => {
+    const legacyService = {
+      ...colouring,
+      id: 6,
+      name: 'خدمة قديمة',
+      categoryId: 2,
+      categoryName: 'قديم',
+      categoryIsActive: false,
+    };
+    // The retained category search may omit the retired category entirely.
+    mocks.listCategories.mockResolvedValue(pageOf([hairCategory]));
+    mocks.listServices.mockResolvedValue(pageOf([legacyService]));
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+    const row = (await screen.findByText('خدمة قديمة')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل' }));
+
+    const categorySelect = await screen.findByLabelText(/^التصنيف/);
+    expect(within(categorySelect).getByRole('option', { name: 'شعر' })).toBeDefined();
+    expect(within(categorySelect).getByRole('option', { name: 'قديم' })).toBeDefined();
+    expect((categorySelect as HTMLSelectElement).value).toBe('2');
+  });
 });
 
 describe('CatalogView employee commission overrides', () => {
@@ -335,6 +390,28 @@ describe('CatalogView employee commission overrides', () => {
     await openOverrides();
 
     expect(await screen.findByText('لا توجد نسب خاصة؛ يطبَّق افتراضي الخدمة 10.00%')).toBeDefined();
+  });
+
+  test('loads every employee page within the selected branch cache scope', async () => {
+    mocks.listCatalogEmployeeOptions.mockImplementation(async (page: number) => (
+      page === 1
+        ? pageOf([{ id: 7, fullName: 'سارة' }], { total: 2, totalPages: 2 })
+        : pageOf([{ id: 8, fullName: 'منى' }], { page: 2, total: 2, totalPages: 2 })
+    ));
+    await openOverrides();
+
+    expect(await screen.findByRole('option', { name: 'منى' })).toBeDefined();
+    expect(mocks.listCatalogEmployeeOptions).toHaveBeenNthCalledWith(1, 1, 3);
+    expect(mocks.listCatalogEmployeeOptions).toHaveBeenNthCalledWith(2, 2, 3);
+  });
+
+  test('surfaces employee-loading errors in the form', async () => {
+    mocks.listCatalogEmployeeOptions.mockRejectedValue(new ApiError(500, {
+      code: 'UNEXPECTED_ERROR', message: 'تعذر تحميل الموظفين',
+    }));
+    await openOverrides();
+
+    expect((await screen.findByRole('alert')).textContent).toContain('تعذر تحميل الموظفين');
   });
 
   test('sets a per-employee override', async () => {

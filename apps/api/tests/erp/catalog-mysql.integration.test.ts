@@ -315,6 +315,26 @@ describe('MySQL-backed ERP services', () => {
 });
 
 describe('MySQL-backed ERP service commission overrides', () => {
+  it('upserts concurrent writes for the same employee and service', async () => {
+    const branchId = await seedBranch();
+    const employeeId = await seedEmployee(branchId);
+    const category = await createCategory(branchId);
+    const created = await createService(branchId, category.id);
+
+    await expect(Promise.all([
+      module.services.setCommissionOverride(ADMIN, created.id, {
+        employeeId, commissionPercent: '20.00', branchId,
+      }),
+      module.services.setCommissionOverride(ADMIN, created.id, {
+        employeeId, commissionPercent: '25.00', branchId,
+      }),
+    ])).resolves.toHaveLength(2);
+
+    const overrides = await module.services.listCommissionOverrides(ADMIN, created.id, branchId);
+    expect(overrides).toHaveLength(1);
+    expect(['20.00', '25.00']).toContain(overrides[0]?.commissionPercent);
+  });
+
   it('replaces an existing override instead of stacking a second row', async () => {
     const branchId = await seedBranch();
     const employeeId = await seedEmployee(branchId);

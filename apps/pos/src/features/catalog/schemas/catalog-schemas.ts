@@ -27,7 +27,8 @@ export const serviceFormSchema = z.object({
     .transform((value) => (value === '' ? '0' : value))
     .pipe(createServiceSchema.shape.commissionPercent),
   description: z.string().optional().default('')
-    .pipe(createServiceSchema.shape.description.unwrap()),
+    .pipe(createServiceSchema.shape.description)
+    .transform((value) => value ?? null),
 });
 
 export const commissionOverrideFormSchema = z.object({

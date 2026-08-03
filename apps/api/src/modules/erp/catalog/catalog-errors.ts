@@ -46,9 +46,12 @@ export const catalogError = (code: CatalogErrorCode, existingId?: number) => (
  * The unique indexes are the real guards; a lost race surfaces as ER_DUP_ENTRY
  * and is translated back into the conflict the pre-check would have produced.
  */
-export const isDuplicateEntryError = (error: unknown) => (
-  typeof error === 'object' && error !== null && (
-    Reflect.get(error, 'code') === 'ER_DUP_ENTRY'
-    || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY'
-  )
-);
+export const isDuplicateEntryError = (error: unknown) => {
+  if (typeof error !== 'object' || error === null) return false;
+  if (Reflect.get(error, 'code') === 'ER_DUP_ENTRY') return true;
+
+  const cause: unknown = Reflect.get(error, 'cause');
+  return typeof cause === 'object'
+    && cause !== null
+    && Reflect.get(cause, 'code') === 'ER_DUP_ENTRY';
+};

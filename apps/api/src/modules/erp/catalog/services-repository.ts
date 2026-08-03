@@ -153,13 +153,9 @@ export const createDrizzleServiceRepository = (
       const before = (await transaction.select().from(erpServiceCommissionOverrides)
         .where(scope).for('update').limit(1))[0];
 
-      if (before) {
-        await transaction.update(erpServiceCommissionOverrides)
-          .set({ commissionPercent, updatedAt: at }).where(scope);
-      } else {
-        await transaction.insert(erpServiceCommissionOverrides)
-          .values({ serviceId, employeeId, commissionPercent, createdAt: at, updatedAt: at });
-      }
+      await transaction.insert(erpServiceCommissionOverrides)
+        .values({ serviceId, employeeId, commissionPercent, createdAt: at, updatedAt: at })
+        .onDuplicateKeyUpdate({ set: { commissionPercent, updatedAt: at } });
       const after = (await transaction.select().from(erpServiceCommissionOverrides)
         .where(scope).limit(1))[0]!;
       await audit.record(transaction, {

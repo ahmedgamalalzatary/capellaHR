@@ -6,7 +6,13 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
-import { createService, updateService, type Category, type Service } from '../api/catalog-api';
+import {
+  createService,
+  updateService,
+  type Category,
+  type Service,
+  type ServiceListItem,
+} from '../api/catalog-api';
 import { catalogQueryKeys } from '../query-keys';
 import {
   serviceFormSchema,
@@ -22,8 +28,8 @@ export function ServiceForm({
   onDone,
   onCancel,
 }: {
-  service?: Service;
-  /** Active service-type categories only: a service cannot sit under a retired one. */
+  service?: ServiceListItem;
+  /** All categories in scope; the form offers active service categories plus the current one. */
   categories: Category[];
   branchId?: number;
   onDone?: (saved: Service) => void;
@@ -45,6 +51,17 @@ export function ServiceForm({
     });
 
   const branchScope = branchId === undefined ? {} : { branchId };
+  const activeCategories = categories.filter(
+    (category) => category.type === 'service' && category.isActive,
+  );
+  const currentCategory = service
+    ? categories.find((category) => category.id === service.categoryId)
+      ?? { id: service.categoryId, name: service.categoryName }
+    : undefined;
+  const categoryOptions = currentCategory
+    && !activeCategories.some((category) => category.id === currentCategory.id)
+    ? [...activeCategories, currentCategory]
+    : activeCategories;
 
   const save = useMutation({
     mutationFn: (values: ServiceFormValues) => (
@@ -80,7 +97,7 @@ export function ServiceForm({
                 {...register('categoryId')}
               >
                 <option value="">اختر التصنيف…</option>
-                {categories.map((category) => (
+                {categoryOptions.map((category) => (
                   <option key={category.id} value={category.id}>{category.name}</option>
                 ))}
               </select>

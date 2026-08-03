@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Check, RefreshCw } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, Card, EmptyState } from '@capella/ui';
 
@@ -42,12 +42,16 @@ export function PresentEmployeePicker({
   });
 
   const items = presentQuery.data;
+  const [staleNotice, setStaleNotice] = useState(false);
   const staleSelection = Boolean(
     selected && items && !items.some(({ id }) => id === selected.id),
   );
 
   useEffect(() => {
-    if (staleSelection) onSelect(null);
+    if (staleSelection) {
+      setStaleNotice(true);
+      onSelect(null);
+    }
   }, [staleSelection, onSelect]);
 
   return (
@@ -65,7 +69,7 @@ export function PresentEmployeePicker({
         </Button>
       </div>
 
-      {staleSelection ? (
+      {staleNotice ? (
         <p role="status" className="rounded-md bg-warning-soft px-3 py-2 text-[13px] text-warning">
           {STALE_SELECTION_MESSAGE}
         </p>
@@ -92,14 +96,17 @@ export function PresentEmployeePicker({
         <Card>
           <ul>
             {(items ?? []).map((employee) => {
-              const isSelected = selected?.id === employee.id && !staleSelection;
+              const isSelected = selected?.id === employee.id && !staleNotice;
               return (
                 <li key={employee.id} className="border-b border-line/60 last:border-b-0">
                   <button
                     type="button"
                     aria-pressed={isSelected}
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start hover:bg-line/20"
-                    onClick={() => onSelect(employee)}
+                    onClick={() => {
+                      setStaleNotice(false);
+                      onSelect(employee);
+                    }}
                   >
                     <span>
                       <span className="block text-sm font-medium">{employee.fullName}</span>

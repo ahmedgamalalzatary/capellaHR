@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { useState } from 'react';
 
 const mocks = vi.hoisted(() => ({ listAssignableEmployees: vi.fn() }));
 
@@ -82,6 +83,32 @@ describe('PresentEmployeePicker', () => {
 
     expect(await screen.findByText('انصرف الموظف المحدد، اختر موظفًا مسجلًا حضوره الآن.')).toBeDefined();
     await waitFor(() => expect(onSelect).toHaveBeenCalledWith(null));
+  });
+
+  test('keeps the stale-selection warning visible until another employee is chosen', async () => {
+    mocks.listAssignableEmployees.mockResolvedValue([heba]);
+    const ControlledPicker = () => {
+      const [selected, setSelected] = useState<AssignableEmployee | null>(nada);
+      return (
+        <>
+          <output data-testid="selected-employee">{selected?.id ?? 'none'}</output>
+          <PresentEmployeePicker selected={selected} onSelect={setSelected} />
+        </>
+      );
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ControlledPicker />
+      </QueryClientProvider>,
+    );
+
+    const warning = await screen.findByText('انصرف الموظف المحدد، اختر موظفًا مسجلًا حضوره الآن.');
+    expect(warning).toBeDefined();
+    await waitFor(() => expect(screen.getByTestId('selected-employee').textContent).toBe('none'));
+    expect(screen.getByText('انصرف الموظف المحدد، اختر موظفًا مسجلًا حضوره الآن.')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: /هبة علي/ }));
+    await waitFor(() => expect(screen.queryByText('انصرف الموظف المحدد، اختر موظفًا مسجلًا حضوره الآن.')).toBeNull());
   });
 
   test('keeps a selected employee who is still checked in', async () => {

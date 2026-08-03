@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ErpAccountIdentity, ErpBranchContextResolver } from '../../src/modules/erp/index.js';
@@ -5,6 +7,7 @@ import {
   CatalogError,
   createCategoryService,
   createServiceCatalogService,
+  isDuplicateEntryError,
   type CategoryRecord,
   type CategoryRepository,
   type CommissionOverrideRecord,
@@ -112,6 +115,12 @@ const services = (
 });
 
 describe('ERP category service', () => {
+  it('does not inspect primitive duplicate-error causes', () => {
+    expect(isDuplicateEntryError({ cause: 'duplicate' })).toBe(false);
+    expect(isDuplicateEntryError({ cause: 1 })).toBe(false);
+    expect(isDuplicateEntryError({ cause: { code: 'ER_DUP_ENTRY' } })).toBe(true);
+  });
+
   it('trims the name and takes the branch from the resolver, not the caller', async () => {
     const create = vi.fn(async (input: Parameters<CategoryRepository['create']>[0]) => category(input));
     await categories(categoryRepository({ create }), 7)
@@ -200,6 +209,11 @@ describe('ERP category service', () => {
 });
 
 describe('ERP service catalog service', () => {
+  it('uses an atomic upsert for commission overrides', () => {
+    const source = readFileSync(resolve('src/modules/erp/catalog/services-repository.ts'), 'utf8');
+    expect(source).toContain('.onDuplicateKeyUpdate({');
+  });
+
   it('stores the exact price and commission the contract normalized', async () => {
     const create = vi.fn(async (input: Parameters<ServiceRepository['create']>[0]) => service(input));
     await services(serviceRepository({ create })).create(ADMIN, {
@@ -316,6 +330,8 @@ describe('ERP service catalog service', () => {
   });
 
   it('refuses override administration by a cashier', async () => {
+    await expect(services(serviceRepository()).listCommissionOverrides(CASHIER, 1))
+      .rejects.toMatchObject({ code: 'ERP_CATALOG_ADMIN_REQUIRED' });
     await expect(services(serviceRepository())
       .setCommissionOverride(CASHIER, 1, { employeeId: 4, commissionPercent: '20.00' }))
       .rejects.toMatchObject({ code: 'ERP_CATALOG_ADMIN_REQUIRED' });

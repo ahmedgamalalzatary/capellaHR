@@ -67,20 +67,22 @@ export function CatalogView() {
   const trimmedCategorySearch = categorySearch.trim();
   const categoriesQuery = useQuery({
     queryKey: catalogQueryKeys.categories({ branchId, search: trimmedCategorySearch }),
-    queryFn: () => listCategories({
+    queryFn: () => fetchAllPages((page) => listCategories({
       ...branchScope,
       ...(trimmedCategorySearch ? { search: trimmedCategorySearch } : {}),
-    }),
+      page,
+    })),
     enabled: scopeReady,
   });
 
   const trimmedServiceSearch = serviceSearch.trim();
   const servicesQuery = useQuery({
     queryKey: catalogQueryKeys.services({ branchId, search: trimmedServiceSearch }),
-    queryFn: () => listServices({
+    queryFn: () => fetchAllPages((page) => listServices({
       ...branchScope,
       ...(trimmedServiceSearch ? { search: trimmedServiceSearch } : {}),
-    }),
+      page,
+    })),
     enabled: scopeReady && tab === 'services',
   });
 
@@ -103,12 +105,8 @@ export function CatalogView() {
     onSuccess: invalidate,
   });
 
-  const categories = categoriesQuery.data?.items ?? [];
-  const services = servicesQuery.data?.items ?? [];
-  // A service may only sit under an active service-type category.
-  const serviceCategoryOptions = categories.filter(
-    (category) => category.type === 'service' && category.isActive,
-  );
+  const categories = categoriesQuery.data ?? [];
+  const services = servicesQuery.data ?? [];
 
   return (
     <div className="space-y-4">
@@ -320,7 +318,7 @@ export function CatalogView() {
 
               {creatingService ? (
                 <ServiceForm
-                  categories={serviceCategoryOptions}
+                  categories={categories}
                   {...branchScope}
                   onDone={() => setCreatingService(false)}
                   onCancel={() => setCreatingService(false)}
@@ -329,7 +327,7 @@ export function CatalogView() {
               {editingService ? (
                 <ServiceForm
                   service={editingService}
-                  categories={serviceCategoryOptions}
+                  categories={categories}
                   {...branchScope}
                   onDone={() => setEditingService(null)}
                   onCancel={() => setEditingService(null)}
