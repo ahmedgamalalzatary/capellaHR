@@ -33,11 +33,11 @@ const pageOf = (items: unknown[]) => ({
   meta: { page: 1, pageSize: 50, total: items.length, totalPages: 1 },
 });
 
-function renderPicker(onSelect?: (service: unknown) => void) {
+function renderPicker(onSelect?: (service: unknown) => void, branchId?: number) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <ServicePicker {...(onSelect ? { onSelect } : {})} />
+      <ServicePicker {...(onSelect ? { onSelect } : {})} {...(branchId === undefined ? {} : { branchId })} />
     </QueryClientProvider>,
   );
 }
@@ -59,6 +59,13 @@ describe('ServicePicker', () => {
     // Retired services and services of a retired category are never offered.
     expect(mocks.listServices.mock.calls[0]?.[0]).toMatchObject({ isActive: true });
     expect(mocks.listServices.mock.calls[0]?.[0]?.branchId).toBeUndefined();
+  });
+
+  test('scopes Admin browsing to the selected branch', async () => {
+    renderPicker(undefined, 3);
+
+    await waitFor(() => expect(mocks.listServices).toHaveBeenCalled());
+    expect(mocks.listServices.mock.calls[0]?.[0]).toMatchObject({ branchId: 3, isActive: true });
   });
 
   test('shows the fixed price, which the cashier can never edit', async () => {

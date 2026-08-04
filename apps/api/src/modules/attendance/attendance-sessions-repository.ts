@@ -272,6 +272,30 @@ export const createAttendanceSessionsRepository = (
      */
     async findPresentEmployee(branchId, employeeId, context) {
       const executor = (context as Executor | undefined) ?? database;
+      if (context) {
+        // Match Attendance mutation lock order (employee, then open session).
+        // Holding both rows until the caller commits prevents checkout or
+        // deactivation from racing a sale after its final presence check.
+        const employee = (await executor.select({
+          id: employees.id,
+          employeeCode: employees.employeeCode,
+          fullName: employees.fullName,
+        }).from(employees).where(and(
+          eq(employees.id, employeeId),
+          eq(employees.employmentStatus, 'active'),
+          isNull(employees.deletedAt),
+        )).for('update').limit(1))[0];
+        if (!employee) return null;
+        const activeAfter = new Date(now().getTime() - 16 * 60 * 60_000);
+        const session = (await executor.select({ branchId: attendanceSessions.branchId })
+          .from(attendanceSessions).where(and(
+            eq(attendanceSessions.branchId, branchId),
+            eq(attendanceSessions.employeeId, employeeId),
+            isNotNull(attendanceSessions.openEmployeeId),
+            gt(attendanceSessions.checkInAt, activeAfter),
+          )).for('update').limit(1))[0];
+        return session ? { ...employee, branchId: session.branchId } : null;
+      }
       return (await presentEmployeeQuery(executor, and(
         presentInBranch(branchId, now()),
         eq(attendanceSessions.employeeId, employeeId),

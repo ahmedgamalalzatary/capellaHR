@@ -7,6 +7,10 @@ import {
   invoiceTotalsSchema,
   paymentBreakdownSchema,
   paymentMethodSchema,
+  quoteSaleInputSchema,
+  saleQuoteSchema,
+  clientVisitHistoryQuerySchema,
+  clientVisitSummarySchema,
   saleErrorSchema,
   saleFixtures,
 } from './index.js';
@@ -180,5 +184,70 @@ describe('ERP complete-sale contracts', () => {
       expect(saleErrorSchema.parse(value)).toEqual(value);
     }
     expect(saleErrorSchema.safeParse({ code: 'SQL_FAILURE', message: 'secret' }).success).toBe(false);
+  });
+
+  it('publishes a service-only quote request and authoritative quote response', () => {
+    expect(quoteSaleInputSchema.parse({
+      branchId: 2,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
+      discount: { kind: 'percentage', value: '10' },
+      tax: { kind: 'fixed', value: '5' },
+    })).toEqual({
+      branchId: 2,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
+      discount: { kind: 'percentage', value: '10.00' },
+      tax: { kind: 'fixed', value: '5.00' },
+    });
+    expect(quoteSaleInputSchema.safeParse({
+      lines: [{ itemType: 'product', productId: 34, quantity: 1 }],
+    }).success).toBe(false);
+
+    expect(saleQuoteSchema.safeParse({
+      lines: [{
+        itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 2,
+        unitPrice: '200.00', lineTotal: '400.00',
+      }],
+      discount: { kind: 'percentage', value: '10.00', amount: '40.00' },
+      tax: { kind: 'fixed', value: '5.00', amount: '5.00' },
+      totals: { subtotal: '400.00', discountAmount: '40.00', taxAmount: '5.00', total: '365.00' },
+    }).success).toBe(true);
+  });
+
+  it('rejects quote totals and adjustments that do not match the quoted lines', () => {
+    const quote = {
+      lines: [{
+        itemType: 'service' as const, sourceId: 21, name: 'صبغة شعر', quantity: 2,
+        unitPrice: '200.00', lineTotal: '400.00',
+      }],
+      discount: { kind: 'percentage' as const, value: '10.00', amount: '40.00' },
+      tax: { kind: 'fixed' as const, value: '5.00', amount: '5.00' },
+      totals: { subtotal: '400.00', discountAmount: '40.00', taxAmount: '5.00', total: '365.00' },
+    };
+
+    expect(saleQuoteSchema.safeParse({
+      ...quote,
+      totals: { ...quote.totals, subtotal: '500.00', total: '465.00' },
+    }).success).toBe(false);
+    expect(saleQuoteSchema.safeParse({
+      ...quote,
+      totals: { ...quote.totals, discountAmount: '30.00', total: '375.00' },
+    }).success).toBe(false);
+    expect(saleQuoteSchema.safeParse({
+      ...quote,
+      tax: { ...quote.tax, amount: '4.00' },
+    }).success).toBe(false);
+  });
+
+  it('publishes paged client visit-history summaries', () => {
+    expect(clientVisitHistoryQuerySchema.parse({ page: '2', pageSize: '10', branchId: '3' }))
+      .toEqual({ page: 2, pageSize: 10, branchId: 3 });
+    expect(clientVisitSummarySchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      assignedEmployee: { id: 8, name: 'سارة علي' },
+      soldAt: '2026-08-03T11:35:00.000Z',
+    }).success).toBe(true);
   });
 });

@@ -19,12 +19,15 @@ const serverErrorMessage = (error: unknown): string | null => {
 
 export function ClientForm({
   client,
+  branchId,
   defaultPhone,
   onDone,
   onCancel,
 }: {
   /** Present when editing; absent when creating. */
   client?: Client;
+  /** Required when an Admin creates or edits within an explicitly selected branch. */
+  branchId?: number;
   /** Pre-fills the number the cashier already typed when creating during a sale. */
   defaultPhone?: string;
   onDone?: (saved: Client) => void;
@@ -47,7 +50,9 @@ export function ClientForm({
 
   const save = useMutation({
     mutationFn: (values: ClientFormValues) => (
-      isEdit ? updateClient(client.id, values) : createClient(values)
+      isEdit
+        ? updateClient(client.id, { ...values, ...(branchId === undefined ? {} : { branchId }) })
+        : createClient({ ...values, ...(branchId === undefined ? {} : { branchId }) })
     ),
     onSuccess: async (saved) => {
       await queryClient.invalidateQueries({ queryKey: clientQueryKeys.all });

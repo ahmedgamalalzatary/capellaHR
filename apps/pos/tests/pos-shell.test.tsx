@@ -73,6 +73,13 @@ describe('PosShell', () => {
     expect(await screen.findByRole('link', { name: 'الخدمات' })).toBeDefined();
   });
 
+  test('shows the service-sale workflow link to every ERP account', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    const link = await screen.findByRole('link', { name: 'بيع جديد' });
+    expect(link.getAttribute('href')).toBe('/sales');
+  });
+
   test('logs out and redirects to /login', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     logoutMock.mockResolvedValue(undefined);

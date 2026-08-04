@@ -5,15 +5,23 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
+  actor: { current: { type: 'cashier', accountId: 3, employeeId: 9 } as
+    { type: 'cashier'; accountId: number; employeeId: number } | { type: 'admin'; accountId: number } },
   listClients: vi.fn(),
+  listClientBranches: vi.fn(),
   createClient: vi.fn(),
   updateClient: vi.fn(),
   findClientByPhone: vi.fn(),
 }));
 
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({ isSuccess: true, data: { actor: mocks.actor.current } }),
+}));
+
 vi.mock('../src/features/clients/api/clients-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listClients: mocks.listClients,
+  listClientBranches: mocks.listClientBranches,
   createClient: mocks.createClient,
   updateClient: mocks.updateClient,
   findClientByPhone: mocks.findClientByPhone,
@@ -45,7 +53,9 @@ function renderView() {
 }
 
 beforeEach(() => {
+  mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
   mocks.listClients.mockResolvedValue(pageOf([nada]));
+  mocks.listClientBranches.mockResolvedValue(pageOf([{ id: 3, name: 'Main' }]));
 });
 
 afterEach(() => {
@@ -54,6 +64,37 @@ afterEach(() => {
 });
 
 describe('ClientsView', () => {
+  test('scopes Admin listing and creation to the selected branch', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.createClient.mockResolvedValue({ ...nada, id: 2 });
+    renderView();
+
+    await screen.findByRole('option', { name: 'Main' });
+    expect(mocks.listClients).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+    await waitFor(() => expect(mocks.listClients).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3 })));
+
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة عميل' }));
+    fireEvent.change(screen.getByLabelText(/^اسم العميل/), { target: { value: 'مريم' } });
+    fireEvent.change(screen.getByLabelText(/^رقم الهاتف/), { target: { value: '01112223344' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة العميل' }));
+    await waitFor(() => expect(mocks.createClient).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3 })));
+  });
+
+  test('shows and retries an Admin branch-loading error', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.listClientBranches.mockRejectedValueOnce(
+      new ApiError(500, { code: 'UNEXPECTED_ERROR', message: 'تعذر تحميل الفروع' }),
+    ).mockResolvedValueOnce(pageOf([{ id: 3, name: 'Main' }]));
+    renderView();
+
+    expect(await screen.findAllByText('تعذر تحميل الفروع')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+
+    expect(await screen.findByRole('option', { name: 'Main' })).toBeDefined();
+    expect(mocks.listClientBranches).toHaveBeenCalledTimes(2);
+  });
+
   test('lists clients with their name and phone', async () => {
     renderView();
     const row = (await screen.findByText('ندى سمير')).closest('tr')!;

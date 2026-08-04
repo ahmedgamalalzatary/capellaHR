@@ -8,7 +8,9 @@ import {
 } from '../modules/auth/index.js';
 import {
   createCashierSessionsRouter,
+  createErpSalesRouter,
   type CashierSessionService,
+  type SaleService,
 } from '../modules/erp/sales/index.js';
 import { createBranchesRouter, type BranchService } from '../modules/branches/index.js';
 import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore } from '../modules/employees/index.js';
@@ -55,6 +57,7 @@ export const createApiRouter = (dependencies: {
   attendanceService?: AttendanceService;
   dashboardService?: DashboardService;
   cashierSessionService?: CashierSessionService;
+  erpSaleService?: SaleService;
   erpClientService?: ClientService;
   erpCategoryService?: CategoryService;
   erpServiceCatalogService?: ServiceCatalogService;
@@ -148,6 +151,15 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createCashierSessionsRouter(dependencies.cashierSessionService),
+      );
+    }
+    if (dependencies.erpSaleService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/sales',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpSalesRouter(dependencies.erpSaleService),
       );
     }
     if (dependencies.erpClientService) {

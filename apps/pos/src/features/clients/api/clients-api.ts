@@ -8,6 +8,7 @@ export interface Client {
   createdAt: string;
   updatedAt: string;
 }
+export interface ClientBranch { id: number; name: string }
 
 export interface ListClientsParams {
   search?: string;
@@ -22,11 +23,16 @@ const queryString = (params: Record<string, string | number | undefined>) => {
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== '') query.set(key, String(value));
   }
-  return query.size > 0 ? `?${query.toString()}` : '';
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : '';
 };
 
 export function listClients(params: ListClientsParams = {}) {
   return api.getPage<Client>(`/erp/clients${queryString({ ...params })}`);
+}
+
+export function listClientBranches(page = 1) {
+  return api.getPage<ClientBranch>(`/branches?page=${page}&pageSize=100`);
 }
 
 export function findClientByPhone(phone: string, branchId?: number) {

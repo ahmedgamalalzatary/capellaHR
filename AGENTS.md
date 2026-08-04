@@ -14,6 +14,7 @@ These instructions apply to the entire repository. Follow the user's explicit in
 - Prefer compact Markdown text diagrams in chat when they make flows, architecture, or decisions easier to understand.
 - Never guess, speculate, or improvise. If confidence is not 100%, stop and ask before answering or acting.
 - Never create a Git commit unless the user explicitly requests it. Each commit authorization is one-time, applies only to the changes explicitly named in that request, and does not authorize any later commit.
+- When the user asks to fix a bug, or identifies a specific bug and asks for help with it, that identification is sufficient authorization to implement the fix. Do not pause to ask for approval before changing the code. Choose the best production-ready, minimal solution: neither over-engineered nor under-engineered.
 - When adding a feature or fixing a bug, inspect and update every related integration point so the change is complete and the same omission does not recur elsewhere.
 
 ## Brainstorming and small tasks
@@ -25,7 +26,7 @@ These instructions apply to the entire repository. Follow the user's explicit in
 
 For a medium-to-high complexity fix or feature:
 
-1. Establish a baseline by running all applicable validation commands, including build, lint, typecheck, and tests. Record unrelated baseline failures. Fix failures caused by the change or required to validate it before feature work.
+1. Establish a baseline by running all applicable validation commands, including build, lint, typecheck, and tests. Record unrelated baseline failures. Fix failures caused by the change or required to validate it before feature work. Skip this pre-change baseline only when you are 100% certain the same applicable validation suite already passed in the current, uncompacted session or chat and no relevant workspace state has changed since that run.
 2. Implement the requested change.
 3. Spawn a sub-agent to perform a strict, deep review of the changes. Address every valid reported issue.
 4. Run the complete applicable validation suite again and restore a green baseline.

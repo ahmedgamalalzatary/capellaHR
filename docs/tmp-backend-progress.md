@@ -517,11 +517,9 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–8
-                                          │
-                                  NEXT: ERP 9 Atomic sale
+DONE: ERP 1–9
                                        ┌──┴──┐
-                                    ERP 10  ERP 11
+                              NEXT: ERP 10  ERP 11
                                       UX    Receipts
                                        └──┬──┘
                                       ERP 12 Hardening
@@ -547,9 +545,8 @@ ERP 6 ───────────────> ERP 15          ERP 17
 
 Safe parallel waves:
 
-1. **Current wave:** ERP 8 is complete; ERP 9 is the next slice.
-2. **Barrier:** Complete ERP 9 before ERP 10 and 11.
-3. **Parallel:** ERP 10 and 11.
+1. **Complete:** ERP 9 delivered the atomic service-sale vertical slice.
+2. **Current parallel wave:** ERP 10 and 11.
 4. **Barrier:** ERP 12, then ERP 13.
 5. **Parallel:** ERP 14, 15, 16, and 18.
 6. ERP 17 starts after ERP 16.
@@ -572,7 +569,7 @@ Safe parallel waves:
 
 No drawer counting, opening balance, closing balance, or reconciliation is included.
 
-## ERP 5. Clients — Complete (visit history deferred to ERP 9)
+## ERP 5. Clients — Complete
 
 - [x] Add branch-scoped client schema and migration.
 - [x] Require client name and phone; completed invoices may never be anonymous.
@@ -580,9 +577,9 @@ No drawer counting, opening balance, closing balance, or reconciliation is inclu
 - [x] Define safe duplicate-client behavior. A duplicate phone within a branch is a stable `CLIENT_PHONE_EXISTS` conflict carrying `existingClientId`, so the counter can continue with the client that already holds the number; the unique index is the real guard and a lost race is translated into the same conflict. The same number in a different branch is a separate client, because ERP records are branch-scoped.
 - [x] Implement client create, read, update, list, and phone-search endpoints (`/api/v1/erp/clients`, plus `GET /erp/clients/by-phone` for exact lookup during a sale).
 - [x] Preserve clients referenced by historical invoices — achieved structurally: there is no delete endpoint and no soft-delete column, so a client can never be removed.
-- [ ] **Add client visit-history read capability — deferred to ERP 9.** Visit history reads the ERP 8 invoice foundation through the ERP 9 service-sale API. Nothing else in ERP 5 depends on it.
+- [x] Add branch-scoped, paginated client visit-history reads through `GET /api/v1/erp/sales/clients/:clientId/visits`, excluding draft invoices consistently from both rows and totals.
 - [x] Add contracts, authorization, branch-isolation, search, duplicate, and MySQL tests.
-- [x] Add Arabic/RTL POS Admin client management with create, read, update, list, and phone search. Visit history is deferred with the capability above.
+- [x] Add Arabic/RTL POS Admin client management with create, read, update, list, and phone search.
 - [x] Add POS client phone search, selection, duplicate handling, and inline client creation for a sale (`ClientPicker`, consumed by the ERP 9 sale workflow).
 - [x] Add component coverage for client administration and the POS client-selection workflow (form-schema, view, and picker tests; no dedicated e2e framework exists in this repo, matching `apps/web` and ERP 1–3).
 
@@ -616,12 +613,12 @@ Current catalog endpoints:
 
 Commission is modelled as a percentage rate only (no fixed-amount commission kind): the locked decisions describe a "configurable **rate** per service" and ERP 9 calculates commission *from the pre-discount list price*, and fixed-amount commission is never mentioned. The "commission rule" ERP 8 must snapshot is therefore which rule applied — the per-employee override or the service default — alongside the rate itself.
 
-## ERP 7. Attendance assignment capability — Complete (invoice wiring deferred to ERP 9)
+## ERP 7. Attendance assignment capability — Complete
 
 - [x] Publish `listPresentEmployees(branchId)` from Attendance without exposing Attendance internals. The capability now projects explicitly to `{ id, employeeCode, fullName, branchId }`, so no session, event, device, GPS, or credential field can reach the ERP even if the reader widens.
 - [x] Return only active employees with an open Attendance session in the requested branch. Presence means an open session of that branch, still inside the locked 16-hour ceiling, for an `active`, non-soft-deleted employee.
 - [x] Add an ERP endpoint for employees eligible for invoice assignment: `GET /api/v1/erp/assignable-employees`. It is read-only, behind the ERP account boundary, and resolves the acting branch through `createErpBranchContextResolver` — an Admin must name the branch, a Cashier's branch comes from their linked employee, and naming another branch is rejected.
-- [x] Revalidate employee presence when completing a sale — delivered as the reusable capability the sale will call: `ErpAttendanceCapability.findPresentEmployee(branchId, employeeId, context?)` and `EmployeeAssignmentService.assertAssignable(actor, { employeeId, branchId? }, context?)`. `context` is the caller's database transaction, so ERP 9's single sale transaction re-checks presence and writes the invoice against one state. **Deferred: the call site itself.** The ERP 8 invoice foundation now exists, and ERP 9 owns wiring this check into atomic sale completion; nothing else in ERP 7 depends on it.
+- [x] Revalidate employee presence inside the sale transaction through `ErpAttendanceCapability.findPresentEmployee(branchId, employeeId, context?)` and `EmployeeAssignmentService.assertAssignable(actor, { employeeId, branchId? }, context?)`, so checkout races reject the whole sale atomically.
 - [x] Reject assignment when the employee checked out after being selected. `assertAssignable` re-reads live presence on every call and raises `ERP_EMPLOYEE_NOT_PRESENT` (HTTP 409) once the session closes.
 - [x] Provide no Cashier or Admin override for assigning an unchecked-in employee. Structural: both roles run the identical check, `assignEmployeeSchema` is `.strict()` so no override field can be sent, and the service exposes no bypass parameter.
 - [x] Add checkout-race, branch-isolation, soft-deletion, and integration tests. Real-MySQL coverage spans presence, branch isolation, never-checked-in, check-out, deactivation, soft deletion, the 16-hour timeout, and an in-transaction re-check.
@@ -650,23 +647,24 @@ No migration was needed: assignment eligibility owns no tables and reads live At
 
 Complete. This persistence foundation intentionally has no standalone screen. The minimal branch-scoped product catalog identity was pulled forward from ERP 13 so product invoice lines have a real foreign key; ERP 13 still owns product administration, stock balances/movements, availability, and POS product workflows. Migrations `0046_tearful_sentry.sql` and `0047_stiff_gideon.sql` create and harden the sales foundation, preserve branch ownership through composite foreign keys, permit completion only after lines, payments, and earned commissions exactly cover the invoice, lock completed snapshots, and enforce cumulative-rounding-safe append-only commission lineage with database triggers. The public contracts carry exact-money sale drafts, authoritative totals, exact payment-sum and snapshot-consistency validation, stored invoice facts, stable errors, and workflow fixtures for ERP 9.
 
-## ERP 9. Atomic service-sale vertical slice
+## ERP 9. Atomic service-sale vertical slice — Complete
 
-- [ ] Implement server-side price, discount, tax, payment, and total calculation.
-- [ ] Assign exactly one present employee to the complete invoice.
-- [ ] Calculate service commission from the pre-discount list price.
-- [ ] Resolve per-employee commission override before the service default.
-- [ ] Complete invoice, lines, payments, invoice number, commission entries, and audit event in one database transaction.
-- [ ] Return the existing invoice for a repeated idempotency key.
-- [ ] Reject reuse of an idempotency key with a different payload.
-- [ ] Keep receipt printing outside the transaction.
-- [ ] Add happy-path, rollback, calculation, snapshot, duplicate, authorization, attendance-race, and real-MySQL tests.
-- [ ] Build the Arabic/RTL POS service-sale workflow: select or create the mandatory client, add service lines, assign one present employee, enter invoice-level discount/tax, and enter mixed payments.
-- [ ] Show server-calculated totals and exact remaining-payment feedback; never treat browser calculations as authoritative.
-- [ ] Add confirmation, duplicate-submit protection, stored-invoice success, safe failure, ambiguous-response, and retry states.
-- [ ] Add component and end-to-end coverage proving a real Cashier can complete one fully paid service invoice through the POS UI.
+- [x] Implement server-side price, discount, tax, payment, and total calculation.
+- [x] Assign exactly one present employee to the complete invoice.
+- [x] Calculate service commission from the pre-discount list price.
+- [x] Resolve per-employee commission override before the service default.
+- [x] Complete invoice, lines, payments, invoice number, commission entries, and audit event in one database transaction.
+- [x] Return the existing invoice for a repeated idempotency key.
+- [x] Reject reuse of an idempotency key with a different payload.
+- [x] Keep receipt printing outside the transaction.
+- [x] Add happy-path, rollback, calculation, snapshot, duplicate, authorization, attendance-race, and real-MySQL tests.
+- [x] Build the Arabic/RTL POS service-sale workflow: select or create the mandatory client, add service lines, assign one present employee, enter invoice-level discount/tax, and enter mixed payments.
+- [x] Show server-calculated totals and exact remaining-payment feedback; never treat browser calculations as authoritative.
+- [x] Add confirmation, duplicate-submit protection, stored-invoice success, safe failure, ambiguous-response, and retry states.
+- [x] Add split component/API/MySQL integration coverage for the authenticated Cashier sale workflow, HTTP authorization/error mapping, and atomic persisted aggregate.
+- [ ] Add a single browser-to-authenticated-HTTP-to-MySQL vertical test when the repository gains its end-to-end browser harness; current coverage does not claim that boundary.
 
-This milestone is complete only when a real Cashier can use the POS UI to persist one fully paid service invoice for a mandatory client and currently present employee.
+Complete. `POST /api/v1/erp/sales/quote` provides authoritative quotes, `POST /api/v1/erp/sales` atomically persists the completed aggregate, and `GET /api/v1/erp/sales/clients/:clientId/visits` completes the deferred client-history capability. The Arabic `/sales` work surface composes the existing client, service, and present-employee selectors with discount/tax, mixed payments, confirmation, exact remaining-payment feedback, idempotent retries, and durable ambiguous-response recovery. Receipt display and printing remain in ERP 11.
 
 ## ERP 10. POS application integration and operational UX
 
@@ -883,7 +881,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–8 are delivered: backend account/auth work, API/package and POS boundaries, Cashier sessions, branch-scoped clients, the category/service catalog with commission overrides, attendance-backed employee assignment, and the ERP 8 sales persistence/contracts foundation. Client visit-history wiring (ERP 5) and sale-completion presence revalidation (ERP 7) now move into the ERP 9 atomic service-sale call site. Next: ERP 9, the complete backend and Arabic/RTL POS service-sale vertical slice.
+ERP 1–9 are delivered, including the complete backend and Arabic/RTL POS atomic service-sale vertical slice, client visit-history reads, and in-transaction attendance revalidation. Next: ERP 10 POS integration/operational UX and ERP 11 receipts may proceed in parallel.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

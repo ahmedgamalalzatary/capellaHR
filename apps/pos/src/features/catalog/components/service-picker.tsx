@@ -18,15 +18,26 @@ import { serverErrorMessage } from './catalog-messages';
  * Without `onSelect` this is a read-only catalog view; the ERP 9 sale workflow
  * passes a handler to turn each row into a selectable line.
  */
-export function ServicePicker({ onSelect }: { onSelect?: (service: ServiceListItem) => void }) {
+export function ServicePicker({
+  onSelect,
+  branchId,
+}: {
+  onSelect?: (service: ServiceListItem) => void;
+  branchId?: number;
+}) {
   const [search, setSearch] = useState('');
   // Whitespace-only input must read as "no filter", so the trimmed term drives
   // both the cache key and the request.
   const trimmed = search.trim();
 
   const servicesQuery = useQuery({
-    queryKey: catalogQueryKeys.services({ picker: true, search: trimmed }),
-    queryFn: () => listServices({ isActive: true, pageSize: 50, ...(trimmed ? { search: trimmed } : {}) }),
+    queryKey: catalogQueryKeys.services({ picker: true, search: trimmed, branchId }),
+    queryFn: () => listServices({
+      isActive: true,
+      pageSize: 50,
+      ...(branchId === undefined ? {} : { branchId }),
+      ...(trimmed ? { search: trimmed } : {}),
+    }),
   });
 
   const items = servicesQuery.data?.items ?? [];

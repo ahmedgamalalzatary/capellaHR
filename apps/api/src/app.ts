@@ -18,7 +18,7 @@ import type { SelfServiceService } from './modules/self-service/index.js';
 import type { AuditService } from './modules/audit/index.js';
 import type { AttendanceService } from './modules/attendance/index.js';
 import type { DashboardService } from './modules/dashboard/index.js';
-import type { CashierSessionService } from './modules/erp/sales/index.js';
+import type { CashierSessionService, SaleService } from './modules/erp/sales/index.js';
 import type { ClientService } from './modules/erp/index.js';
 import type { CategoryService, ServiceCatalogService } from './modules/erp/index.js';
 import type { EmployeeAssignmentService } from './modules/erp/assignment/index.js';
@@ -49,6 +49,7 @@ export const createApp = (dependencies: {
   attendanceService?: AttendanceService;
   dashboardService?: DashboardService;
   cashierSessionService?: CashierSessionService;
+  erpSaleService?: SaleService;
   erpClientService?: ClientService;
   erpCategoryService?: CategoryService;
   erpServiceCatalogService?: ServiceCatalogService;

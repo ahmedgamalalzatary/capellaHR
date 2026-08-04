@@ -288,6 +288,10 @@ describe('ERP Cashier-session repository', () => {
         audit: auditModule.erp,
         branches: branchModule.erp,
         employees: employeeModule.erp,
+        assignment: {
+          listAssignable: async () => [],
+          assertAssignable: async () => { throw new Error('not used'); },
+        },
       });
       return createApp({
         authService: authModule.service,

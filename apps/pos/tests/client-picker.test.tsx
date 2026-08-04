@@ -33,11 +33,11 @@ const pageOf = (items: unknown[]) => ({
   meta: { page: 1, pageSize: 10, total: items.length, totalPages: 1 },
 });
 
-function renderPicker(onSelect = vi.fn(), selected: typeof nada | null = null) {
+function renderPicker(onSelect = vi.fn(), selected: typeof nada | null = null, branchId?: number) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <ClientPicker selected={selected} onSelect={onSelect} />
+      <ClientPicker selected={selected} onSelect={onSelect} {...(branchId === undefined ? {} : { branchId })} />
     </QueryClientProvider>,
   );
   return onSelect;
@@ -65,12 +65,13 @@ describe('ClientPicker', () => {
   });
 
   test('selects a matching client', async () => {
-    const onSelect = renderPicker();
+    const onSelect = renderPicker(vi.fn(), null, 3);
     search('0100');
 
     fireEvent.click(await screen.findByText('ندى سمير'));
 
     expect(onSelect).toHaveBeenCalledWith(nada);
+    expect(mocks.listClients.mock.calls[0]?.[0]).toMatchObject({ branchId: 3 });
   });
 
   test('states that a sale cannot proceed without a client when none matches', async () => {
@@ -85,7 +86,7 @@ describe('ClientPicker', () => {
   test('creates a client inline, pre-filling the typed number, and selects it', async () => {
     mocks.listClients.mockResolvedValue(pageOf([]));
     mocks.createClient.mockResolvedValue({ ...nada, id: 5, fullName: 'مريم' });
-    const onSelect = renderPicker();
+    const onSelect = renderPicker(vi.fn(), null, 3);
     search('01112223344');
 
     fireEvent.click(await screen.findByRole('button', { name: 'إضافة عميل جديد' }));
@@ -97,13 +98,15 @@ describe('ClientPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'إضافة العميل' }));
 
     await waitFor(() => expect(mocks.createClient).toHaveBeenCalledTimes(1));
+    expect(mocks.createClient.mock.calls[0]?.[0]).toMatchObject({ branchId: 3 });
     await waitFor(() => expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 5 })));
   });
 
-  test('shows the chosen client and offers to change it', () => {
-    renderPicker(vi.fn(), nada);
+  test('shows the chosen client and clears it when changing', () => {
+    const onSelect = renderPicker(vi.fn(), nada);
 
     expect(screen.getByText('ندى سمير')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'تغيير العميل' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'تغيير العميل' }));
+    expect(onSelect).toHaveBeenCalledWith(null);
   });
 });

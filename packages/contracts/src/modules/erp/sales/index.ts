@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { coercedMysqlIntSchema, positiveMysqlIntSchema } from '../../../common/index.js';
+import {
+  coercedMysqlIntSchema,
+  paginationPageSchema,
+  paginationPageSizeSchema,
+  positiveMysqlIntSchema,
+} from '../../../common/index.js';
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 
@@ -86,6 +91,12 @@ const saleLineSchema = z.discriminatedUnion('itemType', [
   }).strict(),
 ]);
 
+const serviceSaleLineSchema = z.object({
+  itemType: z.literal('service'),
+  serviceId: positiveMysqlIntSchema,
+  quantity: positiveMysqlIntSchema,
+}).strict();
+
 const paymentSchema = z.object({
   method: paymentMethodSchema,
   amount: positiveMoneySchema,
@@ -136,6 +147,13 @@ export const completeSaleSchema = z.object({
   });
 });
 
+export const quoteSaleInputSchema = z.object({
+  branchId: positiveMysqlIntSchema.optional(),
+  lines: z.array(serviceSaleLineSchema).min(1).max(100),
+  discount: adjustmentSchema.optional(),
+  tax: adjustmentSchema.optional(),
+}).strict();
+
 export const invoiceTotalsSchema = z.object({
   subtotal: positiveMoneySchema,
   discountAmount: exactMoneySchema,
@@ -164,6 +182,76 @@ const storedAdjustmentSchema = z.object({
   if (value.kind === 'fixed' && toCents(value.value) !== toCents(value.amount)) {
     context.addIssue({ code: 'custom', path: ['amount'], message: 'قيمة التعديل الثابت غير متسقة' });
   }
+});
+
+const quoteLineSchema = z.object({
+  itemType: z.literal('service'),
+  sourceId: positiveMysqlIntSchema,
+  name: z.string().min(1).max(255),
+  quantity: positiveMysqlIntSchema,
+  unitPrice: positiveMoneySchema,
+  lineTotal: positiveMoneySchema,
+}).strict().superRefine((value, context) => {
+  if (toCents(value.lineTotal) !== toCents(value.unitPrice) * BigInt(value.quantity)) {
+    context.addIssue({ code: 'custom', path: ['lineTotal'], message: 'إجمالي البند غير متسق' });
+  }
+});
+
+const saleQuoteTotalsSchema = z.object({
+  subtotal: positiveMoneySchema,
+  discountAmount: exactMoneySchema,
+  taxAmount: exactMoneySchema,
+  total: positiveMoneySchema,
+}).strict().superRefine((value, context) => {
+  const expected = toCents(value.subtotal) - toCents(value.discountAmount)
+    + toCents(value.taxAmount);
+  if (expected !== toCents(value.total)) {
+    context.addIssue({ code: 'custom', path: ['total'], message: 'إجمالي الفاتورة غير متسق' });
+  }
+});
+
+const validateAdjustment = (
+  adjustment: z.infer<typeof storedAdjustmentSchema> | null,
+  storedAmount: string,
+  subtotal: string,
+  path: 'discount' | 'tax',
+  context: z.RefinementCtx,
+) => {
+  if (adjustment === null) {
+    if (toCents(storedAmount) !== BigInt(0)) {
+      context.addIssue({ code: 'custom', path: [path], message: 'قيمة التعديل غير متسقة' });
+    }
+    return;
+  }
+  const expected = adjustment.kind === 'fixed'
+    ? toCents(adjustment.value)
+    : percentageAmount(subtotal, adjustment.value);
+  if (toCents(adjustment.amount) !== expected || toCents(storedAmount) !== expected) {
+    context.addIssue({ code: 'custom', path: [path, 'amount'], message: 'قيمة التعديل غير متسقة' });
+  }
+};
+
+export const saleQuoteSchema = z.object({
+  lines: z.array(quoteLineSchema).min(1),
+  discount: storedAdjustmentSchema.nullable(),
+  tax: storedAdjustmentSchema.nullable(),
+  totals: saleQuoteTotalsSchema,
+}).strict().superRefine((value, context) => {
+  const lineSubtotal = value.lines.reduce(
+    (sum, line) => sum + toCents(line.lineTotal),
+    BigInt(0),
+  );
+  if (lineSubtotal !== toCents(value.totals.subtotal)) {
+    context.addIssue({ code: 'custom', path: ['totals', 'subtotal'], message: 'مجموع البنود لا يساوي المجموع الفرعي' });
+  }
+  validateAdjustment(
+    value.discount,
+    value.totals.discountAmount,
+    value.totals.subtotal,
+    'discount',
+    context,
+  );
+  validateAdjustment(value.tax, value.totals.taxAmount, value.totals.subtotal, 'tax', context);
 });
 
 const invoiceLineSchema = z.object({
@@ -237,26 +325,20 @@ export const invoiceSchema = z.object({
     context.addIssue({ code: 'custom', path: ['totals', 'subtotal'], message: 'مجموع البنود لا يساوي المجموع الفرعي' });
   }
 
-  const validateAdjustment = (
-    adjustment: typeof value.discount,
-    storedAmount: string,
-    path: 'discount' | 'tax',
-  ) => {
-    if (adjustment === null) {
-      if (toCents(storedAmount) !== BigInt(0)) {
-        context.addIssue({ code: 'custom', path: [path], message: 'قيمة التعديل غير متسقة' });
-      }
-      return;
-    }
-    const expected = adjustment.kind === 'fixed'
-      ? toCents(adjustment.value)
-      : percentageAmount(value.totals.subtotal, adjustment.value);
-    if (toCents(adjustment.amount) !== expected || toCents(storedAmount) !== expected) {
-      context.addIssue({ code: 'custom', path: [path, 'amount'], message: 'قيمة التعديل غير متسقة' });
-    }
-  };
-  validateAdjustment(value.discount, value.totals.discountAmount, 'discount');
-  validateAdjustment(value.tax, value.totals.taxAmount, 'tax');
+  validateAdjustment(
+    value.discount,
+    value.totals.discountAmount,
+    value.totals.subtotal,
+    'discount',
+    context,
+  );
+  validateAdjustment(
+    value.tax,
+    value.totals.taxAmount,
+    value.totals.subtotal,
+    'tax',
+    context,
+  );
 
   const breakdown = paymentBreakdownSchema.safeParse({
     total: value.totals.total,
@@ -270,6 +352,24 @@ export const invoiceSchema = z.object({
     });
   }
 });
+
+export const clientVisitHistoryQuerySchema = z.object({
+  page: paginationPageSchema.default(1),
+  pageSize: paginationPageSizeSchema.default(20),
+  branchId: coercedMysqlIntSchema.optional(),
+}).strict();
+
+export const clientVisitSummarySchema = z.object({
+  id: positiveMysqlIntSchema,
+  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
+  total: positiveMoneySchema,
+  assignedEmployee: z.object({
+    id: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255),
+  }).strict(),
+  soldAt: isoDateTimeSchema,
+}).strict();
 
 export const saleErrorSchema = z.object({
   code: z.enum([
@@ -345,7 +445,12 @@ export const saleFixtures = {
 } as const;
 
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
+export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
+export type QuoteSaleInput = z.infer<typeof quoteSaleInputSchema>;
+export type SaleQuote = z.infer<typeof saleQuoteSchema>;
 export type InvoiceTotals = z.infer<typeof invoiceTotalsSchema>;
 export type PaymentBreakdown = z.infer<typeof paymentBreakdownSchema>;
 export type InvoiceDto = z.infer<typeof invoiceSchema>;
 export type SaleError = z.infer<typeof saleErrorSchema>;
+export type ClientVisitHistoryQuery = z.infer<typeof clientVisitHistoryQuerySchema>;
+export type ClientVisitSummary = z.infer<typeof clientVisitSummarySchema>;

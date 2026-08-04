@@ -180,11 +180,6 @@ const selfServiceModule = createSelfServiceModule({
   deductions: deductionModule.service,
   advances: advanceModule.service,
 });
-const salesModule = createSalesModule(database, {
-  audit: auditModule.erp,
-  branches: branchModule.erp,
-  employees: employeeModule.erp,
-});
 await employeeModule.uploadStore.retryPendingCleanup();
 
 // ERP composition: ERP modules reach HR only through these public capabilities,
@@ -204,6 +199,12 @@ const erpAssignmentModule = createErpAssignmentModule({
   attendance: attendanceModule.erp,
   branches: branchModule.erp,
   employees: employeeModule.erp,
+});
+const salesModule = createSalesModule(database, {
+  audit: auditModule.erp,
+  branches: branchModule.erp,
+  employees: employeeModule.erp,
+  assignment: erpAssignmentModule.service,
 });
 
 createApp({
@@ -226,6 +227,7 @@ createApp({
   attendanceService: attendanceModule.service,
   dashboardService: dashboardModule.service,
   cashierSessionService: salesModule.cashierSessions,
+  erpSaleService: salesModule.sales,
   erpClientService: erpClientsModule.service,
   erpCategoryService: erpCatalogModule.categories,
   erpServiceCatalogService: erpCatalogModule.services,

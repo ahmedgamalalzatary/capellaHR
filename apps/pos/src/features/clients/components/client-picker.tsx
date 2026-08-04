@@ -27,17 +27,23 @@ const MIN_SEARCH_LENGTH = 3;
 export function ClientPicker({
   selected,
   onSelect,
+  branchId,
 }: {
   selected?: Client | null;
-  onSelect: (client: Client) => void;
+  onSelect: (client: Client | null) => void;
+  branchId?: number;
 }) {
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
 
   const enabled = search.trim().length >= MIN_SEARCH_LENGTH;
   const clientsQuery = useQuery({
-    queryKey: clientQueryKeys.list({ picker: true, search }),
-    queryFn: () => listClients({ search: search.trim(), pageSize: 10 }),
+    queryKey: clientQueryKeys.list({ picker: true, search, branchId }),
+    queryFn: () => listClients({
+      search: search.trim(),
+      pageSize: 10,
+      ...(branchId === undefined ? {} : { branchId }),
+    }),
     enabled,
   });
 
@@ -51,7 +57,11 @@ export function ClientPicker({
             <p className="text-sm font-medium">{selected.fullName}</p>
             <p className="tabular text-[13px] text-muted" dir="ltr">{selected.phone}</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => { setSearch(''); setCreating(false); }}>
+          <Button variant="ghost" size="sm" onClick={() => {
+            setSearch('');
+            setCreating(false);
+            onSelect(null);
+          }}>
             تغيير العميل
           </Button>
         </div>
@@ -71,6 +81,7 @@ export function ClientPicker({
 
       {creating ? (
         <ClientForm
+          {...(branchId === undefined ? {} : { branchId })}
           defaultPhone={/^\d+$/.test(search.trim()) ? search.trim() : ''}
           onDone={(saved) => { setCreating(false); onSelect(saved); }}
           onCancel={() => setCreating(false)}

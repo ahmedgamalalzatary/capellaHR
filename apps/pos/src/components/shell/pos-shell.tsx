@@ -19,14 +19,18 @@ export function PosShell({ children }: { children: ReactNode }) {
       <header className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="flex items-center gap-4">
           <span className="text-sm font-bold text-ink">كابيلا — نقطة البيع</span>
+          <Link href="/sales" className="text-sm font-medium text-ink hover:text-muted">
+            بيع جديد
+          </Link>
           {/* Cashiers need clients to complete a sale, so this is not admin-only. */}
           <Link href="/clients" className="text-sm text-muted hover:text-ink">
             العملاء
           </Link>
-          {/* Cashiers browse the service catalog to build a sale. */}
-          <Link href="/services" className="text-sm text-muted hover:text-ink">
-            الخدمات
-          </Link>
+          {!isAdmin ? (
+            <Link href="/services" className="text-sm text-muted hover:text-ink">
+              الخدمات
+            </Link>
+          ) : null}
           {isAdmin ? (
             <>
               {/* Catalog administration decides what is sellable and what it costs. */}
