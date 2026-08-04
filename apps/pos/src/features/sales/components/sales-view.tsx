@@ -360,7 +360,7 @@ function SaleWorkspace({
       releaseLease = release;
       const draft = readSaleDraft(workspaceOwner);
       if (draft) {
-        setClient(draft.client);
+        setClient(null);
         setEmployee(draft.employee);
         setLines(draft.lines);
         setDiscountKind(draft.discountKind);

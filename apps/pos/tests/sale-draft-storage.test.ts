@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   acquireSaleDraftTab,
+  clearAllSaleDrafts,
   readSaleDraft,
   removeSaleDraft,
   saleDraftStorageKey,
@@ -62,11 +63,24 @@ describe('sale draft storage', () => {
 
   it('round-trips a draft only within its account, branch, and session workspace', () => {
     expect(writeSaleDraft(owner, draft)).toBe(true);
-    expect(readSaleDraft(owner)).toEqual(draft);
+    expect(readSaleDraft(owner)).toEqual({
+      ...draft,
+      client: { id: draft.client!.id, branchId: draft.client!.branchId },
+    });
     expect(readSaleDraft({ ...owner, cashierSessionId: 14 })).toBeNull();
     expect(saleDraftStorageKey(owner, draft.idempotencyKey)).toContain(
       `cashier:3:2:13:${draft.idempotencyKey}`,
     );
+  });
+
+  it('persists only client identifiers, not client personal data', () => {
+    expect(writeSaleDraft(owner, draft)).toBe(true);
+
+    const stored = sessionStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey));
+    expect(localStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).toBeNull();
+    expect(stored).not.toContain(draft.client!.phone);
+    expect(stored).not.toContain(draft.client!.fullName);
+    expect(JSON.parse(stored!).draft.client).toEqual({ id: 5, branchId: 2 });
   });
 
   it('removes only the requested workspace draft', () => {
@@ -85,10 +99,10 @@ describe('sale draft storage', () => {
     writeSaleDraft(owner, draft);
     writeSaleDraft(owner, secondDraft);
 
-    expect(localStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).not.toBeNull();
-    expect(localStorage.getItem(saleDraftStorageKey(owner, secondDraft.idempotencyKey))).not.toBeNull();
+    expect(sessionStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).not.toBeNull();
+    expect(sessionStorage.getItem(saleDraftStorageKey(owner, secondDraft.idempotencyKey))).not.toBeNull();
     expect(removeSaleDraft(owner, draft.idempotencyKey)).toBe(true);
-    expect(localStorage.getItem(saleDraftStorageKey(owner, secondDraft.idempotencyKey))).not.toBeNull();
+    expect(sessionStorage.getItem(saleDraftStorageKey(owner, secondDraft.idempotencyKey))).not.toBeNull();
   });
 
   it('gives a duplicated browser tab a fresh draft selection lease', async () => {
@@ -129,26 +143,41 @@ describe('sale draft storage', () => {
     writeSaleDraft(owner, draft);
 
     vi.setSystemTime(new Date('2026-08-05T10:00:01.000Z'));
+    vi.runOnlyPendingTimers();
 
+    expect(sessionStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).toBeNull();
     expect(readSaleDraft(owner)).toBeNull();
-    expect(localStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).toBeNull();
     vi.useRealTimers();
+  });
+
+  it('clears every stored sale draft and active selection during logout', () => {
+    const anotherOwner = { ...owner, cashierSessionId: 14 };
+    writeSaleDraft(owner, draft);
+    writeSaleDraft(anotherOwner, { ...draft, idempotencyKey: crypto.randomUUID() });
+    sessionStorage.setItem('unrelated', 'keep');
+
+    clearAllSaleDrafts();
+
+    expect(Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index)))
+      .toEqual(['unrelated']);
+    expect(sessionStorage.getItem(`${saleDraftStorageKey(owner)}:active`)).toBeNull();
+    expect(sessionStorage.getItem(`${saleDraftStorageKey(anotherOwner)}:active`)).toBeNull();
   });
 
   it('rejects timestamp-less draft records so client data always has a bounded lifetime', () => {
     const key = saleDraftStorageKey(owner, draft.idempotencyKey);
-    localStorage.setItem(key, JSON.stringify(draft));
+    sessionStorage.setItem(key, JSON.stringify(draft));
     sessionStorage.setItem(`${saleDraftStorageKey(owner)}:active`, draft.idempotencyKey);
 
     expect(readSaleDraft(owner)).toBeNull();
-    expect(localStorage.getItem(key)).toBeNull();
+    expect(sessionStorage.getItem(key)).toBeNull();
   });
 
   it('fails closed for malformed or unavailable browser storage', () => {
     const malformedKey = saleDraftStorageKey(owner);
-    localStorage.setItem(malformedKey, '{bad json');
+    sessionStorage.setItem(malformedKey, '{bad json');
     expect(readSaleDraft(owner)).toBeNull();
-    expect(localStorage.getItem(malformedKey)).toBeNull();
+    expect(sessionStorage.getItem(malformedKey)).toBeNull();
 
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('blocked', 'SecurityError');

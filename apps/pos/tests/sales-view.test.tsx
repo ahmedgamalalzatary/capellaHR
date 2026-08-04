@@ -24,7 +24,7 @@ vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', () => ({
   listCashierSessionBranches: mocks.listBranches,
 }));
 vi.mock('../src/features/clients', () => ({
-  ClientPicker: (props: { branchId?: number; onSelect: (value: unknown) => void }) => (
+  ClientPicker: (props: { branchId?: number; selected?: unknown; onSelect: (value: unknown) => void }) => (
     mocks.clientPickerProps(props),
     <button onClick={() => props.onSelect({ id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678' })}>
       اختر العميل
@@ -85,6 +85,7 @@ const buildDraft = async () => {
 describe('ERP service-sale view', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
     mocks.getCurrentSession.mockReset().mockResolvedValue({ id: 13, branchId: 2, openedByAccountId: 3 });
     mocks.listBranches.mockReset().mockResolvedValue({
@@ -123,8 +124,8 @@ describe('ERP service-sale view', () => {
       payments: [{ method: 'cash', amount: '185.00' }],
       idempotencyKey: expect.any(String),
     }));
-    expect(Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-      .some((key) => key?.startsWith('capella:sale-draft:'))).toBe(false);
+    expect(Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
+      .some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(false);
   });
 
   it('preserves the same idempotency request after an ambiguous network failure', async () => {
@@ -218,9 +219,9 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     const activeDraftKey = Array.from(
-      { length: localStorage.length },
-      (_, index) => localStorage.key(index),
-    ).find((key) => key?.startsWith('capella:sale-draft:'));
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).find((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'));
     const otherIdempotencyKey = crypto.randomUUID();
     const pendingStorageKey = `capella:pending-sale:${otherIdempotencyKey}`;
     const pendingValue = JSON.stringify({
@@ -247,7 +248,7 @@ describe('ERP service-sale view', () => {
     expect(screen.queryByText('تعذر تأكيد نتيجة البيع')).toBeNull();
     expect(screen.getByRole('button', { name: 'اختر العميل' }).matches(':disabled')).toBe(false);
     expect(activeDraftKey).toBeDefined();
-    expect(localStorage.getItem(activeDraftKey!)).not.toBeNull();
+    expect(sessionStorage.getItem(activeDraftKey!)).not.toBeNull();
   });
 
   it('does not submit when durable browser storage is unavailable and explains recovery', async () => {
@@ -276,14 +277,21 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     await waitFor(() => expect(Array.from(
-      { length: localStorage.length },
-      (_, index) => localStorage.key(index),
-    ).some((key) => key?.startsWith('capella:sale-draft:'))).toBe(true));
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
 
     cleanup();
     renderView();
 
     expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: null }),
+    ));
+    expect((screen.getByRole('button', {
+      name: 'مراجعة وإتمام البيع',
+    }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'اختر العميل' }));
     await waitFor(() => expect((screen.getByRole('button', {
       name: 'مراجعة وإتمام البيع',
     }) as HTMLButtonElement).disabled).toBe(false));
@@ -294,9 +302,9 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     await waitFor(() => expect(Array.from(
-      { length: localStorage.length },
-      (_, index) => localStorage.key(index),
-    ).some((key) => key?.startsWith('capella:sale-draft:'))).toBe(true));
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
     cleanup();
 
     const queryClient = new QueryClient();

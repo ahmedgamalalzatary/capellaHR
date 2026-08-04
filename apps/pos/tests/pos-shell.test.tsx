@@ -122,9 +122,11 @@ describe('PosShell', () => {
   test('logs out and redirects to /login', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     logoutMock.mockResolvedValue(undefined);
+    localStorage.setItem('capella:sale-draft:admin:admin:2:13:key', '{}');
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
     await waitFor(() => expect(logoutMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
+    expect(localStorage.getItem('capella:sale-draft:admin:admin:2:13:key')).toBeNull();
   });
 });

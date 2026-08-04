@@ -8,6 +8,6 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['@capella/testing/setup'],
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    exclude: [...configDefaults.exclude, 'tests/e2e/**'],
   },
 });

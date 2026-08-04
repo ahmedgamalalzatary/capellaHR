@@ -12,6 +12,7 @@ import {
   cashierSessionQueryKeys,
   getCurrentCashierSession,
 } from '@/features/cashier-sessions';
+import { clearAllSaleDrafts } from '@/features/sales';
 
 type NavigationItem = { href: string; label: string; adminOnly?: boolean; cashierOnly?: boolean };
 
@@ -67,7 +68,10 @@ export function PosShell({ children }: { children: ReactNode }) {
               variant="ghost"
               size="sm"
               disabled={logout.isPending}
-              onClick={() => logout.mutate(undefined, { onSuccess: () => router.replace('/login') })}
+              onClick={() => {
+                clearAllSaleDrafts();
+                logout.mutate(undefined, { onSuccess: () => router.replace('/login') });
+              }}
             >
               تسجيل الخروج
             </Button>

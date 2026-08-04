@@ -1,11 +1,16 @@
 import { expect, test, type Route } from '@playwright/test';
 
+import { cashierLoginSchema } from '@capella/contracts';
+
 const corsHeaders = {
   'access-control-allow-credentials': 'true',
   'access-control-allow-headers': 'content-type',
   'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
   'access-control-allow-origin': 'http://localhost:3001',
 };
+
+const sessionCookie = 'capella_session';
+const sessionToken = 'cashier-e2e-session';
 
 const json = (route: Route, data: unknown, status = 200) => route.fulfill({
   status,
@@ -15,7 +20,6 @@ const json = (route: Route, data: unknown, status = 200) => route.fulfill({
 });
 
 test('Cashier logs in, restores the open session, and completes a service sale', async ({ page }) => {
-  let authenticated = false;
   let openSession = false;
   let authenticatedSessionReads = 0;
   let completedSale: Record<string, unknown> | undefined;
@@ -40,13 +44,40 @@ test('Cashier logs in, restores the open session, and completes a service sale',
       await route.fulfill({ status: 204, headers: corsHeaders });
       return;
     }
+    const hasSessionCredential = request.headers().cookie?.split(';').some(
+      (part) => part.trim() === `${sessionCookie}=${sessionToken}`,
+    ) ?? false;
     if (path === '/auth/cashier/login' && request.method() === 'POST') {
-      authenticated = true;
-      await json(route, actor);
+      let payload: unknown;
+      try {
+        payload = request.postDataJSON();
+      } catch {
+        payload = null;
+      }
+      const parsed = cashierLoginSchema.safeParse(payload);
+      if (!parsed.success
+        || parsed.data.username !== 'cashier.one'
+        || parsed.data.password !== 'correct-horse-battery-staple') {
+        await route.fulfill({
+          status: 401,
+          contentType: 'application/json',
+          headers: corsHeaders,
+          body: JSON.stringify({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' } }),
+        });
+        return;
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        headers: {
+          ...corsHeaders,
+          'set-cookie': `${sessionCookie}=${sessionToken}; Path=/; HttpOnly; SameSite=Strict`,
+        },
+        body: JSON.stringify({ data: actor }),
+      });
       return;
     }
     if (path === '/auth/session') {
-      if (!authenticated) {
+      if (!hasSessionCredential) {
         await route.fulfill({
           status: 401,
           contentType: 'application/json',
@@ -57,6 +88,15 @@ test('Cashier logs in, restores the open session, and completes a service sale',
       }
       authenticatedSessionReads += 1;
       await json(route, actor);
+      return;
+    }
+    if (path.startsWith('/erp/') && !hasSessionCredential) {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        headers: corsHeaders,
+        body: JSON.stringify({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } }),
+      });
       return;
     }
     if (path === '/erp/cashier-sessions/current') {
@@ -116,6 +156,25 @@ test('Cashier logs in, restores the open session, and completes a service sale',
   });
 
   await page.goto('/login');
+  const unauthenticatedStatuses = await page.evaluate(async () => {
+    const invalidLogin = await fetch('http://localhost:4000/api/v1/auth/cashier/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'cashier.one', password: 'wrong-password' }),
+    });
+    const malformedLogin = await fetch('http://localhost:4000/api/v1/auth/cashier/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    });
+    const protectedRequest = await fetch('http://localhost:4000/api/v1/erp/cashier-sessions/current', {
+      credentials: 'include',
+    });
+    return [invalidLogin.status, malformedLogin.status, protectedRequest.status];
+  });
+  expect(unauthenticatedStatuses).toEqual([401, 401, 401]);
   await page.getByLabel('اسم المستخدم').fill('cashier.one');
   await page.getByLabel('كلمة المرور').fill('correct-horse-battery-staple');
   await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
