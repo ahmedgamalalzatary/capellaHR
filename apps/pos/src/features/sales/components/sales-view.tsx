@@ -38,6 +38,13 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { completeSale, quoteSale } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
+import {
+  acquireSaleDraftTab,
+  readSaleDraft,
+  removeSaleDraft,
+  writeSaleDraft,
+  type SaleDraftOwner,
+} from '../sale-draft-storage';
 
 const PENDING_KEY = 'capella:pending-sale';
 const PENDING_KEY_PREFIX = `${PENDING_KEY}:`;
@@ -50,13 +57,8 @@ const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
 
 type Line = { service: ServiceListItem; quantity: number };
 type AdjustmentKind = 'percentage' | 'fixed';
-type PendingSaleOwner = {
-  /** Admin is a database-enforced singleton and has no public account id. */
-  accountId: number | null;
-  role: 'admin' | 'cashier';
-  branchId: number;
-  cashierSessionId: number;
-};
+/** Admin is a database-enforced singleton and has no public account id. */
+type PendingSaleOwner = SaleDraftOwner;
 type PendingSale = { owner: PendingSaleOwner; input: CompleteSaleInput };
 
 const pendingKey = (idempotencyKey: string) => `${PENDING_KEY_PREFIX}${idempotencyKey}`;
@@ -195,7 +197,17 @@ export function SalesView() {
     return <Card><CardContent>جارٍ تحميل وردية الكاشير…</CardContent></Card>;
   }
   if (session.isError) {
-    return <EmptyState title="تعذر تحميل وردية الكاشير" description={errorMessage(session.error)} />;
+    return (
+      <EmptyState
+        title="تعذر تحميل وردية الكاشير"
+        description={errorMessage(session.error)}
+        action={
+          <Button variant="secondary" size="sm" onClick={() => void session.refetch()}>
+            إعادة المحاولة
+          </Button>
+        }
+      />
+    );
   }
   if (!session.data || (actor?.type === 'cashier' && session.data.openedByAccountId !== actor.accountId)) {
     const actorAccountId = actor.type === 'cashier' ? actor.accountId : null;
@@ -217,6 +229,7 @@ export function SalesView() {
 
   return (
     <SaleWorkspace
+      key={`${actor.type}:${actor.type === 'cashier' ? actor.accountId : 'admin'}:${session.data.branchId}:${session.data.id}`}
       {...(branchId === undefined ? {} : { branchId })}
       workspaceBranchId={session.data.branchId}
       cashierSessionId={session.data.id}
@@ -289,6 +302,12 @@ function SaleWorkspace({
   accountId: number | null;
   role: 'admin' | 'cashier';
 }) {
+  const workspaceOwner = useMemo<PendingSaleOwner>(() => ({
+    accountId,
+    role,
+    branchId: workspaceBranchId,
+    cashierSessionId,
+  }), [accountId, cashierSessionId, role, workspaceBranchId]);
   const [client, setClient] = useState<Client | null>(null);
   const [employee, setEmployee] = useState<AssignableEmployee | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -300,6 +319,9 @@ function SaleWorkspace({
     cash: '', visa: '', instapay: '', vodafone_cash: '',
   });
   const [paymentsTouched, setPaymentsTouched] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftStorageError, setDraftStorageError] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
   const [storageError, setStorageError] = useState(false);
@@ -307,37 +329,68 @@ function SaleWorkspace({
   const [completed, setCompleted] = useState<InvoiceDto | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const didReplayOnMount = useRef(false);
-  const workspaceOwner = useMemo<PendingSaleOwner>(() => ({
-    accountId,
-    role,
-    branchId: workspaceBranchId,
-    cashierSessionId,
-  }), [accountId, cashierSessionId, role, workspaceBranchId]);
-  const matchesWorkspace = useCallback((pending: PendingSale) => (
+  const hasDraftProgress = Boolean(
+    client || employee || lines.length > 0 || discountValue || taxValue || paymentsTouched,
+  );
+  const matchesActiveDraft = useCallback((pending: PendingSale) => (
     pending.owner.accountId === workspaceOwner.accountId
       && pending.owner.role === workspaceOwner.role
       && pending.owner.branchId === workspaceOwner.branchId
       && pending.owner.cashierSessionId === workspaceOwner.cashierSessionId
-  ), [workspaceOwner]);
-  const pendingMatchesWorkspace = Boolean(
+      && (!hasDraftProgress || pending.input.idempotencyKey === idempotencyKey)
+  ), [hasDraftProgress, idempotencyKey, workspaceOwner]);
+  const pendingMatchesActiveDraft = Boolean(
     pendingSale
       && pendingSale.owner.accountId === workspaceOwner.accountId
       && pendingSale.owner.role === workspaceOwner.role
       && pendingSale.owner.branchId === workspaceOwner.branchId
-      && pendingSale.owner.cashierSessionId === workspaceOwner.cashierSessionId,
+      && pendingSale.owner.cashierSessionId === workspaceOwner.cashierSessionId
+      && (!hasDraftProgress || pendingSale.input.idempotencyKey === idempotencyKey),
   );
-  const pendingInput = pendingMatchesWorkspace ? pendingSale!.input : null;
+  const pendingInput = pendingMatchesActiveDraft ? pendingSale!.input : null;
 
   useEffect(() => {
+    let cancelled = false;
+    let releaseLease: () => void = () => undefined;
+    void acquireSaleDraftTab(workspaceOwner).then((release) => {
+      if (cancelled) {
+        release();
+        return;
+      }
+      releaseLease = release;
+      const draft = readSaleDraft(workspaceOwner);
+      if (draft) {
+        setClient(draft.client);
+        setEmployee(draft.employee);
+        setLines(draft.lines);
+        setDiscountKind(draft.discountKind);
+        setDiscountValue(draft.discountValue);
+        setTaxKind(draft.taxKind);
+        setTaxValue(draft.taxValue);
+        setPayments(draft.payments);
+        setPaymentsTouched(draft.paymentsTouched);
+        setIdempotencyKey(draft.idempotencyKey);
+        setDraftRestored(true);
+      }
+      setDraftHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+      releaseLease();
+    };
+  }, [workspaceOwner]);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
     const synchronizePending = (event?: StorageEvent) => {
       if (!event || event.key === PENDING_KEY || event.key?.startsWith(PENDING_KEY_PREFIX)) {
-        setPendingSale(readPending(matchesWorkspace));
+        setPendingSale(readPending(matchesActiveDraft));
       }
     };
     synchronizePending();
     window.addEventListener('storage', synchronizePending);
     return () => window.removeEventListener('storage', synchronizePending);
-  }, [matchesWorkspace]);
+  }, [draftHydrated, matchesActiveDraft]);
 
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
@@ -362,6 +415,42 @@ function SaleWorkspace({
     }
   }, [paymentsTouched, quote.data]);
 
+  useEffect(() => {
+    if (!draftHydrated) return;
+    if (!hasDraftProgress) {
+      removeSaleDraft(workspaceOwner, idempotencyKey);
+      setDraftStorageError(false);
+      return;
+    }
+    const saved = writeSaleDraft(workspaceOwner, {
+      client,
+      employee,
+      lines,
+      discountKind,
+      discountValue,
+      taxKind,
+      taxValue,
+      payments,
+      paymentsTouched,
+      idempotencyKey,
+    });
+    setDraftStorageError(!saved);
+  }, [
+    client,
+    draftHydrated,
+    discountKind,
+    discountValue,
+    employee,
+    hasDraftProgress,
+    idempotencyKey,
+    lines,
+    payments,
+    paymentsTouched,
+    taxKind,
+    taxValue,
+    workspaceOwner,
+  ]);
+
   const completion = useMutation({
     mutationFn: completeSale,
     onSuccess: (invoice, input) => {
@@ -369,6 +458,8 @@ function SaleWorkspace({
       setPendingSale(null);
       setAmbiguous(false);
       setConfirming(false);
+      removeSaleDraft(workspaceOwner, input.idempotencyKey);
+      setDraftRestored(false);
       setCompleted(invoice);
     },
     onError: (error, input) => {
@@ -454,6 +545,9 @@ function SaleWorkspace({
     setDiscountValue('');
     setTaxValue('');
     setCompleted(null);
+    setDraftRestored(false);
+    setDraftStorageError(false);
+    removeSaleDraft(workspaceOwner, idempotencyKey);
     setIdempotencyKey(crypto.randomUUID());
   };
 
@@ -477,6 +571,18 @@ function SaleWorkspace({
         <p className="mt-1 text-sm text-muted">اختر العميل والخدمات والموظف ثم راجع الإجمالي المحسوب من الخادم.</p>
       </div>
 
+      {draftRestored ? (
+        <p role="status" className="rounded-control bg-success-soft px-3 py-2 text-sm text-success">
+          تم استعادة مسودة البيع المحفوظة لهذا الحساب والوردية.
+        </p>
+      ) : null}
+
+      {draftStorageError ? (
+        <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-sm text-danger">
+          تعذر حفظ مسودة البيع في المتصفح. لا تغادر الصفحة قبل إتمام البيع.
+        </p>
+      ) : null}
+
       {ambiguous ? (
         <Card><CardContent className="flex flex-wrap items-center justify-between gap-3 bg-warning-soft">
           <div>
@@ -493,14 +599,19 @@ function SaleWorkspace({
         </CardContent></Card>
       ) : null}
 
-      {pendingSale && !pendingMatchesWorkspace ? (
+      {pendingSale && !pendingMatchesActiveDraft ? (
         <Card><CardContent className="bg-warning-soft">
           <p className="font-medium">يوجد بيع معلق محفوظ لحساب أو وردية أخرى</p>
           <p className="text-sm text-muted">لن يُعاد إرساله أو حذفه من مساحة العمل الحالية. افتح الحساب والوردية الأصليين لاستعادته بأمان.</p>
         </CardContent></Card>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+      <fieldset
+        disabled={Boolean(pendingInput)}
+        className="m-0 min-w-0 border-0 p-0"
+      >
+        <legend className="sr-only">تفاصيل البيع</legend>
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-4">
           <Card><CardHeader><CardTitle>1. العميل</CardTitle></CardHeader><CardContent>
             <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
@@ -542,7 +653,14 @@ function SaleWorkspace({
           </CardContent></Card>
           <Card><CardHeader><CardTitle>5. الإجمالي والمدفوعات</CardTitle></CardHeader><CardContent className="space-y-4">
             {quote.isPending && lines.length > 0 ? <p>جارٍ حساب الإجمالي من الخادم…</p> : null}
-            {quote.isError ? <p role="alert" className="text-danger">{errorMessage(quote.error)}</p> : null}
+            {quote.isError ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p role="alert" className="text-danger">{errorMessage(quote.error)}</p>
+                <Button variant="secondary" size="sm" onClick={() => void quote.refetch()}>
+                  إعادة حساب الإجمالي
+                </Button>
+              </div>
+            ) : null}
             {quote.data ? (
               <dl className="grid grid-cols-2 gap-2 text-sm">
                 <dt>المجموع الفرعي</dt><dd className="text-end">{quote.data.totals.subtotal} ج.م</dd>
@@ -588,7 +706,8 @@ function SaleWorkspace({
             </Button>
           </CardContent></Card>
         </div>
-      </div>
+        </div>
+      </fieldset>
 
       {confirming ? (
         <Modal title="تأكيد البيع" onClose={() => setConfirming(false)}>

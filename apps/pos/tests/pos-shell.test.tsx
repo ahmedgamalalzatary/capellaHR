@@ -1,23 +1,31 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { PosShell } from '../src/components/shell/pos-shell';
 
-const { replaceMock, getSessionMock, logoutMock } = vi.hoisted(() => ({
+const { replaceMock, getSessionMock, logoutMock, getCurrentSessionMock, pathname } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
   getSessionMock: vi.fn(),
   logoutMock: vi.fn(),
+  getCurrentSessionMock: vi.fn(),
+  pathname: { current: '/sales' },
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: replaceMock, replace: replaceMock }),
+  usePathname: () => pathname.current,
 }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getSession: getSessionMock,
   logout: logoutMock,
+}));
+
+vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getCurrentCashierSession: getCurrentSessionMock,
 }));
 
 function renderShell() {
@@ -34,6 +42,11 @@ function renderShell() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+beforeEach(() => {
+  pathname.current = '/sales';
+  getCurrentSessionMock.mockResolvedValue(null);
 });
 
 describe('PosShell', () => {
@@ -78,6 +91,32 @@ describe('PosShell', () => {
     renderShell();
     const link = await screen.findByRole('link', { name: 'بيع جديد' });
     expect(link.getAttribute('href')).toBe('/sales');
+  });
+
+  test('marks the active destination in the responsive primary navigation', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+
+    const navigation = await screen.findByRole('navigation', { name: 'التنقل الرئيسي' });
+    const active = screen.getByRole('link', { name: 'بيع جديد' });
+    expect(navigation.contains(active)).toBe(true);
+    expect(active.getAttribute('aria-current')).toBe('page');
+  });
+
+  test('shows the server-validated Cashier session state in the shell', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    getCurrentSessionMock.mockResolvedValue({
+      id: 13,
+      branchId: 2,
+      branchName: 'الفرع الرئيسي',
+      openedByAccountId: 1,
+      openedByUsername: 'cashier1',
+      openedAt: '2026-08-04T10:00:00.000Z',
+    });
+    renderShell();
+
+    const sessionState = await screen.findByText('الوردية مفتوحة');
+    expect(sessionState.parentElement?.textContent).toContain('الفرع الرئيسي');
   });
 
   test('logs out and redirects to /login', async () => {

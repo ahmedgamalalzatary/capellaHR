@@ -99,6 +99,14 @@ describe('CashierSessionView', () => {
     expect(mocks.getCurrentCashierSession).toHaveBeenCalledWith(undefined);
   });
 
+  test('offers the owning Cashier a direct path from an open session to a new sale', async () => {
+    mocks.getCurrentCashierSession.mockResolvedValue(session);
+    renderView();
+
+    const startSale = await screen.findByRole('link', { name: 'بدء بيع جديد' });
+    expect(startSale.getAttribute('href')).toBe('/sales');
+  });
+
   test('opens a session when the Cashier branch has no active session', async () => {
     renderView();
 

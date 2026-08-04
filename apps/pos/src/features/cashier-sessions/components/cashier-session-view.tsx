@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock3 } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import {
@@ -210,9 +211,17 @@ export function CashierSessionView() {
             {actionError ? <p role="alert" className="text-[13px] text-danger">{actionError}</p> : null}
 
             {ownsSession ? (
-              <Button variant="danger" disabled={closeMutation.isPending} onClick={() => setConfirmClose(true)}>
-                إغلاق الوردية
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/sales"
+                  className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper transition-colors hover:bg-ink/85"
+                >
+                  بدء بيع جديد
+                </Link>
+                <Button variant="danger" disabled={closeMutation.isPending} onClick={() => setConfirmClose(true)}>
+                  إغلاق الوردية
+                </Button>
+              </div>
             ) : isAdmin ? (
               <Button variant="danger" onClick={() => setRecoveryOpen(true)}>
                 إغلاق استثنائي

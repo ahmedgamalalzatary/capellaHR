@@ -666,16 +666,16 @@ Complete. This persistence foundation intentionally has no standalone screen. Th
 
 Complete. `POST /api/v1/erp/sales/quote` provides authoritative quotes, `POST /api/v1/erp/sales` atomically persists the completed aggregate, and `GET /api/v1/erp/sales/clients/:clientId/visits` completes the deferred client-history capability. The Arabic `/sales` work surface composes the existing client, service, and present-employee selectors with discount/tax, mixed payments, confirmation, exact remaining-payment feedback, idempotent retries, and durable ambiguous-response recovery. Receipt display and printing remain in ERP 11.
 
-## ERP 10. POS application integration and operational UX
+## ERP 10. POS application integration and operational UX — Complete
 
-- [ ] Integrate the delivered login, Cashier-session, client, service, employee-assignment, and service-sale features into one coherent POS navigation and work surface.
-- [ ] Preserve authenticated and open-session state across refreshes without bypassing server validation.
-- [ ] Add consistent Arabic/RTL loading, empty, error, conflict, confirmation, success, and retry behavior across the integrated workflow.
-- [ ] Ensure the complete counter workflow is keyboard-friendly, accessible, and responsive at the supported POS display sizes.
-- [ ] Add route-level failure boundaries and recovery that do not lose an in-progress sale draft.
-- [ ] Add cross-feature component and end-to-end coverage for login through completed service sale.
+- [x] Integrate the delivered login, Cashier-session, client, service, employee-assignment, and service-sale features into one coherent POS navigation and work surface.
+- [x] Preserve authenticated and open-session state across refreshes without bypassing server validation.
+- [x] Add consistent Arabic/RTL loading, empty, error, conflict, confirmation, success, and retry behavior across the integrated workflow.
+- [x] Ensure the complete counter workflow is keyboard-friendly, accessible, and responsive at the supported POS display sizes.
+- [x] Add route-level failure boundaries and recovery that do not lose an in-progress sale draft.
+- [x] Add cross-feature component and end-to-end coverage for login through completed service sale.
 
-This slice integrates and hardens already-delivered feature UIs; it must not become a holding phase for frontend work omitted from ERP 1–9.
+Complete. The responsive Arabic/RTL shell now joins the delivered account-aware destinations, active-route state, and server-validated Cashier-session status. An owned open session links directly into the sale workspace. In-progress drafts are isolated by actor, branch, and Cashier session, survive refreshes and protected-route failures, and are removed after a completed sale. Component coverage exercises the integrated navigation, session handoff, draft recovery, accessible failure boundary, and sale lifecycle; the Playwright browser harness completes the Cashier login-to-invoice workflow at wide and compact POS viewports with controlled HTTP fixtures. The separate browser-to-authenticated-HTTP-to-MySQL boundary remains explicitly tracked under ERP 9 and is not claimed here.
 
 ## ERP 11. Receipts
 

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../src/lib/api/client';
@@ -122,6 +123,8 @@ describe('ERP service-sale view', () => {
       payments: [{ method: 'cash', amount: '185.00' }],
       idempotencyKey: expect.any(String),
     }));
+    expect(Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+      .some((key) => key?.startsWith('capella:sale-draft:'))).toBe(false);
   });
 
   it('preserves the same idempotency request after an ambiguous network failure', async () => {
@@ -171,6 +174,10 @@ describe('ERP service-sale view', () => {
     expect(readStoredPending()).not.toBeNull();
     expect((screen.getByRole('button', { name: 'مراجعة وإتمام البيع' }) as HTMLButtonElement).disabled)
       .toBe(true);
+    const frozenInputs = screen.getByRole('group', { name: 'تفاصيل البيع' });
+    expect(frozenInputs.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('نقدي').matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'اختر العميل' }).matches(':disabled')).toBe(true);
   });
 
   it('keeps each unresolved tab submission under its own durable storage key', async () => {
@@ -207,6 +214,42 @@ describe('ERP service-sale view', () => {
     await screen.findByText('تم حفظ الفاتورة');
   });
 
+  it('ignores another tab pending sale and preserves this tab draft', async () => {
+    renderView();
+    await buildDraft();
+    const activeDraftKey = Array.from(
+      { length: localStorage.length },
+      (_, index) => localStorage.key(index),
+    ).find((key) => key?.startsWith('capella:sale-draft:'));
+    const otherIdempotencyKey = crypto.randomUUID();
+    const pendingStorageKey = `capella:pending-sale:${otherIdempotencyKey}`;
+    const pendingValue = JSON.stringify({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input: {
+        clientId: 6,
+        assignedEmployeeId: 8,
+        cashierSessionId: 13,
+        idempotencyKey: otherIdempotencyKey,
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '185.00' }],
+      },
+    });
+    localStorage.setItem(pendingStorageKey, pendingValue);
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: pendingStorageKey,
+      newValue: pendingValue,
+      storageArea: localStorage,
+    }));
+
+    await waitFor(() => expect(mocks.completeSale).not.toHaveBeenCalled());
+    expect(screen.queryByText('تم حفظ الفاتورة')).toBeNull();
+    expect(screen.queryByText('تعذر تأكيد نتيجة البيع')).toBeNull();
+    expect(screen.getByRole('button', { name: 'اختر العميل' }).matches(':disabled')).toBe(false);
+    expect(activeDraftKey).toBeDefined();
+    expect(localStorage.getItem(activeDraftKey!)).not.toBeNull();
+  });
+
   it('does not submit when durable browser storage is unavailable and explains recovery', async () => {
     renderView();
     await buildDraft();
@@ -216,7 +259,7 @@ describe('ERP service-sale view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
-    expect((await screen.findByRole('alert')).textContent).toContain('تعذر حفظ طلب البيع بأمان');
+    expect(await screen.findByText(/تعذر حفظ طلب البيع بأمان/)).toBeDefined();
     expect(mocks.completeSale).not.toHaveBeenCalled();
     storageWrite.mockRestore();
   });
@@ -227,6 +270,47 @@ describe('ERP service-sale view', () => {
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     await buildDraft();
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('restores an in-progress workspace draft after the route remounts', async () => {
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: localStorage.length },
+      (_, index) => localStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:'))).toBe(true));
+
+    cleanup();
+    renderView();
+
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    await waitFor(() => expect((screen.getByRole('button', {
+      name: 'مراجعة وإتمام البيع',
+    }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByText(/تم استعادة مسودة البيع/)).toBeDefined();
+  });
+
+  it('keeps the server render hydration-safe when a browser draft exists', async () => {
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: localStorage.length },
+      (_, index) => localStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:'))).toBe(true));
+    cleanup();
+
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['erp-sales', 'cashier-session', null], {
+      id: 13,
+      branchId: 2,
+      openedByAccountId: 3,
+    });
+    const html = renderToString(
+      <QueryClientProvider client={queryClient}><SalesView /></QueryClientProvider>,
+    );
+
+    expect(html).not.toContain('صبغة شعر');
+    expect(html).not.toContain('تم استعادة مسودة البيع');
   });
 
   it('replays a durable pending request after the app reloads online', async () => {
@@ -311,7 +395,7 @@ describe('ERP service-sale view', () => {
     expect(await screen.findByRole('heading', { name: 'بيع خدمة' })).toBeDefined();
     expect(screen.queryByText(/بيع معلق.*حساب أو وردية أخرى/)).toBeNull();
     expect(mocks.completeSale).not.toHaveBeenCalled();
-    expect(localStorage.getItem('capella:pending-sale')).toBeNull();
+    await waitFor(() => expect(localStorage.getItem('capella:pending-sale')).toBeNull());
     expect(JSON.parse(localStorage.getItem(
       `capella:pending-sale:${stored.input.idempotencyKey}`,
     ) ?? '{}')).toEqual(stored);
@@ -368,6 +452,31 @@ describe('ERP service-sale view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
 
     expect(await screen.findByRole('option', { name: 'Main' })).toBeDefined();
+  });
+
+  it('retries a failed Cashier-session load without reloading the page', async () => {
+    mocks.getCurrentSession.mockRejectedValueOnce(new Error('offline'));
+    renderView();
+
+    expect(await screen.findByText('تعذر تحميل وردية الكاشير')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+
+    expect(await screen.findByRole('heading', { name: 'بيع خدمة' })).toBeDefined();
+    expect(mocks.getCurrentSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed quote without changing the sale draft', async () => {
+    mocks.quoteSale.mockRejectedValueOnce(new Error('offline'));
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
+
+    expect(await screen.findByText('حدث خطأ غير متوقع. حاول مرة أخرى.')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة حساب الإجمالي' }));
+
+    expect(await screen.findByText('185.00 ج.م')).toBeDefined();
+    expect(mocks.quoteSale).toHaveBeenCalledTimes(2);
   });
 
   it('shows feedback when an Admin has no branches', async () => {
