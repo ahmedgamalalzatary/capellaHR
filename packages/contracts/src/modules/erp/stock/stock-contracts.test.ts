@@ -4,6 +4,7 @@ import {
   adjustProductStockSchema,
   createProductSchema,
   listProductsQuerySchema,
+  listStockMovementsQuerySchema,
   updateProductSchema,
 } from './index.js';
 
@@ -40,5 +41,10 @@ describe('ERP product and stock contracts', () => {
     expect(listProductsQuerySchema.parse({ branchId: '3', lowStock: 'true', page: '2' })).toMatchObject({
       branchId: 3, lowStock: true, page: 2, pageSize: 20,
     });
+  });
+
+  it('allows purchase cancellation movements in Admin history filters', () => {
+    expect(listStockMovementsQuerySchema.parse({ branchId: 2, reason: 'purchase_cancellation' }).reason)
+      .toBe('purchase_cancellation');
   });
 });

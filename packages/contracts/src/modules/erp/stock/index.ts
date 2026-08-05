@@ -81,7 +81,7 @@ export const adjustProductStockSchema = z.object({
 });
 export const listStockMovementsQuerySchema = z.object({
   productId: coercedMysqlIntSchema.optional(),
-  reason: z.enum(['opening_stock', 'count_correction', 'wastage', 'damage', 'sale', 'purchase', 'refund', 'void']).optional(),
+  reason: z.enum(['opening_stock', 'count_correction', 'wastage', 'damage', 'sale', 'purchase', 'purchase_cancellation', 'refund', 'void']).optional(),
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
   ...branchScope,

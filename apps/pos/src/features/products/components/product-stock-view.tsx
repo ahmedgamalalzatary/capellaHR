@@ -20,11 +20,11 @@ import { productQueryKeys } from '../query-keys';
 
 const reasonLabels: Record<string, string> = {
   opening_stock: 'رصيد افتتاحي', count_correction: 'تصحيح جرد', wastage: 'هالك',
-  damage: 'تالف', sale: 'بيع', purchase: 'شراء', refund: 'مرتجع', void: 'إلغاء بيع',
+  damage: 'تالف', sale: 'بيع', purchase: 'شراء', purchase_cancellation: 'إلغاء شراء', refund: 'مرتجع', void: 'إلغاء بيع',
 };
 const sourceLabels: Record<string, string> = {
   adjustment: 'تسوية يدوية', sale: 'فاتورة بيع', purchase: 'فاتورة شراء',
-  refund: 'مرتجع', void: 'إلغاء',
+  purchase_cancellation: 'إلغاء شراء', refund: 'مرتجع', void: 'إلغاء',
 };
 const errorText = (value: unknown) => value instanceof ApiError ? value.message : 'تعذر تنفيذ العملية. حاول مرة أخرى.';
 const cairoDate = (value: string) => new Intl.DateTimeFormat('ar-EG', {
