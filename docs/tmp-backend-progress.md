@@ -739,15 +739,17 @@ Complete. Product balances are branch-scoped and non-negative, movements are app
 
 Purchases are fully paid. Supplier balances, credit, and returns are excluded.
 
-## ERP 15. Expenses
+## ERP 15. Expenses — Complete
 
-- [ ] Add branch-scoped expense schema and migration.
-- [ ] Require an expense-type category, exact EGP amount, Cairo date, description, and acting account.
-- [ ] Implement expense create, read, list/filter, and safe correction behavior.
-- [ ] Audit every expense mutation.
-- [ ] Add Arabic/RTL POS Admin expense create, read, list/filter, and safe correction workflows.
-- [ ] Add validation, category-type, authorization, branch, audit, and MySQL tests.
-- [ ] Add component and end-to-end coverage for expense creation, filtering, correction, authorization, and audit behavior.
+- [x] Add branch-scoped expense schema and migration.
+- [x] Require an expense-type category, exact EGP amount, Cairo date, description, and acting account.
+- [x] Implement expense create, read, list/filter, and safe correction behavior.
+- [x] Audit every expense mutation.
+- [x] Add Arabic/RTL POS Admin expense create, read, list/filter, and safe correction workflows.
+- [x] Add validation, category-type, authorization, branch, audit, and MySQL tests.
+- [x] Add component and end-to-end coverage for expense creation, filtering, correction, authorization, and audit behavior.
+
+Complete. Admin-only expense workflows use branch-scoped active expense categories, exact positive EGP amounts, valid Cairo calendar dates, and immutable database facts. Corrections atomically append a reversal and active replacement, preserve chained lineage, require a complete pair before the original status can change, and audit all three mutation facts. API, component, real-MySQL rollback/concurrency, and wide/compact browser coverage verifies creation, pagination/filtering, correction, branch isolation, authorization, and audit behavior.
 
 ## ERP 16. Voids and refunds
 

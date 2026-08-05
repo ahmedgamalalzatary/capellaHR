@@ -26,7 +26,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createErpClientsRouter, createErpProductsRouter, type ClientService, type ProductStockService } from '../modules/erp/index.js';
+import { createErpClientsRouter, createErpExpensesRouter, createErpProductsRouter, type ClientService, type ExpenseService, type ProductStockService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -62,6 +62,7 @@ export const createApiRouter = (dependencies: {
   erpCategoryService?: CategoryService;
   erpServiceCatalogService?: ServiceCatalogService;
   erpProductStockService?: ProductStockService;
+  erpExpenseService?: ExpenseService;
   erpAssignmentService?: EmployeeAssignmentService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
@@ -198,6 +199,10 @@ export const createApiRouter = (dependencies: {
         erpAuth.requireErpAccount,
         createErpProductsRouter(dependencies.erpProductStockService),
       );
+    }
+    if (dependencies.erpExpenseService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use('/erp/expenses', erpAuth.authenticate, erpAuth.requireErpAccount, createErpExpensesRouter(dependencies.erpExpenseService));
     }
     if (dependencies.erpAssignmentService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
