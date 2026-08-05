@@ -23,6 +23,7 @@ test('Cashier logs in, restores the open session, and completes a service sale',
   let openSession = false;
   let authenticatedSessionReads = 0;
   let completedSale: Record<string, unknown> | undefined;
+  let completedSaleRequests = 0;
 
   const actor = { actor: { type: 'cashier', accountId: 8, employeeId: 17 } };
   const session = {
@@ -35,6 +36,30 @@ test('Cashier logs in, restores the open session, and completes a service sale',
     closedAt: null,
     closedByAccountId: null,
     closedByUsername: null,
+  };
+  const storedInvoice = {
+    id: 44,
+    invoiceNumber: 'INV-2026.08.04-12.35-17',
+    status: 'completed',
+    branchId: 3,
+    cashierSessionId: 14,
+    client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+    assignedEmployee: { id: 18, employeeCode: 1018, name: 'سارة علي' },
+    authorizedBy: { accountId: 8, username: 'cashier.one' },
+    lines: [{
+      id: 81, lineNumber: 1, itemType: 'service', sourceId: 21,
+      name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+      commissionRule: 'service_default', commissionRate: '10.00',
+      commissionAmount: '20.00', productCostBasis: null,
+    }],
+    discount: null,
+    tax: null,
+    totals: {
+      subtotal: '200.00', discountAmount: '0.00', taxAmount: '0.00',
+      total: '200.00', paymentTotal: '200.00',
+    },
+    payments: [{ method: 'cash', amount: '200.00' }],
+    soldAt: '2026-08-04T09:35:00.000Z',
   };
 
   await page.route('**/api/v1/**', async (route) => {
@@ -148,8 +173,35 @@ test('Cashier logs in, restores the open session, and completes a service sale',
       return;
     }
     if (path === '/erp/sales' && request.method() === 'POST') {
+      completedSaleRequests += 1;
       completedSale = request.postDataJSON() as Record<string, unknown>;
       await json(route, { id: 44, invoiceNumber: 'INV-2026.08.04-12.35-17', totals: { total: '200.00' } });
+      return;
+    }
+    if (path === '/erp/sales' && request.method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        headers: corsHeaders,
+        body: JSON.stringify({
+          data: [{
+            id: storedInvoice.id,
+            invoiceNumber: storedInvoice.invoiceNumber,
+            status: storedInvoice.status,
+            total: storedInvoice.totals.total,
+            client: { id: storedInvoice.client.id, name: storedInvoice.client.name },
+            assignedEmployee: {
+              id: storedInvoice.assignedEmployee.id,
+              name: storedInvoice.assignedEmployee.name,
+            },
+            soldAt: storedInvoice.soldAt,
+          }],
+          meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+        }),
+      });
+      return;
+    }
+    if (path === '/erp/sales/44' && request.method() === 'GET') {
+      await json(route, storedInvoice);
       return;
     }
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
@@ -194,10 +246,37 @@ test('Cashier logs in, restores the open session, and completes a service sale',
   await page.getByRole('button', { name: /سارة علي/ }).click();
   await expect(page.getByText('تم سداد الإجمالي بالكامل')).toBeVisible();
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
-  await page.getByRole('button', { name: 'تأكيد البيع' }).click();
+  await page.getByRole('button', { name: 'تأكيد البيع' }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
 
   await expect(page.getByRole('heading', { name: 'تم حفظ الفاتورة' })).toBeVisible();
   await expect(page.getByText('INV-2026.08.04-12.35-17')).toBeVisible();
+  await page.getByRole('link', { name: 'عرض وطباعة الإيصال' }).click();
+  await expect(page.getByRole('button', { name: 'طباعة الإيصال' })).toBeVisible();
+  expect(await page.evaluate(() => Array.from(document.styleSheets).some((sheet) => {
+    try {
+      return Array.from(sheet.cssRules).some((rule) => rule.cssText.includes('80mm'));
+    } catch {
+      return false;
+    }
+  }))).toBe(true);
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'print', {
+      value: () => sessionStorage.setItem(
+        'receipt-print-count',
+        String(Number(sessionStorage.getItem('receipt-print-count') ?? '0') + 1),
+      ),
+    });
+  });
+  await page.getByRole('button', { name: 'طباعة الإيصال' }).click();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('receipt-print-count'))).toBe('1');
+  await page.getByRole('link', { name: 'العودة إلى الفواتير' }).click();
+  await page.getByRole('link', { name: 'INV-2026.08.04-12.35-17' }).click();
+  await page.getByRole('button', { name: 'طباعة الإيصال' }).click();
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('receipt-print-count'))).toBe('2');
+  expect(completedSaleRequests).toBe(1);
   expect(completedSale).toMatchObject({
     clientId: 5,
     assignedEmployeeId: 18,

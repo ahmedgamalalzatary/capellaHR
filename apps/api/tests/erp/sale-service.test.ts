@@ -62,11 +62,15 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   const findByIdempotencyKey = vi.fn().mockResolvedValue(null);
   const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(invoice);
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
+  const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
+  const findInvoiceById = vi.fn().mockResolvedValue(invoice);
   const repository: SaleRepository = {
     quote: quoteRepository,
     findByIdempotencyKey,
     complete: completeRepository,
     listClientVisits,
+    listInvoices,
+    findInvoiceById,
     ...overrides,
   };
   const assertAssignable = vi.fn().mockResolvedValue(invoice.assignedEmployee);
@@ -85,7 +89,10 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
       }),
     },
   });
-  return { service, repository, assertAssignable, quoteRepository, completeRepository };
+  return {
+    service, repository, assertAssignable, quoteRepository, completeRepository,
+    listInvoices, findInvoiceById,
+  };
 };
 
 describe('ERP sale service', () => {
@@ -162,6 +169,22 @@ describe('ERP sale service', () => {
     });
     await expect(failing.complete(actor, input)).rejects.toEqual(
       new SaleError('EMPLOYEE_NOT_ASSIGNABLE'),
+    );
+  });
+
+  it('lists and reads stored invoices only through the resolved branch', async () => {
+    const { service, listInvoices, findInvoiceById } = setup();
+    await service.listInvoices(actor, { page: 2, pageSize: 10 });
+    await expect(service.getInvoice(actor, 44, undefined)).resolves.toEqual(invoice);
+
+    expect(listInvoices).toHaveBeenCalledWith(2, { page: 2, pageSize: 10 });
+    expect(findInvoiceById).toHaveBeenCalledWith(2, 44);
+  });
+
+  it('returns a stable not-found error without leaking cross-branch invoice existence', async () => {
+    const { service } = setup({ findInvoiceById: vi.fn().mockResolvedValue(null) });
+    await expect(service.getInvoice(actor, 44, undefined)).rejects.toEqual(
+      new SaleError('INVOICE_NOT_FOUND'),
     );
   });
 });

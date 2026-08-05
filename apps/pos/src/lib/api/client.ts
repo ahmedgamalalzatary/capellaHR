@@ -9,6 +9,7 @@
 
 /** Full API base including the version prefix, from the root .env */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+const API_REQUEST_TIMEOUT_MS = 15_000;
 
 export type ApiFieldErrors = Record<string, string[] | undefined>;
 
@@ -43,10 +44,15 @@ const GENERIC_ERROR: ApiErrorBody = {
 
 async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new DOMException('Request timeout', 'TimeoutError'));
+  }, API_REQUEST_TIMEOUT_MS);
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       credentials: 'include',
       ...init,
+      signal: controller.signal,
       headers: {
         // FormData bodies must let the browser set the multipart boundary.
         ...(init?.body && !(init.body instanceof FormData)
@@ -55,11 +61,21 @@ async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
         ...init?.headers,
       },
     });
-  } catch {
+  } catch (error) {
+    if (controller.signal.aborted
+      && controller.signal.reason instanceof DOMException
+      && controller.signal.reason.name === 'TimeoutError') {
+      throw new ApiError(0, {
+        code: 'REQUEST_TIMEOUT',
+        message: 'انتهت مهلة الاتصال بالخادم. تحقق من النتيجة ثم أعد المحاولة بأمان.',
+      });
+    }
     throw new ApiError(0, {
       code: 'NETWORK_ERROR',
       message: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.',
     });
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {

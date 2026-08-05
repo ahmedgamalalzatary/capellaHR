@@ -2,6 +2,8 @@ import {
   clientIdParamsSchema,
   clientVisitHistoryQuerySchema,
   completeSaleSchema,
+  invoiceHistoryQuerySchema,
+  invoiceParamsSchema,
   quoteSaleInputSchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Response } from 'express';
@@ -59,7 +61,7 @@ const handleError = (error: unknown, response: Response, next: NextFunction) => 
     return;
   }
   if (error instanceof SaleError) {
-    const status = error.code === 'CLIENT_NOT_FOUND'
+    const status = error.code === 'CLIENT_NOT_FOUND' || error.code === 'INVOICE_NOT_FOUND'
       ? 404
       : error.code === 'SALE_VALIDATION_FAILED'
         ? 400
@@ -106,6 +108,34 @@ export const createErpSalesRouter = (service: SaleService) => {
           totalPages: Math.ceil(result.total / query.pageSize),
         },
       });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.get('/', async (request, response, next) => {
+    try {
+      const query = invoiceHistoryQuerySchema.parse(request.query);
+      const result = await service.listInvoices(actorFrom(response), query);
+      response.json({
+        data: result.items,
+        meta: {
+          page: query.page,
+          pageSize: query.pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.pageSize),
+        },
+      });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.get('/:invoiceId', async (request, response, next) => {
+    try {
+      const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
+      const { branchId } = invoiceHistoryQuerySchema.pick({ branchId: true }).parse(request.query);
+      response.json({ data: await service.getInvoice(actorFrom(response), invoiceId, branchId) });
     } catch (error) {
       handleError(error, response, next);
     }

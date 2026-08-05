@@ -3,6 +3,8 @@ import type {
   ClientVisitSummary,
   CompleteSaleInput,
   InvoiceDto,
+  InvoiceHistoryItem,
+  InvoiceHistoryQuery,
   QuoteSaleInput,
   SaleQuote,
 } from '@capella/contracts';
@@ -31,4 +33,12 @@ export const listClientVisits = (
   query: ClientVisitHistoryQuery,
 ) => api.getPage<ClientVisitSummary>(
   `/erp/sales/clients/${encodeURIComponent(String(clientId))}/visits${queryString(query)}`,
+);
+
+export const listInvoices = (query: InvoiceHistoryQuery) => api.getPage<InvoiceHistoryItem>(
+  `/erp/sales${queryString(query)}`,
+);
+
+export const getInvoice = (invoiceId: number, branchId?: number) => api.get<InvoiceDto>(
+  `/erp/sales/${encodeURIComponent(String(invoiceId))}${queryString({ branchId })}`,
 );

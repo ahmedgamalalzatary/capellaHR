@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { ErpAssignmentError } from '../../src/modules/erp/assignment/index.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
+import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 
 const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
@@ -171,6 +172,17 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string) => ({
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('allocates unique gap-safe daily invoice sequences under concurrency', async () => {
+    const store = createDrizzleInvoiceSequenceStore(database);
+    const allocatedAt = new Date('2026-08-04T09:00:00.000Z');
+    const values = await Promise.all(Array.from(
+      { length: 20 },
+      () => store.allocate('2026-08-04', allocatedAt),
+    ));
+    expect([...values].sort((left, right) => left - right))
+      .toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
+  });
+
   it('writes a complete service sale with snapshots, override commission, payment, and audit', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -242,6 +254,26 @@ describe('ERP sale repository MySQL integration', () => {
       .toHaveLength(0);
   });
 
+  it('lists and hydrates only stored invoices from the requested branch', async () => {
+    const first = await fixture();
+    const second = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const stored = await repository.complete(operation(first, crypto.randomUUID()));
+    await repository.complete(operation(second, crypto.randomUUID()));
+
+    await expect(repository.listInvoices(first.branchId, { page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({
+        total: 1,
+        items: [{
+          id: stored.id,
+          client: { id: first.clientId },
+          assignedEmployee: { id: first.employeeId },
+        }],
+      });
+    await expect(repository.findInvoiceById(first.branchId, stored.id)).resolves.toEqual(stored);
+    await expect(repository.findInvoiceById(second.branchId, stored.id)).resolves.toBeNull();
+  });
+
   it('rejects a sale when the acting Cashier account was disabled before the transaction', async () => {
     const data = await fixture();
     await database.update(accounts).set({ active: false }).where(eq(accounts.id, data.accountId));
@@ -304,6 +336,19 @@ describe('ERP sale repository MySQL integration', () => {
       .where(eq(invoices.idempotencyKey, request.input.idempotencyKey))).toHaveLength(1);
   });
 
+  it('completes a concurrent counter burst without losing or duplicating service sales', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const requests = Array.from({ length: 10 }, (_, index) => ({
+      ...operation(data, crypto.randomUUID()),
+      invoiceNumber: `INV-2026.08.03-14.40-${data.branchId * 100 + index + 1}`,
+    }));
+    const results = await Promise.all(requests.map((request) => repository.complete(request)));
+    expect(new Set(results.map(({ id }) => id)).size).toBe(10);
+    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
+      .toHaveLength(10);
+  });
+
   it('maps an invoice-number collision without a matching idempotency key to a conflict', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -312,5 +357,32 @@ describe('ERP sale repository MySQL integration', () => {
 
     await expect(repository.complete(operation(data, crypto.randomUUID())))
       .rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+  });
+
+  it.each([
+    ['invoice', 'BEFORE INSERT', 'erp_invoices'],
+    ['line', 'BEFORE INSERT', 'erp_invoice_lines'],
+    ['commission', 'BEFORE INSERT', 'erp_commission_ledger_entries'],
+    ['payment', 'BEFORE INSERT', 'erp_invoice_payments'],
+    ['completion', 'BEFORE UPDATE', 'erp_invoices'],
+    ['audit', 'BEFORE INSERT', 'audit_events'],
+  ] as const)('rolls back the complete aggregate when %s persistence fails', async (
+    phase,
+    timing,
+    table,
+  ) => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const trigger = `erp12_fail_${phase}`;
+    await database.execute(sql.raw(
+      `CREATE TRIGGER \`${trigger}\` ${timing} ON \`${table}\` FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced ERP 12 rollback'`,
+    ));
+    try {
+      await expect(repository.complete(operation(data, crypto.randomUUID()))).rejects.toBeDefined();
+      expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
+        .toHaveLength(0);
+    } finally {
+      await database.execute(sql.raw(`DROP TRIGGER IF EXISTS \`${trigger}\``));
+    }
   });
 });

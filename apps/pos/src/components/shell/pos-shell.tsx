@@ -19,6 +19,7 @@ type NavigationItem = { href: string; label: string; adminOnly?: boolean; cashie
 const navigation: NavigationItem[] = [
   { href: '/', label: 'الوردية' },
   { href: '/sales', label: 'بيع جديد' },
+  { href: '/invoices', label: 'الفواتير' },
   { href: '/clients', label: 'العملاء' },
   { href: '/services', label: 'الخدمات', cashierOnly: true },
   { href: '/catalog', label: 'الكتالوج', adminOnly: true },

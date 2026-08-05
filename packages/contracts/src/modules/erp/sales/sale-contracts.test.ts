@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 import {
   completeSaleSchema,
   invoiceSchema,
+  invoiceHistoryItemSchema,
+  invoiceHistoryQuerySchema,
+  invoiceParamsSchema,
   invoiceTotalsSchema,
   paymentBreakdownSchema,
   paymentMethodSchema,
@@ -184,6 +187,9 @@ describe('ERP complete-sale contracts', () => {
       expect(saleErrorSchema.parse(value)).toEqual(value);
     }
     expect(saleErrorSchema.safeParse({ code: 'SQL_FAILURE', message: 'secret' }).success).toBe(false);
+    expect(saleErrorSchema.parse({
+      code: 'INVOICE_NOT_FOUND', message: 'الفاتورة غير موجودة',
+    }).code).toBe('INVOICE_NOT_FOUND');
   });
 
   it('publishes a service-only quote request and authoritative quote response', () => {
@@ -246,6 +252,25 @@ describe('ERP complete-sale contracts', () => {
       invoiceNumber: 'INV-2026.08.03-14.35-17',
       status: 'completed',
       total: '185.00',
+      assignedEmployee: { id: 8, name: 'سارة علي' },
+      soldAt: '2026-08-03T11:35:00.000Z',
+    }).success).toBe(true);
+  });
+
+  it('publishes branch-scoped paged invoice history and detail parameters', () => {
+    expect(invoiceHistoryQuerySchema.parse({ page: '2', pageSize: '10', branchId: '3' }))
+      .toEqual({ page: 2, pageSize: 10, branchId: 3 });
+    expect(invoiceParamsSchema.parse({ invoiceId: '44' })).toEqual({ invoiceId: 44 });
+    expect(invoiceParamsSchema.safeParse({ invoiceId: '0' }).success).toBe(false);
+  });
+
+  it('publishes receipt-safe stored invoice history summaries', () => {
+    expect(invoiceHistoryItemSchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      client: { id: 5, name: 'منى أحمد' },
       assignedEmployee: { id: 8, name: 'سارة علي' },
       soldAt: '2026-08-03T11:35:00.000Z',
     }).success).toBe(true);

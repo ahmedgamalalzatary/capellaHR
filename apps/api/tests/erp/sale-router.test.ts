@@ -11,10 +11,14 @@ const setup = (overrides: Partial<SaleService> = {}) => {
   const quote = vi.fn().mockResolvedValue({ lines: [], totals: {} });
   const complete = vi.fn().mockResolvedValue({ id: 44 });
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
+  const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
+  const getInvoice = vi.fn().mockResolvedValue({ id: 44 });
   const service = {
     quote,
     complete,
     listClientVisits,
+    listInvoices,
+    getInvoice,
     ...overrides,
   };
   const app = express();
@@ -28,7 +32,7 @@ const setup = (overrides: Partial<SaleService> = {}) => {
     void _next;
     response.status(500).json({ error: { code: 'UNEXPECTED' } });
   });
-  return { app, quote, complete, listClientVisits };
+  return { app, quote, complete, listClientVisits, listInvoices, getInvoice };
 };
 
 describe('ERP sales router', () => {
@@ -68,6 +72,31 @@ describe('ERP sales router', () => {
     expect(response.status).toBe(200);
     expect(listClientVisits).toHaveBeenCalledWith(actor, 5, { page: 2, pageSize: 10 });
     expect(response.body.meta).toEqual({ page: 2, pageSize: 10, total: 0, totalPages: 0 });
+  });
+
+  it('returns paged invoice history and one stored receipt detail', async () => {
+    const { app, listInvoices, getInvoice } = setup();
+    const history = await request(app).get('/erp/sales?page=2&pageSize=10&branchId=3');
+    expect(history.status).toBe(200);
+    expect(listInvoices).toHaveBeenCalledWith(actor, { page: 2, pageSize: 10, branchId: 3 });
+    expect(history.body.meta).toEqual({ page: 2, pageSize: 10, total: 0, totalPages: 0 });
+
+    const detail = await request(app).get('/erp/sales/44?branchId=3');
+    expect(detail.status).toBe(200);
+    expect(detail.body.data).toEqual({ id: 44 });
+    expect(getInvoice).toHaveBeenCalledWith(actor, 44, 3);
+  });
+
+  it('maps missing and invalid invoice detail requests safely', async () => {
+    const missing = await request(setup({
+      getInvoice: vi.fn().mockRejectedValue(new SaleError('INVOICE_NOT_FOUND')),
+    }).app).get('/erp/sales/44');
+    expect(missing.status).toBe(404);
+    expect(missing.body.error.code).toBe('INVOICE_NOT_FOUND');
+
+    const invalid = await request(setup().app).get('/erp/sales/not-an-id');
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error.code).toBe('SALE_VALIDATION_FAILED');
   });
 
   it('maps validation and stable sale failures without exposing internals', async () => {

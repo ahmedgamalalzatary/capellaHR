@@ -359,6 +359,32 @@ export const clientVisitHistoryQuerySchema = z.object({
   branchId: coercedMysqlIntSchema.optional(),
 }).strict();
 
+export const invoiceHistoryQuerySchema = z.object({
+  page: paginationPageSchema.default(1),
+  pageSize: paginationPageSizeSchema.default(20),
+  branchId: coercedMysqlIntSchema.optional(),
+}).strict();
+
+export const invoiceParamsSchema = z.object({
+  invoiceId: coercedMysqlIntSchema,
+}).strict();
+
+export const invoiceHistoryItemSchema = z.object({
+  id: positiveMysqlIntSchema,
+  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
+  total: positiveMoneySchema,
+  client: z.object({
+    id: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255),
+  }).strict(),
+  assignedEmployee: z.object({
+    id: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255),
+  }).strict(),
+  soldAt: isoDateTimeSchema,
+}).strict();
+
 export const clientVisitSummarySchema = z.object({
   id: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
@@ -381,6 +407,7 @@ export const saleErrorSchema = z.object({
     'PRODUCT_UNAVAILABLE',
     'PAYMENT_TOTAL_MISMATCH',
     'IDEMPOTENCY_CONFLICT',
+    'INVOICE_NOT_FOUND',
   ]),
   message: z.string().min(1),
   field: z.string().min(1).optional(),
@@ -454,3 +481,5 @@ export type InvoiceDto = z.infer<typeof invoiceSchema>;
 export type SaleError = z.infer<typeof saleErrorSchema>;
 export type ClientVisitHistoryQuery = z.infer<typeof clientVisitHistoryQuerySchema>;
 export type ClientVisitSummary = z.infer<typeof clientVisitSummarySchema>;
+export type InvoiceHistoryQuery = z.infer<typeof invoiceHistoryQuerySchema>;
+export type InvoiceHistoryItem = z.infer<typeof invoiceHistoryItemSchema>;

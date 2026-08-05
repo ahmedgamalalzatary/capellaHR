@@ -8,6 +8,7 @@ import type {
 } from '@capella/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Minus, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -329,6 +330,7 @@ function SaleWorkspace({
   const [completed, setCompleted] = useState<InvoiceDto | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const didReplayOnMount = useRef(false);
+  const submitting = useRef(false);
   const hasDraftProgress = Boolean(
     client || employee || lines.length > 0 || discountValue || taxValue || paymentsTouched,
   );
@@ -454,6 +456,7 @@ function SaleWorkspace({
   const completion = useMutation({
     mutationFn: completeSale,
     onSuccess: (invoice, input) => {
+      submitting.current = false;
       removePendingRequest(input);
       setPendingSale(null);
       setAmbiguous(false);
@@ -463,6 +466,7 @@ function SaleWorkspace({
       setCompleted(invoice);
     },
     onError: (error, input) => {
+      submitting.current = false;
       setConfirming(false);
       const isAuthoritativeRejection = error instanceof ApiError
         && error.status >= 400 && error.status < 500;
@@ -520,13 +524,15 @@ function SaleWorkspace({
   };
 
   const submit = () => {
-    if (pendingSale) return;
+    if (pendingSale || submitting.current) return;
     const input = makeInput();
     if (!input) return;
+    submitting.current = true;
     const stored = { owner: workspaceOwner, input };
     try {
       localStorage.setItem(pendingKey(input.idempotencyKey), JSON.stringify(stored));
     } catch {
+      submitting.current = false;
       setConfirming(false);
       setStorageError(true);
       return;
@@ -558,6 +564,7 @@ function SaleWorkspace({
         <CardContent className="space-y-4 text-center">
           <p className="font-mono text-lg font-semibold" dir="ltr">{completed.invoiceNumber}</p>
           <p>{completed.totals.total} ج.م</p>
+          <Link className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper" href={`/invoices/${completed.id}${branchId ? `?branchId=${branchId}` : ''}`}>عرض وطباعة الإيصال</Link>
           <Button onClick={reset}><RotateCcw className="size-4" />بيع جديد</Button>
         </CardContent>
       </Card>

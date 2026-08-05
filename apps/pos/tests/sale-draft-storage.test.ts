@@ -173,6 +173,20 @@ describe('sale draft storage', () => {
     expect(sessionStorage.getItem(key)).toBeNull();
   });
 
+  it('falls back to and migrates a legacy draft when the active selection is stale', () => {
+    const legacyKey = saleDraftStorageKey(owner);
+    sessionStorage.setItem(legacyKey, JSON.stringify({ savedAt: Date.now(), draft }));
+    sessionStorage.setItem(`${legacyKey}:active`, 'missing-draft');
+
+    expect(readSaleDraft(owner)).toEqual({
+      ...draft,
+      client: { id: draft.client!.id, branchId: draft.client!.branchId },
+    });
+    expect(sessionStorage.getItem(legacyKey)).toBeNull();
+    expect(sessionStorage.getItem(`${legacyKey}:active`)).toBe(draft.idempotencyKey);
+    expect(sessionStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).not.toBeNull();
+  });
+
   it('fails closed for malformed or unavailable browser storage', () => {
     const malformedKey = saleDraftStorageKey(owner);
     sessionStorage.setItem(malformedKey, '{bad json');

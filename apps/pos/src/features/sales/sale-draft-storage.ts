@@ -209,9 +209,9 @@ export const readSaleDraft = (owner: SaleDraftOwner): StoredSaleDraft | null => 
       const stored = sessionStorage.getItem(saleDraftStorageKey(owner, activeId));
       if (!stored) {
         sessionStorage.removeItem(activeDraftKey(owner));
-        return null;
+      } else {
+        return decodeStoredDraft(stored)?.draft ?? null;
       }
-      return decodeStoredDraft(stored)?.draft ?? null;
     }
 
     const legacy = sessionStorage.getItem(saleDraftStorageKey(owner));

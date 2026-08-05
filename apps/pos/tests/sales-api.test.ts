@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), getPage: vi.fn() }));
+const mocks = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn(), getPage: vi.fn() }));
 
 vi.mock('../src/lib/api/client', () => ({ api: mocks }));
 
 import {
   completeSale,
+  getInvoice,
+  listInvoices,
   listClientVisits,
   quoteSale,
 } from '../src/features/sales/api/sales-api';
@@ -13,7 +15,17 @@ import {
 describe('sales API', () => {
   beforeEach(() => {
     mocks.post.mockReset().mockResolvedValue({});
+    mocks.get.mockReset().mockResolvedValue({});
     mocks.getPage.mockReset().mockResolvedValue({ items: [], meta: {} });
+  });
+
+  it('serializes stored invoice history and detail reads without posting a sale', async () => {
+    await listInvoices({ branchId: 2, page: 3, pageSize: 10 });
+    expect(mocks.getPage).toHaveBeenCalledWith('/erp/sales?branchId=2&page=3&pageSize=10');
+
+    await getInvoice(44, 2);
+    expect(mocks.get).toHaveBeenCalledWith('/erp/sales/44?branchId=2');
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 
   it('posts quote and completion requests to the sales aggregate endpoints', async () => {

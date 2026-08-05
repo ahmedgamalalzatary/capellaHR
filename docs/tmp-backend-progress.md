@@ -517,14 +517,9 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–9
-                                       ┌──┴──┐
-                              NEXT: ERP 10  ERP 11
-                                      UX    Receipts
-                                       └──┬──┘
-                                      ERP 12 Hardening
+DONE: ERP 1–12
                                           │
-                                      ERP 13 Products/stock
+                              NEXT: ERP 13 Products/stock
                          ┌────────────────┼───────────────┐
                       ERP 14           ERP 16          ERP 18
                  Suppliers/purchases  Refunds/voids    Offline
@@ -545,13 +540,12 @@ ERP 6 ───────────────> ERP 15          ERP 17
 
 Safe parallel waves:
 
-1. **Complete:** ERP 9 delivered the atomic service-sale vertical slice.
-2. **Current parallel wave:** ERP 10 and 11.
-4. **Barrier:** ERP 12, then ERP 13.
-5. **Parallel:** ERP 14, 15, 16, and 18.
-6. ERP 17 starts after ERP 16.
-7. ERP 19 waits for ERP 14–17.
-8. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
+1. **Complete:** ERP 1–12, with ERP 11 physical-printer validation deferred until production hardware is available.
+2. **Current barrier:** ERP 13.
+3. **Parallel after ERP 13:** ERP 14, 15, 16, and 18.
+4. ERP 17 starts after ERP 16.
+5. ERP 19 waits for ERP 14–17.
+6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
 
 ## ERP 4. Cashier sessions
 
@@ -677,31 +671,35 @@ Complete. `POST /api/v1/erp/sales/quote` provides authoritative quotes, `POST /a
 
 Complete. The responsive Arabic/RTL shell now joins the delivered account-aware destinations, active-route state, and server-validated Cashier-session status. An owned open session links directly into the sale workspace. In-progress drafts are isolated by actor, branch, and Cashier session, survive refreshes and protected-route failures, and are removed after a completed sale. Component coverage exercises the integrated navigation, session handoff, draft recovery, accessible failure boundary, and sale lifecycle; the Playwright browser harness completes the Cashier login-to-invoice workflow at wide and compact POS viewports with controlled HTTP fixtures. The separate browser-to-authenticated-HTTP-to-MySQL boundary remains explicitly tracked under ERP 9 and is not claimed here.
 
-## ERP 11. Receipts
+## ERP 11. Receipts — Software complete; hardware validation deferred
 
-- [ ] Add authorized stored-invoice history/detail API operations and contracts for receipt display and reprint.
-- [ ] Build the stored-invoice receipt view.
-- [ ] Add Arabic 80mm thermal browser-print CSS as the default mechanism.
-- [ ] Print only an already-stored invoice and never resubmit a sale to print.
-- [ ] Support reprinting from invoice history.
-- [ ] Include invoice number, Cairo date/time, client, assigned employee, lines, discount, tax, payments, total, and authorized-by account.
+- [x] Add authorized stored-invoice history/detail API operations and contracts for receipt display and reprint.
+- [x] Build the stored-invoice receipt view.
+- [x] Add Arabic 80mm thermal browser-print CSS as the default mechanism.
+- [x] Print only an already-stored invoice and never resubmit a sale to print.
+- [x] Support reprinting from invoice history.
+- [x] Include invoice number, Cairo date/time, client, assigned employee, lines, discount, tax, payments, total, and authorized-by account.
 - [ ] Test output with the selected production printer hardware.
 - [ ] Add a local print agent only if the selected hardware cannot be supported reliably by browser printing.
-- [ ] Add receipt loading, unavailable-printer, print failure, reprint, and authorization states to the POS invoice-history workflow.
-- [ ] Add component and end-to-end coverage proving printing and reprinting use stored invoice facts and never resubmit a sale.
+- [x] Add receipt loading, unavailable-printer, print failure, reprint, and authorization states to the POS invoice-history workflow.
+- [x] Add component and end-to-end coverage proving printing and reprinting use stored invoice facts and never resubmit a sale.
 
-## ERP 12. Vertical-slice hardening
+Software complete. The authorized branch-scoped history/detail API hydrates immutable stored invoice facts for the Arabic/RTL receipt and reprint workflow. Browser printing targets 80mm thermal output and never writes a sale. Component tests cover loading and operational errors; the repeated wide/compact Playwright matrix proves sale → stored receipt → print → history → reprint, safe read-failure recovery with request references, and zero duplicate sale writes. Physical output validation and the conditional local-agent decision are deferred because the selected production printer is unavailable as of 2026-08-04.
 
-- [ ] Lock and verify invoice-number allocation under concurrency.
-- [ ] Verify idempotency under double-clicks, retries, timeouts, and ambiguous responses.
-- [ ] Verify full transaction rollback at every persistence failure point.
-- [ ] Add stable ERP error codes and safe unexpected-error handling.
-- [ ] Add request/correlation IDs to ERP API, audit, jobs, and errors.
-- [ ] Add branch-isolation and horizontal-access tests for every completed endpoint.
-- [ ] Add security tests for cookies, sessions, roles, request validation, and secret leakage.
-- [ ] Run load/concurrency tests for the completed service-sale path.
-- [ ] Harden POS behavior for stable ERP errors, correlation IDs, timeouts, ambiguous submissions, expired sessions, and access denial.
-- [ ] Run browser-level failure-injection and concurrency scenarios for all completed workflows.
+## ERP 12. Vertical-slice hardening — Complete
+
+- [x] Lock and verify invoice-number allocation under concurrency.
+- [x] Verify idempotency under double-clicks, retries, timeouts, and ambiguous responses.
+- [x] Verify full transaction rollback at every persistence failure point.
+- [x] Add stable ERP error codes and safe unexpected-error handling.
+- [x] Add request/correlation IDs to ERP API, audit, jobs, and errors.
+- [x] Add branch-isolation and horizontal-access tests for every completed endpoint.
+- [x] Add security tests for cookies, sessions, roles, request validation, and secret leakage.
+- [x] Run load/concurrency tests for the completed service-sale path.
+- [x] Harden POS behavior for stable ERP errors, correlation IDs, timeouts, ambiguous submissions, expired sessions, and access denial.
+- [x] Run browser-level failure-injection and concurrency scenarios for all completed workflows.
+
+Complete. MySQL integration coverage verifies 20 concurrent daily sequence allocations, concurrent idempotent settlement, a 10-sale burst without loss or duplication, branch isolation, and transaction rollback at invoice, line, commission, payment, completion, and audit failure points. API coverage locks stable safe errors, role/validation boundaries, request-ID propagation, and secret non-leakage. POS coverage locks timeouts and ambiguous submission recovery, while browser scenarios exercise same-tick duplicate confirmation, the completed sale/receipt workflow, and injected receipt-read recovery at both supported viewports.
 
 ## ERP 13. Products and stock
 
@@ -881,7 +879,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–9 are delivered, including the complete backend and Arabic/RTL POS atomic service-sale vertical slice, client visit-history reads, and in-transaction attendance revalidation. Next: ERP 10 POS integration/operational UX and ERP 11 receipts may proceed in parallel.
+ERP 1–12 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. Next: begin ERP 13 products and stock.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

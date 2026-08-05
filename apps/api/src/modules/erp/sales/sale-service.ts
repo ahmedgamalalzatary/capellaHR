@@ -3,6 +3,8 @@ import type {
   ClientVisitSummary,
   CompleteSaleInput,
   InvoiceDto,
+  InvoiceHistoryItem,
+  InvoiceHistoryQuery,
   QuoteSaleInput,
   SaleQuote,
 } from '@capella/contracts';
@@ -40,6 +42,11 @@ export interface SaleRepository {
     clientId: number,
     query: ClientVisitHistoryQuery,
   ): Promise<{ items: ClientVisitSummary[]; total: number }>;
+  listInvoices(
+    branchId: number,
+    query: InvoiceHistoryQuery,
+  ): Promise<{ items: InvoiceHistoryItem[]; total: number }>;
+  findInvoiceById(branchId: number, invoiceId: number): Promise<InvoiceDto | null>;
 }
 
 type SaleErrorCode =
@@ -50,7 +57,8 @@ type SaleErrorCode =
   | 'SERVICE_UNAVAILABLE'
   | 'PRODUCT_UNAVAILABLE'
   | 'PAYMENT_TOTAL_MISMATCH'
-  | 'IDEMPOTENCY_CONFLICT';
+  | 'IDEMPOTENCY_CONFLICT'
+  | 'INVOICE_NOT_FOUND';
 
 const messages: Record<SaleErrorCode, string> = {
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
@@ -61,6 +69,7 @@ const messages: Record<SaleErrorCode, string> = {
   PRODUCT_UNAVAILABLE: 'بيع المنتجات غير متاح في هذه المرحلة',
   PAYMENT_TOTAL_MISMATCH: 'مجموع المدفوعات غير صحيح',
   IDEMPOTENCY_CONFLICT: 'مفتاح العملية مستخدم لطلب مختلف',
+  INVOICE_NOT_FOUND: 'الفاتورة غير موجودة',
 };
 
 export class SaleError extends Error {
@@ -146,6 +155,22 @@ export const createSaleService = (dependencies: {
     ) {
       const { branchId } = await resolveBranchContext(actor, query.branchId);
       return repository.listClientVisits(branchId, clientId, query);
+    },
+
+    async listInvoices(actor: ErpAccountIdentity, query: InvoiceHistoryQuery) {
+      const { branchId } = await resolveBranchContext(actor, query.branchId);
+      return repository.listInvoices(branchId, query);
+    },
+
+    async getInvoice(
+      actor: ErpAccountIdentity,
+      invoiceId: number,
+      requestedBranchId?: number,
+    ) {
+      const { branchId } = await resolveBranchContext(actor, requestedBranchId);
+      const invoice = await repository.findInvoiceById(branchId, invoiceId);
+      if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
+      return invoice;
     },
   };
 };

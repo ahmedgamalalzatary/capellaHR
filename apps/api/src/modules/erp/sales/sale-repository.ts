@@ -464,6 +464,46 @@ export const createDrizzleSaleRepository = (
         total,
       };
     },
+
+    async listInvoices(branchId, query) {
+      const where = and(eq(invoices.branchId, branchId), ne(invoices.status, 'draft'));
+      const [{ total = 0 } = { total: 0 }] = await database.select({ total: count() })
+        .from(invoices).where(where);
+      const rows = await database.select({
+        id: invoices.id,
+        invoiceNumber: invoices.invoiceNumber,
+        status: invoices.status,
+        total: invoices.total,
+        clientId: invoices.clientId,
+        clientName: invoices.clientNameSnapshot,
+        employeeId: invoices.assignedEmployeeId,
+        employeeName: invoices.employeeNameSnapshot,
+        soldAt: invoices.soldAt,
+      }).from(invoices).where(where).orderBy(desc(invoices.soldAt), desc(invoices.id))
+        .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          invoiceNumber: row.invoiceNumber,
+          status: row.status as Exclude<typeof row.status, 'draft'>,
+          total: row.total,
+          client: { id: row.clientId, name: row.clientName },
+          assignedEmployee: { id: row.employeeId, name: row.employeeName },
+          soldAt: asIso(row.soldAt),
+        })),
+        total,
+      };
+    },
+
+    async findInvoiceById(branchId, invoiceId) {
+      const row = (await database.select({ id: invoices.id }).from(invoices).where(and(
+        eq(invoices.id, invoiceId),
+        eq(invoices.branchId, branchId),
+        ne(invoices.status, 'draft'),
+      )).limit(1))[0];
+      return row ? hydrateInvoice(database, row.id) : null;
+    },
+
   };
   return repository;
 };
