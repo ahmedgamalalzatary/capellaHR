@@ -400,7 +400,7 @@ describe('ERP service-sale view', () => {
 
     renderView();
 
-    expect(await screen.findByRole('heading', { name: 'بيع خدمة' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'بيع جديد' })).toBeDefined();
     expect(screen.queryByText(/بيع معلق.*حساب أو وردية أخرى/)).toBeNull();
     expect(mocks.completeSale).not.toHaveBeenCalled();
     await waitFor(() => expect(localStorage.getItem('capella:pending-sale')).toBeNull());
@@ -469,7 +469,7 @@ describe('ERP service-sale view', () => {
     expect(await screen.findByText('تعذر تحميل وردية الكاشير')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
 
-    expect(await screen.findByRole('heading', { name: 'بيع خدمة' })).toBeDefined();
+    expect(await screen.findByRole('heading', { name: 'بيع جديد' })).toBeDefined();
     expect(mocks.getCurrentSession).toHaveBeenCalledTimes(2);
   });
 

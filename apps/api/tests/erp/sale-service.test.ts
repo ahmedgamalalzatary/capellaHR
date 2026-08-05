@@ -57,6 +57,28 @@ const quote = {
   },
 } satisfies SaleQuote;
 
+const productInvoice = {
+  ...invoice,
+  lines: [{
+    ...invoice.lines[0]!,
+    itemType: 'product' as const,
+    sourceId: 31,
+    name: 'شامبو',
+    commissionRule: 'none' as const,
+    commissionRate: '0.00',
+    commissionAmount: '0.00',
+    productCostBasis: '60.00',
+  }],
+} satisfies InvoiceDto;
+const cashierInvoice = {
+  ...invoice,
+  lines: invoice.lines.map((line) => {
+    const safeLine = { ...line };
+    Reflect.deleteProperty(safeLine, 'productCostBasis');
+    return safeLine;
+  }),
+};
+
 const setup = (overrides: Partial<SaleRepository> = {}) => {
   const quoteRepository = vi.fn().mockResolvedValue(quote);
   const findByIdempotencyKey = vi.fn().mockResolvedValue(null);
@@ -111,12 +133,34 @@ describe('ERP sale service', () => {
     const { service, completeRepository } = setup({
       findByIdempotencyKey,
     });
-    await expect(service.complete(actor, input)).resolves.toEqual(invoice);
+    await expect(service.complete(actor, input)).resolves.toEqual(cashierInvoice);
     expect(findByIdempotencyKey).toHaveBeenCalledWith(input.idempotencyKey, {
       actingAccountId: actor.accountId,
       actingAccountRole: actor.role,
     });
     expect(completeRepository).not.toHaveBeenCalled();
+  });
+
+  it('never exposes product cost basis to a Cashier on completion or invoice detail', async () => {
+    const { service } = setup({
+      complete: vi.fn().mockResolvedValue(productInvoice),
+      findInvoiceById: vi.fn().mockResolvedValue(productInvoice),
+    });
+
+    const completed = await service.complete(actor, input);
+    const detail = await service.getInvoice(actor, productInvoice.id);
+
+    expect(completed.lines[0]).not.toHaveProperty('productCostBasis');
+    expect(detail.lines[0]).not.toHaveProperty('productCostBasis');
+  });
+
+  it('retains product cost basis for Admin invoice responses', async () => {
+    const { service } = setup({ findInvoiceById: vi.fn().mockResolvedValue(productInvoice) });
+    const admin = { role: 'admin' as const, accountId: 1 };
+
+    const detail = await service.getInvoice(admin, productInvoice.id);
+
+    expect(detail.lines[0]).toHaveProperty('productCostBasis', '60.00');
   });
 
   it('rejects reuse of an idempotency key for a different request', async () => {
@@ -175,7 +219,7 @@ describe('ERP sale service', () => {
   it('lists and reads stored invoices only through the resolved branch', async () => {
     const { service, listInvoices, findInvoiceById } = setup();
     await service.listInvoices(actor, { page: 2, pageSize: 10 });
-    await expect(service.getInvoice(actor, 44, undefined)).resolves.toEqual(invoice);
+    await expect(service.getInvoice(actor, 44, undefined)).resolves.toEqual(cashierInvoice);
 
     expect(listInvoices).toHaveBeenCalledWith(2, { page: 2, pageSize: 10 });
     expect(findInvoiceById).toHaveBeenCalledWith(2, 44);

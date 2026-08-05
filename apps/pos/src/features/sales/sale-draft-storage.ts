@@ -1,6 +1,7 @@
 import type { PaymentMethod } from '@capella/contracts';
 
 import type { ServiceListItem } from '@/features/catalog';
+import type { ProductSaleItem } from '@/features/products';
 import type { Client } from '@/features/clients';
 import type { AssignableEmployee } from '@/features/employee-assignment';
 
@@ -14,7 +15,7 @@ export type SaleDraftOwner = {
 export type SaleDraft = {
   client: Client | null;
   employee: AssignableEmployee | null;
-  lines: Array<{ service: ServiceListItem; quantity: number }>;
+  lines: Array<{ service: ServiceListItem | ProductSaleItem; quantity: number; itemType?: 'service' | 'product' }>;
   discountKind: 'percentage' | 'fixed';
   discountValue: string;
   taxKind: 'percentage' | 'fixed';
@@ -104,6 +105,7 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
     && value.lines.every((line) => isRecord(line)
       && Number.isInteger(line.quantity)
       && Number(line.quantity) > 0
+      && (line.itemType === undefined || line.itemType === 'service' || line.itemType === 'product')
       && isRecord(line.service)
       && typeof line.service.id === 'number'
       && typeof line.service.name === 'string'

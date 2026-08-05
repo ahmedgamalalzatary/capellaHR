@@ -19,7 +19,7 @@ const json = (route: Route, data: unknown, status = 200) => route.fulfill({
   body: JSON.stringify({ data }),
 });
 
-test('Cashier logs in, restores the open session, and completes a service sale', async ({ page }) => {
+test('Cashier completes a mixed sale and sees a stable last-unit stock conflict', async ({ page }) => {
   let openSession = false;
   let authenticatedSessionReads = 0;
   let completedSale: Record<string, unknown> | undefined;
@@ -46,19 +46,27 @@ test('Cashier logs in, restores the open session, and completes a service sale',
     client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
     assignedEmployee: { id: 18, employeeCode: 1018, name: 'سارة علي' },
     authorizedBy: { accountId: 8, username: 'cashier.one' },
-    lines: [{
-      id: 81, lineNumber: 1, itemType: 'service', sourceId: 21,
-      name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
-      commissionRule: 'service_default', commissionRate: '10.00',
-      commissionAmount: '20.00', productCostBasis: null,
-    }],
+    lines: [
+      {
+        id: 81, lineNumber: 1, itemType: 'service', sourceId: 21,
+        name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+        commissionRule: 'service_default', commissionRate: '10.00',
+        commissionAmount: '20.00', productCostBasis: null,
+      },
+      {
+        id: 82, lineNumber: 2, itemType: 'product', sourceId: 31,
+        name: 'شامبو', quantity: 1, unitPrice: '50.00', lineTotal: '50.00',
+        commissionRule: 'none', commissionRate: '0.00',
+        commissionAmount: '0.00', productCostBasis: '25.00',
+      },
+    ],
     discount: null,
     tax: null,
     totals: {
-      subtotal: '200.00', discountAmount: '0.00', taxAmount: '0.00',
-      total: '200.00', paymentTotal: '200.00',
+      subtotal: '250.00', discountAmount: '0.00', taxAmount: '0.00',
+      total: '250.00', paymentTotal: '250.00',
     },
-    payments: [{ method: 'cash', amount: '200.00' }],
+    payments: [{ method: 'cash', amount: '250.00' }],
     soldAt: '2026-08-04T09:35:00.000Z',
   };
 
@@ -159,23 +167,58 @@ test('Cashier logs in, restores the open session, and completes a service sale',
       });
       return;
     }
+    if (path === '/erp/products') {
+      await route.fulfill({
+        contentType: 'application/json',
+        headers: corsHeaders,
+        body: JSON.stringify({
+          data: [{
+            id: 31, branchId: 3, name: 'شامبو', description: null,
+            sellingPrice: '50.00', isActive: true, quantity: 1,
+          }],
+          meta: { page: 1, pageSize: 50, total: 1, totalPages: 1 },
+        }),
+      });
+      return;
+    }
     if (path === '/erp/assignable-employees') {
       await json(route, [{ id: 18, employeeCode: 1018, fullName: 'سارة علي', branchId: 3 }]);
       return;
     }
     if (path === '/erp/sales/quote' && request.method() === 'POST') {
+      const payload = request.postDataJSON() as {
+        lines: Array<{ itemType: 'service' | 'product'; serviceId?: number; productId?: number; quantity: number }>;
+      };
+      const lines = payload.lines.map((line) => ({
+        itemType: line.itemType,
+        sourceId: line.itemType === 'product' ? line.productId : line.serviceId,
+        name: line.itemType === 'product' ? 'شامبو' : 'صبغة شعر',
+        quantity: line.quantity,
+        unitPrice: line.itemType === 'product' ? '50.00' : '200.00',
+        lineTotal: line.itemType === 'product' ? '50.00' : '200.00',
+      }));
+      const subtotal = lines.reduce((sum, line) => sum + Number(line.lineTotal), 0).toFixed(2);
       await json(route, {
-        lines: [{ itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' }],
+        lines,
         discount: null,
         tax: null,
-        totals: { subtotal: '200.00', discountAmount: '0.00', taxAmount: '0.00', total: '200.00' },
+        totals: { subtotal, discountAmount: '0.00', taxAmount: '0.00', total: subtotal },
       });
       return;
     }
     if (path === '/erp/sales' && request.method() === 'POST') {
       completedSaleRequests += 1;
       completedSale = request.postDataJSON() as Record<string, unknown>;
-      await json(route, { id: 44, invoiceNumber: 'INV-2026.08.04-12.35-17', totals: { total: '200.00' } });
+      if (completedSaleRequests > 1) {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          headers: corsHeaders,
+          body: JSON.stringify({ error: { code: 'INSUFFICIENT_STOCK', message: 'تم بيع آخر وحدة من شامبو. حدّث السلة وحاول مرة أخرى.' } }),
+        });
+        return;
+      }
+      await json(route, { id: 44, invoiceNumber: 'INV-2026.08.04-12.35-17', totals: { total: '250.00' } });
       return;
     }
     if (path === '/erp/sales' && request.method() === 'GET') {
@@ -243,6 +286,7 @@ test('Cashier logs in, restores the open session, and completes a service sale',
   await page.getByLabel('ابحث عن العميل برقم الهاتف أو الاسم').fill('منى');
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: /صبغة شعر/ }).click();
+  await page.getByRole('button', { name: /شامبو/ }).click();
   await page.getByRole('button', { name: /سارة علي/ }).click();
   await expect(page.getByText('تم سداد الإجمالي بالكامل')).toBeVisible();
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
@@ -281,7 +325,20 @@ test('Cashier logs in, restores the open session, and completes a service sale',
     clientId: 5,
     assignedEmployeeId: 18,
     cashierSessionId: 14,
-    lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
-    payments: [{ method: 'cash', amount: '200.00' }],
+    lines: [
+      { itemType: 'service', serviceId: 21, quantity: 1 },
+      { itemType: 'product', productId: 31, quantity: 1 },
+    ],
+    payments: [{ method: 'cash', amount: '250.00' }],
   });
+
+  await page.goto('/sales');
+  await page.getByLabel('ابحث عن العميل برقم الهاتف أو الاسم').fill('منى');
+  await page.getByRole('button', { name: /منى أحمد/ }).click();
+  await page.getByRole('button', { name: /شامبو/ }).click();
+  await page.getByRole('button', { name: /سارة علي/ }).click();
+  await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
+  await page.getByRole('button', { name: 'تأكيد البيع' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'تم بيع آخر وحدة من شامبو' })).toBeVisible();
+  expect(completedSaleRequests).toBe(2);
 });

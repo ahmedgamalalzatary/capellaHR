@@ -517,9 +517,9 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–12
+DONE: ERP 1–13
                                           │
-                              NEXT: ERP 13 Products/stock
+                    NEXT ELIGIBLE: ERP 14 / ERP 15 / ERP 16 / ERP 18
                          ┌────────────────┼───────────────┐
                       ERP 14           ERP 16          ERP 18
                  Suppliers/purchases  Refunds/voids    Offline
@@ -540,9 +540,9 @@ ERP 6 ───────────────> ERP 15          ERP 17
 
 Safe parallel waves:
 
-1. **Complete:** ERP 1–12, with ERP 11 physical-printer validation deferred until production hardware is available.
-2. **Current barrier:** ERP 13.
-3. **Parallel after ERP 13:** ERP 14, 15, 16, and 18.
+1. **Complete:** ERP 1–13, with ERP 11 physical-printer validation deferred until production hardware is available.
+2. **Next eligible:** ERP 14, 15, 16, or 18; begin only the next phase explicitly selected by the user.
+3. ERP 14, 15, 16, and 18 have no remaining ERP 13 dependency.
 4. ERP 17 starts after ERP 16.
 5. ERP 19 waits for ERP 14–17.
 6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
@@ -703,23 +703,25 @@ Complete. MySQL integration coverage verifies 20 concurrent daily sequence alloc
 
 ## ERP 13. Products and stock
 
-- [ ] Add product schema with name, description, selling price, last purchase cost, low-stock threshold, and active state.
-- [ ] Add branch product-stock balances.
-- [ ] Add immutable stock movements with reason, source, quantity delta, and acting account.
-- [ ] Add product administration endpoints and POS product search.
-- [ ] Add product lines to invoices and snapshot their last-purchase-cost basis.
-- [ ] Decrease product stock inside the sale transaction.
-- [ ] Lock stock rows so concurrent sales of the last unit cannot create negative stock.
-- [ ] Reject negative stock without an override.
-- [ ] Add low-stock queries and alerts.
-- [ ] Add stocktaking adjustments for count correction, wastage, and damage.
-- [ ] Exclude products from commission calculations.
-- [ ] Add stock integrity, concurrency, adjustment, audit, branch, and MySQL tests.
-- [ ] Add Arabic/RTL POS Admin product management, branch stock balances, low-stock alerts, movement history, and stocktaking adjustment workflows.
-- [ ] Add POS product search, cart lines, availability feedback, and stable out-of-stock conflict handling.
-- [ ] Add component and end-to-end coverage for product administration, stock adjustment, product sale, and last-unit concurrency behavior.
+- [x] Add product schema with name, description, selling price, last purchase cost, low-stock threshold, and active state.
+- [x] Add branch product-stock balances.
+- [x] Add immutable stock movements with reason, source, quantity delta, and acting account.
+- [x] Add product administration endpoints and POS product search.
+- [x] Add product lines to invoices and snapshot their last-purchase-cost basis.
+- [x] Decrease product stock inside the sale transaction.
+- [x] Lock stock rows so concurrent sales of the last unit cannot create negative stock.
+- [x] Reject negative stock without an override.
+- [x] Add low-stock queries and alerts.
+- [x] Add stocktaking adjustments for count correction, wastage, and damage.
+- [x] Exclude products from commission calculations.
+- [x] Add stock integrity, concurrency, adjustment, audit, branch, and MySQL tests.
+- [x] Add Arabic/RTL POS Admin product management, branch stock balances, low-stock alerts, movement history, and stocktaking adjustment workflows.
+- [x] Add POS product search, cart lines, availability feedback, and stable out-of-stock conflict handling.
+- [x] Add component and end-to-end coverage for product administration, stock adjustment, product sale, and last-unit concurrency behavior.
 
 No product variants, multiple units, consumable tracking, negative-stock override, or inter-branch transfers are included.
+
+Complete. Product balances are branch-scoped and non-negative, movements are append-only with database-enforced reason/source/direction semantics, and product sale settlement locks balances and writes invoice, cost snapshot, stock decrement, and movement atomically. Cashier responses expose selling facts and availability but redact purchase cost and invoice cost basis. Admin product, low-stock, movement-history, and stocktaking workflows are covered alongside real-MySQL rollback and last-unit concurrency tests and wide/compact browser scenarios.
 
 ## ERP 14. Suppliers and purchases
 
@@ -879,7 +881,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–12 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. Next: begin ERP 13 products and stock.
+ERP 1–13 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. Await an explicit choice before beginning the next eligible phase: ERP 14, 15, 16, or 18.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

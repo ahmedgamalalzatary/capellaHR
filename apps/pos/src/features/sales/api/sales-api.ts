@@ -2,7 +2,7 @@ import type {
   ClientVisitHistoryQuery,
   ClientVisitSummary,
   CompleteSaleInput,
-  InvoiceDto,
+  PublicInvoiceDto,
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
@@ -25,7 +25,7 @@ export const quoteSale = (input: QuoteSaleInput) => (
 );
 
 export const completeSale = (input: CompleteSaleInput) => (
-  api.post<InvoiceDto>('/erp/sales', input)
+  api.post<PublicInvoiceDto>('/erp/sales', input)
 );
 
 export const listClientVisits = (
@@ -39,6 +39,6 @@ export const listInvoices = (query: InvoiceHistoryQuery) => api.getPage<InvoiceH
   `/erp/sales${queryString(query)}`,
 );
 
-export const getInvoice = (invoiceId: number, branchId?: number) => api.get<InvoiceDto>(
+export const getInvoice = (invoiceId: number, branchId?: number) => api.get<PublicInvoiceDto>(
   `/erp/sales/${encodeURIComponent(String(invoiceId))}${queryString({ branchId })}`,
 );

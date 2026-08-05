@@ -1,6 +1,6 @@
 'use client';
 
-import type { InvoiceDto, PaymentMethod } from '@capella/contracts';
+import type { PaymentMethod, PublicInvoiceDto } from '@capella/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { Printer, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
@@ -40,7 +40,7 @@ const responseMessage = (error: unknown) => {
     : 'تعذر تحميل الفاتورة.';
 };
 
-function Receipt({ invoice }: { invoice: InvoiceDto }) {
+function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
   return (
     <article data-receipt className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink">
       <header className="border-b border-dashed border-ink pb-3 text-center">

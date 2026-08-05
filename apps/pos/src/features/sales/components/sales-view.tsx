@@ -2,7 +2,7 @@
 
 import type {
   CompleteSaleInput,
-  InvoiceDto,
+  PublicInvoiceDto,
   PaymentMethod,
   QuoteSaleInput,
 } from '@capella/contracts';
@@ -30,6 +30,7 @@ import {
 } from '@/features/cashier-sessions';
 import { ClientPicker, type Client } from '@/features/clients';
 import { ServicePicker, type ServiceListItem } from '@/features/catalog';
+import { ProductPicker, type ProductSaleItem } from '@/features/products';
 import {
   PresentEmployeePicker,
   type AssignableEmployee,
@@ -56,7 +57,7 @@ const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
   { method: 'vodafone_cash', label: 'فودافون كاش' },
 ];
 
-type Line = { service: ServiceListItem; quantity: number };
+type Line = { service: ServiceListItem | ProductSaleItem; quantity: number; itemType?: 'service' | 'product' };
 type AdjustmentKind = 'percentage' | 'fixed';
 /** Admin is a database-enforced singleton and has no public account id. */
 type PendingSaleOwner = SaleDraftOwner;
@@ -180,7 +181,7 @@ export function SalesView() {
     );
     return (
       <section className="mx-auto max-w-6xl space-y-4">
-        <h1 className="text-2xl font-semibold">بيع خدمة</h1>
+        <h1 className="text-2xl font-semibold">بيع جديد</h1>
         <Card><CardContent className="space-y-2">
           {branchContent}
         </CardContent></Card>
@@ -327,7 +328,7 @@ function SaleWorkspace({
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
   const [storageError, setStorageError] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
-  const [completed, setCompleted] = useState<InvoiceDto | null>(null);
+  const [completed, setCompleted] = useState<PublicInvoiceDto | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const didReplayOnMount = useRef(false);
   const submitting = useRef(false);
@@ -396,11 +397,9 @@ function SaleWorkspace({
 
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
-    lines: lines.map(({ service, quantity }) => ({
-      itemType: 'service' as const,
-      serviceId: service.id,
-      quantity,
-    })),
+    lines: lines.map(({ service, quantity, itemType }) => itemType === 'product'
+      ? { itemType: 'product' as const, productId: service.id, quantity }
+      : { itemType: 'service' as const, serviceId: service.id, quantity }),
     ...(discountValue ? { discount: { kind: discountKind, value: discountValue } } : {}),
     ...(taxValue ? { tax: { kind: taxKind, value: taxValue } } : {}),
   }), [branchId, discountKind, discountValue, lines, taxKind, taxValue]);
@@ -574,8 +573,8 @@ function SaleWorkspace({
   return (
     <section className="mx-auto max-w-7xl space-y-4">
       <div>
-        <h1 className="text-2xl font-semibold">بيع خدمة</h1>
-        <p className="mt-1 text-sm text-muted">اختر العميل والخدمات والموظف ثم راجع الإجمالي المحسوب من الخادم.</p>
+        <h1 className="text-2xl font-semibold">بيع جديد</h1>
+        <p className="mt-1 text-sm text-muted">اختر العميل والخدمات أو المنتجات والموظف ثم راجع الإجمالي المحسوب من الخادم.</p>
       </div>
 
       {draftRestored ? (
@@ -623,23 +622,31 @@ function SaleWorkspace({
           <Card><CardHeader><CardTitle>1. العميل</CardTitle></CardHeader><CardContent>
             <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
           </CardContent></Card>
-          <Card><CardHeader><CardTitle>2. الخدمات</CardTitle></CardHeader><CardContent className="space-y-3">
+          <Card><CardHeader><CardTitle>2. الخدمات والمنتجات</CardTitle></CardHeader><CardContent className="space-y-4">
             <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => {
-              const found = current.find(({ service: item }) => item.id === service.id);
+              const found = current.find(({ service: item, itemType }) => itemType !== 'product' && item.id === service.id);
               return found
-                ? current.map((line) => line.service.id === service.id
+                ? current.map((line) => line.itemType !== 'product' && line.service.id === service.id
                   ? { ...line, quantity: line.quantity + 1 }
                   : line)
-                : [...current, { service, quantity: 1 }];
+                : [...current, { service, quantity: 1, itemType: 'service' }];
+            })} />
+            <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
+              const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
+              return found
+                ? current.map((line) => line.itemType === 'product' && line.service.id === product.id
+                  ? { ...line, quantity: Math.min(line.quantity + 1, product.quantityAvailable) }
+                  : line)
+                : [...current, { service: product, quantity: 1, itemType: 'product' }];
             })} />
             {lines.map((line) => (
-              <div key={line.service.id} className="flex items-center justify-between gap-2 rounded-control border border-line p-3">
+              <div key={`${line.itemType ?? 'service'}:${line.service.id}`} className="flex items-center justify-between gap-2 rounded-control border border-line p-3">
                 <span><span className="block font-medium">{line.service.name}</span><span className="text-sm text-muted">{line.service.price} ج.م</span></span>
                 <span className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => current.flatMap((item) => item.service.id !== line.service.id ? [item] : item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }] : []))}><Minus className="size-4" /></Button>
+                  <Button variant="ghost" size="sm" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => current.flatMap((item) => item.service.id !== line.service.id || item.itemType !== line.itemType ? [item] : item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }] : []))}><Minus className="size-4" /></Button>
                   <span className="w-8 text-center">{line.quantity}</span>
-                  <Button variant="ghost" size="sm" aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => current.map((item) => item.service.id === line.service.id ? { ...item, quantity: item.quantity + 1 } : item))}><Plus className="size-4" /></Button>
-                  <Button variant="ghost" size="sm" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => current.filter((item) => item.service.id !== line.service.id))}><Trash2 className="size-4" /></Button>
+                  <Button variant="ghost" size="sm" disabled={line.itemType === 'product' && line.quantity >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => current.map((item) => item.service.id === line.service.id && item.itemType === line.itemType ? { ...item, quantity: item.quantity + 1 } : item))}><Plus className="size-4" /></Button>
+                  <Button variant="ghost" size="sm" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => current.filter((item) => item.service.id !== line.service.id || item.itemType !== line.itemType))}><Trash2 className="size-4" /></Button>
                 </span>
               </div>
             ))}

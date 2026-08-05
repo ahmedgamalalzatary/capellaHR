@@ -23,6 +23,7 @@ const navigation: NavigationItem[] = [
   { href: '/clients', label: 'العملاء' },
   { href: '/services', label: 'الخدمات', cashierOnly: true },
   { href: '/catalog', label: 'الكتالوج', adminOnly: true },
+  { href: '/products', label: 'المنتجات والمخزون', adminOnly: true },
   { href: '/cashier-accounts', label: 'حسابات الكاشير', adminOnly: true },
 ];
 

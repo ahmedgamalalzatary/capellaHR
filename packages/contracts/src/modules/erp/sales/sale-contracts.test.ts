@@ -192,7 +192,7 @@ describe('ERP complete-sale contracts', () => {
     }).code).toBe('INVOICE_NOT_FOUND');
   });
 
-  it('publishes a service-only quote request and authoritative quote response', () => {
+  it('publishes a mixed catalog quote request and authoritative quote response', () => {
     expect(quoteSaleInputSchema.parse({
       branchId: 2,
       lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
@@ -204,9 +204,9 @@ describe('ERP complete-sale contracts', () => {
       discount: { kind: 'percentage', value: '10.00' },
       tax: { kind: 'fixed', value: '5.00' },
     });
-    expect(quoteSaleInputSchema.safeParse({
+    expect(quoteSaleInputSchema.parse({
       lines: [{ itemType: 'product', productId: 34, quantity: 1 }],
-    }).success).toBe(false);
+    }).lines).toEqual([{ itemType: 'product', productId: 34, quantity: 1 }]);
 
     expect(saleQuoteSchema.safeParse({
       lines: [{

@@ -5,6 +5,9 @@ import {
   clients,
   commissionLedgerEntries,
   erpCategories,
+  erpProducts,
+  erpProductStocks,
+  erpStockMovements,
   erpServiceCommissionOverrides,
   erpServices,
   employees,
@@ -48,6 +51,16 @@ const isDuplicateEntryError = (error: unknown) => {
 };
 
 const asIso = (value: Date) => value.toISOString();
+const keyedQueues = <T extends { itemType: string; sourceId: number }>(lines: T[]) => {
+  const queues = new Map<string, T[]>();
+  for (const line of lines) {
+    const key = `${line.itemType}:${line.sourceId}`;
+    const values = queues.get(key) ?? [];
+    values.push(line);
+    queues.set(key, values);
+  }
+  return queues;
+};
 
 const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
   const invoice = (await executor.select().from(invoices)
@@ -182,6 +195,41 @@ const quoteServices = async (
   }
 };
 
+const quoteProducts = async (
+  executor: Executor,
+  branchId: number,
+  lines: Array<{ productId: number; quantity: number }>,
+  lock = false,
+) => {
+  if (!lines.length) return [];
+  const ids = [...new Set(lines.map(({ productId }) => productId))].sort((left, right) => left - right);
+  let query = executor.select({
+    id: erpProducts.id, name: erpProducts.name, price: erpProducts.sellingPrice,
+    cost: erpProducts.lastPurchaseCost, quantity: erpProductStocks.quantity,
+  }).from(erpProducts).innerJoin(erpProductStocks, and(
+    eq(erpProductStocks.productId, erpProducts.id),
+    eq(erpProductStocks.branchId, erpProducts.branchId),
+  )).where(and(eq(erpProducts.branchId, branchId), eq(erpProducts.isActive, true), inArray(erpProducts.id, ids)))
+    .orderBy(asc(erpProducts.id));
+  if (lock) query = query.for('update') as typeof query;
+  const rows = await query;
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  if (byId.size !== ids.length) throw new SaleError('PRODUCT_UNAVAILABLE');
+  const remaining = new Map(rows.map((row) => [row.id, row.quantity]));
+  return lines.map((line) => {
+    const product = byId.get(line.productId)!;
+    const balanceBefore = remaining.get(line.productId)!;
+    if (balanceBefore < line.quantity) throw new SaleError('INSUFFICIENT_STOCK');
+    remaining.set(line.productId, balanceBefore - line.quantity);
+    return {
+      itemType: 'product' as const, sourceId: product.id, name: product.name,
+      quantity: line.quantity, unitPrice: product.price,
+      lineTotal: calculateLineTotal(product.price, line.quantity),
+      productCostBasis: product.cost, balanceBefore,
+    };
+  });
+};
+
 export const createDrizzleSaleRepository = (
   database: Database,
   audit: ErpAuditCapability,
@@ -203,7 +251,16 @@ export const createDrizzleSaleRepository = (
 
   const repository: SaleRepository = {
     async quote(branchId, input) {
-      const lines = await quoteServices(database, branchId, input.lines);
+      const serviceLines = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
+      const productLines = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
+      const services = await quoteServices(database, branchId, serviceLines);
+      const products = await quoteProducts(database, branchId, productLines);
+      const byKey = keyedQueues([...services, ...products]);
+      const lines = input.lines.map((line) => {
+        const sourceId = line.itemType === 'service' ? line.serviceId : line.productId;
+        const quoted = byKey.get(`${line.itemType}:${sourceId}`)!.shift()!;
+        return { itemType: quoted.itemType, sourceId: quoted.sourceId, name: quoted.name, quantity: quoted.quantity, unitPrice: quoted.unitPrice, lineTotal: quoted.lineTotal };
+      });
       let totals;
       try {
         totals = calculateSaleTotals({
@@ -281,14 +338,10 @@ export const createDrizzleSaleRepository = (
           }
           const employee = await operation.assertEmployee(transaction);
 
-          if (input.lines.some((line) => line.itemType === 'product')) {
-            throw new SaleError('PRODUCT_UNAVAILABLE');
-          }
-          const serviceInputs = input.lines.map((line) => ({
-            serviceId: line.itemType === 'service' ? line.serviceId : 0,
-            quantity: line.quantity,
-          }));
+          const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
+          const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
           const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs);
+          const quotedProducts = await quoteProducts(transaction, input.branchId, productInputs, true);
           const serviceIds = [...new Set(serviceInputs.map(({ serviceId }) => serviceId))];
           const serviceRows = await transaction.select({
             id: erpServices.id,
@@ -310,7 +363,7 @@ export const createDrizzleSaleRepository = (
             rule: 'employee_override' as const,
             rate: override.commissionPercent,
           });
-          const calculatedLines = quotedLines.map((line) => {
+          const calculatedServices = quotedLines.map((line) => {
             const commission = rates.get(line.sourceId)!;
             return {
               ...line,
@@ -319,6 +372,11 @@ export const createDrizzleSaleRepository = (
               commissionAmount: calculateCommission(line.lineTotal, commission.rate),
             };
           });
+          const calculatedProducts = quotedProducts.map((line) => ({
+            ...line, commissionRule: 'none' as const, commissionRate: '0.00', commissionAmount: '0.00',
+          }));
+          const byKey = keyedQueues([...calculatedServices, ...calculatedProducts]);
+          const calculatedLines = input.lines.map((line) => byKey.get(`${line.itemType}:${line.itemType === 'service' ? line.serviceId : line.productId}`)!.shift()!);
           let totals;
           try {
             totals = calculateSaleTotals({
@@ -365,8 +423,9 @@ export const createDrizzleSaleRepository = (
               invoiceId,
               branchId: input.branchId,
               lineNumber: index + 1,
-              itemType: 'service',
-              serviceId: line.sourceId,
+              itemType: line.itemType,
+              serviceId: line.itemType === 'service' ? line.sourceId : null,
+              productId: line.itemType === 'product' ? line.sourceId : null,
               itemNameSnapshot: line.name,
               quantity: line.quantity,
               unitPrice: line.unitPrice,
@@ -374,20 +433,26 @@ export const createDrizzleSaleRepository = (
               commissionRuleSnapshot: line.commissionRule,
               commissionRateSnapshot: line.commissionRate,
               commissionAmountSnapshot: line.commissionAmount,
+              productCostBasisSnapshot: line.itemType === 'product' ? line.productCostBasis : null,
             });
             const invoiceLineId = Number(insertedLine[0].insertId);
-            await transaction.insert(commissionLedgerEntries).values({
-              invoiceId,
-              invoiceLineId,
-              employeeId: input.assignedEmployeeId,
-              actingAccountId: operation.actingAccountId,
-              entryType: 'earned',
-              commissionRuleSnapshot: line.commissionRule,
-              commissionRateSnapshot: line.commissionRate,
-              baseAmount: line.lineTotal,
-              amount: line.commissionAmount,
-              createdAt: operation.soldAt,
-            });
+            if (line.itemType === 'service') {
+              await transaction.insert(commissionLedgerEntries).values({
+                invoiceId, invoiceLineId, employeeId: input.assignedEmployeeId,
+                actingAccountId: operation.actingAccountId, entryType: 'earned',
+                commissionRuleSnapshot: line.commissionRule, commissionRateSnapshot: line.commissionRate,
+                baseAmount: line.lineTotal, amount: line.commissionAmount, createdAt: operation.soldAt,
+              });
+            } else {
+              const balanceAfter = line.balanceBefore - line.quantity;
+              await transaction.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: operation.soldAt }).where(and(
+                eq(erpProductStocks.productId, line.sourceId), eq(erpProductStocks.branchId, input.branchId),
+              ));
+              await transaction.insert(erpStockMovements).values({
+                productId: line.sourceId, branchId: input.branchId, reason: 'sale', sourceType: 'sale', sourceId: invoiceId,
+                quantityDelta: -line.quantity, balanceAfter, actingAccountId: operation.actingAccountId, createdAt: operation.soldAt,
+              });
+            }
           }
           await transaction.insert(invoicePayments).values(input.payments.map((payment) => ({
             invoiceId,

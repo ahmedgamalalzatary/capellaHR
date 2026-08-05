@@ -91,12 +91,6 @@ const saleLineSchema = z.discriminatedUnion('itemType', [
   }).strict(),
 ]);
 
-const serviceSaleLineSchema = z.object({
-  itemType: z.literal('service'),
-  serviceId: positiveMysqlIntSchema,
-  quantity: positiveMysqlIntSchema,
-}).strict();
-
 const paymentSchema = z.object({
   method: paymentMethodSchema,
   amount: positiveMoneySchema,
@@ -149,7 +143,7 @@ export const completeSaleSchema = z.object({
 
 export const quoteSaleInputSchema = z.object({
   branchId: positiveMysqlIntSchema.optional(),
-  lines: z.array(serviceSaleLineSchema).min(1).max(100),
+  lines: z.array(saleLineSchema).min(1).max(100),
   discount: adjustmentSchema.optional(),
   tax: adjustmentSchema.optional(),
 }).strict();
@@ -185,7 +179,7 @@ const storedAdjustmentSchema = z.object({
 });
 
 const quoteLineSchema = z.object({
-  itemType: z.literal('service'),
+  itemType: saleItemTypeSchema,
   sourceId: positiveMysqlIntSchema,
   name: z.string().min(1).max(255),
   quantity: positiveMysqlIntSchema,
@@ -405,6 +399,7 @@ export const saleErrorSchema = z.object({
     'CASHIER_SESSION_NOT_OPEN',
     'SERVICE_UNAVAILABLE',
     'PRODUCT_UNAVAILABLE',
+    'INSUFFICIENT_STOCK',
     'PAYMENT_TOTAL_MISMATCH',
     'IDEMPOTENCY_CONFLICT',
     'INVOICE_NOT_FOUND',
@@ -478,6 +473,9 @@ export type SaleQuote = z.infer<typeof saleQuoteSchema>;
 export type InvoiceTotals = z.infer<typeof invoiceTotalsSchema>;
 export type PaymentBreakdown = z.infer<typeof paymentBreakdownSchema>;
 export type InvoiceDto = z.infer<typeof invoiceSchema>;
+export type PublicInvoiceDto = Omit<InvoiceDto, 'lines'> & {
+  lines: Array<Omit<InvoiceDto['lines'][number], 'productCostBasis'>>;
+};
 export type SaleError = z.infer<typeof saleErrorSchema>;
 export type ClientVisitHistoryQuery = z.infer<typeof clientVisitHistoryQuerySchema>;
 export type ClientVisitSummary = z.infer<typeof clientVisitSummarySchema>;

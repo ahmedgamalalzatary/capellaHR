@@ -3,6 +3,7 @@ import type {
   ClientVisitSummary,
   CompleteSaleInput,
   InvoiceDto,
+  PublicInvoiceDto,
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
@@ -56,6 +57,7 @@ type SaleErrorCode =
   | 'CASHIER_SESSION_NOT_OPEN'
   | 'SERVICE_UNAVAILABLE'
   | 'PRODUCT_UNAVAILABLE'
+  | 'INSUFFICIENT_STOCK'
   | 'PAYMENT_TOTAL_MISMATCH'
   | 'IDEMPOTENCY_CONFLICT'
   | 'INVOICE_NOT_FOUND';
@@ -66,7 +68,8 @@ const messages: Record<SaleErrorCode, string> = {
   EMPLOYEE_NOT_ASSIGNABLE: 'الموظف غير مسجل الحضور حاليًا',
   CASHIER_SESSION_NOT_OPEN: 'جلسة الكاشير غير مفتوحة',
   SERVICE_UNAVAILABLE: 'إحدى الخدمات غير متاحة',
-  PRODUCT_UNAVAILABLE: 'بيع المنتجات غير متاح في هذه المرحلة',
+  PRODUCT_UNAVAILABLE: 'إحدى المنتجات غير متاحة',
+  INSUFFICIENT_STOCK: 'الكمية المتاحة من أحد المنتجات غير كافية',
   PAYMENT_TOTAL_MISMATCH: 'مجموع المدفوعات غير صحيح',
   IDEMPOTENCY_CONFLICT: 'مفتاح العملية مستخدم لطلب مختلف',
   INVOICE_NOT_FOUND: 'الفاتورة غير موجودة',
@@ -94,6 +97,17 @@ export const createSaleService = (dependencies: {
   };
 }) => {
   const { repository, resolveBranchContext, assignment, invoiceNumbers } = dependencies;
+  const publicInvoice = (actor: ErpAccountIdentity, invoice: InvoiceDto): InvoiceDto | PublicInvoiceDto => {
+    if (actor.role === 'admin') return invoice;
+    return {
+      ...invoice,
+      lines: invoice.lines.map((line) => {
+        const safeLine = { ...line };
+        Reflect.deleteProperty(safeLine, 'productCostBasis');
+        return safeLine;
+      }),
+    };
+  };
 
   const resolveInput = async (actor: ErpAccountIdentity, input: CompleteSaleInput) => {
     const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
@@ -124,11 +138,11 @@ export const createSaleService = (dependencies: {
         }),
         resolved,
       );
-      if (existing) return existing;
+      if (existing) return publicInvoice(actor, existing);
 
       const number = await invoiceNumbers.allocate();
       try {
-        return await repository.complete({
+        const invoice = await repository.complete({
           input: resolved,
           actingAccountId: accountId,
           actingAccountRole: actor.role,
@@ -140,6 +154,7 @@ export const createSaleService = (dependencies: {
             branchId: resolved.branchId,
           }, context),
         });
+        return publicInvoice(actor, invoice);
       } catch (error) {
         if (error instanceof ErpAssignmentError) {
           throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
@@ -170,7 +185,7 @@ export const createSaleService = (dependencies: {
       const { branchId } = await resolveBranchContext(actor, requestedBranchId);
       const invoice = await repository.findInvoiceById(branchId, invoiceId);
       if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
-      return invoice;
+      return publicInvoice(actor, invoice);
     },
   };
 };

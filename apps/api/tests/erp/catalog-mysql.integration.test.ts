@@ -28,7 +28,6 @@ const module = createErpCatalogModule(database, {
 });
 
 const ADMIN: ErpAccountIdentity = { role: 'admin', accountId: 1 };
-
 /**
  * Branches and employees are shared with other suites' rows, so this suite never
  * deletes them — it seeds its own uniquely named ones and scopes every assertion
@@ -97,6 +96,7 @@ const createService = (branchId: number, categoryId: number, overrides: {
   commissionPercent: overrides.commissionPercent ?? '10.00',
   branchId,
 });
+
 
 /**
  * The catalog tables belong to this suite alone, so they are cleared wholesale.

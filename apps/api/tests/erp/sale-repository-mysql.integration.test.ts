@@ -8,6 +8,9 @@ import {
   commissionLedgerEntries,
   employees,
   erpCategories,
+  erpProducts,
+  erpProductStocks,
+  erpStockMovements,
   erpServiceCommissionOverrides,
   erpServices,
   invoiceLines,
@@ -23,6 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { ErpAssignmentError } from '../../src/modules/erp/assignment/index.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
+import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock/index.js';
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 
@@ -128,6 +132,12 @@ const fixture = async () => {
     createdAt: at,
     updatedAt: at,
   }))[0].insertId);
+  const productId = Number((await database.insert(erpProducts).values({
+    branchId, name: `Product ${marker}`, nameNormalized: `product-${marker}`,
+    sellingPrice: '50.00', lastPurchaseCost: '30.00', lowStockThreshold: 1,
+    createdAt: at, updatedAt: at,
+  }))[0].insertId);
+  await database.insert(erpProductStocks).values({ productId, branchId, quantity: 2, updatedAt: at });
   await database.insert(erpServiceCommissionOverrides).values({
     serviceId,
     employeeId,
@@ -142,11 +152,11 @@ const fixture = async () => {
   }))[0].insertId);
   return {
     marker, clientPhone, at, branchId, employeeId, employeeCode, accountId, adminAccountId,
-    clientId, serviceId, cashierSessionId,
+    clientId, serviceId, productId, cashierSessionId,
   };
 };
 
-const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string) => ({
+const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): CompleteSaleOperation => ({
   input: {
     branchId: data.branchId,
     clientId: data.clientId,
@@ -172,6 +182,97 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string) => ({
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('rejects impossible stock movement reason, source, and direction facts', async () => {
+    const data = await fixture();
+    const base = {
+      productId: data.productId, branchId: data.branchId, sourceId: 99,
+      balanceAfter: 2, actingAccountId: data.accountId, createdAt: data.at,
+    };
+
+    await expect(database.insert(erpStockMovements).values({
+      ...base, reason: 'sale', sourceType: 'purchase', quantityDelta: -1,
+    })).rejects.toBeDefined();
+    await expect(database.insert(erpStockMovements).values({
+      ...base, reason: 'sale', sourceType: 'sale', quantityDelta: 1,
+    })).rejects.toBeDefined();
+  });
+
+  it('creates and adjusts product stock atomically with audit history', async () => {
+    const data = await fixture();
+    const repository = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => data.at);
+    const product = await repository.create({
+      branchId: data.branchId, name: `Stock ${data.marker}`, nameNormalized: `stock-${data.marker}`,
+      description: null, sellingPrice: '100.00', lastPurchaseCost: '60.00',
+      lowStockThreshold: 2, isActive: true, openingQuantity: 0,
+    }, data.adminAccountId);
+    const adjusted = await repository.adjust(product.id, data.branchId, {
+      branchId: data.branchId, quantityDelta: 5, reason: 'count_correction', note: 'opening count',
+    }, data.adminAccountId);
+    expect(adjusted.product.quantity).toBe(5);
+    await expect(repository.adjust(product.id, data.branchId, {
+      branchId: data.branchId, quantityDelta: -6, reason: 'damage',
+    }, data.adminAccountId)).rejects.toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+    expect(await database.select().from(auditEvents).where(eq(auditEvents.entityId, String(product.id)))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ module: 'erp-stock', action: 'create' }),
+      expect.objectContaining({ module: 'erp-stock', action: 'adjust' }),
+    ]));
+  });
+
+  it('decrements product stock, snapshots cost, records movement, and earns no commission', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '100.00' }];
+    const result = await repository.complete(request);
+
+    expect(result.lines[0]).toMatchObject({ sourceId: data.productId, productCostBasis: '30.00', commissionRule: 'none', commissionAmount: '0.00' });
+    expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(0);
+    expect(await database.select().from(erpStockMovements).where(eq(erpStockMovements.sourceId, result.id))).toEqual([
+      expect.objectContaining({ productId: data.productId, reason: 'sale', quantityDelta: -2, balanceAfter: 0 }),
+    ]);
+    expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(0);
+  });
+
+  it('allows only one concurrent sale of the last product unit', async () => {
+    const data = await fixture();
+    await database.update(erpProductStocks).set({ quantity: 1 }).where(eq(erpProductStocks.productId, data.productId));
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const productOperation = (key: string) => {
+      const request = operation(data, key);
+      request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+      delete request.input.discount;
+      delete request.input.tax;
+      request.input.payments = [{ method: 'cash', amount: '50.00' }];
+      request.invoiceNumber += `-${key.slice(0, 4)}`;
+      return request;
+    };
+    const results = await Promise.allSettled([
+      repository.complete(productOperation(crypto.randomUUID())),
+      repository.complete(productOperation(crypto.randomUUID())),
+    ]);
+    expect(results.filter((value) => value.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((value) => value.status === 'rejected')).toEqual([
+      expect.objectContaining({ reason: expect.objectContaining({ code: 'INSUFFICIENT_STOCK' }) }),
+    ]);
+  });
+
+  it('rejects cumulative duplicate product lines that exceed one locked balance', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [
+      { itemType: 'product', productId: data.productId, quantity: 1 },
+      { itemType: 'product', productId: data.productId, quantity: 2 },
+    ];
+    delete request.input.discount; delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '150.00' }];
+    await expect(repository.complete(request)).rejects.toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+    expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(2);
+  });
+
   it('allocates unique gap-safe daily invoice sequences under concurrency', async () => {
     const store = createDrizzleInvoiceSequenceStore(database);
     const allocatedAt = new Date('2026-08-04T09:00:00.000Z');
@@ -383,6 +484,23 @@ describe('ERP sale repository MySQL integration', () => {
         .toHaveLength(0);
     } finally {
       await database.execute(sql.raw(`DROP TRIGGER IF EXISTS \`${trigger}\``));
+    }
+  });
+
+  it('rolls back product stock when stock-movement persistence fails', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    delete request.input.discount; delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '50.00' }];
+    await database.execute(sql.raw("CREATE TRIGGER `erp13_fail_movement` BEFORE INSERT ON `erp_stock_movements` FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced ERP 13 rollback'"));
+    try {
+      await expect(repository.complete(request)).rejects.toBeDefined();
+      expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(2);
+      expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId))).toHaveLength(0);
+    } finally {
+      await database.execute(sql.raw('DROP TRIGGER IF EXISTS `erp13_fail_movement`'));
     }
   });
 });
