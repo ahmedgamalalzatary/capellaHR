@@ -25,6 +25,7 @@ const navigation: NavigationItem[] = [
   { href: '/catalog', label: 'الكتالوج', adminOnly: true },
   { href: '/products', label: 'المنتجات والمخزون', adminOnly: true },
   { href: '/suppliers', label: 'الموردون والمشتريات', adminOnly: true },
+  { href: '/expenses', label: 'المصروفات', adminOnly: true },
   { href: '/cashier-accounts', label: 'حسابات الكاشير', adminOnly: true },
 ];
 

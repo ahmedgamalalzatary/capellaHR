@@ -31,6 +31,7 @@ import {
   createErpStockModule,
   createErpClientsModule,
   createErpSuppliersModule,
+  createErpExpensesModule,
 } from './modules/erp/index.js';
 import { createApiLogger } from './shared/http/index.js';
 
@@ -212,6 +213,11 @@ const erpSuppliersModule = createErpSuppliersModule(database, {
   branches: branchModule.erp,
   employees: employeeModule.erp,
 });
+const erpExpensesModule = createErpExpensesModule(database, {
+  audit: auditModule.erp,
+  branches: branchModule.erp,
+  employees: employeeModule.erp,
+});
 const salesModule = createSalesModule(database, {
   audit: auditModule.erp,
   branches: branchModule.erp,
@@ -245,6 +251,7 @@ createApp({
   erpServiceCatalogService: erpCatalogModule.services,
   erpProductStockService: erpStockModule.service,
   erpSupplierPurchaseService: erpSuppliersModule.service,
+  erpExpenseService: erpExpensesModule.service,
   erpAssignmentService: erpAssignmentModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',

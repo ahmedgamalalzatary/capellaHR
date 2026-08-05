@@ -351,6 +351,13 @@
       "when": 1785958241308,
       "tag": "0049_nostalgic_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1785959457690,
+      "tag": "0050_redundant_chamber",
+      "breakpoints": true
     }
   ]
 }
