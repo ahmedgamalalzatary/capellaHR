@@ -15,9 +15,9 @@ import { accounts } from '../../auth/index.js';
 import { erpProducts } from '../catalog/index.js';
 
 export const stockMovementReasons = [
-  'opening_stock', 'count_correction', 'wastage', 'damage', 'sale', 'purchase', 'refund', 'void',
+  'opening_stock', 'count_correction', 'wastage', 'damage', 'sale', 'purchase', 'purchase_cancellation', 'refund', 'void',
 ] as const;
-export const stockMovementSourceTypes = ['adjustment', 'sale', 'purchase', 'refund', 'void'] as const;
+export const stockMovementSourceTypes = ['adjustment', 'sale', 'purchase', 'purchase_cancellation', 'refund', 'void'] as const;
 
 export const erpProductStocks = mysqlTable('erp_product_stocks', {
   productId: int('product_id').notNull(),
@@ -69,10 +69,10 @@ export const erpStockMovements = mysqlTable('erp_stock_movements', {
   ),
   check(
     'erp_stock_movements_reason_source_consistent',
-    sql`(${table.reason} in ('opening_stock', 'count_correction', 'wastage', 'damage') and ${table.sourceType} = 'adjustment') or (${table.reason} in ('sale', 'purchase', 'refund', 'void') and ${table.reason} = ${table.sourceType})`,
+    sql`(${table.reason} in ('opening_stock', 'count_correction', 'wastage', 'damage') and ${table.sourceType} = 'adjustment') or (${table.reason} in ('sale', 'purchase', 'purchase_cancellation', 'refund', 'void') and ${table.reason} = ${table.sourceType})`,
   ),
   check(
     'erp_stock_movements_direction_consistent',
-    sql`${table.reason} = 'count_correction' or (${table.reason} in ('wastage', 'damage', 'sale') and ${table.quantityDelta} < 0) or (${table.reason} in ('opening_stock', 'purchase', 'refund', 'void') and ${table.quantityDelta} > 0)`,
+    sql`${table.reason} = 'count_correction' or (${table.reason} in ('wastage', 'damage', 'sale', 'purchase_cancellation') and ${table.quantityDelta} < 0) or (${table.reason} in ('opening_stock', 'purchase', 'refund', 'void') and ${table.quantityDelta} > 0)`,
   ),
 ]);

@@ -1,0 +1,1 @@
+export const supplierQueryKeys = { all: ['erp-suppliers'] as const, suppliers: (params: object) => ['erp-suppliers', 'list', params] as const, purchases: (params: object) => ['erp-suppliers', 'purchases', params] as const };

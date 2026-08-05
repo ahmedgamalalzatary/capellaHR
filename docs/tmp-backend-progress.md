@@ -517,17 +517,14 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–13
-                                          │
-                    NEXT ELIGIBLE: ERP 14 / ERP 15 / ERP 16 / ERP 18
-                         ┌────────────────┼───────────────┐
-                      ERP 14           ERP 16          ERP 18
-                 Suppliers/purchases  Refunds/voids    Offline
-                         │                │
-ERP 6 ───────────────> ERP 15          ERP 17
-                         Expenses      Payroll commission
-                         └────────────────┬───────────────┘
-                                      ERP 19 Reports
+DONE: ERP 1–14
+        │
+NEXT ELIGIBLE: ERP 15 / ERP 16 / ERP 18
+
+DONE: ERP 14 ────────────────────────────┐
+ERP 6 ───────────────> ERP 15 Expenses ──┼──> ERP 19 Reports
+ERP 16 Refunds/voids ─> ERP 17 Payroll ──┘
+ERP 18 Offline (independent)
                                           │
                                       ERP 20 Admin UX
                                           │
@@ -540,9 +537,9 @@ ERP 6 ───────────────> ERP 15          ERP 17
 
 Safe parallel waves:
 
-1. **Complete:** ERP 1–13, with ERP 11 physical-printer validation deferred until production hardware is available.
-2. **Next eligible:** ERP 14, 15, 16, or 18; begin only the next phase explicitly selected by the user.
-3. ERP 14, 15, 16, and 18 have no remaining ERP 13 dependency.
+1. **Complete:** ERP 1–14, with ERP 11 physical-printer validation deferred until production hardware is available.
+2. **Next eligible:** ERP 15, 16, or 18; begin only the next phase explicitly selected by the user.
+3. ERP 15, 16, and 18 have no remaining ERP 13 dependency; ERP 14 is complete.
 4. ERP 17 starts after ERP 16.
 5. ERP 19 waits for ERP 14–17.
 6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
@@ -723,21 +720,23 @@ No product variants, multiple units, consumable tracking, negative-stock overrid
 
 Complete. Product balances are branch-scoped and non-negative, movements are append-only with database-enforced reason/source/direction semantics, and product sale settlement locks balances and writes invoice, cost snapshot, stock decrement, and movement atomically. Cashier responses expose selling facts and availability but redact purchase cost and invoice cost basis. Admin product, low-stock, movement-history, and stocktaking workflows are covered alongside real-MySQL rollback and last-unit concurrency tests and wide/compact browser scenarios.
 
-## ERP 14. Suppliers and purchases
+## ERP 14. Suppliers and purchases — Complete
 
-- [ ] Add supplier schema, migration, and branch-scoped CRUD.
-- [ ] Add purchase and purchase-line schemas.
-- [ ] Record supplier, product, quantity, unit cost, totals, date, and acting account.
-- [ ] Post each purchase and its stock movements atomically.
-- [ ] Increase branch stock and update last purchase cost when a purchase posts.
-- [ ] Preserve posted purchase history and define safe correction/cancellation behavior.
-- [ ] Add supplier and product purchase-history queries.
-- [ ] Add validation, exact-money, stock, transaction, authorization, branch, and MySQL tests.
-- [ ] Add Arabic/RTL POS Admin supplier management, purchase entry/posting, and supplier/product purchase-history workflows.
-- [ ] Show exact totals, immutable-posted state, correction/cancellation outcomes, and resulting stock changes.
-- [ ] Add component and end-to-end coverage for supplier lifecycle and purchase-to-stock workflows.
+- [x] Add supplier schema, migration, and branch-scoped CRUD.
+- [x] Add purchase and purchase-line schemas.
+- [x] Record supplier, product, quantity, unit cost, totals, date, and acting account.
+- [x] Post each purchase and its stock movements atomically.
+- [x] Increase branch stock and update last purchase cost when a purchase posts.
+- [x] Preserve posted purchase history and define safe correction/cancellation behavior.
+- [x] Add supplier and product purchase-history queries.
+- [x] Add validation, exact-money, stock, transaction, authorization, branch, and MySQL tests.
+- [x] Add Arabic/RTL POS Admin supplier management, purchase entry/posting, and supplier/product purchase-history workflows.
+- [x] Show exact totals, immutable-posted state, correction/cancellation outcomes, and resulting stock changes.
+- [x] Add component and end-to-end coverage for supplier lifecycle and purchase-to-stock workflows.
 
 Purchases are fully paid. Supplier balances, credit, and returns are excluded.
+
+Complete. Posted purchases atomically update stock and the last-purchase-cost basis, immutable supplier/product snapshots preserve history, and guarded cancellation/correction workflows safely reverse stock and restore the remaining cost basis. Branch isolation, authorization, exact-money validation, rollback/concurrency behavior, and Arabic wide/compact Admin workflows are covered.
 
 ## ERP 15. Expenses
 
@@ -881,7 +880,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–13 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. Await an explicit choice before beginning the next eligible phase: ERP 14, 15, 16, or 18.
+ERP 1–14 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. Await an explicit choice before beginning the next eligible phase: ERP 15, 16, or 18.
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.
