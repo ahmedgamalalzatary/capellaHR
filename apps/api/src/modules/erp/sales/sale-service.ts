@@ -7,7 +7,10 @@ import type {
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
+  RefundInvoiceInput,
+  RefundQuoteInput,
   SaleQuote,
+  VoidInvoiceInput,
 } from '@capella/contracts';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -15,6 +18,7 @@ import { ErpAssignmentError } from '../assignment/assignment-service.js';
 import type { ErpBranchContextResolver } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 import type { AssignableEmployee } from '../assignment/assignment-service.js';
+import { allocateReversalAmounts, MoneyCalculationError } from './services/sale-calculations.js';
 
 export type ResolvedCompleteSaleInput = CompleteSaleInput & { branchId: number };
 
@@ -28,6 +32,18 @@ export type CompleteSaleOperation = {
   assertEmployee(context: unknown): Promise<AssignableEmployee>;
 };
 
+type ReverseInvoiceOperationBase = {
+  invoiceId: number;
+  actingAccountId: number;
+  actingAccountRole: 'admin' | 'cashier';
+  reversedAt: Date;
+};
+
+export type ReverseInvoiceOperation = ReverseInvoiceOperationBase & (
+  | { type: 'void'; input: VoidInvoiceInput & { branchId: number } }
+  | { type: 'refund'; input: RefundInvoiceInput & { branchId: number } }
+);
+
 export interface SaleRepository {
   quote(branchId: number, input: QuoteSaleInput): Promise<SaleQuote>;
   findByIdempotencyKey(
@@ -38,6 +54,7 @@ export interface SaleRepository {
     invoice: InvoiceDto;
   } | null>;
   complete(operation: CompleteSaleOperation): Promise<InvoiceDto>;
+  reverse(operation: ReverseInvoiceOperation): Promise<InvoiceDto>;
   listClientVisits(
     branchId: number,
     clientId: number,
@@ -60,7 +77,12 @@ type SaleErrorCode =
   | 'INSUFFICIENT_STOCK'
   | 'PAYMENT_TOTAL_MISMATCH'
   | 'IDEMPOTENCY_CONFLICT'
-  | 'INVOICE_NOT_FOUND';
+  | 'INVOICE_NOT_FOUND'
+  | 'INVOICE_NOT_REVERSIBLE'
+  | 'VOID_DATE_EXPIRED'
+  | 'REFUND_QUANTITY_EXCEEDED'
+  | 'REFUND_PAYMENT_MISMATCH'
+  | 'REFUND_PAYMENT_EXCEEDED';
 
 const messages: Record<SaleErrorCode, string> = {
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
@@ -73,6 +95,11 @@ const messages: Record<SaleErrorCode, string> = {
   PAYMENT_TOTAL_MISMATCH: 'مجموع المدفوعات غير صحيح',
   IDEMPOTENCY_CONFLICT: 'مفتاح العملية مستخدم لطلب مختلف',
   INVOICE_NOT_FOUND: 'الفاتورة غير موجودة',
+  INVOICE_NOT_REVERSIBLE: 'لا يمكن إلغاء أو استرداد هذه الفاتورة',
+  VOID_DATE_EXPIRED: 'الإلغاء الكامل متاح في يوم البيع فقط',
+  REFUND_QUANTITY_EXCEEDED: 'الكمية المستردة تتجاوز الكمية المتبقية',
+  REFUND_PAYMENT_MISMATCH: 'توزيع مبلغ الاسترداد غير صحيح',
+  REFUND_PAYMENT_EXCEEDED: 'مبلغ الاسترداد يتجاوز المتبقي لوسيلة الدفع',
 };
 
 export class SaleError extends Error {
@@ -161,6 +188,64 @@ export const createSaleService = (dependencies: {
         }
         throw error;
       }
+    },
+
+    async refund(actor: ErpAccountIdentity, invoiceId: number, input: RefundInvoiceInput) {
+      const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
+      const invoice = await repository.reverse({
+        type: 'refund', invoiceId, input: { ...input, branchId },
+        actingAccountId: accountId, actingAccountRole: actor.role, reversedAt: new Date(),
+      });
+      return publicInvoice(actor, invoice);
+    },
+
+    async quoteRefund(actor: ErpAccountIdentity, invoiceId: number, input: RefundQuoteInput) {
+      const { branchId } = await resolveBranchContext(actor, input.branchId);
+      const invoice = await repository.findInvoiceById(branchId, invoiceId);
+      if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
+      if (!invoice.eligibility.canRefund) throw new SaleError('INVOICE_NOT_REVERSIBLE');
+      try {
+        const allocation = allocateReversalAmounts({
+          lines: invoice.lines.map((line) => ({
+            invoiceLineId: line.id,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            refundedQuantity: line.refundedQuantity,
+          })),
+          selected: input.lines,
+          discountAmount: invoice.totals.discountAmount,
+          taxAmount: invoice.totals.taxAmount,
+        });
+        return {
+          lines: allocation.lines,
+          totals: {
+            grossAmount: allocation.grossAmount,
+            discountAmount: allocation.discountAmount,
+            taxAmount: allocation.taxAmount,
+            total: allocation.total,
+          },
+          payments: allocation.total === '0.00' ? [] : invoice.payments
+            .filter((payment) => payment.refundableAmount !== '0.00')
+            .map((payment) => ({
+              method: payment.method,
+              refundableAmount: payment.refundableAmount,
+            })),
+        };
+      } catch (error) {
+        if (error instanceof MoneyCalculationError) {
+          throw new SaleError('REFUND_QUANTITY_EXCEEDED');
+        }
+        throw error;
+      }
+    },
+
+    async void(actor: ErpAccountIdentity, invoiceId: number, input: VoidInvoiceInput) {
+      const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
+      const invoice = await repository.reverse({
+        type: 'void', invoiceId, input: { ...input, branchId },
+        actingAccountId: accountId, actingAccountRole: actor.role, reversedAt: new Date(),
+      });
+      return publicInvoice(actor, invoice);
     },
 
     async listClientVisits(

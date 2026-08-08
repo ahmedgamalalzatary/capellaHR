@@ -517,31 +517,26 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–14
-        │
-NEXT ELIGIBLE: ERP 15 / ERP 16 / ERP 18
-
-DONE: ERP 14 ────────────────────────────┐
-ERP 6 ───────────────> ERP 15 Expenses ──┼──> ERP 19 Reports
-ERP 16 Refunds/voids ─> ERP 17 Payroll ──┘
-ERP 18 Offline (independent)
-                                          │
-                                      ERP 20 Admin UX
-                                          │
-                                      ERP 21 Editions
-                                          │
-                                      ERP 22 Security
-                                          │
-                                      ERP 23 Rollout
+DONE: ERP 1–16
+        ├──> ERP 17 Commission/payroll ──> ERP 19 Reports ──┐
+        └──> ERP 18 Offline sales (independent) ───────┘
+                                                          │
+                                                     ERP 20 Admin UX
+                                                          │
+                                                     ERP 21 Editions
+                                                          │
+                                                     ERP 22 Security
+                                                          │
+                                                     ERP 23 Rollout
 ```
 
 Safe parallel waves:
 
-1. **Complete:** ERP 1–14, with ERP 11 physical-printer validation deferred until production hardware is available.
-2. **Next eligible:** ERP 15, 16, or 18; begin only the next phase explicitly selected by the user.
-3. ERP 15, 16, and 18 have no remaining ERP 13 dependency; ERP 14 is complete.
-4. ERP 17 starts after ERP 16.
-5. ERP 19 waits for ERP 14–17.
+1. **Complete:** ERP 1–16, with ERP 11 physical-printer validation deferred until production hardware is available.
+2. **Next eligible:** ERP 17 and ERP 18; they may proceed in parallel.
+3. ERP 17 is now unblocked by ERP 16 and is the critical path to ERP 19.
+4. ERP 18 is independent and may overlap ERP 17 and ERP 19.
+5. ERP 19 waits for ERP 17; ERP 20 begins after the remaining ERP 17–19 functional slices are complete.
 6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
 
 ## ERP 4. Cashier sessions
@@ -750,22 +745,24 @@ Complete. Posted purchases atomically update stock and the last-purchase-cost ba
 
 Complete. Admin-only expense workflows use branch-scoped active expense categories, exact positive EGP amounts, valid Cairo calendar dates, and immutable database facts. Corrections atomically append a reversal and active replacement, preserve chained lineage, require a complete pair before the original status can change, and audit all three mutation facts. API, component, real-MySQL rollback/concurrency, and wide/compact browser coverage verifies creation, pagination/filtering, correction, branch isolation, authorization, and audit behavior.
 
-## ERP 16. Voids and refunds
+## ERP 16. Voids and refunds — Complete
 
-- [ ] Implement void as a same-day full cancellation.
-- [ ] Implement refund as a full or partial reversal after completion.
-- [ ] Preserve the original invoice and append all void/refund facts.
-- [ ] Permit both Admin and Cashier accounts without an approval hierarchy.
-- [ ] Record the acting account and retain an unused optional approving-account field for future compatibility.
-- [ ] Restore stock for reversed product quantities.
-- [ ] Append commission-ledger reversals for reversed service quantities.
-- [ ] Record reversed payment amounts by their original method labels.
-- [ ] Prevent over-refunding and invalid invoice-state transitions.
-- [ ] Make void/refund submissions idempotent.
-- [ ] Add same-day boundary, partial/full, stock, commission, concurrency, authorization, audit, and MySQL tests.
-- [ ] Add Arabic/RTL Admin and POS invoice search/detail plus eligible void and partial/full refund workflows.
-- [ ] Show immutable original facts, reversible quantities/payments, confirmation, idempotent result, and invalid-transition states.
-- [ ] Add component and end-to-end coverage for same-day voids, later refunds, stock restoration, commission reversal, and repeat submission.
+- [x] Implement void as a same-day full cancellation.
+- [x] Implement refund as a full or partial reversal after completion.
+- [x] Preserve the original invoice and append all void/refund facts.
+- [x] Permit both Admin and Cashier accounts without an approval hierarchy.
+- [x] Record the acting account and retain an unused optional approving-account field for future compatibility.
+- [x] Restore stock for reversed product quantities.
+- [x] Append commission-ledger reversals for reversed service quantities.
+- [x] Record reversed payment amounts by their original method labels.
+- [x] Prevent over-refunding and invalid invoice-state transitions.
+- [x] Make void/refund submissions idempotent.
+- [x] Add same-day boundary, partial/full, stock, commission, concurrency, authorization, audit, and MySQL tests.
+- [x] Add Arabic/RTL Admin and POS invoice search/detail plus eligible void and partial/full refund workflows.
+- [x] Show immutable original facts, reversible quantities/payments, confirmation, idempotent result, and invalid-transition states.
+- [x] Add component and end-to-end coverage for same-day voids, later refunds, stock restoration, commission reversal, and repeat submission.
+
+Complete. Same-day Cairo voids and later full/partial refunds preserve immutable invoice facts while appending normalized reversal lines and original-method payment facts. One transaction restores product stock, appends cumulative commission reversals, derives the invoice lifecycle, records the acting account and audit projection, and enforces idempotency, branch authorization, payment/quantity caps, database guards, rollback, and concurrency. Arabic RTL invoice search, detail, exact refund allocation, confirmation, immutable history, and eligible void/refund actions are covered in wide and compact browser journeys.
 
 ## ERP 17. Commission and payroll integration
 
@@ -882,7 +879,8 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–14 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. Await an explicit choice before beginning the next eligible phase: ERP 15, 16, or 18.
+ERP 1–16 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 17 commission/payroll integration is the next critical-path phase, and ERP 18 offline sale submission may proceed in parallel.
+
 ## Locked exclusions — do not implement
 
 - Do not add public registration, employee self-registration, extra admin accounts, or additional roles.

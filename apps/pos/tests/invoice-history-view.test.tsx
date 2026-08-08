@@ -57,6 +57,20 @@ describe('invoice history', () => {
     expect(mocks.listInvoices).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
   });
 
+  it('searches invoices by trimmed invoice or client text', async () => {
+    renderView();
+    await screen.findByRole('link', { name: item.invoiceNumber });
+
+    fireEvent.change(screen.getByLabelText('بحث برقم الفاتورة أو العميل'), {
+      target: { value: '  منى  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
+
+    await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
+      page: 1, pageSize: 20, search: 'منى',
+    }));
+  });
+
   it('requires an Admin branch and carries it into receipt links', async () => {
     mocks.actor.current = { type: 'admin' };
     renderView();

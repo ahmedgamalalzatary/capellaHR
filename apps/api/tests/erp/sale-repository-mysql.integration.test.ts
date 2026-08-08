@@ -15,9 +15,12 @@ import {
   erpServices,
   invoiceLines,
   invoicePayments,
+  invoiceReversalLines,
+  invoiceReversalPayments,
+  invoiceReversals,
   invoices,
 } from '@capella/database/schema';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +38,15 @@ const isolatedDatabaseName = `capella_hr_test_erp9_${process.pid}_${Date.now()}`
 const isolatedDatabaseUrl = new URL(process.env.DATABASE_URL ?? '');
 isolatedDatabaseUrl.pathname = `/${isolatedDatabaseName}`;
 const database = createDatabase(isolatedDatabaseUrl.toString());
+const cairoBusinessDate = (value: Date) => {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => (
+    parts.find((entry) => entry.type === type)!.value
+  );
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
 
 beforeAll(async () => {
   if (!/^capella_hr_test_erp9_\d+_\d+$/.test(isolatedDatabaseName)) {
@@ -182,6 +194,682 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('partially refunds product quantities, restores stock, and remains idempotent', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '100.00' }];
+    const completed = await repository.complete(sale);
+    const key = crypto.randomUUID();
+    const reversal = {
+      type: 'refund' as const,
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: key,
+        reason: 'Customer return',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash' as const, amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier' as const,
+      reversedAt: new Date('2026-08-03T12:00:00.000Z'),
+    };
+
+    const refunded = await repository.reverse(reversal);
+    const retried = await repository.reverse(reversal);
+
+    expect(refunded.status).toBe('partially_refunded');
+    expect(retried).toEqual(refunded);
+    expect((await database.select().from(erpProductStocks)
+      .where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(1);
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(1);
+    expect(await database.select().from(invoiceReversalLines)
+      .where(eq(invoiceReversalLines.invoiceId, completed.id))).toEqual([
+      expect.objectContaining({ quantity: 1, grossAmount: '50.00', total: '50.00' }),
+    ]);
+    expect(await database.select().from(invoiceReversalPayments)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ methodSnapshot: 'cash', amount: '50.00' }),
+    ]));
+    expect(await database.select().from(erpStockMovements)
+      .where(and(
+        eq(erpStockMovements.reason, 'refund'),
+        eq(erpStockMovements.sourceId, (await database.select({ id: invoiceReversals.id })
+          .from(invoiceReversals).where(eq(invoiceReversals.invoiceId, completed.id)))[0]!.id),
+      )))
+      .toEqual([expect.objectContaining({ reason: 'refund', quantityDelta: 1, balanceAfter: 1 })]);
+  });
+
+  it('voids a same-day service invoice and appends the exact commission reversal', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const now = new Date();
+    const businessDate = cairoBusinessDate(now);
+    const sale = operation(data, crypto.randomUUID());
+    sale.soldAt = now;
+    sale.invoiceNumber = `INV-${businessDate.replaceAll('-', '.')}-14.35-${data.branchId}`;
+    const completed = await repository.complete(sale);
+
+    const voided = await repository.reverse({
+      type: 'void',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Duplicate sale',
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: now,
+    });
+
+    expect(voided.status).toBe('voided');
+    const reversalId = (await database.select({ id: invoiceReversals.id }).from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id)))[0]!.id;
+    expect(await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, completed.id))).toEqual([
+      expect.objectContaining({ entryType: 'earned', baseAmount: '200.00', amount: '30.00' }),
+      expect.objectContaining({
+        entryType: 'reversal', invoiceReversalId: reversalId,
+        baseAmount: '200.00', amount: '-30.00',
+      }),
+    ]);
+    expect(await database.select().from(auditEvents).where(and(
+      eq(auditEvents.entityType, 'invoice'),
+      eq(auditEvents.entityId, String(completed.id)),
+      eq(auditEvents.action, 'void'),
+    ))).toEqual([expect.objectContaining({
+      relatedIds: expect.objectContaining({ actingAccountId: String(data.accountId) }),
+    })]);
+  });
+
+  it('rejects a void exactly when the Cairo business date rolls over', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    await expect(repository.reverse({
+      type: 'void',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Late cancellation',
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-03T21:00:00.000Z'),
+    })).rejects.toMatchObject({ code: 'VOID_DATE_EXPIRED' });
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);
+  });
+
+  it('allows an Admin to fully refund a completed invoice after the sale date', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    const refunded = await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Approved customer refund',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '185.00' }],
+      },
+      actingAccountId: data.adminAccountId,
+      actingAccountRole: 'admin',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    expect(refunded.status).toBe('refunded');
+    expect(refunded.reversals[0]).toMatchObject({
+      actingAccount: { id: data.adminAccountId },
+      approvingAccount: null,
+    });
+  });
+
+  it('rejects a refund whose payment allocation does not equal its calculated total', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    await expect(repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Incorrect tender allocation',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '184.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    })).rejects.toMatchObject({ code: 'REFUND_PAYMENT_MISMATCH' });
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);
+  });
+
+  it('serializes competing refunds so the same quantity is restored only once', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(sale);
+    const reverse = (key: string) => repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: key,
+        reason: 'Concurrent return',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash' as const, amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier' as const,
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    const results = await Promise.allSettled([
+      reverse(crypto.randomUUID()),
+      reverse(crypto.randomUUID()),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([
+      expect.objectContaining({ reason: expect.objectContaining({ code: 'INVOICE_NOT_REVERSIBLE' }) }),
+    ]);
+    expect((await database.select().from(erpProductStocks)
+      .where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(2);
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(1);
+  });
+
+  it('replays concurrent identical full-refund submissions from one stored reversal', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(sale);
+    const reversal = {
+      type: 'refund' as const,
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Identical concurrent return',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash' as const, amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier' as const,
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    };
+
+    const results = await Promise.all([
+      repository.reverse(reversal),
+      repository.reverse(reversal),
+    ]);
+
+    expect(results[1]).toEqual(results[0]);
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(1);
+  });
+
+  it('rejects cumulative quantities and tender amounts beyond the remaining refund caps', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '100.00' }];
+    const completed = await repository.complete(sale);
+    const reverse = (quantity: number, amount: string) => repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Cumulative cap check',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity }],
+        payments: [{ method: 'cash' as const, amount }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier' as const,
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    await reverse(1, '50.00');
+    await expect(reverse(2, '100.00'))
+      .rejects.toMatchObject({ code: 'REFUND_QUANTITY_EXCEEDED' });
+    await expect(reverse(1, '51.00'))
+      .rejects.toMatchObject({ code: 'REFUND_PAYMENT_EXCEEDED' });
+    expect((await database.select().from(erpProductStocks)
+      .where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(1);
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(1);
+  });
+
+  it('rejects a Cashier whose active employee belongs to another branch', async () => {
+    const invoiceBranch = await fixture();
+    const otherBranch = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(invoiceBranch, crypto.randomUUID()));
+
+    await expect(repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: invoiceBranch.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Cross-branch attempt',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '185.00' }],
+      },
+      actingAccountId: otherBranch.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    })).rejects.toMatchObject({ code: 'INVOICE_NOT_REVERSIBLE' });
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);
+  });
+
+  it('blocks direct lifecycle shortcuts and mutation of stored reversal facts', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '100.00' }];
+    const completed = await repository.complete(sale);
+
+    await expect(database.update(invoices).set({ status: 'refunded' })
+      .where(eq(invoices.id, completed.id))).rejects.toBeDefined();
+    await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Guard proof',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+    const reversal = (await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id)))[0]!;
+    await expect(database.update(invoiceReversals).set({ reason: 'tampered' })
+      .where(eq(invoiceReversals.id, reversal.id))).rejects.toBeDefined();
+  });
+
+  it('rejects child inserts after finalization and incomplete direct product finalization', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [
+      { itemType: 'product', productId: data.productId, quantity: 1 },
+      { itemType: 'product', productId: data.productId, quantity: 1 },
+    ];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '100.00' }];
+    const completed = await repository.complete(sale);
+    await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'First line return',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+    const finalized = (await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id)))[0]!;
+    await expect(database.insert(invoiceReversalLines).values({
+      reversalId: finalized.id,
+      invoiceId: completed.id,
+      invoiceLineId: completed.lines[1]!.id,
+      branchId: data.branchId,
+      quantity: 1,
+      grossAmount: '50.00',
+      discountAmount: '0.00',
+      taxAmount: '0.00',
+      total: '50.00',
+    })).rejects.toBeDefined();
+
+    const payment = (await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id)))[0]!;
+    const pendingId = Number((await database.insert(invoiceReversals).values({
+      invoiceId: completed.id,
+      branchId: data.branchId,
+      type: 'refund',
+      idempotencyKey: crypto.randomUUID(),
+      reason: 'Missing stock movement',
+      actingAccountId: data.accountId,
+      approvingAccountId: null,
+      grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
+      businessDate: '2026-08-04',
+      createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    }))[0].insertId);
+    await database.insert(invoiceReversalLines).values({
+      reversalId: pendingId, invoiceId: completed.id,
+      invoiceLineId: completed.lines[1]!.id, branchId: data.branchId,
+      quantity: 1, grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
+    });
+    await database.insert(invoiceReversalPayments).values({
+      reversalId: pendingId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
+    });
+    await expect(database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, pendingId))).rejects.toBeDefined();
+    expect((await database.select().from(invoices)
+      .where(eq(invoices.id, completed.id)))[0]?.status).toBe('partially_refunded');
+  });
+
+  it('rejects a direct void whose Cairo business date differs from its invoice number', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    await expect(database.insert(invoiceReversals).values({
+      invoiceId: completed.id,
+      branchId: data.branchId,
+      type: 'void',
+      idempotencyKey: crypto.randomUUID(),
+      reason: 'Late direct void',
+      actingAccountId: data.accountId,
+      approvingAccountId: null,
+      grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      businessDate: '2026-08-04',
+      createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    })).rejects.toBeDefined();
+  });
+
+  it('rejects finalizing a service refund without its linked commission reversal', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+    const payment = (await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id)))[0]!;
+    const pendingId = Number((await database.insert(invoiceReversals).values({
+      invoiceId: completed.id,
+      branchId: data.branchId,
+      type: 'refund',
+      idempotencyKey: crypto.randomUUID(),
+      reason: 'Missing commission reversal',
+      actingAccountId: data.accountId,
+      approvingAccountId: null,
+      grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      businessDate: '2026-08-04',
+      createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    }))[0].insertId);
+    await database.insert(invoiceReversalLines).values({
+      reversalId: pendingId,
+      invoiceId: completed.id,
+      invoiceLineId: completed.lines[0]!.id,
+      branchId: data.branchId,
+      quantity: 1,
+      grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+    });
+    await database.insert(invoiceReversalPayments).values({
+      reversalId: pendingId,
+      invoicePaymentId: payment.id,
+      methodSnapshot: payment.method,
+      amount: '185.00',
+    });
+
+    await expect(database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, pendingId))).rejects.toBeDefined();
+    expect((await database.select().from(invoices)
+      .where(eq(invoices.id, completed.id)))[0]?.status).toBe('completed');
+  });
+
+  it('rejects reversal money that is not the exact allocation for its selected quantity', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(sale);
+    const payment = (await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id)))[0]!;
+    const pendingId = Number((await database.insert(invoiceReversals).values({
+      invoiceId: completed.id, branchId: data.branchId, type: 'refund',
+      idempotencyKey: crypto.randomUUID(), reason: 'Arbitrary direct amount',
+      actingAccountId: data.accountId, approvingAccountId: null,
+      grossAmount: '1.00', discountAmount: '0.00', taxAmount: '0.00', total: '1.00',
+      businessDate: '2026-08-04', createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    }))[0].insertId);
+    await database.insert(invoiceReversalLines).values({
+      reversalId: pendingId, invoiceId: completed.id,
+      invoiceLineId: completed.lines[0]!.id, branchId: data.branchId,
+      quantity: 1, grossAmount: '1.00', discountAmount: '0.00', taxAmount: '0.00', total: '1.00',
+    });
+    await database.insert(invoiceReversalPayments).values({
+      reversalId: pendingId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '1.00',
+    });
+    await database.update(erpProductStocks).set({ quantity: 2 })
+      .where(eq(erpProductStocks.productId, data.productId));
+    await database.insert(erpStockMovements).values({
+      productId: data.productId, branchId: data.branchId,
+      reason: 'refund', sourceType: 'refund', sourceId: pendingId,
+      quantityDelta: 1, balanceAfter: 2, actingAccountId: data.accountId,
+      createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    await expect(database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, pendingId))).rejects.toBeDefined();
+  });
+
+  it('rejects stock restoration movements whose recorded balance was not persisted', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(sale);
+    const payment = (await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id)))[0]!;
+    const pendingId = Number((await database.insert(invoiceReversals).values({
+      invoiceId: completed.id, branchId: data.branchId, type: 'refund',
+      idempotencyKey: crypto.randomUUID(), reason: 'Movement without stock update',
+      actingAccountId: data.accountId, approvingAccountId: null,
+      grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
+      businessDate: '2026-08-04', createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    }))[0].insertId);
+    await database.insert(invoiceReversalLines).values({
+      reversalId: pendingId, invoiceId: completed.id,
+      invoiceLineId: completed.lines[0]!.id, branchId: data.branchId,
+      quantity: 1, grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
+    });
+    await database.insert(invoiceReversalPayments).values({
+      reversalId: pendingId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
+    });
+    await database.insert(erpStockMovements).values({
+      productId: data.productId, branchId: data.branchId,
+      reason: 'refund', sourceType: 'refund', sourceId: pendingId,
+      quantityDelta: 1, balanceAfter: 2, actingAccountId: data.accountId,
+      createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    await expect(database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, pendingId))).rejects.toBeDefined();
+  });
+
+  it('rejects a historical void whose supplied business date hides its current creation date', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    await expect(database.insert(invoiceReversals).values({
+      invoiceId: completed.id, branchId: data.branchId, type: 'void',
+      idempotencyKey: crypto.randomUUID(), reason: 'Backdated direct void',
+      actingAccountId: data.accountId, approvingAccountId: null,
+      grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      businessDate: '2026-08-03', createdAt: new Date(),
+    })).rejects.toBeDefined();
+  });
+
+  it('finalizes one service refund without counting another pending reversal commission', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+    const payment = (await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id)))[0]!;
+    const earned = (await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, completed.id)))[0]!;
+    const makePending = async (reason: string) => {
+      const reversalId = Number((await database.insert(invoiceReversals).values({
+        invoiceId: completed.id, branchId: data.branchId, type: 'refund',
+        idempotencyKey: crypto.randomUUID(), reason,
+        actingAccountId: data.accountId, approvingAccountId: null,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+        businessDate: '2026-08-04', createdAt: new Date('2026-08-04T09:00:00.000Z'),
+      }))[0].insertId);
+      await database.insert(invoiceReversalLines).values({
+        reversalId, invoiceId: completed.id, invoiceLineId: completed.lines[0]!.id,
+        branchId: data.branchId, quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      });
+      await database.insert(invoiceReversalPayments).values({
+        reversalId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '185.00',
+      });
+      await database.insert(commissionLedgerEntries).values({
+        invoiceId: completed.id, invoiceLineId: completed.lines[0]!.id,
+        employeeId: data.employeeId, actingAccountId: data.accountId,
+        entryType: 'reversal', reversesEntryId: earned.id, invoiceReversalId: reversalId,
+        commissionRuleSnapshot: earned.commissionRuleSnapshot,
+        commissionRateSnapshot: earned.commissionRateSnapshot,
+        baseAmount: '200.00', amount: '-30.00', createdAt: new Date('2026-08-04T09:00:00.000Z'),
+      });
+      return reversalId;
+    };
+    const firstId = await makePending('First pending refund');
+    await makePending('Second pending refund');
+
+    await expect(database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, firstId))).resolves.toBeDefined();
+  });
+
+  it('fully refunds a zero-net product line without creating a payment movement', async () => {
+    const data = await fixture();
+    await database.update(erpProducts).set({ sellingPrice: '0.01' })
+      .where(eq(erpProducts.id, data.productId));
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [
+      { itemType: 'product', productId: data.productId, quantity: 1 },
+      { itemType: 'product', productId: data.productId, quantity: 1 },
+    ];
+    sale.input.discount = { kind: 'fixed', value: '0.01' };
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '0.01' }];
+    const completed = await repository.complete(sale);
+
+    const first = await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Fully discounted item',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+    expect(first.status).toBe('partially_refunded');
+    expect(first.reversals[0]).toMatchObject({ totals: { total: '0.00' }, payments: [] });
+
+    const second = await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Remaining cent',
+        lines: [{ invoiceLineId: completed.lines[1]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '0.01' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:01:00.000Z'),
+    });
+    expect(second.status).toBe('refunded');
+    expect((await database.select().from(erpProductStocks)
+      .where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(2);
+  });
+
+  it('rolls back every reversal fact when audit persistence fails', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(sale);
+    await database.execute(sql.raw("CREATE TRIGGER `erp16_fail_audit` BEFORE INSERT ON `audit_events` FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced ERP 16 rollback'"));
+    try {
+      await expect(repository.reverse({
+        type: 'refund',
+        invoiceId: completed.id,
+        input: {
+          branchId: data.branchId,
+          idempotencyKey: crypto.randomUUID(),
+          reason: 'Rollback proof',
+          lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+          payments: [{ method: 'cash', amount: '50.00' }],
+        },
+        actingAccountId: data.accountId,
+        actingAccountRole: 'cashier',
+        reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+      })).rejects.toBeDefined();
+      expect((await database.select().from(invoices)
+        .where(eq(invoices.id, completed.id)))[0]?.status).toBe('completed');
+      expect((await database.select().from(erpProductStocks)
+        .where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(1);
+      expect(await database.select().from(invoiceReversals)
+        .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);
+      expect(await database.select().from(erpStockMovements).where(and(
+        eq(erpStockMovements.reason, 'refund'),
+        eq(erpStockMovements.productId, data.productId),
+      ))).toHaveLength(0);
+    } finally {
+      await database.execute(sql.raw('DROP TRIGGER IF EXISTS `erp16_fail_audit`'));
+    }
+  });
+
   it('rejects impossible stock movement reason, source, and direction facts', async () => {
     const data = await fixture();
     const base = {

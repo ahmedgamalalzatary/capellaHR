@@ -96,6 +96,78 @@ const paymentSchema = z.object({
   amount: positiveMoneySchema,
 }).strict();
 
+const reversalCommandBaseSchema = z.object({
+  branchId: positiveMysqlIntSchema.optional(),
+  idempotencyKey: z.string().uuid(),
+  reason: z.string().trim()
+    .min(1, 'سبب الإلغاء أو الاسترداد مطلوب')
+    .max(1000, 'سبب الإلغاء أو الاسترداد طويل جدًا'),
+});
+
+export const voidInvoiceSchema = reversalCommandBaseSchema.strict();
+
+const refundLineSelectionSchema = z.object({
+  invoiceLineId: positiveMysqlIntSchema,
+  quantity: positiveMysqlIntSchema,
+}).strict();
+
+const rejectDuplicateRefundLines = (
+  value: { lines: Array<{ invoiceLineId: number }> },
+  context: z.RefinementCtx,
+) => {
+  const seen = new Set<number>();
+  value.lines.forEach((line, index) => {
+    if (seen.has(line.invoiceLineId)) {
+      context.addIssue({
+        code: 'custom', path: ['lines', index, 'invoiceLineId'], message: 'لا يمكن تكرار البند',
+      });
+    }
+    seen.add(line.invoiceLineId);
+  });
+};
+
+export const refundInvoiceSchema = reversalCommandBaseSchema.extend({
+  lines: z.array(refundLineSelectionSchema).min(1).max(100),
+  payments: z.array(paymentSchema).max(paymentMethodSchema.options.length),
+}).strict().superRefine((value, context) => {
+  rejectDuplicateRefundLines(value, context);
+  const seenMethods = new Set<PaymentMethod>();
+  value.payments.forEach((payment, index) => {
+    if (seenMethods.has(payment.method)) {
+      context.addIssue({
+        code: 'custom', path: ['payments', index, 'method'], message: 'لا يمكن تكرار البند',
+      });
+    }
+    seenMethods.add(payment.method);
+  });
+});
+
+export const refundQuoteInputSchema = z.object({
+  branchId: coercedMysqlIntSchema.optional(),
+  lines: z.array(refundLineSelectionSchema).min(1).max(100),
+}).strict().superRefine(rejectDuplicateRefundLines);
+
+const reversalAmountLineSchema = refundLineSelectionSchema.extend({
+  grossAmount: positiveMoneySchema,
+  discountAmount: exactMoneySchema,
+  taxAmount: exactMoneySchema,
+  total: exactMoneySchema,
+}).strict();
+
+export const refundQuoteSchema = z.object({
+  lines: z.array(reversalAmountLineSchema).min(1),
+  totals: z.object({
+    grossAmount: positiveMoneySchema,
+    discountAmount: exactMoneySchema,
+    taxAmount: exactMoneySchema,
+    total: exactMoneySchema,
+  }).strict(),
+  payments: z.array(z.object({
+    method: paymentMethodSchema,
+    refundableAmount: exactMoneySchema,
+  }).strict()),
+}).strict();
+
 export const paymentBreakdownSchema = z.object({
   total: positiveMoneySchema,
   payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
@@ -261,7 +333,12 @@ const invoiceLineSchema = z.object({
   commissionRate: percentageSchema,
   commissionAmount: exactMoneySchema,
   productCostBasis: exactMoneySchema.nullable(),
+  refundedQuantity: z.number().int().min(0),
+  refundableQuantity: z.number().int().min(0),
 }).strict().superRefine((value, context) => {
+  if (value.refundedQuantity + value.refundableQuantity !== value.quantity) {
+    context.addIssue({ code: 'custom', path: ['refundableQuantity'], message: 'كميات الاسترداد غير متسقة' });
+  }
   if (toCents(value.lineTotal) !== toCents(value.unitPrice) * BigInt(value.quantity)) {
     context.addIssue({ code: 'custom', path: ['lineTotal'], message: 'إجمالي البند غير متسق' });
   }
@@ -283,6 +360,48 @@ const invoiceLineSchema = z.object({
     context.addIssue({ code: 'custom', path: ['commissionAmount'], message: 'المنتج لا يحقق عمولة' });
   }
 });
+
+const storedInvoicePaymentSchema = paymentSchema.extend({
+  refundedAmount: exactMoneySchema,
+  refundableAmount: exactMoneySchema,
+}).strict().superRefine((value, context) => {
+  if (toCents(value.refundedAmount) + toCents(value.refundableAmount) !== toCents(value.amount)) {
+    context.addIssue({ code: 'custom', path: ['refundableAmount'], message: 'مبالغ الاسترداد غير متسقة' });
+  }
+});
+
+export const invoiceReversalSchema = z.object({
+  id: positiveMysqlIntSchema,
+  type: z.enum(['void', 'refund']),
+  reason: z.string().min(1).max(1000),
+  actingAccount: z.object({
+    id: positiveMysqlIntSchema,
+    username: z.string().min(1).max(255),
+  }).strict(),
+  approvingAccount: z.object({
+    id: positiveMysqlIntSchema,
+    username: z.string().min(1).max(255),
+  }).strict().nullable(),
+  lines: z.array(z.object({
+    invoiceLineId: positiveMysqlIntSchema,
+    lineNumber: positiveMysqlIntSchema,
+    itemType: saleItemTypeSchema,
+    name: z.string().min(1).max(255),
+    quantity: positiveMysqlIntSchema,
+    grossAmount: positiveMoneySchema,
+    discountAmount: exactMoneySchema,
+    taxAmount: exactMoneySchema,
+    total: exactMoneySchema,
+  }).strict()).min(1),
+  payments: z.array(paymentSchema).max(paymentMethodSchema.options.length),
+  totals: z.object({
+    grossAmount: positiveMoneySchema,
+    discountAmount: exactMoneySchema,
+    taxAmount: exactMoneySchema,
+    total: exactMoneySchema,
+  }).strict(),
+  createdAt: isoDateTimeSchema,
+}).strict();
 
 export const invoiceSchema = z.object({
   id: positiveMysqlIntSchema,
@@ -308,7 +427,9 @@ export const invoiceSchema = z.object({
   discount: storedAdjustmentSchema.nullable(),
   tax: storedAdjustmentSchema.nullable(),
   totals: invoiceTotalsSchema,
-  payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
+  payments: z.array(storedInvoicePaymentSchema).min(1).max(paymentMethodSchema.options.length),
+  reversals: z.array(invoiceReversalSchema),
+  eligibility: z.object({ canVoid: z.boolean(), canRefund: z.boolean() }).strict(),
   soldAt: isoDateTimeSchema,
 }).strict().superRefine((value, context) => {
   const lineSubtotal = value.lines.reduce(
@@ -336,7 +457,7 @@ export const invoiceSchema = z.object({
 
   const breakdown = paymentBreakdownSchema.safeParse({
     total: value.totals.total,
-    payments: value.payments,
+    payments: value.payments.map(({ method, amount }) => ({ method, amount })),
   });
   if (!breakdown.success) {
     context.addIssue({
@@ -357,6 +478,7 @@ export const invoiceHistoryQuerySchema = z.object({
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
   branchId: coercedMysqlIntSchema.optional(),
+  search: z.string().trim().min(1).max(255).optional(),
 }).strict();
 
 export const invoiceParamsSchema = z.object({
@@ -403,6 +525,11 @@ export const saleErrorSchema = z.object({
     'PAYMENT_TOTAL_MISMATCH',
     'IDEMPOTENCY_CONFLICT',
     'INVOICE_NOT_FOUND',
+    'INVOICE_NOT_REVERSIBLE',
+    'VOID_DATE_EXPIRED',
+    'REFUND_QUANTITY_EXCEEDED',
+    'REFUND_PAYMENT_MISMATCH',
+    'REFUND_PAYMENT_EXCEEDED',
   ]),
   message: z.string().min(1),
   field: z.string().min(1).optional(),
@@ -445,6 +572,8 @@ export const saleFixtures = {
       commissionRate: '15.00',
       commissionAmount: '30.00',
       productCostBasis: null,
+      refundedQuantity: 0,
+      refundableQuantity: 1,
     }],
     discount: { kind: 'percentage', value: '10.00', amount: '20.00' },
     tax: { kind: 'fixed', value: '5.00', amount: '5.00' },
@@ -455,7 +584,11 @@ export const saleFixtures = {
       total: '185.00',
       paymentTotal: '185.00',
     },
-    payments: [{ method: 'cash', amount: '185.00' }],
+    payments: [{
+      method: 'cash', amount: '185.00', refundedAmount: '0.00', refundableAmount: '185.00',
+    }],
+    reversals: [],
+    eligibility: { canVoid: false, canRefund: true },
     soldAt: '2026-08-03T11:35:00.000Z',
   },
   errors: {
@@ -467,6 +600,10 @@ export const saleFixtures = {
 } as const;
 
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
+export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;
+export type RefundInvoiceInput = z.infer<typeof refundInvoiceSchema>;
+export type RefundQuoteInput = z.infer<typeof refundQuoteInputSchema>;
+export type RefundQuote = z.infer<typeof refundQuoteSchema>;
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
 export type QuoteSaleInput = z.infer<typeof quoteSaleInputSchema>;
 export type SaleQuote = z.infer<typeof saleQuoteSchema>;

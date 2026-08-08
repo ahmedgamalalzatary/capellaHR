@@ -155,6 +155,65 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   check('erp_invoice_payments_amount_positive', sql`${table.amount} > 0`),
 ]);
 
+export const invoiceReversals = mysqlTable('erp_invoice_reversals', {
+  id: int('id').autoincrement().primaryKey(),
+  invoiceId: int('invoice_id').notNull(),
+  branchId: int('branch_id').notNull(),
+  type: mysqlEnum('type', ['void', 'refund']).notNull(),
+  status: mysqlEnum('status', ['pending', 'finalized']).default('pending').notNull(),
+  idempotencyKey: varchar('idempotency_key', { length: 36 }).notNull(),
+  reason: varchar('reason', { length: 1000 }).notNull(),
+  actingAccountId: int('acting_account_id').notNull(),
+  approvingAccountId: int('approving_account_id'),
+  grossAmount: decimal('gross_amount', { precision: 14, scale: 2 }).notNull(),
+  discountAmount: decimal('discount_amount', { precision: 14, scale: 2 }).notNull(),
+  taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull(),
+  total: decimal('total', { precision: 14, scale: 2 }).notNull(),
+  businessDate: date('business_date', { mode: 'string' }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({ name: 'erp_invoice_reversals_invoice_branch_fk', columns: [table.invoiceId, table.branchId], foreignColumns: [invoices.id, invoices.branchId] }),
+  foreignKey({ name: 'erp_invoice_reversals_acting_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
+  foreignKey({ name: 'erp_invoice_reversals_approving_account_fk', columns: [table.approvingAccountId], foreignColumns: [accounts.id] }),
+  uniqueIndex('erp_invoice_reversals_idempotency_unique').on(table.idempotencyKey),
+  index('erp_invoice_reversals_invoice_created_idx').on(table.invoiceId, table.createdAt),
+  check('erp_invoice_reversals_reason_required', sql`CHAR_LENGTH(TRIM(${table.reason})) > 0`),
+  check('erp_invoice_reversals_amounts_consistent', sql`${table.grossAmount} > 0 and ${table.discountAmount} >= 0 and ${table.taxAmount} >= 0 and ${table.total} = ${table.grossAmount} - ${table.discountAmount} + ${table.taxAmount} and ${table.total} >= 0`),
+]);
+
+export const invoiceReversalLines = mysqlTable('erp_invoice_reversal_lines', {
+  id: int('id').autoincrement().primaryKey(),
+  reversalId: int('reversal_id').notNull(),
+  invoiceId: int('invoice_id').notNull(),
+  invoiceLineId: int('invoice_line_id').notNull(),
+  branchId: int('branch_id').notNull(),
+  quantity: int('quantity').notNull(),
+  grossAmount: decimal('gross_amount', { precision: 14, scale: 2 }).notNull(),
+  discountAmount: decimal('discount_amount', { precision: 14, scale: 2 }).notNull(),
+  taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull(),
+  total: decimal('total', { precision: 14, scale: 2 }).notNull(),
+}, (table) => [
+  foreignKey({ name: 'erp_reversal_lines_reversal_fk', columns: [table.reversalId], foreignColumns: [invoiceReversals.id] }),
+  foreignKey({ name: 'erp_reversal_lines_invoice_fk', columns: [table.invoiceId], foreignColumns: [invoices.id] }),
+  foreignKey({ name: 'erp_reversal_lines_line_fk', columns: [table.invoiceLineId], foreignColumns: [invoiceLines.id] }),
+  foreignKey({ name: 'erp_reversal_lines_branch_fk', columns: [table.branchId], foreignColumns: [branches.id] }),
+  uniqueIndex('erp_invoice_reversal_lines_reversal_line_unique').on(table.reversalId, table.invoiceLineId),
+  check('erp_invoice_reversal_lines_amounts_consistent', sql`${table.quantity} > 0 and ${table.grossAmount} > 0 and ${table.discountAmount} >= 0 and ${table.taxAmount} >= 0 and ${table.total} = ${table.grossAmount} - ${table.discountAmount} + ${table.taxAmount} and ${table.total} >= 0`),
+]);
+
+export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments', {
+  id: int('id').autoincrement().primaryKey(),
+  reversalId: int('reversal_id').notNull(),
+  invoicePaymentId: int('invoice_payment_id').notNull(),
+  methodSnapshot: mysqlEnum('method_snapshot', erpPaymentMethods).notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+}, (table) => [
+  foreignKey({ name: 'erp_reversal_payments_reversal_fk', columns: [table.reversalId], foreignColumns: [invoiceReversals.id] }),
+  foreignKey({ name: 'erp_reversal_payments_payment_fk', columns: [table.invoicePaymentId], foreignColumns: [invoicePayments.id] }),
+  uniqueIndex('erp_invoice_reversal_payments_method_unique').on(table.reversalId, table.methodSnapshot),
+  check('erp_invoice_reversal_payments_amount_positive', sql`${table.amount} > 0`),
+]);
+
 export const invoiceDailySequences = mysqlTable('erp_invoice_daily_sequences', {
   businessDate: date('business_date', { mode: 'string' }).primaryKey(),
   lastValue: int('last_value').notNull(),
@@ -171,6 +230,7 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
   actingAccountId: int('acting_account_id').notNull(),
   entryType: mysqlEnum('entry_type', ['earned', 'reversal']).notNull(),
   reversesEntryId: int('reverses_entry_id'),
+  invoiceReversalId: int('invoice_reversal_id'),
   commissionRuleSnapshot: mysqlEnum('commission_rule_snapshot', ['service_default', 'employee_override']).notNull(),
   commissionRateSnapshot: decimal('commission_rate_snapshot', { precision: 5, scale: 2 }).notNull(),
   baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull(),
@@ -188,13 +248,18 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
     columns: [table.reversesEntryId],
     foreignColumns: [table.id],
   }),
+  foreignKey({
+    name: 'erp_commission_ledger_invoice_reversal_fk',
+    columns: [table.invoiceReversalId],
+    foreignColumns: [invoiceReversals.id],
+  }),
   uniqueIndex('erp_commission_ledger_original_line_unique').on(table.originalInvoiceLineId),
   index('erp_commission_ledger_employee_created_idx').on(table.employeeId, table.createdAt),
   index('erp_commission_ledger_invoice_idx').on(table.invoiceId),
   index('erp_commission_ledger_reversal_idx').on(table.reversesEntryId),
   check(
     'erp_commission_ledger_entry_consistent',
-    sql`(entry_type = 'earned' and reverses_entry_id is null) or (entry_type = 'reversal' and reverses_entry_id is not null)`,
+    sql`(entry_type = 'earned' and reverses_entry_id is null and invoice_reversal_id is null) or (entry_type = 'reversal' and reverses_entry_id is not null and invoice_reversal_id is not null)`,
   ),
   check(
     'erp_commission_ledger_amount_direction',

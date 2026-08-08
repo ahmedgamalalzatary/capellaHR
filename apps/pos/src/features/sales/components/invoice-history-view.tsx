@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
@@ -28,6 +28,8 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
   const isAdmin = actor?.type === 'admin';
   const [branchId, setBranchId] = useState<number | undefined>(initialBranchId);
   const [page, setPage] = useState(1);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [search, setSearch] = useState<string | undefined>();
   const branches = useQuery({
     queryKey: ['erp-sales', 'invoice-branches'],
     queryFn: () => listCashierSessionBranches(1),
@@ -39,13 +41,27 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
     }
   }, [branchId, branches.data, isAdmin]);
   const invoices = useQuery({
-    queryKey: salesQueryKeys.invoices(branchId, page),
-    queryFn: () => listInvoices({ ...(branchId ? { branchId } : {}), page, pageSize: 20 }),
+    queryKey: salesQueryKeys.invoices(branchId, page, search),
+    queryFn: () => listInvoices({
+      ...(branchId ? { branchId } : {}),
+      ...(search ? { search } : {}),
+      page,
+      pageSize: 20,
+    }),
     enabled: Boolean(actor) && (!isAdmin || branchId !== undefined),
   });
 
   return <section className="mx-auto max-w-5xl space-y-4">
     <div><h1 className="text-2xl font-semibold">الفواتير والإيصالات</h1><p className="text-sm text-muted">اعرض الفاتورة المخزنة وأعد طباعة إيصالها دون إعادة البيع.</p></div>
+    <form className="flex max-w-xl items-end gap-2" onSubmit={(event) => {
+      event.preventDefault();
+      setSearch(searchDraft.trim() || undefined);
+      setPage(1);
+    }}>
+      <Label className="grow" htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
+      <Input id="invoice-search" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} />
+      <Button type="submit">بحث</Button>
+    </form>
     {isAdmin ? <div className="max-w-sm space-y-1">
       <Label htmlFor="invoice-branch">الفرع</Label>
       <select id="invoice-branch" disabled={branches.isPending || branches.isError} className="w-full rounded-control border border-line bg-paper px-3 py-2" value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}>

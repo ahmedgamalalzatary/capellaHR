@@ -6,7 +6,11 @@ import type {
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
+  RefundInvoiceInput,
+  RefundQuote,
+  RefundQuoteInput,
   SaleQuote,
+  VoidInvoiceInput,
 } from '@capella/contracts';
 
 import { api } from '@/lib/api/client';
@@ -41,4 +45,20 @@ export const listInvoices = (query: InvoiceHistoryQuery) => api.getPage<InvoiceH
 
 export const getInvoice = (invoiceId: number, branchId?: number) => api.get<PublicInvoiceDto>(
   `/erp/sales/${encodeURIComponent(String(invoiceId))}${queryString({ branchId })}`,
+);
+
+export const quoteRefund = (invoiceId: number, input: RefundQuoteInput) => api.post<RefundQuote>(
+  `/erp/sales/${encodeURIComponent(String(invoiceId))}/refunds/quote`, input,
+);
+
+export const refundInvoice = (invoiceId: number, input: RefundInvoiceInput) => (
+  api.post<PublicInvoiceDto>(
+    `/erp/sales/${encodeURIComponent(String(invoiceId))}/refunds`, input,
+  )
+);
+
+export const voidInvoice = (invoiceId: number, input: VoidInvoiceInput) => (
+  api.post<PublicInvoiceDto>(
+    `/erp/sales/${encodeURIComponent(String(invoiceId))}/void`, input,
+  )
 );

@@ -16,6 +16,10 @@ import {
   clientVisitSummarySchema,
   saleErrorSchema,
   saleFixtures,
+  refundInvoiceSchema,
+  refundQuoteInputSchema,
+  refundQuoteSchema,
+  voidInvoiceSchema,
 } from './index.js';
 
 const validDraft = {
@@ -37,6 +41,62 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('validates idempotent void commands with a required trimmed reason', () => {
+    expect(voidInvoiceSchema.parse({
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
+      reason: '  إدخال مكرر  ',
+    })).toEqual({
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
+      reason: 'إدخال مكرر',
+    });
+    expect(voidInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631', reason: '   ',
+    }).success).toBe(false);
+  });
+
+  it('validates partial refund quantities and original payment-method allocation', () => {
+    const value = {
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632',
+      reason: 'عدم رضا العميل',
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+      payments: [
+        { method: 'cash' as const, amount: '80' },
+        { method: 'visa' as const, amount: '20.00' },
+      ],
+    };
+    expect(refundInvoiceSchema.parse(value).payments).toEqual([
+      { method: 'cash', amount: '80.00' },
+      { method: 'visa', amount: '20.00' },
+    ]);
+    expect(refundInvoiceSchema.safeParse({
+      ...value,
+      lines: [...value.lines, value.lines[0]],
+    }).success).toBe(false);
+    expect(refundInvoiceSchema.safeParse({
+      ...value,
+      payments: [value.payments[0], value.payments[0]],
+    }).success).toBe(false);
+  });
+
+  it('publishes an authoritative partial-refund quote with remaining tenders', () => {
+    expect(refundQuoteInputSchema.parse({
+      branchId: '2', lines: [{ invoiceLineId: 81, quantity: 1 }],
+    })).toEqual({ branchId: 2, lines: [{ invoiceLineId: 81, quantity: 1 }] });
+    expect(refundQuoteSchema.safeParse({
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '200.00',
+        discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: {
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      },
+      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+    }).success).toBe(true);
+  });
+
   it('keeps validation messages as correctly decoded Arabic', () => {
     const source = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
     expect(source).not.toContain('Ã');
@@ -130,6 +190,48 @@ describe('ERP complete-sale contracts', () => {
     expect(invoiceSchema.safeParse({
       ...saleFixtures.completedInvoice,
       internalSequenceDate: '2026-08-03',
+    }).success).toBe(false);
+  });
+
+  it('publishes reversal history and remaining refundable quantities and tenders', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: saleFixtures.completedInvoice.lines.map((line) => ({
+        ...line, refundedQuantity: 0, refundableQuantity: line.quantity,
+      })),
+      payments: saleFixtures.completedInvoice.payments.map((payment) => ({
+        ...payment, refundedAmount: '0.00', refundableAmount: payment.amount,
+      })),
+      reversals: [],
+      eligibility: { canVoid: true, canRefund: true },
+    }).success).toBe(true);
+  });
+
+  it('supports zero-net refund lines without a payment movement', () => {
+    expect(refundInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632',
+      reason: 'إرجاع بند مخصوم بالكامل',
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+      payments: [],
+    }).success).toBe(true);
+    expect(refundQuoteSchema.safeParse({
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '0.01',
+        discountAmount: '0.01', taxAmount: '0.00', total: '0.00',
+      }],
+      totals: {
+        grossAmount: '0.01', discountAmount: '0.01', taxAmount: '0.00', total: '0.00',
+      },
+      payments: [],
+    }).success).toBe(true);
+  });
+
+  it('rejects duplicate invoice lines in refund quote requests', () => {
+    expect(refundQuoteInputSchema.safeParse({
+      lines: [
+        { invoiceLineId: 81, quantity: 1 },
+        { invoiceLineId: 81, quantity: 1 },
+      ],
     }).success).toBe(false);
   });
 
@@ -258,8 +360,9 @@ describe('ERP complete-sale contracts', () => {
   });
 
   it('publishes branch-scoped paged invoice history and detail parameters', () => {
-    expect(invoiceHistoryQuerySchema.parse({ page: '2', pageSize: '10', branchId: '3' }))
-      .toEqual({ page: 2, pageSize: 10, branchId: 3 });
+    expect(invoiceHistoryQuerySchema.parse({
+      page: '2', pageSize: '10', branchId: '3', search: '  01012345678  ',
+    })).toEqual({ page: 2, pageSize: 10, branchId: 3, search: '01012345678' });
     expect(invoiceParamsSchema.parse({ invoiceId: '44' })).toEqual({ invoiceId: 44 });
     expect(invoiceParamsSchema.safeParse({ invoiceId: '0' }).success).toBe(false);
   });

@@ -13,12 +13,40 @@ import {
   invoicePayments,
   invoices,
 } from '@capella/database/schema';
-import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { eq, sql } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/mysql2/migrator';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 
-const database = createDatabase(process.env.DATABASE_URL ?? '');
+const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
+const databaseName = `capella_hr_test_erp8_${process.pid}_${Date.now()}`;
+const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
+databaseUrl.pathname = `/${databaseName}`;
+const database = createDatabase(databaseUrl.toString());
+
+beforeAll(async () => {
+  if (!/^capella_hr_test_erp8_\d+_\d+$/.test(databaseName)) {
+    throw new Error('Unsafe ERP 8 integration database name');
+  }
+  await controlDatabase.execute(sql.raw(
+    `CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  ));
+  await migrate(database, {
+    migrationsFolder: path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../../../packages/database/migrations',
+    ),
+  });
+}, 120_000);
+
+afterAll(async () => {
+  await database.$client.promise().end();
+  await controlDatabase.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
+  await controlDatabase.$client.promise().end();
+}, 30_000);
 
 describe('ERP sales foundation MySQL integration', () => {
   it('allocates one non-reusable daily sequence under concurrency', async () => {
@@ -315,23 +343,7 @@ describe('ERP sales foundation MySQL integration', () => {
         invoiceDeleteRejected = true;
       }
 
-      const reversalId = Number((await transaction.insert(commissionLedgerEntries).values({
-        invoiceId,
-        invoiceLineId: lineId,
-        employeeId,
-        actingAccountId: accountId,
-        entryType: 'reversal',
-        reversesEntryId: ledgerId,
-        commissionRuleSnapshot: 'service_default',
-        commissionRateSnapshot: '33.33',
-        baseAmount: '0.02',
-        amount: '-0.01',
-        createdAt: now,
-      }))[0].insertId);
-
-      let overReversalRejected = false;
-      let reversalOfReversalRejected = false;
-      let cumulativeRoundingRejected = false;
+      let unlinkedReversalRejected = false;
       try {
         await transaction.insert(commissionLedgerEntries).values({
           invoiceId,
@@ -347,54 +359,7 @@ describe('ERP sales foundation MySQL integration', () => {
           createdAt: now,
         });
       } catch {
-        cumulativeRoundingRejected = true;
-      }
-      await transaction.insert(commissionLedgerEntries).values({
-        invoiceId,
-        invoiceLineId: lineId,
-        employeeId,
-        actingAccountId: accountId,
-        entryType: 'reversal',
-        reversesEntryId: ledgerId,
-        commissionRuleSnapshot: 'service_default',
-        commissionRateSnapshot: '33.33',
-        baseAmount: '0.02',
-        amount: '0.00',
-        createdAt: now,
-      });
-      try {
-        await transaction.insert(commissionLedgerEntries).values({
-          invoiceId,
-          invoiceLineId: lineId,
-          employeeId,
-          actingAccountId: accountId,
-          entryType: 'reversal',
-          reversesEntryId: ledgerId,
-          commissionRuleSnapshot: 'service_default',
-          commissionRateSnapshot: '33.33',
-          baseAmount: '0.01',
-          amount: '0.00',
-          createdAt: now,
-        });
-      } catch {
-        overReversalRejected = true;
-      }
-      try {
-        await transaction.insert(commissionLedgerEntries).values({
-          invoiceId,
-          invoiceLineId: lineId,
-          employeeId,
-          actingAccountId: accountId,
-          entryType: 'reversal',
-          reversesEntryId: reversalId,
-          commissionRuleSnapshot: 'service_default',
-          commissionRateSnapshot: '33.33',
-          baseAmount: '0.01',
-          amount: '0.00',
-          createdAt: now,
-        });
-      } catch {
-        reversalOfReversalRejected = true;
+        unlinkedReversalRejected = true;
       }
 
       let updateRejected = false;
@@ -411,7 +376,7 @@ describe('ERP sales foundation MySQL integration', () => {
       } catch {
         deleteRejected = true;
       }
-      throw new Error(`rollback:${invalidStatusRejected}:${emptyCompletionRejected}:${unpaidCompletionRejected}:${lineSubtotalMismatchRejected}:${missingCommissionRejected}:${paymentInsertRejected}:${paymentUpdateRejected}:${paymentDeleteRejected}:${invoiceUpdateRejected}:${invoiceReopenRejected}:${invoiceDeleteRejected}:${lineInsertRejected}:${lineUpdateRejected}:${lineDeleteRejected}:${cumulativeRoundingRejected}:${overReversalRejected}:${reversalOfReversalRejected}:${updateRejected}:${deleteRejected}`);
-    })).rejects.toThrow(`rollback:${Array.from({ length: 19 }, () => 'true').join(':')}`);
+      throw new Error(`rollback:${invalidStatusRejected}:${emptyCompletionRejected}:${unpaidCompletionRejected}:${lineSubtotalMismatchRejected}:${missingCommissionRejected}:${paymentInsertRejected}:${paymentUpdateRejected}:${paymentDeleteRejected}:${invoiceUpdateRejected}:${invoiceReopenRejected}:${invoiceDeleteRejected}:${lineInsertRejected}:${lineUpdateRejected}:${lineDeleteRejected}:${unlinkedReversalRejected}:${updateRejected}:${deleteRejected}`);
+    })).rejects.toThrow(`rollback:${Array.from({ length: 17 }, () => 'true').join(':')}`);
   });
 });

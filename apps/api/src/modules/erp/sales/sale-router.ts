@@ -5,6 +5,9 @@ import {
   invoiceHistoryQuerySchema,
   invoiceParamsSchema,
   quoteSaleInputSchema,
+  refundInvoiceSchema,
+  refundQuoteInputSchema,
+  voidInvoiceSchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Response } from 'express';
 import { ZodError } from 'zod';
@@ -126,6 +129,36 @@ export const createErpSalesRouter = (service: SaleService) => {
           totalPages: Math.ceil(result.total / query.pageSize),
         },
       });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.post('/:invoiceId/refunds', async (request, response, next) => {
+    try {
+      const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
+      const input = refundInvoiceSchema.parse(request.body);
+      response.status(201).json({ data: await service.refund(actorFrom(response), invoiceId, input) });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.post('/:invoiceId/refunds/quote', async (request, response, next) => {
+    try {
+      const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
+      const input = refundQuoteInputSchema.parse(request.body);
+      response.json({ data: await service.quoteRefund(actorFrom(response), invoiceId, input) });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.post('/:invoiceId/void', async (request, response, next) => {
+    try {
+      const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
+      const input = voidInvoiceSchema.parse(request.body);
+      response.status(201).json({ data: await service.void(actorFrom(response), invoiceId, input) });
     } catch (error) {
       handleError(error, response, next);
     }

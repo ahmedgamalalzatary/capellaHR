@@ -35,6 +35,78 @@ const fromCents = (value: bigint) => {
   return `${whole}.${fraction}`;
 };
 
+const proportionalCents = (amount: bigint, part: bigint, whole: bigint) => (
+  (amount * part + whole / 2n) / whole
+);
+
+export const allocateReversalAmounts = (input: {
+  lines: Array<{
+    invoiceLineId: number;
+    quantity: number;
+    unitPrice: string;
+    refundedQuantity: number;
+  }>;
+  selected: Array<{ invoiceLineId: number; quantity: number }>;
+  discountAmount: string;
+  taxAmount: string;
+}) => {
+  const subtotal = input.lines.reduce(
+    (sum, line) => sum + toCents(line.unitPrice) * BigInt(line.quantity),
+    0n,
+  );
+  const discount = toCents(input.discountAmount);
+  const tax = toCents(input.taxAmount);
+  let grossPrefix = 0n;
+  const allocations = new Map<number, { discount: bigint; tax: bigint }>();
+
+  for (const line of input.lines) {
+    const lineGross = toCents(line.unitPrice) * BigInt(line.quantity);
+    const nextPrefix = grossPrefix + lineGross;
+    allocations.set(line.invoiceLineId, {
+      discount: proportionalCents(discount, nextPrefix, subtotal)
+        - proportionalCents(discount, grossPrefix, subtotal),
+      tax: proportionalCents(tax, nextPrefix, subtotal)
+        - proportionalCents(tax, grossPrefix, subtotal),
+    });
+    grossPrefix = nextPrefix;
+  }
+
+  const lines = input.selected.map((selected) => {
+    const original = input.lines.find((line) => line.invoiceLineId === selected.invoiceLineId);
+    if (!original || selected.quantity < 1
+      || original.refundedQuantity + selected.quantity > original.quantity) {
+      throw new MoneyCalculationError('MONEY_OUT_OF_RANGE');
+    }
+    const allocated = allocations.get(selected.invoiceLineId)!;
+    const startQuantity = BigInt(original.refundedQuantity);
+    const endQuantity = startQuantity + BigInt(selected.quantity);
+    const originalQuantity = BigInt(original.quantity);
+    const lineDiscount = proportionalCents(allocated.discount, endQuantity, originalQuantity)
+      - proportionalCents(allocated.discount, startQuantity, originalQuantity);
+    const lineTax = proportionalCents(allocated.tax, endQuantity, originalQuantity)
+      - proportionalCents(allocated.tax, startQuantity, originalQuantity);
+    const lineGross = toCents(original.unitPrice) * BigInt(selected.quantity);
+    return {
+      invoiceLineId: selected.invoiceLineId,
+      quantity: selected.quantity,
+      grossAmount: fromCents(lineGross),
+      discountAmount: fromCents(lineDiscount),
+      taxAmount: fromCents(lineTax),
+      total: fromCents(lineGross - lineDiscount + lineTax),
+    };
+  });
+  const sum = (field: 'grossAmount' | 'discountAmount' | 'taxAmount' | 'total') => (
+    sumMoney(lines.map((line) => line[field]))
+  );
+  return {
+    lines,
+    grossAmount: sum('grossAmount'),
+    discountAmount: sum('discountAmount'),
+    taxAmount: sum('taxAmount'),
+    total: sum('total'),
+  };
+};
+
 export const sumMoney = (values: string[]) => fromCents(
   values.reduce((sum, value) => sum + toCents(value), 0n),
 );

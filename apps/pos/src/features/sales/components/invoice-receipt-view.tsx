@@ -1,14 +1,14 @@
 'use client';
 
-import type { PaymentMethod, PublicInvoiceDto } from '@capella/contracts';
-import { useQuery } from '@tanstack/react-query';
+import type { PaymentMethod, PublicInvoiceDto, RefundQuote } from '@capella/contracts';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Printer, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState } from '@capella/ui';
 
-import { getInvoice } from '../api/sales-api';
+import { getInvoice, quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -39,6 +39,133 @@ const responseMessage = (error: unknown) => {
     ? message
     : 'تعذر تحميل الفاتورة.';
 };
+
+const cents = (value: string) => {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
+  const [whole = '0', fraction = ''] = value.split('.');
+  return BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, '0'));
+};
+
+function ReversalControls({
+  invoice,
+  branchId,
+  onUpdated,
+}: {
+  invoice: PublicInvoiceDto;
+  branchId?: number;
+  onUpdated(invoice: PublicInvoiceDto): void;
+}) {
+  const [mode, setMode] = useState<'refund' | 'void' | null>(null);
+  const [reason, setReason] = useState('');
+  const [quantities, setQuantities] = useState<Record<number, string>>({});
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<PaymentMethod, string>>({
+    cash: '', visa: '', instapay: '', vodafone_cash: '',
+  });
+  const [quoted, setQuoted] = useState<RefundQuote | null>(null);
+  const commandIdentity = useRef<{ fingerprint: string; key: string } | null>(null);
+  const idempotencyKeyFor = (payload: unknown) => {
+    const fingerprint = JSON.stringify(payload);
+    if (commandIdentity.current?.fingerprint !== fingerprint) {
+      commandIdentity.current = { fingerprint, key: crypto.randomUUID() };
+    }
+    return commandIdentity.current.key;
+  };
+  const selectedLines = invoice.lines.flatMap((line) => {
+    const quantity = Number(quantities[line.id] ?? 0);
+    return Number.isInteger(quantity) && quantity > 0
+      ? [{ invoiceLineId: line.id, quantity }]
+      : [];
+  });
+  const close = () => {
+    setMode(null);
+    setReason('');
+    setQuantities({});
+    setPaymentAmounts({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
+    setQuoted(null);
+    commandIdentity.current = null;
+  };
+  const quote = useMutation({
+    mutationFn: () => quoteRefund(invoice.id, {
+      ...(branchId === undefined ? {} : { branchId }), lines: selectedLines,
+    }),
+    onSuccess: (value) => {
+      setQuoted(value);
+      setPaymentAmounts({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
+    },
+  });
+  const refund = useMutation({
+    mutationFn: () => {
+      const payload = {
+        ...(branchId === undefined ? {} : { branchId }),
+        reason: reason.trim(),
+        lines: selectedLines,
+        payments: quoted!.payments.flatMap((payment) => {
+          const amount = paymentAmounts[payment.method].trim();
+          return cents(amount) && cents(amount)! > BigInt(0) ? [{ method: payment.method, amount }] : [];
+        }),
+      };
+      return refundInvoice(invoice.id, {
+        ...payload,
+        idempotencyKey: idempotencyKeyFor(payload),
+      });
+    },
+    onSuccess: (value) => { onUpdated(value); close(); },
+  });
+  const voidMutation = useMutation({
+    mutationFn: () => {
+      const payload = {
+        ...(branchId === undefined ? {} : { branchId }),
+        reason: reason.trim(),
+      };
+      return voidInvoice(invoice.id, {
+        ...payload,
+        idempotencyKey: idempotencyKeyFor(payload),
+      });
+    },
+    onSuccess: (value) => { onUpdated(value); close(); },
+  });
+  const tenderTotal = quoted?.payments.reduce(
+    (sum, payment) => sum + (cents(paymentAmounts[payment.method].trim()) ?? BigInt(0)), BigInt(0),
+  ) ?? BigInt(0);
+  const tenderValid = quoted !== null
+    && tenderTotal === cents(quoted.totals.total)
+    && quoted.payments.every((payment) => (
+      (cents(paymentAmounts[payment.method].trim()) ?? BigInt(0)) <= cents(payment.refundableAmount)!
+    ));
+  const error = quote.error ?? refund.error ?? voidMutation.error;
+
+  return <div data-print-controls className="mx-auto max-w-3xl space-y-3">
+    <div className="flex flex-wrap gap-2">
+      {invoice.eligibility.canRefund ? <Button variant="secondary" onClick={() => { close(); setMode('refund'); }}>استرداد</Button> : null}
+      {invoice.eligibility.canVoid ? <Button variant="secondary" onClick={() => { close(); setMode('void'); }}>إلغاء الفاتورة</Button> : null}
+    </div>
+    {mode === 'refund' ? <Card><CardContent className="space-y-4 pt-5">
+      <h2 className="text-lg font-semibold">استرداد جزئي أو كامل</h2>
+      <div className="space-y-2">{invoice.lines.filter((line) => line.refundableQuantity > 0).map((line) => <label key={line.id} className="grid gap-1 sm:grid-cols-[1fr_8rem] sm:items-center">
+        <span>{line.name} · متبقي {line.refundableQuantity}</span>
+        <input aria-label={`كمية استرداد ${line.name}`} type="number" min={0} max={line.refundableQuantity} disabled={quote.isPending} className="rounded-control border border-line bg-paper px-3 py-2" value={quantities[line.id] ?? ''} onChange={(event) => { setQuantities((current) => ({ ...current, [line.id]: event.target.value })); setQuoted(null); }} />
+      </label>)}</div>
+      <Button disabled={!selectedLines.length || quote.isPending} onClick={() => quote.mutate()}>{quote.isPending ? 'جارٍ الحساب…' : 'احسب الاسترداد'}</Button>
+      {quoted ? <div className="space-y-3 rounded-control border border-line p-3">
+        <p className="font-semibold">الإجمالي المسترد: <span dir="ltr">{quoted.totals.total} ج.م</span></p>
+        {quoted.payments.map((payment) => <label key={payment.method} className="grid gap-1 sm:grid-cols-[1fr_10rem] sm:items-center">
+          <span>{paymentLabels[payment.method]} · متاح {payment.refundableAmount} ج.م</span>
+          <input aria-label={`مبلغ الاسترداد ${paymentLabels[payment.method]}`} inputMode="decimal" className="rounded-control border border-line bg-paper px-3 py-2" value={paymentAmounts[payment.method]} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [payment.method]: event.target.value }))} />
+        </label>)}
+        <label className="grid gap-1"><span>سبب الاسترداد</span><textarea aria-label="سبب الاسترداد" maxLength={1000} className="rounded-control border border-line bg-paper px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        <div className="flex gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" onClick={close}>رجوع</Button></div>
+      </div> : null}
+    </CardContent></Card> : null}
+    {mode === 'void' ? <Card><CardContent className="space-y-3 pt-5">
+      <h2 className="text-lg font-semibold">إلغاء الفاتورة بالكامل</h2>
+      <p className="text-sm text-muted">سيتم عكس كل البنود والمدفوعات والمخزون والعمولة.</p>
+      <label className="grid gap-1"><span>سبب الإلغاء</span><textarea aria-label="سبب الإلغاء" maxLength={1000} className="rounded-control border border-line bg-paper px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+      <div className="flex gap-2"><Button disabled={!reason.trim() || voidMutation.isPending} onClick={() => voidMutation.mutate()}>{voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}</Button><Button variant="ghost" onClick={close}>رجوع</Button></div>
+    </CardContent></Card> : null}
+    {error ? <p role="alert" className="rounded-control bg-danger-soft p-3 text-danger">{responseMessage(error)}</p> : null}
+    {invoice.reversals.length ? <Card><CardContent className="space-y-3 pt-5"><h2 className="text-lg font-semibold">سجل الإلغاء والاسترداد</h2>{invoice.reversals.map((reversal) => <div key={reversal.id} className="space-y-2 border-t border-line pt-3 first:border-0 first:pt-0"><p className="font-medium">{reversal.type === 'void' ? 'إلغاء كامل' : 'استرداد'} · {reversal.totals.total} ج.م</p><p className="text-sm">{reversal.reason}</p><ul className="text-sm">{reversal.lines.map((line) => <li key={line.invoiceLineId}>{line.name} × {line.quantity} · {line.total} ج.م</li>)}</ul>{reversal.payments.length ? <ul className="text-sm">{reversal.payments.map((payment) => <li key={payment.method}>{paymentLabels[payment.method]} · {payment.amount} ج.م</li>)}</ul> : <p className="text-sm">لا توجد حركة دفع لهذا الاسترداد</p>}<p className="text-xs text-muted">{reversal.actingAccount.username} · {formatCairoDateTime(reversal.createdAt)}</p></div>)}</CardContent></Card> : null}
+  </div>;
+}
 
 function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
   return (
@@ -73,8 +200,9 @@ function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
       <div className="py-3">
         <h2 className="font-semibold">المدفوعات</h2>
         {invoice.payments.map((payment) => (
-          <div key={payment.method} className="flex justify-between">
-            <span>{paymentLabels[payment.method]}</span><span>{payment.amount} ج.م</span>
+          <div key={payment.method} className="space-y-1">
+            <div className="flex justify-between"><span>{paymentLabels[payment.method]}</span><span>{payment.amount} ج.م</span></div>
+            <p className="text-xs text-muted">تم استرداد {payment.refundedAmount} ج.م · متبقي {payment.refundableAmount} ج.م</p>
           </div>
         ))}
       </div>
@@ -85,6 +213,7 @@ function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const validBranch = branchId === undefined || (Number.isInteger(branchId) && branchId > 0);
   const query = useQuery({
     queryKey: salesQueryKeys.invoice(invoiceId, branchId),
@@ -126,5 +255,9 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
     </div>
     {printError ? <p role="alert" data-print-controls className="mx-auto max-w-[80mm] rounded-control bg-danger-soft p-3 text-danger">{printError}</p> : null}
     <Card className="mx-auto max-w-[84mm]"><CardContent className="p-0"><Receipt invoice={query.data} /></CardContent></Card>
+    <ReversalControls invoice={query.data} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
+      queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
+      void queryClient.invalidateQueries({ queryKey: salesQueryKeys.all });
+    }} />
   </section>;
 }

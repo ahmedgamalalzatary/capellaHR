@@ -13,12 +13,18 @@ const setup = (overrides: Partial<SaleService> = {}) => {
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const getInvoice = vi.fn().mockResolvedValue({ id: 44 });
+  const refund = vi.fn().mockResolvedValue({ id: 44, status: 'refunded' });
+  const voidInvoice = vi.fn().mockResolvedValue({ id: 44, status: 'voided' });
+  const quoteRefund = vi.fn().mockResolvedValue({ totals: { total: '185.00' } });
   const service = {
     quote,
     complete,
     listClientVisits,
     listInvoices,
     getInvoice,
+    refund,
+    void: voidInvoice,
+    quoteRefund,
     ...overrides,
   };
   const app = express();
@@ -32,10 +38,45 @@ const setup = (overrides: Partial<SaleService> = {}) => {
     void _next;
     response.status(500).json({ error: { code: 'UNEXPECTED' } });
   });
-  return { app, quote, complete, listClientVisits, listInvoices, getInvoice };
+  return { app, quote, complete, listClientVisits, listInvoices, getInvoice, refund, voidInvoice, quoteRefund };
 };
 
 describe('ERP sales router', () => {
+  it('returns the authoritative quote for selected refund quantities', async () => {
+    const { app, quoteRefund } = setup();
+    const response = await request(app).post('/erp/sales/44/refunds/quote').send({
+      branchId: 2, lines: [{ invoiceLineId: 81, quantity: 1 }],
+    });
+    expect(response.status).toBe(200);
+    expect(quoteRefund).toHaveBeenCalledWith(actor, 44, {
+      branchId: 2, lines: [{ invoiceLineId: 81, quantity: 1 }],
+    });
+  });
+
+  it('validates and submits partial refund and same-day void commands', async () => {
+    const { app, refund, voidInvoice } = setup();
+    const refundResponse = await request(app).post('/erp/sales/44/refunds').send({
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632',
+      reason: '  عدم رضا العميل  ',
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+      payments: [{ method: 'cash', amount: '185' }],
+    });
+    expect(refundResponse.status).toBe(201);
+    expect(refund).toHaveBeenCalledWith(actor, 44, expect.objectContaining({
+      reason: 'عدم رضا العميل', payments: [{ method: 'cash', amount: '185.00' }],
+    }));
+
+    const voidResponse = await request(app).post('/erp/sales/44/void').send({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'إدخال مكرر',
+    });
+    expect(voidResponse.status).toBe(201);
+    expect(voidInvoice).toHaveBeenCalledWith(actor, 44, expect.objectContaining({
+      reason: 'إدخال مكرر',
+    }));
+  });
+
   it('quotes a normalized service sale draft', async () => {
     const { app, quote } = setup();
     const response = await request(app).post('/erp/sales/quote').send({

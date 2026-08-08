@@ -10,6 +10,9 @@ import {
   listInvoices,
   listClientVisits,
   quoteSale,
+  quoteRefund,
+  refundInvoice,
+  voidInvoice,
 } from '../src/features/sales/api/sales-api';
 
 describe('sales API', () => {
@@ -43,6 +46,28 @@ describe('sales API', () => {
     };
     await completeSale(complete);
     expect(mocks.post).toHaveBeenCalledWith('/erp/sales', complete);
+  });
+
+  it('posts refund quotes, refunds, and voids to one stored invoice', async () => {
+    const lines = [{ invoiceLineId: 81, quantity: 1 }];
+    await quoteRefund(44, { branchId: 2, lines });
+    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/44/refunds/quote', { branchId: 2, lines });
+
+    const refund = {
+      branchId: 2,
+      idempotencyKey: crypto.randomUUID(),
+      reason: 'عدم رضا العميل',
+      lines,
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    await refundInvoice(44, refund);
+    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/44/refunds', refund);
+
+    const voidCommand = {
+      branchId: 2, idempotencyKey: crypto.randomUUID(), reason: 'إدخال مكرر',
+    };
+    await voidInvoice(44, voidCommand);
+    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/44/void', voidCommand);
   });
 
   it('serializes branch-scoped client visit pagination', async () => {

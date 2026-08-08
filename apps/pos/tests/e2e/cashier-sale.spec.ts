@@ -52,12 +52,14 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
         name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
         commissionRule: 'service_default', commissionRate: '10.00',
         commissionAmount: '20.00', productCostBasis: null,
+        refundedQuantity: 0, refundableQuantity: 1,
       },
       {
         id: 82, lineNumber: 2, itemType: 'product', sourceId: 31,
         name: 'شامبو', quantity: 1, unitPrice: '50.00', lineTotal: '50.00',
         commissionRule: 'none', commissionRate: '0.00',
         commissionAmount: '0.00', productCostBasis: '25.00',
+        refundedQuantity: 0, refundableQuantity: 1,
       },
     ],
     discount: null,
@@ -66,7 +68,11 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
       subtotal: '250.00', discountAmount: '0.00', taxAmount: '0.00',
       total: '250.00', paymentTotal: '250.00',
     },
-    payments: [{ method: 'cash', amount: '250.00' }],
+    payments: [{
+      method: 'cash', amount: '250.00', refundedAmount: '0.00', refundableAmount: '250.00',
+    }],
+    reversals: [],
+    eligibility: { canVoid: true, canRefund: true },
     soldAt: '2026-08-04T09:35:00.000Z',
   };
 

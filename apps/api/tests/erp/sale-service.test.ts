@@ -34,6 +34,7 @@ const invoice = {
     name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
     commissionRule: 'employee_override' as const, commissionRate: '15.00',
     commissionAmount: '30.00', productCostBasis: null,
+    refundedQuantity: 0, refundableQuantity: 1,
   }],
   discount: { kind: 'percentage' as const, value: '10.00', amount: '20.00' },
   tax: { kind: 'fixed' as const, value: '5.00', amount: '5.00' },
@@ -41,7 +42,12 @@ const invoice = {
     subtotal: '200.00', discountAmount: '20.00', taxAmount: '5.00',
     total: '185.00', paymentTotal: '185.00',
   },
-  payments: [{ method: 'cash' as const, amount: '185.00' }],
+  payments: [{
+    method: 'cash' as const, amount: '185.00',
+    refundedAmount: '0.00', refundableAmount: '185.00',
+  }],
+  reversals: [],
+  eligibility: { canVoid: false, canRefund: true },
   soldAt: '2026-08-03T11:35:00.000Z',
 } satisfies InvoiceDto;
 
@@ -83,6 +89,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   const quoteRepository = vi.fn().mockResolvedValue(quote);
   const findByIdempotencyKey = vi.fn().mockResolvedValue(null);
   const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(invoice);
+  const reverse = vi.fn<SaleRepository['reverse']>().mockResolvedValue(invoice);
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const findInvoiceById = vi.fn().mockResolvedValue(invoice);
@@ -90,6 +97,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
     quote: quoteRepository,
     findByIdempotencyKey,
     complete: completeRepository,
+    reverse,
     listClientVisits,
     listInvoices,
     findInvoiceById,
@@ -118,6 +126,60 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
 };
 
 describe('ERP sale service', () => {
+  it('quotes an exact partial refund from stored invoice facts and remaining tenders', async () => {
+    const { service } = setup();
+    await expect((service as unknown as {
+      quoteRefund(actorValue: typeof actor, invoiceId: number, input: {
+        lines: Array<{ invoiceLineId: number; quantity: number }>;
+      }): Promise<unknown>;
+    }).quoteRefund(actor, 44, {
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+    })).resolves.toEqual({
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '200.00',
+        discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: {
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      },
+      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+    });
+  });
+
+  it('submits branch-scoped partial refunds and voids through the atomic repository', async () => {
+    const reverse = vi.fn().mockResolvedValue(invoice);
+    const { service } = setup({ reverse });
+    const refund = {
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632',
+      reason: 'عدم رضا العميل',
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+
+    await expect((service as unknown as {
+      refund(actorValue: typeof actor, invoiceId: number, input: typeof refund): Promise<unknown>;
+      void(actorValue: typeof actor, invoiceId: number, input: {
+        idempotencyKey: string; reason: string;
+      }): Promise<unknown>;
+    }).refund(actor, 44, refund)).resolves.toEqual(cashierInvoice);
+    await (service as unknown as {
+      void(actorValue: typeof actor, invoiceId: number, input: {
+        idempotencyKey: string; reason: string;
+      }): Promise<unknown>;
+    }).void(actor, 44, {
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633', reason: 'إدخال مكرر',
+    });
+
+    expect(reverse).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      type: 'refund', invoiceId: 44, actingAccountId: 3,
+      input: { ...refund, branchId: 2 },
+    }));
+    expect(reverse).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: 'void', invoiceId: 44, actingAccountId: 3,
+      input: expect.objectContaining({ branchId: 2, reason: 'إدخال مكرر' }),
+    }));
+  });
+
   it('returns a server-authoritative quote in the resolved branch', async () => {
     const { service, quoteRepository } = setup();
     await expect(service.quote(actor, {

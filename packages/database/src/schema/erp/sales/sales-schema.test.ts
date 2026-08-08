@@ -10,6 +10,37 @@ const table = (name: keyof typeof salesSchema) => {
 };
 
 describe('ERP sales persistence foundation', () => {
+  it('defines immutable invoice reversal headers, lines, and payment facts', () => {
+    const reversals = table('invoiceReversals');
+    expect(Object.keys(reversals)).toEqual(expect.arrayContaining([
+      'id', 'invoiceId', 'branchId', 'type', 'status', 'idempotencyKey', 'reason',
+      'actingAccountId', 'approvingAccountId', 'grossAmount', 'discountAmount',
+      'taxAmount', 'total', 'businessDate', 'createdAt',
+    ]));
+    const reversalConfig = getTableConfig(reversals);
+    expect(reversalConfig.indexes.map((value) => value.config.name)).toEqual(expect.arrayContaining([
+      'erp_invoice_reversals_idempotency_unique',
+      'erp_invoice_reversals_invoice_created_idx',
+    ]));
+
+    const lines = table('invoiceReversalLines');
+    expect(Object.keys(lines)).toEqual(expect.arrayContaining([
+      'id', 'reversalId', 'invoiceId', 'invoiceLineId', 'branchId', 'quantity',
+      'grossAmount', 'discountAmount', 'taxAmount', 'total',
+    ]));
+    expect(getTableConfig(lines).checks.map((value) => value.name)).toContain(
+      'erp_invoice_reversal_lines_amounts_consistent',
+    );
+
+    const payments = table('invoiceReversalPayments');
+    expect(Object.keys(payments)).toEqual(expect.arrayContaining([
+      'id', 'reversalId', 'invoicePaymentId', 'methodSnapshot', 'amount',
+    ]));
+    expect(getTableConfig(payments).indexes.map((value) => value.config.name)).toContain(
+      'erp_invoice_reversal_payments_method_unique',
+    );
+  });
+
   it('defines the product identity needed by product invoice lines', () => {
     const products = table('erpProducts');
     expect(Object.keys(products)).toEqual(expect.arrayContaining([
@@ -112,7 +143,7 @@ describe('ERP sales persistence foundation', () => {
     const ledger = table('commissionLedgerEntries');
     expect(Object.keys(ledger)).toEqual(expect.arrayContaining([
       'id', 'invoiceId', 'invoiceLineId', 'employeeId', 'actingAccountId',
-      'entryType', 'reversesEntryId', 'commissionRuleSnapshot',
+      'entryType', 'reversesEntryId', 'invoiceReversalId', 'commissionRuleSnapshot',
       'commissionRateSnapshot', 'baseAmount', 'amount', 'createdAt',
     ]));
     const config = getTableConfig(ledger);
@@ -123,6 +154,9 @@ describe('ERP sales persistence foundation', () => {
     ]));
     expect(config.foreignKeys.map((value) => value.getName())).toContain(
       'erp_commission_ledger_reverses_entry_fk',
+    );
+    expect(config.foreignKeys.map((value) => value.getName())).toContain(
+      'erp_commission_ledger_invoice_reversal_fk',
     );
     expect(config.checks.map((value) => value.name)).toEqual(expect.arrayContaining([
       'erp_commission_ledger_entry_consistent',
