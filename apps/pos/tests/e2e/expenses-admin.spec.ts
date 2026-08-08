@@ -1,6 +1,6 @@
 import { expect, test, type Route } from '@playwright/test';
 
-const headers = { 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-origin': 'http://localhost:3001' };
+const headers = { 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-origin': `http://localhost:${process.env.POS_E2E_PORT ?? 3001}` };
 const json = (route: Route, data: unknown, meta?: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', headers, body: JSON.stringify(meta ? { data, meta } : { data }) });
 
 test('Admin creates, filters and safely corrects an expense', async ({ page }) => {

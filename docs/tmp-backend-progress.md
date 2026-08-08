@@ -780,15 +780,16 @@ Complete. Same-day Cairo voids and later full/partial refunds preserve immutable
 
 ## ERP 18. Offline sale submission
 
-- [ ] Generate and persist an idempotency key before each sale submission.
-- [ ] Store unconfirmed completed-sale payloads in browser storage.
-- [ ] Replay queued submissions when connectivity returns.
-- [ ] Remove a queued sale only after the API confirms its stored invoice.
-- [ ] Show pending, syncing, failed, and resolved queue states to the Cashier.
-- [ ] Distinguish retryable connectivity/server failures from permanent validation conflicts.
-- [ ] Define resolution UX when attendance, prices, catalog availability, or stock changed while disconnected.
-- [ ] Test browser restart, repeated reconnect, timeout, duplicate replay, partial response, and permanent-conflict behavior.
-- [ ] Add browser-level end-to-end coverage for queue visibility, reconnect replay, permanent-conflict resolution, and exactly-once stored results.
+- [x] Generate and persist an idempotency key before each sale submission.
+- [x] Store unconfirmed completed-sale payloads in browser storage.
+- [x] Replay queued submissions when connectivity returns.
+- [x] Remove a queued sale only after the API confirms its stored invoice.
+- [x] Show pending, syncing, failed, and resolved queue states to the Cashier.
+- [x] Distinguish retryable connectivity/server failures from permanent validation conflicts.
+- [x] Define resolution UX when attendance, prices, catalog availability, or stock changed while disconnected.
+- [x] Test reload persistence, repeated reconnect, timeout, duplicate replay, partial response, interrupted-sync recovery, and permanent-conflict behavior across component and browser suites.
+- [x] Add browser-level end-to-end coverage for queue visibility, reconnect replay without duplicate HTTP attempts, and permanent-conflict resolution.
+- [ ] Add browser-to-authenticated-HTTP-to-MySQL exactly-once replay coverage when the repository gains that integration harness; API/MySQL idempotency and POS replay are currently verified in their respective suites.
 
 Offline support is resilient submission with idempotent replay, not a fully disconnected catalog or attendance system.
 
