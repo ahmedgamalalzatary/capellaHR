@@ -25,13 +25,13 @@ describe('ERP supplier and purchase contracts', () => {
       branchId: 2, idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630', supplierId: 3, purchaseDate: '2026-08-05',
       lines: [{ productId: 7, quantity: 2, unitCost: '12.50' }],
     });
-    expect(createPurchaseSchema.safeParse({ idempotencyKey: 'not-a-uuid', supplierId: 3, purchaseDate: '2026-08-05', lines: [{ productId: 7, quantity: 1, unitCost: '1' }] }).success).toBe(false);
+    expect(createPurchaseSchema.safeParse({ branchId: 2, idempotencyKey: 'not-a-uuid', supplierId: 3, purchaseDate: '2026-08-05', lines: [{ productId: 7, quantity: 1, unitCost: '1' }] }).success).toBe(false);
     const validKey = '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631';
-    expect(createPurchaseSchema.safeParse({ idempotencyKey: validKey, supplierId: 3, purchaseDate: '2026-08-05', lines: [{ productId: 7, quantity: 0, unitCost: '1' }] }).success).toBe(false);
-    expect(createPurchaseSchema.safeParse({ idempotencyKey: validKey, supplierId: 3, purchaseDate: '2026-08-05', lines: [
+    expect(createPurchaseSchema.safeParse({ branchId: 2, idempotencyKey: validKey, supplierId: 3, purchaseDate: '2026-08-05', lines: [{ productId: 7, quantity: 0, unitCost: '1' }] }).success).toBe(false);
+    expect(createPurchaseSchema.safeParse({ branchId: 2, idempotencyKey: validKey, supplierId: 3, purchaseDate: '2026-08-05', lines: [
       { productId: 7, quantity: 1, unitCost: '1' }, { productId: 7, quantity: 1, unitCost: '2' },
     ] }).success).toBe(false);
-    expect(createPurchaseSchema.safeParse({ idempotencyKey: validKey, supplierId: 3, purchaseDate: '2026-08-05', lines: [
+    expect(createPurchaseSchema.safeParse({ branchId: 2, idempotencyKey: validKey, supplierId: 3, purchaseDate: '2026-08-05', lines: [
       { productId: 7, quantity: 2, unitCost: '9999999999.99' },
     ] }).success).toBe(false);
   });

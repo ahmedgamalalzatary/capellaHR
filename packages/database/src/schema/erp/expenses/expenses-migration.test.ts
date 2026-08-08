@@ -14,6 +14,10 @@ describe('ERP expenses migration', () => {
     expect(migration).toContain('erp_expenses_supersedes_branch_fk');
     expect(migration).toContain('erp_expenses_reject_delete');
     expect(migration).toContain('erp_expenses_guard_update');
+    expect(migration).toContain('erp_expenses_guard_insert');
+    expect(migration).toContain("NEW.`status` = 'corrected'");
+    expect(migration).toContain('NEW.`supersedes_id` IS NOT NULL');
+    expect(migration).toContain('NEW.`supersedes_id` <> OLD.`id`');
     expect(migration).toContain("OLD.`status` = 'active' AND NEW.`status` = 'corrected'");
     expect(migration).toContain("OLD.`kind` = 'expense'");
     expect(migration).toContain('reversal.`reversal_of_id` = OLD.`id`');

@@ -3,16 +3,15 @@ import { accounts, erpProducts, erpProductStocks, erpPurchaseLines, erpPurchases
 import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql } from 'drizzle-orm';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
-import { purchaseError, type PurchaseLineRecord, type PurchaseRecord, type SupplierPurchaseRepository } from './suppliers-service.js';
+import { isSupplierDuplicateEntryError, purchaseError, type PurchaseLineRecord, type PurchaseRecord, type SupplierPurchaseRepository } from './suppliers-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
 const supplierScope = (id: number, branchId: number) => and(eq(erpSuppliers.id, id), eq(erpSuppliers.branchId, branchId));
-const duplicate = (value: unknown) => typeof value === 'object' && value !== null && (Reflect.get(value, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(value, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
 const purchaseSelection = { id: erpPurchases.id, branchId: erpPurchases.branchId, supplierId: erpPurchases.supplierId, supplierName: erpPurchases.supplierNameSnapshot, status: erpPurchases.status, purchaseDate: erpPurchases.purchaseDate, total: erpPurchases.total, actingAccountId: erpPurchases.actingAccountId, actingUsername: accounts.username, cancelledAt: erpPurchases.cancelledAt, cancelledByAccountId: erpPurchases.cancelledByAccountId, cancellationReason: erpPurchases.cancellationReason, correctsPurchaseId: erpPurchases.correctsPurchaseId, createdAt: erpPurchases.createdAt };
 const lineSelection = { id: erpPurchaseLines.id, purchaseId: erpPurchaseLines.purchaseId, branchId: erpPurchaseLines.branchId, productId: erpPurchaseLines.productId, productNameSnapshot: erpPurchaseLines.productNameSnapshot, quantity: erpPurchaseLines.quantity, unitCost: erpPurchaseLines.unitCost, previousUnitCost: erpPurchaseLines.previousUnitCost, lineTotal: erpPurchaseLines.lineTotal };
 
 export const createDrizzleSupplierPurchaseRepository = (database: Database, audit: ErpAuditCapability, now: () => Date = () => new Date()): SupplierPurchaseRepository => {
-  const hydrate = async (rows: Array<Omit<PurchaseRecord, 'lines' | 'correctedByPurchaseId'>>, executor: Database = database) => {
+  const hydrate = async (rows: Array<Omit<PurchaseRecord, 'lines' | 'correctedByPurchaseId'>>, executor: Pick<Database, 'select'> = database) => {
     if (!rows.length) return [];
     const lines = await executor.select(lineSelection).from(erpPurchaseLines).where(inArray(erpPurchaseLines.purchaseId, rows.map((row) => row.id))).orderBy(asc(erpPurchaseLines.id)) as Array<Omit<PurchaseLineRecord, 'postedBalanceAfter' | 'cancellationBalanceAfter'>>;
     const movements = await executor.select({ sourceId: erpStockMovements.sourceId, productId: erpStockMovements.productId, sourceType: erpStockMovements.sourceType, balanceAfter: erpStockMovements.balanceAfter }).from(erpStockMovements).where(and(
@@ -25,7 +24,7 @@ export const createDrizzleSupplierPurchaseRepository = (database: Database, audi
       correctedByPurchaseId: corrections.find((entry) => entry.correctsPurchaseId === row.id)?.id ?? null,
       lines: lines.filter((line) => line.purchaseId === row.id).map((line) => ({
         ...line,
-        postedBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase')!.balanceAfter,
+        postedBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase')?.balanceAfter ?? null,
         cancellationBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase_cancellation')?.balanceAfter ?? null,
       })),
     }));
@@ -55,8 +54,10 @@ export const createDrizzleSupplierPurchaseRepository = (database: Database, audi
         const at = now(); const inserted = await tx.insert(erpPurchases).values({ branchId: input.branchId, supplierId: input.supplierId, supplierNameSnapshot: supplier.name, idempotencyKey: input.idempotencyKey, idempotencyFingerprint: input.idempotencyFingerprint, status: 'posting', purchaseDate: input.purchaseDate, total: input.total, actingAccountId, correctsPurchaseId: input.correctsPurchaseId, createdAt: at }); const purchaseId = Number(inserted[0].insertId);
         for (const line of [...input.lines].sort((a, b) => a.productId - b.productId)) { const product = (await tx.select().from(erpProducts).where(and(eq(erpProducts.id, line.productId), eq(erpProducts.branchId, input.branchId))).for('update').limit(1))[0]; if (!product) throw purchaseError('PURCHASE_PRODUCT_NOT_FOUND'); if (!product.isActive) throw purchaseError('PURCHASE_PRODUCT_INACTIVE'); const stockScope = and(eq(erpProductStocks.productId, line.productId), eq(erpProductStocks.branchId, input.branchId)); const stock = (await tx.select().from(erpProductStocks).where(stockScope).for('update').limit(1))[0]; if (!stock) throw purchaseError('PURCHASE_PRODUCT_NOT_FOUND'); if (line.quantity > 2_147_483_647 - stock.quantity) throw purchaseError('PURCHASE_STOCK_OVERFLOW'); const balanceAfter = stock.quantity + line.quantity; await tx.insert(erpPurchaseLines).values({ purchaseId, branchId: input.branchId, productId: line.productId, productNameSnapshot: product.name, quantity: line.quantity, unitCost: line.unitCost, previousUnitCost: product.lastPurchaseCost, lineTotal: line.lineTotal }); await tx.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: at }).where(stockScope); await tx.update(erpProducts).set({ lastPurchaseCost: line.unitCost, updatedAt: at }).where(and(eq(erpProducts.id, line.productId), eq(erpProducts.branchId, input.branchId))); await tx.insert(erpStockMovements).values({ productId: line.productId, branchId: input.branchId, reason: 'purchase', sourceType: 'purchase', sourceId: purchaseId, quantityDelta: line.quantity, balanceAfter, actingAccountId, createdAt: at }); }
         await tx.update(erpPurchases).set({ status: 'posted' }).where(eq(erpPurchases.id, purchaseId));
-        await audit.record(tx, { module: 'erp-purchases', action: 'post', entityType: 'purchase', entityId: purchaseId, afterState: input, relatedIds: { branchId: input.branchId, supplierId: input.supplierId, actingAccountId }, createdAt: at }); return purchaseId;
-      }); } catch (cause) { if (!duplicate(cause)) throw cause; const result = await replay(); if (result) return result; throw cause; }
+        const postedRow = (await tx.select(purchaseSelection).from(erpPurchases).innerJoin(accounts, eq(accounts.id, erpPurchases.actingAccountId)).where(and(eq(erpPurchases.id, purchaseId), eq(erpPurchases.branchId, input.branchId))).limit(1))[0] as Omit<PurchaseRecord, 'lines' | 'correctedByPurchaseId'>;
+        const posted = (await hydrate([postedRow], tx))[0]!;
+        await audit.record(tx, { module: 'erp-purchases', action: 'post', entityType: 'purchase', entityId: purchaseId, afterState: posted, relatedIds: { branchId: input.branchId, supplierId: input.supplierId, actingAccountId }, createdAt: at }); return purchaseId;
+      }); } catch (cause) { if (!isSupplierDuplicateEntryError(cause)) throw cause; const result = await replay(); if (result) return result; throw cause; }
       return (await findPurchase(id, input.branchId))!;
     },
     findPurchase,

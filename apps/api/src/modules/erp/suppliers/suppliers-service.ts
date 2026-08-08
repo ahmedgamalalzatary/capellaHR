@@ -6,7 +6,7 @@ import { normalizeCatalogName } from '../catalog/index.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 
 export type SupplierRecord = { id: number; branchId: number; name: string; phone: string | null; notes: string | null; isActive: boolean; createdAt: Date; updatedAt: Date };
-export type PurchaseLineRecord = { id: number; purchaseId: number; branchId: number; productId: number; productNameSnapshot: string; quantity: number; unitCost: string; previousUnitCost: string; lineTotal: string; postedBalanceAfter: number; cancellationBalanceAfter: number | null };
+export type PurchaseLineRecord = { id: number; purchaseId: number; branchId: number; productId: number; productNameSnapshot: string; quantity: number; unitCost: string; previousUnitCost: string; lineTotal: string; postedBalanceAfter: number | null; cancellationBalanceAfter: number | null };
 export type PurchaseRecord = {
   id: number; branchId: number; supplierId: number; supplierName: string; status: 'posted' | 'cancelled'; purchaseDate: string; total: string;
   actingAccountId: number; actingUsername: string; cancelledAt: Date | null; cancelledByAccountId: number | null;
@@ -40,8 +40,16 @@ const messages: Record<PurchaseErrorCode, string> = {
   PURCHASE_STOCK_OVERFLOW: 'لا يمكن ترحيل الكمية لأنها تتجاوز الحد الأقصى للمخزون',
 };
 export const purchaseError = (code: PurchaseErrorCode, existingId?: number) => new PurchaseError(code, messages[code], existingId);
-const duplicate = (value: unknown) => typeof value === 'object' && value !== null && (Reflect.get(value, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(value, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-const cents = (money: string) => BigInt(money.replace('.', ''));
+export const isSupplierDuplicateEntryError = (value: unknown) => {
+  if (typeof value !== 'object' || value === null) return false;
+  if (Reflect.get(value, 'code') === 'ER_DUP_ENTRY') return true;
+  const cause: unknown = Reflect.get(value, 'cause');
+  return typeof cause === 'object' && cause !== null && Reflect.get(cause, 'code') === 'ER_DUP_ENTRY';
+};
+const cents = (money: string) => {
+  if (!/^\d+\.\d{2}$/.test(money)) throw new TypeError('Money must use exactly two decimal places');
+  return BigInt(money.replace('.', ''));
+};
 const money = (value: bigint) => `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
 
 export const createSupplierPurchaseService = ({ repository, resolveBranchContext }: { repository: SupplierPurchaseRepository; resolveBranchContext: ErpBranchContextResolver }) => {
@@ -60,7 +68,7 @@ export const createSupplierPurchaseService = ({ repository, resolveBranchContext
       const existing = await repository.findSupplierByNormalizedName(branch.branchId, nameNormalized);
       if (existing) throw purchaseError('SUPPLIER_NAME_EXISTS', existing.id);
       try { return await repository.createSupplier({ branchId: branch.branchId, name, nameNormalized, phone: input.phone ?? null, notes: input.notes ?? null }, branch.accountId); }
-      catch (cause) { if (!duplicate(cause)) throw cause; throw purchaseError('SUPPLIER_NAME_EXISTS', (await repository.findSupplierByNormalizedName(branch.branchId, nameNormalized))?.id); }
+      catch (cause) { if (!isSupplierDuplicateEntryError(cause)) throw cause; throw purchaseError('SUPPLIER_NAME_EXISTS', (await repository.findSupplierByNormalizedName(branch.branchId, nameNormalized))?.id); }
     },
     async getSupplier(actor: ErpAccountIdentity, id: number, branchId?: number) { const branch = await context(actor, branchId); return supplierInBranch(branch.branchId, id); },
     async listSuppliers(actor: ErpAccountIdentity, query: ListSuppliersQuery) { const branch = await context(actor, query.branchId); return repository.listSuppliers(branch.branchId, query); },
@@ -69,7 +77,7 @@ export const createSupplierPurchaseService = ({ repository, resolveBranchContext
       if (input.name !== undefined) { changes.name = input.name.trim(); changes.nameNormalized = normalizeCatalogName(changes.name); const existing = await repository.findSupplierByNormalizedName(branch.branchId, changes.nameNormalized); if (existing && existing.id !== id) throw purchaseError('SUPPLIER_NAME_EXISTS', existing.id); }
       if (input.phone !== undefined) changes.phone = input.phone; if (input.notes !== undefined) changes.notes = input.notes; if (input.isActive !== undefined) changes.isActive = input.isActive;
       try { const result = await repository.updateSupplier(id, branch.branchId, changes, branch.accountId); if (!result) throw purchaseError('SUPPLIER_NOT_FOUND'); return result; }
-      catch (cause) { if (!duplicate(cause)) throw cause; throw purchaseError('SUPPLIER_NAME_EXISTS'); }
+      catch (cause) { if (!isSupplierDuplicateEntryError(cause)) throw cause; throw purchaseError('SUPPLIER_NAME_EXISTS'); }
     },
     async postPurchase(actor: ErpAccountIdentity, input: CreatePurchaseInput) {
       const branch = await context(actor, input.branchId);

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createSupplierPurchaseService, PurchaseError, type SupplierPurchaseRepository } from '../../src/modules/erp/suppliers/index.js';
+import { createSupplierPurchaseService, isSupplierDuplicateEntryError, PurchaseError, type SupplierPurchaseRepository } from '../../src/modules/erp/suppliers/index.js';
 
 const admin = { role: 'admin' as const, accountId: 7 };
 const cashier = { role: 'cashier' as const, accountId: 8, employeeId: 3 };
@@ -18,6 +18,12 @@ const service = (repo = repository()) => createSupplierPurchaseService({
 });
 
 describe('ERP supplier and purchase service', () => {
+  it('recognizes direct and nested duplicate-entry errors', () => {
+    expect(isSupplierDuplicateEntryError({ code: 'ER_DUP_ENTRY' })).toBe(true);
+    expect(isSupplierDuplicateEntryError({ cause: { code: 'ER_DUP_ENTRY' } })).toBe(true);
+    expect(isSupplierDuplicateEntryError({ cause: 'ER_DUP_ENTRY' })).toBe(false);
+  });
+
   it('normalizes and creates branch-scoped suppliers for Admin only', async () => {
     const repo = repository();
     await service(repo).createSupplier(admin, { branchId: 2, name: '  NILE  ', phone: '0100', notes: null });
@@ -36,6 +42,23 @@ describe('ERP supplier and purchase service', () => {
         { productId: 12, quantity: 3, unitCost: '1.50', lineTotal: '4.50' },
       ],
     }), 7);
+  });
+
+  it('rejects money that is not normalized to exactly two decimal places', async () => {
+    await expect(service().postPurchase(admin, {
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+      supplierId: 3,
+      purchaseDate: '2026-08-05',
+      lines: [{ productId: 11, quantity: 1, unitCost: '12' }],
+    })).rejects.toThrow();
+    await expect(service().postPurchase(admin, {
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+      supplierId: 3,
+      purchaseDate: '2026-08-05',
+      lines: [{ productId: 11, quantity: 1, unitCost: '12.5' }],
+    })).rejects.toThrow();
   });
 
   it('preserves repository cancellation conflicts and branch-safe history filters', async () => {

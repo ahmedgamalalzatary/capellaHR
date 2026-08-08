@@ -118,4 +118,25 @@ describe('MySQL-backed ERP expenses', () => {
     const corrected = await expenses.service.correct(ADMIN, original.id, { branchId, categoryId, amount: '11.00', expenseDate: '2026-08-05', description: 'replacement', reason: 'fix' });
     await expect(database.update(erpExpenses).set({ status: 'corrected' }).where(eq(erpExpenses.id, corrected.reversal.id))).rejects.toThrow();
   });
+
+  it('rejects correction state and lineage on direct insert', async () => {
+    const { branchId, categoryId } = await seed();
+    const original = await expenses.service.create(ADMIN, { branchId, categoryId, amount: '10.00', expenseDate: '2026-08-05', description: 'original' });
+    const facts = { branchId, categoryId, amount: '11.00', expenseDate: '2026-08-05', description: 'forged', actingAccountId: ADMIN.accountId, createdAt: new Date() };
+
+    await expect(database.insert(erpExpenses).values({ ...facts, status: 'corrected' })).rejects.toThrow();
+    await expect(database.insert(erpExpenses).values({ ...facts, supersedesId: original.id, correctionReason: 'forged' })).rejects.toThrow();
+  });
+
+  it('rejects making an expense supersede itself', async () => {
+    const { branchId, categoryId } = await seed();
+    const original = await expenses.service.create(ADMIN, { branchId, categoryId, amount: '10.00', expenseDate: '2026-08-05', description: 'original' });
+    await database.insert(erpExpenses).values({
+      branchId, categoryId, amount: original.amount, expenseDate: original.expenseDate,
+      description: original.description, actingAccountId: ADMIN.accountId, kind: 'reversal',
+      reversalOfId: original.id, correctionReason: 'forged', createdAt: new Date(),
+    });
+
+    await expect(database.update(erpExpenses).set({ supersedesId: original.id, correctionReason: 'forged' }).where(eq(erpExpenses.id, original.id))).rejects.toThrow();
+  });
 });

@@ -2,7 +2,7 @@ import type { CancelPurchaseInput, CreatePurchaseInput, CreateSupplierInput, Upd
 import { api } from '@/lib/api/client';
 
 export interface Supplier { id: number; branchId: number; name: string; phone: string | null; notes: string | null; isActive: boolean; createdAt: string; updatedAt: string }
-export interface PurchaseLine { id: number; purchaseId: number; branchId: number; productId: number; productNameSnapshot: string; quantity: number; unitCost: string; previousUnitCost: string; lineTotal: string; postedBalanceAfter: number; cancellationBalanceAfter: number | null }
+export interface PurchaseLine { id: number; purchaseId: number; branchId: number; productId: number; productNameSnapshot: string; quantity: number; unitCost: string; previousUnitCost: string; lineTotal: string; postedBalanceAfter: number | null; cancellationBalanceAfter: number | null }
 export interface Purchase { id: number; branchId: number; supplierId: number; supplierName: string; status: 'posted' | 'cancelled'; purchaseDate: string; total: string; actingAccountId: number; actingUsername: string; cancelledAt: string | null; cancelledByAccountId: number | null; cancellationReason: string | null; correctsPurchaseId: number | null; correctedByPurchaseId: number | null; createdAt: string; lines: PurchaseLine[] }
 const query = (params: Record<string, unknown>) => { const result = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== '') result.set(key, String(value)); }); return result.size ? `?${result}` : ''; };
 export const listSuppliers = (params: { branchId?: number; search?: string; isActive?: boolean; page?: number; pageSize?: number } = {}) => api.getPage<Supplier>(`/erp/suppliers${query(params)}`);

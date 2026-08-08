@@ -28,36 +28,79 @@ ALTER TABLE `erp_expenses` ADD CONSTRAINT `erp_expenses_reversal_branch_fk` FORE
 ALTER TABLE `erp_expenses` ADD CONSTRAINT `erp_expenses_supersedes_branch_fk` FOREIGN KEY (`supersedes_id`,`branch_id`) REFERENCES `erp_expenses`(`id`,`branch_id`) ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX `erp_expenses_branch_date_idx` ON `erp_expenses` (`branch_id`,`expense_date`,`id`);--> statement-breakpoint
 CREATE INDEX `erp_expenses_branch_category_date_idx` ON `erp_expenses` (`branch_id`,`category_id`,`expense_date`);--> statement-breakpoint
+CREATE TRIGGER `erp_expenses_guard_insert`
+BEFORE INSERT ON `erp_expenses`
+FOR EACH ROW
+BEGIN
+  IF NEW.`status` = 'corrected'
+    OR (NEW.`kind` = 'expense' AND NEW.`supersedes_id` IS NOT NULL)
+  THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ERP expense correction facts must use the correction transaction';
+  END IF;
+END;--> statement-breakpoint
 CREATE TRIGGER `erp_expenses_guard_update`
 BEFORE UPDATE ON `erp_expenses`
 FOR EACH ROW
 BEGIN
   IF NOT (
-    OLD.`id` <=> NEW.`id`
-    AND OLD.`branch_id` <=> NEW.`branch_id`
-    AND OLD.`category_id` <=> NEW.`category_id`
-    AND OLD.`amount` <=> NEW.`amount`
-    AND OLD.`expense_date` <=> NEW.`expense_date`
-    AND OLD.`description` <=> NEW.`description`
-    AND OLD.`acting_account_id` <=> NEW.`acting_account_id`
-    AND OLD.`kind` <=> NEW.`kind`
-    AND OLD.`reversal_of_id` <=> NEW.`reversal_of_id`
-    AND OLD.`supersedes_id` <=> NEW.`supersedes_id`
-    AND OLD.`correction_reason` <=> NEW.`correction_reason`
-    AND OLD.`created_at` <=> NEW.`created_at`
-    AND OLD.`kind` = 'expense'
-    AND OLD.`status` = 'active' AND NEW.`status` = 'corrected'
-    AND EXISTS (
-      SELECT 1 FROM `erp_expenses` AS reversal
-      WHERE reversal.`reversal_of_id` = OLD.`id`
-        AND reversal.`branch_id` = OLD.`branch_id`
-        AND reversal.`kind` = 'reversal'
+    (
+      OLD.`id` <=> NEW.`id`
+      AND OLD.`branch_id` <=> NEW.`branch_id`
+      AND OLD.`category_id` <=> NEW.`category_id`
+      AND OLD.`amount` <=> NEW.`amount`
+      AND OLD.`expense_date` <=> NEW.`expense_date`
+      AND OLD.`description` <=> NEW.`description`
+      AND OLD.`acting_account_id` <=> NEW.`acting_account_id`
+      AND OLD.`kind` <=> NEW.`kind`
+      AND OLD.`reversal_of_id` <=> NEW.`reversal_of_id`
+      AND OLD.`supersedes_id` <=> NEW.`supersedes_id`
+      AND OLD.`correction_reason` <=> NEW.`correction_reason`
+      AND OLD.`created_at` <=> NEW.`created_at`
+      AND OLD.`kind` = 'expense'
+      AND OLD.`status` = 'active' AND NEW.`status` = 'corrected'
+      AND EXISTS (
+        SELECT 1 FROM `erp_expenses` AS reversal
+        WHERE reversal.`reversal_of_id` = OLD.`id`
+          AND reversal.`branch_id` = OLD.`branch_id`
+          AND reversal.`kind` = 'reversal'
+      )
+      AND EXISTS (
+        SELECT 1 FROM `erp_expenses` AS replacement
+        WHERE replacement.`supersedes_id` = OLD.`id`
+          AND replacement.`branch_id` = OLD.`branch_id`
+          AND replacement.`kind` = 'expense'
+      )
     )
-    AND EXISTS (
-      SELECT 1 FROM `erp_expenses` AS replacement
-      WHERE replacement.`supersedes_id` = OLD.`id`
-        AND replacement.`branch_id` = OLD.`branch_id`
-        AND replacement.`kind` = 'expense'
+    OR (
+      OLD.`id` <=> NEW.`id`
+      AND OLD.`branch_id` <=> NEW.`branch_id`
+      AND OLD.`category_id` <=> NEW.`category_id`
+      AND OLD.`amount` <=> NEW.`amount`
+      AND OLD.`expense_date` <=> NEW.`expense_date`
+      AND OLD.`description` <=> NEW.`description`
+      AND OLD.`acting_account_id` <=> NEW.`acting_account_id`
+      AND OLD.`kind` <=> NEW.`kind`
+      AND OLD.`status` <=> NEW.`status`
+      AND OLD.`reversal_of_id` <=> NEW.`reversal_of_id`
+      AND OLD.`created_at` <=> NEW.`created_at`
+      AND OLD.`kind` = 'expense'
+      AND OLD.`status` = 'active'
+      AND OLD.`supersedes_id` IS NULL AND NEW.`supersedes_id` IS NOT NULL
+      AND NEW.`supersedes_id` <> OLD.`id`
+      AND OLD.`correction_reason` IS NULL AND NEW.`correction_reason` IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM `erp_expenses` AS original
+        WHERE original.`id` = NEW.`supersedes_id`
+          AND original.`branch_id` = NEW.`branch_id`
+          AND original.`kind` = 'expense'
+          AND original.`status` = 'active'
+      )
+      AND EXISTS (
+        SELECT 1 FROM `erp_expenses` AS reversal
+        WHERE reversal.`reversal_of_id` = NEW.`supersedes_id`
+          AND reversal.`branch_id` = NEW.`branch_id`
+          AND reversal.`kind` = 'reversal'
+      )
     )
   ) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ERP expense facts are immutable';

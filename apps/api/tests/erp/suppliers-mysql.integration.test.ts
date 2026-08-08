@@ -45,7 +45,14 @@ describe('ERP suppliers and purchases MySQL transaction', () => {
     expect(retry.id).toBe(first.id);
     expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(2);
     expect(await database.select().from(erpStockMovements).where(and(eq(erpStockMovements.sourceId, first.id), eq(erpStockMovements.reason, 'purchase')))).toHaveLength(1);
-    expect(await database.select().from(auditEvents).where(and(eq(auditEvents.module, 'erp-purchases'), eq(auditEvents.action, 'post'), eq(auditEvents.entityId, String(first.id))))).toHaveLength(1);
+    const events = await database.select().from(auditEvents).where(and(eq(auditEvents.module, 'erp-purchases'), eq(auditEvents.action, 'post'), eq(auditEvents.entityId, String(first.id))));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.afterState).toMatchObject({
+      id: first.id,
+      supplierName: data.supplier.name,
+      status: 'posted',
+      lines: [expect.objectContaining({ purchaseId: first.id, previousUnitCost: '4.00', postedBalanceAfter: 2 })],
+    });
     await expect(data.module.service.postPurchase(data.actor, { ...input, lines: [{ ...input.lines[0]!, quantity: 1 }] })).rejects.toMatchObject({ code: 'PURCHASE_IDEMPOTENCY_CONFLICT' });
   });
 

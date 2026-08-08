@@ -54,9 +54,10 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
   },
   async correct(id, input) {
     return database.transaction(async (tx) => {
-      const original = (await joined(tx).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).for('update').limit(1))[0] as ExpenseRecord | undefined;
-      if (!original || original.kind !== 'expense') return 'invalid-target';
-      if (original.status !== 'active') return 'already-corrected';
+      const target = (await tx.select({ id: erpExpenses.id, kind: erpExpenses.kind, status: erpExpenses.status }).from(erpExpenses).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).for('update').limit(1))[0];
+      if (!target || target.kind !== 'expense') return 'invalid-target';
+      if (target.status !== 'active') return 'already-corrected';
+      const original = (await joined(tx).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).limit(1))[0] as ExpenseRecord;
       if (!await categoryValid(tx, input.branchId, input.categoryId)) return 'invalid-category';
       const at = now();
       const reversalInsert = await tx.insert(erpExpenses).values({
@@ -68,9 +69,10 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
       const replacementInsert = await tx.insert(erpExpenses).values({
         branchId: input.branchId, categoryId: input.categoryId, amount: input.amount,
         expenseDate: input.expenseDate, description: input.description, actingAccountId: input.actingAccountId,
-        kind: 'expense', status: 'active', supersedesId: id, correctionReason: input.reason, createdAt: at,
+        kind: 'expense', status: 'active', createdAt: at,
       });
       const replacementId = Number(replacementInsert[0].insertId);
+      await tx.update(erpExpenses).set({ supersedesId: id, correctionReason: input.reason }).where(eq(erpExpenses.id, replacementId));
       await tx.update(erpExpenses).set({ status: 'corrected' }).where(eq(erpExpenses.id, id));
       await markCategoryReferenced(tx, input.categoryId, at);
       const [reversal, replacement] = await Promise.all([

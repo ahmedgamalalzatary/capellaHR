@@ -38,6 +38,23 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' })); await waitFor(() => expect(mocks.cancelPurchase).toHaveBeenCalledWith(9, { branchId: 2, reason: 'خطأ في الكمية' }));
   });
 
+  it('clears the cancellation reason whenever the dialog closes or reopens', async () => {
+    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const open = async () => fireEvent.click(within((await screen.findByText('#9')).closest('tr')!).getByRole('button', { name: 'إلغاء المشتريات' }));
+    await open(); fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'سبب قديم' } }); fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    await open(); expect((screen.getByLabelText('سبب الإلغاء') as HTMLInputElement).value).toBe('');
+  });
+
+  it('clears a selected supplier when that supplier is deactivated', async () => {
+    const randomUUID = vi.spyOn(crypto, 'randomUUID');
+    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const purchaseSupplier = await screen.findByLabelText('المورد للمشتريات'); fireEvent.change(purchaseSupplier, { target: { value: '3' } });
+    const keyCallsBeforeDeactivation = randomUUID.mock.calls.length;
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف' }));
+    await waitFor(() => expect((purchaseSupplier as HTMLSelectElement).value).toBe(''));
+    expect(randomUUID.mock.calls.length).toBe(keyCallsBeforeDeactivation + 1);
+  });
+
   it('creates a lineage-linked correction from a cancelled purchase', async () => {
     mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
