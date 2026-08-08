@@ -25,7 +25,7 @@ export type SaleDraft = {
   idempotencyKey: string;
 };
 
-type StoredSaleDraft = Omit<SaleDraft, 'client'> & {
+export type StoredSaleDraft = Omit<SaleDraft, 'client'> & {
   client: Pick<Client, 'id' | 'branchId'> | null;
 };
 
@@ -122,17 +122,22 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
     && typeof value.idempotencyKey === 'string';
 };
 
-const sanitizeDraft = (draft: StoredSaleDraft | SaleDraft): StoredSaleDraft => ({
+export const sanitizeSaleDraft = (draft: StoredSaleDraft | SaleDraft): StoredSaleDraft => ({
   ...draft,
   client: draft.client ? { id: draft.client.id, branchId: draft.client.branchId } : null,
 });
 
+export const parseStoredSaleDraft = (value: unknown): StoredSaleDraft | null => (
+  isSaleDraft(value) ? sanitizeSaleDraft(value) : null
+);
+
 const decodeStoredDraft = (stored: string): { draft: StoredSaleDraft; savedAt: number } | null => {
   const parsed: unknown = JSON.parse(stored);
-  if (!isRecord(parsed) || typeof parsed.savedAt !== 'number' || !isSaleDraft(parsed.draft)) {
+  if (!isRecord(parsed) || typeof parsed.savedAt !== 'number') {
     return null;
   }
-  return { draft: sanitizeDraft(parsed.draft), savedAt: parsed.savedAt };
+  const draft = parseStoredSaleDraft(parsed.draft);
+  return draft ? { draft, savedAt: parsed.savedAt } : null;
 };
 
 const cancelExpiry = (key: string) => {
@@ -236,7 +241,7 @@ export const writeSaleDraft = (owner: SaleDraftOwner, draft: SaleDraft | StoredS
     sessionStorage.setItem(activeKey, draft.idempotencyKey);
     const key = saleDraftStorageKey(owner, draft.idempotencyKey);
     const savedAt = Date.now();
-    sessionStorage.setItem(key, JSON.stringify({ savedAt, draft: sanitizeDraft(draft) }));
+    sessionStorage.setItem(key, JSON.stringify({ savedAt, draft: sanitizeSaleDraft(draft) }));
     scheduleExpiry(key, savedAt);
     return true;
   } catch {

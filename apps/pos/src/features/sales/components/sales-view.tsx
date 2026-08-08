@@ -39,6 +39,16 @@ import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { completeSale, quoteSale } from '../api/sales-api';
+import {
+  enqueueOfflineSale,
+  listOfflineSales,
+  markOfflineSaleFailed,
+  migrateLegacyPendingSales,
+  removeOfflineSale,
+  subscribeOfflineSaleQueue,
+  type OfflineSaleQueueItem,
+} from '../offline-sale-queue';
+import { synchronizeOfflineSales } from '../offline-sale-sync';
 import { salesQueryKeys } from '../query-keys';
 import {
   acquireSaleDraftTab,
@@ -50,6 +60,7 @@ import {
 
 const PENDING_KEY = 'capella:pending-sale';
 const PENDING_KEY_PREFIX = `${PENDING_KEY}:`;
+const OFFLINE_QUEUE_PREFIX = 'capella:offline-sale:v1:';
 const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
   { method: 'cash', label: 'نقدي' },
   { method: 'visa', label: 'فيزا' },
@@ -62,24 +73,6 @@ type AdjustmentKind = 'percentage' | 'fixed';
 /** Admin is a database-enforced singleton and has no public account id. */
 type PendingSaleOwner = SaleDraftOwner;
 type PendingSale = { owner: PendingSaleOwner; input: CompleteSaleInput };
-
-const pendingKey = (idempotencyKey: string) => `${PENDING_KEY_PREFIX}${idempotencyKey}`;
-
-const parsePending = (value: string | null): PendingSale | null => {
-  if (!value) return null;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const owner = Reflect.get(parsed, 'owner');
-    const input = Reflect.get(parsed, 'input');
-    return typeof owner === 'object' && owner !== null
-      && typeof input === 'object' && input !== null
-      ? parsed as PendingSale
-      : null;
-  } catch {
-    return null;
-  }
-};
 
 const toCents = (value: string) => {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
@@ -96,41 +89,17 @@ const errorMessage = (error: unknown) => (
 const readPending = (matches: (pending: PendingSale) => boolean = () => true): PendingSale | null => {
   if (typeof window === 'undefined') return null;
   try {
-    const keys = [PENDING_KEY, ...Array.from(
-      { length: localStorage.length },
-      (_, index) => localStorage.key(index),
-    )
-      .filter((key): key is string => key?.startsWith(PENDING_KEY_PREFIX) === true)
-      .sort()];
-    for (const key of keys) {
-      const pending = parsePending(localStorage.getItem(key));
-      if (!pending) continue;
-      if (key === PENDING_KEY) {
-        try {
-          localStorage.setItem(pendingKey(pending.input.idempotencyKey), JSON.stringify(pending));
-          localStorage.removeItem(PENDING_KEY);
-        } catch {
-          // Continue using the legacy record when migration is not available.
-        }
-      }
-      if (matches(pending)) return pending;
-    }
-    return null;
+    migrateLegacyPendingSales();
+    return listOfflineSales()
+      .map(({ owner, input }) => ({ owner, input }))
+      .find(matches) ?? null;
   } catch {
     return null;
   }
 };
 
 const removePendingRequest = (input: CompleteSaleInput) => {
-  try {
-    localStorage.removeItem(pendingKey(input.idempotencyKey));
-    const legacy = parsePending(localStorage.getItem(PENDING_KEY));
-    if (legacy?.input.idempotencyKey === input.idempotencyKey) {
-      localStorage.removeItem(PENDING_KEY);
-    }
-  } catch {
-    // A failed cleanup is safe: the same idempotency key will only reload this invoice.
-  }
+  removeOfflineSale(input.idempotencyKey);
 };
 
 export function SalesView() {
@@ -244,21 +213,35 @@ export function SalesView() {
 function PendingSaleRecovery({ pending }: { pending: PendingSale }) {
   const attempted = useRef(false);
   const recovery = useMutation({
-    mutationFn: completeSale,
-    onSuccess: (_invoice, input) => removePendingRequest(input),
-    onError: (error, input) => {
-      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-        removePendingRequest(input);
-      }
+    mutationFn: async (input: CompleteSaleInput) => {
+      const result = await synchronizeOfflineSales({ owner: pending.owner, submit: completeSale });
+      const invoice = result.confirmed.find(
+        (item) => item.idempotencyKey === input.idempotencyKey,
+      )?.invoice;
+      if (invoice) return invoice;
+      const queued = listOfflineSales(pending.owner).find(
+        (item) => item.input.idempotencyKey === input.idempotencyKey,
+      );
+      throw new ApiError(queued?.state === 'conflict' ? 409 : 0, {
+        code: queued?.failure?.code ?? 'NETWORK_ERROR',
+        message: queued?.failure?.message ?? 'تعذر تأكيد نتيجة البيع المعلق',
+      });
     },
   });
+  const recoverPending = recovery.mutate;
+  const recoveryPending = recovery.isPending;
 
   useEffect(() => {
+    const retry = () => {
+      if (navigator.onLine && !recoveryPending) recoverPending(pending.input);
+    };
     if (!attempted.current && navigator.onLine) {
       attempted.current = true;
-      recovery.mutate(pending.input);
+      retry();
     }
-  }, [pending.input, recovery]);
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [pending.input, recoverPending, recoveryPending]);
 
   if (recovery.data) {
     return (
@@ -330,7 +313,14 @@ function SaleWorkspace({
   const [ambiguous, setAmbiguous] = useState(false);
   const [completed, setCompleted] = useState<PublicInvoiceDto | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
+  const [conflictRestored, setConflictRestored] = useState(false);
+  const [backgroundSyncCount, setBackgroundSyncCount] = useState(0);
+  const [discarding, setDiscarding] = useState<OfflineSaleQueueItem | null>(null);
+  const [discardError, setDiscardError] = useState(false);
+  const [, setQueueRevision] = useState(0);
   const didReplayOnMount = useRef(false);
+  const backgroundSyncedKeys = useRef(new Set<string>());
   const submitting = useRef(false);
   const hasDraftProgress = Boolean(
     client || employee || lines.length > 0 || discountValue || taxValue || paymentsTouched,
@@ -351,6 +341,23 @@ function SaleWorkspace({
       && (!hasDraftProgress || pendingSale.input.idempotencyKey === idempotencyKey),
   );
   const pendingInput = pendingMatchesActiveDraft ? pendingSale!.input : null;
+  const workspaceQueue = listOfflineSales(workspaceOwner);
+  const queuedItem = workspaceQueue.find((item) => item.state === 'failed') ?? workspaceQueue.find(
+    (item) => item.input.idempotencyKey === pendingSale?.input.idempotencyKey,
+  );
+  const crossSessionConflict = !hasDraftProgress ? listOfflineSales().find((item) => (
+    item.state === 'conflict'
+    && item.recoveryDraft !== undefined
+    && item.owner.role === workspaceOwner.role
+    && item.owner.accountId === workspaceOwner.accountId
+    && item.owner.branchId === workspaceOwner.branchId
+    && item.owner.cashierSessionId !== workspaceOwner.cashierSessionId
+  )) : undefined;
+  const displayedQueueItem = queuedItem ?? crossSessionConflict;
+
+  useEffect(() => subscribeOfflineSaleQueue(() => {
+    setQueueRevision((current) => current + 1);
+  }), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -385,15 +392,63 @@ function SaleWorkspace({
 
   useEffect(() => {
     if (!draftHydrated) return;
+    let cancelled = false;
+    const recordBackgroundSync = (result: Awaited<ReturnType<typeof synchronizeOfflineSales>>) => {
+      if (cancelled) return;
+      const newKeys = result.confirmed
+        .map(({ idempotencyKey: key }) => key)
+        .filter((key) => !backgroundSyncedKeys.current.has(key));
+      if (newKeys.length === 0) return;
+      newKeys.forEach((key) => backgroundSyncedKeys.current.add(key));
+      setBackgroundSyncCount((current) => current + newKeys.length);
+    };
     const synchronizePending = (event?: StorageEvent) => {
-      if (!event || event.key === PENDING_KEY || event.key?.startsWith(PENDING_KEY_PREFIX)) {
-        setPendingSale(readPending(matchesActiveDraft));
+      if (!event || event.key === PENDING_KEY || event.key?.startsWith(PENDING_KEY_PREFIX)
+        || event.key?.startsWith(OFFLINE_QUEUE_PREFIX)) {
+        const matching = readPending(matchesActiveDraft);
+        setPendingSale(matching);
+        if (!matching && navigator.onLine && listOfflineSales(workspaceOwner).some(
+          (item) => item.state !== 'conflict',
+        )) {
+          void synchronizeOfflineSales({ owner: workspaceOwner, submit: completeSale })
+            .then(recordBackgroundSync)
+            .catch(() => undefined);
+        }
+        if (navigator.onLine) {
+          const olderOwners = new Map<string, PendingSaleOwner>();
+          for (const item of listOfflineSales()) {
+            if (item.owner.role !== workspaceOwner.role
+              || item.owner.accountId !== workspaceOwner.accountId
+              || item.owner.cashierSessionId === workspaceOwner.cashierSessionId
+              || item.state === 'conflict') continue;
+            const key = [
+              item.owner.role,
+              item.owner.accountId ?? 'admin',
+              item.owner.branchId,
+              item.owner.cashierSessionId,
+            ].join(':');
+            olderOwners.set(key, item.owner);
+          }
+          for (const owner of olderOwners.values()) {
+            void synchronizeOfflineSales({ owner, submit: completeSale })
+              .then(recordBackgroundSync)
+              .catch(() => undefined);
+          }
+        }
       }
     };
     synchronizePending();
+    const unsubscribe = subscribeOfflineSaleQueue(() => synchronizePending());
+    const onOnline = () => synchronizePending();
     window.addEventListener('storage', synchronizePending);
-    return () => window.removeEventListener('storage', synchronizePending);
-  }, [draftHydrated, matchesActiveDraft]);
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      window.removeEventListener('storage', synchronizePending);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [draftHydrated, matchesActiveDraft, workspaceOwner]);
 
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
@@ -453,15 +508,33 @@ function SaleWorkspace({
   ]);
 
   const completion = useMutation({
-    mutationFn: completeSale,
-    onSuccess: (invoice, input) => {
+    mutationFn: async (input: CompleteSaleInput) => {
+      const result = await synchronizeOfflineSales({ owner: workspaceOwner, submit: completeSale });
+      return {
+        invoice: result.confirmed.find(
+          (item) => item.idempotencyKey === input.idempotencyKey,
+        )?.invoice ?? null,
+        retryableFailure: result.failed.length > 0,
+        queued: listOfflineSales(workspaceOwner).find(
+          (item) => item.input.idempotencyKey === input.idempotencyKey,
+        ) ?? null,
+      };
+    },
+    onSuccess: ({ invoice, queued, retryableFailure }, input) => {
       submitting.current = false;
+      if (!invoice) {
+        setConfirming(false);
+        setAmbiguous(retryableFailure || queued?.state === 'failed');
+        return;
+      }
       removePendingRequest(input);
       setPendingSale(null);
       setAmbiguous(false);
       setConfirming(false);
       removeSaleDraft(workspaceOwner, input.idempotencyKey);
       setDraftRestored(false);
+      setConflictRestored(false);
+      setReplacesIdempotencyKey(null);
       setCompleted(invoice);
     },
     onError: (error, input) => {
@@ -470,10 +543,7 @@ function SaleWorkspace({
       const isAuthoritativeRejection = error instanceof ApiError
         && error.status >= 400 && error.status < 500;
       setAmbiguous(!isAuthoritativeRejection);
-      if (isAuthoritativeRejection) {
-        removePendingRequest(input);
-        setPendingSale(null);
-      }
+      markOfflineSaleFailed(input.idempotencyKey, error);
     },
   });
   const completePending = completion.mutate;
@@ -528,9 +598,24 @@ function SaleWorkspace({
     if (!input) return;
     submitting.current = true;
     const stored = { owner: workspaceOwner, input };
-    try {
-      localStorage.setItem(pendingKey(input.idempotencyKey), JSON.stringify(stored));
-    } catch {
+    const queued = enqueueOfflineSale({
+      owner: workspaceOwner,
+      input,
+      recoveryDraft: {
+        client,
+        employee,
+        lines,
+        discountKind,
+        discountValue,
+        taxKind,
+        taxValue,
+        payments,
+        paymentsTouched,
+        idempotencyKey,
+      },
+      ...(replacesIdempotencyKey ? { replacesIdempotencyKey } : {}),
+    });
+    if (!queued) {
       submitting.current = false;
       setConfirming(false);
       setStorageError(true);
@@ -538,7 +623,30 @@ function SaleWorkspace({
     }
     setStorageError(false);
     setPendingSale(stored);
-    completion.mutate(input);
+    setConfirming(false);
+    if (navigator.onLine) completion.mutate(input);
+    else submitting.current = false;
+  };
+
+  const restoreConflict = (item: OfflineSaleQueueItem) => {
+    const draft = item.recoveryDraft;
+    if (!draft) return;
+    removeSaleDraft(workspaceOwner, idempotencyKey);
+    setClient(null);
+    setEmployee(draft.employee);
+    setLines(draft.lines);
+    setDiscountKind(draft.discountKind);
+    setDiscountValue(draft.discountValue);
+    setTaxKind(draft.taxKind);
+    setTaxValue(draft.taxValue);
+    setPayments(draft.payments);
+    setPaymentsTouched(draft.paymentsTouched);
+    setIdempotencyKey(crypto.randomUUID());
+    setReplacesIdempotencyKey(item.input.idempotencyKey);
+    setPendingSale(null);
+    setAmbiguous(false);
+    setConflictRestored(true);
+    completion.reset();
   };
 
   const reset = () => {
@@ -552,6 +660,8 @@ function SaleWorkspace({
     setCompleted(null);
     setDraftRestored(false);
     setDraftStorageError(false);
+    setConflictRestored(false);
+    setReplacesIdempotencyKey(null);
     removeSaleDraft(workspaceOwner, idempotencyKey);
     setIdempotencyKey(crypto.randomUUID());
   };
@@ -583,10 +693,61 @@ function SaleWorkspace({
         </p>
       ) : null}
 
+      {conflictRestored ? (
+        <p role="status" className="rounded-control bg-warning-soft px-3 py-2 text-sm text-warning">
+          تم استعادة البيع للمراجعة. اختر العميل مجددًا وراجع الأسعار والحضور والمخزون قبل الإرسال.
+        </p>
+      ) : null}
+
+      {backgroundSyncCount > 0 ? (
+        <p role="status" className="rounded-control bg-success-soft px-3 py-2 text-sm text-success">
+          {backgroundSyncCount === 1
+            ? 'تمت مزامنة بيع معلق بنجاح.'
+            : `تمت مزامنة ${backgroundSyncCount} مبيعات معلقة بنجاح.`}
+        </p>
+      ) : null}
+
       {draftStorageError ? (
         <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-sm text-danger">
           تعذر حفظ مسودة البيع في المتصفح. لا تغادر الصفحة قبل إتمام البيع.
         </p>
+      ) : null}
+
+      {draftHydrated && displayedQueueItem ? (
+        <Card><CardContent className="space-y-3 bg-warning-soft">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="font-medium">
+                {displayedQueueItem.state === 'pending'
+                  ? (navigator.onLine ? 'بانتظار المزامنة' : 'بانتظار الاتصال')
+                  : displayedQueueItem.state === 'syncing'
+                    ? 'جارٍ مزامنة البيع'
+                    : displayedQueueItem.state === 'conflict'
+                      ? 'يحتاج البيع إلى مراجعة'
+                      : 'تعذرت مزامنة البيع'}
+              </p>
+              {displayedQueueItem.failure ? <p role="alert" className="text-sm text-danger">{displayedQueueItem.failure.message}</p> : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {displayedQueueItem.state === 'conflict'
+                && displayedQueueItem.recoveryDraft
+                && (!hasDraftProgress
+                  || displayedQueueItem.input.idempotencyKey === idempotencyKey) ? (
+                <Button variant="secondary" onClick={() => restoreConflict(displayedQueueItem)}>
+                  مراجعة وتعديل البيع
+                </Button>
+              ) : null}
+              {(displayedQueueItem.state === 'conflict' || displayedQueueItem.state === 'failed') ? (
+                <Button variant="ghost" onClick={() => {
+                  setDiscardError(false);
+                  setDiscarding(displayedQueueItem);
+                }}>
+                  حذف البيع المعلق
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </CardContent></Card>
       ) : null}
 
       {ambiguous ? (
@@ -729,6 +890,41 @@ function SaleWorkspace({
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setConfirming(false)}>رجوع</Button>
             <Button disabled={completion.isPending} onClick={submit}>تأكيد البيع</Button>
+          </div>
+        </Modal>
+      ) : null}
+
+      {discarding ? (
+        <Modal title="تأكيد حذف البيع المعلق" onClose={() => {
+          setDiscardError(false);
+          setDiscarding(null);
+        }}>
+          <p>سيُحذف الطلب المحفوظ من هذا المتصفح ولن تتم مزامنته لاحقًا.</p>
+          {discardError ? (
+            <p role="alert" className="text-sm text-danger">
+              تعذر حذف البيع المعلق من المتصفح. سيبقى محفوظًا ولن نخفيه حتى ينجح الحذف.
+            </p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDiscarding(null)}>رجوع</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (!removeOfflineSale(discarding.input.idempotencyKey)) {
+                  setDiscardError(true);
+                  return;
+                }
+                removeSaleDraft(workspaceOwner, discarding.input.idempotencyKey);
+                setDiscarding(null);
+                if (discarding.input.idempotencyKey === idempotencyKey) {
+                  setPendingSale(null);
+                  setAmbiguous(false);
+                  reset();
+                }
+              }}
+            >
+              حذف نهائي
+            </Button>
           </div>
         </Modal>
       ) : null}
