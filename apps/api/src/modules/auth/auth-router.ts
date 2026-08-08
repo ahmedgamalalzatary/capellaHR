@@ -3,25 +3,15 @@ import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 
 import { AuthError, type AuthService } from './auth-service.js';
+import { SESSION_COOKIE, readSessionCookie } from './session-cookie.js';
 import { responseRequestId } from '../../shared/http/index.js';
 
-// Stable protocol name shared by issuing, reading, and clearing the session cookie.
-const SESSION_COOKIE = 'capella_session';
-const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+// Mirrors SESSION_LIFETIME_MS.admin in auth-service: the cookie must not expire before
+// the session it carries, or the browser signs the user out while the session is alive.
+// Employee logins deliberately omit Max-Age so their cookie dies with the browser.
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 
 const publicActor = (actor: { type: 'admin' | 'employee' }) => ({ type: actor.type });
-
-const readCookie = (cookieHeader: string | undefined, name: string) => {
-  if (!cookieHeader) return null;
-  for (const section of cookieHeader.split(';')) {
-    const separator = section.indexOf('=');
-    if (separator < 0) continue;
-    if (section.slice(0, separator).trim() === name) {
-      try { return decodeURIComponent(section.slice(separator + 1).trim()); } catch { return null; }
-    }
-  }
-  return null;
-};
 
 export const createAuthRouter = (
   service: AuthService,
@@ -54,7 +44,7 @@ export const createAuthRouter = (
   });
 
   router.get('/session', async (request, response) => {
-    const token = readCookie(request.headers.cookie, SESSION_COOKIE) ?? '';
+    const token = readSessionCookie(request.headers.cookie) ?? '';
     const session = await service.authenticate(token);
     if (!session) {
       if (token) response.clearCookie(SESSION_COOKIE, cookieOptions);
@@ -65,7 +55,7 @@ export const createAuthRouter = (
   });
 
   router.post('/logout', async (request, response) => {
-    const token = readCookie(request.headers.cookie, SESSION_COOKIE);
+    const token = readSessionCookie(request.headers.cookie);
     if (token) await service.logout(token);
     response.clearCookie(SESSION_COOKIE, cookieOptions);
     response.status(204).send();

@@ -53,8 +53,21 @@ export const createApp = (dependencies: {
 } = {}) => {
   const app = express();
 
+  // Every payload here is scoped to the caller's session, so no cache may store or
+  // revalidate one. Express attaches an ETag to each res.json() by default; on a constant
+  // body — /auth/session answers the same string for every admin — that validator is
+  // stable across sessions, so a browser caches the response, revalidates with
+  // If-None-Match, and the API replies 304 with an empty body. That lets a cached
+  // authentication answer outlive the session it describes, and leaves list payloads
+  // readable after logout. Dropping the validator and forbidding storage closes both;
+  // React Query still caches in memory, so nothing is lost.
+  app.set('etag', false);
   if (dependencies.trustProxyHops !== undefined) app.set('trust proxy', dependencies.trustProxyHops);
   app.use(requestContext);
+  app.use((_request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   if (dependencies.logger) app.use(createRequestLogger(dependencies.logger));
   app.use(helmet());
   if (dependencies.corsOrigin) {

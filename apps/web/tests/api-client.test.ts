@@ -13,6 +13,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('api client cache policy', () => {
+  test('opts every request out of the HTTP cache so no session-scoped response is stored', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { data: { actor: { type: 'admin' } } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.get('/auth/session');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: 'no-store' });
+  });
+
+  test('keeps the opt-out on mutating requests that carry a body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { data: { actor: { type: 'admin' } } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.post('/auth/admin/login', { email: 'a@b.c', password: 'x' });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: 'no-store', method: 'POST' });
+  });
+});
+
 describe('api client error contract', () => {
   test('surfaces the nested API error code, Arabic message, and zod field errors', async () => {
     vi.stubGlobal(

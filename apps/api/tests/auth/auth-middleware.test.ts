@@ -29,6 +29,22 @@ const makeApp = (actorType: 'admin' | 'employee' | null) => {
 };
 
 describe('authorization middleware', () => {
+  // The router and the middleware each parsed the Cookie header with their own code. They
+  // agreed on what a browser sends and diverged on anything padded, so a header the
+  // session endpoint accepted could be rejected on every other route. Both now share one
+  // parser; these pin the cases where they used to disagree.
+  it.each([
+    ['padding around the value', 'capella_session= valid-token '],
+    ['padding around the name', ' capella_session =valid-token'],
+    ['a preceding unrelated cookie', 'other=1; capella_session=valid-token'],
+    ['a preceding cookie whose value contains a separator', 'other=a=b; capella_session=valid-token'],
+  ])('accepts a session cookie with %s', async (_name, cookie) => {
+    const response = await request(makeApp('admin')).get('/admin').set('Cookie', cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.actor).toEqual({ type: 'admin' });
+  });
+
   it('rejects requests without an active session', async () => {
     const response = await request(makeApp(null)).get('/admin');
 

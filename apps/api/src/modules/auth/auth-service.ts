@@ -79,6 +79,14 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 // credential exists so unknown emails take the same time as wrong passwords.
 const TIMING_DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$O33BRlRwoIn+0l0wzrVq7g$jTAOxanRrPw/yvMxeDaz0CHzlDf77QOU6llfV3aKaXs';
 
+// Absolute lifetimes, never extended by activity. Admin is the long-lived desktop and
+// phone session; employee stays short because self-service is reached from a device that
+// may be shared on shift, and its cookie is deliberately dropped when the browser closes.
+const SESSION_LIFETIME_MS: Record<ActorType, number> = {
+  admin: 30 * 24 * 60 * 60 * 1_000,
+  employee: 7 * 24 * 60 * 60 * 1_000,
+};
+
 const safelyVerifyHash = async (storedHash: string, value: string) => {
   try {
     return await verify(storedHash, value);
@@ -91,7 +99,6 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   type AttemptContext = { ipAddress?: string | null; userAgent?: string | null; requestId?: string | null };
   const now = dependencies.now ?? (() => new Date());
   const tokenFactory = dependencies.tokenFactory ?? (() => randomBytes(32).toString('base64url'));
-  const sessionLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
   const createSession = async (
     actorType: ActorType,
@@ -106,7 +113,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       tokenHash: hashToken(token),
       actorType,
       employeeId,
-      expiresAt: new Date(createdAt.getTime() + sessionLifetimeMs),
+      expiresAt: new Date(createdAt.getTime() + SESSION_LIFETIME_MS[actorType]),
       revokedAt: null,
     };
     if (actorType === 'employee') {

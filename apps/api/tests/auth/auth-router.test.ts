@@ -45,7 +45,9 @@ describe('authentication HTTP API', () => {
     expect(response.headers['set-cookie']?.[0]).toContain('HttpOnly');
     expect(response.headers['set-cookie']?.[0]).toContain('Secure');
     expect(response.headers['set-cookie']?.[0]).toContain('SameSite=Strict');
-    expect(response.headers['set-cookie']?.[0]).toContain('Max-Age=604800');
+    // Must match the admin session lifetime in auth-service, or the cookie expires while
+    // the stored session is still valid and the user is signed out early.
+    expect(response.headers['set-cookie']?.[0]).toContain('Max-Age=2592000');
     expect(response.body).not.toHaveProperty('data.token');
   });
 

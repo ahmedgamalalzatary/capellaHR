@@ -69,6 +69,48 @@ describe('authentication application composition', () => {
     });
   });
 
+  it('marks API responses no-store so no cache may retain a per-actor payload', async () => {
+    const response = await request(createApp({
+      publicConfig: { timeZone: 'Africa/Cairo', locale: 'ar-EG-u-nu-latn' },
+    })).get('/api/v1/config');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('never answers a repeated session check with 304, whatever validator the client replays', async () => {
+    const service = {
+      async loginAdmin() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      async logout() { return true; },
+      async authenticate(token: string) {
+        return token === 'admin-token'
+          ? { id: 'session', tokenHash: 'hash', actorType: 'admin' as const, employeeId: null, revokedAt: null }
+          : null;
+      },
+      async revokeEmployeeSessions() {},
+    };
+    const app = createApp({ authService: service, secureCookies: false });
+
+    const first = await request(app)
+      .get('/api/v1/auth/session')
+      .set('Cookie', 'capella_session=admin-token');
+
+    expect(first.status).toBe(200);
+    expect(first.headers['cache-control']).toBe('no-store');
+    // The session body is a constant per actor type, so any validator the server emits is
+    // stable across sessions and lets a browser revalidate its way to a stale answer.
+    expect(first.headers.etag).toBeUndefined();
+
+    const replayed = await request(app)
+      .get('/api/v1/auth/session')
+      .set('Cookie', 'capella_session=admin-token')
+      .set('If-None-Match', first.headers.etag ?? '"stale-validator"');
+
+    expect(replayed.status).toBe(200);
+    expect(replayed.body).toEqual({ data: { actor: { type: 'admin' } } });
+  });
+
   it('returns a structured Arabic 400 for malformed JSON', async () => {
     const response = await request(createApp()).post('/api/v1/missing').set('content-type', 'application/json').send('{');
     expect(response.status).toBe(400);

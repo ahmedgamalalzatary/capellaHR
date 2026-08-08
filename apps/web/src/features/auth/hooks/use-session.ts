@@ -22,7 +22,10 @@ export function useSession() {
       }
     },
     staleTime: 60_000,
-    retry: false,
+    // No retry override: a 401 is already turned into `null` above, so it never reaches
+    // the retry path, and every remaining failure is transient (server restarting, laptop
+    // waking, flaky link). Those deserve the client's single retry rather than dropping a
+    // signed-in admin onto an error screen.
     refetchInterval: (query) => query.state.data?.actor.type === 'employee' ? 5_000 : false,
   });
 }

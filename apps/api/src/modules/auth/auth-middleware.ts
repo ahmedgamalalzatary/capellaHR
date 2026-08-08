@@ -3,15 +3,7 @@ import { responseRequestId } from '../../shared/http/index.js';
 import { setAuditActor } from '../audit/index.js';
 
 import type { AuthService } from './auth-service.js';
-
-const readSessionToken = (cookieHeader: string | undefined) => {
-  if (!cookieHeader) return '';
-  for (const section of cookieHeader.split(';')) {
-    const [name, ...value] = section.trim().split('=');
-    if (name === 'capella_session') { try { return decodeURIComponent(value.join('=')); } catch { return ''; } }
-  }
-  return '';
-};
+import { readSessionCookie } from './session-cookie.js';
 
 const reject = (status: number, code: string, message: string): RequestHandler => (_request, response) => {
   response.status(status).json({ error: { code, message, requestId: responseRequestId(response) } });
@@ -19,7 +11,7 @@ const reject = (status: number, code: string, message: string): RequestHandler =
 
 export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>) => {
   const authenticate: RequestHandler = async (request, response, next) => {
-    const session = await service.authenticate(readSessionToken(request.headers.cookie));
+    const session = await service.authenticate(readSessionCookie(request.headers.cookie) ?? '');
     if (!session) {
       reject(401, 'UNAUTHENTICATED', 'يجب تسجيل الدخول')(request, response, next);
       return;

@@ -47,6 +47,13 @@ async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
     response = await fetch(`${API_BASE_URL}${path}`, {
       credentials: 'include',
       ...init,
+      // Unconditional, and deliberately after `...init` so no caller can opt back in.
+      // Every response here is scoped to the session cookie; letting the browser store
+      // one means a cached answer can outlive the session that produced it. Without this
+      // the browser revalidates with If-None-Match and may hand back a 304, which has no
+      // body to parse and surfaces below as an opaque UNEXPECTED_ERROR. The API also
+      // sends `Cache-Control: no-store`; this holds even if a response arrives without it.
+      cache: 'no-store',
       headers: {
         // FormData bodies must let the browser set the multipart boundary.
         ...(init?.body && !(init.body instanceof FormData)

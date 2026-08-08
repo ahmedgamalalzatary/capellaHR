@@ -150,12 +150,29 @@ describe('authentication service', () => {
     expect(sessions.rows.some((row) => row.tokenHash === first.token)).toBe(false);
   });
 
-  it('sets an absolute seven-day expiry when a session is created', async () => {
+  it('sets an absolute thirty-day expiry when an admin session is created', async () => {
     const { service, sessions } = makeService();
 
     await service.loginAdmin('admin@capella.test', 'correct horse battery staple');
 
     expect(Reflect.get(sessions.rows[0]!, 'expiresAt')).toEqual(
+      new Date('2026-08-16T10:00:00.000Z'),
+    );
+  });
+
+  // Pins the shorter employee lifetime against the admin window: raising the admin
+  // constant must not lengthen self-service sessions, whose cookie dies with the browser.
+  it('keeps the employee session at seven days when the admin window is longer', async () => {
+    const setup = makeService();
+
+    await setup.service.loginEmployee({
+      employeeCode: 12,
+      pin: '0123',
+      personalPhone: '01012345678',
+      installationMarker,
+    });
+
+    expect(Reflect.get(setup.sessions.rows[0]!, 'expiresAt')).toEqual(
       new Date('2026-07-24T10:00:00.000Z'),
     );
   });
