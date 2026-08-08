@@ -1,6 +1,7 @@
 import type { createDatabase } from '@capella/database';
 import { accounts, erpCategories, erpExpenses } from '@capella/database/schema';
-import { and, count, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 
 import { markCategoryReferenced } from '../catalog/index.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -60,20 +61,21 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
       const original = (await joined(tx).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).limit(1))[0] as ExpenseRecord;
       if (!await categoryValid(tx, input.branchId, input.categoryId)) return 'invalid-category';
       const at = now();
-      const reversalInsert = await tx.insert(erpExpenses).values({
-        branchId: input.branchId, categoryId: original.categoryId, amount: original.amount,
-        expenseDate: original.expenseDate, description: original.description, actingAccountId: input.actingAccountId,
-        kind: 'reversal', status: 'active', reversalOfId: id, correctionReason: input.reason, createdAt: at,
-      });
-      const reversalId = Number(reversalInsert[0].insertId);
-      const replacementInsert = await tx.insert(erpExpenses).values({
-        branchId: input.branchId, categoryId: input.categoryId, amount: input.amount,
-        expenseDate: input.expenseDate, description: input.description, actingAccountId: input.actingAccountId,
-        kind: 'expense', status: 'active', createdAt: at,
-      });
-      const replacementId = Number(replacementInsert[0].insertId);
-      await tx.update(erpExpenses).set({ supersedesId: id, correctionReason: input.reason }).where(eq(erpExpenses.id, replacementId));
-      await tx.update(erpExpenses).set({ status: 'corrected' }).where(eq(erpExpenses.id, id));
+      const correctionOperationId = randomUUID();
+      await tx.execute(sql`CALL correct_erp_expense(
+        ${id}, ${input.branchId}, ${input.categoryId}, ${input.amount}, ${input.expenseDate},
+        ${input.description}, ${input.actingAccountId}, ${input.reason}, ${at}, ${correctionOperationId}
+      )`);
+      const correctionRows = await tx.select({
+        id: erpExpenses.id,
+        reversalOfId: erpExpenses.reversalOfId,
+        supersedesId: erpExpenses.supersedesId,
+      }).from(erpExpenses).where(eq(erpExpenses.correctionOperationId, correctionOperationId));
+      const reversalId = correctionRows.find((row) => row.reversalOfId === id)?.id;
+      const replacementId = correctionRows.find((row) => row.supersedesId === id)?.id;
+      if (reversalId === undefined || replacementId === undefined) {
+        throw new Error('ERP expense correction procedure did not create complete lineage');
+      }
       await markCategoryReferenced(tx, input.categoryId, at);
       const [reversal, replacement] = await Promise.all([
         joined(tx).where(eq(erpExpenses.id, reversalId)).limit(1).then((rows) => rows[0] as ExpenseRecord),

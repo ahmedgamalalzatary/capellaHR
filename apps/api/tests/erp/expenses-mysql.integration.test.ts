@@ -2,6 +2,7 @@ import { createDatabase } from '@capella/database';
 import { accounts, auditEvents, branches, erpCategories, erpExpenses } from '@capella/database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -125,18 +126,57 @@ describe('MySQL-backed ERP expenses', () => {
     const facts = { branchId, categoryId, amount: '11.00', expenseDate: '2026-08-05', description: 'forged', actingAccountId: ADMIN.accountId, createdAt: new Date() };
 
     await expect(database.insert(erpExpenses).values({ ...facts, status: 'corrected' })).rejects.toThrow();
-    await expect(database.insert(erpExpenses).values({ ...facts, supersedesId: original.id, correctionReason: 'forged' })).rejects.toThrow();
+    await expect(database.insert(erpExpenses).values({
+      ...facts,
+      supersedesId: original.id,
+      correctionOperationId: randomUUID(),
+      correctionReason: 'forged',
+    })).rejects.toThrow();
   });
 
   it('rejects making an expense supersede itself', async () => {
     const { branchId, categoryId } = await seed();
     const original = await expenses.service.create(ADMIN, { branchId, categoryId, amount: '10.00', expenseDate: '2026-08-05', description: 'original' });
-    await database.insert(erpExpenses).values({
-      branchId, categoryId, amount: original.amount, expenseDate: original.expenseDate,
-      description: original.description, actingAccountId: ADMIN.accountId, kind: 'reversal',
-      reversalOfId: original.id, correctionReason: 'forged', createdAt: new Date(),
+    await expect(database.update(erpExpenses).set({ supersedesId: original.id, correctionReason: 'forged' }).where(eq(erpExpenses.id, original.id))).rejects.toThrow();
+  });
+
+  it('rejects linking a replacement after a reversal committed separately', async () => {
+    const { branchId, categoryId } = await seed();
+    const original = await expenses.service.create(ADMIN, { branchId, categoryId, amount: '10.00', expenseDate: '2026-08-05', description: 'original' });
+    const reversalOperationId = randomUUID();
+    await database.transaction(async (tx) => {
+      await tx.execute(sql`INSERT INTO erp_expense_correction_guards
+        (connection_id, operation_id, original_id)
+        VALUES (CONNECTION_ID(), ${reversalOperationId}, ${original.id})`);
+      await tx.insert(erpExpenses).values({
+        branchId, categoryId, amount: original.amount, expenseDate: original.expenseDate,
+        description: original.description, actingAccountId: ADMIN.accountId, kind: 'reversal',
+        reversalOfId: original.id, correctionOperationId: reversalOperationId,
+        correctionReason: 'separate reversal', createdAt: new Date(),
+      });
+      await tx.execute(sql`DELETE FROM erp_expense_correction_guards
+        WHERE connection_id = CONNECTION_ID()`);
+    });
+    await expect(database.transaction(async (tx) => tx.insert(erpExpenses).values({
+      branchId, categoryId, amount: '11.00', expenseDate: '2026-08-05',
+      description: 'unrelated replacement', actingAccountId: ADMIN.accountId,
+      supersedesId: original.id, correctionOperationId: reversalOperationId,
+      correctionReason: 'post-hoc link', createdAt: new Date(),
+    }))).rejects.toThrow();
+  });
+
+  it('rejects invoking the protected correction operation outside a transaction', async () => {
+    const { branchId, categoryId } = await seed();
+    const original = await expenses.service.create(ADMIN, {
+      branchId, categoryId, amount: '10.00', expenseDate: '2026-08-05', description: 'original',
     });
 
-    await expect(database.update(erpExpenses).set({ supersedesId: original.id, correctionReason: 'forged' }).where(eq(erpExpenses.id, original.id))).rejects.toThrow();
+    await expect(database.execute(sql`CALL correct_erp_expense(
+      ${original.id}, ${branchId}, ${categoryId}, ${'11.00'}, ${'2026-08-05'},
+      ${'replacement'}, ${ADMIN.accountId}, ${'fix'}, ${new Date()}, ${randomUUID()}
+    )`)).rejects.toThrow();
+
+    expect((await database.select().from(erpExpenses).where(eq(erpExpenses.branchId, branchId))))
+      .toHaveLength(1);
   });
 });

@@ -601,6 +601,14 @@ describe('ERP service-sale view', () => {
     expect(await screen.findByRole('heading', { name: 'بيع جديد' })).toBeDefined();
     expect(screen.getByText(/تمت مزامنة بيع معلق بنجاح/)).toBeDefined();
     expect(readOfflineQueue()).toEqual([]);
+
+    await buildDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+    await screen.findByText('تم حفظ الفاتورة');
+    fireEvent.click(screen.getByRole('button', { name: 'بيع جديد' }));
+
+    expect(screen.queryByText(/تمت مزامنة بيع معلق بنجاح/)).toBeNull();
   });
 
   it('reopens an older-session conflict under the current session with a fresh key', async () => {

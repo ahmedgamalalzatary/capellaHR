@@ -8,6 +8,8 @@ import { useRef, useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState } from '@capella/ui';
 
+import { createUuid } from '@/lib/uuid';
+
 import { getInvoice, quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
 
@@ -66,15 +68,22 @@ function ReversalControls({
   const idempotencyKeyFor = (payload: unknown) => {
     const fingerprint = JSON.stringify(payload);
     if (commandIdentity.current?.fingerprint !== fingerprint) {
-      commandIdentity.current = { fingerprint, key: crypto.randomUUID() };
+      commandIdentity.current = { fingerprint, key: createUuid() };
     }
     return commandIdentity.current.key;
   };
   const selectedLines = invoice.lines.flatMap((line) => {
     const quantity = Number(quantities[line.id] ?? 0);
-    return Number.isInteger(quantity) && quantity > 0
+    return Number.isInteger(quantity) && quantity > 0 && quantity <= line.refundableQuantity
       ? [{ invoiceLineId: line.id, quantity }]
       : [];
+  });
+  const hasInvalidQuantity = invoice.lines.some((line) => {
+    const raw = quantities[line.id];
+    if (raw === undefined || raw === '') return false;
+    const quantity = Number(raw);
+    return quantity !== 0 && (!Number.isInteger(quantity)
+      || quantity < 0 || quantity > line.refundableQuantity);
   });
   const close = () => {
     setMode(null);
@@ -145,7 +154,7 @@ function ReversalControls({
         <span>{line.name} · متبقي {line.refundableQuantity}</span>
         <input aria-label={`كمية استرداد ${line.name}`} type="number" min={0} max={line.refundableQuantity} disabled={quote.isPending} className="rounded-control border border-line bg-paper px-3 py-2" value={quantities[line.id] ?? ''} onChange={(event) => { setQuantities((current) => ({ ...current, [line.id]: event.target.value })); setQuoted(null); }} />
       </label>)}</div>
-      <Button disabled={!selectedLines.length || quote.isPending} onClick={() => quote.mutate()}>{quote.isPending ? 'جارٍ الحساب…' : 'احسب الاسترداد'}</Button>
+      <Button disabled={!selectedLines.length || hasInvalidQuantity || quote.isPending} onClick={() => quote.mutate()}>{quote.isPending ? 'جارٍ الحساب…' : 'احسب الاسترداد'}</Button>
       {quoted ? <div className="space-y-3 rounded-control border border-line p-3">
         <p className="font-semibold">الإجمالي المسترد: <span dir="ltr">{quoted.totals.total} ج.م</span></p>
         {quoted.payments.map((payment) => <label key={payment.method} className="grid gap-1 sm:grid-cols-[1fr_10rem] sm:items-center">

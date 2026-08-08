@@ -1,5 +1,7 @@
 import type { CompleteSaleInput, PublicInvoiceDto } from '@capella/contracts';
 
+import { createUuid } from '@/lib/uuid';
+
 import {
   listOfflineSales,
   markOfflineSaleFailed,
@@ -19,6 +21,7 @@ const activeSynchronizations = new Map<string, Promise<OfflineSaleSyncResult>>()
 const FALLBACK_LEASE_PREFIX = 'capella:offline-sale-sync-lease:v1:';
 const FALLBACK_LEASE_MS = 30_000;
 const FALLBACK_LEASE_SETTLE_MS = 20;
+const LOCK_WAIT_MS = 5_000;
 
 const ownerKey = (owner: OfflineSaleOwner) => [
   owner.role,
@@ -54,7 +57,7 @@ const acquireFallbackLease = async (owner: OfflineSaleOwner) => {
   const key = offlineSaleSyncLeaseStorageKey(owner);
   const current = readFallbackLease(key);
   if (current && current.expiresAt > Date.now()) return null;
-  const token = crypto.randomUUID();
+  const token = createUuid();
   const writeLease = () => localStorage.setItem(key, JSON.stringify({
     token,
     expiresAt: Date.now() + FALLBACK_LEASE_MS,
@@ -86,16 +89,18 @@ const acquireFallbackLease = async (owner: OfflineSaleOwner) => {
 const replay = async ({
   owner,
   submit,
+  includeFailed,
 }: {
   owner: OfflineSaleOwner;
   submit: (input: CompleteSaleInput) => Promise<PublicInvoiceDto>;
+  includeFailed: boolean;
 }) => {
   const result = emptyResult();
   recoverInterruptedOfflineSales(owner);
   const attempted = new Set<string>();
   while (navigator.onLine) {
     const item = listOfflineSales(owner).find((candidate) => (
-      candidate.state !== 'conflict'
+      (candidate.state === 'pending' || (includeFailed && candidate.state === 'failed'))
       && !attempted.has(candidate.input.idempotencyKey)
     ));
     if (!item) break;
@@ -103,9 +108,8 @@ const replay = async ({
     if (!markOfflineSaleSyncing(item.input.idempotencyKey)) continue;
     try {
       const confirmed = await submit(item.input);
-      if (removeOfflineSale(item.input.idempotencyKey)) {
-        result.confirmed.push({ idempotencyKey: item.input.idempotencyKey, invoice: confirmed });
-      }
+      result.confirmed.push({ idempotencyKey: item.input.idempotencyKey, invoice: confirmed });
+      removeOfflineSale(item.input.idempotencyKey);
     } catch (error) {
       const failed = markOfflineSaleFailed(item.input.idempotencyKey, error);
       if (!failed) continue;
@@ -123,9 +127,11 @@ const replay = async ({
 export const synchronizeOfflineSales = ({
   owner,
   submit,
+  includeFailed = true,
 }: {
   owner: OfflineSaleOwner;
   submit: (input: CompleteSaleInput) => Promise<PublicInvoiceDto>;
+  includeFailed?: boolean;
 }): Promise<OfflineSaleSyncResult> => {
   if (typeof window === 'undefined' || !navigator.onLine) return Promise.resolve(emptyResult());
   const key = ownerKey(owner);
@@ -134,12 +140,27 @@ export const synchronizeOfflineSales = ({
 
   const run = async () => {
     if (navigator.locks) {
-      return navigator.locks.request(`capella:offline-sale-sync:${key}`, () => replay({ owner, submit }));
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), LOCK_WAIT_MS);
+      try {
+        return await navigator.locks.request(
+          `capella:offline-sale-sync:${key}`,
+          { signal: controller.signal },
+          () => replay({ owner, submit, includeFailed }),
+        );
+      } catch (error) {
+        if (controller.signal.aborted
+          && error instanceof DOMException
+          && error.name === 'AbortError') return emptyResult();
+        throw error;
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
     const releaseLease = await acquireFallbackLease(owner);
     if (!releaseLease) return emptyResult();
     try {
-      return await replay({ owner, submit });
+      return await replay({ owner, submit, includeFailed });
     } finally {
       releaseLease();
     }

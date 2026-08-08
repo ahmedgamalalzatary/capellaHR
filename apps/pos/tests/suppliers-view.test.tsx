@@ -50,7 +50,13 @@ describe('SuppliersPurchasesView', () => {
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     const purchaseSupplier = await screen.findByLabelText('المورد للمشتريات'); fireEvent.change(purchaseSupplier, { target: { value: '3' } });
     const keyCallsBeforeDeactivation = randomUUID.mock.calls.length;
-    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف' }));
+    const supplierRow = screen.getAllByRole('row').find((row) => (
+      within(row).queryByText(supplier.name) && within(row).queryByRole('button', { name: 'إيقاف' })
+    ))!;
+    fireEvent.click(within(supplierRow).getByRole('button', { name: 'إيقاف' }));
+    await waitFor(() => expect(mocks.updateSupplier).toHaveBeenCalledWith(3, {
+      branchId: 2, isActive: false,
+    }));
     await waitFor(() => expect((purchaseSupplier as HTMLSelectElement).value).toBe(''));
     expect(randomUUID.mock.calls.length).toBe(keyCallsBeforeDeactivation + 1);
   });
@@ -61,6 +67,17 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
     expect(screen.getByText('تصحيح للمشتريات #9')).toBeDefined(); fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } }); fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } }); fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ correctsPurchaseId: 9 })));
+  });
+
+  it('shows an unavailable marker when a posted stock balance is missing', async () => {
+    mocks.listPurchases.mockResolvedValue({
+      items: [{ ...purchase, lines: [{ ...purchase.lines[0], postedBalanceAfter: null }] }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    expect(await screen.findByText(/الرصيد بعد الترحيل: غير متاح/)).toBeDefined();
   });
 
   it('keeps inactive suppliers visible so they can be reactivated and used in history filters', async () => {

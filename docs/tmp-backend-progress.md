@@ -517,9 +517,8 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–16
-        ├──> ERP 17 Commission/payroll ──> ERP 19 Reports ──┐
-        └──> ERP 18 Offline sales (independent) ───────┘
+DONE: ERP 1–16 and ERP 18 Offline sales, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
+        └──> ERP 17 Commission/payroll ──> ERP 19 Reports ──┐
                                                           │
                                                      ERP 20 Admin UX
                                                           │
@@ -532,10 +531,10 @@ DONE: ERP 1–16
 
 Safe parallel waves:
 
-1. **Complete:** ERP 1–16, with ERP 11 physical-printer validation deferred until production hardware is available.
-2. **Next eligible:** ERP 17 and ERP 18; they may proceed in parallel.
+1. **Complete:** ERP 1–16 and the ERP 18 software slice, with ERP 9's browser-to-authenticated-HTTP-to-MySQL validation, ERP 11 physical-printer validation, and ERP 18's browser-to-authenticated-HTTP-to-MySQL replay harness deferred until those production/integration environments are available.
+2. **Next eligible:** ERP 17.
 3. ERP 17 is now unblocked by ERP 16 and is the critical path to ERP 19.
-4. ERP 18 is independent and may overlap ERP 17 and ERP 19.
+4. ERP 18's offline queue, replay, and conflict-resolution workflow is delivered.
 5. ERP 19 waits for ERP 17; ERP 20 begins after the remaining ERP 17–19 functional slices are complete.
 6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
 
@@ -880,7 +879,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–16 are delivered. ERP 11 software is complete; physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 17 commission/payroll integration is the next critical-path phase, and ERP 18 offline sale submission may proceed in parallel.
+ERP 1–16 and the ERP 18 software slice are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 17 commission/payroll integration is the next critical-path phase.
 
 ## Locked exclusions — do not implement
 

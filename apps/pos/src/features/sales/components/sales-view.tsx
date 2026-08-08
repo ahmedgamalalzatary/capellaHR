@@ -9,7 +9,7 @@ import type {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Minus, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   Button,
@@ -37,13 +37,16 @@ import {
 } from '@/features/employee-assignment';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { createUuid } from '@/lib/uuid';
 
 import { completeSale, quoteSale } from '../api/sales-api';
 import {
   enqueueOfflineSale,
+  getOfflineSaleQueueVersion,
   listOfflineSales,
   markOfflineSaleFailed,
   migrateLegacyPendingSales,
+  offlineSaleRetryDelayMs,
   removeOfflineSale,
   subscribeOfflineSaleQueue,
   type OfflineSaleQueueItem,
@@ -312,13 +315,12 @@ function SaleWorkspace({
   const [storageError, setStorageError] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
   const [completed, setCompleted] = useState<PublicInvoiceDto | null>(null);
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(createUuid);
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
   const [conflictRestored, setConflictRestored] = useState(false);
   const [backgroundSyncCount, setBackgroundSyncCount] = useState(0);
   const [discarding, setDiscarding] = useState<OfflineSaleQueueItem | null>(null);
   const [discardError, setDiscardError] = useState(false);
-  const [, setQueueRevision] = useState(0);
   const didReplayOnMount = useRef(false);
   const backgroundSyncedKeys = useRef(new Set<string>());
   const submitting = useRef(false);
@@ -341,11 +343,26 @@ function SaleWorkspace({
       && (!hasDraftProgress || pendingSale.input.idempotencyKey === idempotencyKey),
   );
   const pendingInput = pendingMatchesActiveDraft ? pendingSale!.input : null;
-  const workspaceQueue = listOfflineSales(workspaceOwner);
+  const queueVersion = useSyncExternalStore(
+    subscribeOfflineSaleQueue,
+    getOfflineSaleQueueVersion,
+    getOfflineSaleQueueVersion,
+  );
+  const offlineQueueSnapshot = useMemo(() => ({
+    version: queueVersion,
+    items: listOfflineSales(),
+  }), [queueVersion]);
+  const offlineQueue = offlineQueueSnapshot.items;
+  const workspaceQueue = useMemo(() => offlineQueue.filter((item) => (
+    item.owner.accountId === workspaceOwner.accountId
+    && item.owner.role === workspaceOwner.role
+    && item.owner.branchId === workspaceOwner.branchId
+    && item.owner.cashierSessionId === workspaceOwner.cashierSessionId
+  )), [offlineQueue, workspaceOwner]);
   const queuedItem = workspaceQueue.find((item) => item.state === 'failed') ?? workspaceQueue.find(
     (item) => item.input.idempotencyKey === pendingSale?.input.idempotencyKey,
   );
-  const crossSessionConflict = !hasDraftProgress ? listOfflineSales().find((item) => (
+  const crossSessionConflict = !hasDraftProgress ? offlineQueue.find((item) => (
     item.state === 'conflict'
     && item.recoveryDraft !== undefined
     && item.owner.role === workspaceOwner.role
@@ -354,10 +371,6 @@ function SaleWorkspace({
     && item.owner.cashierSessionId !== workspaceOwner.cashierSessionId
   )) : undefined;
   const displayedQueueItem = queuedItem ?? crossSessionConflict;
-
-  useEffect(() => subscribeOfflineSaleQueue(() => {
-    setQueueRevision((current) => current + 1);
-  }), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -393,6 +406,7 @@ function SaleWorkspace({
   useEffect(() => {
     if (!draftHydrated) return;
     let cancelled = false;
+    const retryTimers = new Set<number>();
     const recordBackgroundSync = (result: Awaited<ReturnType<typeof synchronizeOfflineSales>>) => {
       if (cancelled) return;
       const newKeys = result.confirmed
@@ -402,48 +416,77 @@ function SaleWorkspace({
       newKeys.forEach((key) => backgroundSyncedKeys.current.add(key));
       setBackgroundSyncCount((current) => current + newKeys.length);
     };
-    const synchronizePending = (event?: StorageEvent) => {
+    const synchronizeOwner = (owner: PendingSaleOwner, includeFailed: boolean, delay = 0) => {
+      const run = () => {
+        if (cancelled || !navigator.onLine) return;
+        void synchronizeOfflineSales({ owner, submit: completeSale, includeFailed })
+          .then(recordBackgroundSync)
+          .catch(() => undefined);
+      };
+      if (delay === 0) run();
+      else {
+        const timer = window.setTimeout(() => {
+          retryTimers.delete(timer);
+          run();
+        }, delay);
+        retryTimers.add(timer);
+      }
+    };
+    const synchronizePending = (event?: StorageEvent, retryFailed = false) => {
       if (!event || event.key === PENDING_KEY || event.key?.startsWith(PENDING_KEY_PREFIX)
         || event.key?.startsWith(OFFLINE_QUEUE_PREFIX)) {
         const matching = readPending(matchesActiveDraft);
         setPendingSale(matching);
-        if (!matching && navigator.onLine && listOfflineSales(workspaceOwner).some(
-          (item) => item.state !== 'conflict',
-        )) {
-          void synchronizeOfflineSales({ owner: workspaceOwner, submit: completeSale })
-            .then(recordBackgroundSync)
-            .catch(() => undefined);
+        const allItems = listOfflineSales();
+        const currentItems = allItems.filter((item) => (
+          item.owner.accountId === workspaceOwner.accountId
+          && item.owner.role === workspaceOwner.role
+          && item.owner.branchId === workspaceOwner.branchId
+          && item.owner.cashierSessionId === workspaceOwner.cashierSessionId
+        ));
+        if (!matching && navigator.onLine && currentItems.some((item) => item.state === 'pending')) {
+          synchronizeOwner(workspaceOwner, false);
+        }
+        if (!matching && navigator.onLine && retryFailed) {
+          const failed = currentItems.find((item) => item.state === 'failed');
+          if (failed) synchronizeOwner(workspaceOwner, true, offlineSaleRetryDelayMs(failed.attempts));
         }
         if (navigator.onLine) {
-          const olderOwners = new Map<string, PendingSaleOwner>();
-          for (const item of listOfflineSales()) {
+          const olderOwners = new Map<string, { owner: PendingSaleOwner; items: OfflineSaleQueueItem[] }>();
+          for (const item of allItems) {
             if (item.owner.role !== workspaceOwner.role
               || item.owner.accountId !== workspaceOwner.accountId
               || item.owner.cashierSessionId === workspaceOwner.cashierSessionId
-              || item.state === 'conflict') continue;
+              || item.state === 'conflict'
+              || (!retryFailed && item.state !== 'pending')) continue;
             const key = [
               item.owner.role,
               item.owner.accountId ?? 'admin',
               item.owner.branchId,
               item.owner.cashierSessionId,
             ].join(':');
-            olderOwners.set(key, item.owner);
+            const group = olderOwners.get(key) ?? { owner: item.owner, items: [] };
+            group.items.push(item);
+            olderOwners.set(key, group);
           }
-          for (const owner of olderOwners.values()) {
-            void synchronizeOfflineSales({ owner, submit: completeSale })
-              .then(recordBackgroundSync)
-              .catch(() => undefined);
+          for (const { owner, items } of olderOwners.values()) {
+            if (items.some((item) => item.state === 'pending')) synchronizeOwner(owner, false);
+            if (retryFailed) {
+              const failed = items.find((item) => item.state === 'failed');
+              if (failed) synchronizeOwner(owner, true, offlineSaleRetryDelayMs(failed.attempts));
+            }
           }
         }
       }
     };
     synchronizePending();
     const unsubscribe = subscribeOfflineSaleQueue(() => synchronizePending());
-    const onOnline = () => synchronizePending();
+    const onOnline = () => synchronizePending(undefined, true);
     window.addEventListener('storage', synchronizePending);
     window.addEventListener('online', onOnline);
     return () => {
       cancelled = true;
+      retryTimers.forEach((timer) => window.clearTimeout(timer));
       unsubscribe();
       window.removeEventListener('storage', synchronizePending);
       window.removeEventListener('online', onOnline);
@@ -641,7 +684,7 @@ function SaleWorkspace({
     setTaxValue(draft.taxValue);
     setPayments(draft.payments);
     setPaymentsTouched(draft.paymentsTouched);
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(createUuid());
     setReplacesIdempotencyKey(item.input.idempotencyKey);
     setPendingSale(null);
     setAmbiguous(false);
@@ -661,9 +704,10 @@ function SaleWorkspace({
     setDraftRestored(false);
     setDraftStorageError(false);
     setConflictRestored(false);
+    setBackgroundSyncCount(0);
     setReplacesIdempotencyKey(null);
     removeSaleDraft(workspaceOwner, idempotencyKey);
-    setIdempotencyKey(crypto.randomUUID());
+    setIdempotencyKey(createUuid());
   };
 
   if (completed) {

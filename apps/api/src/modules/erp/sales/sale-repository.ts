@@ -42,6 +42,7 @@ import {
   calculateSaleTotals,
   MoneyCalculationError,
   sumMoney,
+  toCents,
 } from './services/sale-calculations.js';
 
 type Database = ReturnType<typeof createDatabase>;
@@ -57,17 +58,13 @@ const isDuplicateEntryError = (error: unknown) => {
 };
 
 const asIso = (value: Date) => value.toISOString();
-const moneyCents = (value: string) => {
-  const [whole = '0', fraction = '00'] = value.split('.');
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
-};
 const signedMoney = (value: bigint) => {
   const sign = value < 0n ? '-' : '';
   const absolute = value < 0n ? -value : value;
   return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`;
 };
 const commissionCents = (base: bigint, rate: string) => (
-  (base * moneyCents(rate) + 5_000n) / 10_000n
+  (base * toCents(rate) + 5_000n) / 10_000n
 );
 const invoiceBusinessDate = (invoiceNumber: string) => invoiceNumber.slice(4, 14).replaceAll('.', '-');
 const cairoDate = (value: Date) => {
@@ -128,7 +125,7 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
   for (const payment of reversalPayments) {
     refundedByPayment.set(
       payment.invoicePaymentId,
-      (refundedByPayment.get(payment.invoicePaymentId) ?? 0n) + moneyCents(payment.amount),
+      (refundedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.amount),
     );
   }
 
@@ -191,7 +188,7 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
         method,
         amount,
         refundedAmount: signedMoney(refunded),
-        refundableAmount: signedMoney(moneyCents(amount) - refunded),
+        refundableAmount: signedMoney(toCents(amount) - refunded),
       };
     }),
     reversals: reversals.map((reversal) => ({
@@ -749,7 +746,7 @@ export const createDrizzleSaleRepository = (
           for (const payment of priorPayments) {
             reversedByPayment.set(
               payment.invoicePaymentId,
-              (reversedByPayment.get(payment.invoicePaymentId) ?? 0n) + moneyCents(payment.amount),
+              (reversedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.amount),
             );
           }
           const requestedPayments = operation.type === 'void'
@@ -758,8 +755,8 @@ export const createDrizzleSaleRepository = (
           const paymentRows = requestedPayments.map((requested) => {
             const payment = originalPayments.find((candidate) => candidate.method === requested.method);
             if (!payment) throw new SaleError('REFUND_PAYMENT_EXCEEDED');
-            const remaining = moneyCents(payment.amount) - (reversedByPayment.get(payment.id) ?? 0n);
-            if (moneyCents(requested.amount) > remaining) {
+            const remaining = toCents(payment.amount) - (reversedByPayment.get(payment.id) ?? 0n);
+            if (toCents(requested.amount) > remaining) {
               throw new SaleError('REFUND_PAYMENT_EXCEEDED');
             }
             return { invoicePaymentId: payment.id, method: requested.method, amount: requested.amount };
@@ -853,8 +850,8 @@ export const createDrizzleSaleRepository = (
               && entry.invoiceReversalId !== null
               && finalizedReversalIds.has(entry.invoiceReversalId)
             ))
-              .reduce((sum, entry) => sum + moneyCents(entry.baseAmount), 0n);
-            const base = moneyCents(line.unitPrice) * BigInt(selectedByLine.get(line.id)!);
+              .reduce((sum, entry) => sum + toCents(entry.baseAmount), 0n);
+            const base = toCents(line.unitPrice) * BigInt(selectedByLine.get(line.id)!);
             const amount = commissionCents(priorBase + base, earned.commissionRateSnapshot)
               - commissionCents(priorBase, earned.commissionRateSnapshot);
             await transaction.insert(commissionLedgerEntries).values({

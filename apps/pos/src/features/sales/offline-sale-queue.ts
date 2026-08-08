@@ -39,10 +39,19 @@ const QUEUE_PREFIX = 'capella:offline-sale:v1:';
 const LEGACY_KEY = 'capella:pending-sale';
 const LEGACY_PREFIX = `${LEGACY_KEY}:`;
 const QUEUE_CHANGE_EVENT = 'capella:offline-sale-queue-change';
+let queueVersion = 0;
 
 const notifyQueueChange = () => {
+  queueVersion += 1;
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_CHANGE_EVENT));
 };
+
+export const getOfflineSaleQueueVersion = () => queueVersion;
+
+export const offlineSaleRetryDelayMs = (attempts: number) => Math.min(
+  30_000,
+  1_000 * (2 ** Math.max(0, Math.min(attempts - 1, 5))),
+);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null
@@ -279,7 +288,10 @@ export const subscribeOfflineSaleQueue = (listener: () => void) => {
     if (event.key === null
       || event.key === LEGACY_KEY
       || event.key.startsWith(LEGACY_PREFIX)
-      || event.key.startsWith(QUEUE_PREFIX)) listener();
+      || event.key.startsWith(QUEUE_PREFIX)) {
+      queueVersion += 1;
+      listener();
+    }
   };
   window.addEventListener(QUEUE_CHANGE_EVENT, listener);
   window.addEventListener('storage', onStorage);

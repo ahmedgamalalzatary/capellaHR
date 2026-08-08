@@ -15,9 +15,11 @@ export class MoneyCalculationError extends Error {
   }
 }
 
-const toCents = (value: string) => {
-  const [whole = '0', fraction = ''] = value.split('.');
-  return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+export const toCents = (value: string) => {
+  const negative = value.startsWith('-');
+  const [whole = '0', fraction = ''] = (negative ? value.slice(1) : value).split('.');
+  const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
+  return negative ? -cents : cents;
 };
 
 const MAX_STORED_MONEY_CENTS = 99_999_999_999_999n;

@@ -6,11 +6,13 @@ import type { SaleDraft } from '../src/features/sales/sale-draft-storage';
 import {
   classifySaleSubmissionError,
   enqueueOfflineSale,
+  getOfflineSaleQueueVersion,
   listOfflineSales,
   markOfflineSaleFailed,
   markOfflineSaleSyncing,
   migrateLegacyPendingSales,
   offlineSaleQueueStorageKey,
+  offlineSaleRetryDelayMs,
   recoverInterruptedOfflineSales,
   removeOfflineSale,
   subscribeOfflineSaleQueue,
@@ -258,6 +260,7 @@ describe('offline sale queue', () => {
   });
 
   it('notifies the current tab after every durable queue change', () => {
+    const initialVersion = getOfflineSaleQueueVersion();
     let changes = 0;
     const unsubscribe = subscribeOfflineSaleQueue(() => { changes += 1; });
     const input = sale();
@@ -268,5 +271,12 @@ describe('offline sale queue', () => {
     unsubscribe();
 
     expect(changes).toBe(3);
+    expect(getOfflineSaleQueueVersion()).toBe(initialVersion + 3);
+  });
+
+  it('caps exponential automatic retry delays', () => {
+    expect(offlineSaleRetryDelayMs(1)).toBe(1_000);
+    expect(offlineSaleRetryDelayMs(2)).toBe(2_000);
+    expect(offlineSaleRetryDelayMs(20)).toBe(30_000);
   });
 });

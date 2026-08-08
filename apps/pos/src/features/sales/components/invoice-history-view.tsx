@@ -58,8 +58,8 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
       setSearch(searchDraft.trim() || undefined);
       setPage(1);
     }}>
-      <Label className="grow" htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
-      <Input id="invoice-search" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} />
+      <Label htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
+      <Input className="grow" id="invoice-search" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} />
       <Button type="submit">بحث</Button>
     </form>
     {isAdmin ? <div className="max-w-sm space-y-1">

@@ -17,6 +17,7 @@ export const erpExpenses = mysqlTable('erp_expenses', {
   status: mysqlEnum('status', ['active', 'corrected']).notNull().default('active'),
   reversalOfId: int('reversal_of_id'),
   supersedesId: int('supersedes_id'),
+  correctionOperationId: varchar('correction_operation_id', { length: 36 }),
   correctionReason: varchar('correction_reason', { length: 500 }),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
@@ -32,5 +33,6 @@ export const erpExpenses = mysqlTable('erp_expenses', {
   index('erp_expenses_branch_category_date_idx').on(table.branchId, table.categoryId, table.expenseDate),
   check('erp_expenses_amount_positive', sql`${table.amount} > 0`),
   check('erp_expenses_lineage_consistent', sql`(${table.kind} = 'expense' and ${table.reversalOfId} is null) or (${table.kind} = 'reversal' and ${table.reversalOfId} is not null and ${table.supersedesId} is null)`),
+  check('erp_expenses_correction_operation_consistent', sql`(${table.reversalOfId} is null and ${table.supersedesId} is null and ${table.correctionOperationId} is null) or (${table.correctionOperationId} is not null and (${table.reversalOfId} is not null or ${table.supersedesId} is not null))`),
   check('erp_expenses_correction_reason_consistent', sql`(${table.reversalOfId} is null and ${table.supersedesId} is null and ${table.correctionReason} is null) or (${table.correctionReason} is not null and (${table.reversalOfId} is not null or ${table.supersedesId} is not null))`),
 ]);

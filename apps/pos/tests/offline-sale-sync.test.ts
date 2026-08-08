@@ -44,7 +44,11 @@ const invoice = (input: CompleteSaleInput): PublicInvoiceDto => ({
     subtotal: '185.00', discountAmount: '0.00', taxAmount: '0.00',
     total: '185.00', paymentTotal: '185.00',
   },
-  payments: [{ method: 'cash', amount: '185.00' }],
+  payments: [{
+    method: 'cash', amount: '185.00', refundedAmount: '0.00', refundableAmount: '185.00',
+  }],
+  reversals: [],
+  eligibility: { canVoid: true, canRefund: true },
   soldAt: '2026-08-08T12:00:00.000Z',
 });
 
@@ -72,6 +76,43 @@ describe('offline sale synchronization', () => {
       { idempotencyKey: second.idempotencyKey, invoice: invoice(second) },
     ]);
     expect(listOfflineSales(owner)).toEqual([]);
+  });
+
+  it('reports a confirmed invoice even when queue removal fails', async () => {
+    const input = sale();
+    enqueueOfflineSale({ owner, input });
+    const originalRemoveItem = Storage.prototype.removeItem;
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+      if (key.includes(input.idempotencyKey)) throw new Error('storage unavailable');
+      originalRemoveItem.call(this, key);
+    });
+
+    const result = await synchronizeOfflineSales({
+      owner,
+      submit: async (submitted) => invoice(submitted),
+    });
+    removeItem.mockRestore();
+
+    expect(result.confirmed).toEqual([{ idempotencyKey: input.idempotencyKey, invoice: invoice(input) }]);
+    expect(listOfflineSales(owner)).toEqual([expect.objectContaining({ input })]);
+  });
+
+  it('can exclude failed items while automatically replaying pending items', async () => {
+    const failed = sale();
+    const pending = sale();
+    enqueueOfflineSale({ owner, input: failed });
+    enqueueOfflineSale({ owner, input: pending });
+    await synchronizeOfflineSales({
+      owner,
+      submit: vi.fn().mockRejectedValue(new ApiError(503, { code: 'UNAVAILABLE', message: 'failed' })),
+    });
+    const submit = vi.fn(async (input: CompleteSaleInput) => invoice(input));
+
+    await synchronizeOfflineSales({ owner, submit, includeFailed: false });
+
+    expect(submit).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledWith(pending);
+    expect(listOfflineSales(owner)).toEqual([expect.objectContaining({ input: failed, state: 'failed' })]);
   });
 
   it('keeps a connectivity failure and stops replaying later items until reconnect', async () => {
@@ -197,6 +238,31 @@ describe('offline sale synchronization', () => {
 
     expect(submit).not.toHaveBeenCalled();
     expect(listOfflineSales(owner)).toEqual([expect.objectContaining({ input })]);
+  });
+
+  it('stops waiting for a Web Lock after the acquisition timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const input = sale();
+      enqueueOfflineSale({ owner, input });
+      Object.defineProperty(navigator, 'locks', {
+        configurable: true,
+        value: {
+          request: vi.fn((_name: string, options: LockOptions) => new Promise((_, reject) => {
+            options.signal?.addEventListener('abort', () => reject(
+              new DOMException('The operation was aborted', 'AbortError'),
+            ));
+          })),
+        },
+      });
+      const synchronization = synchronizeOfflineSales({ owner, submit: vi.fn() });
+
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await expect(synchronization).resolves.toEqual({ confirmed: [], failed: [], conflicts: [] });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not reclaim a fallback lease that another tab acquired after suspension', async () => {

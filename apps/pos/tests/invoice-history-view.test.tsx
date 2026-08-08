@@ -61,7 +61,11 @@ describe('invoice history', () => {
     renderView();
     await screen.findByRole('link', { name: item.invoiceNumber });
 
-    fireEvent.change(screen.getByLabelText('بحث برقم الفاتورة أو العميل'), {
+    const searchInput = screen.getByLabelText('بحث برقم الفاتورة أو العميل');
+    expect(searchInput.classList.contains('grow')).toBe(true);
+    expect(screen.getByText('بحث برقم الفاتورة أو العميل').classList.contains('grow')).toBe(false);
+
+    fireEvent.change(searchInput, {
       target: { value: '  منى  ' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'بحث' }));

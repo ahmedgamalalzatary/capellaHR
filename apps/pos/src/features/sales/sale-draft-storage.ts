@@ -4,6 +4,7 @@ import type { ServiceListItem } from '@/features/catalog';
 import type { ProductSaleItem } from '@/features/products';
 import type { Client } from '@/features/clients';
 import type { AssignableEmployee } from '@/features/employee-assignment';
+import { createUuid } from '@/lib/uuid';
 
 export type SaleDraftOwner = {
   accountId: number | null;
@@ -65,12 +66,12 @@ const holdTabLock = (tabId: string) => new Promise<(() => void) | null>((resolve
 export const acquireSaleDraftTab = async (owner: SaleDraftOwner): Promise<() => void> => {
   if (typeof window === 'undefined' || !navigator.locks) return () => undefined;
   try {
-    let tabId = sessionStorage.getItem(TAB_KEY) ?? crypto.randomUUID();
+    let tabId = sessionStorage.getItem(TAB_KEY) ?? createUuid();
     sessionStorage.setItem(TAB_KEY, tabId);
     let release = await holdTabLock(tabId);
     if (release) return release;
 
-    tabId = crypto.randomUUID();
+    tabId = createUuid();
     sessionStorage.setItem(TAB_KEY, tabId);
     sessionStorage.removeItem(activeDraftKey(owner));
     release = await holdTabLock(tabId);

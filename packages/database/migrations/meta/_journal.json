@@ -372,6 +372,13 @@
       "when": 1786200794017,
       "tag": "0052_blue_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "5",
+      "when": 1786206676588,
+      "tag": "0053_lucky_mongu",
+      "breakpoints": true
     }
   ]
 }

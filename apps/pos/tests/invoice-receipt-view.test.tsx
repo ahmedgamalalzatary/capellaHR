@@ -53,6 +53,7 @@ describe('stored invoice receipt', () => {
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     Object.defineProperty(window, 'print', { configurable: true, value: originalPrint });
   });
 
@@ -124,6 +125,20 @@ describe('stored invoice receipt', () => {
     await waitFor(() => expect(quantity.disabled).toBe(false));
   });
 
+  it('does not quote quantities above the refundable balance', async () => {
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '2' } });
+
+    const quoteButton = screen.getByRole('button', { name: 'احسب الاسترداد' }) as HTMLButtonElement;
+    expect(quoteButton.disabled).toBe(true);
+    fireEvent.click(quoteButton);
+    expect(quoteRefund).not.toHaveBeenCalled();
+  });
+
   it('shows original remaining tenders and immutable reversal line/payment details', async () => {
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
@@ -193,6 +208,25 @@ describe('stored invoice receipt', () => {
     await waitFor(() => expect(voidInvoice).toHaveBeenCalledTimes(2));
     expect(voidInvoice.mock.calls[1]![1].idempotencyKey)
       .toBe(voidInvoice.mock.calls[0]![1].idempotencyKey);
+  });
+
+  it('generates a UUID v7 idempotency key when randomUUID is unavailable', async () => {
+    vi.stubGlobal('crypto', {
+      getRandomValues: (values: Uint8Array) => values.fill(1),
+    });
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+    fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+
+    await waitFor(() => expect(voidInvoice).toHaveBeenCalledOnce());
+    expect(voidInvoice.mock.calls[0]![1].idempotencyKey)
+      .toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   it('reports an unavailable browser print API without losing the stored receipt', async () => {

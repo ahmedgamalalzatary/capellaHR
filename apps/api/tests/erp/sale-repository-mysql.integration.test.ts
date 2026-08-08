@@ -302,7 +302,7 @@ describe('ERP sale repository MySQL integration', () => {
       },
       actingAccountId: data.accountId,
       actingAccountRole: 'cashier',
-      reversedAt: new Date('2026-08-03T21:00:00.000Z'),
+      reversedAt: new Date('2026-08-03T22:30:00.000Z'),
     })).rejects.toMatchObject({ code: 'VOID_DATE_EXPIRED' });
     expect(await database.select().from(invoiceReversals)
       .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);

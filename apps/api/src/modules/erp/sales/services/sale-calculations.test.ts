@@ -8,6 +8,7 @@ import {
   calculateSaleTotals,
   MoneyCalculationError,
   sumMoney,
+  toCents,
 } from './sale-calculations.js';
 
 describe('ERP sale calculations', () => {
@@ -85,6 +86,12 @@ describe('ERP sale calculations', () => {
 
   it('sums exact money without floating-point conversion', () => {
     expect(sumMoney(['999999999999.99', '0.01'])).toBe('1000000000000.00');
+  });
+
+  it('preserves the sign of negative fractional money', () => {
+    expect(toCents('-0.01')).toBe(-1n);
+    expect(toCents('-0.30')).toBe(-30n);
+    expect(sumMoney(['1.00', '-0.01', '-0.30'])).toBe('0.69');
   });
 
   it('rejects line and invoice totals outside DECIMAL(14,2) storage', () => {

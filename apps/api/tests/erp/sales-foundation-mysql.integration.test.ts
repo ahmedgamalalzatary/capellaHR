@@ -21,9 +21,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 
-const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
+const sourceDatabaseUrl = process.env.DATABASE_URL;
+if (!sourceDatabaseUrl) {
+  throw new Error('DATABASE_URL is required for ERP sales foundation MySQL integration tests');
+}
+const controlDatabase = createDatabase(sourceDatabaseUrl);
 const databaseName = `capella_hr_test_erp8_${process.pid}_${Date.now()}`;
-const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
+const databaseUrl = new URL(sourceDatabaseUrl);
 databaseUrl.pathname = `/${databaseName}`;
 const database = createDatabase(databaseUrl.toString());
 
@@ -43,9 +47,13 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await controlDatabase.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-  await controlDatabase.$client.promise().end();
+  const failures: unknown[] = [];
+  try { await database.$client.promise().end(); } catch (error) { failures.push(error); }
+  try {
+    await controlDatabase.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
+  } catch (error) { failures.push(error); }
+  try { await controlDatabase.$client.promise().end(); } catch (error) { failures.push(error); }
+  if (failures.length > 0) throw new AggregateError(failures, 'ERP sales foundation cleanup failed');
 }, 30_000);
 
 describe('ERP sales foundation MySQL integration', () => {
