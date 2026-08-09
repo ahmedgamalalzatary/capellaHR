@@ -180,13 +180,89 @@ BEGIN
       GROUP BY reversal_line.invoice_line_id
     ) reversed ON reversed.invoice_line_id = original_line.id
     WHERE original_line.invoice_id = NEW.invoice_id AND original_line.item_type = 'service'
-      AND COALESCE((
-        SELECT SUM(ledger.base_amount) FROM `erp_commission_ledger_entries` ledger
-        JOIN `erp_invoice_reversals` ledger_reversal
-          ON ledger_reversal.id = ledger.invoice_reversal_id
-        WHERE ledger.invoice_line_id = original_line.id AND ledger.entry_type = 'reversal'
-          AND (ledger_reversal.status = 'finalized' OR ledger_reversal.id = NEW.id)
-      ), 0.00) <> original_line.unit_price * COALESCE(reversed.quantity, 0)
+      AND (
+        COALESCE((
+          SELECT SUM(ledger.base_amount) FROM `erp_commission_ledger_entries` ledger
+          JOIN `erp_commission_ledger_entries` earned ON earned.id = ledger.reverses_entry_id
+            AND earned.entry_type = 'earned'
+          JOIN `erp_invoice_reversal_lines` commission_line
+            ON ledger.invoice_reversal_id = commission_line.reversal_id
+            AND ledger.invoice_line_id = commission_line.invoice_line_id
+          JOIN `erp_invoice_reversals` ledger_reversal
+            ON ledger_reversal.id = ledger.invoice_reversal_id
+          LEFT JOIN (
+            SELECT prior.id,
+              COALESCE(SUM(CASE WHEN prior_reversal.status = 'finalized'
+                THEN prior.base_amount ELSE 0.00 END) OVER (
+                  PARTITION BY prior.reverses_entry_id ORDER BY prior.id
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ), 0.00) base_amount
+            FROM `erp_commission_ledger_entries` prior
+            JOIN `erp_invoice_reversals` prior_reversal
+              ON prior_reversal.id = prior.invoice_reversal_id
+            WHERE prior.entry_type = 'reversal'
+          ) prior ON prior.id = ledger.id
+          WHERE ledger.invoice_line_id = original_line.id AND ledger.entry_type = 'reversal'
+            AND ledger.invoice_id = NEW.invoice_id
+            AND ledger.invoice_id = earned.invoice_id
+            AND ledger.invoice_line_id = earned.invoice_line_id
+            AND ledger.employee_id = earned.employee_id
+            AND ledger.commission_rule_snapshot = earned.commission_rule_snapshot
+            AND ledger.commission_rate_snapshot = earned.commission_rate_snapshot
+            AND commission_line.invoice_id = NEW.invoice_id
+            AND commission_line.branch_id = NEW.branch_id
+            AND ledger.base_amount = original_line.unit_price * commission_line.quantity
+            AND -ledger.amount = ROUND(
+              (COALESCE(prior.base_amount, 0.00) + ledger.base_amount)
+                * earned.commission_rate_snapshot / 100, 2
+            ) - ROUND(
+              COALESCE(prior.base_amount, 0.00) * earned.commission_rate_snapshot / 100, 2
+            )
+            AND (ledger_reversal.status = 'finalized' OR ledger_reversal.id = NEW.id)
+        ), 0.00) <> original_line.unit_price * COALESCE(reversed.quantity, 0)
+      )
+  ) OR EXISTS (
+    SELECT 1 FROM `erp_commission_ledger_entries` ledger
+    LEFT JOIN `erp_commission_ledger_entries` earned
+      ON earned.id = ledger.reverses_entry_id AND earned.entry_type = 'earned'
+    LEFT JOIN `erp_invoice_reversal_lines` commission_line
+      ON ledger.invoice_reversal_id = commission_line.reversal_id
+      AND ledger.invoice_line_id = commission_line.invoice_line_id
+    LEFT JOIN `erp_invoice_lines` commission_original_line
+      ON commission_original_line.id = ledger.invoice_line_id
+    LEFT JOIN (
+      SELECT prior.id,
+        COALESCE(SUM(CASE WHEN prior_reversal.status = 'finalized'
+          THEN prior.base_amount ELSE 0.00 END) OVER (
+            PARTITION BY prior.reverses_entry_id ORDER BY prior.id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+          ), 0.00) base_amount
+      FROM `erp_commission_ledger_entries` prior
+      JOIN `erp_invoice_reversals` prior_reversal
+        ON prior_reversal.id = prior.invoice_reversal_id
+      WHERE prior.entry_type = 'reversal'
+    ) prior ON prior.id = ledger.id
+    WHERE ledger.invoice_reversal_id = NEW.id AND ledger.entry_type = 'reversal'
+      AND (earned.id IS NULL
+        OR commission_line.id IS NULL
+        OR commission_original_line.id IS NULL
+        OR ledger.invoice_id <> NEW.invoice_id
+        OR ledger.invoice_id <> earned.invoice_id
+        OR ledger.invoice_line_id <> earned.invoice_line_id
+        OR ledger.employee_id <> earned.employee_id
+        OR ledger.commission_rule_snapshot <> earned.commission_rule_snapshot
+        OR ledger.commission_rate_snapshot <> earned.commission_rate_snapshot
+        OR commission_line.invoice_id <> NEW.invoice_id
+        OR commission_line.branch_id <> NEW.branch_id
+        OR commission_original_line.invoice_id <> NEW.invoice_id
+        OR commission_original_line.branch_id <> NEW.branch_id
+        OR ledger.base_amount <> commission_original_line.unit_price * commission_line.quantity
+        OR -ledger.amount <> ROUND(
+          (COALESCE(prior.base_amount, 0.00) + ledger.base_amount)
+            * earned.commission_rate_snapshot / 100, 2
+        ) - ROUND(
+          COALESCE(prior.base_amount, 0.00) * earned.commission_rate_snapshot / 100, 2
+        ))
   ) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice reversal commission facts are incomplete';
   END IF;

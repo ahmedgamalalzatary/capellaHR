@@ -86,6 +86,16 @@ afterEach(() => {
 });
 
 describe('CommissionsView', () => {
+  it('does not load commissions until a month is selected', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('شهر العمولة'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(screen.getByText('اختر شهرًا لعرض العمولات')).toBeDefined();
+    expect(mocks.list).not.toHaveBeenCalled();
+  });
+
   it('shows monthly employee totals and invoice-line reversal traceability', async () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });

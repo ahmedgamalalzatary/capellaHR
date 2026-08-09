@@ -324,7 +324,7 @@ function SaleWorkspace({
   const [discardError, setDiscardError] = useState(false);
   const didReplayOnMount = useRef(false);
   const backgroundSyncedKeys = useRef(new Set<string>());
-  const retryTimers = useRef(new Set<number>());
+  const retryTimers = useRef(new Map<string, number>());
   const mounted = useRef(true);
   const submitting = useRef(false);
   const hasDraftProgress = Boolean(
@@ -439,6 +439,12 @@ function SaleWorkspace({
       setBackgroundSyncCount((current) => current + newKeys.length);
     };
     const synchronizeOwner = (owner: PendingSaleOwner, includeFailed: boolean, delay = 0) => {
+      const ownerKey = [
+        owner.role,
+        owner.accountId ?? 'admin',
+        owner.branchId,
+        owner.cashierSessionId,
+      ].join(':');
       const run = () => {
         if (!mounted.current || !navigator.onLine) return;
         void synchronizeOfflineSales({ owner, submit: completeSale, includeFailed })
@@ -447,11 +453,14 @@ function SaleWorkspace({
       };
       if (delay === 0) run();
       else {
+        const existingTimer = retryTimers.current.get(ownerKey);
+        if (existingTimer !== undefined) window.clearTimeout(existingTimer);
         const timer = window.setTimeout(() => {
-          retryTimers.current.delete(timer);
+          if (retryTimers.current.get(ownerKey) !== timer) return;
+          retryTimers.current.delete(ownerKey);
           run();
         }, delay);
-        retryTimers.current.add(timer);
+        retryTimers.current.set(ownerKey, timer);
       }
     };
     const synchronizePending = (event?: StorageEvent, retryFailed = false) => {

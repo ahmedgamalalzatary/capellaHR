@@ -8,6 +8,7 @@ import {
 import { and, asc, eq, gte, inArray, lt } from 'drizzle-orm';
 
 import type { CommissionEntry, CommissionListQuery, CommissionSummary } from '@capella/contracts';
+import { nextMonth, startOfCairoDate } from '../cairo-calendar.js';
 import type { CommissionRepository } from './commission-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
@@ -23,31 +24,6 @@ const money = (value: bigint) => {
   const absolute = negative ? -value : value;
   return `${negative ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
 };
-const nextMonth = (month: string) => {
-  const [year, number] = month.split('-').map(Number) as [number, number];
-  return number === 12 ? `${year + 1}-01` : `${year}-${String(number + 1).padStart(2, '0')}`;
-};
-const startOfCairoDate = (date: string) => {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  const dateAt = (instant: Date) => {
-    const parts = Object.fromEntries(formatter.formatToParts(instant)
-      .filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
-    return `${parts.year}-${parts.month}-${parts.day}`;
-  };
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  const target = Date.UTC(year, month - 1, day);
-  let low = target - 36 * 60 * 60_000;
-  let high = target + 36 * 60 * 60_000;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (dateAt(new Date(middle)) < date) low = middle + 1;
-    else high = middle;
-  }
-  return new Date(low);
-};
-
 const entryFields = {
   id: commissionLedgerEntries.id,
   type: commissionLedgerEntries.entryType,
@@ -124,7 +100,10 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
       const ids = (await database.selectDistinct({ employeeId: invoices.assignedEmployeeId })
         .from(invoices).innerJoin(
           commissionLedgerEntries,
-          eq(commissionLedgerEntries.invoiceId, invoices.id),
+          and(
+            eq(commissionLedgerEntries.invoiceId, invoices.id),
+            eq(commissionLedgerEntries.employeeId, invoices.assignedEmployeeId),
+          ),
         ).where(and(
           eq(invoices.branchId, branchId),
           gte(invoices.soldAt, start),

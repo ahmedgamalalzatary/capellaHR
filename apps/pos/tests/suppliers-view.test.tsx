@@ -17,7 +17,7 @@ import { SuppliersPurchasesView } from '../src/features/suppliers';
 const renderView = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SuppliersPurchasesView /></QueryClientProvider>);
 
 beforeEach(() => { mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 describe('SuppliersPurchasesView', () => {
   it('creates a supplier and posts a purchase with an exact visible total', async () => {
@@ -46,6 +46,9 @@ describe('SuppliersPurchasesView', () => {
   });
 
   it('clears a selected supplier when that supplier is deactivated', async () => {
+    const now = new Date('2026-08-09T21:30:00.000Z');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
     const randomUUID = vi.spyOn(crypto, 'randomUUID');
     mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
@@ -63,7 +66,7 @@ describe('SuppliersPurchasesView', () => {
     }));
     await waitFor(() => expect((purchaseSupplier as HTMLSelectElement).value).toBe(''));
     expect(purchaseDate.value).toBe(
-      new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date()),
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(now),
     );
     expect(screen.queryByText('تصحيح للمشتريات #9')).toBeNull();
     expect(screen.getAllByLabelText('المنتج')).toHaveLength(1);

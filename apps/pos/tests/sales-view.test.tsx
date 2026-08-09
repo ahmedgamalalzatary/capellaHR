@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   listBranches: vi.fn(),
   quoteSale: vi.fn(),
   completeSale: vi.fn(),
+  synchronizeOfflineSales: vi.fn(),
   clientPickerProps: vi.fn(),
   servicePickerProps: vi.fn(),
 }));
@@ -54,6 +55,16 @@ vi.mock('../src/features/sales/api/sales-api', () => ({
   quoteSale: mocks.quoteSale,
   completeSale: mocks.completeSale,
 }));
+vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/features/sales/offline-sale-sync')>();
+  return {
+    ...actual,
+    synchronizeOfflineSales: (input: Parameters<typeof actual.synchronizeOfflineSales>[0]) => {
+      mocks.synchronizeOfflineSales(input);
+      return actual.synchronizeOfflineSales(input);
+    },
+  };
+});
 
 import { SalesView } from '../src/features/sales/components/sales-view';
 import {
@@ -115,6 +126,7 @@ describe('ERP service-sale view', () => {
       totals: { subtotal: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
     });
     mocks.completeSale.mockReset().mockResolvedValue(invoice);
+    mocks.synchronizeOfflineSales.mockReset();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
@@ -410,6 +422,46 @@ describe('ERP service-sale view', () => {
     expect(mocks.completeSale).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: predecessor.idempotencyKey,
     }));
+  });
+
+  it('replays a failed sale once across an online-offline-online connectivity flap', async () => {
+    const predecessor = {
+      clientId: 5,
+      assignedEmployeeId: 8,
+      cashierSessionId: 12,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    enqueueOfflineSale({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 12 },
+      input: predecessor,
+    });
+    markOfflineSaleFailed(predecessor.idempotencyKey, new ApiError(503, {
+      code: 'UNEXPECTED_ERROR', message: 'الخادم غير متاح',
+    }));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    renderView();
+    await screen.findByRole('button', { name: 'اختر العميل' });
+    await waitFor(() => expect(mocks.clientPickerProps.mock.calls.length).toBeGreaterThan(1));
+    vi.useFakeTimers();
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    window.dispatchEvent(new Event('offline'));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(mocks.synchronizeOfflineSales).toHaveBeenCalledTimes(1);
+    expect(mocks.synchronizeOfflineSales).toHaveBeenCalledWith(expect.objectContaining({
+      owner: expect.objectContaining({ cashierSessionId: 12 }),
+      includeFailed: true,
+    }));
+    await vi.waitFor(() => expect(mocks.completeSale).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: predecessor.idempotencyKey }),
+    ));
   });
 
   it('updates the pending queue label from connectivity events', async () => {

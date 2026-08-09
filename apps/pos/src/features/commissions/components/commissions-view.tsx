@@ -84,7 +84,7 @@ export function CommissionsView() {
   const commissions = useQuery({
     queryKey: commissionQueryKeys.list(filters),
     queryFn: () => listCommissions({ branchId: branchId!, month, page, pageSize: 20 }),
-    enabled: branchId !== undefined,
+    enabled: branchId !== undefined && Boolean(month),
   });
 
   return <div className="mx-auto max-w-7xl space-y-4" dir="rtl">
@@ -96,7 +96,8 @@ export function CommissionsView() {
         </select></Label>}
       <Label>شهر العمولة<Input aria-label="شهر العمولة" type="month" value={month} onChange={(event) => { setMonth(event.target.value); setPage(1); setSelected(null); }} /></Label>
     </CardContent></Card>
-    {branchId === undefined ? <EmptyState title="اختر فرعًا لعرض العمولات" />
+    {!month ? <EmptyState title="اختر شهرًا لعرض العمولات" />
+      : branchId === undefined ? <EmptyState title="اختر فرعًا لعرض العمولات" />
       : commissions.isPending ? <Card><p className="p-6 text-center text-sm text-muted">جارٍ تحميل العمولات…</p></Card>
         : commissions.isError ? <EmptyState title="تعذر تحميل العمولات" action={<Button onClick={() => void commissions.refetch()}>إعادة المحاولة</Button>} />
           : !commissions.data.items.length ? <EmptyState title="لا توجد عمولات لهذا الشهر" />

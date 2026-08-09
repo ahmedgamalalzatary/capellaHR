@@ -55,6 +55,13 @@ describe('ERP sales migration', () => {
     expect(ownershipRepairMigration).toContain('invoice.branch_id = NEW.branch_id');
     expect(ownershipRepairMigration).toContain('payment.invoice_id = NEW.invoice_id');
     expect(ownershipRepairMigration).toContain('NOT EXISTS (SELECT 1 FROM `erp_product_stocks` stock');
+    expect(ownershipRepairMigration).toContain('earned.id = ledger.reverses_entry_id');
+    expect(ownershipRepairMigration).toContain('ledger.invoice_reversal_id = commission_line.reversal_id');
+    expect(ownershipRepairMigration).toContain('ledger.invoice_reversal_id = NEW.id');
+    expect(ownershipRepairMigration).toContain('ledger.employee_id = earned.employee_id');
+    expect(ownershipRepairMigration).toContain('ledger.commission_rule_snapshot = earned.commission_rule_snapshot');
+    expect(ownershipRepairMigration).toContain('ledger.commission_rate_snapshot = earned.commission_rate_snapshot');
+    expect(ownershipRepairMigration).toContain('-ledger.amount <> ROUND(');
   });
 
   it('creates every ERP 8 persistence table', () => {
