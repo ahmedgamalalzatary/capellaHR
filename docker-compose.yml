@@ -144,6 +144,7 @@ services:
       PORT: 3000
       HOSTNAME: 0.0.0.0
       API_PROXY_TARGET: http://api:4000
+      PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:?PUBLIC_ORIGINS is required}
       PROTECTED_TAB_PASSWORD: ${PROTECTED_TAB_PASSWORD:?PROTECTED_TAB_PASSWORD is required}
     profiles: ["hr", "erp", "full"]
     depends_on:

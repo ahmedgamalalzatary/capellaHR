@@ -45,6 +45,7 @@ export const createProtectedAreaAccessHandler = (options: {
   now?: () => number;
   maximumAttempts?: number;
   maximumKeys?: number;
+  selfOrigins?: readonly string[];
   validateSession?: (token: string) => Promise<boolean>;
   windowMs?: number;
 } = {}) => {
@@ -54,6 +55,13 @@ export const createProtectedAreaAccessHandler = (options: {
   const maximumKeys = options.maximumKeys ?? 10_000;
   const validateSession = options.validateSession ?? validateAdminSession;
   const windowMs = options.windowMs ?? 5 * 60_000;
+  const selfOrigins = options.selfOrigins
+    ?? process.env['PUBLIC_ORIGINS']?.split(',').map((origin) => origin.trim()).filter(Boolean)
+    ?? [];
+  const canonicalOriginsByHost = new Map(selfOrigins.map((origin) => {
+    const canonicalOrigin = new URL(origin).origin;
+    return [new URL(canonicalOrigin).host.toLowerCase(), canonicalOrigin];
+  }));
   const attempts = new Map<string, AttemptWindow>();
 
   return async (request: Request): Promise<Response> => {
@@ -65,7 +73,11 @@ export const createProtectedAreaAccessHandler = (options: {
       } catch {
         normalizedOrigin = null;
       }
-      if (!normalizedOrigin || normalizedOrigin !== new URL(request.url).origin) {
+      const requestHost = request.headers.get('host')?.toLowerCase();
+      const expectedOrigin = requestHost
+        ? canonicalOriginsByHost.get(requestHost)
+        : undefined;
+      if (!normalizedOrigin || normalizedOrigin !== expectedOrigin) {
         return json({ error: 'INVALID_ORIGIN' }, 403);
       }
     }

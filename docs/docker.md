@@ -64,7 +64,7 @@ The commands below target Capella's `full` installation. For HR, set both values
 
 Use URL-safe characters in `MYSQL_PASSWORD`, or percent-encode special characters in `DATABASE_URL`. The edition and private `API_PROXY_TARGET=http://api:4000` are embedded during frontend builds, so changing either requires rebuilding the selected frontend images. Browser code never receives that private address; it always calls the current host's `/api/v1` path.
 
-Set `PUBLIC_ORIGINS` to every canonical public origin served by this API. The origin guard matches each request host only to its configured canonical origin; it never trusts an arbitrary production `Host` header. Keep `DEV_CORS_ORIGINS` empty in production. When a local tool genuinely needs cross-origin credentialed requests, set it only under `NODE_ENV=development` to a comma-separated origin list such as `http://localhost:3000,http://localhost:3001`. Production startup rejects a non-empty list.
+Set `PUBLIC_ORIGINS` to every canonical public origin served by this API. The API origin guard and the web protected-tab guard match each request host only to its configured canonical origin; they never derive a production origin from an arbitrary `Host` header. Keep `DEV_CORS_ORIGINS` empty in production. When a local tool genuinely needs cross-origin credentialed requests, set it only under `NODE_ENV=development` to a comma-separated origin list such as `http://localhost:3000,http://localhost:3001`. Production startup rejects a non-empty list.
 
 Validate interpolation without printing resolved secrets:
 

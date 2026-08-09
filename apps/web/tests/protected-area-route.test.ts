@@ -84,6 +84,29 @@ describe('POST /protected-area-access', () => {
     expect(validateSession).not.toHaveBeenCalled();
   });
 
+  it('accepts the configured HTTPS origin behind an HTTP reverse proxy', async () => {
+    process.env['PROTECTED_TAB_PASSWORD'] = 'Cap2255';
+    const protectedHandler = createProtectedAreaAccessHandler({
+      enforceSameOrigin: true,
+      selfOrigins: ['https://hr.example.com'],
+      validateSession: async () => true,
+    });
+    const proxiedRequest = new Request('http://web:3000/protected-area-access', {
+      method: 'POST',
+      headers: {
+        cookie: 'capella_session=valid-session',
+        host: 'hr.example.com',
+        origin: 'https://hr.example.com',
+      },
+      body: JSON.stringify({ password: 'Cap2255' }),
+    });
+
+    const response = await protectedHandler(proxiedRequest);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ unlocked: true });
+  });
+
   it('rejects a wrong password', async () => {
     process.env['PROTECTED_TAB_PASSWORD'] = 'Cap2255';
 
