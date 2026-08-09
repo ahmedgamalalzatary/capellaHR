@@ -48,6 +48,13 @@ describe('invoice history', () => {
     });
   });
 
+  it('announces invoice loading', () => {
+    mocks.listInvoices.mockReturnValue(new Promise(() => undefined));
+    renderView();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل الفواتير…' })).toBeDefined();
+  });
+
   it('lists branch-scoped stored invoices with receipt links', async () => {
     renderView();
     const link = await screen.findByRole('link', { name: item.invoiceNumber });

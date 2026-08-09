@@ -8,6 +8,7 @@ import { useRef, useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { useSession } from '@/features/auth';
 import {
   createErpReportExport,
@@ -21,6 +22,7 @@ import { createUuid } from '@/lib/uuid';
 
 import { getInvoice, quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 
 const paymentLabels: Record<PaymentMethod, string> = {
   cash: 'نقدي',
@@ -312,7 +314,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   if (!Number.isInteger(invoiceId) || invoiceId < 1 || !validBranch) {
     return <EmptyState title="رابط الفاتورة غير صالح" description="ارجع إلى سجل الفواتير واختر فاتورة صحيحة." />;
   }
-  if (query.isPending) return <p role="status">جارٍ تحميل الفاتورة…</p>;
+  if (query.isPending) return <LoadingState label="جارٍ تحميل الفاتورة…" />;
   if (query.isError) {
     const reference = requestReference(query.error);
     return <div role="alert" className="space-y-3 rounded-control bg-danger-soft p-4 text-danger">
@@ -374,7 +376,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
     <Card className="mx-auto max-w-[84mm]"><CardContent className="p-0"><Receipt invoice={query.data} /></CardContent></Card>
     <ReversalControls invoice={query.data} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
-      void queryClient.invalidateQueries({ queryKey: salesQueryKeys.all });
+      void invalidateErpCaches(queryClient, 'reversal');
     }} />
   </section>;
 }

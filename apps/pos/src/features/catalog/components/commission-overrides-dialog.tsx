@@ -3,10 +3,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { useState } from 'react';
 
 import { Button, Field, Input, Modal } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
+import { SuccessState } from '@/components/feedback/success-state';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import {
   listCatalogEmployeeOptions,
@@ -38,6 +42,7 @@ export function CommissionOverridesDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [successMessage, setSuccessMessage] = useState<string>();
 
   const overridesQuery = useQuery({
     queryKey: catalogQueryKeys.overrides(service.id, branchId),
@@ -55,9 +60,7 @@ export function CommissionOverridesDialog({
     });
 
   const branchScope = branchId === undefined ? {} : { branchId };
-  const invalidate = () => queryClient.invalidateQueries({
-    queryKey: catalogQueryKeys.overrides(service.id, branchId),
-  });
+  const invalidate = () => invalidateErpCaches(queryClient, 'catalog');
 
   const save = useMutation({
     mutationFn: (values: CommissionOverrideFormValues) =>
@@ -65,14 +68,16 @@ export function CommissionOverridesDialog({
     onSuccess: async () => {
       await invalidate();
       reset({ employeeId: '', commissionPercent: '' });
+      setSuccessMessage('تم حفظ نسبة العمولة.');
     },
   });
 
   const remove = useMutation({
     mutationFn: (employeeId: number) =>
       removeCommissionOverride(service.id, employeeId, branchId),
-    onSuccess: invalidate,
+    onSuccess: async () => { await invalidate(); setSuccessMessage('تمت إزالة نسبة العمولة.'); },
   });
+  const overridePending = save.isPending || remove.isPending;
 
   const employees = employeesQuery.data ?? [];
   const employeeName = (id: number) =>
@@ -86,9 +91,13 @@ export function CommissionOverridesDialog({
     ?? serverErrorMessage(employeesQuery.error);
 
   return (
-    <Modal title={`نسب العمولة — ${service.name}`} onClose={onClose}>
+    <Modal
+      title={`نسب العمولة — ${service.name}`}
+      dismissOnBackdrop={!overridePending}
+      onClose={onClose}
+    >
       {overridesQuery.isPending ? (
-        <p className="text-[13px] text-muted">جارٍ تحميل النسب…</p>
+        <LoadingState label="جارٍ تحميل النسب…" className="p-0 text-start" />
       ) : overridesQuery.isError ? (
         <p role="alert" className="text-[13px] text-danger">
           {serverErrorMessage(overridesQuery.error)}
@@ -115,7 +124,7 @@ export function CommissionOverridesDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={remove.isPending}
+                    disabled={overridePending}
                     onClick={() => remove.mutate(override.employeeId)}
                   >
                     إزالة
@@ -127,11 +136,14 @@ export function CommissionOverridesDialog({
         </table>
       )}
 
+      {successMessage ? <SuccessState message={successMessage} /> : null}
+
       <form noValidate className="space-y-3" onSubmit={handleSubmit((values) => save.mutate(values))}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="الموظف" htmlFor="override-employee" required>
             <select
               id="override-employee"
+              disabled={overridePending}
               className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
               {...register('employeeId')}
             >
@@ -148,6 +160,7 @@ export function CommissionOverridesDialog({
               autoComplete="off"
               dir="ltr"
               className="text-start"
+              disabled={overridePending}
               {...register('commissionPercent')}
             />
           </Field>
@@ -156,10 +169,18 @@ export function CommissionOverridesDialog({
         {formError ? <p role="alert" className="text-[13px] text-danger">{formError}</p> : null}
 
         <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={save.isPending}>
+          <Button type="submit" size="sm" disabled={overridePending}>
             {save.isPending ? 'جارٍ الحفظ…' : 'حفظ النسبة'}
           </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>إغلاق</Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={overridePending}
+            onClick={onClose}
+          >
+            إغلاق
+          </Button>
         </div>
       </form>
     </Modal>

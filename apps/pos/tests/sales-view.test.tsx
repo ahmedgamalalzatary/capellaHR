@@ -80,7 +80,8 @@ const invoice = {
 
 const renderView = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><SalesView /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><SalesView /></QueryClientProvider>);
+  return client;
 };
 
 const readStoredPending = () => {
@@ -108,6 +109,12 @@ const buildDraft = async () => {
 };
 
 describe('ERP service-sale view', () => {
+  it('announces Cashier-session loading', () => {
+    mocks.getCurrentSession.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل وردية الكاشير…' })).toBeDefined();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -137,7 +144,10 @@ describe('ERP service-sale view', () => {
   });
 
   it('completes one fully paid service invoice from the server quote', async () => {
-    renderView();
+    const queryClient = renderView();
+    for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
+      queryClient.setQueryData([key, 'existing'], { cached: true });
+    }
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
@@ -154,6 +164,9 @@ describe('ERP service-sale view', () => {
     }));
     expect(Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
       .some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(false);
+    for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
+      expect(queryClient.getQueryState([key, 'existing'])?.isInvalidated).toBe(true);
+    }
   });
 
   it('preserves the same idempotency request after an ambiguous network failure', async () => {
@@ -310,7 +323,10 @@ describe('ERP service-sale view', () => {
   });
 
   it('replays another tab queued sale in the background while preserving this tab draft', async () => {
-    renderView();
+    const queryClient = renderView();
+    for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
+      queryClient.setQueryData([key, 'background'], { cached: true });
+    }
     await buildDraft();
     const activeDraftKey = Array.from(
       { length: sessionStorage.length },
@@ -344,6 +360,9 @@ describe('ERP service-sale view', () => {
     expect(activeDraftKey).toBeDefined();
     expect(sessionStorage.getItem(activeDraftKey!)).not.toBeNull();
     expect(readOfflineQueue()).toEqual([]);
+    for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
+      expect(queryClient.getQueryState([key, 'background'])?.isInvalidated).toBe(true);
+    }
   });
 
   it('shows and retries a failed predecessor before completing the active queued draft', async () => {

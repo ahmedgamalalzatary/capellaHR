@@ -45,11 +45,12 @@ const pageOf = (items: unknown[], meta: Partial<Record<string, number>> = {}) =>
 
 function renderView() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <ClientsView />
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 beforeEach(() => {
@@ -64,10 +65,19 @@ afterEach(() => {
 });
 
 describe('ClientsView', () => {
+  test('announces client loading', () => {
+    mocks.listClients.mockReturnValue(new Promise(() => undefined));
+    renderView();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل العملاء…' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'إدارة العملاء' })).toBeDefined();
+  });
+
   test('scopes Admin listing and creation to the selected branch', async () => {
     mocks.actor.current = { type: 'admin', accountId: 1 };
     mocks.createClient.mockResolvedValue({ ...nada, id: 2 });
-    renderView();
+    const queryClient = renderView();
+    queryClient.setQueryData(['erp-reports', 'existing'], {});
 
     await screen.findByRole('option', { name: 'Main' });
     expect(mocks.listClients).not.toHaveBeenCalled();
@@ -79,6 +89,7 @@ describe('ClientsView', () => {
     fireEvent.change(screen.getByLabelText(/^رقم الهاتف/), { target: { value: '01112223344' } });
     fireEvent.click(screen.getByRole('button', { name: 'إضافة العميل' }));
     await waitFor(() => expect(mocks.createClient).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3 })));
+    expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
   });
 
   test('shows and retries an Admin branch-loading error', async () => {
@@ -176,6 +187,25 @@ describe('ClientsView', () => {
 
     await waitFor(() => expect(mocks.createClient).toHaveBeenCalledTimes(1));
     expect(mocks.createClient.mock.calls[0]?.[0]).toEqual({ fullName: 'مريم', phone: '01112223344' });
+  });
+
+  test('keeps the client form open while saving', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.createClient.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await screen.findByRole('option', { name: 'Main' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+    await screen.findByText('ندى سمير');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة عميل' }));
+    fireEvent.change(screen.getByLabelText(/^اسم العميل/), { target: { value: 'مريم' } });
+    fireEvent.change(screen.getByLabelText(/^رقم الهاتف/), { target: { value: '01112223344' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة العميل' }));
+    await waitFor(() => expect(mocks.createClient).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'إلغاء' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الفرع').hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '' } });
+    expect((screen.getByLabelText('الفرع') as HTMLSelectElement).value).toBe('3');
+    expect(screen.getByLabelText(/^اسم العميل/)).toBeDefined();
   });
 
   test('shows the Arabic validation message for a bad phone without calling the API', async () => {

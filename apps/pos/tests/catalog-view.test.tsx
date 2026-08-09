@@ -68,11 +68,12 @@ function renderView() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <CatalogView />
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 /** Admin flows need a branch picked before anything is scoped. */
@@ -101,6 +102,15 @@ afterEach(() => {
 });
 
 describe('CatalogView branch scope', () => {
+  test('announces category loading after branch selection', async () => {
+    mocks.listCategories.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await pickBranch();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل التصنيفات…' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'إدارة الكتالوج' })).toBeDefined();
+  });
+
   test('asks an admin to choose a branch before loading anything', async () => {
     renderView();
 
@@ -180,7 +190,9 @@ describe('CatalogView categories', () => {
 
   test('creates a category with its type and the acting branch', async () => {
     mocks.createCategory.mockResolvedValue({ ...hairCategory, id: 2, name: 'أظافر' });
-    renderView();
+    const queryClient = renderView();
+    queryClient.setQueryData(['erp-reports', 'existing'], {});
+    queryClient.setQueryData(['expense-categories', 3, 'active'], []);
     await pickBranch();
     fireEvent.click(await screen.findByRole('button', { name: 'إضافة تصنيف' }));
 
@@ -189,8 +201,32 @@ describe('CatalogView categories', () => {
     fireEvent.click(screen.getByRole('button', { name: 'حفظ التصنيف' }));
 
     await waitFor(() => expect(mocks.createCategory).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('status', { name: 'تم حفظ التصنيف.' })).toBeDefined();
     expect(mocks.createCategory.mock.calls[0]?.[0])
       .toEqual({ name: 'أظافر', type: 'expense', branchId: 3 });
+    expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['expense-categories', 3, 'active'])?.isInvalidated).toBe(true);
+  });
+
+  test('keeps the category editor open while saving', async () => {
+    mocks.createCategory.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await pickBranch();
+    fireEvent.click(await screen.findByRole('button', { name: 'إضافة تصنيف' }));
+    fireEvent.change(screen.getByLabelText(/^اسم التصنيف/), { target: { value: 'أظافر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التصنيف' }));
+    await waitFor(() => expect(mocks.createCategory).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'إلغاء' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الفرع')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('tab', { name: 'الخدمات' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'إضافة تصنيف' })).toHaveProperty('disabled', true);
+    const categoryRow = screen.getByText('شعر').closest('tr')!;
+    expect(within(categoryRow).getByRole('button', { name: 'تعديل' })).toHaveProperty('disabled', true);
+    expect(within(categoryRow).getByRole('button', { name: 'إيقاف' })).toHaveProperty('disabled', true);
+    expect(within(categoryRow).getByRole('button', { name: 'حذف' })).toHaveProperty('disabled', true);
+    fireEvent.click(within(categoryRow).getByRole('button', { name: 'تعديل' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'الخدمات' }));
+    expect(screen.getByLabelText(/^اسم التصنيف/)).toHaveProperty('value', 'أظافر');
   });
 
   test('surfaces the duplicate-name conflict from the server', async () => {
@@ -214,9 +250,34 @@ describe('CatalogView categories', () => {
     const row = (await screen.findByText('شعر')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'إيقاف' }));
 
+    expect(mocks.updateCategory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إيقاف التصنيف' }));
     await waitFor(() => expect(mocks.updateCategory).toHaveBeenCalledTimes(1));
     expect(mocks.updateCategory.mock.calls[0]?.slice(0, 2))
       .toEqual([1, { isActive: false, branchId: 3 }]);
+  });
+
+  test('locks a pre-opened confirmation while an editor save is pending', async () => {
+    mocks.createCategory.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await pickBranch();
+    const row = (await screen.findByText('شعر')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'إيقاف' }));
+    const dialog = screen.getByRole('dialog', { name: 'إيقاف التصنيف' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة تصنيف' }));
+    fireEvent.change(screen.getByLabelText(/^اسم التصنيف/), { target: { value: 'أظافر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التصنيف' }));
+
+    await waitFor(() => expect(mocks.createCategory).toHaveBeenCalledTimes(1));
+    const confirm = within(dialog).getByRole('button', { name: 'تأكيد إيقاف التصنيف' });
+    const dismiss = within(dialog).getByRole('button', { name: 'إلغاء' });
+    expect(confirm).toHaveProperty('disabled', true);
+    expect(dismiss).toHaveProperty('disabled', true);
+    fireEvent.click(confirm);
+    fireEvent.click(dismiss);
+    expect(mocks.updateCategory).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'إيقاف التصنيف' })).toBeDefined();
   });
 
   test('confirms before deleting an unused category', async () => {
@@ -318,6 +379,31 @@ describe('CatalogView services', () => {
     });
   });
 
+  test('keeps the service editor open while saving', async () => {
+    mocks.createService.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'إضافة خدمة' }));
+    fireEvent.change(screen.getByLabelText(/^اسم الخدمة/), { target: { value: 'تصفيف' } });
+    fireEvent.change(screen.getByLabelText(/^التصنيف/), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/^السعر/), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الخدمة' }));
+    await waitFor(() => expect(mocks.createService).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'إلغاء' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الفرع')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('tab', { name: 'التصنيفات' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'إضافة خدمة' })).toHaveProperty('disabled', true);
+    const serviceRow = screen.getByText('صبغة').closest('tr')!;
+    expect(within(serviceRow).getByRole('button', { name: 'تعديل' })).toHaveProperty('disabled', true);
+    expect(within(serviceRow).getByRole('button', { name: 'إيقاف' })).toHaveProperty('disabled', true);
+    expect(within(serviceRow).getByRole('button', { name: 'العمولات' })).toHaveProperty('disabled', true);
+    fireEvent.click(within(serviceRow).getByRole('button', { name: 'تعديل' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'التصنيفات' }));
+    expect(screen.getByLabelText(/^اسم الخدمة/)).toHaveProperty('value', 'تصفيف');
+  });
+
   test('blocks an invalid price in the browser without calling the API', async () => {
     renderView();
     await pickBranch();
@@ -345,6 +431,8 @@ describe('CatalogView services', () => {
     expect(within(row).queryByRole('button', { name: 'حذف' })).toBeNull();
     fireEvent.click(within(row).getByRole('button', { name: 'إيقاف' }));
 
+    expect(mocks.updateService).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إيقاف الخدمة' }));
     await waitFor(() => expect(mocks.updateService).toHaveBeenCalledTimes(1));
     expect(mocks.updateService.mock.calls[0]?.slice(0, 2))
       .toEqual([5, { isActive: false, branchId: 3 }]);
@@ -426,8 +514,29 @@ describe('CatalogView employee commission overrides', () => {
     fireEvent.click(screen.getByRole('button', { name: 'حفظ النسبة' }));
 
     await waitFor(() => expect(mocks.setCommissionOverride).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('status', { name: 'تم حفظ نسبة العمولة.' })).toBeDefined();
     expect(mocks.setCommissionOverride.mock.calls[0]?.slice(0, 2))
       .toEqual([5, { employeeId: 7, commissionPercent: '25.00', branchId: 3 }]);
+  });
+
+  test('announces override loading', async () => {
+    mocks.listCommissionOverrides.mockReturnValue(new Promise(() => undefined));
+    await openOverrides();
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل النسب…' })).toBeDefined();
+  });
+
+  test('keeps the override dialog open while saving', async () => {
+    mocks.setCommissionOverride.mockReturnValue(new Promise(() => undefined));
+    await openOverrides();
+    fireEvent.change(await screen.findByLabelText(/^الموظف/), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/^النسبة/), { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ النسبة' }));
+    await waitFor(() => expect(mocks.setCommissionOverride).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'إغلاق' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText(/^الموظف/)).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText(/^النسبة/)).toHaveProperty('disabled', true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: /نسب العمولة/ })).toBeDefined();
   });
 
   test('lists an existing override with its employee name and removes it', async () => {
@@ -447,6 +556,23 @@ describe('CatalogView employee commission overrides', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'إزالة' }));
 
     await waitFor(() => expect(mocks.removeCommissionOverride).toHaveBeenCalledWith(5, 7, 3));
+  });
+
+  test('locks override editing while removing an existing override', async () => {
+    mocks.listCommissionOverrides.mockResolvedValue([
+      {
+        id: 1, serviceId: 5, employeeId: 7, commissionPercent: '25.00',
+        createdAt: '2026-08-01T09:00:00.000Z', updatedAt: '2026-08-01T09:00:00.000Z',
+      },
+    ]);
+    mocks.removeCommissionOverride.mockReturnValue(new Promise(() => undefined));
+    await openOverrides();
+    fireEvent.click((await screen.findByRole('button', { name: 'إزالة' })));
+    await waitFor(() => expect(mocks.removeCommissionOverride).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByLabelText(/^الموظف/)).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText(/^النسبة/)).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'حفظ النسبة' })).toHaveProperty('disabled', true);
   });
 
   test('surfaces the Arabic error when an override cannot be saved', async () => {

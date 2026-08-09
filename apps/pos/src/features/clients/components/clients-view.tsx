@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { useSession } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -33,6 +34,7 @@ export function ClientsView() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
+  const [formPending, setFormPending] = useState(false);
 
   // Whitespace-only input must read as "no filter", so the trimmed term drives
   // both the cache key and the request.
@@ -62,15 +64,20 @@ export function ClientsView() {
 
   return (
     <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold text-ink">إدارة العملاء</h1>
+        <p className="mt-1 text-sm text-muted">إضافة بيانات العملاء والبحث فيها وتحديثها.</p>
+      </div>
       {isAdmin ? (
         <Card><CardContent className="space-y-2">
           <Label htmlFor="clients-branch">الفرع</Label>
           <select
             id="clients-branch"
             value={selectedBranchId ?? ''}
-            disabled={branchesQuery.isPending || branchesQuery.isError}
+            disabled={formPending || branchesQuery.isPending || branchesQuery.isError}
             className="h-9 w-full max-w-xs rounded-control border border-line bg-paper px-3 text-sm"
             onChange={(event) => {
+              if (formPending) return;
               setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
               setPage(1);
               setCreateOpen(false);
@@ -105,14 +112,14 @@ export function ClientsView() {
             onChange={(event) => { setSearch(event.target.value); setPage(1); }}
           />
         </div>
-        <Button size="sm" disabled={!scopeReady} onClick={() => { setCreateOpen(true); setEditing(null); }}>
+        <Button size="sm" disabled={!scopeReady || formPending} onClick={() => { setCreateOpen(true); setEditing(null); }}>
           <Plus className="size-4" aria-hidden />
           إضافة عميل
         </Button>
       </div>
 
       {createOpen ? (
-        <ClientForm {...branchScope} onDone={() => setCreateOpen(false)} onCancel={() => setCreateOpen(false)} />
+        <ClientForm {...branchScope} onDone={() => setCreateOpen(false)} onCancel={() => setCreateOpen(false)} onPendingChange={setFormPending} />
       ) : null}
 
       {editing ? (
@@ -121,6 +128,7 @@ export function ClientsView() {
           {...branchScope}
           onDone={() => setEditing(null)}
           onCancel={() => setEditing(null)}
+          onPendingChange={setFormPending}
         />
       ) : null}
 
@@ -128,7 +136,7 @@ export function ClientsView() {
         {!scopeReady ? (
           <EmptyState title="اختر فرعًا لعرض العملاء" />
         ) : clientsQuery.isPending ? (
-          <div className="px-6 py-16 text-center text-sm text-muted">جارٍ تحميل العملاء…</div>
+          <LoadingState label="جارٍ تحميل العملاء…" className="px-6 py-16" />
         ) : clientsQuery.isError ? (
           <EmptyState
             title="تعذر تحميل العملاء"
@@ -165,6 +173,7 @@ export function ClientsView() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={formPending}
                         onClick={() => { setEditing(client); setCreateOpen(false); }}
                       >
                         <Pencil className="size-4" aria-hidden />

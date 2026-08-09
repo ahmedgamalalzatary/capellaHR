@@ -97,3 +97,29 @@ test('Admin creates, edits, and adjusts a branch product', async ({ page }) => {
   });
   await expect(page.getByRole('cell', { name: '3', exact: true })).toBeVisible();
 });
+
+test('Cashier cannot open product or supplier administration directly', async ({ page }) => {
+  await page.route('**/api/v1/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace('/api/v1', '');
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders });
+      return;
+    }
+    if (path === '/auth/session') {
+      await json(route, { actor: { type: 'cashier', accountId: 8, employeeId: 17 } });
+      return;
+    }
+    if (path === '/erp/cashier-sessions/current') {
+      await json(route, null);
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
+  });
+
+  for (const path of ['/products', '/suppliers']) {
+    await page.goto(path);
+    await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /المنتجات|الموردون/ })).toHaveCount(0);
+  }
+});

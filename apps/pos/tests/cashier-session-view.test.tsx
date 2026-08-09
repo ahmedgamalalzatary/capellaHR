@@ -88,6 +88,13 @@ afterEach(() => {
 });
 
 describe('CashierSessionView', () => {
+  test('announces cashier-session loading', async () => {
+    mocks.getCurrentCashierSession.mockReturnValue(new Promise(() => undefined));
+    renderView();
+
+    expect(await screen.findByRole('status', { name: 'جارٍ تحميل الوردية…' })).toBeDefined();
+  });
+
   test('restores and displays the acting Cashier open session with a Cairo timestamp', async () => {
     mocks.getCurrentCashierSession.mockResolvedValue(session);
     renderView();

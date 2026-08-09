@@ -18,14 +18,29 @@ import { ExpensesView } from '../src/features/expenses';
 import { ApiError } from '../src/lib/api/client';
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ExpensesView /></QueryClientProvider>);
+const mount = () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={queryClient}><ExpensesView /></QueryClientProvider>);
+  return queryClient;
+};
 
 describe('ExpensesView', () => {
+  it('announces loading the expense history', async () => {
+    mocks.categories.mockResolvedValue({ items: [], meta: { totalPages: 1 } });
+    mocks.list.mockReturnValue(new Promise(() => undefined));
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل المصروفات…' })).toBeDefined();
+  });
+
   it('creates and filters branch-scoped expenses', async () => {
     mocks.categories.mockResolvedValue({ items: [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], meta: { totalPages: 1 } });
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     mocks.create.mockResolvedValue(expense);
-    mount();
+    const queryClient = mount();
+    queryClient.setQueryData(['erp-reports', 'existing'], {});
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     await screen.findAllByRole('option', { name: 'تشغيل' });
@@ -35,8 +50,10 @@ describe('ExpensesView', () => {
     fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'مستلزمات' } });
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل المصروف' }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, categoryId: 4, amount: '125.50' })));
+    expect(await screen.findByRole('status', { name: 'تم تسجيل المصروف.' })).toBeDefined();
     fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-08-01' } });
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, fromDate: '2026-08-01' })));
+    expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
   });
 
   it('shows immutable lineage and explicitly corrects an active original', async () => {
@@ -52,6 +69,24 @@ describe('ExpensesView', () => {
     fireEvent.change(screen.getByLabelText('سبب التصحيح'), { target: { value: 'قيمة خاطئة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد التصحيح' }));
     await waitFor(() => expect(mocks.correct).toHaveBeenCalledWith(10, expect.objectContaining({ branchId: 2, amount: '100', reason: 'قيمة خاطئة' })));
+  });
+
+  it('keeps the expense correction open while posting', async () => {
+    mocks.categories.mockResolvedValue({ items: [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], meta: { totalPages: 1 } });
+    mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mocks.correct.mockReturnValue(new Promise(() => undefined));
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByText('مستلزمات');
+    fireEvent.click(screen.getByRole('button', { name: 'تصحيح' }));
+    fireEvent.change(screen.getByLabelText('المبلغ الصحيح'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('سبب التصحيح'), { target: { value: 'قيمة خاطئة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد التصحيح' }));
+    await waitFor(() => expect(mocks.correct).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'إلغاء' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الفرع').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('المبلغ الصحيح').hasAttribute('disabled')).toBe(true);
   });
 
   it('requires a new active category when the original category was retired', async () => {

@@ -14,21 +14,38 @@ vi.mock('../src/features/suppliers/api/suppliers-api', () => ({
 }));
 
 import { SuppliersPurchasesView } from '../src/features/suppliers';
-const renderView = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SuppliersPurchasesView /></QueryClientProvider>);
+const renderView = () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={queryClient}><SuppliersPurchasesView /></QueryClientProvider>);
+  return queryClient;
+};
 
 beforeEach(() => { mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('SuppliersPurchasesView', () => {
+  it('announces supplier and purchase-history loading', async () => {
+    mocks.listSuppliers.mockReturnValue(new Promise(() => undefined));
+    mocks.listPurchases.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل الموردين…' })).toBeDefined();
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل سجل المشتريات…' })).toBeDefined();
+  });
+
   it('creates a supplier and posts a purchase with an exact visible total', async () => {
-    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const queryClient = renderView(); queryClient.setQueryData(['erp-reports', 'existing'], {}); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } }); fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
     await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, name: 'مورد جديد' })));
     fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } }); fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } });
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
     expect(screen.getByText('الإجمالي: 25.00 ج.م')).toBeDefined(); fireEvent.click(screen.getByRole('button', { name: 'ترحيل المشتريات' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, supplierId: 3, lines: [{ productId: 4, quantity: 2, unitCost: '12.50' }] })));
+    expect(await screen.findByRole('status', { name: 'تم ترحيل المشتريات إلى المخزون.' })).toBeDefined();
     await waitFor(() => expect(mocks.listProducts.mock.calls.filter(([params]) => params.isActive === true)).toHaveLength(2));
+    expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
   });
 
   it('shows immutable posted history and confirms one-time cancellation', async () => {
@@ -61,6 +78,8 @@ describe('SuppliersPurchasesView', () => {
       within(row).queryByText(supplier.name) && within(row).queryByRole('button', { name: 'إيقاف' })
     ))!;
     fireEvent.click(within(supplierRow).getByRole('button', { name: 'إيقاف' }));
+    expect(mocks.updateSupplier).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إيقاف المورد' }));
     await waitFor(() => expect(mocks.updateSupplier).toHaveBeenCalledWith(3, {
       branchId: 2, isActive: false,
     }));
@@ -79,6 +98,48 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
     expect(screen.getByText('تصحيح للمشتريات #9')).toBeDefined(); fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } }); fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } }); fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ correctsPurchaseId: 9 })));
+  });
+
+  it('keeps the purchase correction open while posting', async () => {
+    const randomUUID = vi.spyOn(crypto, 'randomUUID');
+    mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mocks.postPurchase.mockReturnValue(new Promise(() => undefined));
+    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
+    fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
+    await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'إلغاء التصحيح' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الفرع').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('المنتج').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الكمية').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('اسم المورد')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'إضافة المورد' })).toHaveProperty('disabled', true);
+    const keyCalls = randomUUID.mock.calls.length;
+    fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '99' } });
+    expect(randomUUID.mock.calls.length).toBe(keyCalls);
+    expect(mocks.postPurchase.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      lines: [expect.objectContaining({ quantity: 2 })],
+    }));
+  });
+
+  it('locks the purchase draft while a supplier save is pending', async () => {
+    mocks.createSupplier.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
+
+    await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('المورد للمشتريات')).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('تاريخ المشتريات')).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('المنتج')).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('الكمية')).toHaveProperty('disabled', true);
+    expect(screen.getByLabelText('تكلفة الوحدة')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'إضافة بند' })).toHaveProperty('disabled', true);
   });
 
   it('shows an unavailable marker when a posted stock balance is missing', async () => {
@@ -131,6 +192,25 @@ describe('SuppliersPurchasesView', () => {
     mocks.updateSupplier.mockRejectedValueOnce(new Error('failed'));
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إيقاف' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إيقاف المورد' }));
     expect((await screen.findByRole('alert')).textContent).toContain('تعذر تنفيذ العملية');
+  });
+
+  it('keeps cancellation controls and reason locked while cancellation is pending', async () => {
+    mocks.cancelPurchase.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('#9')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'إلغاء المشتريات' }));
+    fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'خطأ في الكمية' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+
+    await waitFor(() => expect(mocks.cancelPurchase).toHaveBeenCalledTimes(1));
+    expect((screen.getByLabelText('سبب الإلغاء') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'رجوع' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    expect(screen.getByLabelText('سبب الإلغاء')).toBeDefined();
+    expect((screen.getByLabelText('سبب الإلغاء') as HTMLInputElement).value).toBe('خطأ في الكمية');
   });
 });

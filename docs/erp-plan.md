@@ -1,6 +1,6 @@
 # Beauty Center ERP — Decisions, Reasoning, and Plan
 
-Status: **Implementation in progress; ERP 1–19 software slices delivered, subject to the explicitly deferred validation listed below.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP19 reports and PDF export delivery.
+Status: **Implementation in progress; ERP 1–20 software slices delivered, subject to the explicitly deferred validation listed below.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP20 cross-feature administration UX hardening.
 
 ---
 
@@ -260,11 +260,17 @@ Product profit is calculated as net product revenue after the invoice discount i
 
 The shared database-backed report queue renders Arabic landscape A4 PDFs for the 15 tabular reports and Arabic portrait A4 PDFs for one selected stored invoice. Invoice PDFs include snapshotted client, employee, line, payment, discount, tax, total, and acting-account facts. The Admin invoice detail exposes queue, status, retry, and download controls independently from void/refund mutation state.
 
+### Cross-feature administration UX — delivered in ERP20
+
+The POS now exposes one role-aware, grouped Arabic/RTL navigation model and an Admin landing page for the delivered cashier-account, catalog, client, supplier/purchase, product/stock, expense, invoice, commission, report, and export workflows. Duplicate page headings were removed, Admin-only product and supplier URLs are guarded directly, and page landmarks, skip navigation, responsive layouts, loading and success announcements, empty/error states, and destructive confirmations follow shared patterns.
+
+Related mutations invalidate their owning data and every affected downstream view, including reports, stock, clients, commissions, and sales. Pending mutations keep their editor, confirmation state, and identity active until settlement, while local branch/tab controls plus shell navigation and logout remain locked. Component coverage and wide/compact browser journeys verify navigation continuity, direct-route permissions, destructive actions, purchase-to-product-stock propagation, and cross-feature layout behavior.
+
 ---
 
 ## 9. ERP module group status
 
-The `apps/api/src/modules/erp/` group is delivered through ERP19, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final module delivered in ERP19; remaining planned ERP20+ work is cross-feature integration and access hardening rather than delivery of the modules listed here:
+The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final backend module delivered in ERP19, and ERP20 integrated the delivered workflows into the hardened Admin experience. Remaining ERP21+ work concerns editions/runtime composition and production security rather than delivery of the modules listed here:
 
 | Module | Purpose |
 |---|---|

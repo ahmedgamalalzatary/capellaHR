@@ -517,12 +517,10 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–19, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
-        └──> ERP 20 Admin UX ──────────────────────────────┐
-                                                          │
-                                                     ERP 21 Editions
-                                                          │
-                                                     ERP 22 Security
+DONE: ERP 1–20, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
+        └──> ERP 21 Editions
+                  │
+             ERP 22 Security
 ```
 
 Safe parallel waves:
@@ -531,8 +529,8 @@ Safe parallel waves:
 2. **Complete:** ERP 17 commission/payroll integration.
 3. **Complete:** ERP 19 reports and PDF exports.
 4. ERP 18's offline queue, replay, and conflict-resolution workflow is delivered.
-5. **Next eligible:** ERP 20.
-6. ERP 20 → ERP 21 → ERP 22 should remain sequential.
+5. **Complete:** ERP 20 cross-feature administration UX hardening.
+6. **Next eligible:** ERP 21, followed by ERP 22.
 
 ## ERP 4. Cashier sessions
 
@@ -806,16 +804,18 @@ Complete. Admins have one Arabic/RTL report workspace covering all 15 locked fin
 
 The existing database-backed worker queue now dispatches ERP jobs without coupling HR reports to ERP internals. Tabular reports produce Arabic landscape A4 PDFs; stored invoices produce Arabic portrait A4 PDFs with immutable invoice, line, payment, discount, tax, employee, client, and authorization facts. The invoice detail owns its Admin-only queue/status/download/retry controls without affecting refund or void mutation identity. Contracts reject unsupported selected-row semantics, all report and export endpoints are Admin-only, and migration, real-MySQL branch/snapshot/profit, batching, queue retry, file lifecycle, component, and browser coverage protects the workflow.
 
-## ERP 20. Cross-feature administration UX hardening
+## ERP 20. Cross-feature administration UX hardening — Complete
 
-- [ ] Integrate the delivered Cashier-account, catalog, client, supplier, purchase, stock, expense, invoice, commission, report, and export workflows into coherent Admin navigation.
-- [ ] Remove duplicate or placeholder administration entry points and preserve public feature boundaries.
-- [ ] Standardize Arabic/RTL loading, empty, error, confirmation, conflict, permission, and success states across all Admin ERP features.
-- [ ] Complete accessibility, keyboard, responsive-layout, focus-management, and destructive-action confirmation review.
-- [ ] Verify cross-feature cache invalidation and navigation after mutations without hiding server-side conflicts.
-- [ ] Add end-to-end regression journeys spanning related Admin features.
+- [x] Integrate the delivered Cashier-account, catalog, client, supplier, purchase, stock, expense, invoice, commission, report, and export workflows into coherent Admin navigation.
+- [x] Remove duplicate or placeholder administration entry points and preserve public feature boundaries.
+- [x] Standardize Arabic/RTL loading, empty, error, confirmation, conflict, permission, and success states across all Admin ERP features.
+- [x] Complete accessibility, keyboard, responsive-layout, focus-management, and destructive-action confirmation review.
+- [x] Verify cross-feature cache invalidation and navigation after mutations without hiding server-side conflicts.
+- [x] Add end-to-end regression journeys spanning related Admin features.
 
-This slice hardens and integrates administration features already delivered in their owning slices; it must not defer missing feature UI from ERP 1–19.
+Complete. The role-aware POS shell and Admin landing page now group every delivered ERP workflow without duplicate page entry points, while direct product and supplier administration URLs enforce Admin access. Shared Arabic loading and success announcements, page landmarks, empty/error states, focus-contained confirmations, pending-state locks, and responsive navigation cover the integrated experience without masking server conflicts. Pending commands also lock local branch/tab controls plus shell navigation and logout until the request settles, preserving the active command state.
+
+Catalog, client, sale/reversal, purchase, product, and expense mutations invalidate their owning caches plus affected report, stock, client, sales, and commission projections. Focused component coverage and wide/compact browser journeys protect navigation continuity, mutation safety, destructive confirmations, direct-route permissions, document-level overflow, and purchase-to-product-stock propagation across Admin features.
 
 ## ERP 21. Editions and runtime module registry
 
@@ -860,7 +860,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–19 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 20 cross-feature administration UX hardening is the next critical-path phase.
+ERP 1–20 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 21 editions and runtime module registry is the next critical-path phase.
 
 ## Locked exclusions — do not implement
 

@@ -39,11 +39,12 @@ import { InvoiceReceiptView } from '../src/features/sales/components/invoice-rec
 
 const renderView = (branchId: number | undefined = 2) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  render(
     <QueryClientProvider client={queryClient}>
       <InvoiceReceiptView invoiceId={44} {...(branchId === undefined ? {} : { branchId })} />
     </QueryClientProvider>,
   );
+  return queryClient;
 };
 
 describe('stored invoice receipt', () => {
@@ -96,6 +97,14 @@ describe('stored invoice receipt', () => {
     Object.defineProperty(window, 'print', { configurable: true, value: originalPrint });
   });
 
+  it('announces the invoice loading state accessibly', () => {
+    getInvoice.mockReturnValueOnce(new Promise(() => undefined));
+
+    renderView();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل الفاتورة…' })).toBeDefined();
+  });
+
   it('renders every required stored fact and prints without submitting a sale', async () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     renderView();
@@ -117,7 +126,10 @@ describe('stored invoice receipt', () => {
       ...saleFixtures.completedInvoice,
       eligibility: { canVoid: true, canRefund: true },
     });
-    renderView();
+    const queryClient = renderView();
+    for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
+      queryClient.setQueryData([key, 'existing'], { cached: true });
+    }
     await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
 
     fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
@@ -137,6 +149,9 @@ describe('stored invoice receipt', () => {
       payments: [{ method: 'cash', amount: '185.00' }],
       idempotencyKey: expect.any(String),
     })));
+    for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
+      expect(queryClient.getQueryState([key, 'existing'])?.isInvalidated).toBe(true);
+    }
   });
 
   it('locks refund quantities while an exact quote is pending', async () => {

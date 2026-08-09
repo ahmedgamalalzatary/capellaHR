@@ -24,6 +24,12 @@ vi.mock('../src/features/products/api/products-api', () => ({
 afterEach(cleanup);
 
 describe('ProductPicker', () => {
+  it('announces product loading', () => {
+    mocks.listSellableProducts.mockImplementationOnce(() => new Promise(() => undefined));
+    render(<QueryClientProvider client={new QueryClient()}><ProductPicker branchId={2} onSelect={vi.fn()} /></QueryClientProvider>);
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل المنتجات…' })).toBeDefined();
+  });
+
   it('shows available quantity and selects an in-stock product', async () => {
     const onSelect = vi.fn();
     render(<QueryClientProvider client={new QueryClient()}><ProductPicker branchId={2} onSelect={onSelect} /></QueryClientProvider>);

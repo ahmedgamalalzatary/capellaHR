@@ -79,7 +79,7 @@ describe('ServicePicker', () => {
   test('shows an Arabic loading state before results arrive', () => {
     renderPicker();
 
-    expect(screen.getByText('جارٍ تحميل الخدمات…')).toBeDefined();
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل الخدمات…' })).toBeDefined();
   });
 
   test('passes the search term to the API', async () => {

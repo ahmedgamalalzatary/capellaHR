@@ -6,7 +6,7 @@ import type {
   PaymentMethod,
   QuoteSaleInput,
 } from '@capella/contracts';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Minus, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -22,6 +22,9 @@ import {
   Label,
   Modal,
 } from '@capella/ui';
+
+import { LoadingState } from '@/components/feedback/loading-state';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { useSession } from '@/features/auth';
 import {
@@ -162,13 +165,13 @@ export function SalesView() {
   }
 
   if (auth.isPending) {
-    return <Card><CardContent>جارٍ تحميل وردية الكاشير…</CardContent></Card>;
+    return <Card><CardContent><LoadingState label="جارٍ تحميل وردية الكاشير…" className="p-0 text-start" /></CardContent></Card>;
   }
   if (!actor || actor.type === 'employee') {
     return <EmptyState title="هذا الحساب غير مخول لاستخدام نقطة البيع" />;
   }
   if (session.isPending) {
-    return <Card><CardContent>جارٍ تحميل وردية الكاشير…</CardContent></Card>;
+    return <Card><CardContent><LoadingState label="جارٍ تحميل وردية الكاشير…" className="p-0 text-start" /></CardContent></Card>;
   }
   if (session.isError) {
     return (
@@ -290,6 +293,7 @@ function SaleWorkspace({
   accountId: number | null;
   role: 'admin' | 'cashier';
 }) {
+  const queryClient = useQueryClient();
   const workspaceOwner = useMemo<PendingSaleOwner>(() => ({
     accountId,
     role,
@@ -437,6 +441,7 @@ function SaleWorkspace({
       if (newKeys.length === 0) return;
       newKeys.forEach((key) => backgroundSyncedKeys.current.add(key));
       setBackgroundSyncCount((current) => current + newKeys.length);
+      void invalidateErpCaches(queryClient, 'sale');
     };
     const synchronizeOwner = (owner: PendingSaleOwner, includeFailed: boolean, delay = 0) => {
       const ownerKey = [
@@ -520,7 +525,7 @@ function SaleWorkspace({
       window.removeEventListener('storage', synchronizePending);
       window.removeEventListener('online', onOnline);
     };
-  }, [draftHydrated, matchesActiveDraft, workspaceOwner]);
+  }, [draftHydrated, matchesActiveDraft, queryClient, workspaceOwner]);
 
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
@@ -608,6 +613,7 @@ function SaleWorkspace({
       setConflictRestored(false);
       setReplacesIdempotencyKey(null);
       setCompleted(invoice);
+      void invalidateErpCaches(queryClient, 'sale');
     },
     onError: (error, input) => {
       submitting.current = false;

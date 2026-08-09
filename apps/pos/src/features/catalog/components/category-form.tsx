@@ -6,8 +6,9 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { invalidateErpCaches } from '@/lib/erp-cache';
+
 import { createCategory, updateCategory, type Category } from '../api/catalog-api';
-import { catalogQueryKeys } from '../query-keys';
 import { categoryFormSchema, type CategoryFormValues } from '../schemas/catalog-schemas';
 import { serverErrorMessage } from './catalog-messages';
 
@@ -46,7 +47,7 @@ export function CategoryForm({
         : createCategory({ ...values, ...branchScope })
     ),
     onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: catalogQueryKeys.all });
+      await invalidateErpCaches(queryClient, 'catalog');
       onDone?.(saved);
     },
   });
@@ -59,13 +60,13 @@ export function CategoryForm({
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم التصنيف" htmlFor="category-name" required>
-              <Input id="category-name" autoComplete="off" {...register('name')} />
+              <Input id="category-name" autoComplete="off" disabled={save.isPending} {...register('name')} />
             </Field>
             <Field label="النوع" htmlFor="category-type" required>
               <select
                 id="category-type"
                 className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:opacity-70"
-                disabled={isEdit}
+                disabled={isEdit || save.isPending}
                 {...register('type')}
               >
                 <option value="service">خدمات</option>
@@ -81,7 +82,7 @@ export function CategoryForm({
               {save.isPending ? 'جارٍ الحفظ…' : 'حفظ التصنيف'}
             </Button>
             {onCancel ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onCancel}>إلغاء</Button>
+              <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onCancel}>إلغاء</Button>
             ) : null}
           </div>
         </form>

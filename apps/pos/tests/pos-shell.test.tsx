@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -28,12 +28,17 @@ vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', async (impo
   getCurrentCashierSession: getCurrentSessionMock,
 }));
 
-function renderShell() {
+function PendingCommand() {
+  const command = useMutation({ mutationFn: () => new Promise<void>(() => undefined) });
+  return <button type="button" onClick={() => command.mutate()}>ابدأ الحفظ</button>;
+}
+
+function renderShell(children = <p>المحتوى</p>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <PosShell>
-        <p>المحتوى</p>
+        {children}
       </PosShell>
     </QueryClientProvider>,
   );
@@ -60,6 +65,35 @@ describe('PosShell', () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell();
     expect(await screen.findByRole('link', { name: 'حسابات الكاشير' })).toBeDefined();
+  });
+
+  test('groups the complete Admin navigation by workflow', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+
+    const sales = await screen.findByRole('group', { name: 'المبيعات والعملاء' });
+    const administration = screen.getByRole('group', { name: 'الإدارة' });
+    const oversight = screen.getByRole('group', { name: 'المتابعة' });
+    const system = screen.getByRole('group', { name: 'النظام' });
+
+    expect(sales.textContent).toContain('الفواتير');
+    expect(administration.textContent).toContain('الموردون والمشتريات');
+    expect(oversight.textContent).toContain('التقارير');
+    expect(system.textContent).toContain('حسابات الكاشير');
+  });
+
+  test('links Admins to the administration dashboard and session management', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+
+    expect(await screen.findByRole('link', { name: 'لوحة الإدارة' })).toHaveProperty(
+      'href',
+      `${window.location.origin}/`,
+    );
+    expect(screen.getByRole('link', { name: 'ورديات الكاشير' })).toHaveProperty(
+      'href',
+      expect.stringContaining('/cashier-sessions'),
+    );
   });
 
   test('shows commission reporting only to an admin actor', async () => {
@@ -151,5 +185,19 @@ describe('PosShell', () => {
     await waitFor(() => expect(logoutMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
     expect(localStorage.getItem('capella:sale-draft:admin:admin:2:13:key')).toBeNull();
+  });
+
+  test('prevents shell navigation and logout while a command is pending', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell(<PendingCommand />);
+
+    const destination = await screen.findByRole('link', { name: 'الكتالوج' });
+    fireEvent.click(await screen.findByRole('button', { name: 'ابدأ الحفظ' }));
+
+    await waitFor(() => expect(destination.getAttribute('aria-disabled')).toBe('true'));
+    const navigation = new MouseEvent('click', { bubbles: true, cancelable: true });
+    expect(destination.dispatchEvent(navigation)).toBe(false);
+    expect(screen.getByRole('button', { name: 'تسجيل الخروج' })).toHaveProperty('disabled', true);
+    expect(logoutMock).not.toHaveBeenCalled();
   });
 });

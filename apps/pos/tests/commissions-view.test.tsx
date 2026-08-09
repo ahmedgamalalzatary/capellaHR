@@ -86,6 +86,16 @@ afterEach(() => {
 });
 
 describe('CommissionsView', () => {
+  it('announces loading monthly totals', async () => {
+    mocks.list.mockReturnValue(new Promise(() => undefined));
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل العمولات…' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'العمولات' })).toBeDefined();
+  });
+
   it('does not load commissions until a month is selected', async () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });

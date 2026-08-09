@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { Button, Card, EmptyState } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { ApiError } from '@/lib/api/client';
 
 import { listAssignableEmployees, type AssignableEmployee } from '../api/assignable-employees-api';
@@ -76,7 +77,7 @@ export function PresentEmployeePicker({
       ) : null}
 
       {presentQuery.isPending ? (
-        <p className="px-1 text-[13px] text-muted">جارٍ تحميل الموظفين…</p>
+        <LoadingState label="جارٍ تحميل الموظفين…" className="p-0 text-start" />
       ) : presentQuery.isError ? (
         <EmptyState
           title="تعذر تحميل الموظفين المسجلين حضورًا"

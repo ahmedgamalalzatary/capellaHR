@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 
@@ -69,10 +70,10 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
         {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
       </select>
     </div> : null}
-    {isAdmin && branches.isPending ? <p role="status">جارٍ تحميل الفروع…</p> : null}
+    {isAdmin && branches.isPending ? <LoadingState label="جارٍ تحميل الفروع…" className="p-0 text-start" /> : null}
     {isAdmin && branches.isError ? <div role="alert" className="rounded-control bg-danger-soft p-4 text-danger"><p>تعذر تحميل الفروع.</p><Button variant="secondary" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></div> : null}
     {isAdmin && branches.data?.items.length === 0 ? <EmptyState title="لا توجد فروع" description="أضف فرعًا قبل عرض الفواتير." /> : null}
-    {invoices.isPending && (!isAdmin || branchId !== undefined) ? <p role="status">جارٍ تحميل الفواتير…</p> : null}
+    {invoices.isPending && (!isAdmin || branchId !== undefined) ? <LoadingState label="جارٍ تحميل الفواتير…" className="p-0 text-start" /> : null}
     {invoices.isError ? <div role="alert" className="rounded-control bg-danger-soft p-4 text-danger"><p>تعذر تحميل الفواتير.</p><Button variant="secondary" onClick={() => void invoices.refetch()}>إعادة المحاولة</Button></div> : null}
     {invoices.data?.items.length === 0 ? <EmptyState title="لا توجد فواتير" description="ستظهر الفواتير المكتملة هنا." /> : null}
     <div className="space-y-2">

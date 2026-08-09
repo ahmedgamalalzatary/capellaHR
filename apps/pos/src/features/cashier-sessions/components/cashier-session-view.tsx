@@ -17,6 +17,7 @@ import {
   Label,
 } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { useSession } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -160,11 +161,11 @@ export function CashierSessionView() {
       ) : null}
 
       {!isAdmin && !isCashier ? (
-        <Card><CardContent className="text-sm text-muted">جارٍ تحميل بيانات الحساب…</CardContent></Card>
+        <Card><LoadingState label="جارٍ تحميل بيانات الحساب…" className="text-start" /></Card>
       ) : isAdmin && selectedBranchId === undefined ? (
         <EmptyState title="اختر فرعًا لعرض وردية الكاشير" />
       ) : currentQuery.isPending ? (
-        <Card><CardContent className="text-sm text-muted">جارٍ تحميل الوردية…</CardContent></Card>
+        <Card><LoadingState label="جارٍ تحميل الوردية…" className="text-start" /></Card>
       ) : currentQuery.isError ? (
         <Card>
           <EmptyState

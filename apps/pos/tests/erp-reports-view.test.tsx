@@ -42,6 +42,20 @@ const failedExport = {
   failedAt: '2026-08-09T12:01:00.000Z', fileDeletedAt: null,
   createdAt: '2026-08-09T12:00:00.000Z', updatedAt: '2026-08-09T12:01:00.000Z',
 };
+const completedExport = {
+  ...failedExport,
+  id: 12,
+  status: 'completed' as const,
+  filePath: 'erp-reports/report-12.pdf',
+  fileSha256: 'a'.repeat(64),
+  fileSizeBytes: 1024,
+  rowCount: 21,
+  attemptCount: 1,
+  cycleAttemptCount: 1,
+  failureReason: null,
+  completedAt: '2026-08-09T12:01:00.000Z',
+  failedAt: null,
+};
 
 function mount() {
   return render(
@@ -75,6 +89,21 @@ afterEach(() => {
 });
 
 describe('ErpReportsView', () => {
+  it('announces loading report data', async () => {
+    mocks.view.mockReturnValue(new Promise(() => undefined));
+    mount();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل التقرير…' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'التقارير والتصدير' })).toBeDefined();
+  });
+
+  it('announces loading export history', () => {
+    mocks.listExports.mockReturnValue(new Promise(() => undefined));
+    mount();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل سجل التصدير…' })).toBeDefined();
+  });
+
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
     expect(await screen.findAllByRole('tab', { name: /تقرير/ })).toHaveLength(15);
@@ -120,6 +149,22 @@ describe('ErpReportsView', () => {
     mount();
 
     expect(await screen.findByText('حالة غير معروفة')).toBeDefined();
+  });
+
+  it('confirms file deletion in a locked dialog', async () => {
+    mocks.listExports.mockResolvedValue({
+      items: [completedExport], meta: { ...meta, total: 1, totalPages: 1 },
+    });
+    mocks.deleteFile.mockReturnValue(new Promise(() => undefined));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'حذف الملف' }));
+
+    expect(mocks.deleteFile).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'حذف ملف التصدير' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد حذف الملف' }));
+    await waitFor(() => expect(mocks.deleteFile).toHaveBeenCalledWith(12, expect.anything()));
+    expect((within(dialog).getByRole('button', { name: 'تأكيد حذف الملف' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole('button', { name: 'إلغاء' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('resets export-history pagination when the report tab changes', async () => {

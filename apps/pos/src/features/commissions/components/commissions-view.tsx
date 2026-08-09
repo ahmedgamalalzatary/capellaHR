@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { CommissionSummary } from '@capella/contracts';
 import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
@@ -46,7 +47,7 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
           </div>
           <Button variant="ghost" onClick={onClose}>إغلاق التفاصيل</Button>
         </div>
-        {query.isPending ? <p className="py-6 text-center text-sm text-muted">جارٍ تحميل التفاصيل…</p>
+        {query.isPending ? <LoadingState label="جارٍ تحميل التفاصيل…" className="py-6" />
           : query.isError ? <EmptyState title="تعذر تحميل تفاصيل العمولة" action={<Button onClick={() => void query.refetch()}>إعادة المحاولة</Button>} />
             : !query.data.entries.length ? <EmptyState title="لا توجد قيود تفصيلية" />
               : <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -88,6 +89,10 @@ export function CommissionsView() {
   });
 
   return <div className="mx-auto max-w-7xl space-y-4" dir="rtl">
+    <div>
+      <h1 className="text-2xl font-semibold text-ink">العمولات</h1>
+      <p className="mt-1 text-sm text-muted">مراجعة إجماليات الموظفين وتتبع قيود البيع والعكس.</p>
+    </div>
     <Card><CardContent className="grid gap-3 pt-5 sm:grid-cols-2">
       {branches.isError
         ? <EmptyState title="تعذر تحميل الفروع" action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>} />
@@ -98,7 +103,7 @@ export function CommissionsView() {
     </CardContent></Card>
     {!month ? <EmptyState title="اختر شهرًا لعرض العمولات" />
       : branchId === undefined ? <EmptyState title="اختر فرعًا لعرض العمولات" />
-      : commissions.isPending ? <Card><p className="p-6 text-center text-sm text-muted">جارٍ تحميل العمولات…</p></Card>
+      : commissions.isPending ? <Card><LoadingState label="جارٍ تحميل العمولات…" /></Card>
         : commissions.isError ? <EmptyState title="تعذر تحميل العمولات" action={<Button onClick={() => void commissions.refetch()}>إعادة المحاولة</Button>} />
           : !commissions.data.items.length ? <EmptyState title="لا توجد عمولات لهذا الشهر" />
             : <Card><div className="overflow-x-auto"><table className="w-full text-sm">

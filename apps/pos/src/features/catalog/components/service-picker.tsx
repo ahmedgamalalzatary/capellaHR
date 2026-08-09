@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { Button, Card, EmptyState, Input } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { listServices, type ServiceListItem } from '../api/catalog-api';
 import { catalogQueryKeys } from '../query-keys';
 import { serverErrorMessage } from './catalog-messages';
@@ -52,7 +53,7 @@ export function ServicePicker({
       />
 
       {servicesQuery.isPending ? (
-        <p className="px-1 text-[13px] text-muted">جارٍ تحميل الخدمات…</p>
+        <LoadingState label="جارٍ تحميل الخدمات…" className="p-0 text-start" />
       ) : servicesQuery.isError ? (
         <EmptyState
           title="تعذر تحميل الخدمات"

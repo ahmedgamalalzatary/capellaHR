@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Plus } from 'lucide-react';
 import { useState } from 'react';
 
-import { Badge, Button, Card, EmptyState } from '@capella/ui';
+import { Badge, Button, Card, ConfirmDialog, EmptyState } from '@capella/ui';
+
+import { LoadingState } from '@/components/feedback/loading-state';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -31,7 +33,7 @@ export function CashierAccountsView() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
-  const [confirmDisableId, setConfirmDisableId] = useState<number | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState<CashierAccount | null>(null);
   const [resetPasswordTarget, setResetPasswordTarget] = useState<CashierAccount | null>(null);
 
   const accountsQuery = useQuery({
@@ -51,7 +53,7 @@ export function CashierAccountsView() {
     mutationFn: ({ accountId, active }: { accountId: number; active: boolean }) =>
       setCashierAccountStatus(accountId, active),
     onSuccess: async () => {
-      setConfirmDisableId(null);
+      setConfirmDisable(null);
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
     },
   });
@@ -61,7 +63,11 @@ export function CashierAccountsView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink">حسابات الكاشير</h1>
+          <p className="mt-1 text-sm text-muted">إنشاء حسابات التشغيل وإدارة وصولها بأمان.</p>
+        </div>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="size-4" aria-hidden />
           إنشاء حساب كاشير جديد
@@ -80,7 +86,7 @@ export function CashierAccountsView() {
 
       <Card>
         {accountsQuery.isPending ? (
-          <div className="px-6 py-16 text-center text-sm text-muted">جارٍ تحميل الحسابات…</div>
+          <LoadingState label="جارٍ تحميل الحسابات…" className="px-6 py-16" />
         ) : accountsQuery.isError ? (
           <EmptyState
             title="تعذر تحميل الحسابات"
@@ -123,29 +129,9 @@ export function CashierAccountsView() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {account.active ? (
-                          confirmDisableId === account.id ? (
-                            <>
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                disabled={setStatus.isPending}
-                                onClick={() => setStatus.mutate({ accountId: account.id, active: false })}
-                              >
-                                تأكيد التعطيل
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setConfirmDisableId(null)}
-                              >
-                                إلغاء
-                              </Button>
-                            </>
-                          ) : (
-                            <Button variant="ghost" size="sm" onClick={() => setConfirmDisableId(account.id)}>
-                              تعطيل
-                            </Button>
-                          )
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmDisable(account)}>
+                            تعطيل
+                          </Button>
                         ) : (
                           <Button
                             variant="ghost"
@@ -207,6 +193,20 @@ export function CashierAccountsView() {
           accountId={resetPasswordTarget.id}
           username={resetPasswordTarget.username}
           onClose={() => setResetPasswordTarget(null)}
+        />
+      ) : null}
+
+      {confirmDisable ? (
+        <ConfirmDialog
+          title="تعطيل حساب الكاشير"
+          description={setStatus.isError
+            ? serverErrorMessage(setStatus.error)
+            : `سيُمنع ${confirmDisable.username} من تسجيل الدخول وتُلغى جلساته الحالية.`}
+          confirmLabel="تأكيد التعطيل"
+          tone="danger"
+          pending={setStatus.isPending}
+          onConfirm={() => setStatus.mutate({ accountId: confirmDisable.id, active: false })}
+          onCancel={() => { setStatus.reset(); setConfirmDisable(null); }}
         />
       ) : null}
     </div>

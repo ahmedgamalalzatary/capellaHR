@@ -1,5 +1,5 @@
-import { CashierSessionView } from '@/features/cashier-sessions';
+import { ErpHomeView } from '@/components/shell/erp-home-view';
 
 export default function HomePage() {
-  return <CashierSessionView />;
+  return <ErpHomeView />;
 }

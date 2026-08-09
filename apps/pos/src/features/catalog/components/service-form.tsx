@@ -6,6 +6,8 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { invalidateErpCaches } from '@/lib/erp-cache';
+
 import {
   createService,
   updateService,
@@ -13,7 +15,6 @@ import {
   type Service,
   type ServiceListItem,
 } from '../api/catalog-api';
-import { catalogQueryKeys } from '../query-keys';
 import {
   serviceFormSchema,
   type ServiceFormInput,
@@ -70,7 +71,7 @@ export function ServiceForm({
         : createService({ ...values, ...branchScope })
     ),
     onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: catalogQueryKeys.all });
+      await invalidateErpCaches(queryClient, 'catalog');
       onDone?.(saved);
     },
   });
@@ -88,11 +89,12 @@ export function ServiceForm({
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم الخدمة" htmlFor="service-name" required>
-              <Input id="service-name" autoComplete="off" {...register('name')} />
+              <Input id="service-name" autoComplete="off" disabled={save.isPending} {...register('name')} />
             </Field>
             <Field label="التصنيف" htmlFor="service-category" required>
               <select
                 id="service-category"
+                disabled={save.isPending}
                 className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
                 {...register('categoryId')}
               >
@@ -110,6 +112,7 @@ export function ServiceForm({
                 autoComplete="off"
                 dir="ltr"
                 className="text-start"
+                disabled={save.isPending}
                 {...register('price')}
               />
             </Field>
@@ -121,12 +124,13 @@ export function ServiceForm({
                 dir="ltr"
                 className="text-start"
                 placeholder="0"
+                disabled={save.isPending}
                 {...register('commissionPercent')}
               />
             </Field>
           </div>
           <Field label="الوصف" htmlFor="service-description">
-            <Input id="service-description" autoComplete="off" {...register('description')} />
+            <Input id="service-description" autoComplete="off" disabled={save.isPending} {...register('description')} />
           </Field>
 
           {formError ? <p role="alert" className="text-[13px] text-danger">{formError}</p> : null}
@@ -136,7 +140,7 @@ export function ServiceForm({
               {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الخدمة'}
             </Button>
             {onCancel ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onCancel}>إلغاء</Button>
+              <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onCancel}>إلغاء</Button>
             ) : null}
           </div>
         </form>

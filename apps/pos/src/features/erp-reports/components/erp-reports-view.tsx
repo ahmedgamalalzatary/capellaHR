@@ -9,8 +9,9 @@ import {
   type ReportFilters,
   type ReportType,
 } from '@capella/contracts';
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
 
+import { LoadingState } from '@/components/feedback/loading-state';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
@@ -130,11 +131,12 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
   const actionError = retry.error ?? removeFile.error ?? download.error;
   const items = query.data?.items ?? [];
   const meta = query.data?.meta;
+  const deleteTarget = items.find(({ id }) => id === confirmDelete);
 
   return <section className="space-y-3" aria-labelledby="erp-export-history-title">
     <h2 id="erp-export-history-title" className="font-semibold">سجل تصدير التقرير الحالي</h2>
     {actionError ? <p role="alert" className="text-sm text-danger">{errorMessage(actionError)}</p> : null}
-    <Card>{query.isPending ? <p className="p-6 text-center text-sm text-muted">جارٍ تحميل سجل التصدير…</p>
+    <Card>{query.isPending ? <LoadingState label="جارٍ تحميل سجل التصدير…" className="p-6" />
       : query.isError ? <EmptyState title="تعذر تحميل سجل التصدير" action={<Button onClick={() => void query.refetch()}>إعادة المحاولة</Button>} />
         : !items.length ? <EmptyState title="لا توجد تصديرات لهذا التقرير" />
           : <ul className="divide-y divide-line/60">{items.map((record) => {
@@ -148,15 +150,23 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
                 {record.status === 'failed' ? <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate(record.id)}>إعادة محاولة التصدير</Button> : null}
                 {record.status === 'completed' && !record.fileDeletedAt ? <>
                   <Button size="sm" variant="ghost" disabled={download.isPending} onClick={() => download.mutate(record)}>تنزيل PDF</Button>
-                  {confirmDelete === record.id ? <>
-                    <Button size="sm" variant="danger" disabled={removeFile.isPending} onClick={() => removeFile.mutate(record.id)}>تأكيد حذف الملف</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(undefined)}>إلغاء</Button>
-                  </> : <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(record.id)}>حذف الملف</Button>}
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(record.id)}>حذف الملف</Button>
                 </> : null}
               </span>
             </li>;
           })}</ul>}
     </Card>
+    {deleteTarget ? <ConfirmDialog
+      title="حذف ملف التصدير"
+      description={removeFile.isError
+        ? errorMessage(removeFile.error)
+        : `سيُحذف ملف PDF رقم ${deleteTarget.id} نهائياً مع بقاء سجل التصدير.`}
+      confirmLabel="تأكيد حذف الملف"
+      tone="danger"
+      pending={removeFile.isPending}
+      onConfirm={() => removeFile.mutate(deleteTarget.id)}
+      onCancel={() => { removeFile.reset(); setConfirmDelete(undefined); }}
+    /> : null}
     {meta && meta.totalPages > 1 ? <div className="flex justify-end gap-2">
       <Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>السابق</Button>
       <span className="self-center text-sm">صفحة {page}</span>
@@ -207,6 +217,10 @@ export function ErpReportsView() {
   const meta = report.data?.meta;
 
   return <div className="mx-auto max-w-7xl space-y-4" dir="rtl">
+    <div>
+      <h1 className="text-2xl font-semibold text-ink">التقارير والتصدير</h1>
+      <p className="mt-1 text-sm text-muted">عرض التقارير المالية والتشغيلية وإدارة ملفات PDF.</p>
+    </div>
     <div role="tablist" aria-label="أنواع تقارير ERP" className="flex flex-wrap gap-2">
       {erpTabReportTypes.map((type) => <Button
         key={type}
@@ -235,7 +249,7 @@ export function ErpReportsView() {
     </div>
     {createExport.isError ? <p role="alert" className="text-sm text-danger">{errorMessage(createExport.error)}</p> : null}
 
-    <Card>{report.isPending ? <p className="p-8 text-center text-sm text-muted">جارٍ تحميل التقرير…</p>
+    <Card>{report.isPending ? <LoadingState label="جارٍ تحميل التقرير…" className="p-8" />
       : report.isError ? <EmptyState title="تعذر تحميل التقرير" description={errorMessage(report.error)} action={<Button onClick={() => void report.refetch()}>إعادة المحاولة</Button>} />
         : !snapshot?.rows.length ? <EmptyState title="لا توجد سجلات مطابقة" />
           : <div className="overflow-x-auto"><table className="w-full text-sm">

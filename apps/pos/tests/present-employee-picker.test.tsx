@@ -42,6 +42,12 @@ afterEach(() => {
 });
 
 describe('PresentEmployeePicker', () => {
+  test('announces employee loading', () => {
+    mocks.listAssignableEmployees.mockReturnValue(new Promise(() => undefined));
+    renderPicker();
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل الموظفين…' })).toBeDefined();
+  });
+
   test('lists the employees currently checked in at the branch', async () => {
     renderPicker();
 

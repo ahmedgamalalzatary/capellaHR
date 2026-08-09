@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'الخدمات' };
 export default function ServicesPage() {
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold">الخدمات</h2>
+      <h1 className="text-2xl font-semibold text-ink">الخدمات</h1>
       <ServicePicker />
     </div>
   );

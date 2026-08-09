@@ -70,6 +70,14 @@ afterEach(() => {
 });
 
 describe('CashierAccountsView', () => {
+  test('announces account loading', () => {
+    mocks.listCashierAccounts.mockReturnValue(new Promise(() => undefined));
+    renderView();
+
+    expect(screen.getByRole('status', { name: 'جارٍ تحميل الحسابات…' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'حسابات الكاشير' })).toBeDefined();
+  });
+
   test('lists cashier accounts with resolved employee names and status badges', async () => {
     renderView();
     const row1 = (await screen.findByText('cashier1')).closest('tr')!;
@@ -162,9 +170,23 @@ describe('CashierAccountsView', () => {
     const row = (await screen.findByText('cashier1')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'تعطيل' }));
     expect(mocks.setCashierAccountStatus).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد التعطيل' }));
+    const dialog = screen.getByRole('dialog', { name: 'تعطيل حساب الكاشير' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد التعطيل' }));
     await waitFor(() => expect(mocks.setCashierAccountStatus).toHaveBeenCalledTimes(1));
     expect(mocks.setCashierAccountStatus.mock.calls[0]).toEqual([1, false]);
+  });
+
+  test('locks the account-disable dialog while the request is pending', async () => {
+    mocks.setCashierAccountStatus.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    const row = (await screen.findByText('cashier1')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعطيل' }));
+    const dialog = screen.getByRole('dialog', { name: 'تعطيل حساب الكاشير' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد التعطيل' }));
+
+    await waitFor(() => expect(mocks.setCashierAccountStatus).toHaveBeenCalledTimes(1));
+    expect((within(dialog).getByRole('button', { name: 'تأكيد التعطيل' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole('button', { name: 'إلغاء' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test('re-enables a disabled account without confirmation', async () => {

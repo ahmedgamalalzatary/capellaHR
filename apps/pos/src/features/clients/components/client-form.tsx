@@ -2,14 +2,15 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { createClient, updateClient, type Client } from '../api/clients-api';
-import { clientQueryKeys } from '../query-keys';
 import { clientFormSchema, type ClientFormValues } from '../schemas/client-schemas';
 
 const serverErrorMessage = (error: unknown): string | null => {
@@ -23,6 +24,7 @@ export function ClientForm({
   defaultPhone,
   onDone,
   onCancel,
+  onPendingChange,
 }: {
   /** Present when editing; absent when creating. */
   client?: Client;
@@ -32,6 +34,7 @@ export function ClientForm({
   defaultPhone?: string;
   onDone?: (saved: Client) => void;
   onCancel?: () => void;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const isEdit = client !== undefined;
@@ -55,12 +58,17 @@ export function ClientForm({
         : createClient({ ...values, ...(branchId === undefined ? {} : { branchId }) })
     ),
     onSuccess: async (saved) => {
-      await queryClient.invalidateQueries({ queryKey: clientQueryKeys.all });
+      await invalidateErpCaches(queryClient, 'client');
       onDone?.(saved);
     },
   });
 
   const formError = errors.fullName?.message ?? errors.phone?.message ?? serverErrorMessage(save.error);
+
+  useEffect(() => {
+    onPendingChange?.(save.isPending);
+    return () => onPendingChange?.(false);
+  }, [onPendingChange, save.isPending]);
 
   return (
     <Card>
@@ -68,7 +76,7 @@ export function ClientForm({
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم العميل" htmlFor="client-name" required>
-              <Input id="client-name" autoComplete="off" {...register('fullName')} />
+              <Input id="client-name" autoComplete="off" disabled={save.isPending} {...register('fullName')} />
             </Field>
             <Field label="رقم الهاتف" htmlFor="client-phone" required>
               <Input
@@ -77,6 +85,7 @@ export function ClientForm({
                 autoComplete="off"
                 dir="ltr"
                 className="text-start"
+                disabled={save.isPending}
                 {...register('phone')}
               />
             </Field>
@@ -91,7 +100,7 @@ export function ClientForm({
               {save.isPending ? 'جارٍ الحفظ…' : isEdit ? 'حفظ التعديل' : 'إضافة العميل'}
             </Button>
             {onCancel ? (
-              <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+              <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onCancel}>
                 إلغاء
               </Button>
             ) : null}
