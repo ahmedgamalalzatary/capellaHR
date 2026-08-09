@@ -74,6 +74,12 @@ export const formatCairoTimestamp = (value: string): string => new Intl.DateTime
   hour12: true,
 }).format(new Date(value)).replace(/[\u200e\u200f]/g, '');
 
+export const formatInvoiceSoldAt = (summary: ReportSnapshot['summary']): string => (
+  typeof summary.soldAt === 'string'
+    ? formatCairoTimestamp(summary.soldAt)
+    : display(summary.businessDate ?? null)
+);
+
 const hasRtl = (value: string) => /[\u0590-\u08ff]/u.test(value);
 
 /**
@@ -355,12 +361,9 @@ const renderInvoice = async (
   drawText(document, snapshot.title, PAGE_MARGIN, y, width, 'center');
   y += 34;
 
-  const invoiceSoldAt = snapshot.summary.soldAt ?? snapshot.summary.businessDate ?? null;
   const details: Array<[string, string]> = [
     ['رقم الفاتورة', display(snapshot.summary.invoiceNumber ?? null)],
-    ['تاريخ البيع', typeof invoiceSoldAt === 'string'
-      ? formatCairoTimestamp(invoiceSoldAt)
-      : display(invoiceSoldAt)],
+    ['تاريخ البيع', formatInvoiceSoldAt(snapshot.summary)],
     ['الفرع', display(snapshot.summary.branchName ?? null)],
     ['العميل', display(snapshot.summary.clientName ?? null)],
     ['هاتف العميل', display(snapshot.summary.clientPhone ?? null)],

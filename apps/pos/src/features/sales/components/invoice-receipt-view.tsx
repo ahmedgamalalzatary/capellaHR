@@ -255,25 +255,21 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   const existingExport = useQuery({
     queryKey: ['erp-reports', 'invoice-export', invoiceId],
     queryFn: async () => {
-      let page = 1;
+      const result = await listErpReportExports({
+        reportType: 'erp-invoice', page: 1, pageSize: 100,
+      });
       let newest: ErpReportExport | null = null;
-      while (true) {
-        const result = await listErpReportExports({
-          reportType: 'erp-invoice', page, pageSize: 100,
-        });
-        for (const record of result.items) {
-          const eligible = record.selection.mode === 'selected'
-            && record.selection.ids.includes(invoiceId)
-            && !(record.status === 'completed' && record.fileDeletedAt);
-          if (!eligible) continue;
-          if (!newest || record.createdAt > newest.createdAt
-            || (record.createdAt === newest.createdAt && record.id > newest.id)) {
-            newest = record;
-          }
+      for (const record of result.items) {
+        const eligible = record.selection.mode === 'selected'
+          && record.selection.ids.includes(invoiceId)
+          && !(record.status === 'completed' && record.fileDeletedAt);
+        if (!eligible) continue;
+        if (!newest || record.createdAt > newest.createdAt
+          || (record.createdAt === newest.createdAt && record.id > newest.id)) {
+          newest = record;
         }
-        if (page >= result.meta.totalPages) return newest;
-        page += 1;
       }
+      return newest;
     },
     enabled: isAdmin && Number.isInteger(invoiceId) && invoiceId > 0,
   });
@@ -351,7 +347,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
           <Button variant="secondary" onClick={() => void exportQuery.refetch()}>
             إعادة تحميل حالة PDF
           </Button>
-        ) : exportQuery.data?.status === 'completed' ? (
+        ) : exportQuery.data?.status === 'completed' && !exportQuery.data.fileDeletedAt ? (
           <Button variant="secondary" disabled={downloadExport.isPending} onClick={() => downloadExport.mutate()}>
             {downloadExport.isPending ? 'جارٍ التنزيل…' : 'تنزيل PDF A4'}
           </Button>

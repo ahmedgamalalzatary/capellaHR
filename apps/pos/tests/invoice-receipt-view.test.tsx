@@ -296,31 +296,50 @@ describe('stored invoice receipt', () => {
     expect(reportExports.create).not.toHaveBeenCalled();
   });
 
-  it('recovers the newest usable invoice export across every history page', async () => {
-    reportExports.list
-      .mockResolvedValueOnce({
-        items: Array.from({ length: 100 }, (_, index) => ({
-          id: index === 0 ? 91 : 1_000 + index,
-          selection: { mode: 'selected', ids: [index === 0 ? 44 : 1_000 + index] },
-          status: 'completed', fileDeletedAt: null,
-          createdAt: '2026-08-09T12:00:00.000Z',
-        })),
-        meta: { page: 1, pageSize: 100, total: 101, totalPages: 2 },
-      })
-      .mockResolvedValueOnce({
-        items: [{
-          id: 92, selection: { mode: 'selected', ids: [44] }, status: 'completed',
-          fileDeletedAt: null, createdAt: '2026-08-09T13:00:00.000Z',
-        }],
-        meta: { page: 2, pageSize: 100, total: 101, totalPages: 2 },
-      });
+  it('recovers the newest usable invoice export from one newest-first history page', async () => {
+    reportExports.list.mockResolvedValueOnce({
+      items: [{
+        id: 91, selection: { mode: 'selected', ids: [44] }, status: 'completed',
+        fileDeletedAt: null, createdAt: '2026-08-09T12:00:00.000Z',
+      }, {
+        id: 92, selection: { mode: 'selected', ids: [44] }, status: 'completed',
+        fileDeletedAt: null, createdAt: '2026-08-09T13:00:00.000Z',
+      }],
+      meta: { page: 1, pageSize: 100, total: 101, totalPages: 2 },
+    });
     renderView();
     await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
-    expect(reportExports.list).toHaveBeenCalledTimes(2);
+    expect(reportExports.list).toHaveBeenCalledOnce();
+    expect(reportExports.list).toHaveBeenCalledWith({
+      reportType: 'erp-invoice', page: 1, pageSize: 100,
+    });
     expect(reportExports.get).toHaveBeenCalledWith(92);
     expect(reportExports.get).not.toHaveBeenCalledWith(91);
+  });
+
+  it('does not offer download when a completed invoice export file was deleted', async () => {
+    reportExports.list.mockResolvedValueOnce({
+      items: [{
+        id: 91, selection: { mode: 'selected', ids: [44] }, status: 'processing',
+        fileDeletedAt: null, createdAt: '2026-08-09T12:00:00.000Z',
+      }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    reportExports.get.mockResolvedValueOnce({
+      id: 91, reportType: 'erp-invoice', status: 'completed', filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [44] }, filePath: null, fileSha256: null,
+      fileSizeBytes: null, rowCount: 1, attemptCount: 1, cycleAttemptCount: 1, retryCount: 0,
+      failureReason: null, queuedAt: '', startedAt: '', completedAt: '', failedAt: null,
+      fileDeletedAt: '2026-08-09T13:00:00.000Z', createdAt: '', updatedAt: '',
+    });
+
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    await waitFor(() => expect(reportExports.get).toHaveBeenCalledWith(91));
+    expect(screen.queryByRole('button', { name: 'تنزيل PDF A4' })).toBeNull();
   });
 
   it('allows a replacement when every matching completed invoice PDF was deleted', async () => {

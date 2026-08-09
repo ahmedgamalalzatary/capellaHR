@@ -79,12 +79,21 @@ const errorMessage = (error: unknown) => error instanceof Error
   ? error.message
   : 'تعذر إكمال العملية. حاول مرة أخرى.';
 
-const statusBadge = (status: ErpReportExport['status']) => ({
+type ExportStatusBadge = {
+  label: string;
+  variant: 'neutral' | 'warning' | 'success' | 'danger';
+};
+
+const exportStatusBadges: Partial<Record<ErpReportExport['status'], ExportStatusBadge>> = {
   queued: { label: 'في الانتظار', variant: 'neutral' as const },
   processing: { label: 'قيد الإنشاء', variant: 'warning' as const },
   completed: { label: 'مكتمل', variant: 'success' as const },
   failed: { label: 'فشل', variant: 'danger' as const },
-}[status]);
+};
+
+const statusBadge = (status: ErpReportExport['status']): ExportStatusBadge => (
+  exportStatusBadges[status] ?? { label: 'حالة غير معروفة', variant: 'neutral' }
+);
 
 function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
   const queryClient = useQueryClient();

@@ -3,7 +3,7 @@ import { PassThrough, Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
 import { renderReportPdf, renderReportPdfToStream } from './index.js';
-import { formatCairoTimestamp, reportSummaryLabel } from './report-pdf.js';
+import { formatCairoTimestamp, formatInvoiceSoldAt, reportSummaryLabel } from './report-pdf.js';
 
 const snapshot: ReportSnapshot = {
   reportType: 'employees',
@@ -24,6 +24,13 @@ const snapshot: ReportSnapshot = {
 describe('Arabic report PDF renderer', () => {
   it('formats invoice sale timestamps in Cairo across the UTC midnight boundary', () => {
     expect(formatCairoTimestamp('2026-08-08T22:30:00.000Z')).toBe('09/08/2026، 01:30 ص');
+  });
+
+  it('displays an invoice business date without inventing a sale time', () => {
+    expect(formatInvoiceSoldAt({ businessDate: '2026-08-09' })).toBe('2026-08-09');
+    expect(formatInvoiceSoldAt({
+      businessDate: '2026-08-09', soldAt: '2026-08-08T22:30:00.000Z',
+    })).toBe('09/08/2026، 01:30 ص');
   });
 
   it('uses Arabic labels for every ERP report total', () => {

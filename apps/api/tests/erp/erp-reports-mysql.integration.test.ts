@@ -26,9 +26,13 @@ import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-re
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 import { createErpPayrollCapability } from '../../src/modules/payroll/index.js';
 
-const control = createDatabase(process.env.DATABASE_URL ?? '');
+const configuredDatabaseUrl = process.env.DATABASE_URL;
+if (!configuredDatabaseUrl) {
+  throw new Error('DATABASE_URL must be set for ERP reports MySQL integration tests');
+}
+const control = createDatabase(configuredDatabaseUrl);
 const databaseName = `capella_hr_test_erp19_${process.pid}_${Date.now()}`;
-const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
+const databaseUrl = new URL(configuredDatabaseUrl);
 databaseUrl.pathname = `/${databaseName}`;
 const database = createDatabase(databaseUrl.toString());
 const migrationsFolder = path.resolve(
@@ -37,6 +41,9 @@ const migrationsFolder = path.resolve(
 );
 const soldAt = new Date('2026-08-09T09:00:00.000Z');
 const reversedAt = new Date('2026-09-01T09:00:00.000Z');
+const employeePinSentinel = 'ERP_REPORT_EMPLOYEE_PIN_SENTINEL';
+const cashierPasswordSentinel = 'ERP_REPORT_CASHIER_PASSWORD_SENTINEL';
+const adminPasswordSentinel = 'ERP_REPORT_ADMIN_PASSWORD_SENTINEL';
 
 let branchId: number;
 let otherBranchId: number;
@@ -68,16 +75,16 @@ beforeAll(async () => {
   }))[0].insertId);
   employeeId = Number((await database.insert(employees).values({
     employeeCode: 1_919_001, fullName: 'موظف التقرير', personalPhone: '01019190001',
-    whatsappPhone: '01119190001', pinHash: 'unused', age: 30, address: 'Cairo',
+    whatsappPhone: '01119190001', pinHash: employeePinSentinel, age: 30, address: 'Cairo',
     branchId, shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
     createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
   const cashierId = Number((await database.insert(accounts).values({
-    username: 'erp19-cashier', passwordHash: 'unused', role: 'cashier', employeeId,
+    username: 'erp19-cashier', passwordHash: cashierPasswordSentinel, role: 'cashier', employeeId,
     createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
   adminId = Number((await database.insert(accounts).values({
-    username: 'erp19-admin', passwordHash: 'unused', role: 'admin',
+    username: 'erp19-admin', passwordHash: adminPasswordSentinel, role: 'admin',
     createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
   const clientId = Number((await database.insert(clients).values({
@@ -149,9 +156,15 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-  await control.$client.promise().end();
+  try {
+    await database.$client.promise().end();
+  } finally {
+    try {
+      await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
+    } finally {
+      await control.$client.promise().end();
+    }
+  }
 }, 30_000);
 
 describe('ERP reports MySQL reader', () => {
@@ -170,7 +183,12 @@ describe('ERP reports MySQL reader', () => {
       expect(result.snapshot.reportType).toBe(reportType);
       expect(result.snapshot.columns.length).toBeGreaterThan(0);
       expect(result.snapshot.summary.totalRecords).toBe(result.total);
-      expect(JSON.stringify(result.snapshot)).not.toContain('pinHash');
+      const serializedSnapshot = JSON.stringify(result.snapshot);
+      expect(serializedSnapshot).not.toContain('pinHash');
+      expect(serializedSnapshot).not.toContain('passwordHash');
+      expect(serializedSnapshot).not.toContain(employeePinSentinel);
+      expect(serializedSnapshot).not.toContain(cashierPasswordSentinel);
+      expect(serializedSnapshot).not.toContain(adminPasswordSentinel);
     }
   });
 

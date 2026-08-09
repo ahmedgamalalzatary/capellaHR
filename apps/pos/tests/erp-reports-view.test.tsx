@@ -111,6 +111,17 @@ describe('ErpReportsView', () => {
     await waitFor(() => expect(mocks.retry).toHaveBeenCalledWith(9, expect.anything()));
   });
 
+  it('renders a safe fallback badge for an unknown future export status', async () => {
+    mocks.listExports.mockResolvedValueOnce({
+      items: [{ ...failedExport, status: 'archived' }],
+      meta: { ...meta, total: 1, totalPages: 1 },
+    });
+
+    mount();
+
+    expect(await screen.findByText('حالة غير معروفة')).toBeDefined();
+  });
+
   it('resets export-history pagination when the report tab changes', async () => {
     mocks.listExports.mockResolvedValue({
       items: [failedExport], meta: { ...meta, total: 21, totalPages: 2 },

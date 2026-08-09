@@ -523,8 +523,6 @@ DONE: ERP 1–19, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end
                                                      ERP 21 Editions
                                                           │
                                                      ERP 22 Security
-                                                          │
-                                                     ERP 23 Rollout
 ```
 
 Safe parallel waves:
@@ -534,7 +532,7 @@ Safe parallel waves:
 3. **Complete:** ERP 19 reports and PDF exports.
 4. ERP 18's offline queue, replay, and conflict-resolution workflow is delivered.
 5. **Next eligible:** ERP 20.
-6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
+6. ERP 20 → ERP 21 → ERP 22 should remain sequential.
 
 ## ERP 4. Cashier sessions
 
@@ -845,27 +843,6 @@ This slice hardens and integrates administration features already delivered in t
 - [ ] Add deployment examples for recommended subdomains and supported separate-domain topology.
 - [ ] Add safe frontend handling for expired, missing, wrong-role, and cross-application sessions.
 - [ ] Add production cookie, proxy, origin, CSRF, protected-route, and session-isolation verification across both frontends and the API.
-
-## ERP 23. Production readiness and Capella rollout
-
-- [ ] Verify upgrade migrations from the current Capella HR schema and data.
-- [ ] Verify clean installation using the complete migration chain.
-- [ ] Add edition-aware environment validation, health checks, and structured startup logs.
-- [ ] Add operational monitoring for failed sales, queued offline sales, report jobs, authentication throttling, and stock conflicts.
-- [ ] Configure automated server-level MySQL backups and perform a restore drill.
-- [ ] Review client-data privacy, access, retention, and export behavior.
-- [ ] Review indexes and query performance with realistic catalog, invoice, stock, and report volumes.
-- [ ] Run dependency, security, authorization, and secret-leak reviews.
-- [ ] Run complete lint, typecheck, builds, unit, component, integration, MySQL, worker, concurrency, failure-injection, and end-to-end suites.
-- [ ] Verify every functional ERP slice is usable through its shipped Arabic/RTL UI with no backend-only feature gaps.
-- [ ] Test the chosen thermal printer in the production browser and operating environment.
-- [ ] Prepare Capella staging with real branch, Cashiers, categories, services, commissions, products, opening stock, suppliers, and optional existing clients.
-- [ ] Rehearse sales, mixed payments, offline replay, receipts, stock, voids/refunds, commissions, payroll projection, expenses, reports, and PDFs.
-- [ ] Prepare deployment rollback and incident procedures.
-- [ ] Deploy Capella with `EDITION=full` and monitor stabilization.
-- [ ] Smoke-test and package the sellable `hr` edition.
-- [ ] Smoke-test and package the sellable `erp` edition.
-- [ ] Complete installation, upgrade, operation, backup/restore, and recovery documentation.
 
 ## ERP locked exclusions
 
