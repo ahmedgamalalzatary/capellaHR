@@ -129,6 +129,9 @@ importers:
 
   apps/pos:
     dependencies:
+      '@capella/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@capella/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -217,6 +220,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@capella/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@capella/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

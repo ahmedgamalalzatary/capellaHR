@@ -229,7 +229,11 @@ describe('MySQL-backed authentication', () => {
     const cashierCookie = cashierLogin.headers['set-cookie']?.[0]?.split(';')[0];
 
     const secondModule = auth.createAuthModule({ database });
-    const secondApp = createApp({ authService: secondModule.service, secureCookies: false });
+    const secondApp = createApp({
+      authService: secondModule.service,
+      cashierAccountsService: secondModule.cashierAccounts,
+      secureCookies: false,
+    });
     const session = await request(secondApp)
       .get('/api/v1/auth/session')
       .set('Cookie', cashierCookie ?? '');

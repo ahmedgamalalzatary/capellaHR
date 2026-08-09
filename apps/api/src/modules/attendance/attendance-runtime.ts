@@ -10,8 +10,9 @@ import {
 
 export const createAttendanceJobsRuntime = (
   database: ReturnType<typeof createDatabase>,
-  options: { now?: () => Date; timeZone?: string } = {},
+  options: { now?: () => Date; timeZone?: string; payrollEnabled?: boolean } = {},
 ) => {
+  const { payrollEnabled = true, ...runtimeOptions } = options;
   let isFinanciallyLocked: Parameters<typeof createDrizzleAttendanceRepository>[1]['isFinanciallyLocked'] = (
     () => Promise.resolve(false)
   );
@@ -26,16 +27,20 @@ export const createAttendanceJobsRuntime = (
     ),
   });
   const repository = createDrizzleAttendanceRepository(database, {
-    ...options,
+    ...runtimeOptions,
     isFinanciallyLocked: (...input) => isFinanciallyLocked(...input),
     readRequiredDuration: (employeeId, context, includeDeleted) => (
       shifts.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
     ),
   });
-  const payroll = createPayrollModule(database, { ...options, attendance: repository });
-  isFinanciallyLocked = (employeeId, attendanceDate, context) => (
-    payroll.service.isFinanciallyLocked(employeeId, attendanceDate, context)
-  );
+  const payroll = payrollEnabled
+    ? createPayrollModule(database, { ...runtimeOptions, attendance: repository })
+    : undefined;
+  if (payroll) {
+    isFinanciallyLocked = (employeeId, attendanceDate, context) => (
+      payroll.service.isFinanciallyLocked(employeeId, attendanceDate, context)
+    );
+  }
   reconcileAbsencesBeforeShiftChange = repository.reconcileDueAbsencesForEmployee;
   return { repository, payroll, processor: createAttendanceJobProcessor(repository) };
 };

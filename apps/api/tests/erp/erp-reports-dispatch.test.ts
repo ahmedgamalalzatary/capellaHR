@@ -1,8 +1,38 @@
+import { resolveEdition } from '@capella/config/edition';
+import type { createDatabase } from '@capella/database';
+import pino from 'pino';
 import type { ReportReader } from '../../src/modules/reports/index.js';
 import { createDrizzleReportReader, createReportsModule } from '../../src/modules/reports/index.js';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+
+const runtimeWiring = vi.hoisted(() => ({
+  erpReader: {
+    read: vi.fn(),
+    readBatches: vi.fn(),
+  },
+  reportOptions: vi.fn(),
+}));
+
+vi.mock('../../src/modules/erp/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/modules/erp/index.js')>();
+  return {
+    ...actual,
+    createErpReportsModule: () => ({ repository: {}, reader: runtimeWiring.erpReader }),
+  };
+});
+
+vi.mock('../../src/modules/reports/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/modules/reports/index.js')>();
+  return {
+    ...actual,
+    createReportsModule: (...args: Parameters<typeof actual.createReportsModule>) => {
+      runtimeWiring.reportOptions(args[1]);
+      return actual.createReportsModule(...args);
+    },
+  };
+});
+
+import { createApiRuntime } from '../../src/runtime/api-runtime.js';
 
 const generatedAt = new Date('2026-08-09T12:00:00.000Z');
 const result = {
@@ -68,8 +98,18 @@ describe('ERP report dispatch', () => {
   });
 
   it('injects the ERP reader into the API report runtime', () => {
-    const server = readFileSync(fileURLToPath(new URL('../../src/server.ts', import.meta.url)), 'utf8');
-    expect(server).toContain('createErpReportsModule');
-    expect(server).toContain('erp: erpReportsModule.reader');
+    runtimeWiring.reportOptions.mockClear();
+
+    createApiRuntime({
+      database: {} as ReturnType<typeof createDatabase>,
+      edition: resolveEdition('erp'),
+      logger: pino({ level: 'silent' }),
+      timeZone: 'Africa/Cairo',
+      maxEmployeeImageBytes: 16_777_216,
+    });
+
+    expect(runtimeWiring.reportOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ erp: runtimeWiring.erpReader }),
+    );
   });
 });

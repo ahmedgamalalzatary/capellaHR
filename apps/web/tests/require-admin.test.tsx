@@ -48,6 +48,19 @@ describe('RequireAdmin', () => {
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
   });
 
+  test.each([
+    [{ type: 'employee' }, 'هذا القسم مخصص للمدير فقط.'],
+    [{ type: 'cashier', accountId: 1, employeeId: 7 }, 'هذا الحساب غير مخوّل بالدخول إلى نظام الموارد البشرية.'],
+  ])('shows a safe wrong-role state for a %s session', async (actor, message) => {
+    getSessionMock.mockResolvedValue({ actor });
+
+    renderGuard();
+
+    await waitFor(() => expect(screen.getByText(message)).toBeDefined());
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(screen.queryByText('لوحة التحكم')).toBeNull();
+  });
+
   test('shows a retryable error instead of redirecting when the session check fails', async () => {
     getSessionMock.mockRejectedValue(new TypeError('fetch failed'));
     renderGuard();

@@ -86,10 +86,7 @@ describe('PosShell', () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell();
 
-    expect(await screen.findByRole('link', { name: 'لوحة الإدارة' })).toHaveProperty(
-      'href',
-      `${window.location.origin}/`,
-    );
+    expect((await screen.findByRole('link', { name: 'لوحة الإدارة' })).getAttribute('href')).toBe('/');
     expect(screen.getByRole('link', { name: 'ورديات الكاشير' })).toHaveProperty(
       'href',
       expect.stringContaining('/cashier-sessions'),

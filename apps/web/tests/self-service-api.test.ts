@@ -47,14 +47,14 @@ describe('self-service API', () => {
 
     const paths = fetchMock.mock.calls.map(([url]) => String(url));
     expect(paths).toEqual([
-      'http://localhost:4000/api/v1/self-service/overview',
-      'http://localhost:4000/api/v1/self-service/attendance?state=closed&dateFrom=2026-07-01&page=2',
-      'http://localhost:4000/api/v1/self-service/weekly-days?status=weekly_day_off&page=2',
-      'http://localhost:4000/api/v1/self-service/payroll/2026-07',
-      'http://localhost:4000/api/v1/self-service/commissions/2026-07',
-      'http://localhost:4000/api/v1/self-service/bonuses?payrollMonth=2026-07',
-      'http://localhost:4000/api/v1/self-service/deductions?page=2',
-      'http://localhost:4000/api/v1/self-service/advances?payrollMonth=2026-07&page=3',
+      '/api/v1/self-service/overview',
+      '/api/v1/self-service/attendance?state=closed&dateFrom=2026-07-01&page=2',
+      '/api/v1/self-service/weekly-days?status=weekly_day_off&page=2',
+      '/api/v1/self-service/payroll/2026-07',
+      '/api/v1/self-service/commissions/2026-07',
+      '/api/v1/self-service/bonuses?payrollMonth=2026-07',
+      '/api/v1/self-service/deductions?page=2',
+      '/api/v1/self-service/advances?payrollMonth=2026-07&page=3',
     ]);
     expect(paths.join(' ')).not.toMatch(/employeeId|branchId|reports|exports/);
   });

@@ -25,13 +25,28 @@ describe('server environment', () => {
     expect(() => parseServerEnv({ ...base, API_PORT: '65536' })).toThrow();
   });
 
-  it('normalizes WEB_ORIGIN to an origin-only value', async () => {
+  it('normalizes an explicit development CORS origin list', async () => {
     const { parseServerEnv } = await import('./server.js');
     const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
 
-    expect(parseServerEnv({ ...base, WEB_ORIGIN: 'https://hr.example.com/' }).WEB_ORIGIN).toBe('https://hr.example.com');
-    expect(parseServerEnv({ ...base, WEB_ORIGIN: 'https://hr.example.com/admin' }).WEB_ORIGIN).toBe('https://hr.example.com');
-    expect(() => parseServerEnv({ ...base, WEB_ORIGIN: 'data:text/plain,x' })).toThrow(ZodError);
+    expect(parseServerEnv({
+      ...base,
+      NODE_ENV: 'development',
+      DEV_CORS_ORIGINS: 'http://localhost:3000/, http://localhost:3001/path',
+    }).DEV_CORS_ORIGINS).toEqual(['http://localhost:3000', 'http://localhost:3001']);
+    expect(parseServerEnv({ ...base }).DEV_CORS_ORIGINS).toEqual([]);
+    expect(() => parseServerEnv({ ...base, DEV_CORS_ORIGINS: 'data:text/plain,x' })).toThrow(ZodError);
+  });
+
+  it('rejects cross-origin allowances in production', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({
+      ...base,
+      NODE_ENV: 'production',
+      DEV_CORS_ORIGINS: 'https://hr.example.com',
+    })).toThrow('DEV_CORS_ORIGINS is development-only');
   });
 
   it('accepts only a bounded explicit trusted-proxy hop count', async () => {
@@ -119,5 +134,20 @@ describe('server environment', () => {
     });
     expect(parsed).not.toHaveProperty('ADMIN_EMAIL');
     expect(parsed).not.toHaveProperty('ADMIN_PASSWORD');
+  });
+
+  it('passes optional edition deployment settings through to the shared startup resolver', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const { parseWorkerEnv } = await import('./worker.js');
+    const base = {
+      DATABASE_URL: 'mysql://user:password@localhost/capella_hr',
+      ADMIN_EMAIL: 'admin@capella.test',
+      ADMIN_PASSWORD: 'password',
+      EDITION: 'erp',
+      COMPOSE_PROFILES: 'erp',
+    };
+
+    expect(parseServerEnv(base)).toMatchObject({ EDITION: 'erp', COMPOSE_PROFILES: 'erp' });
+    expect(parseWorkerEnv(base)).toMatchObject({ EDITION: 'erp', COMPOSE_PROFILES: 'erp' });
   });
 });

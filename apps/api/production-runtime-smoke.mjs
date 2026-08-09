@@ -1,5 +1,6 @@
 const runtimePackages = [
   '@capella/config/server',
+  '@capella/config/edition',
   '@capella/contracts',
   '@capella/database',
   '@capella/database/schema',

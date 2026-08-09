@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  EDITION: z.string().optional(),
+  COMPOSE_PROFILES: z.string().optional(),
   DATABASE_URL: z.string().min(1),
   LOG_LEVEL: z.string().default('info'),
   APP_TIME_ZONE: z.literal('Africa/Cairo').default('Africa/Cairo'),

@@ -45,6 +45,7 @@ import {
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
   cashierAccountsService?: CashierAccountsService;
+  employeeAuthenticationEnabled?: boolean;
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
@@ -106,6 +107,9 @@ export const createApiRouter = (dependencies: {
       ...(dependencies.cashierAccountsService === undefined
         ? {}
         : { cashierAccounts: dependencies.cashierAccountsService }),
+      ...(dependencies.employeeAuthenticationEnabled === undefined
+        ? {}
+        : { employeeAuthenticationEnabled: dependencies.employeeAuthenticationEnabled }),
     };
     router.use('/auth', createAuthRouter(dependencies.authService, authOptions));
     if (dependencies.branchService) {

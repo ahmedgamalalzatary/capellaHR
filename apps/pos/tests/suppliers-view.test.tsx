@@ -142,6 +142,46 @@ describe('SuppliersPurchasesView', () => {
     expect(screen.getByRole('button', { name: 'إضافة بند' })).toHaveProperty('disabled', true);
   });
 
+  it('locks pre-opened supplier lifecycle dialogs while another command is pending', async () => {
+    mocks.createSupplier.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف' }));
+    fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
+
+    await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledTimes(1));
+    const confirm = screen.getByRole('button', { name: 'تأكيد إيقاف المورد' });
+    const dismiss = screen.getByRole('button', { name: 'إلغاء' });
+    expect(confirm).toHaveProperty('disabled', true);
+    expect(dismiss).toHaveProperty('disabled', true);
+    fireEvent.click(confirm);
+    fireEvent.click(dismiss);
+    expect(mocks.updateSupplier).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'إيقاف المورد' })).toBeDefined();
+  });
+
+  it('locks a pre-opened cancellation dialog while another supplier command is pending', async () => {
+    mocks.createSupplier.mockReturnValue(new Promise(() => undefined));
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('#9')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'إلغاء المشتريات' }));
+    fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'خطأ في الكمية' } });
+    fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
+
+    await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('سبب الإلغاء')).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'تأكيد الإلغاء' })).toHaveProperty('disabled', true);
+    const dismiss = screen.getByRole('button', { name: 'رجوع' });
+    expect(dismiss).toHaveProperty('disabled', true);
+    fireEvent.click(dismiss);
+    expect(screen.getByRole('dialog', { name: 'إلغاء المشتريات #9' })).toBeDefined();
+  });
+
   it('shows an unavailable marker when a posted stock balance is missing', async () => {
     mocks.listPurchases.mockResolvedValue({
       items: [{ ...purchase, lines: [{ ...purchase.lines[0], postedBalanceAfter: null }] }],

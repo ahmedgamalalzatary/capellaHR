@@ -15,10 +15,12 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   const router = useRouter();
   const session = useSession();
 
-  const isAdmin = session.data?.actor.type === 'admin';
-  // Redirect only on a resolved "not signed in as admin" answer; network or
-  // server failures get a retry state instead of bouncing the user to /login.
-  const shouldRedirect = session.isSuccess && !isAdmin;
+  const actorType = session.data?.actor.type;
+  const isAdmin = actorType === 'admin';
+  const isUnauthorizedRole = actorType === 'employee' || actorType === 'cashier';
+  // Redirect only when no session exists. A valid wrong-role session gets an
+  // explicit state, while network/server failures remain retryable.
+  const shouldRedirect = session.isSuccess && !actorType;
 
   useEffect(() => {
     if (shouldRedirect) router.replace('/login');
@@ -39,6 +41,16 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
         <Button variant="secondary" size="sm" onClick={() => void session.refetch()}>
           إعادة المحاولة
         </Button>
+      </div>
+    );
+  }
+
+  if (isUnauthorizedRole) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center p-6 text-center text-sm text-danger">
+        {actorType === 'employee'
+          ? 'هذا القسم مخصص للمدير فقط.'
+          : 'هذا الحساب غير مخوّل بالدخول إلى نظام الموارد البشرية.'}
       </div>
     );
   }

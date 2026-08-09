@@ -47,9 +47,11 @@ export const createAuthRouter = (
   options: {
     secureCookies?: boolean;
     cashierAccounts?: CashierAccountsService;
+    employeeAuthenticationEnabled?: boolean;
   } = {},
 ) => {
   const router = Router();
+  const employeeAuthenticationEnabled = options.employeeAuthenticationEnabled ?? true;
   const cookieOptions: CookieOptions = {
     httpOnly: true,
     secure: options.secureCookies ?? true,
@@ -65,26 +67,27 @@ export const createAuthRouter = (
     response.json({ data: { actor: publicActor(result.actor) } });
   });
 
-  router.post('/employee/login', async (request, response) => {
-    const input = employeeLoginSchema.parse(request.body);
-    const result = await service.loginEmployee(input, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
-    response.cookie(SESSION_COOKIE, result.token, cookieOptions);
-    response.json({ data: { actor: publicActor(result.actor) } });
-  });
-
-  router.post('/cashier/login', async (request, response) => {
-    const input = cashierLoginSchema.parse(request.body);
-    const result = await service.loginCashier(input.username, input.password, {
-      ipAddress: request.ip?.slice(0, 45) ?? null,
-      userAgent: request.header('user-agent')?.slice(0, 1024) ?? null,
-      requestId: responseRequestId(response),
+  if (employeeAuthenticationEnabled) {
+    router.post('/employee/login', async (request, response) => {
+      const input = employeeLoginSchema.parse(request.body);
+      const result = await service.loginEmployee(input, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
+      response.cookie(SESSION_COOKIE, result.token, cookieOptions);
+      response.json({ data: { actor: publicActor(result.actor) } });
     });
-    response.cookie(SESSION_COOKIE, result.token, cookieOptions);
-    response.json({ data: { actor: publicActor(result.actor) } });
-  });
+  }
 
   if (options.cashierAccounts) {
     const middleware = createAuthMiddleware(service);
+    router.post('/cashier/login', async (request, response) => {
+      const input = cashierLoginSchema.parse(request.body);
+      const result = await service.loginCashier(input.username, input.password, {
+        ipAddress: request.ip?.slice(0, 45) ?? null,
+        userAgent: request.header('user-agent')?.slice(0, 1024) ?? null,
+        requestId: responseRequestId(response),
+      });
+      response.cookie(SESSION_COOKIE, result.token, cookieOptions);
+      response.json({ data: { actor: publicActor(result.actor) } });
+    });
     router.post(
       '/cashier-accounts',
       middleware.authenticate,
@@ -139,6 +142,16 @@ export const createAuthRouter = (
     const token = readCookie(request.headers.cookie, SESSION_COOKIE) ?? '';
     const session = await service.authenticate(token);
     if (!session) throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
+    const disabledActor = (
+      (session.actorType === 'employee' && !employeeAuthenticationEnabled)
+      || (session.actorType === 'account'
+        && session.accountRole === 'cashier'
+        && !options.cashierAccounts)
+    );
+    if (disabledActor) {
+      await service.logout(token);
+      throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
+    }
     const actor = session.actorType === 'account'
       ? session.accountRole === 'admin'
         ? publicActor({ type: 'admin' })

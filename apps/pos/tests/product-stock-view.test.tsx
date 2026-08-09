@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -117,6 +117,28 @@ describe('ProductStockView', () => {
       branchId: 2,
       isActive: false,
     }));
+  });
+
+  it('locks a pre-opened deactivation confirmation while another product command is pending', async () => {
+    mocks.update.mockReturnValue(new Promise(() => undefined));
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findAllByText('شامبو');
+    fireEvent.click(screen.getByRole('button', { name: 'إيقاف' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التعديل' }));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    const dialog = screen.getByRole('dialog', { name: 'إيقاف المنتج' });
+    const confirm = within(dialog).getByRole('button', { name: 'تأكيد إيقاف المنتج' });
+    const dismiss = within(dialog).getByRole('button', { name: 'إلغاء' });
+    expect(confirm).toHaveProperty('disabled', true);
+    expect(dismiss).toHaveProperty('disabled', true);
+    fireEvent.click(confirm);
+    fireEvent.click(dismiss);
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(dialog).toBeDefined();
   });
 
   it('clears branch-specific state when the branch changes', async () => {

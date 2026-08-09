@@ -25,13 +25,17 @@ const unavailableAttendance: AuthServiceDependencies['attendance'] = {
   hasOpenSession() { return Promise.resolve(false); },
 };
 
-export const createAuthModule = (dependencies: {
+type AuthModuleDependencies = {
   database: Database;
   employees?: AuthServiceDependencies['employees'];
   personalDevices?: AuthServiceDependencies['personalDevices'];
   attendance?: AuthServiceDependencies['attendance'];
   onLoginLimitCleanupError?: (error: unknown) => void;
-}) => {
+};
+
+export const createAuthModule = <TEnabled extends boolean | undefined = undefined>(
+  dependencies: AuthModuleDependencies & { cashierAccountsEnabled?: TEnabled },
+) => {
   const repositories = createDrizzleAuthRepositories(
     dependencies.database,
     undefined,
@@ -39,11 +43,15 @@ export const createAuthModule = (dependencies: {
       ? { onLoginLimitCleanupError: dependencies.onLoginLimitCleanupError }
       : {},
   );
-  const cashierAccountRepository = createDrizzleCashierAccountRepository(dependencies.database);
-  const cashierAccounts = createCashierAccountsService({
-    accounts: cashierAccountRepository,
-    hashPassword: hash,
-  });
+  const cashierAccountRepository = dependencies.cashierAccountsEnabled === false
+    ? undefined
+    : createDrizzleCashierAccountRepository(dependencies.database);
+  const cashierAccounts = cashierAccountRepository
+    ? createCashierAccountsService({
+        accounts: cashierAccountRepository,
+        hashPassword: hash,
+      })
+    : undefined;
   const service = createAuthService({
     accounts: repositories.accountCredentials,
     sessions: repositories.sessions,
@@ -53,7 +61,7 @@ export const createAuthModule = (dependencies: {
     attendance: dependencies.attendance ?? unavailableAttendance,
   });
 
-  return {
+  const result = {
     service,
     erp: createErpAuthCapability(service),
     cashierAccounts,
@@ -97,5 +105,8 @@ export const createAuthModule = (dependencies: {
         });
       });
     },
+  };
+  return result as Omit<typeof result, 'cashierAccounts'> & {
+    cashierAccounts: TEnabled extends false ? undefined : NonNullable<typeof cashierAccounts>;
   };
 };

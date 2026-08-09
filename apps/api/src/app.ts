@@ -26,14 +26,16 @@ import type { CommissionService } from './modules/erp/commissions/index.js';
 import { createApiRouter } from './routes/index.js';
 import {
   createRequestLogger,
+  createOriginGuard,
   errorHandler,
   notFoundHandler,
   requestContext,
 } from './shared/http/index.js';
 
-export const createApp = (dependencies: {
+export interface AppDependencies {
   authService?: AuthService;
   cashierAccountsService?: CashierAccountsService;
+  employeeAuthenticationEnabled?: boolean;
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
@@ -62,19 +64,23 @@ export const createApp = (dependencies: {
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
-  corsOrigin?: string;
+  corsOrigins?: string[];
+  enforceSameOrigin?: boolean;
   trustProxyHops?: number;
   readinessCheck?: () => Promise<void>;
   logger?: Logger;
-} = {}) => {
+}
+
+export const createApp = (dependencies: AppDependencies = {}) => {
   const app = express();
 
   if (dependencies.trustProxyHops !== undefined) app.set('trust proxy', dependencies.trustProxyHops);
   app.use(requestContext);
   if (dependencies.logger) app.use(createRequestLogger(dependencies.logger));
   app.use(helmet());
-  if (dependencies.corsOrigin) {
-    app.use(cors({ origin: dependencies.corsOrigin, credentials: true }));
+  if (dependencies.enforceSameOrigin) app.use(createOriginGuard(dependencies.corsOrigins));
+  if (dependencies.corsOrigins?.length) {
+    app.use(cors({ origin: dependencies.corsOrigins, credentials: true }));
   }
   app.use(express.json());
   app.use('/api/v1', createApiRouter(dependencies));

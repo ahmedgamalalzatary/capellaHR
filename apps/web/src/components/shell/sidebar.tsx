@@ -9,6 +9,15 @@ import { ADMIN_NAV } from './nav';
 
 export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const navigation = process.env.NEXT_PUBLIC_CAPELLA_EDITION === 'erp'
+    ? ADMIN_NAV.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => [
+          '/employees', '/devices', '/shifts', '/attendance',
+          '/branches', '/audit', '/settings',
+        ].includes(item.href)),
+      })).filter((group) => group.items.length > 0)
+    : ADMIN_NAV;
 
   return (
     <aside
@@ -24,11 +33,13 @@ export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNaviga
     >
       <div className="flex h-14 items-center border-b border-line px-5">
         <span className="text-lg font-bold tracking-tight">كابيلا</span>
-        <span className="ms-2 text-[12px] text-muted">الموارد البشرية</span>
+        <span className="ms-2 text-[12px] text-muted">
+          {process.env.NEXT_PUBLIC_CAPELLA_EDITION === 'erp' ? 'الحضور' : 'الموارد البشرية'}
+        </span>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {ADMIN_NAV.map((group, groupIndex) => (
+        {navigation.map((group, groupIndex) => (
           <div key={group.label ?? groupIndex} className="mb-4">
             {group.label ? (
               <p className="mb-1 px-2 text-[11px] font-semibold text-muted">{group.label}</p>

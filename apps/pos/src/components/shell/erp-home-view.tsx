@@ -63,7 +63,7 @@ export function ErpHomeView() {
   }
 
   if (actor && actor.type !== 'admin') return <CashierSessionView />;
-  if (!actor) return null;
+  if (!actor) return <LoadingState label="جارٍ التحقق من الجلسة…" />;
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">

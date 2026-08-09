@@ -4,8 +4,9 @@
   "type": "module",
   "exports": {
     "./server": { "types": "./src/server.ts", "development": "./src/server.ts", "default": "./dist/server.js" },
-    "./client": { "types": "./src/client.ts", "development": "./src/client.ts", "default": "./dist/client.js" },
-    "./worker": { "types": "./src/worker.ts", "development": "./src/worker.ts", "default": "./dist/worker.js" }
+    "./proxy": { "types": "./src/proxy.ts", "development": "./src/proxy.ts", "default": "./dist/proxy.js" },
+    "./worker": { "types": "./src/worker.ts", "development": "./src/worker.ts", "default": "./dist/worker.js" },
+    "./edition": { "types": "./src/edition.ts", "development": "./src/edition.ts", "default": "./dist/edition.js" }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

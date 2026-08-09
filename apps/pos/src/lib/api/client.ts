@@ -7,8 +7,8 @@
  * is a zod-flatten map of field name to Arabic messages.
  */
 
-/** Full API base including the version prefix, from the root .env */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+/** Same-origin API path; the frontend host proxies it to the shared API runtime. */
+const API_BASE_URL = '/api/v1';
 const API_REQUEST_TIMEOUT_MS = 15_000;
 
 export type ApiFieldErrors = Record<string, string[] | undefined>;

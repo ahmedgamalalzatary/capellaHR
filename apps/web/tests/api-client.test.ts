@@ -14,6 +14,18 @@ afterEach(() => {
 });
 
 describe('api client error contract', () => {
+  test('uses the current frontend origin for API requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { data: { status: 'ok' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.get('/health/live');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/health/live',
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
   test('surfaces the nested API error code, Arabic message, and zod field errors', async () => {
     vi.stubGlobal(
       'fetch',

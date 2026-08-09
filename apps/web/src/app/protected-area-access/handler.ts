@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 
+import { resolveApiProxyTarget } from '@capella/config/proxy';
+
 const json = (body: object, status: number) => Response.json(body, { status });
 
 type AttemptWindow = { count: number; startedAt: number };
@@ -22,9 +24,7 @@ const sessionKey = (token: string) => (
 );
 
 const validateAdminSession = async (token: string) => {
-  const apiBaseUrl = (
-    process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:4000/api/v1'
-  ).replace(/\/+$/, '');
+  const apiBaseUrl = `${resolveApiProxyTarget()}/api/v1`;
   try {
     const response = await fetch(`${apiBaseUrl}/auth/session`, {
       headers: { cookie: `capella_session=${encodeURIComponent(token)}` },
@@ -41,6 +41,7 @@ const validateAdminSession = async (token: string) => {
 };
 
 export const createProtectedAreaAccessHandler = (options: {
+  enforceSameOrigin?: boolean;
   now?: () => number;
   maximumAttempts?: number;
   maximumKeys?: number;
@@ -48,6 +49,7 @@ export const createProtectedAreaAccessHandler = (options: {
   windowMs?: number;
 } = {}) => {
   const now = options.now ?? Date.now;
+  const sameOriginRequired = options.enforceSameOrigin ?? process.env.NODE_ENV === 'production';
   const maximumAttempts = options.maximumAttempts ?? 5;
   const maximumKeys = options.maximumKeys ?? 10_000;
   const validateSession = options.validateSession ?? validateAdminSession;
@@ -55,6 +57,19 @@ export const createProtectedAreaAccessHandler = (options: {
   const attempts = new Map<string, AttemptWindow>();
 
   return async (request: Request): Promise<Response> => {
+    if (sameOriginRequired) {
+      const origin = request.headers.get('origin');
+      let normalizedOrigin: string | null = null;
+      try {
+        if (origin) normalizedOrigin = new URL(origin).origin;
+      } catch {
+        normalizedOrigin = null;
+      }
+      if (!normalizedOrigin || normalizedOrigin !== new URL(request.url).origin) {
+        return json({ error: 'INVALID_ORIGIN' }, 403);
+      }
+    }
+
     const configuredPassword = process.env['PROTECTED_TAB_PASSWORD'];
     if (!configuredPassword) return json({ error: 'NOT_CONFIGURED' }, 503);
 

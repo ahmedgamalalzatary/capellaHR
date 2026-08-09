@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 
 import pino from 'pino';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/app.js';
 
@@ -42,15 +42,180 @@ describe('authentication application composition', () => {
     expect(response.body.data.actor).toEqual({ type: 'admin' });
   });
 
-  it('allows credentialed requests only from the configured frontend origin', async () => {
-    const response = await request(createApp({ corsOrigin: 'http://localhost:3000' }))
+  it('does not expose Cashier authentication when the ERP account capability is absent', async () => {
+    const service = {
+      async loginAdmin() { throw new Error('not used'); },
+      async loginCashier() { throw new Error('cashier login must not be reachable'); },
+      async beginEmployeeDeviceAuthentication() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      async logout() { return true; },
+      async authenticate() { return null; },
+      async revokeEmployeeSessions() {},
+    };
+
+    const response = await request(createApp({ authService: service, secureCookies: false }))
+      .post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'correct' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('does not expose employee self-service authentication when that capability is disabled', async () => {
+    const loginEmployee = vi.fn(async () => { throw new Error('employee login must not be reachable'); });
+    const service = {
+      async loginAdmin() { throw new Error('not used'); },
+      async loginCashier() { throw new Error('not used'); },
+      async beginEmployeeDeviceAuthentication() { throw new Error('not used'); },
+      loginEmployee,
+      async logout() { return true; },
+      async authenticate() { return null; },
+      async revokeEmployeeSessions() {},
+    };
+
+    const response = await request(createApp({
+      authService: service,
+      employeeAuthenticationEnabled: false,
+      secureCookies: false,
+    })).post('/api/v1/auth/employee/login').send({
+      employeeCode: 12,
+      pin: '0123',
+      personalPhone: '01012345678',
+      installationMarker: 'marker-marker-123',
+    });
+
+    expect(response.status).toBe(404);
+    expect(loginEmployee).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'Cashier',
+      session: {
+        id: 'cashier-session', tokenHash: 'hash', actorType: 'account' as const,
+        accountRole: 'cashier' as const, accountId: 7, employeeId: 11, revokedAt: null,
+      },
+      dependencies: {},
+    },
+    {
+      label: 'employee',
+      session: {
+        id: 'employee-session', tokenHash: 'hash', actorType: 'employee' as const,
+        accountRole: null, accountId: null, employeeId: 11, revokedAt: null,
+      },
+      dependencies: { employeeAuthenticationEnabled: false },
+    },
+  ])('revokes an existing $label session when its edition capability is disabled', async ({ session, dependencies }) => {
+    const logout = vi.fn(async () => true);
+    const service = {
+      async loginAdmin() { throw new Error('not used'); },
+      async loginCashier() { throw new Error('not used'); },
+      async beginEmployeeDeviceAuthentication() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      logout,
+      async authenticate() { return session; },
+      async revokeEmployeeSessions() {},
+    };
+
+    const response = await request(createApp({
+      authService: service,
+      secureCookies: false,
+      ...dependencies,
+    })).get('/api/v1/auth/session').set('Cookie', 'capella_session=disabled-token');
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.message).toBe('يجب تسجيل الدخول');
+    expect(logout).toHaveBeenCalledWith('disabled-token');
+  });
+
+  it('allows credentialed cross-origin requests only from the explicit development list', async () => {
+    const developmentApp = createApp({
+      ...({ corsOrigins: ['http://localhost:3000', 'http://localhost:3001'] } as Record<string, unknown>),
+    });
+    const preflight = (origin: string) => request(developmentApp)
       .options('/api/v1/auth/admin/login')
-      .set('Origin', 'http://localhost:3000')
+      .set('Origin', origin)
       .set('Access-Control-Request-Method', 'POST');
 
-    expect(response.status).toBe(204);
-    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:3000');
-    expect(response.headers['access-control-allow-credentials']).toBe('true');
+    const web = await preflight('http://localhost:3000');
+    const pos = await preflight('http://localhost:3001');
+    const rejected = await preflight('https://attacker.example');
+
+    expect(web.status).toBe(204);
+    expect(web.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+    expect(web.headers['access-control-allow-credentials']).toBe('true');
+    expect(pos.headers['access-control-allow-origin']).toBe('http://localhost:3001');
+    expect(rejected.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('accepts production mutations only from the public origin forwarded by the trusted proxy', async () => {
+    const loginAdmin = vi.fn(async () => ({ token: 'token', actor: { type: 'admin' as const } }));
+    const service = {
+      loginAdmin,
+      async loginCashier() { throw new Error('not used'); },
+      async beginEmployeeDeviceAuthentication() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      async logout() { return true; },
+      async authenticate() { return null; },
+      async revokeEmployeeSessions() {},
+    };
+    const productionApp = createApp({
+      authService: service,
+      secureCookies: true,
+      trustProxyHops: 1,
+      ...({ enforceSameOrigin: true } as Record<string, unknown>),
+    });
+    const sendLogin = (origin?: string) => {
+      const pending = request(productionApp)
+        .post('/api/v1/auth/admin/login')
+        .set('Host', 'hr.example.com')
+        .set('X-Forwarded-Proto', 'https');
+      if (origin) pending.set('Origin', origin);
+      return pending.send({ email: 'admin@capella.test', password: 'correct' });
+    };
+
+    const missing = await sendLogin();
+    const crossSite = await sendLogin('https://attacker.example');
+    const sameOrigin = await sendLogin('https://hr.example.com');
+
+    expect(missing.status).toBe(403);
+    expect(missing.body.error.code).toBe('INVALID_ORIGIN');
+    expect(crossSite.status).toBe(403);
+    expect(crossSite.body.error.code).toBe('INVALID_ORIGIN');
+    expect(sameOrigin.status).toBe(200);
+    expect(loginAdmin).toHaveBeenCalledTimes(1);
+  });
+
+  it('permits mutation origins from the explicit development list and rejects every other origin', async () => {
+    const loginAdmin = vi.fn(async () => ({ token: 'token', actor: { type: 'admin' as const } }));
+    const service = {
+      loginAdmin,
+      async loginCashier() { throw new Error('not used'); },
+      async beginEmployeeDeviceAuthentication() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      async logout() { return true; },
+      async authenticate() { return null; },
+      async revokeEmployeeSessions() {},
+    };
+    const developmentApp = createApp({
+      authService: service,
+      secureCookies: false,
+      corsOrigins: ['http://localhost:3000', 'http://localhost:3001'],
+      enforceSameOrigin: true,
+    });
+    const sendLogin = (origin: string) => request(developmentApp)
+      .post('/api/v1/auth/admin/login')
+      .set('Host', 'localhost:4000')
+      .set('Origin', origin)
+      .send({ email: 'admin@capella.test', password: 'correct' });
+
+    const allowed = await sendLogin('http://localhost:3001');
+    const rejected = await sendLogin('http://localhost:3002');
+
+    expect(allowed.status).toBe(200);
+    expect(rejected.status).toBe(403);
+    expect(rejected.body.error.code).toBe('INVALID_ORIGIN');
+    expect(loginAdmin).toHaveBeenCalledTimes(1);
   });
 
   it('assigns one correlation ID to headers and structured errors', async () => {

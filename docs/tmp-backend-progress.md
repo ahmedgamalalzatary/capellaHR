@@ -449,7 +449,7 @@ Added 2026-07-29 from `docs/erp-plan.md`. The ERP plan remains the source of tru
 
 - [ ] Deliver a production-ready Arabic/RTL POS application backed by the existing API and MySQL database.
 - [ ] Preserve HR behavior while sharing accounts, employees, branches, attendance, audit, payroll capabilities, and reporting infrastructure through public module boundaries.
-- [ ] Support the named `hr`, `erp`, and `full` editions from one migration history and codebase.
+- [x] Support the named `hr`, `erp`, and `full` editions from one migration history and codebase.
 - [ ] Deploy Capella using `EDITION=full`, then validate the sellable `hr` and `erp` editions.
 
 Every functional ERP slice is delivered end to end: database and migration work, contracts, API/domain behavior, authorization and audit, the owning Arabic/RTL Admin or Cashier workflow, and proportional unit, component, integration, MySQL, and end-to-end coverage. A slice is not complete while its required UI is deferred to a later catch-all phase. ERP administration belongs in `apps/pos` so an `erp` installation remains independently operable; only HR-specific additions such as employee self-service belong in `apps/web`. Explicit foundation, architecture, hardening, security, and rollout slices do not require a standalone screen, but must cover both backend and frontend integration surfaces needed by the user-facing slices.
@@ -517,10 +517,7 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–20, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
-        └──> ERP 21 Editions
-                  │
-             ERP 22 Security
+DONE: ERP 1–22, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
 ```
 
 Safe parallel waves:
@@ -530,7 +527,8 @@ Safe parallel waves:
 3. **Complete:** ERP 19 reports and PDF exports.
 4. ERP 18's offline queue, replay, and conflict-resolution workflow is delivered.
 5. **Complete:** ERP 20 cross-feature administration UX hardening.
-6. **Next eligible:** ERP 21, followed by ERP 22.
+6. **Complete:** ERP 21 editions and runtime module registry.
+7. **Complete:** ERP 22 multi-frontend production security.
 
 ## ERP 4. Cashier sessions
 
@@ -817,32 +815,40 @@ Complete. The role-aware POS shell and Admin landing page now group every delive
 
 Catalog, client, sale/reversal, purchase, product, and expense mutations invalidate their owning caches plus affected report, stock, client, sales, and commission projections. Focused component coverage and wide/compact browser journeys protect navigation continuity, mutation safety, destructive confirmations, direct-route permissions, document-level overflow, and purchase-to-product-stock propagation across Admin features.
 
-## ERP 21. Editions and runtime module registry
+## ERP 21. Editions and runtime module registry — Complete
 
-- [ ] Create a startup module registry with core, sellable, and support classifications.
-- [ ] Keep auth, branches, employees, and audit always enabled as core.
-- [ ] Add dependency expansion for sellable and support modules.
-- [ ] Define the supported `hr`, `erp`, and `full` edition module sets.
-- [ ] Include Attendance in the ERP edition because employee assignment requires live presence.
-- [ ] Fail startup loudly for unknown edition names.
-- [ ] Log the resolved module list at startup.
-- [ ] Construct and mount only API modules enabled by the resolved edition.
-- [ ] Keep one database migration history and migrate every schema in every edition.
-- [ ] Build and expose only the frontend routes/navigation supported by each resolved edition; disabled feature URLs must fail safely.
-- [ ] Keep `apps/web` HR-only, `apps/pos` ERP-only, and enable both containers for `full`.
-- [ ] Add Docker Compose profiles for the HR and POS containers.
-- [ ] Add edition-resolution, boot, disabled API/UI route, migration, frontend build, and smoke tests.
+- [x] Create a startup module registry with core, sellable, and support classifications.
+- [x] Keep auth, branches, employees, and audit always enabled as core.
+- [x] Add dependency expansion for sellable and support modules.
+- [x] Define the supported `hr`, `erp`, and `full` edition module sets.
+- [x] Include Attendance in the ERP edition because employee assignment requires live presence.
+- [x] Fail startup loudly for unknown edition names.
+- [x] Log the resolved module list at startup.
+- [x] Construct and mount only API modules enabled by the resolved edition.
+- [x] Keep one database migration history and migrate every schema in every edition.
+- [x] Build and expose only the frontend routes/navigation supported by each resolved edition; disabled feature URLs fail safely.
+- [x] Keep `apps/pos` ERP-only; use `apps/web` for HR in `hr`/`full` and its restricted attendance/device-pairing surface in `erp`.
+- [x] Add Docker Compose profiles for the HR and POS containers.
+- [x] Add edition-resolution, boot, disabled API/UI route, migration, frontend build, and smoke tests.
 
-## ERP 22. Multi-frontend production security
+Complete. One shared typed registry now resolves missing configuration to the core floor and expands the supported `hr`, `erp`, and `full` editions through explicit module dependencies. Unknown edition names stop startup, while API and worker startup logs include the resolved edition and ordered module list. The API composition root constructs and mounts only enabled services; Cashier authentication and ERP routes disappear outside ERP editions. ERP Attendance runs without Payroll financial locking, while HR and full retain the Payroll lock and full keeps post-payroll commission integration.
 
-- [ ] Serve each frontend and its `/api` proxy under the same origin.
-- [ ] Route HR and POS `/api` traffic to the shared API container at the reverse proxy.
-- [ ] Preserve host-only `SameSite=strict` cookies.
-- [ ] Keep HR and POS browser sessions independent.
-- [ ] Keep cross-origin allowances limited to explicit development configuration.
-- [ ] Add deployment examples for recommended subdomains and supported separate-domain topology.
-- [ ] Add safe frontend handling for expired, missing, wrong-role, and cross-application sessions.
-- [ ] Add production cookie, proxy, origin, CSRF, protected-route, and session-isolation verification across both frontends and the API.
+The worker follows the same registry: HR omits ERP readers, ERP omits Payroll, and full combines both. Dedicated Next builds reject unsupported frontend/edition combinations; the ERP Web build keeps admin login plus branches, employees, shifts, devices, attendance, audit, and settings, while hiding and redirecting HR-only payroll, benefits, reports, dashboard, and employee self-service routes. This retains the attendance/device setup required for live employee assignment without exposing excluded modules. Compose profiles select Web, POS, and the worker without changing the edition-independent migration service, preserving one schema history and configuration-only upgrades. Resolver, construction, disabled-route, worker, frontend-build, and deployment-contract tests cover the supported matrix. The local workstation does not have Docker installed, so `docker compose config` remains an environment validation to repeat on the deployment host; repository contract tests and all supported frontend build combinations are green.
+
+## ERP 22. Multi-frontend production security — Complete
+
+- [x] Serve each frontend and its `/api` proxy under the same origin.
+- [x] Route HR and POS `/api` traffic to the shared API container at the reverse proxy.
+- [x] Preserve host-only `SameSite=strict` cookies.
+- [x] Keep HR and POS browser sessions independent.
+- [x] Keep cross-origin allowances limited to explicit development configuration.
+- [x] Add deployment examples for recommended subdomains and supported separate-domain topology.
+- [x] Add safe frontend handling for expired, missing, wrong-role, and cross-application sessions.
+- [x] Add production cookie, proxy, origin, CSRF, protected-route, and session-isolation verification across both frontends and the API.
+
+Complete. Both browser clients now use the host-relative `/api/v1` path. HR and POS expose that path through their own origin and proxy it to the same private API runtime, while host-only secure `SameSite=strict` cookies keep the two browser cookie jars independent. Production rejects every state-changing request whose `Origin` is missing or differs from the proxy-forwarded public origin; optional credentialed CORS is parsed only from an explicit development list and is rejected at production startup.
+
+The HR protected-area route performs its server-side session check through the private API address and applies its own production same-origin check. Both frontends clear protected caches after an expired-session `401`, preserve valid sessions on wrong-role `403` responses, and show explicit wrong-role or wrong-application states. Tested Nginx examples cover recommended subdomains and unrelated domains, including trusted forwarding headers and the upload-size boundary. Deployment verification covers proxy routing, host-only cookie attributes, CSRF rejection, protected routes, and independent HR/POS login state.
 
 ## ERP locked exclusions
 
@@ -860,7 +866,7 @@ Catalog, client, sale/reversal, purchase, product, and expense mutations invalid
 
 ## ERP immediate action
 
-ERP 1–20 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 21 editions and runtime module registry is the next critical-path phase.
+ERP 1–22 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. The remaining critical path is production deployment and environment validation.
 
 ## Locked exclusions — do not implement
 

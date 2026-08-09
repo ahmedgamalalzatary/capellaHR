@@ -1,8 +1,11 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button, Field, Input, Modal } from '@capella/ui';
+
+import { clearSessionState } from '@/features/auth';
 
 export type ProtectedArea =
   | 'employees'
@@ -30,6 +33,7 @@ export function ProtectedAreaUnlockDialog({
   onUnlocked,
   onClose,
 }: ProtectedAreaUnlockDialogProps) {
+  const queryClient = useQueryClient();
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -45,7 +49,12 @@ export function ProtectedAreaUnlockDialog({
         body: JSON.stringify({ password }),
       });
       if (!response.ok) {
-        setError(response.status === 401
+        const body = await response.json().catch(() => null) as { error?: string } | null;
+        if (response.status === 401 && body?.error === 'UNAUTHENTICATED') {
+          clearSessionState(queryClient);
+          return;
+        }
+        setError(response.status === 401 && body?.error === 'INVALID_PASSWORD'
           ? 'كلمة المرور غير صحيحة.'
           : 'تعذر التحقق من كلمة المرور. حاول مرة أخرى.');
         return;

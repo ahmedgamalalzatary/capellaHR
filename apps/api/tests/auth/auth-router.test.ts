@@ -84,6 +84,7 @@ describe('authentication HTTP API', () => {
     expect(response.headers['set-cookie']?.[0]).toContain('Secure');
     expect(response.headers['set-cookie']?.[0]).toContain('SameSite=Strict');
     expect(response.headers['set-cookie']?.[0]).toContain('Path=/;');
+    expect(response.headers['set-cookie']?.[0]).not.toMatch(/;\s*Domain=/i);
     expect(response.body).not.toHaveProperty('data.token');
   });
 

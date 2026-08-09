@@ -1,6 +1,6 @@
 # Beauty Center ERP — Decisions, Reasoning, and Plan
 
-Status: **Implementation in progress; ERP 1–20 software slices delivered, subject to the explicitly deferred validation listed below.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP20 cross-feature administration UX hardening.
+Status: **ERP 1–22 software slices delivered, subject to the explicitly deferred validation listed below; production deployment remains.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP22 multi-frontend production security.
 
 ---
 
@@ -19,7 +19,7 @@ A beauty center ERP for Capella, covering (the owner's original requirement list
 9. **Employee sales** — cashier assigns incoming clients to currently-attendant employees; system tracks what each employee earned
 10. **Stock** — product quantities: purchases increase, sales decrease
 
-Context that shaped everything: the same owner already built **Capella HR** (this repository), the beauty center is **one branch** in its `branches` module, employees **check in through HR** (GPS-geofenced, face-verified), and the workflow in requirement 9 depends on live attendance data.
+Context that shaped everything: the same owner already built **Capella HR** (this repository), the beauty center is **one branch** in its `branches` module, employees **check in through HR** (code + PIN, registered browser, assigned branch, and GPS), and the workflow in requirement 9 depends on live attendance data.
 
 ---
 
@@ -71,7 +71,7 @@ Rule 1 will be **enforced automatically with an ESLint import-boundary rule** (t
 These were confirmed by reading the code on 2026-07-29 (not assumptions):
 
 - **Stack:** Next.js + Express + **Drizzle ORM** + MySQL, pnpm workspaces + Turborepo, Docker Compose deployment, `apps/` = `api` / `web` / `worker`. (Note: earlier discussion said "Prisma" — the repo actually uses Drizzle.)
-- **Modules are already optional at the wiring level.** `apps/api/src/routes/index.ts` mounts each module's router only if its service is passed into `createApp` (`apps/api/src/app.ts`). `server.ts` currently wires all 15 unconditionally; per-edition enablement is a small change, not a redesign.
+- **Modules are optional at the wiring level.** `apps/api/src/routes/index.ts` mounts each module's router only if its service is passed into `createApp` (`apps/api/src/app.ts`), and the ERP21 runtime composition root now constructs only the resolved edition's modules.
 - **Live presence already exists as data.** `attendance_sessions.open_employee_id` is a stored generated column (non-null while the session is open) with a unique index. The ERP will consume it **only** via a public capability such as `listPresentEmployees(branchId)` (Rule 2, §2) — the point is that the capability is cheap to provide, not that ERP queries attendance tables.
 - **A payroll-input pipeline already exists.** Ordinary bonuses remain separate, while ERP17 adds an HR-owned deterministic commission input that is included in open previews and snapshotted at finalization, plus an HR-owned post-payroll deduction input for later reversals (§8). ERP never reads or writes HR tables directly.
 - **Arabic RTL is already the house style.** `apps/web` renders `lang="ar" dir="rtl"` with IBM Plex Sans Arabic; locale `ar-EG`, timezone `Africa/Cairo`. The POS app follows the same.
@@ -114,10 +114,10 @@ The Attendance construction boundary accepts the Payroll financial-lock capabili
 An edition affects three distinct things, deliberately kept separate:
 
 1. **Runtime/API availability** — `server.ts` constructs and passes only the resolved module set into `createApp`; routers for absent modules are never mounted, so their URLs do not exist on that customer's server.
-2. **UI/container availability** — Docker Compose **profiles**: the HR `web` container carries the `hr` profile, the new `pos` container carries the `erp` profile. An HR-only customer's server never even pulls the POS image.
+2. **UI/container availability** — Docker Compose **profiles**: `web` serves HR in `hr`/`full` and the restricted attendance surface in `erp`; `pos` carries the `erp`/`full` profiles. An HR-only customer's server never pulls the POS image, while an ERP-only customer can still check staff in without exposing HR administration.
 3. **Database migrations** — **all schemas migrate on every installation regardless of edition.** Disabled modules' tables exist and stay empty. This is intentional: one migration history, no per-edition migration forks, and upgrading a customer to a bigger edition is config-only. The cost (unused empty tables) is accepted.
 
-**The "ERP only" nuance (intentional):** ERP-only resolves to the always-on core plus `attendance` and its support dependencies, with `payroll` excluded — because client-assignment requires knowing who is present, while Attendance no longer requires Payroll to be constructed. HR-exclusive modules (payroll, advances, deductions, self-service, the HR frontend) stay off. Full HR continues to enable Payroll and inject its financial-lock capability into Attendance. Commercially this is a selling point ("a salon POS with staff check-in built in") and a natural upsell path to full HR via a config change.
+**The "ERP only" nuance (intentional):** ERP-only resolves to the always-on core plus `attendance` and its support dependencies, with `payroll` excluded — because client-assignment requires knowing who is present, while Attendance no longer requires Payroll to be constructed. The `web` container exposes only branch/personal-device attendance and device pairing in this edition; HR administration, payroll, advances, deductions, and self-service stay off. Full HR continues to enable Payroll and inject its financial-lock capability into Attendance. Commercially this is a selling point ("a salon POS with staff check-in built in") and a natural upsell path to full HR via a config change.
 
 **Licensing:** because the owner installs and controls every deployment, `.env` + compose profiles are sufficient. Signed license keys only become relevant if self-service installers are ever distributed — deliberately out of scope now.
 
@@ -136,11 +136,11 @@ apps/
 
 They share `packages/ui` (one design language) and `packages/contracts`, but build and deploy as independent containers. Domain layout is a reverse-proxy concern (nginx/Caddy/Traefik routes by hostname):
 
-- **Subdomains (recommended per installation):** `hr.customer.com` + `pos.customer.com` + `api.customer.com`, one wildcard certificate.
+- **Subdomains (recommended per installation):** `hr.customer.com` + `pos.customer.com`, with each host serving its own `/api` path and both paths forwarding to the shared API.
 - **Two unrelated domains:** both DNS records point at the same server; each domain serves the API under its own `/api` path (proxy forwards both to the same API container) so cookies stay first-party.
 - Separate big domains are best reserved for **marketing sites** per product edition.
 
-**Security topology (decided — production solution).** The current implementation is single-frontend by construction: session cookie is `SameSite=strict` and host-only, and CORS accepts exactly one origin. Decision: **each frontend is served with the API under its own origin** — the reverse proxy exposes `hr.customer.com/api` and `pos.customer.com/api`, both forwarding to the same API container. Cookies stay first-party, host-only, and `SameSite=strict` exactly as today; no CORS relaxation and no new CSRF surface in production. HR and POS sessions are independent (an admin logs into each app separately). The CORS origin list is only ever a development convenience.
+**Security topology (delivered production solution).** Each frontend is served with the API under its own origin: the reverse proxy exposes `hr.customer.com/api` and `pos.customer.com/api`, both forwarding to the same private API container. Browser clients use only `/api/v1`. Cookies remain first-party, host-only, secure, and `SameSite=strict`; production state changes also require an exact same-origin `Origin` header. HR and POS sessions are independent, so an Admin logs into each app separately. Optional credentialed CORS is restricted to an explicit development-only list and production startup rejects it.
 
 ---
 
@@ -270,7 +270,7 @@ Related mutations invalidate their owning data and every affected downstream vie
 
 ## 9. ERP module group status
 
-The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final backend module delivered in ERP19, and ERP20 integrated the delivered workflows into the hardened Admin experience. Remaining ERP21+ work concerns editions/runtime composition and production security rather than delivery of the modules listed here:
+The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final backend module delivered in ERP19, ERP20 integrated the workflows into the hardened Admin experience, ERP21 delivered the named runtime editions, and ERP22 delivered the multi-frontend production boundary. Remaining work is deployment and environment validation rather than delivery or composition of the modules listed here:
 
 | Module | Purpose |
 |---|---|
@@ -314,5 +314,5 @@ All owner-level questions from the original list are now **answered and locked i
    This forces the account model, the attendance capability, the sale transaction, invoice numbering, snapshots, and the first POS screens — every risky unknown — to the front.
 2. Harden the slice: idempotency, concurrency, commission ledger, audit.
 3. Grow outward: products + stock, suppliers, expenses, clients history, reports/PDF.
-4. **Then** generalize: module registry, editions, compose profiles, multi-frontend security design.
-5. Capella goes live as `EDITION=full`; the `hr` and `erp` editions are cut from the same codebase afterwards.
+4. **Delivered:** module registry, editions, compose profiles, and multi-frontend production security.
+5. Deploy Capella as `EDITION=full`, then validate the `hr` and `erp` editions from the same codebase.

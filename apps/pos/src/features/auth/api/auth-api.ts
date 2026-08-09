@@ -1,20 +1,9 @@
-import type { AdminLoginInput, CashierLoginInput } from '@capella/contracts';
+import type { AdminLoginInput, AuthSessionData, CashierLoginInput } from '@capella/contracts';
 
 import { api } from '@/lib/api/client';
 
-/**
- * The `capella_session` cookie is shared with the HR web app, so an HR
- * employee session is technically visible here too; `employee` is included
- * so route guards can detect and reject it explicitly.
- */
-export type SessionActor =
-  | { type: 'admin' }
-  | { type: 'cashier'; accountId: number; employeeId: number }
-  | { type: 'employee' };
-
-export interface SessionData {
-  actor: SessionActor;
-}
+/** All API actors remain explicit so a wrong-application session fails safely. */
+export type SessionData = AuthSessionData;
 
 export function cashierLogin(input: CashierLoginInput): Promise<SessionData> {
   return api.post<SessionData>('/auth/cashier/login', input);

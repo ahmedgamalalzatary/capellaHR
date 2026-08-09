@@ -250,20 +250,24 @@ export function SuppliersPurchasesView() {
           : `لن يكون ${confirmingToggle.name} متاحاً للمشتريات الجديدة حتى إعادة تفعيله.`}
         confirmLabel="تأكيد إيقاف المورد"
         tone="danger"
-        pending={toggleSupplier.isPending}
-        onConfirm={() => toggleSupplier.mutate(confirmingToggle)}
-        onCancel={() => { toggleSupplier.reset(); setConfirmingToggle(null); }}
+        pending={commandPending}
+        onConfirm={() => { if (!commandPending) toggleSupplier.mutate(confirmingToggle); }}
+        onCancel={() => {
+          if (commandPending) return;
+          toggleSupplier.reset();
+          setConfirmingToggle(null);
+        }}
       /> : null}
       {cancelling ? <Modal
         title={`إلغاء المشتريات #${cancelling.id}`}
-        dismissOnBackdrop={!cancel.isPending}
-        onClose={closeCancellation}
+        dismissOnBackdrop={!commandPending}
+        onClose={() => { if (!commandPending) closeCancellation(); }}
       >
         <p className="text-sm text-danger">سيُعكس المخزون فقط إذا كانت الكميات الحالية كافية. السجل الأصلي سيظل محفوظاً.</p>
-        <Input aria-label="سبب الإلغاء" disabled={cancel.isPending} value={reason} onChange={(event) => setReason(event.target.value)} />
+        <Input aria-label="سبب الإلغاء" disabled={commandPending} value={reason} onChange={(event) => { if (!commandPending) setReason(event.target.value); }} />
         <div className="flex gap-2">
-          <Button variant="danger" disabled={!reason.trim() || cancel.isPending} onClick={() => cancel.mutate()}>تأكيد الإلغاء</Button>
-          <Button variant="ghost" disabled={cancel.isPending} onClick={closeCancellation}>رجوع</Button>
+          <Button variant="danger" disabled={!reason.trim() || commandPending} onClick={() => { if (!commandPending) cancel.mutate(); }}>تأكيد الإلغاء</Button>
+          <Button variant="ghost" disabled={commandPending} onClick={() => { if (!commandPending) closeCancellation(); }}>رجوع</Button>
         </div>
         {cancel.isError ? <p role="alert" className="text-danger">{errorText(cancel.error)}</p> : null}
       </Modal> : null}

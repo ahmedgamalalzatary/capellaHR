@@ -29,8 +29,10 @@ RUN --mount=type=cache,id=capellahr-pnpm,target=/pnpm/store \
 
 COPY . .
 
-ARG NEXT_PUBLIC_API_URL=https://capellaegy.com/api/v1
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG API_PROXY_TARGET=http://api:4000
+ARG EDITION
+ENV API_PROXY_TARGET=$API_PROXY_TARGET
+ENV EDITION=$EDITION
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm exec turbo run build --filter=@capella/web...

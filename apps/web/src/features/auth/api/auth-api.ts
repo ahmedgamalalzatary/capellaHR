@@ -1,14 +1,8 @@
-import type { AdminLoginInput, EmployeeLoginInput } from '@capella/contracts';
+import type { AdminLoginInput, AuthSessionData, EmployeeLoginInput } from '@capella/contracts';
 
 import { api } from '@/lib/api/client';
 
-type SessionActor =
-  | { type: 'admin' }
-  | { type: 'employee' };
-
-export interface SessionData {
-  actor: SessionActor;
-}
+export type SessionData = AuthSessionData;
 
 export function adminLogin(input: AdminLoginInput): Promise<SessionData> {
   return api.post<SessionData>('/auth/admin/login', input);

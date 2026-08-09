@@ -11,10 +11,9 @@ import { useSession } from '../hooks/use-session';
  * Client-side gate for ERP (Admin/Cashier) pages. The API enforces authorization on
  * every request; this only prevents rendering POS chrome to the wrong actor.
  *
- * The `capella_session` cookie is shared with the HR web app, so an HR employee
- * session is visible here too. That case gets an explicit rejection message rather
- * than a silent redirect, since redirecting could read as "not logged in" when the
- * visitor is in fact signed in — just to the wrong app.
+ * Host-only cookies keep normal HR and POS sessions independent. If a valid
+ * wrong-application actor is nevertheless returned, it gets an explicit rejection
+ * state rather than being treated as signed out.
  */
 export function RequireErpAccount({
   children,

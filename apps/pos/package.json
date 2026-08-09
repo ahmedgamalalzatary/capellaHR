@@ -11,6 +11,7 @@
     "clean": "rimraf .next coverage"
   },
   "dependencies": {
+    "@capella/config": "workspace:*",
     "@capella/contracts": "workspace:*",
     "@capella/shared": "workspace:*",
     "@capella/ui": "workspace:*",

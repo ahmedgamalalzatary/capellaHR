@@ -25,6 +25,20 @@ describe('POS API client hardening', () => {
     await rejection;
   });
 
+  it('uses the current frontend origin for API requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: { status: 'ok' },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.get('/health/live');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/health/live',
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
   it('preserves pagination metadata and downloads private PDF blobs', async () => {
     const json = vi.fn().mockResolvedValue({
       data: { reportType: 'erp-sales' },

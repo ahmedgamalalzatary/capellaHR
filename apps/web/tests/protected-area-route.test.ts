@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createProtectedAreaAccessHandler } from '../src/app/protected-area-access/handler';
 
 const originalPassword = process.env['PROTECTED_TAB_PASSWORD'];
+const originalApiProxyTarget = process.env['API_PROXY_TARGET'];
 const handler = () => createProtectedAreaAccessHandler({
   validateSession: async (token) => token === 'valid-session',
 });
@@ -21,6 +22,12 @@ afterEach(() => {
   } else {
     process.env['PROTECTED_TAB_PASSWORD'] = originalPassword;
   }
+  if (originalApiProxyTarget === undefined) {
+    delete process.env['API_PROXY_TARGET'];
+  } else {
+    process.env['API_PROXY_TARGET'] = originalApiProxyTarget;
+  }
+  vi.unstubAllGlobals();
 });
 
 describe('POST /protected-area-access', () => {
@@ -31,6 +38,50 @@ describe('POST /protected-area-access', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ unlocked: true });
+  });
+
+  it('validates the session through the private API proxy target', async () => {
+    process.env['PROTECTED_TAB_PASSWORD'] = 'Cap2255';
+    process.env['API_PROXY_TARGET'] = 'http://api:4000';
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({
+      data: { actor: { type: 'admin' } },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await createProtectedAreaAccessHandler()(request('Cap2255'));
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api:4000/api/v1/auth/session',
+      expect.objectContaining({
+        headers: { cookie: 'capella_session=valid-session' },
+      }),
+    );
+  });
+
+  it('rejects cross-site protected-area requests before validating the password', async () => {
+    process.env['PROTECTED_TAB_PASSWORD'] = 'Cap2255';
+    const validateSession = vi.fn(async () => true);
+    const protectedHandler = (createProtectedAreaAccessHandler as (
+      options: Record<string, unknown>,
+    ) => ReturnType<typeof createProtectedAreaAccessHandler>)({
+      enforceSameOrigin: true,
+      validateSession,
+    });
+    const crossSite = new Request('https://hr.example.com/protected-area-access', {
+      method: 'POST',
+      headers: {
+        cookie: 'capella_session=valid-session',
+        origin: 'https://attacker.example',
+      },
+      body: JSON.stringify({ password: 'Cap2255' }),
+    });
+
+    const response = await protectedHandler(crossSite);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'INVALID_ORIGIN' });
+    expect(validateSession).not.toHaveBeenCalled();
   });
 
   it('rejects a wrong password', async () => {

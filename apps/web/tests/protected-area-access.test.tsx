@@ -1,12 +1,26 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProtectedAreaGate } from '../src/features/protected-area/components/protected-area-gate';
+import { SESSION_QUERY_KEY } from '../src/features/auth';
 
 const response = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), {
   status,
   headers: { 'Content-Type': 'application/json' },
 }));
+
+const renderGate = (area: Parameters<typeof ProtectedAreaGate>[0]['area'], content: string) => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ProtectedAreaGate area={area}>
+        <p>{content}</p>
+      </ProtectedAreaGate>
+    </QueryClientProvider>,
+  );
+  return queryClient;
+};
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -23,10 +37,13 @@ describe('ProtectedAreaGate', () => {
   it('unlocks only the requested area for the current browser tab', async () => {
     vi.mocked(fetch).mockReturnValue(response({ unlocked: true }));
 
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { rerender } = render(
-      <ProtectedAreaGate area="employees">
-        <p>employee content</p>
-      </ProtectedAreaGate>,
+      <QueryClientProvider client={queryClient}>
+        <ProtectedAreaGate area="employees">
+          <p>employee content</p>
+        </ProtectedAreaGate>
+      </QueryClientProvider>,
     );
 
     expect(screen.queryByText('employee content')).toBeNull();
@@ -41,9 +58,11 @@ describe('ProtectedAreaGate', () => {
     expect(sessionStorage.getItem('capella:protected-area:reports')).toBeNull();
 
     rerender(
-      <ProtectedAreaGate area="reports">
-        <p>reports content</p>
-      </ProtectedAreaGate>,
+      <QueryClientProvider client={queryClient}>
+        <ProtectedAreaGate area="reports">
+          <p>reports content</p>
+        </ProtectedAreaGate>
+      </QueryClientProvider>,
     );
     expect(screen.queryByText('reports content')).toBeNull();
   });
@@ -51,11 +70,7 @@ describe('ProtectedAreaGate', () => {
   it('keeps the area locked and shows an Arabic error for a wrong password', async () => {
     vi.mocked(fetch).mockReturnValue(response({ error: 'INVALID_PASSWORD' }, 401));
 
-    render(
-      <ProtectedAreaGate area="payroll">
-        <p>payroll content</p>
-      </ProtectedAreaGate>,
-    );
+    renderGate('payroll', 'payroll content');
 
     fireEvent.change(screen.getByLabelText('كلمة مرور الوصول'), {
       target: { value: 'wrong' },
@@ -70,14 +85,27 @@ describe('ProtectedAreaGate', () => {
     expect(sessionStorage.getItem('capella:protected-area:payroll')).toBeNull();
   });
 
+  it('clears stale session state when the protected check reports an expired session', async () => {
+    vi.mocked(fetch).mockReturnValue(response({ error: 'UNAUTHENTICATED' }, 401));
+    const queryClient = renderGate('payroll', 'payroll content');
+    queryClient.setQueryData(SESSION_QUERY_KEY, { actor: { type: 'admin' } });
+    queryClient.setQueryData(['employees', 'protected'], { items: [] });
+
+    fireEvent.change(screen.getByLabelText('كلمة مرور الوصول'), {
+      target: { value: 'Cap2255' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'فتح القسم' }));
+
+    await waitFor(() => expect(queryClient.getQueryData(SESSION_QUERY_KEY)).toBeNull());
+    expect(queryClient.getQueryData(['employees', 'protected'])).toBeUndefined();
+    expect(screen.queryByText('كلمة المرور غير صحيحة.')).toBeNull();
+    expect(sessionStorage.getItem('capella:protected-area:payroll')).toBeNull();
+  });
+
   it('restores access after refresh in the same tab without checking again', async () => {
     sessionStorage.setItem('capella:protected-area:reports', 'unlocked');
 
-    render(
-      <ProtectedAreaGate area="reports">
-        <p>reports content</p>
-      </ProtectedAreaGate>,
-    );
+    renderGate('reports', 'reports content');
 
     expect(await screen.findByText('reports content')).toBeDefined();
     await waitFor(() => expect(fetch).not.toHaveBeenCalled());

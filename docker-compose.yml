@@ -60,6 +60,8 @@ services:
       - .env.production
     environment:
       NODE_ENV: production
+      EDITION: ${EDITION:?EDITION must be hr, erp, or full}
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:?COMPOSE_PROFILES must match EDITION}
       API_PORT: 4000
       REPORT_FILES_ROOT: /app/uploads/reports
     depends_on:
@@ -98,11 +100,14 @@ services:
     init: true
     environment:
       NODE_ENV: production
+      EDITION: ${EDITION:?EDITION must be hr, erp, or full}
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:?COMPOSE_PROFILES must match EDITION}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       APP_TIME_ZONE: Africa/Cairo
       REPORT_WORKER_POLL_MS: ${REPORT_WORKER_POLL_MS:-2000}
       REPORT_FILES_ROOT: /app/uploads/reports
+    profiles: ["hr", "erp", "full"]
     depends_on:
       db:
         condition: service_healthy
@@ -127,14 +132,18 @@ services:
       context: .
       dockerfile: dockerfile.web
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        API_PROXY_TARGET: http://api:4000
+        EDITION: ${EDITION:?EDITION must be hr, erp, or full}
     restart: unless-stopped
     init: true
     environment:
       NODE_ENV: production
+      EDITION: ${EDITION:?EDITION must be hr, erp, or full}
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      API_PROXY_TARGET: http://api:4000
       PROTECTED_TAB_PASSWORD: ${PROTECTED_TAB_PASSWORD:?PROTECTED_TAB_PASSWORD is required}
+    profiles: ["hr", "erp", "full"]
     depends_on:
       api:
         condition: service_healthy
@@ -163,13 +172,16 @@ services:
       context: .
       dockerfile: dockerfile.pos
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        API_PROXY_TARGET: http://api:4000
+        EDITION: ${EDITION:?EDITION must be hr, erp, or full}
     restart: unless-stopped
     init: true
     environment:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      API_PROXY_TARGET: http://api:4000
+    profiles: ["erp", "full"]
     depends_on:
       api:
         condition: service_healthy

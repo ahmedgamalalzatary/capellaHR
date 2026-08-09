@@ -1,5 +1,6 @@
 import { createAttendanceJobsRuntime } from '@capella/api/attendance-runtime';
 import { createErpReportsModule } from '@capella/api/erp-reports-runtime';
+import { assertEditionProfile, resolveEdition } from '@capella/config/edition';
 import { workerEnv as env } from '@capella/config/worker';
 import { createDatabase } from '@capella/database';
 import path from 'node:path';
@@ -8,7 +9,7 @@ import pino from 'pino';
 
 import { scheduleCurrentAttendanceDate } from './attendance-scheduler.js';
 import { runIndependentWorkers } from './report-worker.js';
-import { createWorkerReportRuntime } from './worker-runtime.js';
+import { createWorkerEditionPlan, createWorkerReportRuntime } from './worker-runtime.js';
 
 const defaultFilesRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -17,26 +18,36 @@ const defaultFilesRoot = path.resolve(
 const staleAfterMilliseconds = 15 * 60 * 1_000;
 const maintenanceIntervalMilliseconds = 5 * 60 * 1_000;
 const logger = pino({ level: env.LOG_LEVEL });
+const edition = assertEditionProfile(resolveEdition(env.EDITION), env.COMPOSE_PROFILES);
+const plan = createWorkerEditionPlan(edition);
+if (!plan.attendance || !plan.reports) {
+  throw new Error(
+    'The background worker is not available in the core-only configuration. Select EDITION=hr, erp, or full.',
+  );
+}
 const database = createDatabase(env.DATABASE_URL);
 const attendance = createAttendanceJobsRuntime(database, {
   timeZone: env.APP_TIME_ZONE,
+  payrollEnabled: plan.payroll,
 });
-const erpReports = createErpReportsModule(database);
+const erpReports = plan.erpReports ? createErpReportsModule(database) : undefined;
 const { reports, reportProcessor } = createWorkerReportRuntime({
   database,
   filesRoot: env.REPORT_FILES_ROOT ?? defaultFilesRoot,
   timeZone: env.APP_TIME_ZONE,
-  payroll: {
-    preview: (employeeId, month, context) => (
-      attendance.payroll.repository.previewInContext(
-        employeeId,
-        month,
-        attendance.repository,
-        context,
-      )
-    ),
-  },
-  erpReader: erpReports.reader,
+  ...(attendance.payroll ? {
+    payroll: {
+      preview: (employeeId, month, context) => (
+        attendance.payroll!.repository.previewInContext(
+          employeeId,
+          month,
+          attendance.repository,
+          context,
+        )
+      ),
+    },
+  } : {}),
+  ...(erpReports ? { erpReader: erpReports.reader } : {}),
 });
 const controller = new AbortController();
 const stop = () => controller.abort();
@@ -48,7 +59,11 @@ const closeDatabase = () => new Promise<void>((resolve, reject) => {
 });
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);
-logger.info({ pollIntervalMs: env.REPORT_WORKER_POLL_MS }, 'Background worker started');
+logger.info({
+  pollIntervalMs: env.REPORT_WORKER_POLL_MS,
+  edition: edition.edition,
+  modules: edition.modules,
+}, 'Background worker started');
 
 try {
   const maintainAttendance = async () => {

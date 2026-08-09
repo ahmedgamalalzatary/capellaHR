@@ -23,6 +23,40 @@ export const responseRequestId = (response: { locals: Record<string, unknown> })
   typeof response.locals.requestId === 'string' ? response.locals.requestId : randomUUID()
 );
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+export const createOriginGuard = (allowedOrigins: string[] = []): RequestHandler => {
+  const allowed = new Set(allowedOrigins);
+  return (request, response, next) => {
+    if (SAFE_METHODS.has(request.method)) {
+      next();
+      return;
+    }
+
+    const origin = request.header('origin');
+    const host = request.header('host');
+    let expectedOrigin: string | null = null;
+    try {
+      if (host) expectedOrigin = new URL(`${request.protocol}://${host}`).origin;
+    } catch {
+      expectedOrigin = null;
+    }
+
+    if (!origin || origin === 'null' || (origin !== expectedOrigin && !allowed.has(origin))) {
+      response.status(403).json({
+        error: {
+          code: 'INVALID_ORIGIN',
+          message: 'مصدر الطلب غير مسموح',
+          requestId: responseRequestId(response),
+        },
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
 export const createApiLogger = (level: string, destination?: DestinationStream) => pino({
   level,
   redact: {

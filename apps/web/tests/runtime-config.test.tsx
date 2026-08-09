@@ -24,7 +24,7 @@ describe('runtime display configuration', () => {
 
     expect(container.querySelector('time')).toBeNull();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:4000/api/v1/config',
+      '/api/v1/config',
       expect.objectContaining({ credentials: 'include' }),
     ));
     await waitFor(() => expect(container.querySelector('time')).not.toBeNull());

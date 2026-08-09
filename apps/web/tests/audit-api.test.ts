@@ -27,7 +27,7 @@ describe('audit API', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:4000/api/v1/audit?search=employee+17&actorType=admin&module=employees&dateFrom=2026-07-01&dateTo=2026-07-20&page=2',
+      '/api/v1/audit?search=employee+17&actorType=admin&module=employees&dateFrom=2026-07-01&dateTo=2026-07-20&page=2',
       expect.objectContaining({ credentials: 'include' }),
     );
   });

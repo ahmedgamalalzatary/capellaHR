@@ -4,6 +4,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["EDITION", "API_PROXY_TARGET"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
