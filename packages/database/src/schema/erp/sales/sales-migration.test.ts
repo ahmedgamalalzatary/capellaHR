@@ -20,6 +20,10 @@ const migration54Name = readdirSync(migrationsDirectory).find((name) => /^0054_.
 const reversalRepairMigration = migration54Name
   ? readFileSync(`${migrationsDirectory}/${migration54Name}`, 'utf8')
   : '';
+const migration55Name = readdirSync(migrationsDirectory).find((name) => /^0055_.*\.sql$/.test(name));
+const ownershipRepairMigration = migration55Name
+  ? readFileSync(`${migrationsDirectory}/${migration55Name}`, 'utf8')
+  : '';
 
 describe('ERP sales migration', () => {
   it('guards normalized reversal facts and invoice lifecycle transitions', () => {
@@ -44,6 +48,13 @@ describe('ERP sales migration', () => {
     expect(reversalRepairMigration).toContain('DROP TRIGGER `erp_invoice_reversals_validate_finalize`');
     expect(reversalRepairMigration).toContain('CREATE TRIGGER `erp_invoice_reversals_validate_finalize`');
     expect(reversalRepairMigration).toContain('prior_reversal.invoice_id = NEW.invoice_id');
+    expect(migration55Name).toBeDefined();
+    expect(ownershipRepairMigration).toContain('reversal_line.invoice_id = NEW.invoice_id');
+    expect(ownershipRepairMigration).toContain('reversal_line.branch_id = NEW.branch_id');
+    expect(ownershipRepairMigration).toContain('original_line.invoice_id = NEW.invoice_id');
+    expect(ownershipRepairMigration).toContain('invoice.branch_id = NEW.branch_id');
+    expect(ownershipRepairMigration).toContain('payment.invoice_id = NEW.invoice_id');
+    expect(ownershipRepairMigration).toContain('NOT EXISTS (SELECT 1 FROM `erp_product_stocks` stock');
   });
 
   it('creates every ERP 8 persistence table', () => {

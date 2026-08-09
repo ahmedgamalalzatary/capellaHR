@@ -51,6 +51,8 @@ describe('SuppliersPurchasesView', () => {
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
     const purchaseSupplier = screen.getByLabelText('المورد للمشتريات');
+    const purchaseDate = screen.getByLabelText('تاريخ المشتريات') as HTMLInputElement;
+    fireEvent.change(purchaseDate, { target: { value: '2020-01-01' } });
     const keyCallsBeforeDeactivation = randomUUID.mock.calls.length;
     const supplierRow = screen.getAllByRole('row').find((row) => (
       within(row).queryByText(supplier.name) && within(row).queryByRole('button', { name: 'إيقاف' })
@@ -60,6 +62,9 @@ describe('SuppliersPurchasesView', () => {
       branchId: 2, isActive: false,
     }));
     await waitFor(() => expect((purchaseSupplier as HTMLSelectElement).value).toBe(''));
+    expect(purchaseDate.value).toBe(
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date()),
+    );
     expect(screen.queryByText('تصحيح للمشتريات #9')).toBeNull();
     expect(screen.getAllByLabelText('المنتج')).toHaveLength(1);
     expect(randomUUID.mock.calls.length).toBe(keyCallsBeforeDeactivation + 1);

@@ -106,6 +106,7 @@ export function SuppliersPurchasesView() {
   };
   const resetDraft = () => {
     setSupplierId(''); setCorrectionOf(undefined); setLines([blankLine(lineKey)]);
+    setPurchaseDate(todayInCairo());
     setIdempotencyKey(createUuid());
     setLineKey((value) => value + 1);
   };

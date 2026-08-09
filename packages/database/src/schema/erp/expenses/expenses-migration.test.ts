@@ -23,6 +23,7 @@ describe('ERP expenses migration', () => {
     expect(migration).toContain('NEW.`supersedes_id` IS NOT NULL');
     expect(forwardName).toBeDefined();
     expect(forwardMigration).toContain('correction_operation_id');
+    expect(forwardMigration).toContain('CREATE TABLE `erp_expense_correction_guards`');
     expect(forwardMigration).toContain('CREATE PROCEDURE `correct_erp_expense`');
     expect(repairName).toBeDefined();
     expect(repairMigration).toContain('DROP PROCEDURE `correct_erp_expense`');
