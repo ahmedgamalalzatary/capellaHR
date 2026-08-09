@@ -8,7 +8,10 @@ import type {
   ReportSnapshot,
   ReportType,
 } from '@capella/contracts';
-import { reportFilterCompatibilitySchema } from '@capella/contracts';
+import {
+  reportFilterCompatibilitySchema,
+  reportSelectionCompatibilitySchema,
+} from '@capella/contracts';
 import type { Readable, Writable } from 'node:stream';
 
 export type ReportExportRecord = {
@@ -134,6 +137,7 @@ export const createReportService = (
   async view(reportType: ReportType, query: ReportQuery) {
     const input = queryParts(query);
     reportFilterCompatibilitySchema.parse({ reportType, filters: input.filters });
+    reportSelectionCompatibilitySchema.parse({ reportType, selection: input.selection });
     const result = await reader.read(reportType, input.filters, input.selection, input.pagination, now());
     if (result.kind === 'unavailable') throw new ReportError('REPORT_SOURCE_UNAVAILABLE');
     return result;
@@ -141,12 +145,19 @@ export const createReportService = (
 
   async createExport(input: CreateReportExportInput) {
     reportFilterCompatibilitySchema.parse({ reportType: input.reportType, filters: input.filters });
+    reportSelectionCompatibilitySchema.parse({
+      reportType: input.reportType,
+      selection: input.selection,
+    });
     const available = await reader.read(input.reportType, input.filters, input.selection, {
       page: 1,
       pageSize: 1,
       purpose: 'availability',
     }, now());
-    if (available.kind === 'unavailable') throw new ReportError('REPORT_SOURCE_UNAVAILABLE');
+    if (available.kind === 'unavailable'
+      || (input.reportType === 'erp-invoice' && available.total === 0)) {
+      throw new ReportError('REPORT_SOURCE_UNAVAILABLE');
+    }
     return exports.create(input, now());
   },
 

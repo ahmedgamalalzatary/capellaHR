@@ -20,7 +20,46 @@ describe('report contracts', () => {
       'bonuses',
       'deductions',
       'advances',
+      'erp-sales',
+      'erp-payment-methods',
+      'erp-services',
+      'erp-products',
+      'erp-employees',
+      'erp-commissions',
+      'erp-discounts',
+      'erp-taxes',
+      'erp-refunds',
+      'erp-voids',
+      'erp-expenses',
+      'erp-purchases',
+      'erp-stock',
+      'erp-profit',
+      'erp-client-history',
+      'erp-invoice',
     ]);
+  });
+
+  it('accepts branch and date filters for ERP reports and requires invoice selection', () => {
+    expect(createReportExportSchema.parse({
+      reportType: 'erp-profit',
+      filters: { branchId: 2, dateFrom: '2026-08-01', dateTo: '2026-08-31' },
+      selection: { mode: 'all' },
+    })).toMatchObject({ reportType: 'erp-profit' });
+    expect(createReportExportSchema.safeParse({
+      reportType: 'erp-invoice',
+      filters: { branchId: 2 },
+      selection: { mode: 'all' },
+    }).success).toBe(false);
+    expect(createReportExportSchema.parse({
+      reportType: 'erp-invoice',
+      filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [41] },
+    }).selection).toEqual({ mode: 'selected', ids: [41] });
+    expect(createReportExportSchema.safeParse({
+      reportType: 'erp-profit',
+      filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [41] },
+    }).success).toBe(false);
   });
 
   it('parses filtered selected-record queries and preserves Western date values', () => {

@@ -5,7 +5,7 @@ import {
   type ListReportExportsQuery,
 } from '@capella/contracts';
 import { reportExports } from '@capella/database/schema';
-import { and, asc, count, eq, gte, isNotNull, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, isNotNull, lt, lte, sql } from 'drizzle-orm';
 
 import type { Database } from '../payroll/financial-repository-helpers.js';
 import { currentAuditRequestId, writeAudit } from '../audit/index.js';
@@ -92,7 +92,7 @@ export const createDrizzleReportExportRepository = (
     ];
     const where = filters.length ? and(...filters) : undefined;
     const rows = await database.select().from(reportExports).where(where)
-      .orderBy(asc(reportExports.createdAt), asc(reportExports.id))
+      .orderBy(desc(reportExports.createdAt), desc(reportExports.id))
       .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const totals = await database.select({ value: count() }).from(reportExports).where(where);
     return { items: rows.map(toRecord), total: totals[0]?.value ?? 0 };

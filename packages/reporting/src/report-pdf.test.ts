@@ -3,6 +3,7 @@ import { PassThrough, Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
 import { renderReportPdf, renderReportPdfToStream } from './index.js';
+import { formatCairoTimestamp, reportSummaryLabel } from './report-pdf.js';
 
 const snapshot: ReportSnapshot = {
   reportType: 'employees',
@@ -21,6 +22,24 @@ const snapshot: ReportSnapshot = {
 };
 
 describe('Arabic report PDF renderer', () => {
+  it('formats invoice sale timestamps in Cairo across the UTC midnight boundary', () => {
+    expect(formatCairoTimestamp('2026-08-08T22:30:00.000Z')).toBe('09/08/2026، 01:30 ص');
+  });
+
+  it('uses Arabic labels for every ERP report total', () => {
+    const keys = [
+      'totalRecords', 'totalSales', 'totalDiscount', 'totalTax', 'totalQuantity',
+      'totalRevenue', 'totalNetPayments', 'totalNetSales', 'totalCommission',
+      'totalRefunds', 'totalVoids', 'totalNetExpenses', 'totalNetPurchases',
+      'netQuantityChange', 'totalCost', 'totalProfit',
+    ];
+
+    for (const key of keys) {
+      expect(reportSummaryLabel(key)).not.toBe(key);
+      expect(reportSummaryLabel(key)).toMatch(/[\u0600-\u06ff]/u);
+    }
+  });
+
   it('creates a non-empty PDF from an immutable report snapshot', async () => {
     const pdf = await renderReportPdf(snapshot);
 
@@ -54,6 +73,42 @@ describe('Arabic report PDF renderer', () => {
 
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(1_000);
+  });
+
+  it('renders ERP invoices as portrait A4 from their immutable line and payment snapshot', async () => {
+    const invoice: ReportSnapshot = {
+      reportType: 'erp-invoice',
+      title: 'فاتورة مبيعات',
+      generatedAt: '2026-08-09T12:00:00.000Z',
+      columns: [
+        { key: 'lineNumber', label: 'البند' },
+        { key: 'itemName', label: 'الصنف' },
+        { key: 'itemType', label: 'النوع' },
+        { key: 'quantity', label: 'الكمية' },
+        { key: 'unitPrice', label: 'سعر الوحدة' },
+        { key: 'lineTotal', label: 'الإجمالي' },
+      ],
+      rows: [{
+        lineNumber: 1, itemName: 'خدمة تاريخية', itemType: 'خدمة',
+        quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+      }],
+      summary: {
+        invoiceNumber: 'INV-2026.08.09-1', businessDate: '2026-08-09',
+        branchName: 'الفرع الرئيسي', clientName: 'عميل محفوظ', clientPhone: '01000000000',
+        employeeName: 'موظف محفوظ', authorizedBy: 'admin', payments: 'cash: 190.00',
+        subtotal: '200.00', discountAmount: '20.00', taxAmount: '10.00', total: '190.00',
+        totalRecords: 1, lineSubtotal: '200.00',
+      },
+    };
+    const original = structuredClone(invoice);
+
+    const pdf = await renderReportPdf(invoice);
+    const source = pdf.toString('latin1');
+
+    expect(source).toMatch(/\/MediaBox \[0 0 595\.28\d* 841\.89\d*\]/);
+    expect(source.match(/\/Type \/Page\b/g)).toHaveLength(1);
+    expect(pdf.length).toBeGreaterThan(1_000);
+    expect(invoice).toEqual(original);
   });
 
   it('bands wide reports and paginates wrapped rows without mutating the snapshot', async () => {

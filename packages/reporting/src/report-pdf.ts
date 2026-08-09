@@ -39,7 +39,24 @@ const summaryLabels: Record<string, string> = {
   averageDurationMinutes: '\u0645\u062a\u0648\u0633\u0637 \u0645\u062f\u0629 \u0627\u0644\u0648\u0631\u062f\u064a\u0629 \u0628\u0627\u0644\u062f\u0642\u0627\u0626\u0642',
   totalRequiredMinutes: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u062f\u0642\u0627\u0626\u0642 \u0627\u0644\u0645\u0639\u0641\u0627\u0629',
   totalAmount: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0645\u0628\u0644\u063a',
+  totalSales: 'إجمالي المبيعات',
+  totalDiscount: 'إجمالي الخصومات',
+  totalTax: 'إجمالي الضرائب',
+  totalQuantity: 'صافي الكمية',
+  totalRevenue: 'صافي الإيراد',
+  totalNetPayments: 'صافي المدفوعات',
+  totalNetSales: 'صافي المبيعات',
+  totalCommission: 'صافي العمولات',
+  totalRefunds: 'إجمالي المرتجعات',
+  totalVoids: 'إجمالي الإلغاءات',
+  totalNetExpenses: 'صافي المصروفات',
+  totalNetPurchases: 'صافي المشتريات',
+  netQuantityChange: 'صافي تغير المخزون',
+  totalCost: 'إجمالي التكلفة',
+  totalProfit: 'إجمالي الربح',
 };
+
+export const reportSummaryLabel = (key: string) => summaryLabels[key] ?? key;
 
 const display = (value: ReportCell): string => {
   if (value === null) return '\u2014';
@@ -47,7 +64,7 @@ const display = (value: ReportCell): string => {
   return String(value);
 };
 
-const cairoTimestamp = (value: string): string => new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
+export const formatCairoTimestamp = (value: string): string => new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
   timeZone: 'Africa/Cairo',
   year: 'numeric',
   month: '2-digit',
@@ -209,7 +226,7 @@ const drawBandHeading = (
   y += 25;
 
   document.fillColor('#4b5563').font('NotoSansArabic-Regular').fontSize(8);
-  const generated = `\u062a\u0627\u0631\u064a\u062e \u0627\u0644\u0625\u0646\u0634\u0627\u0621: ${cairoTimestamp(snapshot.generatedAt)}`;
+  const generated = `\u062a\u0627\u0631\u064a\u062e \u0627\u0644\u0625\u0646\u0634\u0627\u0621: ${formatCairoTimestamp(snapshot.generatedAt)}`;
   drawText(document, generated, PAGE_MARGIN, y, tableWidth);
   y += 17;
 
@@ -222,7 +239,7 @@ const drawBandHeading = (
   if (bandNumber === 1 && Object.keys(snapshot.summary).length) {
     document.font('NotoSansArabic-Regular').fontSize(8);
     const summary = Object.entries(snapshot.summary)
-      .map(([key, value]) => `${summaryLabels[key] ?? key}: ${display(value)}`)
+      .map(([key, value]) => `${reportSummaryLabel(key)}: ${display(value)}`)
       .join('  |  ');
     const lines = wrapText(document, summary, tableWidth - 12);
     const height = Math.max(26, lines.length * 12 + 12);
@@ -306,6 +323,137 @@ const renderBand = (
   })();
 };
 
+const invoicePaymentLabels: Record<string, string> = {
+  cash: 'نقدي',
+  visa: 'فيزا',
+  instapay: 'إنستا باي',
+  vodafone_cash: 'فودافون كاش',
+};
+
+const invoicePayments = (value: ReportCell | undefined) => {
+  if (typeof value !== 'string') return display(value ?? null);
+  return value.split(' | ').map((entry) => {
+    const separator = entry.indexOf(':');
+    if (separator < 0) return entry;
+    const method = entry.slice(0, separator);
+    return `${invoicePaymentLabels[method] ?? method}${entry.slice(separator)}`;
+  }).join('  |  ');
+};
+
+const renderInvoice = async (
+  document: PDFKit.PDFDocument,
+  source: ReportPdfSource,
+  addPage: () => void,
+) => {
+  const { snapshot } = source;
+  const width = document.page.width - PAGE_MARGIN * 2;
+  const bottom = document.page.height - PAGE_MARGIN - FOOTER_HEIGHT;
+  let y = PAGE_MARGIN;
+
+  document.fillColor('#111827').font('NotoSansArabic-Bold').fontSize(20);
+  drawText(document, snapshot.title, PAGE_MARGIN, y, width, 'center');
+  y += 34;
+
+  const invoiceSoldAt = snapshot.summary.soldAt ?? snapshot.summary.businessDate ?? null;
+  const details: Array<[string, string]> = [
+    ['رقم الفاتورة', display(snapshot.summary.invoiceNumber ?? null)],
+    ['تاريخ البيع', typeof invoiceSoldAt === 'string'
+      ? formatCairoTimestamp(invoiceSoldAt)
+      : display(invoiceSoldAt)],
+    ['الفرع', display(snapshot.summary.branchName ?? null)],
+    ['العميل', display(snapshot.summary.clientName ?? null)],
+    ['هاتف العميل', display(snapshot.summary.clientPhone ?? null)],
+    ['الموظف', display(snapshot.summary.employeeName ?? null)],
+    ['كود الموظف', display(snapshot.summary.employeeCode ?? null)],
+    ['تم البيع بواسطة', display(snapshot.summary.authorizedBy ?? null)],
+  ];
+  const detailWidth = width / 2;
+  const detailHeight = 23;
+  document.font('NotoSansArabic-Regular').fontSize(8.5);
+  details.forEach(([label, value], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const x = PAGE_MARGIN + column * detailWidth;
+    const detailY = y + row * detailHeight;
+    document.save().fillColor(row % 2 ? '#ffffff' : '#f9fafb')
+      .rect(x, detailY, detailWidth, detailHeight).fill().restore();
+    document.save().strokeColor('#d1d5db').lineWidth(0.5)
+      .rect(x, detailY, detailWidth, detailHeight).stroke().restore();
+    document.fillColor('#111827');
+    drawText(document, `${label}: ${value}`, x + 6, detailY + 7, detailWidth - 12);
+  });
+  y += Math.ceil(details.length / 2) * detailHeight + 14;
+
+  const columns = snapshot.columns.filter(({ key }) => key !== 'id').reverse();
+  const columnWidth = width / columns.length;
+  const addLinePage = () => {
+    addPage();
+    y = drawHeader(document, columns, PAGE_MARGIN, width);
+  };
+  y = drawHeader(document, columns, y, width);
+
+  let rowIndex = 0;
+  let hasRows = false;
+  for await (const batch of source.rows()) {
+    for (const row of batch) {
+      hasRows = true;
+      document.font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
+      const lines = columns.map((column) => wrapText(
+        document, display(row[column.key] ?? null), columnWidth - CELL_PADDING * 2,
+      ));
+      const height = Math.max(
+        22,
+        Math.max(...lines.map((entry) => entry.length)) * BODY_LINE_HEIGHT + CELL_PADDING * 2,
+      );
+      if (y + height > bottom) addLinePage();
+      columns.forEach((_, columnIndex) => {
+        const x = PAGE_MARGIN + columnIndex * columnWidth;
+        if (rowIndex % 2) document.save().fillColor('#f9fafb')
+          .rect(x, y, columnWidth, height).fill().restore();
+        document.save().strokeColor('#9ca3af').lineWidth(0.5)
+          .rect(x, y, columnWidth, height).stroke().restore();
+        document.fillColor('#111827').font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
+        drawCellLines(document, lines[columnIndex] ?? [''], x, y, columnWidth, BODY_LINE_HEIGHT);
+      });
+      y += height;
+      rowIndex += 1;
+    }
+  }
+  if (!hasRows) {
+    document.save().strokeColor('#9ca3af').lineWidth(0.5)
+      .rect(PAGE_MARGIN, y, width, 34).stroke().restore();
+    document.fillColor('#6b7280').font('NotoSansArabic-Regular').fontSize(8);
+    drawText(document, 'لا توجد بنود', PAGE_MARGIN, y + 11, width, 'center');
+    y += 34;
+  }
+
+  const totals: Array<[string, ReportCell]> = [
+    ['الإجمالي قبل الخصم والضريبة', snapshot.summary.subtotal ?? snapshot.summary.lineSubtotal ?? null],
+    ['الخصم', snapshot.summary.discountAmount ?? null],
+    ['الضريبة', snapshot.summary.taxAmount ?? null],
+    ['الإجمالي النهائي', snapshot.summary.total ?? null],
+  ];
+  const totalsHeight = 30 + totals.length * 21;
+  if (y + totalsHeight > bottom) {
+    addPage();
+    y = PAGE_MARGIN;
+  } else y += 12;
+  document.save().fillColor('#f9fafb').rect(PAGE_MARGIN, y, width, totalsHeight).fill().restore();
+  document.save().strokeColor('#d1d5db').lineWidth(0.5)
+    .rect(PAGE_MARGIN, y, width, totalsHeight).stroke().restore();
+  document.fillColor('#111827').font('NotoSansArabic-Regular').fontSize(9);
+  drawText(
+    document,
+    `طرق الدفع: ${invoicePayments(snapshot.summary.payments)}`,
+    PAGE_MARGIN + 8, y + 8, width - 16,
+  );
+  totals.forEach(([label, value], index) => {
+    document.font(index === totals.length - 1 ? 'NotoSansArabic-Bold' : 'NotoSansArabic-Regular')
+      .fontSize(index === totals.length - 1 ? 10 : 9);
+    drawText(document, `${label}: ${display(value)}`, PAGE_MARGIN + 8, y + 31 + index * 21, width - 16);
+  });
+};
+
 export type ReportPdfSource = {
   snapshot: Omit<ReportSnapshot, 'rows'>;
   rows: () => AsyncIterable<ReportSnapshot['rows']>;
@@ -316,12 +464,13 @@ export const renderReportPdfToStream = async (
   output: Writable,
 ): Promise<void> => {
   const { snapshot } = source;
+  const isInvoice = snapshot.reportType === 'erp-invoice';
   const document = new PDFDocument({
     autoFirstPage: false,
     bufferPages: false,
     compress: true,
     size: 'A4',
-    layout: 'landscape',
+    layout: isInvoice ? 'portrait' : 'landscape',
     margin: 0,
     info: {
       Title: snapshot.title,
@@ -347,18 +496,25 @@ export const renderReportPdfToStream = async (
     drawText(document, `\u0635\u0641\u062d\u0629 ${pageNumber}`, PAGE_MARGIN, document.page.height - PAGE_MARGIN, width, 'center');
   };
 
+  addPage();
+  // PDFKit's first shaped run for an embedded Arabic font initializes its
+  // subset. Prime both subsets outside the printable area so no real text
+  // can become that initialization run.
+  document.fillColor('#ffffff').font('NotoSansArabic-Bold').fontSize(1)
+    .text('\u0627', -10, -10, { lineBreak: false });
+  document.font('NotoSansArabic-Regular').fontSize(1)
+    .text('\u0627', -10, -10, { lineBreak: false });
+
+  if (isInvoice) {
+    await renderInvoice(document, source, addPage);
+    document.end();
+    await completed;
+    return;
+  }
+
   const bands = columnBands(snapshot.columns);
   for (const [index, band] of bands.entries()) {
-    addPage();
-    if (index === 0) {
-      // PDFKit's first shaped run for an embedded Arabic font initializes its
-      // subset. Prime both subsets outside the printable area so no real text
-      // can become that initialization run.
-      document.fillColor('#ffffff').font('NotoSansArabic-Bold').fontSize(1)
-        .text('\u0627', -10, -10, { lineBreak: false });
-      document.font('NotoSansArabic-Regular').fontSize(1)
-        .text('\u0627', -10, -10, { lineBreak: false });
-    }
+    if (index > 0) addPage();
     await renderBand(document, snapshot, band, index + 1, bands.length, source.rows, addPage);
   }
   document.end();

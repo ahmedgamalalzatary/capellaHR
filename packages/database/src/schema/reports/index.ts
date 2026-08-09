@@ -15,6 +15,10 @@ import {
 const reportTypes = [
   'branches', 'employees', 'devices', 'shifts', 'weekly-day-off',
   'attendance', 'payroll', 'bonuses', 'deductions', 'advances',
+  'erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products',
+  'erp-employees', 'erp-commissions', 'erp-discounts', 'erp-taxes',
+  'erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases',
+  'erp-stock', 'erp-profit', 'erp-client-history', 'erp-invoice',
 ] as const;
 
 export const reportExports = mysqlTable('report_exports', {

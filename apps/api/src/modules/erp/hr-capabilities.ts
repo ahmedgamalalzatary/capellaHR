@@ -4,6 +4,7 @@ import type { ErpAuditCapability, ErpAuditEvent, ErpAuditExecutor } from '../aud
 import type { ErpBranchCapability } from '../branches/index.js';
 import type { ErpEmployeeCapability } from '../employees/index.js';
 import type { ErpPayrollCapability } from '../payroll/index.js';
+import type { ReportReader } from '../reports/index.js';
 
 export type ErpHrCapabilities = {
   auth: ErpAuthCapability;
@@ -23,4 +24,5 @@ export type {
   ErpBranchCapability,
   ErpEmployeeCapability,
   ErpPayrollCapability,
+  ReportReader,
 };

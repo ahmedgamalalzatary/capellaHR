@@ -7,6 +7,10 @@ const getInvoice = vi.hoisted(() => vi.fn());
 const quoteRefund = vi.hoisted(() => vi.fn());
 const refundInvoice = vi.hoisted(() => vi.fn());
 const voidInvoice = vi.hoisted(() => vi.fn());
+const reportExports = vi.hoisted(() => ({
+  actor: { current: 'admin' as 'admin' | 'cashier' },
+  create: vi.fn(), list: vi.fn(), get: vi.fn(), retry: vi.fn(), download: vi.fn(),
+}));
 const originalPrint = window.print;
 
 vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
@@ -15,6 +19,20 @@ vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
   quoteRefund,
   refundInvoice,
   voidInvoice,
+}));
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({
+    data: { actor: reportExports.actor.current === 'admin'
+      ? { type: 'admin', accountId: 1 }
+      : { type: 'cashier', accountId: 2, employeeId: 3 } },
+  }),
+}));
+vi.mock('../src/features/erp-reports', () => ({
+  createErpReportExport: reportExports.create,
+  listErpReportExports: reportExports.list,
+  getErpReportExport: reportExports.get,
+  retryErpReportExport: reportExports.retry,
+  downloadErpReportExport: reportExports.download,
 }));
 
 import { InvoiceReceiptView } from '../src/features/sales/components/invoice-receipt-view';
@@ -49,11 +67,32 @@ describe('stored invoice receipt', () => {
       ...saleFixtures.completedInvoice, status: 'voided',
       eligibility: { canVoid: false, canRefund: false },
     });
+    reportExports.actor.current = 'admin';
+    const job = {
+      id: 91, reportType: 'erp-invoice', status: 'queued', filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [44] }, filePath: null, fileSha256: null,
+      fileSizeBytes: null, rowCount: null, attemptCount: 0, cycleAttemptCount: 0,
+      retryCount: 0, failureReason: null, queuedAt: '2026-08-09T12:00:00.000Z',
+      startedAt: null, completedAt: null, failedAt: null, fileDeletedAt: null,
+      createdAt: '2026-08-09T12:00:00.000Z', updatedAt: '2026-08-09T12:00:00.000Z',
+    };
+    reportExports.create.mockReset().mockResolvedValue(job);
+    reportExports.list.mockReset().mockResolvedValue({
+      items: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 },
+    });
+    reportExports.get.mockReset().mockResolvedValue({
+      ...job, status: 'completed', filePath: 'reports/91.pdf', rowCount: 1,
+      completedAt: '2026-08-09T12:01:00.000Z',
+    });
+    reportExports.retry.mockReset().mockResolvedValue(job);
+    reportExports.download.mockReset().mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
   });
 
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
     Object.defineProperty(window, 'print', { configurable: true, value: originalPrint });
   });
 
@@ -208,6 +247,111 @@ describe('stored invoice receipt', () => {
     await waitFor(() => expect(voidInvoice).toHaveBeenCalledTimes(2));
     expect(voidInvoice.mock.calls[1]![1].idempotencyKey)
       .toBe(voidInvoice.mock.calls[0]![1].idempotencyKey);
+  });
+
+  it('lets an Admin queue and download the stored invoice through the report worker', async () => {
+    const createObjectURL = vi.fn(() => 'blob:invoice');
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء PDF A4' }));
+    await waitFor(() => expect(reportExports.create).toHaveBeenCalledWith({
+      reportType: 'erp-invoice',
+      filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [44] },
+    }));
+    fireEvent.click(await screen.findByRole('button', { name: 'تنزيل PDF A4' }));
+    await waitFor(() => expect(reportExports.download).toHaveBeenCalledWith(91));
+    expect(createObjectURL).toHaveBeenCalled();
+  });
+
+  it('does not expose invoice PDF exports to a Cashier', async () => {
+    reportExports.actor.current = 'cashier';
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    expect(screen.queryByRole('button', { name: 'إنشاء PDF A4' })).toBeNull();
+  });
+
+  it('recovers an existing invoice export after navigation without enqueueing a duplicate', async () => {
+    reportExports.list.mockResolvedValueOnce({
+      items: [{
+        id: 91, reportType: 'erp-invoice', status: 'completed', filters: { branchId: 2 },
+        selection: { mode: 'selected', ids: [44] }, filePath: 'reports/91.pdf',
+        fileSha256: 'a'.repeat(64), fileSizeBytes: 1200, rowCount: 1,
+        attemptCount: 1, cycleAttemptCount: 1, retryCount: 0, failureReason: null,
+        queuedAt: '2026-08-09T12:00:00.000Z', startedAt: '2026-08-09T12:00:01.000Z',
+        completedAt: '2026-08-09T12:00:02.000Z', failedAt: null, fileDeletedAt: null,
+        createdAt: '2026-08-09T12:00:00.000Z', updatedAt: '2026-08-09T12:00:02.000Z',
+      }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
+    expect(reportExports.create).not.toHaveBeenCalled();
+  });
+
+  it('recovers the newest usable invoice export when several jobs exist', async () => {
+    reportExports.list.mockResolvedValueOnce({
+      items: [
+        {
+          id: 92, selection: { mode: 'selected', ids: [44] }, status: 'completed',
+          fileDeletedAt: null, createdAt: '2026-08-09T13:00:00.000Z',
+        },
+        {
+          id: 91, selection: { mode: 'selected', ids: [44] }, status: 'completed',
+          fileDeletedAt: null, createdAt: '2026-08-09T12:00:00.000Z',
+        },
+      ],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
+    expect(reportExports.get).toHaveBeenCalledWith(92);
+    expect(reportExports.get).not.toHaveBeenCalledWith(91);
+  });
+
+  it('allows a replacement when every matching completed invoice PDF was deleted', async () => {
+    reportExports.list.mockResolvedValueOnce({
+      items: [{
+        id: 91, selection: { mode: 'selected', ids: [44] }, status: 'completed',
+        fileDeletedAt: '2026-08-09T13:00:00.000Z', createdAt: '2026-08-09T12:00:00.000Z',
+      }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    const createButton = await screen.findByRole('button', { name: 'إنشاء PDF A4' });
+    expect(reportExports.get).not.toHaveBeenCalled();
+    fireEvent.click(createButton);
+    await waitFor(() => expect(reportExports.create).toHaveBeenCalledOnce());
+  });
+
+  it('allows an Admin to retry loading a known invoice export status', async () => {
+    reportExports.list.mockResolvedValueOnce({
+      items: [{ selection: { mode: 'selected', ids: [44] }, id: 91 }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    reportExports.get.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce({
+      id: 91, reportType: 'erp-invoice', status: 'completed', filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [44] }, filePath: 'reports/91.pdf', fileSha256: 'a',
+      fileSizeBytes: 1, rowCount: 1, attemptCount: 1, cycleAttemptCount: 1, retryCount: 0,
+      failureReason: null, queuedAt: '', startedAt: '', completedAt: '', failedAt: null,
+      fileDeletedAt: null, createdAt: '', updatedAt: '',
+    });
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'إعادة تحميل حالة PDF' }));
+    await waitFor(() => expect(reportExports.get).toHaveBeenCalledTimes(2));
   });
 
   it('keeps a pending refund panel and its idempotency identity when navigation is attempted', async () => {

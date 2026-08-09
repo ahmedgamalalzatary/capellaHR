@@ -12,6 +12,11 @@
       "types": "./src/modules/attendance/attendance-runtime.ts",
       "development": "./src/modules/attendance/attendance-runtime.ts",
       "default": "./dist/modules/attendance/attendance-runtime.js"
+    },
+    "./erp-reports-runtime": {
+      "types": "./src/modules/erp/erp-reports/erp-reports-runtime.ts",
+      "development": "./src/modules/erp/erp-reports/erp-reports-runtime.ts",
+      "default": "./dist/modules/erp/erp-reports/erp-reports-runtime.js"
     }
   },
   "scripts": {

@@ -24,4 +24,20 @@ describe('POS API client hardening', () => {
     await vi.advanceTimersByTimeAsync(15_000);
     await rejection;
   });
+
+  it('preserves pagination metadata and downloads private PDF blobs', async () => {
+    const json = vi.fn().mockResolvedValue({
+      data: { reportType: 'erp-sales' },
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+    const blob = new Blob(['%PDF'], { type: 'application/pdf' });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json })
+      .mockResolvedValueOnce({ ok: true, status: 200, blob: () => Promise.resolve(blob) }));
+
+    await expect(api.getWithMeta('/reports/erp-sales')).resolves.toMatchObject({
+      data: { reportType: 'erp-sales' }, meta: { total: 1 },
+    });
+    await expect(api.getBlob('/reports/exports/1/download')).resolves.toBe(blob);
+  });
 });

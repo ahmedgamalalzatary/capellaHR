@@ -8,6 +8,26 @@ import {
 } from '../../common/index.js';
 import { payrollMonthSchema } from '../payroll/index.js';
 
+export const erpTabReportTypes = [
+  'erp-sales',
+  'erp-payment-methods',
+  'erp-services',
+  'erp-products',
+  'erp-employees',
+  'erp-commissions',
+  'erp-discounts',
+  'erp-taxes',
+  'erp-refunds',
+  'erp-voids',
+  'erp-expenses',
+  'erp-purchases',
+  'erp-stock',
+  'erp-profit',
+  'erp-client-history',
+] as const;
+
+export const erpReportTypes = [...erpTabReportTypes, 'erp-invoice'] as const;
+
 export const reportTypeSchema = z.enum([
   'branches',
   'employees',
@@ -19,6 +39,7 @@ export const reportTypeSchema = z.enum([
   'bonuses',
   'deductions',
   'advances',
+  ...erpReportTypes,
 ]);
 export const reportExportStatusSchema = z.enum(['queued', 'processing', 'completed', 'failed']);
 
@@ -77,6 +98,17 @@ const allowedFilters: Record<ReportType, ReadonlySet<keyof z.infer<typeof report
   bonuses: new Set(['search', 'branchId', 'dateFrom', 'dateTo', 'monthFrom', 'monthTo']),
   deductions: new Set(['search', 'branchId', 'dateFrom', 'dateTo', 'monthFrom', 'monthTo']),
   advances: new Set(['search', 'branchId', 'dateFrom', 'dateTo', 'monthFrom', 'monthTo']),
+  ...erpTabReportTypes.reduce<Record<
+    (typeof erpTabReportTypes)[number],
+    ReadonlySet<keyof z.infer<typeof reportFiltersSchema>>
+  >>((entries, reportType) => {
+    entries[reportType] = new Set(['search', 'branchId', 'dateFrom', 'dateTo']);
+    return entries;
+  }, {} as Record<
+    (typeof erpTabReportTypes)[number],
+    ReadonlySet<keyof z.infer<typeof reportFiltersSchema>>
+  >),
+  'erp-invoice': new Set(['branchId']),
 };
 
 const validateFilterCompatibility = (
@@ -103,6 +135,34 @@ export const reportSelectionSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('all') }).strict(),
   z.object({ mode: z.literal('selected'), ids: idListSchema }).strict(),
 ]);
+const erpTabReportTypeSet = new Set<ReportType>(erpTabReportTypes);
+const validateSelectionCompatibility = (
+  reportType: ReportType,
+  selection: z.infer<typeof reportSelectionSchema>,
+  context: z.RefinementCtx,
+) => {
+  if (erpTabReportTypeSet.has(reportType) && selection.mode !== 'all') {
+    context.addIssue({
+      code: 'custom',
+      path: ['selection'],
+      message: 'تقارير ERP الجدولية تدعم تصدير كل النتائج المطابقة فقط',
+    });
+  }
+  if (reportType === 'erp-invoice'
+    && (selection.mode !== 'selected' || selection.ids.length !== 1)) {
+    context.addIssue({
+      code: 'custom',
+      path: ['selection'],
+      message: 'يجب اختيار فاتورة واحدة لتصديرها',
+    });
+  }
+};
+export const reportSelectionCompatibilitySchema = z.object({
+  reportType: reportTypeSchema,
+  selection: reportSelectionSchema,
+}).superRefine((value, context) => validateSelectionCompatibility(
+  value.reportType, value.selection, context,
+));
 export const reportQuerySchema = z.object({
   ...reportFilterShape,
   selection: z.enum(['all', 'selected']).default('all'),
@@ -122,7 +182,10 @@ export const createReportExportSchema = z.object({
   reportType: reportTypeSchema,
   filters: reportFiltersSchema,
   selection: reportSelectionSchema,
-}).strict().superRefine((value, context) => validateFilterCompatibility(value.reportType, value.filters, context));
+}).strict().superRefine((value, context) => {
+  validateFilterCompatibility(value.reportType, value.filters, context);
+  validateSelectionCompatibility(value.reportType, value.selection, context);
+});
 export const reportTypeParamsSchema = z.object({ reportType: reportTypeSchema }).strict();
 export const reportExportParamsSchema = z.object({ exportId: coercedMysqlIntSchema }).strict();
 export const listReportExportsQuerySchema = z.object({

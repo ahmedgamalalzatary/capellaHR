@@ -19,7 +19,7 @@ export const snapshotTransactionConfig = {
   isolationLevel: 'repeatable read',
   accessMode: 'read only',
 } as const;
-const titles: Record<ReportType, string> = {
+const titles: Partial<Record<ReportType, string>> = {
   branches: 'تقرير الفروع',
   employees: 'تقرير الموظفين',
   devices: 'تقرير الأجهزة',
@@ -88,7 +88,7 @@ export const snapshot = (
   generatedAt: Date,
 ): ReportSnapshot => ({
   reportType,
-  title: titles[reportType],
+  title: titles[reportType] ?? reportType,
   generatedAt: generatedAt.toISOString(),
   columns: reportColumns,
   rows,

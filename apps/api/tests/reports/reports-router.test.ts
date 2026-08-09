@@ -55,10 +55,12 @@ const exportRecord: ReportExportRecord = {
   createdAt: at,
   updatedAt: at,
 };
-const auth = (actorType: 'admin' | 'employee' | null = 'admin') => ({
+const auth = (actorType: 'admin' | 'employee' | 'account' | null = 'admin') => ({
   authenticate: vi.fn(async () => actorType === null ? null : {
     actorType,
     employeeId: actorType === 'employee' ? 1 : null,
+    accountId: actorType === 'account' ? 2 : null,
+    accountRole: actorType === 'account' ? 'cashier' : null,
   }),
 }) as unknown as AuthService;
 const service = (): ReportService => ({
@@ -87,11 +89,18 @@ describe('reports HTTP API', () => {
   it('requires an authenticated admin for every report operation', async () => {
     const unauthenticated = createApp({ authService: auth(null), reportService: service() });
     const employee = createApp({ authService: auth('employee'), reportService: service() });
+    const cashier = createApp({ authService: auth('account'), reportService: service() });
 
     expect((await request(unauthenticated).get('/api/v1/reports/employees')).status).toBe(401);
     expect((await request(employee).post('/api/v1/reports/exports')
       .set('Cookie', 'capella_session=x').send({
         reportType: 'employees', filters: {}, selection: { mode: 'all' },
+      })).status).toBe(403);
+    expect((await request(cashier).get('/api/v1/reports/erp-sales')
+      .set('Cookie', 'capella_session=x')).status).toBe(403);
+    expect((await request(cashier).post('/api/v1/reports/exports')
+      .set('Cookie', 'capella_session=x').send({
+        reportType: 'erp-sales', filters: {}, selection: { mode: 'all' },
       })).status).toBe(403);
   });
 

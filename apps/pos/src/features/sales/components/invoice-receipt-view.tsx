@@ -8,6 +8,14 @@ import { useRef, useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState } from '@capella/ui';
 
+import { useSession } from '@/features/auth';
+import {
+  createErpReportExport,
+  downloadErpReportExport,
+  getErpReportExport,
+  listErpReportExports,
+  retryErpReportExport,
+} from '@/features/erp-reports';
 import { createUuid } from '@/lib/uuid';
 
 import { getInvoice, quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
@@ -232,13 +240,68 @@ function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
+  const [exportId, setExportId] = useState<number>();
   const queryClient = useQueryClient();
+  const session = useSession();
+  const isAdmin = session.data?.actor.type === 'admin';
   const validBranch = branchId === undefined || (Number.isInteger(branchId) && branchId > 0);
   const query = useQuery({
     queryKey: salesQueryKeys.invoice(invoiceId, branchId),
     queryFn: () => getInvoice(invoiceId, branchId),
     enabled: Number.isInteger(invoiceId) && invoiceId > 0 && validBranch,
     retry: false,
+  });
+  const existingExport = useQuery({
+    queryKey: ['erp-reports', 'invoice-export', invoiceId],
+    queryFn: async () => {
+      let page = 1;
+      while (true) {
+        const result = await listErpReportExports({
+          reportType: 'erp-invoice', page, pageSize: 100,
+        });
+        const match = result.items.find((record) => record.selection.mode === 'selected'
+          && record.selection.ids.includes(invoiceId)
+          && !(record.status === 'completed' && record.fileDeletedAt));
+        if (match || page >= result.meta.totalPages) return match ?? null;
+        page += 1;
+      }
+    },
+    enabled: isAdmin && Number.isInteger(invoiceId) && invoiceId > 0,
+  });
+  const activeExportId = exportId ?? existingExport.data?.id;
+  const exportQuery = useQuery({
+    queryKey: ['erp-reports', 'export', activeExportId],
+    queryFn: () => getErpReportExport(activeExportId!),
+    enabled: isAdmin && activeExportId !== undefined,
+    refetchInterval: (result) => result.state.data?.status === 'queued'
+      || result.state.data?.status === 'processing' ? 5_000 : false,
+  });
+  const createExport = useMutation({
+    mutationFn: () => createErpReportExport({
+      reportType: 'erp-invoice',
+      filters: branchId === undefined ? {} : { branchId },
+      selection: { mode: 'selected', ids: [invoiceId] },
+    }),
+    onSuccess: (record) => setExportId(record.id),
+  });
+  const retryExport = useMutation({
+    mutationFn: () => retryErpReportExport(activeExportId!),
+    onSuccess: (record) => queryClient.setQueryData(
+      ['erp-reports', 'export', record.id], record,
+    ),
+  });
+  const downloadExport = useMutation({
+    mutationFn: () => downloadErpReportExport(activeExportId!),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${query.data?.invoiceNumber ?? `invoice-${invoiceId}`}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    },
   });
 
   if (!Number.isInteger(invoiceId) || invoiceId < 1 || !validBranch) {
@@ -268,10 +331,40 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   };
 
   return <section className="space-y-4">
-    <div data-print-controls className="mx-auto flex max-w-[80mm] flex-wrap justify-between gap-2">
+    <div data-print-controls className="mx-auto flex max-w-[80mm] flex-wrap items-center justify-between gap-2">
       <Link href={branchId ? `/invoices?branchId=${branchId}` : '/invoices'}>العودة إلى الفواتير</Link>
-      <Button onClick={print}><Printer className="size-4" />طباعة الإيصال</Button>
+      <span className="flex flex-wrap gap-2">
+        {isAdmin ? existingExport.isError && activeExportId === undefined ? (
+          <Button variant="secondary" onClick={() => void existingExport.refetch()}>
+            إعادة تحميل سجل PDF
+          </Button>
+        ) : exportQuery.isError ? (
+          <Button variant="secondary" onClick={() => void exportQuery.refetch()}>
+            إعادة تحميل حالة PDF
+          </Button>
+        ) : exportQuery.data?.status === 'completed' ? (
+          <Button variant="secondary" disabled={downloadExport.isPending} onClick={() => downloadExport.mutate()}>
+            {downloadExport.isPending ? 'جارٍ التنزيل…' : 'تنزيل PDF A4'}
+          </Button>
+        ) : exportQuery.data?.status === 'failed' ? (
+          <Button variant="secondary" disabled={retryExport.isPending} onClick={() => retryExport.mutate()}>
+            {retryExport.isPending ? 'جارٍ إعادة المحاولة…' : 'إعادة محاولة PDF A4'}
+          </Button>
+        ) : activeExportId !== undefined ? (
+          <Button variant="secondary" disabled>جارٍ إنشاء PDF A4…</Button>
+        ) : existingExport.isPending ? (
+          <Button variant="secondary" disabled>جارٍ التحقق من ملفات PDF…</Button>
+        ) : (
+          <Button variant="secondary" disabled={createExport.isPending} onClick={() => createExport.mutate()}>
+            {createExport.isPending ? 'جارٍ وضع الطلب…' : 'إنشاء PDF A4'}
+          </Button>
+        ) : null}
+        <Button onClick={print}><Printer className="size-4" />طباعة الإيصال</Button>
+      </span>
     </div>
+    {createExport.isError || exportQuery.isError || retryExport.isError || downloadExport.isError
+      ? <p role="alert" data-print-controls className="mx-auto max-w-[80mm] rounded-control bg-danger-soft p-3 text-danger">تعذر إكمال تصدير PDF. حاول مرة أخرى.</p>
+      : null}
     {printError ? <p role="alert" data-print-controls className="mx-auto max-w-[80mm] rounded-control bg-danger-soft p-3 text-danger">{printError}</p> : null}
     <Card className="mx-auto max-w-[84mm]"><CardContent className="p-0"><Receipt invoice={query.data} /></CardContent></Card>
     <ReversalControls invoice={query.data} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {

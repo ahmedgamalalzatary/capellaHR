@@ -32,6 +32,7 @@ import {
   createErpClientsModule,
   createErpSuppliersModule,
   createErpExpensesModule,
+  createErpReportsModule,
   createCommissionModule,
 } from './modules/erp/index.js';
 import { createApiLogger } from './shared/http/index.js';
@@ -138,6 +139,7 @@ const employeeFinancialLifecycle = createEmployeeFinancialLifecycle({
     ),
   },
 });
+const erpReportsModule = createErpReportsModule(database);
 const reportsModule = createReportsModule(database, {
   ...(env.REPORT_FILES_ROOT === undefined ? {} : { filesRoot: env.REPORT_FILES_ROOT }),
   timeZone: env.APP_TIME_ZONE,
@@ -151,6 +153,7 @@ const reportsModule = createReportsModule(database, {
       )
     ),
   },
+  erp: erpReportsModule.reader,
 });
 const auditModule = createAuditModule(database, { timeZone: env.APP_TIME_ZONE });
 const dashboardModule = createDashboardModule(database, {

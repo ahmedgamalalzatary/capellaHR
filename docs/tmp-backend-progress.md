@@ -517,10 +517,8 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–18, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
-        └──> ERP 19 Reports ───────────────────────────────┐
-                                                          │
-                                                     ERP 20 Admin UX
+DONE: ERP 1–19, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
+        └──> ERP 20 Admin UX ──────────────────────────────┐
                                                           │
                                                      ERP 21 Editions
                                                           │
@@ -533,9 +531,9 @@ Safe parallel waves:
 
 1. **Complete:** ERP 1–16 and the ERP 18 software slice, with ERP 9's browser-to-authenticated-HTTP-to-MySQL validation, ERP 11 physical-printer validation, and ERP 18's browser-to-authenticated-HTTP-to-MySQL replay harness deferred until those production/integration environments are available.
 2. **Complete:** ERP 17 commission/payroll integration.
-3. **Next eligible:** ERP 19.
+3. **Complete:** ERP 19 reports and PDF exports.
 4. ERP 18's offline queue, replay, and conflict-resolution workflow is delivered.
-5. ERP 19 is unblocked; ERP 20 begins after ERP 19 is complete.
+5. **Next eligible:** ERP 20.
 6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
 
 ## ERP 4. Cashier sessions
@@ -794,17 +792,21 @@ Each completed service sale or pre-finalization reversal transactionally refresh
 
 Offline support is resilient submission with idempotent replay, not a fully disconnected catalog or attendance system.
 
-## ERP 19. ERP reports and PDF exports
+## ERP 19. ERP reports and PDF exports — Complete
 
-- [ ] Add branch/date-filtered reports for sales, payment methods, services, products, employees, commissions, discounts, taxes, refunds, voids, expenses, purchases, stock, profit, and client history.
-- [ ] Calculate product profit using the snapshotted last-purchase-cost basis.
-- [ ] Build ERP report screens with pagination, filters, totals, and safe fields.
-- [ ] Reuse the existing database-backed worker report queue.
-- [ ] Add Arabic A4 invoice PDF export.
-- [ ] Add Arabic financial and operational report PDFs.
-- [ ] Read historical names, prices, rates, costs, discounts, and taxes from invoice snapshots.
-- [ ] Add export authorization, branch-isolation, batching, worker-retry, file-lifecycle, and MySQL tests.
-- [ ] Add component and end-to-end coverage for report filtering, pagination, totals, export lifecycle, retry, download, and historical-snapshot rendering.
+- [x] Add branch/date-filtered reports for sales, payment methods, services, products, employees, commissions, discounts, taxes, refunds, voids, expenses, purchases, stock, profit, and client history.
+- [x] Calculate product profit using the snapshotted last-purchase-cost basis.
+- [x] Build ERP report screens with pagination, filters, totals, and safe fields.
+- [x] Reuse the existing database-backed worker report queue.
+- [x] Add Arabic A4 invoice PDF export.
+- [x] Add Arabic financial and operational report PDFs.
+- [x] Read historical names, prices, rates, costs, discounts, and taxes from invoice snapshots.
+- [x] Add export authorization, branch-isolation, batching, worker-retry, file-lifecycle, and MySQL tests.
+- [x] Add component and end-to-end coverage for report filtering, pagination, totals, export lifecycle, retry, download, and historical-snapshot rendering.
+
+Complete. Admins have one Arabic/RTL report workspace covering all 15 locked financial and operational reports with branch, Cairo-date, and safe search filters, full-result totals, pagination, and the durable export lifecycle. Report pages and streamed export batches read inside repeatable-read snapshots; sale facts are recognized on the sale date and void/refund facts on the Cairo date of the reversal. Historical invoice snapshots supply names, prices, commission rates, discounts, taxes, and product cost bases. Product profit is net product revenue after exact allocated invoice discount, excluding tax, less snapshotted last-purchase cost, with reversals undoing both revenue and cost.
+
+The existing database-backed worker queue now dispatches ERP jobs without coupling HR reports to ERP internals. Tabular reports produce Arabic landscape A4 PDFs; stored invoices produce Arabic portrait A4 PDFs with immutable invoice, line, payment, discount, tax, employee, client, and authorization facts. The invoice detail owns its Admin-only queue/status/download/retry controls without affecting refund or void mutation identity. Contracts reject unsupported selected-row semantics, all report and export endpoints are Admin-only, and migration, real-MySQL branch/snapshot/profit, batching, queue retry, file lifecycle, component, and browser coverage protects the workflow.
 
 ## ERP 20. Cross-feature administration UX hardening
 
@@ -881,7 +883,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–18 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 19 reports and PDF exports are the next critical-path phase.
+ERP 1–19 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 20 cross-feature administration UX hardening is the next critical-path phase.
 
 ## Locked exclusions — do not implement
 

@@ -22,6 +22,22 @@ beforeEach(clear);
 afterAll(clear);
 
 describe('MySQL-backed report exports', () => {
+  it('lists the newest export jobs first', async () => {
+    await seed();
+    const repository = createDrizzleReportExportRepository(database);
+    const older = await repository.create({
+      reportType: 'employees', filters: {}, selection: { mode: 'all' },
+    }, now);
+    const newerAt = new Date(now.getTime() + 1_000);
+    const newer = await repository.create({
+      reportType: 'employees', filters: {}, selection: { mode: 'all' },
+    }, newerAt);
+
+    await expect(repository.list({ page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: newer.id }, { id: older.id }],
+    });
+  });
+
   it('walks an unrestricted export in bounded batches inside one snapshot transaction', async () => {
     await seed();
     await database.insert(branches).values(Array.from({ length: 125 }, (_, index) => ({

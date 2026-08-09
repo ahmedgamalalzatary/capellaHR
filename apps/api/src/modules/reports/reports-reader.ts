@@ -1,4 +1,4 @@
-import type { ReportFilters, ReportSelection, ReportSnapshot, ReportType } from '@capella/contracts';
+import { erpReportTypes, type ReportFilters, type ReportSelection, type ReportSnapshot, type ReportType } from '@capella/contracts';
 import { employees } from '@capella/database/schema';
 import { asc } from 'drizzle-orm';
 
@@ -39,12 +39,16 @@ export const createDrizzleReportReader = (
     timeZone?: string;
     now?: () => Date;
     payroll?: ReportsPayrollGateway;
+    erp?: ReportReader;
     maxInteractivePayrollCandidates?: number;
   } = {},
 ): ReportReader => {
   const timeZone = options.timeZone ?? 'Africa/Cairo';
   const now = options.now ?? (() => new Date());
   const maxInteractivePayrollCandidates = options.maxInteractivePayrollCandidates ?? 5_000;
+  const isErpReport = (reportType: ReportType) => (
+    (erpReportTypes as readonly ReportType[]).includes(reportType)
+  );
   if (!Number.isSafeInteger(maxInteractivePayrollCandidates) || maxInteractivePayrollCandidates < 1) {
     throw new Error('maxInteractivePayrollCandidates must be a positive safe integer');
   }
@@ -80,6 +84,10 @@ export const createDrizzleReportReader = (
 
   return {
     read(reportType, filters, selection, pagination, generatedAt) {
+      if (isErpReport(reportType)) {
+        return options.erp?.read(reportType, filters, selection, pagination, generatedAt)
+          ?? Promise.resolve({ kind: 'unavailable' as const });
+      }
       if (reportType === 'payroll' && !options.payroll) {
         return Promise.resolve({ kind: 'unavailable' as const });
       }
@@ -94,6 +102,11 @@ export const createDrizzleReportReader = (
     },
 
     readBatches(reportType, filters, selection, batchSize, generatedAt, onBatch) {
+      if (isErpReport(reportType)) {
+        return options.erp?.readBatches(
+          reportType, filters, selection, batchSize, generatedAt, onBatch,
+        ) ?? Promise.resolve({ kind: 'unavailable' as const });
+      }
       if (reportType === 'payroll' && !options.payroll) {
         return Promise.resolve({ kind: 'unavailable' as const });
       }

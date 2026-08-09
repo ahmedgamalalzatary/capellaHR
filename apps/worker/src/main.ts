@@ -3,6 +3,7 @@ import {
   createReportsModule,
 } from '@capella/api/reports-runtime';
 import { createAttendanceJobsRuntime } from '@capella/api/attendance-runtime';
+import { createErpReportsModule } from '@capella/api/erp-reports-runtime';
 import { workerEnv as env } from '@capella/config/worker';
 import { createDatabase } from '@capella/database';
 import { renderReportPdfToStream } from '@capella/reporting';
@@ -24,6 +25,7 @@ const database = createDatabase(env.DATABASE_URL);
 const attendance = createAttendanceJobsRuntime(database, {
   timeZone: env.APP_TIME_ZONE,
 });
+const erpReports = createErpReportsModule(database);
 const reports = createReportsModule(database, {
   filesRoot: env.REPORT_FILES_ROOT ?? defaultFilesRoot,
   timeZone: env.APP_TIME_ZONE,
@@ -37,6 +39,7 @@ const reports = createReportsModule(database, {
       )
     ),
   },
+  erp: erpReports.reader,
 });
 const reportProcessor = createReportProcessor(
   reports.reader,

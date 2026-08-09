@@ -3,7 +3,7 @@ import type {
   ReportSnapshot,
 } from '@capella/contracts';
 import { PassThrough, Readable } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createReportProcessor,
@@ -140,6 +140,17 @@ describe('reports service', () => {
       .rejects.toMatchObject({ code: 'REPORT_SOURCE_UNAVAILABLE' });
   });
 
+  it('rejects selected-row views for ERP tabular reports before reading data', async () => {
+    const reader = createReader();
+    const read = vi.spyOn(reader, 'read');
+    const service = createReportService(reader, createRepository(), createStore(), () => now);
+
+    await expect(service.view('erp-sales', {
+      selection: 'selected', selectedIds: [7], page: 1, pageSize: 20,
+    })).rejects.toBeDefined();
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it('queues only an available report with immutable filters and selection', async () => {
     let captured: CreateReportExportInput | undefined;
     const repository = createRepository({
@@ -160,6 +171,25 @@ describe('reports service', () => {
       filters: { branchId: 2 },
       selection: { mode: 'selected', ids: [5, 8] },
     });
+  });
+
+  it('rejects an invoice export when the selected invoice is absent from the requested branch', async () => {
+    const create = vi.fn();
+    const service = createReportService(
+      createReader({
+        reportType: 'erp-invoice', title: 'فاتورة مبيعات', generatedAt: now.toISOString(),
+        columns: [], rows: [], summary: { totalRecords: 0 },
+      }),
+      createRepository({ create }),
+      createStore(),
+      () => now,
+    );
+
+    await expect(service.createExport({
+      reportType: 'erp-invoice', filters: { branchId: 99 },
+      selection: { mode: 'selected', ids: [404] },
+    })).rejects.toMatchObject({ code: 'REPORT_SOURCE_UNAVAILABLE' });
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('claims, snapshots, renders, stores, and completes one PDF export', async () => {

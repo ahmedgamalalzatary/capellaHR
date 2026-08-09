@@ -1,6 +1,6 @@
 # Beauty Center ERP — Decisions, Reasoning, and Plan
 
-Status: **Implementation in progress; ERP 1–18 software slices delivered, subject to the explicitly deferred validation listed below.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP17 commission/payroll delivery.
+Status: **Implementation in progress; ERP 1–19 software slices delivered, subject to the explicitly deferred validation listed below.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP19 reports and PDF export delivery.
 
 ---
 
@@ -252,6 +252,14 @@ The **invoice** snapshots: the assigned employee (§7), the discount (kind: % or
 
 Renaming a service or changing its price affects future invoices only.
 
+### ERP reporting and recognition — delivered in ERP19
+
+ERP reports are Admin-only and branch/date filtered. Screen pages and export batches share one ERP SQL reader and use repeatable-read snapshots so totals and rows describe one database state. Sales are recognized on the Cairo sale date; refunds and voids are separate reversal events recognized on their Cairo event date. Historical labels and monetary bases come from immutable invoice and ledger snapshots rather than current catalog records.
+
+Product profit is calculated as net product revenue after the invoice discount is allocated exactly across invoice lines, excluding tax, less the product line's snapshotted last-purchase-cost basis multiplied by quantity. A product reversal negates both the allocated net revenue and the corresponding snapshotted cost. This preserves historical profit when catalog names, prices, or purchase costs later change.
+
+The shared database-backed report queue renders Arabic landscape A4 PDFs for the 15 tabular reports and Arabic portrait A4 PDFs for one selected stored invoice. Invoice PDFs include snapshotted client, employee, line, payment, discount, tax, total, and acting-account facts. The Admin invoice detail exposes queue, status, retry, and download controls independently from void/refund mutation state.
+
 ---
 
 ## 9. Planned ERP module group (draft — detailed design is Step 2)
@@ -266,7 +274,7 @@ New group `apps/api/src/modules/erp/` (mirroring the existing module conventions
 | `sales` | POS: invoices, invoice lines, payments, invoice-level employee assignment, cashier sessions, commission ledger |
 | `expenses` | Categorized expenses |
 | `clients` | Client records (name, phone, visit history) |
-| `erp-reports` | Sales/expense/employee-earnings reports + PDF export via the existing worker pipeline |
+| `erp-reports` | Delivered in ERP19: 15 ERP reports plus invoice/report PDF export through the existing worker pipeline |
 
 Plus: `apps/pos` (new Next.js frontend), the account/role model in HR core (§6), and the edition wiring (§4).
 
