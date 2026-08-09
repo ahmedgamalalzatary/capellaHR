@@ -253,8 +253,13 @@ const commissionFacts = (filters: ReportFilters) => sql`
   INNER JOIN erp_invoice_lines line
     ON line.id = ledger.invoice_line_id AND line.invoice_id = ledger.invoice_id
       AND line.branch_id = invoice.branch_id
+  LEFT JOIN erp_invoice_reversals reversal
+    ON reversal.id = ledger.invoice_reversal_id
+      AND reversal.invoice_id = ledger.invoice_id
+      AND reversal.branch_id = invoice.branch_id
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
+    sql`(ledger.entry_type <> 'reversal' OR reversal.status = 'finalized')`,
     ...branchFilter(filters, 'invoice.branch_id'), ...timestampFilter(filters, 'ledger.created_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.employee_name_snapshot', 'line.item_name_snapshot',

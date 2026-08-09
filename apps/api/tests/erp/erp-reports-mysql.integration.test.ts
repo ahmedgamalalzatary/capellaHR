@@ -4,12 +4,14 @@ import {
   branches,
   cashierSessions,
   clients,
+  commissionLedgerEntries,
   employees,
   erpCategories,
   erpProducts,
   erpProductStocks,
   erpServiceCommissionOverrides,
   erpServices,
+  invoiceReversals,
 } from '@capella/database/schema';
 import { erpTabReportTypes } from '@capella/contracts';
 import { eq, sql } from 'drizzle-orm';
@@ -39,7 +41,10 @@ const reversedAt = new Date('2026-09-01T09:00:00.000Z');
 let branchId: number;
 let otherBranchId: number;
 let invoiceId: number;
+let serviceLineId: number;
 let productLineId: number;
+let employeeId: number;
+let adminId: number;
 let originalProductName: string;
 
 beforeAll(async () => {
@@ -61,7 +66,7 @@ beforeAll(async () => {
     latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 100,
     createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
-  const employeeId = Number((await database.insert(employees).values({
+  employeeId = Number((await database.insert(employees).values({
     employeeCode: 1_919_001, fullName: 'موظف التقرير', personalPhone: '01019190001',
     whatsappPhone: '01119190001', pinHash: 'unused', age: 30, address: 'Cairo',
     branchId, shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
@@ -71,7 +76,7 @@ beforeAll(async () => {
     username: 'erp19-cashier', passwordHash: 'unused', role: 'cashier', employeeId,
     createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
-  const adminId = Number((await database.insert(accounts).values({
+  adminId = Number((await database.insert(accounts).values({
     username: 'erp19-admin', passwordHash: 'unused', role: 'admin',
     createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
@@ -126,6 +131,7 @@ beforeAll(async () => {
   );
   const completed = await sales.complete(operation);
   invoiceId = completed.id;
+  serviceLineId = completed.lines.find((line) => line.itemType === 'service')!.id;
   productLineId = completed.lines.find((line) => line.itemType === 'product')!.id;
   await sales.reverse({
     type: 'refund', invoiceId,
@@ -166,6 +172,34 @@ describe('ERP reports MySQL reader', () => {
       expect(result.snapshot.summary.totalRecords).toBe(result.total);
       expect(JSON.stringify(result.snapshot)).not.toContain('pinHash');
     }
+  });
+
+  it('excludes pending commission reversals from commission rows and totals', async () => {
+    const earned = (await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceLineId, serviceLineId)))[0]!;
+    const pendingReversalId = Number((await database.insert(invoiceReversals).values({
+      invoiceId, branchId, type: 'refund', idempotencyKey: crypto.randomUUID(),
+      reason: 'Pending report exclusion', actingAccountId: adminId,
+      grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      businessDate: '2026-09-02', createdAt: new Date('2026-09-02T09:00:00.000Z'),
+    }))[0].insertId);
+    await database.insert(commissionLedgerEntries).values({
+      invoiceId, invoiceLineId: serviceLineId, employeeId, actingAccountId: adminId,
+      entryType: 'reversal', reversesEntryId: earned.id, invoiceReversalId: pendingReversalId,
+      commissionRuleSnapshot: earned.commissionRuleSnapshot,
+      commissionRateSnapshot: earned.commissionRateSnapshot,
+      baseAmount: '200.00', amount: '-30.00', createdAt: new Date('2026-09-02T09:00:00.000Z'),
+    });
+
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-commissions', { branchId, dateFrom: '2026-08-01', dateTo: '2026-09-30' },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+
+    expect(result).toMatchObject({
+      kind: 'success', total: 1,
+      snapshot: { summary: { totalRecords: 1, totalCommission: '30.00' } },
+    });
   });
 
   it('uses invoice snapshots and exact last-purchase-cost profit for sale and reversal months', async () => {

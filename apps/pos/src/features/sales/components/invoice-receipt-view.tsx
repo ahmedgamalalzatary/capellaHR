@@ -15,6 +15,7 @@ import {
   getErpReportExport,
   listErpReportExports,
   retryErpReportExport,
+  type ErpReportExport,
 } from '@/features/erp-reports';
 import { createUuid } from '@/lib/uuid';
 
@@ -255,14 +256,22 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
     queryKey: ['erp-reports', 'invoice-export', invoiceId],
     queryFn: async () => {
       let page = 1;
+      let newest: ErpReportExport | null = null;
       while (true) {
         const result = await listErpReportExports({
           reportType: 'erp-invoice', page, pageSize: 100,
         });
-        const match = result.items.find((record) => record.selection.mode === 'selected'
-          && record.selection.ids.includes(invoiceId)
-          && !(record.status === 'completed' && record.fileDeletedAt));
-        if (match || page >= result.meta.totalPages) return match ?? null;
+        for (const record of result.items) {
+          const eligible = record.selection.mode === 'selected'
+            && record.selection.ids.includes(invoiceId)
+            && !(record.status === 'completed' && record.fileDeletedAt);
+          if (!eligible) continue;
+          if (!newest || record.createdAt > newest.createdAt
+            || (record.createdAt === newest.createdAt && record.id > newest.id)) {
+            newest = record;
+          }
+        }
+        if (page >= result.meta.totalPages) return newest;
         page += 1;
       }
     },

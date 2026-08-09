@@ -191,17 +191,13 @@ BEGIN
           JOIN `erp_invoice_reversals` ledger_reversal
             ON ledger_reversal.id = ledger.invoice_reversal_id
           LEFT JOIN (
-            SELECT prior.id,
-              COALESCE(SUM(CASE WHEN prior_reversal.status = 'finalized'
-                THEN prior.base_amount ELSE 0.00 END) OVER (
-                  PARTITION BY prior.reverses_entry_id ORDER BY prior.id
-                  ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-                ), 0.00) base_amount
+            SELECT prior.reverses_entry_id, SUM(prior.base_amount) base_amount
             FROM `erp_commission_ledger_entries` prior
             JOIN `erp_invoice_reversals` prior_reversal
               ON prior_reversal.id = prior.invoice_reversal_id
-            WHERE prior.entry_type = 'reversal'
-          ) prior ON prior.id = ledger.id
+            WHERE prior.entry_type = 'reversal' AND prior_reversal.status = 'finalized'
+            GROUP BY prior.reverses_entry_id
+          ) prior ON prior.reverses_entry_id = ledger.reverses_entry_id
           WHERE ledger.invoice_line_id = original_line.id AND ledger.entry_type = 'reversal'
             AND ledger.invoice_id = NEW.invoice_id
             AND ledger.invoice_id = earned.invoice_id
@@ -212,12 +208,12 @@ BEGIN
             AND commission_line.invoice_id = NEW.invoice_id
             AND commission_line.branch_id = NEW.branch_id
             AND ledger.base_amount = original_line.unit_price * commission_line.quantity
-            AND -ledger.amount = ROUND(
+            AND (ledger_reversal.status = 'finalized' OR -ledger.amount = ROUND(
               (COALESCE(prior.base_amount, 0.00) + ledger.base_amount)
                 * earned.commission_rate_snapshot / 100, 2
             ) - ROUND(
               COALESCE(prior.base_amount, 0.00) * earned.commission_rate_snapshot / 100, 2
-            )
+            ))
             AND (ledger_reversal.status = 'finalized' OR ledger_reversal.id = NEW.id)
         ), 0.00) <> original_line.unit_price * COALESCE(reversed.quantity, 0)
       )
@@ -231,17 +227,13 @@ BEGIN
     LEFT JOIN `erp_invoice_lines` commission_original_line
       ON commission_original_line.id = ledger.invoice_line_id
     LEFT JOIN (
-      SELECT prior.id,
-        COALESCE(SUM(CASE WHEN prior_reversal.status = 'finalized'
-          THEN prior.base_amount ELSE 0.00 END) OVER (
-            PARTITION BY prior.reverses_entry_id ORDER BY prior.id
-            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-          ), 0.00) base_amount
+      SELECT prior.reverses_entry_id, SUM(prior.base_amount) base_amount
       FROM `erp_commission_ledger_entries` prior
       JOIN `erp_invoice_reversals` prior_reversal
         ON prior_reversal.id = prior.invoice_reversal_id
-      WHERE prior.entry_type = 'reversal'
-    ) prior ON prior.id = ledger.id
+      WHERE prior.entry_type = 'reversal' AND prior_reversal.status = 'finalized'
+      GROUP BY prior.reverses_entry_id
+    ) prior ON prior.reverses_entry_id = ledger.reverses_entry_id
     WHERE ledger.invoice_reversal_id = NEW.id AND ledger.entry_type = 'reversal'
       AND (earned.id IS NULL
         OR commission_line.id IS NULL

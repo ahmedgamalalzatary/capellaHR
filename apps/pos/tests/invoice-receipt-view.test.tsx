@@ -296,24 +296,29 @@ describe('stored invoice receipt', () => {
     expect(reportExports.create).not.toHaveBeenCalled();
   });
 
-  it('recovers the newest usable invoice export when several jobs exist', async () => {
-    reportExports.list.mockResolvedValueOnce({
-      items: [
-        {
+  it('recovers the newest usable invoice export across every history page', async () => {
+    reportExports.list
+      .mockResolvedValueOnce({
+        items: Array.from({ length: 100 }, (_, index) => ({
+          id: index === 0 ? 91 : 1_000 + index,
+          selection: { mode: 'selected', ids: [index === 0 ? 44 : 1_000 + index] },
+          status: 'completed', fileDeletedAt: null,
+          createdAt: '2026-08-09T12:00:00.000Z',
+        })),
+        meta: { page: 1, pageSize: 100, total: 101, totalPages: 2 },
+      })
+      .mockResolvedValueOnce({
+        items: [{
           id: 92, selection: { mode: 'selected', ids: [44] }, status: 'completed',
           fileDeletedAt: null, createdAt: '2026-08-09T13:00:00.000Z',
-        },
-        {
-          id: 91, selection: { mode: 'selected', ids: [44] }, status: 'completed',
-          fileDeletedAt: null, createdAt: '2026-08-09T12:00:00.000Z',
-        },
-      ],
-      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
-    });
+        }],
+        meta: { page: 2, pageSize: 100, total: 101, totalPages: 2 },
+      });
     renderView();
     await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
+    expect(reportExports.list).toHaveBeenCalledTimes(2);
     expect(reportExports.get).toHaveBeenCalledWith(92);
     expect(reportExports.get).not.toHaveBeenCalledWith(91);
   });

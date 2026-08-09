@@ -75,6 +75,22 @@ describe('Arabic report PDF renderer', () => {
     expect(pdf.length).toBeGreaterThan(1_000);
   });
 
+  it('renders a zero-column snapshot without non-finite table geometry or mutation', async () => {
+    const zeroColumnSnapshot: ReportSnapshot = {
+      ...snapshot,
+      reportType: 'erp-invoice',
+      columns: [],
+      rows: [{ ignored: 'value' }],
+    };
+    const original = structuredClone(zeroColumnSnapshot);
+
+    const pdf = await renderReportPdf(zeroColumnSnapshot);
+
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pdf.toString('latin1')).not.toMatch(/(?:Infinity|NaN)/);
+    expect(zeroColumnSnapshot).toEqual(original);
+  });
+
   it('renders ERP invoices as portrait A4 from their immutable line and payment snapshot', async () => {
     const invoice: ReportSnapshot = {
       reportType: 'erp-invoice',
@@ -147,6 +163,7 @@ describe('Arabic report PDF renderer', () => {
     ];
     const pdf = await renderReportPdf({
       ...snapshot,
+      reportType: 'erp-invoice',
       columns,
       rows: [{
         id: 1,
@@ -156,11 +173,11 @@ describe('Arabic report PDF renderer', () => {
         age: 30,
         branch: '\u0627\u0644\u0642\u0627\u0647\u0631\u0629',
         shift: 600,
-        address: '\u0639'.repeat(1_000),
+        address: '\u0639'.repeat(3_000),
       }],
     });
     const pageCount = pdf.toString('latin1').match(/\/Type \/Page\b/g)?.length ?? 0;
 
-    expect(pageCount).toBeGreaterThan(1);
+    expect(pageCount).toBeGreaterThan(2);
   });
 });

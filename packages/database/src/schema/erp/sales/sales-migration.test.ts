@@ -62,6 +62,7 @@ describe('ERP sales migration', () => {
     expect(ownershipRepairMigration).toContain('ledger.commission_rule_snapshot = earned.commission_rule_snapshot');
     expect(ownershipRepairMigration).toContain('ledger.commission_rate_snapshot = earned.commission_rate_snapshot');
     expect(ownershipRepairMigration).toContain('-ledger.amount <> ROUND(');
+    expect(ownershipRepairMigration).not.toContain('PARTITION BY prior.reverses_entry_id ORDER BY prior.id');
   });
 
   it('creates every ERP 8 persistence table', () => {

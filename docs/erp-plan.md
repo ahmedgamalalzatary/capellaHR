@@ -262,9 +262,9 @@ The shared database-backed report queue renders Arabic landscape A4 PDFs for the
 
 ---
 
-## 9. Planned ERP module group (draft — detailed design is Step 2)
+## 9. ERP module group status
 
-New group `apps/api/src/modules/erp/` (mirroring the existing module conventions: `routes/controllers/services/repositories/schemas/dto/tests`), with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`:
+The `apps/api/src/modules/erp/` group is delivered through ERP19, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final module delivered in ERP19; remaining planned ERP20+ work is cross-feature integration and access hardening rather than delivery of the modules listed here:
 
 | Module | Purpose |
 |---|---|

@@ -1061,6 +1061,80 @@ describe('ERP sale repository MySQL integration', () => {
       .where(eq(invoiceReversals.id, firstId))).resolves.toBeDefined();
   });
 
+  it('reconciles rounding when partial reversals finalize in reverse insertion order', async () => {
+    const data = await fixture();
+    await database.update(erpServices).set({ price: '0.10' })
+      .where(eq(erpServices.id, data.serviceId));
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'service', serviceId: data.serviceId, quantity: 3 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '0.30' }];
+    const completed = await repository.complete(sale);
+    const line = completed.lines[0]!;
+    const payment = (await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id)))[0]!;
+    const earned = (await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, completed.id)))[0]!;
+    const insertPending = async (reason: string) => {
+      const reversalId = Number((await database.insert(invoiceReversals).values({
+        invoiceId: completed.id, branchId: data.branchId, type: 'refund',
+        idempotencyKey: crypto.randomUUID(), reason,
+        actingAccountId: data.accountId, approvingAccountId: null,
+        grossAmount: '0.10', discountAmount: '0.00', taxAmount: '0.00', total: '0.10',
+        businessDate: '2026-08-04', createdAt: new Date('2026-08-04T09:00:00.000Z'),
+      }))[0].insertId);
+      await database.insert(invoiceReversalLines).values({
+        reversalId, invoiceId: completed.id, invoiceLineId: line.id,
+        branchId: data.branchId, quantity: 1,
+        grossAmount: '0.10', discountAmount: '0.00', taxAmount: '0.00', total: '0.10',
+      });
+      await database.insert(invoiceReversalPayments).values({
+        reversalId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '0.10',
+      });
+      return reversalId;
+    };
+    const lowerReversalId = await insertPending('Inserted first, finalized second');
+    const higherReversalId = await insertPending('Inserted second, finalized first');
+
+    await database.insert(commissionLedgerEntries).values({
+      id: 2_000_002,
+      invoiceId: completed.id, invoiceLineId: line.id, employeeId: data.employeeId,
+      actingAccountId: data.accountId, entryType: 'reversal', reversesEntryId: earned.id,
+      invoiceReversalId: higherReversalId,
+      commissionRuleSnapshot: earned.commissionRuleSnapshot,
+      commissionRateSnapshot: earned.commissionRateSnapshot,
+      baseAmount: '0.10', amount: '-0.02', createdAt: new Date('2026-08-04T09:01:00.000Z'),
+    });
+    await database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, higherReversalId));
+
+    await database.insert(commissionLedgerEntries).values({
+      id: 2_000_001,
+      invoiceId: completed.id, invoiceLineId: line.id, employeeId: data.employeeId,
+      actingAccountId: data.accountId, entryType: 'reversal', reversesEntryId: earned.id,
+      invoiceReversalId: lowerReversalId,
+      commissionRuleSnapshot: earned.commissionRuleSnapshot,
+      commissionRateSnapshot: earned.commissionRateSnapshot,
+      baseAmount: '0.10', amount: '-0.01', createdAt: new Date('2026-08-04T09:02:00.000Z'),
+    });
+    await expect(database.update(invoiceReversals).set({ status: 'finalized' })
+      .where(eq(invoiceReversals.id, lowerReversalId))).resolves.toBeDefined();
+
+    const [reconciliation] = await database.select({
+      quantity: sql<string>`SUM(${invoiceReversalLines.quantity})`,
+      baseAmount: sql<string>`SUM(${commissionLedgerEntries.baseAmount})`,
+      commission: sql<string>`SUM(${commissionLedgerEntries.amount})`,
+    }).from(invoiceReversalLines)
+      .innerJoin(commissionLedgerEntries, and(
+        eq(commissionLedgerEntries.invoiceReversalId, invoiceReversalLines.reversalId),
+        eq(commissionLedgerEntries.invoiceLineId, invoiceReversalLines.invoiceLineId),
+      ))
+      .where(eq(invoiceReversalLines.invoiceId, completed.id));
+    expect(reconciliation).toEqual({ quantity: '2', baseAmount: '0.20', commission: '-0.03' });
+  });
+
   it('fully refunds a zero-net product line without creating a payment movement', async () => {
     const data = await fixture();
     await database.update(erpProducts).set({ sellingPrice: '0.01' })

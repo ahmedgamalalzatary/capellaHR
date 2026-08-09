@@ -1,18 +1,14 @@
-import {
-  createReportProcessor,
-  createReportsModule,
-} from '@capella/api/reports-runtime';
 import { createAttendanceJobsRuntime } from '@capella/api/attendance-runtime';
 import { createErpReportsModule } from '@capella/api/erp-reports-runtime';
 import { workerEnv as env } from '@capella/config/worker';
 import { createDatabase } from '@capella/database';
-import { renderReportPdfToStream } from '@capella/reporting';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
 
 import { scheduleCurrentAttendanceDate } from './attendance-scheduler.js';
 import { runIndependentWorkers } from './report-worker.js';
+import { createWorkerReportRuntime } from './worker-runtime.js';
 
 const defaultFilesRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -26,7 +22,8 @@ const attendance = createAttendanceJobsRuntime(database, {
   timeZone: env.APP_TIME_ZONE,
 });
 const erpReports = createErpReportsModule(database);
-const reports = createReportsModule(database, {
+const { reports, reportProcessor } = createWorkerReportRuntime({
+  database,
   filesRoot: env.REPORT_FILES_ROOT ?? defaultFilesRoot,
   timeZone: env.APP_TIME_ZONE,
   payroll: {
@@ -39,14 +36,8 @@ const reports = createReportsModule(database, {
       )
     ),
   },
-  erp: erpReports.reader,
+  erpReader: erpReports.reader,
 });
-const reportProcessor = createReportProcessor(
-  reports.reader,
-  reports.repository,
-  reports.fileStore,
-  renderReportPdfToStream,
-);
 const controller = new AbortController();
 const stop = () => controller.abort();
 const closeDatabase = () => new Promise<void>((resolve, reject) => {

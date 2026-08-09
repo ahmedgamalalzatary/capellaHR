@@ -198,6 +198,7 @@ const drawHeader = (
   y: number,
   tableWidth: number,
 ): number => {
+  if (!columns.length) return y;
   const width = tableWidth / columns.length;
   document.font('NotoSansArabic-Bold').fontSize(HEADER_FONT_SIZE);
   const lines = columns.map((column) => wrapText(document, column.label, width - CELL_PADDING * 2));
@@ -384,8 +385,8 @@ const renderInvoice = async (
   });
   y += Math.ceil(details.length / 2) * detailHeight + 14;
 
-  const columns = snapshot.columns.filter(({ key }) => key !== 'id').reverse();
-  const columnWidth = width / columns.length;
+  const columns = [...snapshot.columns.filter(({ key }) => key !== 'id')].reverse();
+  const columnWidth = columns.length ? width / columns.length : 0;
   const addLinePage = () => {
     addPage();
     y = drawHeader(document, columns, PAGE_MARGIN, width);
@@ -397,25 +398,40 @@ const renderInvoice = async (
   for await (const batch of source.rows()) {
     for (const row of batch) {
       hasRows = true;
+      if (!columns.length) continue;
       document.font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
       const lines = columns.map((column) => wrapText(
         document, display(row[column.key] ?? null), columnWidth - CELL_PADDING * 2,
       ));
-      const height = Math.max(
-        22,
-        Math.max(...lines.map((entry) => entry.length)) * BODY_LINE_HEIGHT + CELL_PADDING * 2,
-      );
-      if (y + height > bottom) addLinePage();
-      columns.forEach((_, columnIndex) => {
-        const x = PAGE_MARGIN + columnIndex * columnWidth;
-        if (rowIndex % 2) document.save().fillColor('#f9fafb')
-          .rect(x, y, columnWidth, height).fill().restore();
-        document.save().strokeColor('#9ca3af').lineWidth(0.5)
-          .rect(x, y, columnWidth, height).stroke().restore();
-        document.fillColor('#111827').font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
-        drawCellLines(document, lines[columnIndex] ?? [''], x, y, columnWidth, BODY_LINE_HEIGHT);
-      });
-      y += height;
+      const rowLineCount = Math.max(...lines.map((entry) => entry.length));
+      let lineOffset = 0;
+      while (lineOffset < rowLineCount) {
+        if (y + 22 > bottom) addLinePage();
+        const availableLines = Math.max(
+          1,
+          Math.floor((bottom - y - CELL_PADDING * 2) / BODY_LINE_HEIGHT),
+        );
+        const segmentLineCount = Math.min(rowLineCount - lineOffset, availableLines);
+        const height = Math.max(22, segmentLineCount * BODY_LINE_HEIGHT + CELL_PADDING * 2);
+        columns.forEach((_, columnIndex) => {
+          const x = PAGE_MARGIN + columnIndex * columnWidth;
+          if (rowIndex % 2) document.save().fillColor('#f9fafb')
+            .rect(x, y, columnWidth, height).fill().restore();
+          document.save().strokeColor('#9ca3af').lineWidth(0.5)
+            .rect(x, y, columnWidth, height).stroke().restore();
+          document.fillColor('#111827').font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
+          drawCellLines(
+            document,
+            (lines[columnIndex] ?? []).slice(lineOffset, lineOffset + segmentLineCount),
+            x,
+            y,
+            columnWidth,
+            BODY_LINE_HEIGHT,
+          );
+        });
+        y += height;
+        lineOffset += segmentLineCount;
+      }
       rowIndex += 1;
     }
   }

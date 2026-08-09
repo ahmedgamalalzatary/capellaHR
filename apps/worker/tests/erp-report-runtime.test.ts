@@ -1,16 +1,25 @@
-import { createErpReportsModule } from '@capella/api/erp-reports-runtime';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import type { ReportReader } from '@capella/api/reports-runtime';
+import type { createDatabase } from '@capella/database';
+import { describe, expect, it, vi } from 'vitest';
+
+import { createWorkerReportRuntime } from '../src/worker-runtime.js';
 
 describe('ERP report worker runtime', () => {
-  it('exposes the ERP reader composition to the independent worker process', () => {
-    expect(createErpReportsModule).toEqual(expect.any(Function));
-  });
+  it('dispatches ERP reports through the reader supplied to the side-effect-free factory', async () => {
+    const read = vi.fn<ReportReader['read']>().mockResolvedValue({ kind: 'unavailable' });
+    const erpReader = { read, readBatches: vi.fn() } satisfies ReportReader;
+    const runtime = createWorkerReportRuntime({
+      database: {} as ReturnType<typeof createDatabase>,
+      erpReader,
+      filesRoot: '.',
+      timeZone: 'Africa/Cairo',
+    });
 
-  it('injects the ERP reader into the shared worker report runtime', () => {
-    const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
-    expect(main).toContain('createErpReportsModule');
-    expect(main).toContain('erp: erpReports.reader');
+    await runtime.reports.reader.read(
+      'erp-sales', { branchId: 2 }, { mode: 'all' },
+      { page: 1, pageSize: 20 }, new Date('2026-08-09T12:00:00.000Z'),
+    );
+
+    expect(read).toHaveBeenCalledOnce();
   });
 });
