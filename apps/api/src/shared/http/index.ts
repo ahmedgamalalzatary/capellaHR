@@ -25,8 +25,17 @@ export const responseRequestId = (response: { locals: Record<string, unknown> })
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-export const createOriginGuard = (allowedOrigins: string[] = []): RequestHandler => {
-  const allowed = new Set(allowedOrigins);
+interface OriginGuardOptions {
+  selfOrigins?: readonly string[];
+  allowedOrigins?: readonly string[];
+  allowHostFallback?: boolean;
+}
+
+export const createOriginGuard = (options: OriginGuardOptions = {}): RequestHandler => {
+  const allowed = new Set(options.allowedOrigins);
+  const configuredSelfOrigins = new Map(
+    (options.selfOrigins ?? []).map((origin) => [new URL(origin).host, origin]),
+  );
   return (request, response, next) => {
     if (SAFE_METHODS.has(request.method)) {
       next();
@@ -35,14 +44,16 @@ export const createOriginGuard = (allowedOrigins: string[] = []): RequestHandler
 
     const origin = request.header('origin');
     const host = request.header('host');
-    let expectedOrigin: string | null = null;
-    try {
-      if (host) expectedOrigin = new URL(`${request.protocol}://${host}`).origin;
-    } catch {
-      expectedOrigin = null;
+    let selfOrigin = host ? configuredSelfOrigins.get(host.toLowerCase()) : undefined;
+    if (!selfOrigin && options.allowHostFallback) {
+      try {
+        if (host) selfOrigin = new URL(`${request.protocol}://${host}`).origin;
+      } catch {
+        selfOrigin = undefined;
+      }
     }
 
-    if (!origin || origin === 'null' || (origin !== expectedOrigin && !allowed.has(origin))) {
+    if (!origin || origin === 'null' || (origin !== selfOrigin && !allowed.has(origin))) {
       response.status(403).json({
         error: {
           code: 'INVALID_ORIGIN',

@@ -45,8 +45,23 @@ describe('server environment', () => {
     expect(() => parseServerEnv({
       ...base,
       NODE_ENV: 'production',
+      PUBLIC_ORIGINS: 'https://hr.example.com',
       DEV_CORS_ORIGINS: 'https://hr.example.com',
     })).toThrow('DEV_CORS_ORIGINS is development-only');
+  });
+
+  it('requires and normalizes canonical public origins in production', async () => {
+    const { parseServerEnv } = await import('./server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({ ...base, NODE_ENV: 'production' })).toThrow(
+      'PUBLIC_ORIGINS is required in production',
+    );
+    expect(parseServerEnv({
+      ...base,
+      NODE_ENV: 'production',
+      PUBLIC_ORIGINS: 'https://hr.example.com/, https://pos.example.com/path',
+    }).PUBLIC_ORIGINS).toEqual(['https://hr.example.com', 'https://pos.example.com']);
   });
 
   it('accepts only a bounded explicit trusted-proxy hop count', async () => {

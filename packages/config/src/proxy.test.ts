@@ -4,7 +4,14 @@ import { resolveApiProxyTarget } from './proxy.js';
 
 describe('API proxy target', () => {
   it('defaults local frontend development to the local API origin', () => {
-    expect(resolveApiProxyTarget(undefined)).toBe('http://localhost:4000');
+    const previous = process.env.API_PROXY_TARGET;
+    delete process.env.API_PROXY_TARGET;
+    try {
+      expect(resolveApiProxyTarget(undefined)).toBe('http://localhost:4000');
+    } finally {
+      if (previous === undefined) delete process.env.API_PROXY_TARGET;
+      else process.env.API_PROXY_TARGET = previous;
+    }
   });
 
   it.each([

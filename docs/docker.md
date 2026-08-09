@@ -42,6 +42,7 @@ APP_TIME_ZONE=Africa/Cairo
 APP_LOCALE=ar-EG-u-nu-latn
 MAX_EMPLOYEE_IMAGE_BYTES=16777216
 TRUST_PROXY_HOPS=1
+PUBLIC_ORIGINS=https://capellaegy.com,https://pos.capellaegy.com
 DEV_CORS_ORIGINS=
 ADMIN_EMAIL=replace_with_the_admin_email
 ADMIN_PASSWORD=replace_with_a_long_random_admin_password
@@ -61,7 +62,7 @@ The commands below target Capella's `full` installation. For HR, set both values
 
 Use URL-safe characters in `MYSQL_PASSWORD`, or percent-encode special characters in `DATABASE_URL`. The edition and private `API_PROXY_TARGET=http://api:4000` are embedded during frontend builds, so changing either requires rebuilding the selected frontend images. Browser code never receives that private address; it always calls the current host's `/api/v1` path.
 
-Keep `DEV_CORS_ORIGINS` empty in production. When a local tool genuinely needs cross-origin credentialed requests, set it only under `NODE_ENV=development` to a comma-separated origin list such as `http://localhost:3000,http://localhost:3001`. Production startup rejects a non-empty list.
+Set `PUBLIC_ORIGINS` to every canonical public origin served by this API. The origin guard matches each request host only to its configured canonical origin; it never trusts an arbitrary production `Host` header. Keep `DEV_CORS_ORIGINS` empty in production. When a local tool genuinely needs cross-origin credentialed requests, set it only under `NODE_ENV=development` to a comma-separated origin list such as `http://localhost:3000,http://localhost:3001`. Production startup rejects a non-empty list.
 
 Validate interpolation without printing resolved secrets:
 
@@ -178,7 +179,7 @@ The liveness route checks the Node process. The readiness route executes `SELECT
 
 Use [the recommended subdomain example](../deploy/nginx/recommended-subdomains.conf.example) for normal installations. It serves HR—or the restricted attendance surface in ERP-only deployments—and POS on separate subdomains, and each server block routes its own `/api/` path to `127.0.0.1:4020`. For two unrelated public domains, use [the separate-domain example](../deploy/nginx/separate-domains.conf.example); the proxy behavior is intentionally identical. Replace the example hostnames and certificate paths, preserve Certbot's TLS settings, then validate with `nginx -t` before reloading Nginx.
 
-The proxy must overwrite `Host`, `X-Forwarded-Proto`, and `X-Forwarded-For` exactly as shown. The API trusts one proxy hop and reconstructs the public origin from those values. Do not add an `Access-Control-Allow-Origin` header in Nginx. The API container remains bound only to `127.0.0.1:4020`, and both API locations retain `client_max_body_size 17m` so the proxy does not undercut the application upload limit.
+The proxy must overwrite `Host`, `X-Forwarded-Proto`, and `X-Forwarded-For` exactly as shown. `TRUST_PROXY_HOPS` is required when a deployment proxy terminates TLS; set it to the verified number of trusted hops (`1` for the documented local Nginx topology). Production same-origin checks select the matching canonical value from `PUBLIC_ORIGINS`, while Host-based origin derivation is development-only. Do not add an `Access-Control-Allow-Origin` header in Nginx. The API container remains bound only to `127.0.0.1:4020`, and both API locations retain `client_max_body_size 17m` so the proxy does not undercut the application upload limit.
 
 ## Production security verification
 

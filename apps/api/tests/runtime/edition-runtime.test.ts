@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { createApiRuntime } from '../../src/runtime/api-runtime.js';
 import { createApp } from '../../src/app.js';
 
+const coreModules = ['auth', 'branches', 'employees', 'audit'] as const;
+
 const runtimeFor = (edition: string | undefined) => createApiRuntime({
   database: {} as ReturnType<typeof createDatabase>,
   edition: resolveEdition(edition),
@@ -82,6 +84,39 @@ describe('API edition runtime', () => {
       erpSaleService: expect.any(Object),
       erpCommissionService: expect.any(Object),
     });
+  });
+
+  it('fails at startup when Attendance is enabled without Shifts', () => {
+    expect(() => createApiRuntime({
+      database: {} as ReturnType<typeof createDatabase>,
+      edition: { edition: 'core', modules: [...coreModules, 'devices', 'attendance'] },
+      logger: pino({ level: 'silent' }),
+      timeZone: 'Africa/Cairo',
+      maxEmployeeImageBytes: 16_777_216,
+    })).toThrow('Enabled module dependency "shifts" was not constructed.');
+  });
+
+  it('fails at startup when Weekly Days Off is enabled without Payroll', () => {
+    expect(() => createApiRuntime({
+      database: {} as ReturnType<typeof createDatabase>,
+      edition: { edition: 'core', modules: [...coreModules, 'weekly-day-offs'] },
+      logger: pino({ level: 'silent' }),
+      timeZone: 'Africa/Cairo',
+      maxEmployeeImageBytes: 16_777_216,
+    })).toThrow('Enabled module dependency "payroll" was not constructed.');
+  });
+
+  it('fails at startup when Payroll employee lifecycle support lacks Advances', () => {
+    expect(() => createApiRuntime({
+      database: {} as ReturnType<typeof createDatabase>,
+      edition: {
+        edition: 'core',
+        modules: [...coreModules, 'devices', 'shifts', 'attendance', 'payroll'],
+      },
+      logger: pino({ level: 'silent' }),
+      timeZone: 'Africa/Cairo',
+      maxEmployeeImageBytes: 16_777_216,
+    })).toThrow('Enabled module dependency "advances" was not constructed.');
   });
 
   it('returns not found for routes disabled by each edition', async () => {

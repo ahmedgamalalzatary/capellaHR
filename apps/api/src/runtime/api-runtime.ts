@@ -89,28 +89,32 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     context: unknown,
   ) => Promise<void> = () => Promise.resolve();
   const payrollForAttendance: { current?: ReturnType<typeof createPayrollModule>['service'] } = {};
-  const attendanceModule = enabled('attendance') ? createAttendanceModule(
-    database,
-    required(deviceModule, 'devices').attendanceDevices,
-    createOnnxFaceGateway((storagePath) => employeeUploadStore.read(storagePath)),
-    {
-      isFinanciallyLocked: (employeeId, attendanceDate, context) => (
-        payrollForAttendance.current?.isFinanciallyLocked(employeeId, attendanceDate, context)
-        ?? Promise.resolve(false)
-      ),
-      readRequiredDuration: (employeeId, context, includeDeleted) => (
-        required(shiftModule, 'shifts').service.readRequiredDurationForCheckIn(
-          employeeId,
-          context,
-          includeDeleted,
-        )
-      ),
-      afterSessionClosed: (employeeId, at, context) => (
-        applyPendingDeactivation(employeeId, at, context)
-      ),
-      timeZone,
-    },
-  ) : undefined;
+  const attendanceModule = enabled('attendance') ? (() => {
+    const attendanceDevices = required(deviceModule, 'devices').attendanceDevices;
+    const shifts = required(shiftModule, 'shifts').service;
+    return createAttendanceModule(
+      database,
+      attendanceDevices,
+      createOnnxFaceGateway((storagePath) => employeeUploadStore.read(storagePath)),
+      {
+        isFinanciallyLocked: (employeeId, attendanceDate, context) => (
+          payrollForAttendance.current?.isFinanciallyLocked(employeeId, attendanceDate, context)
+          ?? Promise.resolve(false)
+        ),
+        readRequiredDuration: (employeeId, context, includeDeleted) => (
+          shifts.readRequiredDurationForCheckIn(
+            employeeId,
+            context,
+            includeDeleted,
+          )
+        ),
+        afterSessionClosed: (employeeId, at, context) => (
+          applyPendingDeactivation(employeeId, at, context)
+        ),
+        timeZone,
+      },
+    );
+  })() : undefined;
   if (attendanceModule) {
     reconcileAbsencesBeforeShiftChange = attendanceModule.repository.reconcileDueAbsencesForEmployee;
   }
@@ -125,39 +129,46 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
   const deductionModule = enabled('deductions') ? createDeductionModule(database, { timeZone }) : undefined;
   const advanceModule = enabled('advances') ? createAdvanceModule(database, { timeZone }) : undefined;
 
-  const employeeFinancialLifecycle = payrollModule && attendanceModule && advanceModule
-    ? createEmployeeFinancialLifecycle({
-        timeZone,
-        now: () => new Date(),
-        attendance: attendanceModule.repository,
-        advances: {
-          prepareEmployeeDeletion: advanceModule.lifecycle.prepareEmployeeDeletion,
-          deactivationImpact: (employeeId, at, context) => (
-            advanceModule.service.deactivationImpact(employeeId, at, context)
-          ),
-          accelerateForDeletion: (employeeId, at, context) => (
-            advanceModule.service.accelerateForDeletion(employeeId, at, context)
-          ),
-        },
-        settlements: {
-          recordAdjustment: (employeeId, at, reason, amount, context) => (
-            advanceModule.service.recordDeactivationAdjustment(employeeId, at, reason, amount, context)
-          ),
-          recordOutstandingDebt: (employeeId, at, amount, context) => (
-            advanceModule.service.recordOutstandingDebt(employeeId, at, amount, context)
-          ),
-        },
-        payroll: {
-          preview: (employeeId, month) => payrollModule.service.preview(employeeId, month),
-          previewInContext: (employeeId, month, attendance, context) => (
-            payrollModule.repository.previewInContext(employeeId, month, attendance, context)
-          ),
-          isFinalized: (employeeId, attendanceDate, context) => (
-            payrollModule.repository.isFinalized(employeeId, attendanceDate, context)
-          ),
-        },
-      })
-    : undefined;
+  const employeeFinancialLifecycle = payrollModule ? (() => {
+    const attendance = required(attendanceModule, 'attendance').repository;
+    const advances = required(advanceModule, 'advances');
+    return createEmployeeFinancialLifecycle({
+      timeZone,
+      now: () => new Date(),
+      attendance,
+      advances: {
+        prepareEmployeeDeletion: advances.lifecycle.prepareEmployeeDeletion,
+        deactivationImpact: (employeeId, at, context) => (
+          advances.service.deactivationImpact(employeeId, at, context)
+        ),
+        accelerateForDeletion: (employeeId, at, context) => (
+          advances.service.accelerateForDeletion(employeeId, at, context)
+        ),
+      },
+      settlements: {
+        recordAdjustment: (employeeId, at, reason, amount, context) => (
+          advances.service.recordDeactivationAdjustment(employeeId, at, reason, amount, context)
+        ),
+        recordOutstandingDebt: (employeeId, at, amount, context) => (
+          advances.service.recordOutstandingDebt(employeeId, at, amount, context)
+        ),
+      },
+      payroll: {
+        preview: (employeeId, month) => payrollModule.service.preview(employeeId, month),
+        previewInContext: (employeeId, month, lifecycleAttendance, context) => (
+          payrollModule.repository.previewInContext(
+            employeeId,
+            month,
+            lifecycleAttendance,
+            context,
+          )
+        ),
+        isFinalized: (employeeId, attendanceDate, context) => (
+          payrollModule.repository.isFinalized(employeeId, attendanceDate, context)
+        ),
+      },
+    });
+  })() : undefined;
 
   const employeeModule = createEmployeesModule(
     database,
@@ -183,16 +194,19 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     },
   });
 
-  const weeklyDayOffModule = enabled('weekly-day-offs') ? createWeeklyDayOffModule(database, {
-    isFinanciallyLocked: (employeeId, attendanceDate, context) => (
-      required(payrollModule, 'payroll').service.isFinanciallyLocked(
-        employeeId,
-        attendanceDate,
-        context,
-      )
-    ),
-    timeZone,
-  }) : undefined;
+  const weeklyDayOffModule = enabled('weekly-day-offs') ? (() => {
+    const payroll = required(payrollModule, 'payroll').service;
+    return createWeeklyDayOffModule(database, {
+      isFinanciallyLocked: (employeeId, attendanceDate, context) => (
+        payroll.isFinanciallyLocked(
+          employeeId,
+          attendanceDate,
+          context,
+        )
+      ),
+      timeZone,
+    });
+  })() : undefined;
 
   const erpAssignmentModule = enabled('erp-assignment') ? createErpAssignmentModule({
     attendance: required(attendanceModule, 'attendance').erp,
@@ -236,16 +250,20 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     employees: employeeModule.erp,
   }) : undefined;
   const erpReportsModule = enabled('erp-reports') ? createErpReportsModule(database) : undefined;
+  const payrollReportDependencies = payrollModule ? {
+    payroll: payrollModule.repository,
+    attendance: required(attendanceModule, 'attendance').repository,
+  } : undefined;
 
   const reportsModule = enabled('reports') ? createReportsModule(database, {
     ...(options.reportFilesRoot === undefined ? {} : { filesRoot: options.reportFilesRoot }),
     timeZone,
-    ...(payrollModule ? {
+    ...(payrollReportDependencies ? {
       payroll: {
-        preview: (employeeId, month, context) => payrollModule.repository.previewInContext(
+        preview: (employeeId, month, context) => payrollReportDependencies.payroll.previewInContext(
           employeeId,
           month,
-          required(attendanceModule, 'attendance').repository,
+          payrollReportDependencies.attendance,
           context,
         ),
       },

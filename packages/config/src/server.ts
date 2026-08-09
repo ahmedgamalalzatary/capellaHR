@@ -9,7 +9,7 @@ const webOriginSchema = z.string().url().transform((value, context) => {
   return url.origin;
 });
 
-const developmentCorsOriginsSchema = z.preprocess(
+const originListSchema = z.preprocess(
   (value) => typeof value === 'string'
     ? value.split(',').map((origin) => origin.trim()).filter(Boolean)
     : value,
@@ -39,10 +39,18 @@ const schema = z.object({
   REPORT_WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
   REPORT_FILES_ROOT: z.string().trim().min(1).max(500).optional(),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(1).max(10).optional(),
-  DEV_CORS_ORIGINS: developmentCorsOriginsSchema,
+  PUBLIC_ORIGINS: originListSchema,
+  DEV_CORS_ORIGINS: originListSchema,
   ADMIN_EMAIL: z.string().email(),
   ADMIN_PASSWORD: z.string().min(1),
 }).superRefine((value, context) => {
+  if (value.NODE_ENV === 'production' && value.PUBLIC_ORIGINS.length === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['PUBLIC_ORIGINS'],
+      message: 'PUBLIC_ORIGINS is required in production',
+    });
+  }
   if (value.NODE_ENV === 'production' && value.DEV_CORS_ORIGINS.length > 0) {
     context.addIssue({
       code: 'custom',

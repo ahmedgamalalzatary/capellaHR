@@ -65,7 +65,9 @@ export interface AppDependencies {
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
   corsOrigins?: string[];
+  publicOrigins?: string[];
   enforceSameOrigin?: boolean;
+  allowHostOriginFallback?: boolean;
   trustProxyHops?: number;
   readinessCheck?: () => Promise<void>;
   logger?: Logger;
@@ -78,7 +80,16 @@ export const createApp = (dependencies: AppDependencies = {}) => {
   app.use(requestContext);
   if (dependencies.logger) app.use(createRequestLogger(dependencies.logger));
   app.use(helmet());
-  if (dependencies.enforceSameOrigin) app.use(createOriginGuard(dependencies.corsOrigins));
+  if (dependencies.enforceSameOrigin) {
+    app.use(createOriginGuard({
+      ...(dependencies.publicOrigins === undefined
+        ? {} : { selfOrigins: dependencies.publicOrigins }),
+      ...(dependencies.corsOrigins === undefined
+        ? {} : { allowedOrigins: dependencies.corsOrigins }),
+      ...(dependencies.allowHostOriginFallback === undefined
+        ? {} : { allowHostFallback: dependencies.allowHostOriginFallback }),
+    }));
+  }
   if (dependencies.corsOrigins?.length) {
     app.use(cors({ origin: dependencies.corsOrigins, credentials: true }));
   }

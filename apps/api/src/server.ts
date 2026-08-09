@@ -26,7 +26,9 @@ createApp({
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigins: env.DEV_CORS_ORIGINS,
+  publicOrigins: env.PUBLIC_ORIGINS,
   enforceSameOrigin: true,
+  allowHostOriginFallback: env.NODE_ENV === 'development',
   ...(env.TRUST_PROXY_HOPS === undefined ? {} : { trustProxyHops: env.TRUST_PROXY_HOPS }),
   readinessCheck: async () => {
     await database.execute(sql`SELECT 1`);

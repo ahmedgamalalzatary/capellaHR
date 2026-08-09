@@ -148,7 +148,7 @@ describe('authentication application composition', () => {
     expect(rejected.headers['access-control-allow-origin']).toBeUndefined();
   });
 
-  it('accepts production mutations only from the public origin forwarded by the trusted proxy', async () => {
+  it('accepts production mutations only from the matching configured public origin', async () => {
     const loginAdmin = vi.fn(async () => ({ token: 'token', actor: { type: 'admin' as const } }));
     const service = {
       loginAdmin,
@@ -163,6 +163,7 @@ describe('authentication application composition', () => {
       authService: service,
       secureCookies: true,
       trustProxyHops: 1,
+      publicOrigins: ['https://hr.example.com', 'https://pos.example.com'],
       ...({ enforceSameOrigin: true } as Record<string, unknown>),
     });
     const sendLogin = (origin?: string) => {
@@ -177,13 +178,26 @@ describe('authentication application composition', () => {
     const missing = await sendLogin();
     const crossSite = await sendLogin('https://attacker.example');
     const sameOrigin = await sendLogin('https://hr.example.com');
+    const spoofedHost = await request(productionApp)
+      .post('/api/v1/auth/admin/login')
+      .set('Host', 'attacker.example')
+      .set('X-Forwarded-Proto', 'https')
+      .set('Origin', 'https://attacker.example')
+      .send({ email: 'admin@capella.test', password: 'correct' });
+    const posOrigin = await request(productionApp)
+      .post('/api/v1/auth/admin/login')
+      .set('Host', 'pos.example.com')
+      .set('Origin', 'https://pos.example.com')
+      .send({ email: 'admin@capella.test', password: 'correct' });
 
     expect(missing.status).toBe(403);
     expect(missing.body.error.code).toBe('INVALID_ORIGIN');
     expect(crossSite.status).toBe(403);
     expect(crossSite.body.error.code).toBe('INVALID_ORIGIN');
+    expect(spoofedHost.status).toBe(403);
     expect(sameOrigin.status).toBe(200);
-    expect(loginAdmin).toHaveBeenCalledTimes(1);
+    expect(posOrigin.status).toBe(200);
+    expect(loginAdmin).toHaveBeenCalledTimes(2);
   });
 
   it('permits mutation origins from the explicit development list and rejects every other origin', async () => {
@@ -202,6 +216,7 @@ describe('authentication application composition', () => {
       secureCookies: false,
       corsOrigins: ['http://localhost:3000', 'http://localhost:3001'],
       enforceSameOrigin: true,
+      allowHostOriginFallback: true,
     });
     const sendLogin = (origin: string) => request(developmentApp)
       .post('/api/v1/auth/admin/login')

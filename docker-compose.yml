@@ -63,6 +63,7 @@ services:
       EDITION: ${EDITION:?EDITION must be hr, erp, or full}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES:?COMPOSE_PROFILES must match EDITION}
       API_PORT: 4000
+      PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:?PUBLIC_ORIGINS is required}
       REPORT_FILES_ROOT: /app/uploads/reports
     depends_on:
       db:
