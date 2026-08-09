@@ -22,4 +22,5 @@ export type {
   ErpAuditExecutor,
   ErpBranchCapability,
   ErpEmployeeCapability,
+  ErpPayrollCapability,
 };

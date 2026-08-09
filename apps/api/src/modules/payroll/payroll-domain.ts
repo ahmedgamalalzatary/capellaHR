@@ -6,7 +6,9 @@ export type PayrollCalculationInput = {
   overtimeMinutes: number;
   shortageMinutes: number;
   bonuses: string;
+  commission?: string;
   deductions: string;
+  commissionDeductions?: string;
   advances: string;
   priorNegativeCarry: string;
   /** Signed: credits the employee for a write-off or cash payment, debits a forfeited salary. */
@@ -59,8 +61,10 @@ export const calculatePayroll = (input: PayrollCalculationInput) => {
   const netSalary = proratedBase
     + overtimeAmount
     + toCents(input.bonuses)
+    + toCents(input.commission ?? '0.00')
     - attendanceDeductionAmount
     - toCents(input.deductions)
+    - toCents(input.commissionDeductions ?? '0.00')
     - toCents(input.advances)
     + toCents(input.priorNegativeCarry)
     + toCents(input.deactivationAdjustment ?? '0.00');

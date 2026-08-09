@@ -6,6 +6,7 @@ import type {
   ErpAuditCapability,
   ErpBranchCapability,
   ErpEmployeeCapability,
+  ErpPayrollCapability,
 } from '../hr-capabilities.js';
 import { createDrizzleCashierSessionRepository } from './cashier-sessions-repository.js';
 import { createCashierSessionService } from './cashier-sessions-service.js';
@@ -21,6 +22,7 @@ export const createSalesModule = (
     branches: ErpBranchCapability;
     employees: ErpEmployeeCapability;
     assignment: EmployeeAssignmentService;
+    payroll?: ErpPayrollCapability;
   },
 ) => {
   const cashierSessionRepository = createDrizzleCashierSessionRepository(
@@ -31,7 +33,11 @@ export const createSalesModule = (
     repository: cashierSessionRepository,
     resolveBranchContext: createErpBranchContextResolver(capabilities),
   });
-  const saleRepository = createDrizzleSaleRepository(database, capabilities.audit);
+  const saleRepository = createDrizzleSaleRepository(
+    database,
+    capabilities.audit,
+    capabilities.payroll,
+  );
   const sales = createSaleService({
     repository: saleRepository,
     resolveBranchContext: createErpBranchContextResolver(capabilities),

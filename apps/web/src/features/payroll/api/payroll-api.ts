@@ -16,8 +16,10 @@ export interface PayrollRecord {
   proratedBase: string;
   overtimeAmount: string;
   bonusAmount: string;
+  commissionAmount: string;
   attendanceDeductionAmount: string;
   manualDeductionAmount: string;
+  commissionDeductionAmount: string;
   advanceAmount: string;
   priorNegativeCarry: string;
   netSalary: string;

@@ -1,6 +1,6 @@
 # Beauty Center ERP — Decisions, Reasoning, and Plan
 
-Status: **Step 1 — planning.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; revised same day after external design review (identity model, module boundaries, commission ledger, transactional invariants, snapshots, edition scoping, build order, cookie/CORS correction).
+Status: **Implementation in progress; ERP 1–18 software slices delivered, subject to the explicitly deferred validation listed below.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP17 commission/payroll delivery.
 
 ---
 
@@ -73,7 +73,7 @@ These were confirmed by reading the code on 2026-07-29 (not assumptions):
 - **Stack:** Next.js + Express + **Drizzle ORM** + MySQL, pnpm workspaces + Turborepo, Docker Compose deployment, `apps/` = `api` / `web` / `worker`. (Note: earlier discussion said "Prisma" — the repo actually uses Drizzle.)
 - **Modules are already optional at the wiring level.** `apps/api/src/routes/index.ts` mounts each module's router only if its service is passed into `createApp` (`apps/api/src/app.ts`). `server.ts` currently wires all 15 unconditionally; per-edition enablement is a small change, not a redesign.
 - **Live presence already exists as data.** `attendance_sessions.open_employee_id` is a stored generated column (non-null while the session is open) with a unique index. The ERP will consume it **only** via a public capability such as `listPresentEmployees(branchId)` (Rule 2, §2) — the point is that the capability is cheap to provide, not that ERP queries attendance tables.
-- **A payroll-input pipeline already exists.** `bonuses(employee_id, payroll_month, amount, reason)` is summed into `payroll_months.bonus_amount` at payroll finalization. Commissions are projected into this pipeline in a controlled way (§8) — ERP does not write HR tables directly.
+- **A payroll-input pipeline already exists.** Ordinary bonuses remain separate, while ERP17 adds an HR-owned deterministic commission input that is included in open previews and snapshotted at finalization, plus an HR-owned post-payroll deduction input for later reversals (§8). ERP never reads or writes HR tables directly.
 - **Arabic RTL is already the house style.** `apps/web` renders `lang="ar" dir="rtl"` with IBM Plex Sans Arabic; locale `ar-EG`, timezone `Africa/Cairo`. The POS app follows the same.
 - **PDF machinery already exists.** `apps/worker` polls DB-queued report jobs and renders PDFs via `packages/reporting` (`report-pdf.ts`). Invoice/report PDF export reuses this pattern instead of introducing a new one.
 - **Branches with GPS geofencing exist**; the beauty center is one branch. All ERP data is branch-scoped from day one, so multi-branch POS is cheap later.
@@ -214,9 +214,11 @@ These are architectural invariants, not features — the sales module is designe
 
 ### Commission ledger, not direct bonus rows
 
-Commissions are **ERP-owned** in an **immutable, append-only ledger**: one entry per service line for the invoice's assigned employee (rates vary per service; the employee is fixed per invoice — §7), snapshotting the rule and rate that applied. Refunds append **reversal entries**; nothing is ever updated or deleted. On payroll finalization, the applicable **net** commission per employee per month is **projected** into the existing payroll-input pipeline (a bonus-like input) with a **deterministic reference** (e.g. `erp-commission:<month>:<employeeId>`), making the projection idempotent and traceable from a payroll number back to individual invoice lines. Payroll never reads ERP tables; the ERP calls an HR-core public capability to submit the projection (Rule 2, §2).
+Commissions are **ERP-owned** in an **immutable, append-only ledger**: one entry per service line for the invoice's assigned employee (rates vary per service; the employee is fixed per invoice — §7), snapshotting the rule and rate that applied. Refunds append **reversal entries**; nothing is ever updated or deleted. Every completed service sale or pre-finalization reversal transactionally refreshes one HR-owned payroll input containing that employee/month's current **net** commission. Its deterministic reference is `erp-commission:<month>:<employeeId>`, so retries are idempotent and open payroll previews always include the live value. Payroll finalization snapshots that value into the immutable payroll row. If a later reversal targets a month whose payroll is already finalized, ERP leaves the snapshot untouched and submits one idempotent HR deduction in the Cairo month of the reversal. Payroll never reads ERP tables; ERP calls HR-core public projection and deduction capabilities (Rule 2, §2), while the HR-owned input rows retain the traceable deterministic identity.
 
-Why not "insert a bonus row at sale time": it loses refund reversibility, historical rate context, idempotency under retries, and the audit path from salary back to invoice.
+Why not insert ordinary bonus rows at sale time: they lose refund reversibility, historical rate context, deterministic replacement under retries, and the audit path from salary back to invoice. The dedicated live input can be updated only until payroll finalization; the immutable ERP ledger remains the source of the calculated total.
+
+ERP17's migration backfills deterministic live inputs from the existing ledger only for employee-months without a finalized payroll snapshot. Historical finalized payrolls keep `commission_amount = 0.00`, explicitly recording that legacy ERP commission was not paid through Payroll; later reversals of those unpaid legacy amounts do not create deductions. New finalized payrolls snapshot the live input and remain eligible for later reversal deductions.
 
 ### One transaction per completed sale
 
@@ -278,12 +280,12 @@ All owner-level questions from the original list are now **answered and locked i
 
 1. **Thermal printing mechanism** — browser print CSS vs a local print agent. Deferred until printer hardware is chosen; the invoice/receipt data model does not depend on it. Default when building: browser print CSS first, agent only if the hardware demands it.
 
-### Step 2 design deliverables (direction decided, details to draft)
+### Step 2 design deliverables (direction decided; completed items are marked)
 
 2. **Full Drizzle schemas** for every ERP table + the accounts/roles migration in HR core (including retiring the `admin_credentials` singleton).
 3. **Void vs refund definitions** — the *authority* is decided (§7: cashier or admin, no hierarchy); the exact semantics to draft: void = same-day full cancellation, refund = full or partial after the fact; both reverse stock (products) and append commission reversals.
 4. **POS screen flow** (owner delegated the default): search/pick client → add service/product lines → assign present employee → discount/tax if any → mixed payment entry → complete (one transaction) → print/reprint. To be drafted as wireframes with the Arabic RTL layout.
-5. **Employee commission visibility** — where employees see their totals (natural candidate: the existing HR self-service surface, fed by the ERP ledger through a public capability).
+5. **Employee commission visibility — delivered in ERP17:** employees see their own monthly earned, reversed, and net totals in HR self-service through a public capability; Admins get branch/month totals and invoice-line/reversal traceability in the POS.
 6. **Offline queue design** — the §7/§8 local-queue-with-idempotency-keys mechanism, drafted concretely (storage, replay, failure UX at the counter).
 7. **Invoice sequence implementation** — the daily counter behind `INV-YYYY.MM.DD-HH.MM-<seq>` (same singleton-sequence pattern the repo already uses for `employee_code_sequence`).
 

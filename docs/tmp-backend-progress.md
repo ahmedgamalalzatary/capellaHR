@@ -1,6 +1,6 @@
 # Capella HR implementation tracker (temporary)
 
-Last verified: 2026-08-02
+Last verified: 2026-08-09
 
 This is the temporary working checklist for completing the full functional product. The locked product rules remain in `docs/hr-specs.md`; this file tracks implementation progress and dependency order only.
 
@@ -517,8 +517,8 @@ This is an architecture slice: no standalone user screen is required. Complete: 
 The docs describe a mostly sequential order, but the real dependency graph allows controlled parallel work.
 
 ```text
-DONE: ERP 1–16 and ERP 18 Offline sales, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
-        └──> ERP 17 Commission/payroll ──> ERP 19 Reports ──┐
+DONE: ERP 1–18, subject to the explicitly deferred ERP 9 and ERP 18 end-to-end integration harnesses below
+        └──> ERP 19 Reports ───────────────────────────────┐
                                                           │
                                                      ERP 20 Admin UX
                                                           │
@@ -532,10 +532,10 @@ DONE: ERP 1–16 and ERP 18 Offline sales, subject to the explicitly deferred ER
 Safe parallel waves:
 
 1. **Complete:** ERP 1–16 and the ERP 18 software slice, with ERP 9's browser-to-authenticated-HTTP-to-MySQL validation, ERP 11 physical-printer validation, and ERP 18's browser-to-authenticated-HTTP-to-MySQL replay harness deferred until those production/integration environments are available.
-2. **Next eligible:** ERP 17.
-3. ERP 17 is now unblocked by ERP 16 and is the critical path to ERP 19.
+2. **Complete:** ERP 17 commission/payroll integration.
+3. **Next eligible:** ERP 19.
 4. ERP 18's offline queue, replay, and conflict-resolution workflow is delivered.
-5. ERP 19 waits for ERP 17; ERP 20 begins after the remaining ERP 17–19 functional slices are complete.
+5. ERP 19 is unblocked; ERP 20 begins after ERP 19 is complete.
 6. ERP 20 → ERP 21 → ERP 22 → ERP 23 should remain sequential.
 
 ## ERP 4. Cashier sessions
@@ -763,19 +763,21 @@ Complete. Admin-only expense workflows use branch-scoped active expense categori
 
 Complete. Same-day Cairo voids and later full/partial refunds preserve immutable invoice facts while appending normalized reversal lines and original-method payment facts. One transaction restores product stock, appends cumulative commission reversals, derives the invoice lifecycle, records the acting account and audit projection, and enforces idempotency, branch authorization, payment/quantity caps, database guards, rollback, and concurrency. Arabic RTL invoice search, detail, exact refund allocation, confirmation, immutable history, and eligible void/refund actions are covered in wide and compact browser journeys.
 
-## ERP 17. Commission and payroll integration
+## ERP 17. Commission and payroll integration — Complete
 
-- [ ] Calculate net monthly employee commission from the immutable ERP ledger.
-- [ ] Publish commission totals to employee self-service through a public capability.
-- [ ] Project net monthly commission into Payroll through a public payroll-input capability.
-- [ ] Use a deterministic reference such as `erp-commission:<month>:<employeeId>`.
-- [ ] Make repeated payroll projection idempotent and traceable to invoice lines.
-- [ ] Prevent Payroll from importing or querying ERP internals.
-- [ ] Submit post-finalization commission reversals as HR deductions through a public capability.
-- [ ] Add employee commission-total UI to HR self-service.
-- [ ] Add month-boundary, repeated-projection, refund-reversal, finalized-payroll, traceability, and MySQL tests.
-- [ ] Add authorized Arabic/RTL POS Admin commission drill-down and traceability from employee/month totals to invoice lines and reversals.
-- [ ] Add component and end-to-end coverage for employee self-service totals, Admin traceability, payroll projection, and post-finalization reversal behavior.
+- [x] Calculate net monthly employee commission from the immutable ERP ledger.
+- [x] Publish commission totals to employee self-service through a public capability.
+- [x] Project net monthly commission into Payroll through a public payroll-input capability.
+- [x] Use the deterministic reference `erp-commission:<month>:<employeeId>`.
+- [x] Make repeated payroll projection idempotent and traceable to invoice lines.
+- [x] Prevent Payroll from importing or querying ERP internals.
+- [x] Submit post-finalization commission reversals as HR deductions through a public capability.
+- [x] Add employee commission-total UI to HR self-service.
+- [x] Add month-boundary, repeated-projection, refund-reversal, finalized-payroll, traceability, and MySQL tests.
+- [x] Add authorized Arabic/RTL POS Admin commission drill-down and traceability from employee/month totals to invoice lines and reversals.
+- [x] Add component and end-to-end coverage for employee self-service totals, Admin traceability, payroll projection, and post-finalization reversal behavior.
+
+Each completed service sale or pre-finalization reversal transactionally refreshes one HR-owned live input for the original Cairo payroll month, with the ledger total calculated only after the employee projection lock is held. Open payroll therefore includes the current net commission. Finalization snapshots both commission income and any post-payroll commission deductions into the immutable payroll row. The ERP17 migration backfills ledger totals only for months without a finalized payroll; legacy finalized rows retain zero commission and their unpaid legacy reversals do not create deductions. A reversal after a commission-bearing payroll is finalized cannot rewrite it; it creates one idempotent HR deduction in the Cairo month when the reversal occurred. ERP-only composition may omit the Payroll capability, and HR-only self-service explicitly reports commissions unavailable when the ERP commission reader is absent, preserving the locked edition boundaries without fabricating zero earnings.
 
 ## ERP 18. Offline sale submission
 
@@ -879,7 +881,7 @@ This slice hardens and integrates administration features already delivered in t
 
 ## ERP immediate action
 
-ERP 1–16 and the ERP 18 software slice are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 17 commission/payroll integration is the next critical-path phase.
+ERP 1–18 are delivered subject to the explicitly recorded validation deferrals. ERP 9's browser-to-authenticated-HTTP-to-MySQL validation remains deferred until that integration harness exists. ERP 11 physical-printer validation and the conditional local print-agent decision remain deferred until the selected production hardware is available. ERP 18's browser-to-authenticated-HTTP-to-MySQL exactly-once harness remains explicitly deferred until that integration harness exists. ERP 19 reports and PDF exports are the next critical-path phase.
 
 ## Locked exclusions — do not implement
 

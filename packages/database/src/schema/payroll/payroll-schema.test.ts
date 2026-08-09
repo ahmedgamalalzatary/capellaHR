@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { getTableConfig, MySqlDialect } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
@@ -10,12 +12,18 @@ import {
   employeeOutstandingDebts,
   employeePendingDeactivations,
   employeeSalaryPeriods,
+  erpCommissionPayrollInputs,
+  erpPostPayrollDeductions,
   financialAuditEvents,
   payrollMonths,
 } from './index.js';
 
 const config = (table: Parameters<typeof getTableConfig>[0]) => getTableConfig(table);
 const dialect = new MySqlDialect();
+const migrationsDirectory = fileURLToPath(new URL('../../../migrations/', import.meta.url));
+const erp17MigrationName = readdirSync(migrationsDirectory).find((name) => /^0056_.*\.sql$/.test(name));
+if (!erp17MigrationName) throw new Error('ERP 17 migration 0056 is missing');
+const erp17Migration = readFileSync(`${migrationsDirectory}/${erp17MigrationName}`, 'utf8');
 const checkSql = (table: Parameters<typeof getTableConfig>[0], name: string) => {
   const constraint = config(table).checks.find((check) => check.name === name);
   return constraint ? dialect.sqlToQuery(constraint.value).sql : null;
@@ -39,6 +47,29 @@ describe('payroll schema', () => {
     expect(config(employeeSalaryPeriods).indexes.some((index) => index.config.name === 'employee_salary_periods_employee_month_unique')).toBe(true);
     expect(config(payrollMonths).name).toBe('payroll_months');
     expect(config(payrollMonths).indexes.some((index) => index.config.name === 'payroll_months_employee_month_unique')).toBe(true);
+  });
+
+  it('stores idempotent ERP commission inputs and post-payroll deductions in HR-owned tables', () => {
+    expect(config(erpCommissionPayrollInputs).name).toBe('erp_commission_payroll_inputs');
+    expect(config(erpCommissionPayrollInputs).indexes
+      .some((index) => index.config.name === 'erp_commission_payroll_inputs_reference_unique')).toBe(true);
+    expect(config(erpCommissionPayrollInputs).indexes
+      .some((index) => index.config.name === 'erp_commission_payroll_inputs_employee_month_unique')).toBe(true);
+    expect(config(erpPostPayrollDeductions).name).toBe('erp_post_payroll_deductions');
+    expect(config(erpPostPayrollDeductions).indexes
+      .some((index) => index.config.name === 'erp_post_payroll_deductions_reference_unique')).toBe(true);
+    expect(config(payrollMonths).columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      'commission_amount', 'commission_deduction_amount',
+    ]));
+  });
+
+  it('backfills only open payroll commission inputs from existing immutable ledger facts', () => {
+    expect(erp17Migration).toContain('INSERT INTO `erp_commission_payroll_inputs`');
+    expect(erp17Migration).toContain('FROM `erp_commission_ledger_entries` ledger');
+    expect(erp17Migration).toContain('INNER JOIN `erp_invoices` invoice');
+    expect(erp17Migration).toContain('LEFT JOIN `payroll_months` payroll');
+    expect(erp17Migration).toContain('WHERE payroll.`id` IS NULL');
+    expect(erp17Migration).toContain("CONCAT('erp-commission:'");
   });
 
   it.each([

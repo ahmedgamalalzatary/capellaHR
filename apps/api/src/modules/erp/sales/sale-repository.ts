@@ -24,15 +24,17 @@ import {
   count,
   desc,
   eq,
+  gte,
   inArray,
   isNull,
   like,
+  lt,
   ne,
   or,
 } from 'drizzle-orm';
 import { isDeepStrictEqual } from 'node:util';
 
-import type { ErpAuditCapability } from '../hr-capabilities.js';
+import type { ErpAuditCapability, ErpPayrollCapability } from '../hr-capabilities.js';
 import { SaleError, type CompleteSaleOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
 import {
   allocateReversalAmounts,
@@ -73,6 +75,33 @@ const cairoDate = (value: Date) => {
   }).formatToParts(value);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)!.value;
   return `${part('year')}-${part('month')}-${part('day')}`;
+};
+const cairoMonth = (value: Date) => cairoDate(value).slice(0, 7);
+const startOfCairoDate = (value: string) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const dateAt = (instant: Date) => {
+    const parts = Object.fromEntries(formatter.formatToParts(instant)
+      .filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  };
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  const target = Date.UTC(year, month - 1, day);
+  let low = target - 36 * 60 * 60_000;
+  let high = target + 36 * 60 * 60_000;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (dateAt(new Date(middle)) < value) low = middle + 1;
+    else high = middle;
+  }
+  return new Date(low);
+};
+const nextMonth = (month: string) => {
+  const [year, monthNumber] = month.split('-').map(Number) as [number, number];
+  return monthNumber === 12
+    ? `${year + 1}-01`
+    : `${year}-${String(monthNumber + 1).padStart(2, '0')}`;
 };
 const keyedQueues = <T extends { itemType: string; sourceId: number }>(lines: T[]) => {
   const queues = new Map<string, T[]>();
@@ -342,7 +371,35 @@ const quoteProducts = async (
 export const createDrizzleSaleRepository = (
   database: Database,
   audit: ErpAuditCapability,
+  payroll?: ErpPayrollCapability,
 ): SaleRepository => {
+  const projectCommission = async (
+    transaction: Transaction,
+    employeeId: number,
+    month: string,
+  ) => {
+    if (!payroll) return undefined;
+    return payroll.projectCommission({
+      employeeId,
+      payrollMonth: month,
+      calculateAmount: async () => {
+        const invoiceIds = (await transaction.select({ id: invoices.id }).from(invoices).where(and(
+          eq(invoices.assignedEmployeeId, employeeId),
+          gte(invoices.soldAt, startOfCairoDate(`${month}-01`)),
+          lt(invoices.soldAt, startOfCairoDate(`${nextMonth(month)}-01`)),
+        ))).map(({ id }) => id);
+        const entries = invoiceIds.length
+          ? await transaction.select({ amount: commissionLedgerEntries.amount })
+            .from(commissionLedgerEntries).where(and(
+              eq(commissionLedgerEntries.employeeId, employeeId),
+              inArray(commissionLedgerEntries.invoiceId, invoiceIds),
+            ))
+          : [];
+        return signedMoney(entries.reduce((total, entry) => total + toCents(entry.amount), 0n));
+      },
+      reference: `erp-commission:${month}:${employeeId}`,
+    }, transaction);
+  };
   const findByIdempotencyKey: SaleRepository['findByIdempotencyKey'] = async (key, actor) => {
     const predicate = actor.actingAccountRole === 'cashier'
       ? and(
@@ -462,6 +519,9 @@ export const createDrizzleSaleRepository = (
           if (!session || (operation.actingAccountRole === 'cashier'
             && session.openedByAccountId !== operation.actingAccountId)) {
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
+          }
+          if (payroll && input.lines.some((line) => line.itemType === 'service')) {
+            await payroll.lockCommissionEmployee(input.assignedEmployeeId, transaction);
           }
 
           const client = (await transaction.select().from(clients).where(and(
@@ -618,6 +678,13 @@ export const createDrizzleSaleRepository = (
           })));
           await transaction.update(invoices).set({ status: 'completed' })
             .where(eq(invoices.id, invoiceId));
+          if (calculatedLines.some((line) => line.itemType === 'service')) {
+            await projectCommission(
+              transaction,
+              input.assignedEmployeeId,
+              cairoMonth(operation.soldAt),
+            );
+          }
           const completed = await hydrateInvoice(transaction, invoiceId);
           if (!completed) throw new Error('Completed invoice could not be reloaded');
           await audit.record(transaction, {
@@ -661,6 +728,9 @@ export const createDrizzleSaleRepository = (
             ne(invoices.status, 'draft'),
           )).for('update').limit(1))[0];
           if (!original) throw new SaleError('INVOICE_NOT_FOUND');
+          if (payroll) {
+            await payroll.lockCommissionEmployee(original.assignedEmployeeId, transaction);
+          }
           const replay = await existingReversal(operation, transaction);
           if (replay) return replay;
           if (original.status === 'refunded' || original.status === 'voided'
@@ -841,6 +911,7 @@ export const createDrizzleSaleRepository = (
               eq(invoiceReversals.invoiceId, original.id),
               eq(invoiceReversals.status, 'finalized'),
             ))).map(({ id }) => id));
+          let reversedCommission = 0n;
           for (const line of originalLines.filter((candidate) => (
             candidate.itemType === 'service' && selectedByLine.has(candidate.id)
           ))) {
@@ -856,6 +927,7 @@ export const createDrizzleSaleRepository = (
             const base = toCents(line.unitPrice) * BigInt(selectedByLine.get(line.id)!);
             const amount = commissionCents(priorBase + base, earned.commissionRateSnapshot)
               - commissionCents(priorBase, earned.commissionRateSnapshot);
+            reversedCommission += amount;
             await transaction.insert(commissionLedgerEntries).values({
               invoiceId: original.id,
               invoiceLineId: line.id,
@@ -874,6 +946,23 @@ export const createDrizzleSaleRepository = (
 
           await transaction.update(invoiceReversals).set({ status: 'finalized' })
             .where(eq(invoiceReversals.id, reversalId));
+
+          if (reversedCommission > 0n && payroll) {
+            const month = cairoMonth(original.soldAt);
+            const projection = await projectCommission(
+              transaction,
+              original.assignedEmployeeId,
+              month,
+            );
+            if (projection === 'payroll_finalized') {
+              await payroll.recordPostPayrollDeduction({
+                employeeId: original.assignedEmployeeId,
+                occurredAt: operation.reversedAt,
+                amount: signedMoney(reversedCommission),
+                reference: `erp-commission-reversal:${reversalId}:${original.assignedEmployeeId}`,
+              }, transaction);
+            }
+          }
 
           const afterState = await hydrateInvoice(transaction, original.id);
           if (!beforeState || !afterState) throw new Error('Reversed invoice could not be reloaded');

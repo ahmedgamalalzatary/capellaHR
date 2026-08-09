@@ -12,6 +12,7 @@ import type { PageMeta } from '@/lib/api/client';
 
 import {
   getSelfServiceOverview,
+  getSelfServiceCommissionMonth,
   getSelfServicePayrollMonth,
   listSelfServiceAdvances,
   listSelfServiceAttendance,
@@ -20,13 +21,14 @@ import {
   listSelfServiceWeeklyDays,
 } from '../api/self-service-api';
 
-type Section = 'overview' | 'attendance' | 'weekly-days' | 'payroll' | 'bonuses' | 'deductions' | 'advances';
+type Section = 'overview' | 'attendance' | 'weekly-days' | 'payroll' | 'commissions' | 'bonuses' | 'deductions' | 'advances';
 
 const sections: Array<{ id: Section; label: string }> = [
   { id: 'overview', label: 'بياناتي' },
   { id: 'attendance', label: 'الحضور' },
   { id: 'weekly-days', label: 'أيام الراحة والغياب' },
   { id: 'payroll', label: 'الراتب' },
+  { id: 'commissions', label: 'العمولات' },
   { id: 'bonuses', label: 'المكافآت' },
   { id: 'deductions', label: 'الخصومات' },
   { id: 'advances', label: 'السلف' },
@@ -318,13 +320,57 @@ function PayrollSection() {
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                   {([
                     ['الراتب الأساسي', query.data.baseSalary], ['بعد الاستحقاق', query.data.proratedBase],
-                    ['الوقت الإضافي', query.data.overtimeAmount], ['المكافآت', query.data.bonusAmount],
+                    ['الوقت الإضافي', query.data.overtimeAmount], ['المكافآت', query.data.bonusAmount], ['العمولات', query.data.commissionAmount],
                     ['خصم الحضور', query.data.attendanceDeductionAmount], ['الخصومات اليدوية', query.data.manualDeductionAmount],
-                    ['السلف', query.data.advanceAmount], ['الترحيل السابق', query.data.priorNegativeCarry],
+                    ['خصومات عمولات سابقة', query.data.commissionDeductionAmount], ['السلف', query.data.advanceAmount], ['الترحيل السابق', query.data.priorNegativeCarry],
                   ] as Array<[string, string]>).map(([label, amount]) => <div key={label} className="flex justify-between gap-3"><dt className="text-muted">{label}</dt><dd className="tabular">{formatMoney(amount)}</dd></div>)}
                 </dl>
               </Card>
             ) : null}
+    </div>
+  );
+}
+
+function CommissionsSection() {
+  const [monthInput, setMonthInput] = useState(currentCairoMonth);
+  const [month, setMonth] = useState('');
+  const query = useQuery({
+    queryKey: ['self-service', 'commissions', month],
+    queryFn: () => getSelfServiceCommissionMonth(month),
+    enabled: Boolean(month),
+    retry: false,
+  });
+  useExitOnUnauthorized(query.error);
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); setMonth(monthInput); }}>
+          <label className="space-y-1.5 text-sm" htmlFor="self-service-commission-month">
+            <span className="block font-medium">شهر العمولة</span>
+            <Input id="self-service-commission-month" type="month" value={monthInput} onChange={(event) => setMonthInput(event.target.value)} required />
+          </label>
+          <Button type="submit">عرض العمولات</Button>
+        </form>
+      </Card>
+      {!month ? <Card><EmptyState title="اختر شهرًا لعرض إجمالي العمولة" /></Card>
+        : query.isPending ? <Card><Loading /></Card>
+          : query.isError ? <Card><QueryError error={query.error} retry={() => void query.refetch()} /></Card>
+            : query.data?.available === false ? (
+              <Card><EmptyState title="العمولات غير متاحة في هذه النسخة" /></Card>
+            ) : query.data ? (
+              <Card className="p-5">
+                <div className="border-b border-line pb-4">
+                  <p className="text-[12px] text-muted">صافي العمولة</p>
+                  <p className="tabular mt-1 text-2xl font-bold">{formatMoney(query.data.netAmount)}</p>
+                </div>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div className="flex justify-between gap-3"><dt className="text-muted">العمولة المكتسبة</dt><dd className="tabular">{formatMoney(query.data.earnedAmount)}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-muted">العمولة المعكوسة</dt><dd className="tabular">{formatMoney(query.data.reversedAmount)}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-muted">بنود الخدمات</dt><dd className="tabular">{query.data.invoiceLineCount}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-muted">عمليات الاسترداد</dt><dd className="tabular">{query.data.reversalCount}</dd></div>
+                </dl>
+              </Card>
+            ) : <Card><EmptyState title="لا توجد عمولات لهذا الشهر" /></Card>}
     </div>
   );
 }
@@ -374,6 +420,7 @@ export function SelfServiceView() {
           {section === 'attendance' ? <AttendanceSection /> : null}
           {section === 'weekly-days' ? <WeeklyDaysSection /> : null}
           {section === 'payroll' ? <PayrollSection /> : null}
+          {section === 'commissions' ? <CommissionsSection /> : null}
           {section === 'bonuses' ? <AdjustmentSection kind="bonuses" /> : null}
           {section === 'deductions' ? <AdjustmentSection kind="deductions" /> : null}
           {section === 'advances' ? <AdvancesSection /> : null}

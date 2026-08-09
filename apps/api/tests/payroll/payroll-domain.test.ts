@@ -44,6 +44,15 @@ describe('payroll exact arithmetic', () => {
     }).netSalary).toBe('0.00');
   });
 
+  it('adds live ERP commission and subtracts post-finalization commission deductions', () => {
+    expect(calculatePayroll({
+      baseSalary: '0.00', fullMonthWorkdays: 0, eligibleWorkdays: 0,
+      requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0,
+      bonuses: '100.00', commission: '250.00', deductions: '25.00',
+      commissionDeductions: '40.00', advances: '10.00', priorNegativeCarry: '0.00',
+    }).netSalary).toBe('275.00');
+  });
+
   it('subtracts a negative deactivation adjustment when the salary is forfeited', () => {
     // `zero_salary` on an employee whose debt is smaller than the month's earnings lands here:
     // the adjustment has to be able to pull the net down to exactly zero, not only up.

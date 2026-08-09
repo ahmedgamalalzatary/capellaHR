@@ -62,6 +62,17 @@ describe('PosShell', () => {
     expect(await screen.findByRole('link', { name: 'حسابات الكاشير' })).toBeDefined();
   });
 
+  test('shows commission reporting only to an admin actor', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+    expect(await screen.findByRole('link', { name: 'العمولات' })).toHaveProperty('href', expect.stringContaining('/commissions'));
+
+    cleanup();
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'العمولات' })).toBeNull());
+  });
+
   test('hides the cashier-accounts link for a cashier actor', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();

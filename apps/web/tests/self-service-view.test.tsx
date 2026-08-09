@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listAttendance: vi.fn(),
   listWeeklyDays: vi.fn(),
   getPayrollMonth: vi.fn(),
+  getCommissionMonth: vi.fn(),
   listBonuses: vi.fn(),
   listDeductions: vi.fn(),
   listAdvances: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../src/features/employee-self-service/api/self-service-api', () => ({
   listSelfServiceAttendance: mocks.listAttendance,
   listSelfServiceWeeklyDays: mocks.listWeeklyDays,
   getSelfServicePayrollMonth: mocks.getPayrollMonth,
+  getSelfServiceCommissionMonth: mocks.getCommissionMonth,
   listSelfServiceBonuses: mocks.listBonuses,
   listSelfServiceDeductions: mocks.listDeductions,
   listSelfServiceAdvances: mocks.listAdvances,
@@ -69,8 +71,8 @@ const noRetryCases = [
   { name: 'overview', read: mocks.getOverview, tabIndex: null, queryKey: ['self-service', 'overview'] },
   { name: 'attendance', read: mocks.listAttendance, tabIndex: 1, queryKey: ['self-service', 'attendance', 1] },
   { name: 'weekly days', read: mocks.listWeeklyDays, tabIndex: 2, queryKey: ['self-service', 'weekly-days', 1] },
-  { name: 'adjustments', read: mocks.listBonuses, tabIndex: 4, queryKey: ['self-service', 'bonuses', 1] },
-  { name: 'advances', read: mocks.listAdvances, tabIndex: 6, queryKey: ['self-service', 'advances', 1] },
+  { name: 'adjustments', read: mocks.listBonuses, tabIndex: 5, queryKey: ['self-service', 'bonuses', 1] },
+  { name: 'advances', read: mocks.listAdvances, tabIndex: 7, queryKey: ['self-service', 'advances', 1] },
 ] as const;
 
 beforeEach(() => {
@@ -89,7 +91,18 @@ beforeEach(() => {
   mocks.listWeeklyDays.mockResolvedValue(pageOf([
     { id: 1, attendanceDate: '2026-07-01', status: 'weekly_day_off', requiredMinutes: 480, dayOffConvertedAt: '2026-07-02T00:00:00.000Z' },
   ]));
-  mocks.getPayrollMonth.mockResolvedValue({ payrollMonth: '2026-06', status: 'finalized', netSalary: '4880.00' });
+  mocks.getPayrollMonth.mockResolvedValue({
+    payrollMonth: '2026-06', status: 'finalized', baseSalary: '5000.00', proratedBase: '5000.00',
+    overtimeAmount: '100.00', bonusAmount: '75.00', commissionAmount: '300.00',
+    attendanceDeductionAmount: '25.00', manualDeductionAmount: '20.00', commissionDeductionAmount: '50.00',
+    advanceAmount: '500.00', priorNegativeCarry: '0.00', netSalary: '4880.00', eligibleWorkdays: 26,
+    fullMonthWorkdays: 26, requiredMinutes: 12480, overtimeMinutes: 60, shortageMinutes: 0,
+    finalizedAt: '2026-07-01T00:00:00.000Z',
+  });
+  mocks.getCommissionMonth.mockResolvedValue({
+    available: true, payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
+    netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
+  });
   mocks.listBonuses.mockResolvedValue(pageOf([{ id: 1, payrollMonth: '2026-07', amount: '100.00', createdAt: '', updatedAt: '' }]));
   mocks.listDeductions.mockResolvedValue(pageOf([{ id: 2, payrollMonth: '2026-07', amount: '20.00', createdAt: '', updatedAt: '' }]));
   mocks.listAdvances.mockResolvedValue(pageOf([{
@@ -133,7 +146,7 @@ describe('SelfServiceView', () => {
     expect(screen.getByRole('tabpanel').id).toBe('self-service-panel-overview');
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(overviewTab.id);
 
-    const bonusesTab = screen.getAllByRole('tab')[4]!;
+    const bonusesTab = screen.getAllByRole('tab')[5]!;
     fireEvent.click(bonusesTab);
     expect(bonusesTab.id).toBe('self-service-tab-bonuses');
     expect(bonusesTab.getAttribute('aria-controls')).toBe('self-service-panel-bonuses');
@@ -147,7 +160,7 @@ describe('SelfServiceView', () => {
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledTimes(1));
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1]);
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1, -1]);
 
     tabs[0]!.focus();
     fireEvent.keyDown(tabs[0]!, { key: 'ArrowLeft' });
@@ -155,10 +168,10 @@ describe('SelfServiceView', () => {
     expect(tabs[1]!.getAttribute('aria-selected')).toBe('true');
 
     fireEvent.keyDown(tabs[1]!, { key: 'End' });
-    expect(document.activeElement).toBe(tabs[6]);
-    expect(tabs[6]!.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabs[7]);
+    expect(tabs[7]!.getAttribute('aria-selected')).toBe('true');
 
-    fireEvent.keyDown(tabs[6]!, { key: 'Home' });
+    fireEvent.keyDown(tabs[7]!, { key: 'Home' });
     expect(document.activeElement).toBe(tabs[0]);
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
   });
@@ -226,6 +239,45 @@ describe('SelfServiceView', () => {
 
     await waitFor(() => expect(mocks.getPayrollMonth).toHaveBeenCalledWith('2026-07'));
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'تعذر التحقق من بيانات الحضور للراتب');
+  });
+
+  it('shows commission income and post-payroll commission deductions in payroll', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'الراتب' }));
+    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
+    fireEvent.click(screen.getByRole('button', { name: 'عرض الراتب' }));
+
+    expect(await screen.findByText('خصومات عمولات سابقة')).toBeDefined();
+    expect(screen.getAllByText('العمولات')).toHaveLength(2);
+  });
+
+  it('shows the employee own monthly earned, reversed, and net commission totals', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'العمولات' }));
+    fireEvent.change(screen.getByLabelText('شهر العمولة'), { target: { value: '2026-08' } });
+    fireEvent.click(screen.getByRole('button', { name: 'عرض العمولات' }));
+
+    await waitFor(() => expect(mocks.getCommissionMonth).toHaveBeenCalledWith('2026-08'));
+    expect(await screen.findByText(/250\.00/)).toBeDefined();
+    expect(screen.getByText(/300\.00/)).toBeDefined();
+    expect(screen.getByText(/^50\.00/)).toBeDefined();
+  });
+
+  it('marks commissions unavailable instead of reporting fabricated zero totals in HR-only mode', async () => {
+    mocks.getCommissionMonth.mockResolvedValueOnce({ available: false, payrollMonth: '2026-08' });
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'العمولات' }));
+    fireEvent.change(screen.getByLabelText('شهر العمولة'), { target: { value: '2026-08' } });
+    fireEvent.click(screen.getByRole('button', { name: 'عرض العمولات' }));
+
+    expect(await screen.findByText('العمولات غير متاحة في هذه النسخة')).toBeDefined();
+    expect(screen.queryByText(/^0\.00/)).toBeNull();
   });
 
   it('ends the current session from the self-service header', async () => {

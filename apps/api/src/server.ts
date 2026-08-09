@@ -32,6 +32,7 @@ import {
   createErpClientsModule,
   createErpSuppliersModule,
   createErpExpensesModule,
+  createCommissionModule,
 } from './modules/erp/index.js';
 import { createApiLogger } from './shared/http/index.js';
 
@@ -173,16 +174,6 @@ const weeklyDayOffModule = createWeeklyDayOffModule(database, {
   ),
   timeZone: env.APP_TIME_ZONE,
 });
-const selfServiceModule = createSelfServiceModule({
-  employees: employeeModule.service,
-  branches: branchModule.service,
-  attendance: attendanceModule.service,
-  weeklyDays: weeklyDayOffModule.service,
-  payroll: payrollModule.service,
-  bonuses: bonusModule.service,
-  deductions: deductionModule.service,
-  advances: advanceModule.service,
-});
 await employeeModule.uploadStore.retryPendingCleanup();
 
 // ERP composition: ERP modules reach HR only through these public capabilities,
@@ -223,6 +214,22 @@ const salesModule = createSalesModule(database, {
   branches: branchModule.erp,
   employees: employeeModule.erp,
   assignment: erpAssignmentModule.service,
+  payroll: payrollModule.erp,
+});
+const commissionModule = createCommissionModule(database, {
+  branches: branchModule.erp,
+  employees: employeeModule.erp,
+});
+const selfServiceModule = createSelfServiceModule({
+  employees: employeeModule.service,
+  branches: branchModule.service,
+  attendance: attendanceModule.service,
+  weeklyDays: weeklyDayOffModule.service,
+  payroll: payrollModule.service,
+  bonuses: bonusModule.service,
+  deductions: deductionModule.service,
+  advances: advanceModule.service,
+  commissions: commissionModule.selfService,
 });
 
 createApp({
@@ -253,6 +260,7 @@ createApp({
   erpSupplierPurchaseService: erpSuppliersModule.service,
   erpExpenseService: erpExpensesModule.service,
   erpAssignmentService: erpAssignmentModule.service,
+  erpCommissionService: commissionModule.service,
   publicConfig: { timeZone: env.APP_TIME_ZONE, locale: env.APP_LOCALE },
   secureCookies: env.NODE_ENV === 'production',
   corsOrigin: env.WEB_ORIGIN,

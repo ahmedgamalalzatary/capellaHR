@@ -102,6 +102,13 @@ export const createSelfServiceRouter = (
     } catch (error) { handle(error, response, next); }
   });
 
+  router.get('/commissions/:month', async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const { month } = selfServicePayrollMonthParamsSchema.parse(request.params);
+      response.json({ data: await service.getCommissionMonth(employeeId(response), month) });
+    } catch (error) { handle(error, response, next); }
+  });
+
   const financialList = (
     read: (id: number, query: ReturnType<typeof selfServiceFinancialListQuerySchema.parse>) => Promise<{ items: unknown[]; total: number }>,
   ) => async (request: Request, response: Response, next: NextFunction) => {

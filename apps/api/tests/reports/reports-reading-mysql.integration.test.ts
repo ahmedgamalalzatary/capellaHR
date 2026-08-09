@@ -230,11 +230,13 @@ describe('MySQL-backed reports reading', () => {
       proratedBase: '6000.00',
       overtimeAmount: '10.00',
       bonusAmount: '100.00',
+      commissionAmount: '30.00',
       attendanceDeductionAmount: '0.00',
       manualDeductionAmount: '0.00',
+      commissionDeductionAmount: '10.00',
       advanceAmount: '40.00',
       priorNegativeCarry: '0.00',
-      netSalary: '6070.00',
+      netSalary: '6090.00',
       eligibleWorkdays: 1,
       fullMonthWorkdays: 30,
       requiredMinutes: 600,
@@ -282,10 +284,13 @@ describe('MySQL-backed reports reading', () => {
       total: 2,
       snapshot: {
         rows: expect.arrayContaining([
-          expect.objectContaining({ employeeId, payrollMonth: '2026-07', status: 'finalized' }),
+          expect.objectContaining({
+            employeeId, payrollMonth: '2026-07', status: 'finalized',
+            commissionAmount: '30.00', commissionDeductionAmount: '10.00',
+          }),
           expect.objectContaining({ employeeId: deletedEmployeeId, payrollMonth: '2026-07', status: 'open' }),
         ]),
-        summary: { finalizedRecords: 1, openRecords: 1, totalNetSalary: '6045.00' },
+        summary: { finalizedRecords: 1, openRecords: 1, totalNetSalary: '6065.00' },
       },
     });
 

@@ -9,6 +9,8 @@ import {
   employeeEmploymentPeriods,
   employeeSalaryPeriods,
   employees,
+  erpCommissionPayrollInputs,
+  erpPostPayrollDeductions,
   payrollMonths,
 } from '@capella/database/schema';
 import { and, asc, desc, eq, inArray, lt, lte, notExists, or, sql } from 'drizzle-orm';
@@ -54,8 +56,10 @@ const payrollFields = {
   payrollMonth: payrollMonths.payrollMonth, status: payrollMonths.status,
   baseSalary: payrollMonths.baseSalary, proratedBase: payrollMonths.proratedBase,
   overtimeAmount: payrollMonths.overtimeAmount, bonusAmount: payrollMonths.bonusAmount,
+  commissionAmount: payrollMonths.commissionAmount,
   attendanceDeductionAmount: payrollMonths.attendanceDeductionAmount,
   manualDeductionAmount: payrollMonths.manualDeductionAmount,
+  commissionDeductionAmount: payrollMonths.commissionDeductionAmount,
   advanceAmount: payrollMonths.advanceAmount, priorNegativeCarry: payrollMonths.priorNegativeCarry,
   deactivationAdjustmentAmount: payrollMonths.deactivationAdjustmentAmount,
   netSalary: payrollMonths.netSalary, eligibleWorkdays: payrollMonths.eligibleWorkdays,
@@ -99,7 +103,9 @@ const rawFinalized = async (executor: Executor, employeeId: number, month: strin
 
 const sumAmount = async (
   executor: Executor,
-  table: typeof bonuses | typeof deductions | typeof advanceInstallments | typeof employeeDeactivationAdjustments,
+  table: typeof bonuses | typeof deductions | typeof advanceInstallments
+    | typeof employeeDeactivationAdjustments | typeof erpCommissionPayrollInputs
+    | typeof erpPostPayrollDeductions,
   employeeId: number,
   month: string,
 ) => (await executor.select({ value: sql<string>`coalesce(sum(${table.amount}), 0.00)` })
@@ -156,10 +162,21 @@ const compute = async (
   if (existing) return { kind: 'success', payroll: existing };
   const attendanceResult = await attendance.readPayrollFacts(employee.id, month, transaction, mode);
   if (attendanceResult.kind === 'blocked') return attendanceResult;
-  const [baseSalary, bonusAmount, manualDeductionAmount, advanceAmount, carry, deactivationAdjustmentAmount] = await Promise.all([
+  const [
+    baseSalary,
+    bonusAmount,
+    commissionAmount,
+    manualDeductionAmount,
+    commissionDeductionAmount,
+    advanceAmount,
+    carry,
+    deactivationAdjustmentAmount,
+  ] = await Promise.all([
     salaryForMonth(transaction, employee, month),
     sumAmount(transaction, bonuses, employee.id, month),
+    sumAmount(transaction, erpCommissionPayrollInputs, employee.id, month),
     sumAmount(transaction, deductions, employee.id, month),
+    sumAmount(transaction, erpPostPayrollDeductions, employee.id, month),
     sumAmount(transaction, advanceInstallments, employee.id, month),
     priorCarry(transaction, employee.id, month),
     sumAmount(transaction, employeeDeactivationAdjustments, employee.id, month),
@@ -168,7 +185,9 @@ const compute = async (
     baseSalary,
     ...attendanceResult.facts,
     bonuses: bonusAmount,
+    commission: commissionAmount,
     deductions: manualDeductionAmount,
+    commissionDeductions: commissionDeductionAmount,
     advances: advanceAmount,
     priorNegativeCarry: carry,
     deactivationAdjustment: deactivationAdjustmentAmount,
@@ -178,8 +197,10 @@ const compute = async (
     calculated.proratedBase,
     calculated.overtimeAmount,
     bonusAmount,
+    commissionAmount,
     calculated.attendanceDeductionAmount,
     manualDeductionAmount,
+    commissionDeductionAmount,
     advanceAmount,
     carry,
     deactivationAdjustmentAmount,
@@ -197,7 +218,8 @@ const compute = async (
       id: 0, employeeId: employee.id, employeeCode: employee.employeeCode,
       employeeName: employee.fullName, branchId, branchName,
       payrollMonth: month, status: 'open', baseSalary,
-      ...calculated, bonusAmount, manualDeductionAmount, advanceAmount,
+      ...calculated, bonusAmount, commissionAmount, manualDeductionAmount,
+      commissionDeductionAmount, advanceAmount,
       priorNegativeCarry: carry, deactivationAdjustmentAmount, ...attendanceResult.facts, finalizedAt: null,
     },
   };
@@ -213,8 +235,11 @@ const insertFinalized = async (
     employeeId: payroll.employeeId, payrollMonth: payrollMonthStart(payroll.payrollMonth),
     status: 'finalized', baseSalary: payroll.baseSalary, proratedBase: payroll.proratedBase,
     overtimeAmount: payroll.overtimeAmount, bonusAmount: payroll.bonusAmount,
+    commissionAmount: payroll.commissionAmount,
     attendanceDeductionAmount: payroll.attendanceDeductionAmount,
-    manualDeductionAmount: payroll.manualDeductionAmount, advanceAmount: payroll.advanceAmount,
+    manualDeductionAmount: payroll.manualDeductionAmount,
+    commissionDeductionAmount: payroll.commissionDeductionAmount,
+    advanceAmount: payroll.advanceAmount,
     priorNegativeCarry: payroll.priorNegativeCarry,
     deactivationAdjustmentAmount: payroll.deactivationAdjustmentAmount ?? '0.00',
     netSalary: payroll.netSalary,

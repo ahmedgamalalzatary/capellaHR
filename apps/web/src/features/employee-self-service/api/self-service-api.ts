@@ -10,6 +10,7 @@ import type {
   SelfServiceAdjustment,
   SelfServiceAdvance,
   SelfServiceAttendance,
+  SelfServiceCommission,
   SelfServiceOverview,
   SelfServicePayroll,
   SelfServiceWeeklyDay,
@@ -36,6 +37,10 @@ export const listSelfServiceWeeklyDays = (query: Partial<SelfServiceWeeklyDayLis
 
 export const getSelfServicePayrollMonth = (month: string) => (
   api.get<SelfServicePayroll>(`/self-service/payroll/${encodeURIComponent(month)}`)
+);
+
+export const getSelfServiceCommissionMonth = (month: string) => (
+  api.get<SelfServiceCommission>(`/self-service/commissions/${encodeURIComponent(month)}`)
 );
 
 export const listSelfServiceBonuses = (query: Partial<SelfServiceFinancialListQuery> = {}) => (

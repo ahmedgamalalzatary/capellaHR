@@ -30,6 +30,10 @@ const makeService = (): SelfServiceService => ({
   listAttendance: vi.fn(async () => ({ items: [], total: 0 })),
   listWeeklyDays: vi.fn(async () => ({ items: [], total: 0 })),
   getPayrollMonth: vi.fn(async () => ({ payrollMonth: '2026-06' } as never)),
+  getCommissionMonth: vi.fn(async () => ({
+    available: true as const, payrollMonth: '2026-08', earnedAmount: '30.00', reversedAmount: '10.00',
+    netAmount: '20.00', invoiceLineCount: 1, reversalCount: 1,
+  })),
   listBonuses: vi.fn(async () => ({ items: [{ id: 1, payrollMonth: '2026-06', amount: '100.00', reason: 'سبب', createdAt: new Date(), updatedAt: new Date() }], total: 1 })),
   listDeductions: vi.fn(async () => ({ items: [], total: 0 })),
   listAdvances: vi.fn(async () => ({ items: [], total: 0 })),
@@ -44,6 +48,7 @@ describe('employee self-service router', () => {
       service.listAttendance,
       service.listWeeklyDays,
       service.getPayrollMonth,
+      service.getCommissionMonth,
       service.listBonuses,
       service.listDeductions,
       service.listAdvances,
@@ -57,6 +62,7 @@ describe('employee self-service router', () => {
       { path: '/attendance', request: { query: {} } },
       { path: '/weekly-days', request: { query: {} } },
       { path: '/payroll/:month', request: { params: { month: '2026-07' } } },
+      { path: '/commissions/:month', request: { params: { month: '2026-07' } } },
       { path: '/bonuses', request: { query: {} } },
       { path: '/deductions', request: { query: {} } },
       { path: '/advances', request: { query: {} } },
@@ -101,6 +107,18 @@ describe('employee self-service router', () => {
     expect(response.status).toBe(200);
     expect(service.getOverview).toHaveBeenCalledWith(7);
     expect(response.body.data.profile.employeeCode).toBe(42);
+  });
+
+  it('returns only the authenticated employee commission total for a month', async () => {
+    const service = makeService();
+    const response = await request(createApp({ authService: makeAuth('employee'), selfServiceService: service }))
+      .get('/api/v1/self-service/commissions/2026-08')
+      .set('Cookie', 'capella_session=x');
+
+    expect(response.status).toBe(200);
+    expect(service.getCommissionMonth).toHaveBeenCalledWith(7, '2026-08');
+    expect(response.body.data).toMatchObject({ netAmount: '20.00' });
+    expect(response.body.data).not.toHaveProperty('employeeId');
   });
 
   it('rejects horizontal-access filters instead of ignoring them', async () => {

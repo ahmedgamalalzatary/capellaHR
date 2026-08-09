@@ -42,8 +42,10 @@ export const payrollMonths = mysqlTable('payroll_months', {
   proratedBase: decimal('prorated_base', { precision: 14, scale: 2 }).notNull(),
   overtimeAmount: decimal('overtime_amount', { precision: 14, scale: 2 }).notNull(),
   bonusAmount: decimal('bonus_amount', { precision: 14, scale: 2 }).notNull(),
+  commissionAmount: decimal('commission_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
   attendanceDeductionAmount: decimal('attendance_deduction_amount', { precision: 14, scale: 2 }).notNull(),
   manualDeductionAmount: decimal('manual_deduction_amount', { precision: 14, scale: 2 }).notNull(),
+  commissionDeductionAmount: decimal('commission_deduction_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
   advanceAmount: decimal('advance_amount', { precision: 14, scale: 2 }).notNull(),
   priorNegativeCarry: decimal('prior_negative_carry', { precision: 14, scale: 2 }).notNull(),
   deactivationAdjustmentAmount: decimal('deactivation_adjustment_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
@@ -61,6 +63,37 @@ export const payrollMonths = mysqlTable('payroll_months', {
   index('payroll_months_month_status_idx').on(table.payrollMonth, table.status),
   check('payroll_months_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
   check('payroll_months_counts_nonnegative', sql`${table.eligibleWorkdays} >= 0 and ${table.fullMonthWorkdays} >= 0 and ${table.requiredMinutes} >= 0 and ${table.overtimeMinutes} >= 0 and ${table.shortageMinutes} >= 0`),
+]);
+
+export const erpCommissionPayrollInputs = mysqlTable('erp_commission_payroll_inputs', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  reference: varchar('reference', { length: 191 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('erp_commission_payroll_inputs_reference_unique').on(table.reference),
+  uniqueIndex('erp_commission_payroll_inputs_employee_month_unique')
+    .on(table.employeeId, table.payrollMonth),
+  check('erp_commission_payroll_inputs_amount_nonnegative', sql`${table.amount} >= 0`),
+  check('erp_commission_payroll_inputs_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
+]);
+
+export const erpPostPayrollDeductions = mysqlTable('erp_post_payroll_deductions', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
+  amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  reference: varchar('reference', { length: 191 }).notNull(),
+  occurredAt: timestamp('occurred_at', { mode: 'date', fsp: 3 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  uniqueIndex('erp_post_payroll_deductions_reference_unique').on(table.reference),
+  index('erp_post_payroll_deductions_employee_month_idx').on(table.employeeId, table.payrollMonth),
+  check('erp_post_payroll_deductions_amount_positive', sql`${table.amount} > 0`),
+  check('erp_post_payroll_deductions_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 
 export const deactivationAdjustmentReasons = [

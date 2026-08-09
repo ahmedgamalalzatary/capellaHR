@@ -22,6 +22,7 @@ import type { CashierSessionService, SaleService } from './modules/erp/sales/ind
 import type { ClientService, ExpenseService, ProductStockService, SupplierPurchaseService } from './modules/erp/index.js';
 import type { CategoryService, ServiceCatalogService } from './modules/erp/index.js';
 import type { EmployeeAssignmentService } from './modules/erp/assignment/index.js';
+import type { CommissionService } from './modules/erp/commissions/index.js';
 import { createApiRouter } from './routes/index.js';
 import {
   createRequestLogger,
@@ -57,6 +58,7 @@ export const createApp = (dependencies: {
   erpSupplierPurchaseService?: SupplierPurchaseService;
   erpExpenseService?: ExpenseService;
   erpAssignmentService?: EmployeeAssignmentService;
+  erpCommissionService?: CommissionService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;

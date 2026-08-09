@@ -22,6 +22,16 @@ export type SelfServiceDependencies = {
   bonuses: Pick<BonusService, 'list'>;
   deductions: Pick<DeductionService, 'list'>;
   advances: Pick<AdvanceService, 'list'>;
+  commissions?: {
+    getMonthlySummary(employeeId: number, month: string): Promise<{
+      payrollMonth: string;
+      earnedAmount: string;
+      reversedAmount: string;
+      netAmount: string;
+      invoiceLineCount: number;
+      reversalCount: number;
+    } | null>;
+  };
 };
 
 const projectAttendance = (record: AttendanceSession) => ({
@@ -81,8 +91,10 @@ const projectPayroll = (record: PayrollRecord) => ({
   proratedBase: record.proratedBase,
   overtimeAmount: record.overtimeAmount,
   bonusAmount: record.bonusAmount,
+  commissionAmount: record.commissionAmount,
   attendanceDeductionAmount: record.attendanceDeductionAmount,
   manualDeductionAmount: record.manualDeductionAmount,
+  commissionDeductionAmount: record.commissionDeductionAmount,
   advanceAmount: record.advanceAmount,
   priorNegativeCarry: record.priorNegativeCarry,
   netSalary: record.netSalary,
@@ -132,6 +144,24 @@ export const createSelfServiceService = (dependencies: SelfServiceDependencies) 
 
   async getPayrollMonth(employeeId: number, month: string) {
     return projectPayroll(await dependencies.payroll.preview(employeeId, month));
+  },
+
+  async getCommissionMonth(employeeId: number, month: string) {
+    if (!dependencies.commissions) return {
+      available: false as const,
+      payrollMonth: month,
+    };
+    const summary = await dependencies.commissions.getMonthlySummary(employeeId, month);
+    if (!summary) return null;
+    return {
+      available: true as const,
+      payrollMonth: summary.payrollMonth,
+      earnedAmount: summary.earnedAmount,
+      reversedAmount: summary.reversedAmount,
+      netAmount: summary.netAmount,
+      invoiceLineCount: summary.invoiceLineCount,
+      reversalCount: summary.reversalCount,
+    };
   },
 
   async listBonuses(employeeId: number, query: SelfServiceFinancialListQuery) {

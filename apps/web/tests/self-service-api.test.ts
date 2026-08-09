@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   getSelfServiceOverview,
+  getSelfServiceCommissionMonth,
   getSelfServicePayrollMonth,
   listSelfServiceAttendance,
   listSelfServiceAdvances,
@@ -26,6 +27,10 @@ describe('self-service API', () => {
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ data: { payrollMonth: '2026-07' } }))
+      .mockResolvedValueOnce(jsonResponse({ data: {
+        available: true, payrollMonth: '2026-07', earnedAmount: '30.00', reversedAmount: '10.00',
+        netAmount: '20.00', invoiceLineCount: 1, reversalCount: 1,
+      } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }))
       .mockResolvedValueOnce(jsonResponse({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }));
@@ -35,6 +40,7 @@ describe('self-service API', () => {
     await listSelfServiceAttendance({ state: 'closed', dateFrom: '2026-07-01', page: 2 });
     await listSelfServiceWeeklyDays({ status: 'weekly_day_off', page: 2 });
     await getSelfServicePayrollMonth('2026-07');
+    await getSelfServiceCommissionMonth('2026-07');
     await listSelfServiceBonuses({ payrollMonth: '2026-07' });
     await listSelfServiceDeductions({ page: 2 });
     await listSelfServiceAdvances({ payrollMonth: '2026-07', page: 3 });
@@ -45,6 +51,7 @@ describe('self-service API', () => {
       'http://localhost:4000/api/v1/self-service/attendance?state=closed&dateFrom=2026-07-01&page=2',
       'http://localhost:4000/api/v1/self-service/weekly-days?status=weekly_day_off&page=2',
       'http://localhost:4000/api/v1/self-service/payroll/2026-07',
+      'http://localhost:4000/api/v1/self-service/commissions/2026-07',
       'http://localhost:4000/api/v1/self-service/bonuses?payrollMonth=2026-07',
       'http://localhost:4000/api/v1/self-service/deductions?page=2',
       'http://localhost:4000/api/v1/self-service/advances?payrollMonth=2026-07&page=3',

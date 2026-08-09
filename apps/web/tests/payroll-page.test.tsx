@@ -45,6 +45,8 @@ const payroll = {
   proratedBase: '6000.00',
   overtimeAmount: '150.00',
   bonusAmount: '200.00',
+  commissionAmount: '350.00',
+  commissionDeductionAmount: '40.00',
   attendanceDeductionAmount: '50.00',
   manualDeductionAmount: '25.00',
   advanceAmount: '500.00',
@@ -135,6 +137,10 @@ describe('PayrollView', () => {
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'التفاصيل' }));
     expect(screen.getByText('الراتب الأساسي بعد الاستحقاق')).toBeDefined();
     expect(screen.getByText(/150\.00/)).toBeDefined();
+    expect(screen.getByText('العمولات')).toBeDefined();
+    expect(screen.getByText(/350\.00/)).toBeDefined();
+    expect(screen.getByText('خصومات عمولات سابقة')).toBeDefined();
+    expect(screen.getByText(/40\.00/)).toBeDefined();
     expect(screen.getByText(/500\.00/)).toBeDefined();
     expect(screen.getByText('الترحيل السالب السابق')).toBeDefined();
   });

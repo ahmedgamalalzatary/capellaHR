@@ -37,6 +37,10 @@ import {
   createErpAssignmentRouter,
   type EmployeeAssignmentService,
 } from '../modules/erp/assignment/index.js';
+import {
+  createCommissionRouter,
+  type CommissionService,
+} from '../modules/erp/commissions/index.js';
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -65,6 +69,7 @@ export const createApiRouter = (dependencies: {
   erpSupplierPurchaseService?: SupplierPurchaseService;
   erpExpenseService?: ExpenseService;
   erpAssignmentService?: EmployeeAssignmentService;
+  erpCommissionService?: CommissionService;
   publicConfig?: { timeZone: string; locale: string };
   employeeUploadMaxBytes?: number;
   secureCookies?: boolean;
@@ -163,6 +168,15 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createErpSalesRouter(dependencies.erpSaleService),
+      );
+    }
+    if (dependencies.erpCommissionService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/commissions',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createCommissionRouter(dependencies.erpCommissionService),
       );
     }
     if (dependencies.erpClientService) {

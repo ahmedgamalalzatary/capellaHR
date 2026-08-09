@@ -57,8 +57,10 @@ export type SelfServicePayroll = {
   proratedBase: string;
   overtimeAmount: string;
   bonusAmount: string;
+  commissionAmount: string;
   attendanceDeductionAmount: string;
   manualDeductionAmount: string;
+  commissionDeductionAmount: string;
   advanceAmount: string;
   priorNegativeCarry: string;
   netSalary: string;
@@ -68,4 +70,17 @@ export type SelfServicePayroll = {
   overtimeMinutes: number;
   shortageMinutes: number;
   finalizedAt: string | null;
+};
+
+export type SelfServiceCommission = {
+  available: false;
+  payrollMonth: string;
+} | {
+  available: true;
+  payrollMonth: string;
+  earnedAmount: string;
+  reversedAmount: string;
+  netAmount: string;
+  invoiceLineCount: number;
+  reversalCount: number;
 };

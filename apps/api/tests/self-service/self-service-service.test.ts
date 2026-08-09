@@ -71,7 +71,8 @@ const makeDependencies = () => ({
       id: 9, employeeId: 7, employeeCode: 42, employeeName: employee.fullName,
       branchId: 3, branchName: branch.name, payrollMonth: '2026-06', status: 'finalized' as const,
       baseSalary: '5000.00', proratedBase: '5000.00', overtimeAmount: '0.00', bonusAmount: '100.00',
-      attendanceDeductionAmount: '0.00', manualDeductionAmount: '20.00', advanceAmount: '200.00',
+      commissionAmount: '300.00', attendanceDeductionAmount: '0.00', manualDeductionAmount: '20.00',
+      commissionDeductionAmount: '50.00', advanceAmount: '200.00',
       priorNegativeCarry: '0.00', netSalary: '4880.00', eligibleWorkdays: 20, fullMonthWorkdays: 20,
       requiredMinutes: 9600, overtimeMinutes: 0, shortageMinutes: 0,
       finalizedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -80,9 +81,35 @@ const makeDependencies = () => ({
   bonuses: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   deductions: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   advances: { list: vi.fn(async () => ({ items: [], total: 0 })) },
+  commissions: { getMonthlySummary: vi.fn(async () => ({
+    employeeId: 7, employeeCode: 42, employeeName: employee.fullName,
+    payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
+    netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
+  })) },
 });
 
 describe('employee self-service service', () => {
+  it('publishes only the authenticated employee monthly commission totals', async () => {
+    const dependencies = makeDependencies();
+    const service = createSelfServiceService(dependencies);
+
+    await expect(service.getCommissionMonth(7, '2026-08')).resolves.toEqual({
+      available: true, payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
+      netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
+    });
+    expect(dependencies.commissions.getMonthlySummary).toHaveBeenCalledWith(7, '2026-08');
+  });
+
+  it('keeps HR-only self-service available when the ERP commission capability is absent', async () => {
+    const dependencies = makeDependencies();
+    Reflect.deleteProperty(dependencies, 'commissions');
+    const service = createSelfServiceService(dependencies);
+
+    await expect(service.getCommissionMonth(7, '2026-08')).resolves.toEqual({
+      available: false, payrollMonth: '2026-08',
+    });
+  });
+
   it('projects an own-profile overview without images, secrets, GPS, or internal state', async () => {
     const service = createSelfServiceService(makeDependencies());
 
