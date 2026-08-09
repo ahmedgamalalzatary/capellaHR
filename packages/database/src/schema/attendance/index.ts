@@ -48,6 +48,8 @@ export const attendanceSessions = mysqlTable('attendance_sessions', {
   uniqueIndex('attendance_sessions_employee_date_unique')
     .on(table.employeeId, table.attendanceDate),
   index('attendance_sessions_date_employee_idx').on(table.attendanceDate, table.employeeId),
+  uniqueIndex('attendance_sessions_id_employee_unique')
+    .on(table.id, table.employeeId),
   uniqueIndex('attendance_sessions_id_employee_date_unique')
     .on(table.id, table.employeeId, table.attendanceDate),
   uniqueIndex('attendance_sessions_open_employee_unique').on(table.openEmployeeId),

@@ -2435,6 +2435,14 @@
           ],
           "isUnique": false
         },
+        "attendance_sessions_id_employee_unique": {
+          "name": "attendance_sessions_id_employee_unique",
+          "columns": [
+            "id",
+            "employee_id"
+          ],
+          "isUnique": true
+        },
         "attendance_sessions_id_employee_date_unique": {
           "name": "attendance_sessions_id_employee_date_unique",
           "columns": [

@@ -1,5 +1,6 @@
 import { getTableColumns } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/mysql-core';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import * as attendanceSchema from './index.js';
@@ -83,6 +84,22 @@ describe('attendance daily-record schema', () => {
       index.config.name === 'attendance_sessions_id_employee_date_unique'
       && index.config.unique
     ))).toBe(true);
+    expect(config.indexes.some((index) => (
+      index.config.name === 'attendance_sessions_id_employee_unique'
+      && index.config.unique
+    ))).toBe(true);
+  });
+
+  it('creates the exact owner key before migration 0018 adds owner foreign keys', () => {
+    const migration = readFileSync(
+      new URL('../../../migrations/0018_fearless_sunfire.sql', import.meta.url),
+      'utf8',
+    );
+    const ownerKey = migration.indexOf('attendance_sessions_id_employee_unique');
+    const ownerForeignKey = migration.indexOf('attendance_denied_attempts_approved_owner_fk');
+
+    expect(ownerKey).toBeGreaterThanOrEqual(0);
+    expect(ownerForeignKey).toBeGreaterThan(ownerKey);
   });
 
   it('stores accepted event verification snapshots separately from sessions', () => {

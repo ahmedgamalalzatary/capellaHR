@@ -64,6 +64,7 @@ CREATE TABLE `attendance_sessions` (
 	`updated_at` timestamp(3) NOT NULL,
 	CONSTRAINT `attendance_sessions_id` PRIMARY KEY(`id`),
 	CONSTRAINT `attendance_sessions_employee_date_unique` UNIQUE(`employee_id`,`attendance_date`),
+	CONSTRAINT `attendance_sessions_id_employee_unique` UNIQUE(`id`,`employee_id`),
 	CONSTRAINT `attendance_sessions_id_employee_date_unique` UNIQUE(`id`,`employee_id`,`attendance_date`),
 	CONSTRAINT `attendance_sessions_open_employee_unique` UNIQUE(`open_employee_id`),
 	CONSTRAINT `attendance_sessions_required_minutes_range` CHECK(`attendance_sessions`.`required_minutes` between 1 and 720),
