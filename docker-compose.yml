@@ -8,6 +8,7 @@ services:
       - --innodb-buffer-pool-size=256M
       - --max-connections=50
       - --performance-schema=OFF
+      - --log-bin-trust-function-creators=ON
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
       MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}

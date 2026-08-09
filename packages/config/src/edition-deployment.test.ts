@@ -29,6 +29,10 @@ describe('edition deployment contract', () => {
     expect(migrate).not.toContain('EDITION:');
   });
 
+  it('allows the migration account to create required triggers with binary logging enabled', () => {
+    expect(serviceBlock(compose, 'db')).toContain('--log-bin-trust-function-creators=ON');
+  });
+
   it('assigns worker and frontend containers to the supported edition profiles', () => {
     expect(serviceBlock(compose, 'worker')).toContain('profiles: ["hr", "erp", "full"]');
     expect(serviceBlock(compose, 'web')).toContain('profiles: ["hr", "erp", "full"]');

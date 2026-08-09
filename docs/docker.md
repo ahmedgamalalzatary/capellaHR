@@ -14,6 +14,8 @@ This project uses Docker only for production on the Hostinger KVM 1 VPS. Nginx a
 
 The Compose project name remains `capellahr`, so its container names continue to use the `capellahr-` prefix. The new database and employee-upload volumes end in `_v2` to prevent the old beta data from being reused accidentally.
 
+MySQL enables `log_bin_trust_function_creators` because migrations create application-owned validation triggers through the restricted database account. The account still requires its normal database privileges; this setting does not grant access by itself.
+
 ## Production environment
 
 Create the untracked root `.env.production` on the VPS and restrict it to the owner:
