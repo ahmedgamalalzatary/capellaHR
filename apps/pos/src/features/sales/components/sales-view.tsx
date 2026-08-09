@@ -319,10 +319,13 @@ function SaleWorkspace({
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
   const [conflictRestored, setConflictRestored] = useState(false);
   const [backgroundSyncCount, setBackgroundSyncCount] = useState(0);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [discarding, setDiscarding] = useState<OfflineSaleQueueItem | null>(null);
   const [discardError, setDiscardError] = useState(false);
   const didReplayOnMount = useRef(false);
   const backgroundSyncedKeys = useRef(new Set<string>());
+  const retryTimers = useRef(new Set<number>());
+  const mounted = useRef(true);
   const submitting = useRef(false);
   const hasDraftProgress = Boolean(
     client || employee || lines.length > 0 || discountValue || taxValue || paymentsTouched,
@@ -373,6 +376,27 @@ function SaleWorkspace({
   const displayedQueueItem = queuedItem ?? crossSessionConflict;
 
   useEffect(() => {
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    const timers = retryTimers.current;
+    return () => {
+      mounted.current = false;
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     let releaseLease: () => void = () => undefined;
     void acquireSaleDraftTab(workspaceOwner).then((release) => {
@@ -405,10 +429,8 @@ function SaleWorkspace({
 
   useEffect(() => {
     if (!draftHydrated) return;
-    let cancelled = false;
-    const retryTimers = new Set<number>();
     const recordBackgroundSync = (result: Awaited<ReturnType<typeof synchronizeOfflineSales>>) => {
-      if (cancelled) return;
+      if (!mounted.current) return;
       const newKeys = result.confirmed
         .map(({ idempotencyKey: key }) => key)
         .filter((key) => !backgroundSyncedKeys.current.has(key));
@@ -418,7 +440,7 @@ function SaleWorkspace({
     };
     const synchronizeOwner = (owner: PendingSaleOwner, includeFailed: boolean, delay = 0) => {
       const run = () => {
-        if (cancelled || !navigator.onLine) return;
+        if (!mounted.current || !navigator.onLine) return;
         void synchronizeOfflineSales({ owner, submit: completeSale, includeFailed })
           .then(recordBackgroundSync)
           .catch(() => undefined);
@@ -426,10 +448,10 @@ function SaleWorkspace({
       if (delay === 0) run();
       else {
         const timer = window.setTimeout(() => {
-          retryTimers.delete(timer);
+          retryTimers.current.delete(timer);
           run();
         }, delay);
-        retryTimers.add(timer);
+        retryTimers.current.add(timer);
       }
     };
     const synchronizePending = (event?: StorageEvent, retryFailed = false) => {
@@ -485,8 +507,6 @@ function SaleWorkspace({
     window.addEventListener('storage', synchronizePending);
     window.addEventListener('online', onOnline);
     return () => {
-      cancelled = true;
-      retryTimers.forEach((timer) => window.clearTimeout(timer));
       unsubscribe();
       window.removeEventListener('storage', synchronizePending);
       window.removeEventListener('online', onOnline);
@@ -763,7 +783,7 @@ function SaleWorkspace({
             <div>
               <p className="font-medium">
                 {displayedQueueItem.state === 'pending'
-                  ? (navigator.onLine ? 'بانتظار المزامنة' : 'بانتظار الاتصال')
+                  ? (online ? 'بانتظار المزامنة' : 'بانتظار الاتصال')
                   : displayedQueueItem.state === 'syncing'
                     ? 'جارٍ مزامنة البيع'
                     : displayedQueueItem.state === 'conflict'

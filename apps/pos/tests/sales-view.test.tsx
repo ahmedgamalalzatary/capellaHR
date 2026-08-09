@@ -120,6 +120,7 @@ describe('ERP service-sale view', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -358,11 +359,15 @@ describe('ERP service-sale view', () => {
         code: 'UNEXPECTED_ERROR', message: 'الخادم غير متاح',
       }))
       .mockResolvedValue(invoice);
+    vi.useFakeTimers();
 
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     window.dispatchEvent(new Event('online'));
 
-    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
+    expect(mocks.completeSale).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mocks.completeSale).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
     expect(await screen.findByText('الخادم غير متاح')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة بنفس الطلب' }));
 
@@ -374,6 +379,61 @@ describe('ERP service-sale view', () => {
       expect.not.stringMatching(predecessor.idempotencyKey),
     ]);
     expect(readOfflineQueue()).toEqual([]);
+  });
+
+  it('keeps a delayed failed-sale retry when draft state reruns synchronization', async () => {
+    const predecessor = {
+      clientId: 5,
+      assignedEmployeeId: 8,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    const owner = { accountId: 3, role: 'cashier' as const, branchId: 2, cashierSessionId: 13 };
+    enqueueOfflineSale({ owner, input: predecessor });
+    markOfflineSaleFailed(predecessor.idempotencyKey, new ApiError(503, {
+      code: 'UNEXPECTED_ERROR', message: 'الخادم غير متاح',
+    }));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    renderView();
+    const selectClient = await screen.findByRole('button', { name: 'اختر العميل' });
+    await screen.findByText('الخادم غير متاح');
+    vi.useFakeTimers();
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    fireEvent.click(selectClient);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(mocks.completeSale).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: predecessor.idempotencyKey,
+    }));
+  });
+
+  it('updates the pending queue label from connectivity events', async () => {
+    const input = {
+      clientId: 5,
+      assignedEmployeeId: 8,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    enqueueOfflineSale({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input,
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    mocks.completeSale.mockImplementation(() => new Promise(() => undefined));
+    renderView();
+    await screen.findByText('بانتظار الاتصال');
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    expect(screen.getByText('بانتظار المزامنة')).toBeDefined();
   });
 
   it('does not submit when durable browser storage is unavailable and explains recovery', async () => {

@@ -150,8 +150,7 @@ export function SuppliersPurchasesView() {
     ),
     onSuccess: async (_updated, supplier) => {
       if (supplier.isActive && supplierId === String(supplier.id)) {
-        setSupplierId('');
-        setIdempotencyKey(createUuid());
+        resetDraft();
       }
       await refresh();
     },

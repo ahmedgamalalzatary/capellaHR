@@ -85,14 +85,6 @@ function ReversalControls({
     return quantity !== 0 && (!Number.isInteger(quantity)
       || quantity < 0 || quantity > line.refundableQuantity);
   });
-  const close = () => {
-    setMode(null);
-    setReason('');
-    setQuantities({});
-    setPaymentAmounts({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
-    setQuoted(null);
-    commandIdentity.current = null;
-  };
   const quote = useMutation({
     mutationFn: () => quoteRefund(invoice.id, {
       ...(branchId === undefined ? {} : { branchId }), lines: selectedLines,
@@ -118,7 +110,7 @@ function ReversalControls({
         idempotencyKey: idempotencyKeyFor(payload),
       });
     },
-    onSuccess: (value) => { onUpdated(value); close(); },
+    onSuccess: (value) => { onUpdated(value); close(true); },
   });
   const voidMutation = useMutation({
     mutationFn: () => {
@@ -131,8 +123,26 @@ function ReversalControls({
         idempotencyKey: idempotencyKeyFor(payload),
       });
     },
-    onSuccess: (value) => { onUpdated(value); close(); },
+    onSuccess: (value) => { onUpdated(value); close(true); },
   });
+  const reversalPending = refund.isPending || voidMutation.isPending;
+  function close(requestSettled = false) {
+    if (reversalPending && !requestSettled) return;
+    setMode(null);
+    setReason('');
+    setQuantities({});
+    setPaymentAmounts({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
+    setQuoted(null);
+    commandIdentity.current = null;
+    quote.reset();
+    refund.reset();
+    voidMutation.reset();
+  }
+  function openMode(nextMode: 'refund' | 'void') {
+    if (reversalPending) return;
+    close();
+    setMode(nextMode);
+  }
   const tenderTotal = quoted?.payments.reduce(
     (sum, payment) => sum + (cents(paymentAmounts[payment.method].trim()) ?? BigInt(0)), BigInt(0),
   ) ?? BigInt(0);
@@ -145,8 +155,8 @@ function ReversalControls({
 
   return <div data-print-controls className="mx-auto max-w-3xl space-y-3">
     <div className="flex flex-wrap gap-2">
-      {invoice.eligibility.canRefund ? <Button variant="secondary" onClick={() => { close(); setMode('refund'); }}>استرداد</Button> : null}
-      {invoice.eligibility.canVoid ? <Button variant="secondary" onClick={() => { close(); setMode('void'); }}>إلغاء الفاتورة</Button> : null}
+      {invoice.eligibility.canRefund ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('refund')}>استرداد</Button> : null}
+      {invoice.eligibility.canVoid ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('void')}>إلغاء الفاتورة</Button> : null}
     </div>
     {mode === 'refund' ? <Card><CardContent className="space-y-4 pt-5">
       <h2 className="text-lg font-semibold">استرداد جزئي أو كامل</h2>
@@ -162,14 +172,14 @@ function ReversalControls({
           <input aria-label={`مبلغ الاسترداد ${paymentLabels[payment.method]}`} inputMode="decimal" className="rounded-control border border-line bg-paper px-3 py-2" value={paymentAmounts[payment.method]} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [payment.method]: event.target.value }))} />
         </label>)}
         <label className="grid gap-1"><span>سبب الاسترداد</span><textarea aria-label="سبب الاسترداد" maxLength={1000} className="rounded-control border border-line bg-paper px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-        <div className="flex gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" onClick={close}>رجوع</Button></div>
+        <div className="flex gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
       </div> : null}
     </CardContent></Card> : null}
     {mode === 'void' ? <Card><CardContent className="space-y-3 pt-5">
       <h2 className="text-lg font-semibold">إلغاء الفاتورة بالكامل</h2>
       <p className="text-sm text-muted">سيتم عكس كل البنود والمدفوعات والمخزون والعمولة.</p>
       <label className="grid gap-1"><span>سبب الإلغاء</span><textarea aria-label="سبب الإلغاء" maxLength={1000} className="rounded-control border border-line bg-paper px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <div className="flex gap-2"><Button disabled={!reason.trim() || voidMutation.isPending} onClick={() => voidMutation.mutate()}>{voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}</Button><Button variant="ghost" onClick={close}>رجوع</Button></div>
+      <div className="flex gap-2"><Button disabled={!reason.trim() || voidMutation.isPending} onClick={() => voidMutation.mutate()}>{voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
     </CardContent></Card> : null}
     {error ? <p role="alert" className="rounded-control bg-danger-soft p-3 text-danger">{responseMessage(error)}</p> : null}
     {invoice.reversals.length ? <Card><CardContent className="space-y-3 pt-5"><h2 className="text-lg font-semibold">سجل الإلغاء والاسترداد</h2>{invoice.reversals.map((reversal) => <div key={reversal.id} className="space-y-2 border-t border-line pt-3 first:border-0 first:pt-0"><p className="font-medium">{reversal.type === 'void' ? 'إلغاء كامل' : 'استرداد'} · {reversal.totals.total} ج.م</p><p className="text-sm">{reversal.reason}</p><ul className="text-sm">{reversal.lines.map((line) => <li key={line.invoiceLineId}>{line.name} × {line.quantity} · {line.total} ج.م</li>)}</ul>{reversal.payments.length ? <ul className="text-sm">{reversal.payments.map((payment) => <li key={payment.method}>{paymentLabels[payment.method]} · {payment.amount} ج.م</li>)}</ul> : <p className="text-sm">لا توجد حركة دفع لهذا الاسترداد</p>}<p className="text-xs text-muted">{reversal.actingAccount.username} · {formatCairoDateTime(reversal.createdAt)}</p></div>)}</CardContent></Card> : null}

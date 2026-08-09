@@ -1,10 +1,11 @@
 import { expect, test, type Route } from '@playwright/test';
+import { e2eBaseUrl } from '../../playwright-port';
 
 const corsHeaders = {
   'access-control-allow-credentials': 'true',
   'access-control-allow-headers': 'content-type',
   'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS',
-  'access-control-allow-origin': `http://localhost:${process.env.POS_E2E_PORT ?? 3001}`,
+  'access-control-allow-origin': e2eBaseUrl,
 };
 const json = (route: Route, data: unknown, meta?: unknown, status = 200) => route.fulfill({
   status,

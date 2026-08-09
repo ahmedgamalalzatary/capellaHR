@@ -8,6 +8,8 @@ if (!name) throw new Error('ERP 15 migration 0050 is missing');
 const migration = readFileSync(`${directory}/${name}`, 'utf8');
 const forwardName = readdirSync(directory).find((entry) => /^0053_.*\.sql$/.test(entry));
 const forwardMigration = forwardName ? readFileSync(`${directory}/${forwardName}`, 'utf8') : '';
+const repairName = readdirSync(directory).find((entry) => /^0054_.*\.sql$/.test(entry));
+const repairMigration = repairName ? readFileSync(`${directory}/${repairName}`, 'utf8') : '';
 
 describe('ERP expenses migration', () => {
   it('creates branch-safe immutable facts with controlled correction status', () => {
@@ -22,6 +24,10 @@ describe('ERP expenses migration', () => {
     expect(forwardName).toBeDefined();
     expect(forwardMigration).toContain('correction_operation_id');
     expect(forwardMigration).toContain('CREATE PROCEDURE `correct_erp_expense`');
+    expect(repairName).toBeDefined();
+    expect(repairMigration).toContain('DROP PROCEDURE `correct_erp_expense`');
+    expect(repairMigration).toContain('CREATE PROCEDURE `correct_erp_expense`');
+    expect(repairMigration).toContain('IN p_description varchar(1000)');
     expect(forwardMigration).toContain('SQL SECURITY DEFINER');
     expect(forwardMigration).toContain('CONNECTION_ID()');
     expect(forwardMigration).toContain('SAVEPOINT erp_expense_correction_start');

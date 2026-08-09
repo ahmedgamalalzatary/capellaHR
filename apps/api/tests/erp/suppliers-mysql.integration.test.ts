@@ -140,6 +140,8 @@ describe('ERP suppliers and purchases MySQL transaction', () => {
     const data = await fixture(0); const other = await fixture(0); const posted = await post(data, { branchId: data.branchId, supplierId: data.supplier.id, purchaseDate: '2026-08-05', lines: [{ productId: data.productId, quantity: 1, unitCost: '5.00' }] });
     await expect(data.module.service.getPurchase(data.actor, posted.id, other.branchId)).rejects.toMatchObject({ code: 'PURCHASE_NOT_FOUND' });
     await data.module.service.cancelPurchase(data.actor, posted.id, { branchId: data.branchId, reason: 'correct' });
+    const differentSupplier = await data.module.service.createSupplier(data.actor, { branchId: data.branchId, name: `Different ${sequence}` });
+    await expect(post(data, { branchId: data.branchId, supplierId: differentSupplier.id, purchaseDate: '2026-08-05', correctsPurchaseId: posted.id, lines: [{ productId: data.productId, quantity: 1, unitCost: '6.00' }] })).rejects.toMatchObject({ code: 'PURCHASE_CORRECTION_INVALID' });
     const correction = await post(data, { branchId: data.branchId, supplierId: data.supplier.id, purchaseDate: '2026-08-05', correctsPurchaseId: posted.id, lines: [{ productId: data.productId, quantity: 1, unitCost: '6.00' }] });
     expect((await data.module.service.getPurchase(data.actor, posted.id, data.branchId)).correctedByPurchaseId).toBe(correction.id);
     await expect(post(data, { branchId: data.branchId, supplierId: data.supplier.id, purchaseDate: '2026-08-05', correctsPurchaseId: posted.id, lines: [{ productId: data.productId, quantity: 1, unitCost: '7.00' }] })).rejects.toMatchObject({ code: 'PURCHASE_CORRECTION_INVALID' });

@@ -815,7 +815,9 @@ export const createDrizzleSaleRepository = (
             const balanceByProduct = new Map(stocks.map((stock) => [stock.productId, stock.quantity]));
             for (const line of productLines) {
               const quantity = selectedByLine.get(line.id)!;
-              const balanceAfter = balanceByProduct.get(line.productId!)! + quantity;
+              const balanceBefore = balanceByProduct.get(line.productId!);
+              if (balanceBefore === undefined) throw new SaleError('PRODUCT_UNAVAILABLE');
+              const balanceAfter = balanceBefore + quantity;
               balanceByProduct.set(line.productId!, balanceAfter);
               await transaction.update(erpProductStocks).set({
                 quantity: balanceAfter, updatedAt: operation.reversedAt,

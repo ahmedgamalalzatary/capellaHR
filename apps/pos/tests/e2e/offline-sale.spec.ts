@@ -1,6 +1,7 @@
 import { expect, test, type Route } from '@playwright/test';
+import { e2eBaseUrl } from '../../playwright-port';
 
-const posOrigin = `http://localhost:${process.env.POS_E2E_PORT ?? 3001}`;
+const posOrigin = e2eBaseUrl;
 const corsHeaders = {
   'access-control-allow-credentials': 'true',
   'access-control-allow-headers': 'content-type',

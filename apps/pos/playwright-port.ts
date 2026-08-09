@@ -5,3 +5,6 @@ export const parseE2ePort = (value: string | undefined) => {
   }
   return port;
 };
+
+export const e2ePort = parseE2ePort(process.env.POS_E2E_PORT ?? '3001');
+export const e2eBaseUrl = `http://localhost:${e2ePort}`;

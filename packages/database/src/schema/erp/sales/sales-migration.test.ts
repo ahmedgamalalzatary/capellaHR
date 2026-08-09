@@ -16,6 +16,10 @@ const reversalMigration = readFileSync(`${migrationsDirectory}/${migration51Name
 const migration52Name = readdirSync(migrationsDirectory).find((name) => /^0052_.*\.sql$/.test(name));
 if (!migration52Name) throw new Error('ERP 16 commission-link migration 0052 is missing');
 const commissionLinkMigration = readFileSync(`${migrationsDirectory}/${migration52Name}`, 'utf8');
+const migration54Name = readdirSync(migrationsDirectory).find((name) => /^0054_.*\.sql$/.test(name));
+const reversalRepairMigration = migration54Name
+  ? readFileSync(`${migrationsDirectory}/${migration54Name}`, 'utf8')
+  : '';
 
 describe('ERP sales migration', () => {
   it('guards normalized reversal facts and invoice lifecycle transitions', () => {
@@ -36,6 +40,10 @@ describe('ERP sales migration', () => {
     expect(reversalMigration).toContain('Invoice reversal stock restoration is incomplete');
     expect(reversalMigration).toContain('Invoice reversal commission facts are incomplete');
     expect(reversalMigration).toContain('Void business date is invalid');
+    expect(migration54Name).toBeDefined();
+    expect(reversalRepairMigration).toContain('DROP TRIGGER `erp_invoice_reversals_validate_finalize`');
+    expect(reversalRepairMigration).toContain('CREATE TRIGGER `erp_invoice_reversals_validate_finalize`');
+    expect(reversalRepairMigration).toContain('prior_reversal.invoice_id = NEW.invoice_id');
   });
 
   it('creates every ERP 8 persistence table', () => {

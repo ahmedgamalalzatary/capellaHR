@@ -1,11 +1,12 @@
 import { saleFixtures } from '@capella/contracts';
 import { expect, test } from '@playwright/test';
+import { e2eBaseUrl } from '../../playwright-port';
 
 const corsHeaders = {
   'access-control-allow-credentials': 'true',
   'access-control-allow-headers': 'content-type',
   'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
-  'access-control-allow-origin': `http://localhost:${process.env.POS_E2E_PORT ?? 3001}`,
+  'access-control-allow-origin': e2eBaseUrl,
 };
 
 test('receipt loading exposes a safe request reference and recovers without a sale write', async ({ page }) => {

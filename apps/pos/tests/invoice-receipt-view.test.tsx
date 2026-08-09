@@ -210,6 +210,87 @@ describe('stored invoice receipt', () => {
       .toBe(voidInvoice.mock.calls[0]![1].idempotencyKey);
   });
 
+  it('keeps a pending refund panel and its idempotency identity when navigation is attempted', async () => {
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    let rejectRefund!: (error: Error) => void;
+    refundInvoice.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectRefund = reject; }));
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '185.00' } });
+    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledOnce());
+    const originalKey = refundInvoice.mock.calls[0]![1].idempotencyKey;
+
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
+
+    expect(screen.getByRole('heading', { name: 'استرداد جزئي أو كامل' })).toBeDefined();
+    expect((screen.getByLabelText('سبب الاسترداد') as HTMLTextAreaElement).value).toBe('عدم رضا العميل');
+    rejectRefund(new Error('network timeout'));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(2));
+    expect(refundInvoice.mock.calls[1]![1].idempotencyKey).toBe(originalKey);
+  });
+
+  it('keeps a pending void panel and its idempotency identity when navigation is attempted', async () => {
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    let rejectVoid!: (error: Error) => void;
+    voidInvoice.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectVoid = reject; }));
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+    fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    await waitFor(() => expect(voidInvoice).toHaveBeenCalledOnce());
+    const originalKey = voidInvoice.mock.calls[0]![1].idempotencyKey;
+
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+
+    expect(screen.getByRole('heading', { name: 'إلغاء الفاتورة بالكامل' })).toBeDefined();
+    expect((screen.getByLabelText('سبب الإلغاء') as HTMLTextAreaElement).value).toBe('إدخال مكرر');
+    rejectVoid(new Error('network timeout'));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    await waitFor(() => expect(voidInvoice).toHaveBeenCalledTimes(2));
+    expect(voidInvoice.mock.calls[1]![1].idempotencyKey).toBe(originalKey);
+  });
+
+  it('clears mutation errors when a reversal panel closes', async () => {
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    voidInvoice.mockRejectedValueOnce(new Error('network timeout'));
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+    fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('generates a UUID v7 idempotency key when randomUUID is unavailable', async () => {
     vi.stubGlobal('crypto', {
       getRandomValues: (values: Uint8Array) => values.fill(1),

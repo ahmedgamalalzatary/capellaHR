@@ -19,7 +19,11 @@ These instructions apply to the entire repository. Follow the user's explicit in
 
 ## Codex/ChatGPT explicit instructions
 
-- Do not use a fixed 30-second polling or pull loop while waiting for a command or agent. Use completion-triggered waiting so the command or agent wakes you when it finishes; do not repeatedly wake it to check its status.
+# CODEX/CHATGPT: NEVER POLL OR PULL A RUNNING COMMAND OR AGENT
+
+- After starting a command or agent, do not manually trigger it, request its status, or use repeated timed waits to check whether it finished.
+- Use completion-triggered waiting only: the running command or agent must wake you when it completes. If other work is available, continue that work and let the completion notification arrive on its own.
+- A timed wait that expires must never be followed by another status check or timed wait. Treat any repeated check as prohibited polling.
 - Prefer commands that return the smallest useful output for the task to reduce token usage. Filter or limit output when the full result is unnecessary, for example with `tail -40`, `head -40`, or a search for only the relevant task/status lines.
 - Move quickly through red/green TDD phases and work in small, focused slices. Use TDD to catch wrong directions early rather than allowing the process itself to slow down delivery.
 - Assume commands copied from this chat CLI may be broken or split at line wraps. When the user must copy and run a command, keep it short, provide it as a single copy-safe line, avoid fragile line continuations, and provide commands one at a time when practical.

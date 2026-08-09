@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { parseE2ePort } from './playwright-port';
+import { e2eBaseUrl, e2ePort } from './playwright-port';
 
-const port = parseE2ePort(process.env.POS_E2E_PORT);
-const baseURL = `http://localhost:${port}`;
+const port = e2ePort;
+const baseURL = e2eBaseUrl;
 
 export default defineConfig({
   testDir: './tests/e2e',

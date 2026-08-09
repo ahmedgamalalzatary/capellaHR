@@ -1,6 +1,7 @@
 import { expect, test, type Route } from '@playwright/test';
+import { e2eBaseUrl } from '../../playwright-port';
 
-const headers = { 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS', 'access-control-allow-origin': `http://localhost:${process.env.POS_E2E_PORT ?? 3001}` };
+const headers = { 'access-control-allow-credentials': 'true', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS', 'access-control-allow-origin': e2eBaseUrl };
 const json = (route: Route, data: unknown, meta?: unknown, status = 200) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(meta ? { data, meta } : { data }) });
 
 test('Admin manages a supplier, posts exact purchase stock facts, and cancels once', async ({ page }) => {
@@ -28,6 +29,6 @@ test('Admin manages a supplier, posts exact purchase stock facts, and cancels on
     { branchId: 2, isActive: true },
   ]);
   await page.getByLabel('المورد للمشتريات').selectOption('3'); await page.getByRole('combobox', { name: 'المنتج', exact: true }).selectOption('4'); await page.getByLabel('الكمية', { exact: true }).fill('2'); await page.getByLabel('تكلفة الوحدة', { exact: true }).fill('12.50'); await expect(page.getByText('الإجمالي: 25.00 ج.م')).toBeVisible(); await page.getByRole('button', { name: 'ترحيل المشتريات' }).click();
-  await expect.poll(() => postPayload).toMatchObject({ branchId: 2, idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/), supplierId: 3, lines: [{ productId: 4, quantity: 2, unitCost: '12.50' }] }); await expect(page.getByRole('cell', { name: 'مُرحّلة' })).toBeVisible(); await expect(page.getByText(/الرصيد بعد الترحيل 7/)).toBeVisible();
+  await expect.poll(() => postPayload).toMatchObject({ branchId: 2, idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/), supplierId: 3, lines: [{ productId: 4, quantity: 2, unitCost: '12.50' }] }); await expect(page.getByRole('cell', { name: 'مُرحّلة' })).toBeVisible(); await expect(page.getByText(/الرصيد بعد الترحيل: 7/)).toBeVisible();
   await page.getByRole('button', { name: 'إلغاء المشتريات' }).click(); await page.getByLabel('سبب الإلغاء').fill('خطأ في الكمية'); await page.getByRole('button', { name: 'تأكيد الإلغاء' }).click(); await expect.poll(() => cancelPayload).toMatchObject({ branchId: 2, reason: 'خطأ في الكمية' }); await expect(page.getByText(/ملغاة — خطأ في الكمية/)).toBeVisible(); await expect(page.getByText(/وبعد الإلغاء 5/)).toBeVisible();
 });

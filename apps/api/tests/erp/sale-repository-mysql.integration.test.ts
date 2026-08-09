@@ -244,6 +244,38 @@ describe('ERP sale repository MySQL integration', () => {
       .toEqual([expect.objectContaining({ reason: 'refund', quantityDelta: 1, balanceAfter: 1 })]);
   });
 
+  it('rejects a product reversal explicitly when its stock row is missing', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(sale);
+    await database.delete(erpProductStocks).where(and(
+      eq(erpProductStocks.productId, data.productId),
+      eq(erpProductStocks.branchId, data.branchId),
+    ));
+
+    await expect(repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Missing stock row',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-03T12:00:00.000Z'),
+    })).rejects.toMatchObject({ code: 'PRODUCT_UNAVAILABLE' });
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);
+  });
+
   it('voids a same-day service invoice and appends the exact commission reversal', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());

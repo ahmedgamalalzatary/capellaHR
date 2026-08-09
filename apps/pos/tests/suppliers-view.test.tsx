@@ -47,8 +47,10 @@ describe('SuppliersPurchasesView', () => {
 
   it('clears a selected supplier when that supplier is deactivated', async () => {
     const randomUUID = vi.spyOn(crypto, 'randomUUID');
+    mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const purchaseSupplier = await screen.findByLabelText('المورد للمشتريات'); fireEvent.change(purchaseSupplier, { target: { value: '3' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
+    const purchaseSupplier = screen.getByLabelText('المورد للمشتريات');
     const keyCallsBeforeDeactivation = randomUUID.mock.calls.length;
     const supplierRow = screen.getAllByRole('row').find((row) => (
       within(row).queryByText(supplier.name) && within(row).queryByRole('button', { name: 'إيقاف' })
@@ -58,6 +60,8 @@ describe('SuppliersPurchasesView', () => {
       branchId: 2, isActive: false,
     }));
     await waitFor(() => expect((purchaseSupplier as HTMLSelectElement).value).toBe(''));
+    expect(screen.queryByText('تصحيح للمشتريات #9')).toBeNull();
+    expect(screen.getAllByLabelText('المنتج')).toHaveLength(1);
     expect(randomUUID.mock.calls.length).toBe(keyCallsBeforeDeactivation + 1);
   });
 
