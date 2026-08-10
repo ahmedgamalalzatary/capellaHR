@@ -171,6 +171,7 @@ describe('authentication service', () => {
         actorType: 'account',
         accountId: 21,
         employeeId: null,
+        expiresAt: new Date('2026-07-18T10:00:00.000Z'),
       }),
     ]);
     expect(attempts.rows).toEqual([
@@ -220,7 +221,7 @@ describe('authentication service', () => {
     expect(first.token).not.toBe(second.token);
     expect(sessions.rows).toHaveLength(2);
     expect(sessions.rows.every((row) => row.actorType === 'account' && row.accountId === 1)).toBe(true);
-    expect(sessions.rows[0]?.expiresAt).toEqual(new Date('2026-07-18T10:00:00.000Z'));
+    expect(sessions.rows[0]?.expiresAt).toEqual(new Date('2026-08-16T10:00:00.000Z'));
     expect(sessions.rows.some((row) => row.tokenHash === first.token)).toBe(false);
   });
 
@@ -274,6 +275,7 @@ describe('authentication service', () => {
     expect(result.actor).toEqual({ type: 'employee' });
     expect(setup.sessions.attendanceEligibilityChecks).toBe(1);
     expect(setup.sessions.deviceEligibilityChecks).toBe(1);
+    expect(setup.sessions.rows[0]?.expiresAt).toEqual(new Date('2026-07-24T10:00:00.000Z'));
     expect(setup.attendanceContext).toBe(setup.sessions.transactionContext);
     await expect(setup.service.authenticate(result.token)).resolves.toMatchObject({ actorType: 'employee', employeeId: 7 });
   });

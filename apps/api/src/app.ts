@@ -76,8 +76,13 @@ export interface AppDependencies {
 export const createApp = (dependencies: AppDependencies = {}) => {
   const app = express();
 
+  app.set('etag', false);
   if (dependencies.trustProxyHops !== undefined) app.set('trust proxy', dependencies.trustProxyHops);
   app.use(requestContext);
+  app.use((_request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   if (dependencies.logger) app.use(createRequestLogger(dependencies.logger));
   app.use(helmet());
   if (dependencies.enforceSameOrigin) {

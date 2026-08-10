@@ -35,7 +35,7 @@ describe('POS API client hardening', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/health/live',
-      expect.objectContaining({ credentials: 'include' }),
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' }),
     );
   });
 

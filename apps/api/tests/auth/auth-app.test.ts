@@ -93,7 +93,8 @@ describe('authentication application composition', () => {
       label: 'Cashier',
       session: {
         id: 'cashier-session', tokenHash: 'hash', actorType: 'account' as const,
-        accountRole: 'cashier' as const, accountId: 7, employeeId: 11, revokedAt: null,
+        accountRole: 'cashier' as const, accountId: 7, employeeId: 11,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
       },
       dependencies: {},
     },
@@ -101,7 +102,8 @@ describe('authentication application composition', () => {
       label: 'employee',
       session: {
         id: 'employee-session', tokenHash: 'hash', actorType: 'employee' as const,
-        accountRole: null, accountId: null, employeeId: 11, revokedAt: null,
+        accountRole: null, accountId: null, employeeId: 11,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
       },
       dependencies: { employeeAuthenticationEnabled: false },
     },
@@ -248,6 +250,50 @@ describe('authentication application composition', () => {
     expect(response.body).toEqual({
       data: { timeZone: 'Africa/Cairo', locale: 'ar-EG-u-nu-latn' },
     });
+  });
+
+  it('marks API responses no-store so no cache may retain a per-actor payload', async () => {
+    const response = await request(createApp({
+      publicConfig: { timeZone: 'Africa/Cairo', locale: 'ar-EG-u-nu-latn' },
+    })).get('/api/v1/config');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('never answers a repeated session check with 304', async () => {
+    const service = {
+      async loginAdmin() { throw new Error('not used'); },
+      async loginCashier() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      async logout() { return true; },
+      async authenticate(token: string) {
+        return token === 'admin-token'
+          ? {
+              id: 'session', tokenHash: 'hash', actorType: 'admin' as const,
+              employeeId: null, accountId: null,
+              expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
+            }
+          : null;
+      },
+      async revokeEmployeeSessions() {},
+    };
+    const app = createApp({ authService: service, secureCookies: false });
+    const first = await request(app)
+      .get('/api/v1/auth/session')
+      .set('Cookie', 'capella_session=admin-token');
+
+    expect(first.status).toBe(200);
+    expect(first.headers['cache-control']).toBe('no-store');
+    expect(first.headers.etag).toBeUndefined();
+
+    const replayed = await request(app)
+      .get('/api/v1/auth/session')
+      .set('Cookie', 'capella_session=admin-token')
+      .set('If-None-Match', first.headers.etag ?? '"stale-validator"');
+
+    expect(replayed.status).toBe(200);
+    expect(replayed.body).toEqual({ data: { actor: { type: 'admin' } } });
   });
 
   it('returns a structured Arabic 400 for malformed JSON', async () => {

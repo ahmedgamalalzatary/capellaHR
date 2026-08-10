@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { RequireAdmin } from '../src/features/auth';
+import { ApiError } from '../src/lib/api/client';
+import { createAppQueryClient } from '../src/providers';
 
 const { replaceMock, getSessionMock } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
@@ -72,5 +74,26 @@ describe('RequireAdmin', () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     await waitFor(() => expect(screen.getByText('لوحة التحكم')).toBeDefined());
+  });
+
+  test('recovers automatically from one transient session-check failure', async () => {
+    getSessionMock
+      .mockRejectedValueOnce(new ApiError(0, {
+        code: 'NETWORK_ERROR',
+        message: 'تعذر الاتصال بالخادم.',
+      }))
+      .mockResolvedValue({ actor: { type: 'admin' } });
+
+    render(
+      <QueryClientProvider client={createAppQueryClient()}>
+        <RequireAdmin>
+          <p>لوحة التحكم</p>
+        </RequireAdmin>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByText('لوحة التحكم')).toBeDefined(), { timeout: 5_000 });
+    expect(getSessionMock).toHaveBeenCalledTimes(2);
+    expect(replaceMock).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ const service = (): DeviceService => ({
   createPairing: vi.fn(async () => ({ id: 1, pairingToken: 'x'.repeat(32) })), completePairing: vi.fn(async () => ({ id: 2 } as never)),
   cancelPairing: vi.fn(), revoke: vi.fn(), verify: vi.fn(), list: vi.fn(async () => ({ items: [], total: 0 })), get: vi.fn(), history: vi.fn(async () => []),
 });
-const app = (actor: 'admin' | 'employee' | null = 'admin', deviceService = service()) => { const result = express(); result.use(express.json()); result.use('/api/v1/devices', createDevicesRouter(deviceService, { authenticate: async () => actor ? { id: 's', tokenHash: 'h', actorType: actor, employeeId: actor === 'employee' ? 1 : null, revokedAt: null } : null })); return result; };
+const app = (actor: 'admin' | 'employee' | null = 'admin', deviceService = service()) => { const result = express(); result.use(express.json()); result.use('/api/v1/devices', createDevicesRouter(deviceService, { authenticate: async () => actor ? { id: 's', tokenHash: 'h', actorType: actor, employeeId: actor === 'employee' ? 1 : null, expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null } : null })); return result; };
 
 describe('devices HTTP API', () => {
   it('pairs directly from the token and browser marker', async () => {

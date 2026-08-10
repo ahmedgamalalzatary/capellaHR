@@ -202,6 +202,7 @@ describe('MySQL-backed attendance sessions', () => {
         tokenHash: 'b'.repeat(64),
         actorType: 'employee',
         employeeId,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'),
         revokedAt: null,
       }, 3, () => Promise.resolve(true), (context) => attendance.hasOpenSession(employeeId, context)),
       attendance.checkOut({
@@ -228,6 +229,7 @@ describe('MySQL-backed attendance sessions', () => {
       tokenHash: 'd'.repeat(64),
       actorType: 'employee',
       employeeId,
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
       revokedAt: null,
     }, 3, (context) => eligibility.isActiveEmployeeDevice(deviceId, employeeId, context),
     (context) => attendance.hasOpenSession(employeeId, context));

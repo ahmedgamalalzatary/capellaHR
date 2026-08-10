@@ -47,6 +47,7 @@ async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
     response = await fetch(`${API_BASE_URL}${path}`, {
       credentials: 'include',
       ...init,
+      cache: 'no-store',
       headers: {
         // FormData bodies must let the browser set the multipart boundary.
         ...(init?.body && !(init.body instanceof FormData)

@@ -25,7 +25,11 @@ const makeApp = (actor: 'admin' | 'employee' | null = 'admin') => {
   const authService = {
     async authenticate() {
       if (!actor) return null;
-      return { id: 's', tokenHash: 'h', actorType: actor, employeeId: actor === 'employee' ? 4 : null, revokedAt: null };
+      return {
+        id: 's', tokenHash: 'h', actorType: actor,
+        employeeId: actor === 'employee' ? 4 : null,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
+      };
     },
   };
   app.use('/api/v1/branches', createBranchesRouter(makeService(), authService));

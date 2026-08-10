@@ -11,7 +11,7 @@ type StoredSession = {
   employeeId: number | null;
   accountId?: number | null;
   accountRole?: 'admin' | 'cashier' | null;
-  expiresAt?: Date;
+  expiresAt: Date;
   revokedAt: Date | null;
 };
 
@@ -113,6 +113,11 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 // Valid argon2 hash of an unused throwaway value; verified against when no
 // credential exists so unknown emails take the same time as wrong passwords.
 const TIMING_DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$O33BRlRwoIn+0l0wzrVq7g$jTAOxanRrPw/yvMxeDaz0CHzlDf77QOU6llfV3aKaXs';
+const SESSION_LIFETIME_MS = {
+  admin: 30 * 24 * 60 * 60_000,
+  cashier: 24 * 60 * 60_000,
+  employee: 7 * 24 * 60 * 60_000,
+} as const;
 
 const safelyVerifyHash = async (storedHash: string, value: string) => {
   try {
@@ -126,36 +131,39 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   type AttemptContext = { ipAddress?: string | null; userAgent?: string | null; requestId?: string | null };
   const now = dependencies.now ?? (() => new Date());
   const tokenFactory = dependencies.tokenFactory ?? (() => randomBytes(32).toString('base64url'));
-  const sessionLifetimeMs = 24 * 60 * 60_000;
-
   const createSession = async (
-    actorType: ActorType,
-    employeeId: number | null,
-    accountId: number | null = null,
-    credentialVersion?: number,
-    deviceId?: number,
+    input: {
+      actorType: ActorType;
+      employeeId: number | null;
+      accountId?: number | null;
+      lifetimeMs: number;
+      credentialVersion?: number;
+      deviceId?: number;
+    },
   ) => {
     const token = tokenFactory();
     const session = {
       id: randomUUID(),
       tokenHash: hashToken(token),
-      actorType,
-      employeeId,
-      accountId,
-      expiresAt: new Date(now().valueOf() + sessionLifetimeMs),
+      actorType: input.actorType,
+      employeeId: input.employeeId,
+      accountId: input.accountId ?? null,
+      expiresAt: new Date(now().valueOf() + input.lifetimeMs),
       revokedAt: null,
     };
-    if (actorType === 'employee') {
+    if (input.actorType === 'employee') {
       const result = await dependencies.sessions.createEmployeeIfCurrent(
         session,
-        credentialVersion!,
-        (context) => dependencies.personalDevices.isActiveEmployeeDevice(deviceId!, employeeId!, context),
-        (context) => dependencies.attendance.hasOpenSession(employeeId!, context),
+        input.credentialVersion!,
+        (context) => dependencies.personalDevices.isActiveEmployeeDevice(
+          input.deviceId!, input.employeeId!, context,
+        ),
+        (context) => dependencies.attendance.hasOpenSession(input.employeeId!, context),
       );
       if (result === 'credentials_changed') throw new AuthError('INVALID_CREDENTIALS', 'تعذر تسجيل الدخول');
       if (result === 'device_invalid') throw new AuthError('DEVICE_NOT_REGISTERED', 'تعذر تسجيل الدخول');
       if (result === 'attendance_required') throw new AuthError('ACTIVE_ATTENDANCE_REQUIRED', 'تعذر تسجيل الدخول');
-    } else if (actorType === 'account') {
+    } else if (input.actorType === 'account') {
       const result = await dependencies.sessions.createAccountIfCurrent(session);
       if (result === 'account_invalid') {
         throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
@@ -177,7 +185,10 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       });
       if (!valid) throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
       return {
-        token: await createSession('account', null, credential.id),
+        token: await createSession({
+          actorType: 'account', employeeId: null, accountId: credential.id,
+          lifetimeMs: SESSION_LIFETIME_MS.admin,
+        }),
         actor: { type: 'admin' as const },
       };
     },
@@ -214,7 +225,10 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       }
       let token: string;
       try {
-        token = await createSession('account', null, account.id);
+        token = await createSession({
+          actorType: 'account', employeeId: null, accountId: account.id,
+          lifetimeMs: SESSION_LIFETIME_MS.cashier,
+        });
       } catch (error) {
         if (error instanceof AuthError) await recordAttempt(false);
         throw error;
@@ -257,13 +271,12 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
       const employeeId = identity!.id;
       let token: string;
       try {
-        token = await createSession(
-          'employee',
-          employeeId,
-          null,
-          identity!.credentialVersion,
-          verifiedDevice!.id,
-        );
+        token = await createSession({
+          actorType: 'employee', employeeId,
+          lifetimeMs: SESSION_LIFETIME_MS.employee,
+          credentialVersion: identity!.credentialVersion,
+          deviceId: verifiedDevice!.id,
+        });
       }
       catch (error) { if (error instanceof AuthError) await recordAttempt(false, error.code); throw error; }
       await recordAttempt(true, null);

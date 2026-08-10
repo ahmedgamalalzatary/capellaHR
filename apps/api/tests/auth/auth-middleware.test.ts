@@ -13,7 +13,8 @@ const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
       if (!actorType || token !== 'valid-token') return null;
       return {
         id: 'session-id', tokenHash: 'hash', actorType,
-        employeeId: actorType === 'employee' || actorType === 'account' ? 7 : null, revokedAt: null,
+        employeeId: actorType === 'employee' || actorType === 'account' ? 7 : null,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
         accountId: actorType === 'account' ? 21 : null,
         accountRole: actorType === 'account' ? 'cashier' as const : null,
       };
@@ -34,6 +35,18 @@ const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
 };
 
 describe('authorization middleware', () => {
+  it.each([
+    ['padding around the value', 'capella_session= valid-token '],
+    ['padding around the name', ' capella_session =valid-token'],
+    ['a preceding unrelated cookie', 'other=1; capella_session=valid-token'],
+    ['a preceding cookie whose value contains a separator', 'other=a=b; capella_session=valid-token'],
+  ])('accepts a session cookie with %s', async (_name, cookie) => {
+    const response = await request(makeApp('admin')).get('/admin').set('Cookie', cookie);
+
+    expect(response.status).toBe(200);
+    expect(response.body.actor).toEqual({ type: 'admin' });
+  });
+
   it('rejects requests without an active session', async () => {
     const response = await request(makeApp(null)).get('/admin');
 

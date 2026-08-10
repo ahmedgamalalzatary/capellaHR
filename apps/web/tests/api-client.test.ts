@@ -22,7 +22,7 @@ describe('api client error contract', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/health/live',
-      expect.objectContaining({ credentials: 'include' }),
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' }),
     );
   });
 

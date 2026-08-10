@@ -18,9 +18,10 @@ import {
 } from './cashier-accounts-service.js';
 import { createAuthMiddleware } from './auth-middleware.js';
 import { responseRequestId } from '../../shared/http/index.js';
+import { SESSION_COOKIE, readSessionCookie } from './session-cookie.js';
 
-// Stable protocol name shared by issuing, reading, and clearing the session cookie.
-const SESSION_COOKIE = 'capella_session';
+const ADMIN_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
+const CASHIER_SESSION_MAX_AGE_MS = 24 * 60 * 60_000;
 
 const publicActor = (
   actor:
@@ -29,18 +30,6 @@ const publicActor = (
 ) => actor.type === 'cashier'
   ? { type: actor.type, accountId: actor.accountId, employeeId: actor.employeeId }
   : { type: actor.type };
-
-const readCookie = (cookieHeader: string | undefined, name: string) => {
-  if (!cookieHeader) return null;
-  for (const section of cookieHeader.split(';')) {
-    const separator = section.indexOf('=');
-    if (separator < 0) continue;
-    if (section.slice(0, separator).trim() === name) {
-      try { return decodeURIComponent(section.slice(separator + 1).trim()); } catch { return null; }
-    }
-  }
-  return null;
-};
 
 export const createAuthRouter = (
   service: AuthService,
@@ -57,13 +46,14 @@ export const createAuthRouter = (
     secure: options.secureCookies ?? true,
     sameSite: 'strict',
     path: '/',
-    maxAge: 24 * 60 * 60_000,
   };
+  const adminCookieOptions = { ...cookieOptions, maxAge: ADMIN_SESSION_MAX_AGE_MS };
+  const cashierCookieOptions = { ...cookieOptions, maxAge: CASHIER_SESSION_MAX_AGE_MS };
 
   router.post('/admin/login', async (request, response) => {
     const input = adminLoginSchema.parse(request.body);
     const result = await service.loginAdmin(input.email, input.password, { ipAddress: request.ip?.slice(0, 45) ?? null, userAgent: request.header('user-agent')?.slice(0, 1024) ?? null, requestId: responseRequestId(response) });
-    response.cookie(SESSION_COOKIE, result.token, cookieOptions);
+    response.cookie(SESSION_COOKIE, result.token, adminCookieOptions);
     response.json({ data: { actor: publicActor(result.actor) } });
   });
 
@@ -85,7 +75,7 @@ export const createAuthRouter = (
         userAgent: request.header('user-agent')?.slice(0, 1024) ?? null,
         requestId: responseRequestId(response),
       });
-      response.cookie(SESSION_COOKIE, result.token, cookieOptions);
+      response.cookie(SESSION_COOKIE, result.token, cashierCookieOptions);
       response.json({ data: { actor: publicActor(result.actor) } });
     });
     router.post(
@@ -139,8 +129,9 @@ export const createAuthRouter = (
   }
 
   router.get('/session', async (request, response) => {
-    const token = readCookie(request.headers.cookie, SESSION_COOKIE) ?? '';
+    const token = readSessionCookie(request.headers.cookie) ?? '';
     const session = await service.authenticate(token);
+    if (!session && token) response.clearCookie(SESSION_COOKIE, cookieOptions);
     if (!session) throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
     const disabledActor = (
       (session.actorType === 'employee' && !employeeAuthenticationEnabled)
@@ -150,6 +141,7 @@ export const createAuthRouter = (
     );
     if (disabledActor) {
       await service.logout(token);
+      response.clearCookie(SESSION_COOKIE, cookieOptions);
       throw new AuthError('UNAUTHENTICATED', 'يجب تسجيل الدخول');
     }
     const actor = session.actorType === 'account'
@@ -165,7 +157,7 @@ export const createAuthRouter = (
   });
 
   router.post('/logout', async (request, response) => {
-    const token = readCookie(request.headers.cookie, SESSION_COOKIE);
+    const token = readSessionCookie(request.headers.cookie);
     if (token) await service.logout(token);
     response.clearCookie(SESSION_COOKIE, cookieOptions);
     response.status(204).send();

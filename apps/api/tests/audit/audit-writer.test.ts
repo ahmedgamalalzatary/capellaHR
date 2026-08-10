@@ -108,7 +108,7 @@ describe('audit writer', () => {
     const auth = createAuthMiddleware({
       authenticate: vi.fn(async () => ({
         id: 'session', tokenHash: 'hash', actorType: 'employee' as const,
-        employeeId: 17, revokedAt: null,
+        employeeId: 17, expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
       })),
     });
     const app = express();
