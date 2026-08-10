@@ -2,13 +2,14 @@
 
 import type { PaymentMethod, PublicInvoiceDto, RefundQuote } from '@capella/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Printer, RotateCcw } from 'lucide-react';
+import { ArrowRight, Printer, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 
-import { Button, Card, CardContent, EmptyState } from '@capella/ui';
+import { Button, Card, CardContent, EmptyState, Input } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { Textarea } from '@/components/form/textarea';
 import { useSession } from '@/features/auth';
 import {
   createErpReportExport,
@@ -164,36 +165,36 @@ function ReversalControls({
     ));
   const error = quote.error ?? refund.error ?? voidMutation.error;
 
-  return <div data-print-controls className="mx-auto max-w-3xl space-y-3">
+  return <div data-print-controls className="mx-auto w-full max-w-2xl space-y-3">
     <div className="flex flex-wrap gap-2">
       {invoice.eligibility.canRefund ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('refund')}>استرداد</Button> : null}
       {invoice.eligibility.canVoid ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('void')}>إلغاء الفاتورة</Button> : null}
     </div>
-    {mode === 'refund' ? <Card><CardContent className="space-y-4 pt-5">
-      <h2 className="text-lg font-semibold">استرداد جزئي أو كامل</h2>
-      <div className="space-y-2">{invoice.lines.filter((line) => line.refundableQuantity > 0).map((line) => <label key={line.id} className="grid gap-1 sm:grid-cols-[1fr_8rem] sm:items-center">
-        <span>{line.name} · متبقي {line.refundableQuantity}</span>
-        <input aria-label={`كمية استرداد ${line.name}`} type="number" min={0} max={line.refundableQuantity} disabled={quote.isPending} className="rounded-control border border-line bg-paper px-3 py-2" value={quantities[line.id] ?? ''} onChange={(event) => { setQuantities((current) => ({ ...current, [line.id]: event.target.value })); setQuoted(null); }} />
+    {mode === 'refund' ? <Card className="shadow-card"><CardContent className="space-y-4 p-4 sm:p-5">
+      <h2 className="text-sm font-semibold text-ink">استرداد جزئي أو كامل</h2>
+      <div className="space-y-2">{invoice.lines.filter((line) => line.refundableQuantity > 0).map((line) => <label key={line.id} className="grid items-center gap-2 rounded-control border border-line bg-surface/50 p-3 sm:grid-cols-[1fr_8rem]">
+        <span className="text-sm">{line.name} · متبقي {line.refundableQuantity}</span>
+        <Input aria-label={`كمية استرداد ${line.name}`} type="number" min={0} max={line.refundableQuantity} disabled={quote.isPending} dir="ltr" className="text-start" value={quantities[line.id] ?? ''} onChange={(event) => { setQuantities((current) => ({ ...current, [line.id]: event.target.value })); setQuoted(null); }} />
       </label>)}</div>
       <Button disabled={!selectedLines.length || hasInvalidQuantity || quote.isPending} onClick={() => quote.mutate()}>{quote.isPending ? 'جارٍ الحساب…' : 'احسب الاسترداد'}</Button>
-      {quoted ? <div className="space-y-3 rounded-control border border-line p-3">
-        <p className="font-semibold">الإجمالي المسترد: <span dir="ltr">{quoted.totals.total} ج.م</span></p>
-        {quoted.payments.map((payment) => <label key={payment.method} className="grid gap-1 sm:grid-cols-[1fr_10rem] sm:items-center">
-          <span>{paymentLabels[payment.method]} · متاح {payment.refundableAmount} ج.م</span>
-          <input aria-label={`مبلغ الاسترداد ${paymentLabels[payment.method]}`} inputMode="decimal" className="rounded-control border border-line bg-paper px-3 py-2" value={paymentAmounts[payment.method]} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [payment.method]: event.target.value }))} />
+      {quoted ? <div className="space-y-3 rounded-control border border-line bg-surface/50 p-3">
+        <p className="font-semibold">الإجمالي المسترد: <span className="tabular" dir="ltr">{quoted.totals.total} ج.م</span></p>
+        {quoted.payments.map((payment) => <label key={payment.method} className="grid items-center gap-2 sm:grid-cols-[1fr_10rem]">
+          <span className="text-sm">{paymentLabels[payment.method]} · متاح {payment.refundableAmount} ج.م</span>
+          <Input aria-label={`مبلغ الاسترداد ${paymentLabels[payment.method]}`} inputMode="decimal" dir="ltr" className="bg-paper text-start" value={paymentAmounts[payment.method]} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [payment.method]: event.target.value }))} />
         </label>)}
-        <label className="grid gap-1"><span>سبب الاسترداد</span><textarea aria-label="سبب الاسترداد" maxLength={1000} className="rounded-control border border-line bg-paper px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-        <div className="flex gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
+        <label className="grid gap-1.5"><span className="text-sm font-medium text-ink">سبب الاسترداد</span><Textarea aria-label="سبب الاسترداد" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        <div className="flex flex-wrap gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
       </div> : null}
     </CardContent></Card> : null}
-    {mode === 'void' ? <Card><CardContent className="space-y-3 pt-5">
-      <h2 className="text-lg font-semibold">إلغاء الفاتورة بالكامل</h2>
-      <p className="text-sm text-muted">سيتم عكس كل البنود والمدفوعات والمخزون والعمولة.</p>
-      <label className="grid gap-1"><span>سبب الإلغاء</span><textarea aria-label="سبب الإلغاء" maxLength={1000} className="rounded-control border border-line bg-paper px-3 py-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <div className="flex gap-2"><Button disabled={!reason.trim() || voidMutation.isPending} onClick={() => voidMutation.mutate()}>{voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
+    {mode === 'void' ? <Card className="shadow-card"><CardContent className="space-y-3 p-4 sm:p-5">
+      <h2 className="text-sm font-semibold text-ink">إلغاء الفاتورة بالكامل</h2>
+      <p className="text-[13px] text-muted">سيتم عكس كل البنود والمدفوعات والمخزون والعمولة.</p>
+      <label className="grid gap-1.5"><span className="text-sm font-medium text-ink">سبب الإلغاء</span><Textarea aria-label="سبب الإلغاء" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+      <div className="flex flex-wrap gap-2"><Button variant="danger" disabled={!reason.trim() || voidMutation.isPending} onClick={() => voidMutation.mutate()}>{voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
     </CardContent></Card> : null}
-    {error ? <p role="alert" className="rounded-control bg-danger-soft p-3 text-danger">{responseMessage(error)}</p> : null}
-    {invoice.reversals.length ? <Card><CardContent className="space-y-3 pt-5"><h2 className="text-lg font-semibold">سجل الإلغاء والاسترداد</h2>{invoice.reversals.map((reversal) => <div key={reversal.id} className="space-y-2 border-t border-line pt-3 first:border-0 first:pt-0"><p className="font-medium">{reversal.type === 'void' ? 'إلغاء كامل' : 'استرداد'} · {reversal.totals.total} ج.م</p><p className="text-sm">{reversal.reason}</p><ul className="text-sm">{reversal.lines.map((line) => <li key={line.invoiceLineId}>{line.name} × {line.quantity} · {line.total} ج.م</li>)}</ul>{reversal.payments.length ? <ul className="text-sm">{reversal.payments.map((payment) => <li key={payment.method}>{paymentLabels[payment.method]} · {payment.amount} ج.م</li>)}</ul> : <p className="text-sm">لا توجد حركة دفع لهذا الاسترداد</p>}<p className="text-xs text-muted">{reversal.actingAccount.username} · {formatCairoDateTime(reversal.createdAt)}</p></div>)}</CardContent></Card> : null}
+    {error ? <p role="alert" className="rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{responseMessage(error)}</p> : null}
+    {invoice.reversals.length ? <Card className="shadow-card"><CardContent className="space-y-3 p-4 sm:p-5"><h2 className="text-sm font-semibold text-ink">سجل الإلغاء والاسترداد</h2>{invoice.reversals.map((reversal) => <div key={reversal.id} className="space-y-2 border-t border-line pt-3 first:border-0 first:pt-0"><p className="font-medium">{reversal.type === 'void' ? 'إلغاء كامل' : 'استرداد'} · {reversal.totals.total} ج.م</p><p className="text-[13px] text-muted">{reversal.reason}</p><ul className="space-y-0.5 text-[13px]">{reversal.lines.map((line) => <li key={line.invoiceLineId}>{line.name} × {line.quantity} · {line.total} ج.م</li>)}</ul>{reversal.payments.length ? <ul className="space-y-0.5 text-[13px]">{reversal.payments.map((payment) => <li key={payment.method}>{paymentLabels[payment.method]} · {payment.amount} ج.م</li>)}</ul> : <p className="text-[13px]">لا توجد حركة دفع لهذا الاسترداد</p>}<p className="text-xs text-muted">{reversal.actingAccount.username} · {formatCairoDateTime(reversal.createdAt)}</p></div>)}</CardContent></Card> : null}
   </div>;
 }
 
@@ -317,10 +318,10 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   if (query.isPending) return <LoadingState label="جارٍ تحميل الفاتورة…" />;
   if (query.isError) {
     const reference = requestReference(query.error);
-    return <div role="alert" className="space-y-3 rounded-control bg-danger-soft p-4 text-danger">
-      <p>{responseMessage(query.error)}</p>
+    return <div role="alert" className="mx-auto w-full max-w-2xl space-y-3 rounded-card border border-danger/20 bg-danger-soft p-5 text-danger">
+      <p className="text-sm font-medium">{responseMessage(query.error)}</p>
       {reference ? <p className="text-xs">مرجع الطلب: {reference}</p> : null}
-      <Button variant="secondary" onClick={() => void query.refetch()}><RotateCcw className="size-4" />إعادة المحاولة</Button>
+      <Button variant="secondary" onClick={() => void query.refetch()}><RotateCcw className="size-4" aria-hidden />إعادة المحاولة</Button>
     </div>;
   }
 
@@ -338,8 +339,14 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   };
 
   return <section className="space-y-4">
-    <div data-print-controls className="mx-auto flex max-w-[80mm] flex-wrap items-center justify-between gap-2">
-      <Link href={branchId ? `/invoices?branchId=${branchId}` : '/invoices'}>العودة إلى الفواتير</Link>
+    <div data-print-controls className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-between gap-2">
+      <Link
+        href={branchId ? `/invoices?branchId=${branchId}` : '/invoices'}
+        className="inline-flex h-9 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-ink transition-colors hover:bg-surface"
+      >
+        <ArrowRight className="size-4" aria-hidden />
+        العودة إلى الفواتير
+      </Link>
       <span className="flex flex-wrap gap-2">
         {isAdmin ? existingExport.isError && activeExportId === undefined ? (
           <Button variant="secondary" onClick={() => void existingExport.refetch()}>
@@ -366,14 +373,14 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
             {createExport.isPending ? 'جارٍ وضع الطلب…' : 'إنشاء PDF A4'}
           </Button>
         ) : null}
-        <Button onClick={print}><Printer className="size-4" />طباعة الإيصال</Button>
+        <Button onClick={print}><Printer className="size-4" aria-hidden />طباعة الإيصال</Button>
       </span>
     </div>
     {createExport.isError || exportQuery.isError || retryExport.isError || downloadExport.isError
-      ? <p role="alert" data-print-controls className="mx-auto max-w-[80mm] rounded-control bg-danger-soft p-3 text-danger">تعذر إكمال تصدير PDF. حاول مرة أخرى.</p>
+      ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">تعذر إكمال تصدير PDF. حاول مرة أخرى.</p>
       : null}
-    {printError ? <p role="alert" data-print-controls className="mx-auto max-w-[80mm] rounded-control bg-danger-soft p-3 text-danger">{printError}</p> : null}
-    <Card className="mx-auto max-w-[84mm]"><CardContent className="p-0"><Receipt invoice={query.data} /></CardContent></Card>
+    {printError ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{printError}</p> : null}
+    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><Receipt invoice={query.data} /></CardContent></Card>
     <ReversalControls invoice={query.data} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
       void invalidateErpCaches(queryClient, 'reversal');

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, FileText, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import {
@@ -11,7 +12,12 @@ import {
 } from '@capella/contracts';
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
 
+import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
+import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
+import { FieldError } from '@/components/feedback/notice';
+import { Select } from '@/components/form/select';
+import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
@@ -133,46 +139,73 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
   const meta = query.data?.meta;
   const deleteTarget = items.find(({ id }) => id === confirmDelete);
 
-  return <section className="space-y-3" aria-labelledby="erp-export-history-title">
-    <h2 id="erp-export-history-title" className="font-semibold">سجل تصدير التقرير الحالي</h2>
-    {actionError ? <p role="alert" className="text-sm text-danger">{errorMessage(actionError)}</p> : null}
-    <Card>{query.isPending ? <LoadingState label="جارٍ تحميل سجل التصدير…" className="p-6" />
-      : query.isError ? <EmptyState title="تعذر تحميل سجل التصدير" action={<Button onClick={() => void query.refetch()}>إعادة المحاولة</Button>} />
-        : !items.length ? <EmptyState title="لا توجد تصديرات لهذا التقرير" />
-          : <ul className="divide-y divide-line/60">{items.map((record) => {
-            const badge = statusBadge(record.status);
-            return <li key={record.id} className="flex flex-wrap items-center gap-2 p-3 text-sm">
-              <span className="font-medium">ملف #{record.id}</span>
-              <Badge variant={badge.variant}>{badge.label}</Badge>
-              {record.fileDeletedAt ? <Badge variant="neutral">تم حذف الملف</Badge> : null}
-              {record.rowCount !== null ? <span className="text-muted">{record.rowCount} سجل</span> : null}
-              <span className="ms-auto flex flex-wrap gap-2">
-                {record.status === 'failed' ? <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate(record.id)}>إعادة محاولة التصدير</Button> : null}
-                {record.status === 'completed' && !record.fileDeletedAt ? <>
-                  <Button size="sm" variant="ghost" disabled={download.isPending} onClick={() => download.mutate(record)}>تنزيل PDF</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(record.id)}>حذف الملف</Button>
-                </> : null}
-              </span>
-            </li>;
-          })}</ul>}
-    </Card>
-    {deleteTarget ? <ConfirmDialog
-      title="حذف ملف التصدير"
-      description={removeFile.isError
-        ? errorMessage(removeFile.error)
-        : `سيُحذف ملف PDF رقم ${deleteTarget.id} نهائياً مع بقاء سجل التصدير.`}
-      confirmLabel="تأكيد حذف الملف"
-      tone="danger"
-      pending={removeFile.isPending}
-      onConfirm={() => removeFile.mutate(deleteTarget.id)}
-      onCancel={() => { removeFile.reset(); setConfirmDelete(undefined); }}
-    /> : null}
-    {meta && meta.totalPages > 1 ? <div className="flex justify-end gap-2">
-      <Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>السابق</Button>
-      <span className="self-center text-sm">صفحة {page}</span>
-      <Button variant="ghost" disabled={page >= meta.totalPages} onClick={() => setPage((value) => value + 1)}>التالي</Button>
-    </div> : null}
-  </section>;
+  return (
+    <section className="space-y-3" aria-labelledby="erp-export-history-title">
+      <SectionHeading id="erp-export-history-title" title="سجل تصدير التقرير الحالي" />
+      {actionError ? <FieldError>{errorMessage(actionError)}</FieldError> : null}
+      <Card className="overflow-hidden shadow-card">
+        {query.isPending ? <LoadingState label="جارٍ تحميل سجل التصدير…" className="py-16" />
+          : query.isError ? <EmptyState title="تعذر تحميل سجل التصدير" action={<Button onClick={() => void query.refetch()}>إعادة المحاولة</Button>} />
+            : !items.length ? <EmptyState title="لا توجد تصديرات لهذا التقرير" />
+              : (
+                <ul className="divide-y divide-line/60">
+                  {items.map((record) => {
+                    const badge = statusBadge(record.status);
+                    return (
+                      <li key={record.id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm">
+                        <FileText className="size-4 shrink-0 text-muted" aria-hidden />
+                        <span className="font-medium">ملف #{record.id}</span>
+                        <Badge variant={badge.variant}>{badge.label}</Badge>
+                        {record.fileDeletedAt ? <Badge variant="neutral">تم حذف الملف</Badge> : null}
+                        {record.rowCount !== null ? <span className="tabular text-muted">{record.rowCount} سجل</span> : null}
+                        <span className="ms-auto flex flex-wrap gap-1">
+                          {record.status === 'failed' ? (
+                            <Button size="sm" variant="ghost" disabled={retry.isPending} onClick={() => retry.mutate(record.id)}>
+                              <RotateCcw className="size-4" aria-hidden />
+                              إعادة محاولة التصدير
+                            </Button>
+                          ) : null}
+                          {record.status === 'completed' && !record.fileDeletedAt ? (
+                            <>
+                              <Button size="sm" variant="ghost" disabled={download.isPending} onClick={() => download.mutate(record)}>
+                                <Download className="size-4" aria-hidden />
+                                تنزيل PDF
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(record.id)}>
+                                <Trash2 className="size-4" aria-hidden />
+                                حذف الملف
+                              </Button>
+                            </>
+                          ) : null}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+        {meta && meta.totalPages > 1 ? (
+          <Pagination
+            summary={<>صفحة <span className="tabular">{page}</span></>}
+            previousDisabled={page <= 1}
+            nextDisabled={page >= meta.totalPages}
+            onPrevious={() => setPage((value) => value - 1)}
+            onNext={() => setPage((value) => value + 1)}
+          />
+        ) : null}
+      </Card>
+      {deleteTarget ? <ConfirmDialog
+        title="حذف ملف التصدير"
+        description={removeFile.isError
+          ? errorMessage(removeFile.error)
+          : `سيُحذف ملف PDF رقم ${deleteTarget.id} نهائياً مع بقاء سجل التصدير.`}
+        confirmLabel="تأكيد حذف الملف"
+        tone="danger"
+        pending={removeFile.isPending}
+        onConfirm={() => removeFile.mutate(deleteTarget.id)}
+        onCancel={() => { removeFile.reset(); setConfirmDelete(undefined); }}
+      /> : null}
+    </section>
+  );
 }
 
 export function ErpReportsView() {
@@ -216,55 +249,121 @@ export function ErpReportsView() {
   const snapshot = report.data?.snapshot;
   const meta = report.data?.meta;
 
-  return <div className="mx-auto max-w-7xl space-y-4" dir="rtl">
-    <div>
-      <h1 className="text-2xl font-semibold text-ink">التقارير والتصدير</h1>
-      <p className="mt-1 text-sm text-muted">عرض التقارير المالية والتشغيلية وإدارة ملفات PDF.</p>
-    </div>
-    <div role="tablist" aria-label="أنواع تقارير ERP" className="flex flex-wrap gap-2">
-      {erpTabReportTypes.map((type) => <Button
-        key={type}
-        role="tab"
-        variant={type === reportType ? 'primary' : 'secondary'}
-        aria-selected={type === reportType}
-        onClick={() => { setReportType(type); setPage(1); }}
-      >{tabLabels[type]}</Button>)}
-    </div>
+  return (
+    <section className="space-y-6">
+      <PageHeader
+        title="التقارير والتصدير"
+        description="عرض التقارير المالية والتشغيلية وإدارة ملفات PDF."
+      />
 
-    <Card><CardContent className="grid gap-3 pt-5 sm:grid-cols-2 lg:grid-cols-5">
-      <Label>الفرع<select aria-label="الفرع" value={branchInput ?? ''} onChange={(event) => setBranchInput(event.target.value ? Number(event.target.value) : undefined)} className="mt-1 h-10 w-full rounded-control border border-line bg-paper px-3">
-        <option value="">كل الفروع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-      </select></Label>
-      <Label>من تاريخ<Input aria-label="من تاريخ" type="date" value={dateFromInput} onChange={(event) => setDateFromInput(event.target.value)} /></Label>
-      <Label>إلى تاريخ<Input aria-label="إلى تاريخ" type="date" value={dateToInput} onChange={(event) => setDateToInput(event.target.value)} /></Label>
-      <Label>بحث<Input aria-label="بحث" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} /></Label>
-      <Button className="self-end" onClick={applyFilters}>تطبيق الفلاتر</Button>
-    </CardContent></Card>
+      <div role="group" aria-label="أنواع تقارير ERP" className="flex flex-wrap gap-1.5">
+        {erpTabReportTypes.map((type) => (
+          <Button
+            key={type}
+            size="sm"
+            variant={type === reportType ? 'primary' : 'secondary'}
+            aria-pressed={type === reportType}
+            onClick={() => { setReportType(type); setPage(1); }}
+          >
+            {tabLabels[type]}
+          </Button>
+        ))}
+      </div>
 
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="font-semibold">{tabLabels[reportType]}</h2>
-      <Button disabled={createExport.isPending} onClick={() => createExport.mutate()}>
-        {createExport.isPending ? 'جارٍ وضع التصدير في الانتظار…' : 'تصدير PDF'}
-      </Button>
-    </div>
-    {createExport.isError ? <p role="alert" className="text-sm text-danger">{errorMessage(createExport.error)}</p> : null}
+      <Card className="shadow-card">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3 xl:grid-cols-5 xl:items-end">
+          <div className="space-y-1.5">
+            <Label htmlFor="report-branch">الفرع</Label>
+            <Select
+              id="report-branch"
+              aria-label="الفرع"
+              value={branchInput ?? ''}
+              onChange={(event) => setBranchInput(event.target.value ? Number(event.target.value) : undefined)}
+            >
+              <option value="">كل الفروع</option>
+              {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="report-from">من تاريخ</Label>
+            <Input id="report-from" aria-label="من تاريخ" type="date" value={dateFromInput} onChange={(event) => setDateFromInput(event.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="report-to">إلى تاريخ</Label>
+            <Input id="report-to" aria-label="إلى تاريخ" type="date" value={dateToInput} onChange={(event) => setDateToInput(event.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="report-search">بحث</Label>
+            <Input id="report-search" aria-label="بحث" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+          </div>
+          <Button onClick={applyFilters}>تطبيق الفلاتر</Button>
+        </CardContent>
+      </Card>
 
-    <Card>{report.isPending ? <LoadingState label="جارٍ تحميل التقرير…" className="p-8" />
-      : report.isError ? <EmptyState title="تعذر تحميل التقرير" description={errorMessage(report.error)} action={<Button onClick={() => void report.refetch()}>إعادة المحاولة</Button>} />
-        : !snapshot?.rows.length ? <EmptyState title="لا توجد سجلات مطابقة" />
-          : <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead><tr className="border-b border-line text-muted">{snapshot.columns.map((column) => <th key={column.key} className="p-3 text-start">{column.label}</th>)}</tr></thead>
-            <tbody>{snapshot.rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-line/60">{snapshot.columns.map((column) => <td key={column.key} className="p-3">{displayCell(row[column.key] ?? null)}</td>)}</tr>)}</tbody>
-          </table></div>}
-    </Card>
+      <div className="space-y-3">
+        <SectionHeading
+          title={tabLabels[reportType]}
+          actions={(
+            <Button size="sm" disabled={createExport.isPending} onClick={() => createExport.mutate()}>
+              <Download className="size-4" aria-hidden />
+              {createExport.isPending ? 'جارٍ وضع التصدير في الانتظار…' : 'تصدير PDF'}
+            </Button>
+          )}
+        />
+        {createExport.isError ? <FieldError>{errorMessage(createExport.error)}</FieldError> : null}
 
-    {snapshot && Object.keys(snapshot.summary).length ? <Card><dl className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">{Object.entries(snapshot.summary).map(([key, value]) => <div key={key} className="flex justify-between gap-4"><dt className="text-muted">{summaryLabels[key] ?? key}</dt><dd className="tabular">{displayCell(value)}</dd></div>)}</dl></Card> : null}
+        <Card className="overflow-hidden shadow-card">
+          {report.isPending ? <LoadingState label="جارٍ تحميل التقرير…" className="py-16" />
+            : report.isError ? <EmptyState title="تعذر تحميل التقرير" description={errorMessage(report.error)} action={<Button onClick={() => void report.refetch()}>إعادة المحاولة</Button>} />
+              : !snapshot?.rows.length ? <EmptyState title="لا توجد سجلات مطابقة" />
+                : (
+                  <DataTable>
+                    <THead>
+                      {snapshot.columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
+                    </THead>
+                    <tbody>
+                      {snapshot.rows.map((row, index) => (
+                        <TR key={String(row.id ?? index)}>
+                          {snapshot.columns.map((column) => (
+                            <TD key={column.key} className="whitespace-nowrap">
+                              {displayCell(row[column.key] ?? null)}
+                            </TD>
+                          ))}
+                        </TR>
+                      ))}
+                    </tbody>
+                  </DataTable>
+                )}
+          {meta && meta.totalPages > 1 ? (
+            <Pagination
+              summary={(
+                <>
+                  صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
+                  {' — '}
+                  <span className="tabular">{meta.total}</span> سجل
+                </>
+              )}
+              previousDisabled={page <= 1}
+              nextDisabled={page >= meta.totalPages}
+              onPrevious={() => setPage((value) => value - 1)}
+              onNext={() => setPage((value) => value + 1)}
+            />
+          ) : null}
+        </Card>
 
-    {meta && meta.totalPages > 1 ? <div className="flex items-center justify-between text-sm">
-      <span className="text-muted">صفحة {meta.page} من {meta.totalPages} — {meta.total} سجل</span>
-      <div className="flex gap-2"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>السابق</Button><Button variant="ghost" disabled={page >= meta.totalPages} onClick={() => setPage((value) => value + 1)}>التالي</Button></div>
-    </div> : null}
+        {snapshot && Object.keys(snapshot.summary).length ? (
+          <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {Object.entries(snapshot.summary).map(([key, value]) => (
+              <div key={key} className="rounded-card border border-line bg-paper p-3 shadow-card">
+                <dt className="text-[12px] text-muted">{summaryLabels[key] ?? key}</dt>
+                <dd className="tabular mt-1 text-base font-semibold text-ink">{displayCell(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </div>
 
-    <ExportHistory key={reportType} reportType={reportType} />
-  </div>;
+      <ExportHistory key={reportType} reportType={reportType} />
+    </section>
+  );
 }

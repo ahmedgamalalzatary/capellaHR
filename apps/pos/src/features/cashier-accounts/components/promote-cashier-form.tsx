@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { Select } from '@/components/form/select';
 import { ApiError } from '@/lib/api/client';
 
 import { promoteCashier } from '../api/cashier-accounts-api';
@@ -49,14 +50,13 @@ export function PromoteCashierForm({
       ?? serverErrorMessage(promote.error);
 
   return (
-    <Card>
-      <CardContent className="space-y-4 py-5">
+    <Card className="shadow-card">
+      <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => promote.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="الموظف" htmlFor="promote-employee" required>
-              <select
+              <Select
                 id="promote-employee"
-                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
                 defaultValue=""
                 aria-invalid={errors.employeeId ? true : undefined}
                 {...register('employeeId')}
@@ -65,7 +65,7 @@ export function PromoteCashierForm({
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>{employee.fullName}</option>
                 ))}
-              </select>
+              </Select>
             </Field>
             <Field label="اسم المستخدم" htmlFor="promote-username" required>
               <Input
@@ -90,7 +90,7 @@ export function PromoteCashierForm({
               {formError}
             </p>
           ) : null}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
             <Button type="submit" disabled={promote.isPending}>
               <UserPlus className="size-4" aria-hidden />
               إنشاء الحساب

@@ -1,9 +1,12 @@
 'use client';
 
+import { ShieldAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 
-import { Button } from '@capella/ui';
+import { Button, Card, CardContent } from '@capella/ui';
+
+import { LoadingState } from '@/components/feedback/loading-state';
 
 import { useSession } from '../hooks/use-session';
 
@@ -42,27 +45,40 @@ export function RequireErpAccount({
 
   if (session.isPending) {
     return (
-      <div className="flex min-h-dvh items-center justify-center text-sm text-muted">
-        جارٍ التحقق من الجلسة…
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <LoadingState label="جارٍ التحقق من الجلسة…" className="p-0" />
       </div>
     );
   }
 
   if (session.isError) {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm text-danger">تعذر التحقق من الجلسة. تأكد من اتصالك بالخادم.</p>
-        <Button variant="secondary" size="sm" onClick={() => void session.refetch()}>
-          إعادة المحاولة
-        </Button>
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <Card className="w-full max-w-sm shadow-card">
+          <CardContent className="space-y-3 p-6 text-center">
+            <p className="text-sm text-danger">تعذر التحقق من الجلسة. تأكد من اتصالك بالخادم.</p>
+            <Button variant="secondary" size="sm" onClick={() => void session.refetch()}>
+              إعادة المحاولة
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (isUnauthorizedRole) {
     return (
-      <div className="flex min-h-dvh items-center justify-center p-6 text-center text-sm text-danger">
-        {isErpAccount ? 'هذا القسم مخصص للمدير فقط.' : 'هذا الحساب غير مخوّل بالدخول إلى نقطة البيع.'}
+      <div className="flex min-h-[60vh] items-center justify-center p-6">
+        <Card className="w-full max-w-sm shadow-card">
+          <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
+            <span className="flex size-10 items-center justify-center rounded-full bg-danger-soft text-danger">
+              <ShieldAlert className="size-5" aria-hidden />
+            </span>
+            <p className="text-sm text-danger">
+              {isErpAccount ? 'هذا القسم مخصص للمدير فقط.' : 'هذا الحساب غير مخوّل بالدخول إلى نقطة البيع.'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
     );
   }

@@ -9,6 +9,7 @@ import { Button, Field, Input, Modal } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
 import { SuccessState } from '@/components/feedback/success-state';
+import { Select } from '@/components/form/select';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
@@ -97,7 +98,7 @@ export function CommissionOverridesDialog({
       onClose={onClose}
     >
       {overridesQuery.isPending ? (
-        <LoadingState label="جارٍ تحميل النسب…" className="p-0 text-start" />
+        <LoadingState label="جارٍ تحميل النسب…" className="justify-start p-0" />
       ) : overridesQuery.isError ? (
         <p role="alert" className="text-[13px] text-danger">
           {serverErrorMessage(overridesQuery.error)}
@@ -141,17 +142,16 @@ export function CommissionOverridesDialog({
       <form noValidate className="space-y-3" onSubmit={handleSubmit((values) => save.mutate(values))}>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="الموظف" htmlFor="override-employee" required>
-            <select
+            <Select
               id="override-employee"
               disabled={overridePending}
-              className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
               {...register('employeeId')}
             >
               <option value="">اختر الموظف…</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>{employee.fullName}</option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="النسبة %" htmlFor="override-percent" required>
             <Input

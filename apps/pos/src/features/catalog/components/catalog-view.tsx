@@ -1,13 +1,27 @@
 'use client';
 
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Percent, Plus } from 'lucide-react';
+import { Pencil, Percent, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  ConfirmDialog,
+  EmptyState,
+  Input,
+  Label,
+  cn,
+} from '@capella/ui';
 
+import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { LoadingState } from '@/components/feedback/loading-state';
+import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
+import { Select } from '@/components/form/select';
+import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -116,21 +130,21 @@ export function CatalogView() {
   const services = servicesQuery.data ?? [];
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink">إدارة الكتالوج</h1>
-        <p className="mt-1 text-sm text-muted">إدارة تصنيفات الخدمات والأسعار ونسب العمولات.</p>
-      </div>
+    <section className="space-y-6">
+      <PageHeader
+        title="إدارة الكتالوج"
+        description="إدارة تصنيفات الخدمات والأسعار ونسب العمولات."
+      />
       {successMessage ? <SuccessState message={successMessage} /> : null}
       {isAdmin ? (
-        <Card>
-          <CardContent className="space-y-2">
+        <Card className="shadow-card">
+          <CardContent className="space-y-1.5 p-4 sm:p-5">
             <Label htmlFor="catalog-branch">الفرع</Label>
-            <select
+            <Select
               id="catalog-branch"
+              className="max-w-sm"
               value={selectedBranchId ?? ''}
               disabled={branchesQuery.isPending || branchesQuery.isError || commandPending}
-              className="h-9 w-full max-w-xs rounded-control border border-line bg-paper px-3 text-sm text-ink disabled:opacity-70"
               onChange={(event) => {
                 if (commandPending) return;
                 setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
@@ -140,12 +154,10 @@ export function CatalogView() {
               {(branchesQuery.data ?? []).map((branch) => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
-            </select>
+            </Select>
             {branchesQuery.isError ? (
-              <div className="flex items-center gap-2">
-                <p role="alert" className="text-[13px] text-danger">
-                  {serverErrorMessage(branchesQuery.error)}
-                </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <FieldError>{serverErrorMessage(branchesQuery.error)}</FieldError>
                 <Button variant="ghost" size="sm" onClick={() => void branchesQuery.refetch()}>
                   إعادة المحاولة
                 </Button>
@@ -157,13 +169,17 @@ export function CatalogView() {
 
       {!scopeReady ? (
         session.isPending ? (
-          <Card><LoadingState label="جارٍ تحميل بيانات الحساب…" className="text-start" /></Card>
+          <Card className="shadow-card"><LoadingState label="جارٍ تحميل بيانات الحساب…" /></Card>
         ) : (
-          <EmptyState title="اختر فرعًا لعرض الكتالوج" />
+          <Card className="shadow-card"><EmptyState title="اختر فرعًا لعرض الكتالوج" /></Card>
         )
       ) : (
         <>
-          <div role="tablist" aria-label="أقسام الكتالوج" className="flex gap-2">
+          <div
+            role="tablist"
+            aria-label="أقسام الكتالوج"
+            className="inline-flex gap-1 rounded-control border border-line bg-paper p-1"
+          >
             {tabs.map((entry) => (
               <button
                 key={entry.key}
@@ -171,9 +187,10 @@ export function CatalogView() {
                 role="tab"
                 aria-selected={tab === entry.key}
                 disabled={commandPending}
-                className={`rounded-control px-3 py-1.5 text-sm ${
-                  tab === entry.key ? 'bg-ink text-paper' : 'border border-line text-muted'
-                }`}
+                className={cn(
+                  'rounded-control px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50',
+                  tab === entry.key ? 'bg-ink text-paper' : 'text-muted hover:bg-ink/5 hover:text-ink',
+                )}
                 onClick={() => { if (!commandPending) setTab(entry.key); }}
               >
                 {entry.label}
@@ -183,29 +200,6 @@ export function CatalogView() {
 
           {tab === 'categories' ? (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="w-full max-w-xs">
-                  <Input
-                    aria-label="بحث في التصنيفات"
-                    placeholder="بحث باسم التصنيف"
-                    value={categorySearch}
-                    onChange={(event) => setCategorySearch(event.target.value)}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  disabled={commandPending}
-                  onClick={() => {
-                    if (commandPending) return;
-                    setCreatingCategory(true);
-                    setEditingCategory(null);
-                  }}
-                >
-                  <Plus className="size-4" aria-hidden />
-                  إضافة تصنيف
-                </Button>
-              </div>
-
               {creatingCategory ? (
                 <CategoryForm
                   {...branchScope}
@@ -222,7 +216,35 @@ export function CatalogView() {
                 />
               ) : null}
 
-              <Card>
+              <Card className="overflow-hidden shadow-card">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
+                  <div className="relative w-full max-w-xs">
+                    <Search
+                      className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted"
+                      aria-hidden
+                    />
+                    <Input
+                      aria-label="بحث في التصنيفات"
+                      placeholder="بحث باسم التصنيف"
+                      className="ps-9"
+                      value={categorySearch}
+                      onChange={(event) => setCategorySearch(event.target.value)}
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={commandPending}
+                    onClick={() => {
+                      if (commandPending) return;
+                      setCreatingCategory(true);
+                      setEditingCategory(null);
+                    }}
+                  >
+                    <Plus className="size-4" aria-hidden />
+                    إضافة تصنيف
+                  </Button>
+                </div>
+
                 {categoriesQuery.isPending ? (
                   <LoadingState label="جارٍ تحميل التصنيفات…" className="px-6 py-16" />
                 ) : categoriesQuery.isError ? (
@@ -241,27 +263,25 @@ export function CatalogView() {
                     description={trimmedCategorySearch ? 'جرب اسمًا آخر.' : 'ابدأ بإضافة أول تصنيف.'}
                   />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line text-[12px] text-muted">
-                          <th className="px-4 py-2.5 text-start font-medium">اسم التصنيف</th>
-                          <th className="px-4 py-2.5 text-start font-medium">النوع</th>
-                          <th className="px-4 py-2.5 text-start font-medium">الحالة</th>
-                          <th className="px-4 py-2.5 text-start font-medium">إجراءات</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {categories.map((category) => (
-                          <tr key={category.id} className="border-b border-line/60 last:border-b-0">
-                            <td className="px-4 py-3 font-medium">{category.name}</td>
-                            <td className="px-4 py-3 text-muted">
-                              {CATEGORY_TYPE_LABELS[category.type]}
-                            </td>
-                            <td className="px-4 py-3 text-muted">
+                  <DataTable>
+                    <THead>
+                      <TH>اسم التصنيف</TH>
+                      <TH>النوع</TH>
+                      <TH>الحالة</TH>
+                      <TH>إجراءات</TH>
+                    </THead>
+                    <tbody>
+                      {categories.map((category) => (
+                        <TR key={category.id}>
+                          <TD className="font-medium">{category.name}</TD>
+                          <TD className="text-muted">{CATEGORY_TYPE_LABELS[category.type]}</TD>
+                          <TD>
+                            <Badge variant={category.isActive ? 'success' : 'neutral'}>
                               {category.isActive ? 'نشط' : 'موقوف'}
-                            </td>
-                            <td className="flex flex-wrap gap-1 px-4 py-3">
+                            </Badge>
+                          </TD>
+                          <TD>
+                            <RowActions>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -295,19 +315,17 @@ export function CatalogView() {
                               >
                                 حذف
                               </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </RowActions>
+                          </TD>
+                        </TR>
+                      ))}
+                    </tbody>
+                  </DataTable>
                 )}
               </Card>
 
               {toggleCategory.isError ? (
-                <p role="alert" className="text-[13px] text-danger">
-                  {serverErrorMessage(toggleCategory.error)}
-                </p>
+                <FieldError>{serverErrorMessage(toggleCategory.error)}</FieldError>
               ) : null}
 
               {confirmingCategory ? (
@@ -350,29 +368,6 @@ export function CatalogView() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="w-full max-w-xs">
-                  <Input
-                    aria-label="بحث في الخدمات"
-                    placeholder="بحث باسم الخدمة"
-                    value={serviceSearch}
-                    onChange={(event) => setServiceSearch(event.target.value)}
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  disabled={commandPending}
-                  onClick={() => {
-                    if (commandPending) return;
-                    setCreatingService(true);
-                    setEditingService(null);
-                  }}
-                >
-                  <Plus className="size-4" aria-hidden />
-                  إضافة خدمة
-                </Button>
-              </div>
-
               {creatingService ? (
                 <ServiceForm
                   categories={categories}
@@ -391,7 +386,35 @@ export function CatalogView() {
                 />
               ) : null}
 
-              <Card>
+              <Card className="shadow-card">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
+                  <div className="relative w-full max-w-xs">
+                    <Search
+                      className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted"
+                      aria-hidden
+                    />
+                    <Input
+                      aria-label="بحث في الخدمات"
+                      placeholder="بحث باسم الخدمة"
+                      className="ps-9"
+                      value={serviceSearch}
+                      onChange={(event) => setServiceSearch(event.target.value)}
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={commandPending}
+                    onClick={() => {
+                      if (commandPending) return;
+                      setCreatingService(true);
+                      setEditingService(null);
+                    }}
+                  >
+                    <Plus className="size-4" aria-hidden />
+                    إضافة خدمة
+                  </Button>
+                </div>
+
                 {servicesQuery.isPending ? (
                   <LoadingState label="جارٍ تحميل الخدمات…" className="px-6 py-16" />
                 ) : servicesQuery.isError ? (
@@ -410,37 +433,45 @@ export function CatalogView() {
                     description={trimmedServiceSearch ? 'جرب اسمًا آخر.' : 'ابدأ بإضافة أول خدمة.'}
                   />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line text-[12px] text-muted">
-                          <th className="px-4 py-2.5 text-start font-medium">اسم الخدمة</th>
-                          <th className="px-4 py-2.5 text-start font-medium">التصنيف</th>
-                          <th className="px-4 py-2.5 text-start font-medium">السعر (ج.م)</th>
-                          <th className="px-4 py-2.5 text-start font-medium">العمولة</th>
-                          <th className="px-4 py-2.5 text-start font-medium">الحالة</th>
-                          <th className="px-4 py-2.5 text-start font-medium">إجراءات</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {services.map((service) => (
-                          <tr key={service.id} className="border-b border-line/60 last:border-b-0">
-                            <td className="px-4 py-3 font-medium">{service.name}</td>
-                            <td className="px-4 py-3 text-muted">{service.categoryName}</td>
-                            <td className="tabular px-4 py-3" dir="ltr">{service.price}</td>
-                            <td className="tabular px-4 py-3 text-muted" dir="ltr">
-                              {`${service.commissionPercent}%`}
-                            </td>
-                            <td className="px-4 py-3 text-muted">
+                  <DataTable>
+                    <THead>
+                      <TH>اسم الخدمة</TH>
+                      <TH>التصنيف</TH>
+                      <TH numeric>السعر (ج.م)</TH>
+                      <TH numeric>العمولة</TH>
+                      <TH>الحالة</TH>
+                      <TH>إجراءات</TH>
+                    </THead>
+                    <tbody>
+                      {services.map((service) => (
+                        <TR key={service.id}>
+                          <TD className="font-medium">{service.name}</TD>
+                          <TD className="text-muted">{service.categoryName}</TD>
+                          <TD numeric>{service.price}</TD>
+                          <TD numeric className="text-muted">
+                            {`${service.commissionPercent}%`}
+                          </TD>
+                          <TD>
+                            <Badge
+                              variant={
+                                service.isActive && service.categoryIsActive
+                                  ? 'success'
+                                  : service.isActive
+                                    ? 'warning'
+                                    : 'neutral'
+                              }
+                            >
                               {service.isActive && service.categoryIsActive
                                 ? 'نشط'
                                 : service.isActive
                                   ? 'موقوف بالتصنيف'
                                   : 'موقوف'}
-                            </td>
-                            {/* No delete: an invoice line snapshots the service and
-                                points back at it, so the row is never removed. */}
-                            <td className="flex flex-wrap gap-1 px-4 py-3">
+                            </Badge>
+                          </TD>
+                          {/* No delete: an invoice line snapshots the service and
+                              points back at it, so the row is never removed. */}
+                          <TD>
+                            <RowActions>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -475,19 +506,17 @@ export function CatalogView() {
                                 <Percent className="size-4" aria-hidden />
                                 العمولات
                               </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </RowActions>
+                          </TD>
+                        </TR>
+                      ))}
+                    </tbody>
+                  </DataTable>
                 )}
               </Card>
 
               {toggleService.isError ? (
-                <p role="alert" className="text-[13px] text-danger">
-                  {serverErrorMessage(toggleService.error)}
-                </p>
+                <FieldError>{serverErrorMessage(toggleService.error)}</FieldError>
               ) : null}
 
               {confirmingService ? (
@@ -519,6 +548,6 @@ export function CatalogView() {
           )}
         </>
       )}
-    </div>
+    </section>
   );
 }

@@ -67,7 +67,7 @@ test('Admin filters, pages, exports, and retries an ERP report', async ({ page }
   });
 
   await page.goto('/reports');
-  await expect(page.getByRole('tab')).toHaveCount(15);
+  await expect(page.getByRole('group', { name: 'أنواع تقارير ERP' }).getByRole('button')).toHaveCount(15);
   await page.getByLabel('الفرع').selectOption('2');
   await page.getByLabel('من تاريخ').fill('2026-08-01');
   await page.getByLabel('إلى تاريخ').fill('2026-08-31');

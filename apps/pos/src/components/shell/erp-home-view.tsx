@@ -1,17 +1,32 @@
 'use client';
 
+import {
+  Boxes,
+  ChevronLeft,
+  ShoppingCart,
+  UserCog,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 
 import { Button, Card, CardContent } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { CashierSessionView } from '@/features/cashier-sessions';
 
-const adminGroups = [
+const adminGroups: ReadonlyArray<{
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  links: ReadonlyArray<{ href: string; label: string }>;
+}> = [
   {
     title: 'المبيعات والعملاء',
     description: 'تشغيل البيع ومراجعة الفواتير وبيانات العملاء.',
+    icon: ShoppingCart,
     links: [
       { href: '/sales', label: 'بيع جديد' },
       { href: '/invoices', label: 'الفواتير والإيصالات' },
@@ -21,6 +36,7 @@ const adminGroups = [
   {
     title: 'الكتالوج والمخزون',
     description: 'إدارة ما يُباع وما يُشترى وأرصدة كل فرع.',
+    icon: Boxes,
     links: [
       { href: '/catalog', label: 'إدارة الكتالوج' },
       { href: '/products', label: 'المنتجات والمخزون' },
@@ -30,6 +46,7 @@ const adminGroups = [
   {
     title: 'المال والمتابعة',
     description: 'متابعة المصروفات والعمولات والتقارير والتصدير.',
+    icon: Wallet,
     links: [
       { href: '/expenses', label: 'المصروفات' },
       { href: '/commissions', label: 'العمولات' },
@@ -39,12 +56,13 @@ const adminGroups = [
   {
     title: 'التشغيل والصلاحيات',
     description: 'متابعة ورديات الكاشير وإدارة حسابات التشغيل.',
+    icon: UserCog,
     links: [
       { href: '/cashier-sessions', label: 'ورديات الكاشير' },
       { href: '/cashier-accounts', label: 'حسابات الكاشير' },
     ],
   },
-] as const;
+];
 
 export function ErpHomeView() {
   const session = useSession();
@@ -53,12 +71,14 @@ export function ErpHomeView() {
   if (session.isPending) return <LoadingState label="جارٍ التحقق من الجلسة…" />;
   if (session.isError) {
     return (
-      <div role="alert" className="flex flex-col items-center gap-3 p-6 text-center">
-        <p className="text-sm text-danger">تعذر التحقق من الجلسة. تأكد من اتصالك بالخادم.</p>
-        <Button variant="secondary" size="sm" onClick={() => void session.refetch()}>
-          إعادة المحاولة
-        </Button>
-      </div>
+      <Card className="mx-auto max-w-md shadow-card">
+        <CardContent role="alert" className="flex flex-col items-center gap-3 p-6 text-center">
+          <p className="text-sm text-danger">تعذر التحقق من الجلسة. تأكد من اتصالك بالخادم.</p>
+          <Button variant="secondary" size="sm" onClick={() => void session.refetch()}>
+            إعادة المحاولة
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -66,29 +86,31 @@ export function ErpHomeView() {
   if (!actor) return <LoadingState label="جارٍ التحقق من الجلسة…" />;
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink">لوحة الإدارة</h1>
-        <p className="mt-1 text-sm text-muted">
-          نقطة واحدة للوصول إلى كل عمليات الإدارة المترابطة دون تكرار شاشات الميزات.
-        </p>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="space-y-6">
+      <PageHeader
+        title="لوحة الإدارة"
+        description="نقطة واحدة للوصول إلى كل عمليات الإدارة المترابطة دون تكرار شاشات الميزات."
+      />
+      <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         {adminGroups.map((group) => (
-          <Card key={group.title}>
-            <CardContent className="space-y-3 pt-5">
+          <Card key={group.title} className="shadow-card transition-shadow hover:shadow-raised">
+            <CardContent className="flex h-full flex-col gap-4 p-5">
               <div>
-                <h2 className="font-semibold">{group.title}</h2>
-                <p className="mt-1 text-sm text-muted">{group.description}</p>
+                <span className="mb-3 inline-flex size-9 items-center justify-center rounded-control border border-line bg-surface text-ink">
+                  <group.icon className="size-4" aria-hidden />
+                </span>
+                <h2 className="text-sm font-semibold text-ink">{group.title}</h2>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted">{group.description}</p>
               </div>
-              <ul className="space-y-1">
+              <ul className="mt-auto space-y-0.5 border-t border-line/70 pt-3">
                 {group.links.map((item) => (
                   <li key={item.href}>
                     <Link
                       href={item.href}
-                      className="block rounded-control px-2 py-1.5 text-sm font-medium underline-offset-4 hover:bg-surface hover:underline"
+                      className="flex items-center justify-between gap-2 rounded-control px-2 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-surface"
                     >
                       {item.label}
+                      <ChevronLeft className="size-4 shrink-0 text-muted" aria-hidden />
                     </Link>
                   </li>
                 ))}

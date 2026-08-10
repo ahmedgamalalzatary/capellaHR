@@ -3,9 +3,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+
+import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
+import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
+import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
+import { Select } from '@/components/form/select';
+import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { listCatalogBranches, listCategories } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -17,6 +23,11 @@ import { expenseCategoryQueryKeys, expenseQueryKeys } from '../query-keys';
 const errorText = (error: unknown) => error instanceof ApiError ? error.message : 'تعذر تنفيذ العملية. حاول مرة أخرى.';
 const todayInCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
 const kindLabel = (expense: Expense) => expense.kind === 'reversal' ? 'قيد عكسي' : expense.status === 'corrected' ? 'تم تصحيحه' : expense.supersedesId ? 'بديل تصحيح' : 'مصروف';
+const kindTone = (expense: Expense) => expense.kind === 'reversal'
+  ? 'warning' as const
+  : expense.status === 'corrected'
+    ? 'neutral' as const
+    : 'success' as const;
 
 export function ExpensesView() {
   const client = useQueryClient();
@@ -46,30 +57,215 @@ export function ExpensesView() {
   const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setCategoryId(activeCategories.data?.some((category) => category.id === expense.categoryId) ? expense.categoryId : undefined); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
   const canSubmit = branchId && categoryId && amount && expenseDate && description.trim();
   const commandPending = create.isPending || correction.isPending;
+  const amountLabel = correcting ? 'المبلغ الصحيح' : 'المبلغ';
 
-  return <div className="mx-auto max-w-7xl space-y-4" dir="rtl">
-    <div><h1 className="text-xl font-bold">المصروفات</h1><p className="text-sm text-muted">سجل مصروفات الفروع وتصحيحها دون تغيير أو حذف التاريخ الأصلي.</p></div>
-    {successMessage ? <SuccessState message={successMessage} /> : null}
-    {branches.isError ? <EmptyState title="تعذر تحميل الفروع" action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>} /> : <Label>الفرع<select className="mt-1 h-10 w-full rounded-control border border-line bg-paper px-3" value={branchId ?? ''} disabled={commandPending} onChange={(event) => { if (commandPending) return; setBranchId(event.target.value ? Number(event.target.value) : undefined); clearDraft(); setFilterCategoryId(undefined); setPage(1); }}><option value="">اختر الفرع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></Label>}
-    {branchId === undefined ? <EmptyState title="اختر فرعًا لإدارة مصروفاته" /> : <>
-      <Card><CardContent className="grid gap-3 pt-5 md:grid-cols-2 xl:grid-cols-5">
-        <Label>التصنيف<select aria-label="التصنيف" className="mt-1 h-10 w-full rounded-control border border-line bg-paper px-3" value={categoryId ?? ''} onChange={(event) => setCategoryId(event.target.value ? Number(event.target.value) : undefined)} disabled={commandPending || activeCategories.isPending || activeCategories.isError}><option value="">اختر التصنيف</option>{activeCategories.data?.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Label>
-        <Label>المبلغ<Input aria-label={correcting ? 'المبلغ الصحيح' : 'المبلغ'} inputMode="decimal" disabled={commandPending} value={amount} onChange={(event) => setAmount(event.target.value)} /></Label>
-        <Label>تاريخ المصروف<Input aria-label="تاريخ المصروف" type="date" disabled={commandPending} value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} /></Label>
-        <Label>الوصف<Input aria-label="الوصف" disabled={commandPending} value={description} onChange={(event) => setDescription(event.target.value)} /></Label>
-        {correcting ? <Label>سبب التصحيح<Input aria-label="سبب التصحيح" disabled={commandPending} value={reason} onChange={(event) => setReason(event.target.value)} /></Label> : <div className="self-end"><Button disabled={!canSubmit || create.isPending} onClick={() => create.mutate()}>تسجيل المصروف</Button></div>}
-        {correcting ? <div className="flex gap-2 md:col-span-2 xl:col-span-5"><Button disabled={!canSubmit || !reason.trim() || correction.isPending} onClick={() => correction.mutate()}>تأكيد التصحيح</Button><Button variant="ghost" disabled={correction.isPending} onClick={clearDraft}>إلغاء</Button></div> : null}
-        {(correcting ? correction.isError : create.isError) ? <p role="alert" className="text-sm text-danger md:col-span-2 xl:col-span-5">{errorText(correcting ? correction.error : create.error)}</p> : null}
-        {activeCategories.isError ? <EmptyState title="تعذر تحميل تصنيفات المصروفات" action={<Button onClick={() => void activeCategories.refetch()}>إعادة المحاولة</Button>} /> : null}
-      </CardContent></Card>
-      <Card><CardContent className="grid gap-3 pt-5 md:grid-cols-4">
-        <Label>تصفية حسب التصنيف<select className="mt-1 h-10 w-full rounded-control border border-line bg-paper px-3" value={filterCategoryId ?? ''} onChange={(event) => { setFilterCategoryId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }} disabled={allCategories.isPending || allCategories.isError}><option value="">كل التصنيفات</option>{allCategories.data?.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></Label>
-        {allCategories.isError ? <EmptyState title="تعذر تحميل تصنيفات التصفية" action={<Button onClick={() => void allCategories.refetch()}>إعادة المحاولة</Button>} /> : null}
-        <Label>من تاريخ<Input aria-label="من تاريخ" type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} /></Label>
-        <Label>إلى تاريخ<Input aria-label="إلى تاريخ" type="date" value={toDate} onChange={(event) => { setToDate(event.target.value); setPage(1); }} /></Label>
-        <Label>الحالة<select className="mt-1 h-10 w-full rounded-control border border-line bg-paper px-3" value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(1); }}><option value="">كل الحالات</option><option value="active">نشط</option><option value="corrected">تم تصحيحه</option></select></Label>
-      </CardContent></Card>
-      <Card>{expenses.isPending ? <LoadingState label="جارٍ تحميل المصروفات…" /> : expenses.isError ? <EmptyState title="تعذر تحميل المصروفات" action={<Button onClick={() => void expenses.refetch()}>إعادة المحاولة</Button>} /> : !expenses.data?.items.length ? <EmptyState title="لا توجد مصروفات" /> : <><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-line"><th className="p-3 text-start">التاريخ</th><th className="p-3 text-start">التصنيف</th><th className="p-3 text-start">الوصف</th><th className="p-3 text-start">المبلغ</th><th className="p-3 text-start">الحالة والمنفذ</th><th className="p-3 text-start">الإجراء</th></tr></thead><tbody>{expenses.data.items.map((expense) => <tr key={expense.id} className="border-b border-line/60"><td className="p-3">{expense.expenseDate}</td><td className="p-3">{expense.categoryName}</td><td className="p-3">{expense.description}{expense.correctionReason ? <span className="block text-xs text-muted">السبب: {expense.correctionReason}</span> : null}</td><td className="p-3" dir="ltr">{expense.kind === 'reversal' ? '-' : ''}{expense.amount} ج.م</td><td className="p-3">{kindLabel(expense)}<span className="block text-xs text-muted">{expense.actingUsername}{expense.reversalOfId ? ` · يعكس #${expense.reversalOfId}` : expense.supersedesId ? ` · بديل #${expense.supersedesId}` : ''}</span></td><td className="p-3">{expense.kind === 'expense' && expense.status === 'active' ? <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => beginCorrection(expense)}>تصحيح</Button> : null}</td></tr>)}</tbody></table></div><div className="flex justify-end gap-2 p-3"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>السابق</Button><span className="self-center text-sm">صفحة {page}</span><Button variant="ghost" disabled={page >= (expenses.data.meta.totalPages || 1)} onClick={() => setPage((value) => value + 1)}>التالي</Button></div></>}</Card>
-    </>}
-  </div>;
+  return (
+    <section className="space-y-6">
+      <PageHeader
+        title="المصروفات"
+        description="سجل مصروفات الفروع وتصحيحها دون تغيير أو حذف التاريخ الأصلي."
+      />
+      {successMessage ? <SuccessState message={successMessage} /> : null}
+
+      <Card className="shadow-card">
+        <CardContent className="p-4 sm:p-5">
+          {branches.isError ? (
+            <EmptyState
+              title="تعذر تحميل الفروع"
+              className="py-8"
+              action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
+            />
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="expense-branch">الفرع</Label>
+              <Select
+                id="expense-branch"
+                className="max-w-sm"
+                value={branchId ?? ''}
+                disabled={commandPending}
+                onChange={(event) => {
+                  if (commandPending) return;
+                  setBranchId(event.target.value ? Number(event.target.value) : undefined);
+                  clearDraft();
+                  setFilterCategoryId(undefined);
+                  setPage(1);
+                }}
+              >
+                <option value="">اختر الفرع</option>
+                {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </Select>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {branchId === undefined ? (
+        <Card className="shadow-card"><EmptyState title="اختر فرعًا لإدارة مصروفاته" /></Card>
+      ) : (
+        <>
+          <Card className="shadow-card">
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              <SectionHeading
+                title={correcting ? `تصحيح مصروف #${correcting.id}` : 'تسجيل مصروف جديد'}
+                description={correcting
+                  ? 'يُسجَّل التصحيح كقيد جديد؛ القيد الأصلي يبقى في السجل.'
+                  : 'المبلغ والتاريخ والوصف مطلوبة لكل مصروف.'}
+              />
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-category">التصنيف</Label>
+                  <Select
+                    id="expense-category"
+                    aria-label="التصنيف"
+                    value={categoryId ?? ''}
+                    onChange={(event) => setCategoryId(event.target.value ? Number(event.target.value) : undefined)}
+                    disabled={commandPending || activeCategories.isPending || activeCategories.isError}
+                  >
+                    <option value="">اختر التصنيف</option>
+                    {activeCategories.data?.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-amount">{amountLabel}</Label>
+                  <Input id="expense-amount" aria-label={amountLabel} inputMode="decimal" dir="ltr" className="text-start" disabled={commandPending} value={amount} onChange={(event) => setAmount(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-date">تاريخ المصروف</Label>
+                  <Input id="expense-date" aria-label="تاريخ المصروف" type="date" disabled={commandPending} value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-description">الوصف</Label>
+                  <Input id="expense-description" aria-label="الوصف" disabled={commandPending} value={description} onChange={(event) => setDescription(event.target.value)} />
+                </div>
+                {correcting ? (
+                  <div className="space-y-1.5 sm:col-span-2 xl:col-span-4">
+                    <Label htmlFor="expense-reason">سبب التصحيح</Label>
+                    <Input id="expense-reason" aria-label="سبب التصحيح" disabled={commandPending} value={reason} onChange={(event) => setReason(event.target.value)} />
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                {correcting ? (
+                  <>
+                    <Button disabled={!canSubmit || !reason.trim() || correction.isPending} onClick={() => correction.mutate()}>تأكيد التصحيح</Button>
+                    <Button variant="ghost" disabled={correction.isPending} onClick={clearDraft}>إلغاء</Button>
+                  </>
+                ) : (
+                  <Button disabled={!canSubmit || create.isPending} onClick={() => create.mutate()}>تسجيل المصروف</Button>
+                )}
+              </div>
+
+              {(correcting ? correction.isError : create.isError) ? (
+                <FieldError>{errorText(correcting ? correction.error : create.error)}</FieldError>
+              ) : null}
+              {activeCategories.isError ? (
+                <EmptyState
+                  title="تعذر تحميل تصنيفات المصروفات"
+                  className="py-8"
+                  action={<Button onClick={() => void activeCategories.refetch()}>إعادة المحاولة</Button>}
+                />
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card">
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              <SectionHeading title="تصفية السجل" />
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-filter-category">تصفية حسب التصنيف</Label>
+                  <Select
+                    id="expense-filter-category"
+                    value={filterCategoryId ?? ''}
+                    onChange={(event) => { setFilterCategoryId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}
+                    disabled={allCategories.isPending || allCategories.isError}
+                  >
+                    <option value="">كل التصنيفات</option>
+                    {allCategories.data?.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-from">من تاريخ</Label>
+                  <Input id="expense-from" aria-label="من تاريخ" type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-to">إلى تاريخ</Label>
+                  <Input id="expense-to" aria-label="إلى تاريخ" type="date" value={toDate} onChange={(event) => { setToDate(event.target.value); setPage(1); }} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-status">الحالة</Label>
+                  <Select id="expense-status" value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(1); }}>
+                    <option value="">كل الحالات</option>
+                    <option value="active">نشط</option>
+                    <option value="corrected">تم تصحيحه</option>
+                  </Select>
+                </div>
+              </div>
+              {allCategories.isError ? (
+                <EmptyState
+                  title="تعذر تحميل تصنيفات التصفية"
+                  className="py-8"
+                  action={<Button onClick={() => void allCategories.refetch()}>إعادة المحاولة</Button>}
+                />
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden shadow-card">
+            {expenses.isPending ? <LoadingState label="جارٍ تحميل المصروفات…" className="py-16" />
+              : expenses.isError ? <EmptyState title="تعذر تحميل المصروفات" action={<Button onClick={() => void expenses.refetch()}>إعادة المحاولة</Button>} />
+                : !expenses.data?.items.length ? <EmptyState title="لا توجد مصروفات" />
+                  : (
+                    <>
+                      <DataTable>
+                        <THead>
+                          <TH>التاريخ</TH>
+                          <TH>التصنيف</TH>
+                          <TH>الوصف</TH>
+                          <TH numeric>المبلغ</TH>
+                          <TH>الحالة والمنفذ</TH>
+                          <TH>الإجراء</TH>
+                        </THead>
+                        <tbody>
+                          {expenses.data.items.map((expense) => (
+                            <TR key={expense.id}>
+                              <TD className="tabular whitespace-nowrap text-muted">{expense.expenseDate}</TD>
+                              <TD>{expense.categoryName}</TD>
+                              <TD>
+                                {expense.description}
+                                {expense.correctionReason ? <span className="block text-xs text-muted">السبب: {expense.correctionReason}</span> : null}
+                              </TD>
+                              <TD numeric className="whitespace-nowrap font-medium">
+                                <span dir="ltr">{expense.kind === 'reversal' ? '-' : ''}{expense.amount}</span> ج.م
+                              </TD>
+                              <TD>
+                                <Badge variant={kindTone(expense)}>{kindLabel(expense)}</Badge>
+                                <span className="mt-1 block text-xs text-muted">
+                                  {expense.actingUsername}{expense.reversalOfId ? ` · يعكس #${expense.reversalOfId}` : expense.supersedesId ? ` · بديل #${expense.supersedesId}` : ''}
+                                </span>
+                              </TD>
+                              <TD>
+                                {expense.kind === 'expense' && expense.status === 'active' ? (
+                                  <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => beginCorrection(expense)}>تصحيح</Button>
+                                ) : null}
+                              </TD>
+                            </TR>
+                          ))}
+                        </tbody>
+                      </DataTable>
+                      <Pagination
+                        summary={<>صفحة <span className="tabular">{page}</span></>}
+                        previousDisabled={page <= 1}
+                        nextDisabled={page >= (expenses.data.meta.totalPages || 1)}
+                        onPrevious={() => setPage((value) => value - 1)}
+                        onNext={() => setPage((value) => value + 1)}
+                      />
+                    </>
+                  )}
+          </Card>
+        </>
+      )}
+    </section>
+  );
 }

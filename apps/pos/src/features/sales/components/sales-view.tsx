@@ -7,7 +7,7 @@ import type {
   QuoteSaleInput,
 } from '@capella/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Minus, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { CircleCheck, Minus, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -21,9 +21,13 @@ import {
   Input,
   Label,
   Modal,
+  cn,
 } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { Notice } from '@/components/feedback/notice';
+import { Select } from '@/components/form/select';
+import { PageHeader } from '@/components/layout/page-header';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { useSession } from '@/features/auth';
@@ -142,22 +146,21 @@ export function SalesView() {
     ) : (
       <>
         <Label htmlFor="sale-branch">الفرع</Label>
-        <select
+        <Select
           id="sale-branch"
           disabled={branches.isPending}
-          className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
           value={selectedBranchId ?? ''}
           onChange={(event) => setSelectedBranchId(Number(event.target.value) || undefined)}
         >
           <option value="">اختر الفرع</option>
           {(branches.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
+        </Select>
       </>
     );
     return (
-      <section className="mx-auto max-w-6xl space-y-4">
-        <h1 className="text-2xl font-semibold">بيع جديد</h1>
-        <Card><CardContent className="space-y-2">
+      <section className="mx-auto w-full max-w-2xl space-y-6">
+        <PageHeader title="بيع جديد" description="اختر الفرع الذي ستُسجَّل عليه العملية." />
+        <Card className="shadow-card"><CardContent className="space-y-1.5 p-5">
           {branchContent}
         </CardContent></Card>
       </section>
@@ -165,13 +168,13 @@ export function SalesView() {
   }
 
   if (auth.isPending) {
-    return <Card><CardContent><LoadingState label="جارٍ تحميل وردية الكاشير…" className="p-0 text-start" /></CardContent></Card>;
+    return <Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>;
   }
   if (!actor || actor.type === 'employee') {
-    return <EmptyState title="هذا الحساب غير مخول لاستخدام نقطة البيع" />;
+    return <Card className="shadow-card"><EmptyState title="هذا الحساب غير مخول لاستخدام نقطة البيع" /></Card>;
   }
   if (session.isPending) {
-    return <Card><CardContent><LoadingState label="جارٍ تحميل وردية الكاشير…" className="p-0 text-start" /></CardContent></Card>;
+    return <Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>;
   }
   if (session.isError) {
     return (
@@ -251,11 +254,11 @@ function PendingSaleRecovery({ pending }: { pending: PendingSale }) {
 
   if (recovery.data) {
     return (
-      <Card className="mx-auto max-w-2xl">
+      <Card className="mx-auto max-w-lg shadow-card">
         <CardHeader><CardTitle>تم حفظ الفاتورة</CardTitle></CardHeader>
-        <CardContent className="space-y-2 text-center">
+        <CardContent className="space-y-2 p-5 text-center">
           <p className="font-mono text-lg font-semibold" dir="ltr">{recovery.data.invoiceNumber}</p>
-          <p>{recovery.data.totals.total} ج.م</p>
+          <p className="tabular text-2xl font-semibold text-ink">{recovery.data.totals.total} ج.م</p>
         </CardContent>
       </Card>
     );
@@ -277,7 +280,11 @@ function PendingSaleRecovery({ pending }: { pending: PendingSale }) {
     );
   }
 
-  return <Card><CardContent>جارٍ استعادة نتيجة البيع المعلق…</CardContent></Card>;
+  return (
+    <Card className="mx-auto max-w-lg shadow-card">
+      <LoadingState label="جارٍ استعادة نتيجة البيع المعلق…" className="py-10" />
+    </Card>
+  );
 }
 
 function SaleWorkspace({
@@ -747,56 +754,64 @@ function SaleWorkspace({
 
   if (completed) {
     return (
-      <Card className="mx-auto max-w-2xl">
-        <CardHeader><CardTitle>تم حفظ الفاتورة</CardTitle></CardHeader>
-        <CardContent className="space-y-4 text-center">
-          <p className="font-mono text-lg font-semibold" dir="ltr">{completed.invoiceNumber}</p>
-          <p>{completed.totals.total} ج.م</p>
-          <Link className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper" href={`/invoices/${completed.id}${branchId ? `?branchId=${branchId}` : ''}`}>عرض وطباعة الإيصال</Link>
-          <Button onClick={reset}><RotateCcw className="size-4" />بيع جديد</Button>
+      <Card className="mx-auto max-w-lg shadow-raised">
+        <CardHeader className="text-center"><CardTitle>تم حفظ الفاتورة</CardTitle></CardHeader>
+        <CardContent className="space-y-5 p-6 text-center">
+          <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-soft text-success">
+            <CircleCheck className="size-6" aria-hidden />
+          </span>
+          <div className="space-y-1">
+            <p className="font-mono text-sm font-semibold text-muted" dir="ltr">{completed.invoiceNumber}</p>
+            <p className="tabular text-3xl font-semibold text-ink">{completed.totals.total} ج.م</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link className="inline-flex h-9 items-center justify-center gap-2 rounded-control bg-ink px-4 text-sm font-medium text-paper transition-colors hover:bg-ink/85" href={`/invoices/${completed.id}${branchId ? `?branchId=${branchId}` : ''}`}>
+              <Printer className="size-4" aria-hidden />
+              عرض وطباعة الإيصال
+            </Link>
+            <Button variant="secondary" onClick={reset}><RotateCcw className="size-4" aria-hidden />بيع جديد</Button>
+          </div>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <section className="mx-auto max-w-7xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">بيع جديد</h1>
-        <p className="mt-1 text-sm text-muted">اختر العميل والخدمات أو المنتجات والموظف ثم راجع الإجمالي المحسوب من الخادم.</p>
-      </div>
+    <section className="space-y-5">
+      <PageHeader
+        title="بيع جديد"
+        description="اختر العميل والخدمات أو المنتجات والموظف ثم راجع الإجمالي المحسوب من الخادم."
+      />
 
       {draftRestored ? (
-        <p role="status" className="rounded-control bg-success-soft px-3 py-2 text-sm text-success">
-          تم استعادة مسودة البيع المحفوظة لهذا الحساب والوردية.
-        </p>
+        <Notice tone="success">تم استعادة مسودة البيع المحفوظة لهذا الحساب والوردية.</Notice>
       ) : null}
 
       {conflictRestored ? (
-        <p role="status" className="rounded-control bg-warning-soft px-3 py-2 text-sm text-warning">
+        <Notice tone="warning">
           تم استعادة البيع للمراجعة. اختر العميل مجددًا وراجع الأسعار والحضور والمخزون قبل الإرسال.
-        </p>
+        </Notice>
       ) : null}
 
       {backgroundSyncCount > 0 ? (
-        <p role="status" className="rounded-control bg-success-soft px-3 py-2 text-sm text-success">
+        <Notice tone="success">
           {backgroundSyncCount === 1
             ? 'تمت مزامنة بيع معلق بنجاح.'
             : `تمت مزامنة ${backgroundSyncCount} مبيعات معلقة بنجاح.`}
-        </p>
+        </Notice>
       ) : null}
 
       {draftStorageError ? (
-        <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-sm text-danger">
+        <Notice tone="danger" role="alert">
           تعذر حفظ مسودة البيع في المتصفح. لا تغادر الصفحة قبل إتمام البيع.
-        </p>
+        </Notice>
       ) : null}
 
       {draftHydrated && displayedQueueItem ? (
-        <Card><CardContent className="space-y-3 bg-warning-soft">
+        <Notice tone="warning">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="font-medium">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
                 {displayedQueueItem.state === 'pending'
                   ? (online ? 'بانتظار المزامنة' : 'بانتظار الاتصال')
                   : displayedQueueItem.state === 'syncing'
@@ -805,19 +820,19 @@ function SaleWorkspace({
                       ? 'يحتاج البيع إلى مراجعة'
                       : 'تعذرت مزامنة البيع'}
               </p>
-              {displayedQueueItem.failure ? <p role="alert" className="text-sm text-danger">{displayedQueueItem.failure.message}</p> : null}
+              {displayedQueueItem.failure ? <p role="alert" className="mt-1 text-danger">{displayedQueueItem.failure.message}</p> : null}
             </div>
             <div className="flex flex-wrap gap-2">
               {displayedQueueItem.state === 'conflict'
                 && displayedQueueItem.recoveryDraft
                 && (!hasDraftProgress
                   || displayedQueueItem.input.idempotencyKey === idempotencyKey) ? (
-                <Button variant="secondary" onClick={() => restoreConflict(displayedQueueItem)}>
+                <Button variant="secondary" size="sm" onClick={() => restoreConflict(displayedQueueItem)}>
                   مراجعة وتعديل البيع
                 </Button>
               ) : null}
               {(displayedQueueItem.state === 'conflict' || displayedQueueItem.state === 'failed') ? (
-                <Button variant="ghost" onClick={() => {
+                <Button variant="ghost" size="sm" onClick={() => {
                   setDiscardError(false);
                   setDiscarding(displayedQueueItem);
                 }}>
@@ -826,30 +841,33 @@ function SaleWorkspace({
               ) : null}
             </div>
           </div>
-        </CardContent></Card>
+        </Notice>
       ) : null}
 
       {ambiguous ? (
-        <Card><CardContent className="flex flex-wrap items-center justify-between gap-3 bg-warning-soft">
-          <div>
-            <p className="font-medium">تعذر تأكيد نتيجة البيع</p>
-            <p className="text-sm text-muted">سيُعاد استخدام نفس مفتاح العملية، ولن تُنشأ فاتورة مكررة.</p>
+        <Notice tone="warning">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">تعذر تأكيد نتيجة البيع</p>
+              <p className="mt-0.5 text-muted">سيُعاد استخدام نفس مفتاح العملية، ولن تُنشأ فاتورة مكررة.</p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!pendingInput || completion.isPending}
+              onClick={() => pendingInput && completion.mutate(pendingInput)}
+            >
+              إعادة المحاولة بنفس الطلب
+            </Button>
           </div>
-          <Button
-            variant="secondary"
-            disabled={!pendingInput || completion.isPending}
-            onClick={() => pendingInput && completion.mutate(pendingInput)}
-          >
-            إعادة المحاولة بنفس الطلب
-          </Button>
-        </CardContent></Card>
+        </Notice>
       ) : null}
 
       {pendingSale && !pendingMatchesActiveDraft ? (
-        <Card><CardContent className="bg-warning-soft">
-          <p className="font-medium">يوجد بيع معلق محفوظ لحساب أو وردية أخرى</p>
-          <p className="text-sm text-muted">لن يُعاد إرساله أو حذفه من مساحة العمل الحالية. افتح الحساب والوردية الأصليين لاستعادته بأمان.</p>
-        </CardContent></Card>
+        <Notice tone="warning">
+          <p className="text-sm font-medium">يوجد بيع معلق محفوظ لحساب أو وردية أخرى</p>
+          <p className="mt-0.5 text-muted">لن يُعاد إرساله أو حذفه من مساحة العمل الحالية. افتح الحساب والوردية الأصليين لاستعادته بأمان.</p>
+        </Notice>
       ) : null}
 
       <fieldset
@@ -857,115 +875,172 @@ function SaleWorkspace({
         className="m-0 min-w-0 border-0 p-0"
       >
         <legend className="sr-only">تفاصيل البيع</legend>
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <div className="space-y-4">
-          <Card><CardHeader><CardTitle>1. العميل</CardTitle></CardHeader><CardContent>
-            <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
-          </CardContent></Card>
-          <Card><CardHeader><CardTitle>2. الخدمات والمنتجات</CardTitle></CardHeader><CardContent className="space-y-4">
-            <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => {
-              const found = current.find(({ service: item, itemType }) => itemType !== 'product' && item.id === service.id);
-              return found
-                ? current.map((line) => line.itemType !== 'product' && line.service.id === service.id
-                  ? { ...line, quantity: line.quantity + 1 }
-                  : line)
-                : [...current, { service, quantity: 1, itemType: 'service' }];
-            })} />
-            <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
-              const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
-              return found
-                ? current.map((line) => line.itemType === 'product' && line.service.id === product.id
-                  ? { ...line, quantity: Math.min(line.quantity + 1, product.quantityAvailable) }
-                  : line)
-                : [...current, { service: product, quantity: 1, itemType: 'product' }];
-            })} />
-            {lines.map((line) => (
-              <div key={`${line.itemType ?? 'service'}:${line.service.id}`} className="flex items-center justify-between gap-2 rounded-control border border-line p-3">
-                <span><span className="block font-medium">{line.service.name}</span><span className="text-sm text-muted">{line.service.price} ج.م</span></span>
-                <span className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => current.flatMap((item) => item.service.id !== line.service.id || item.itemType !== line.itemType ? [item] : item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }] : []))}><Minus className="size-4" /></Button>
-                  <span className="w-8 text-center">{line.quantity}</span>
-                  <Button variant="ghost" size="sm" disabled={line.itemType === 'product' && line.quantity >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => current.map((item) => item.service.id === line.service.id && item.itemType === line.itemType ? { ...item, quantity: item.quantity + 1 } : item))}><Plus className="size-4" /></Button>
-                  <Button variant="ghost" size="sm" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => current.filter((item) => item.service.id !== line.service.id || item.itemType !== line.itemType))}><Trash2 className="size-4" /></Button>
-                </span>
-              </div>
-            ))}
-          </CardContent></Card>
-          <Card><CardHeader><CardTitle>3. الموظف</CardTitle></CardHeader><CardContent>
-            <PresentEmployeePicker
-              selected={employee}
-              onSelect={setEmployee}
-              {...(branchId === undefined ? {} : { branchId })}
-            />
-          </CardContent></Card>
-        </div>
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
+          <div className="min-w-0 space-y-4">
+            <Card className="shadow-card">
+              <CardHeader><CardTitle><StepTitle step={1} label="العميل" /></CardTitle></CardHeader>
+              <CardContent className="p-5">
+                <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
+              </CardContent>
+            </Card>
 
-        <div className="space-y-4">
-          <Card><CardHeader><CardTitle>4. الخصم والضريبة</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">
-            <AdjustmentInput label="الخصم" kind={discountKind} value={discountValue} onKind={setDiscountKind} onValue={setDiscountValue} />
-            <AdjustmentInput label="الضريبة" kind={taxKind} value={taxValue} onKind={setTaxKind} onValue={setTaxValue} />
-          </CardContent></Card>
-          <Card><CardHeader><CardTitle>5. الإجمالي والمدفوعات</CardTitle></CardHeader><CardContent className="space-y-4">
-            {quote.isPending && lines.length > 0 ? <p>جارٍ حساب الإجمالي من الخادم…</p> : null}
-            {quote.isError ? (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p role="alert" className="text-danger">{errorMessage(quote.error)}</p>
-                <Button variant="secondary" size="sm" onClick={() => void quote.refetch()}>
-                  إعادة حساب الإجمالي
-                </Button>
-              </div>
-            ) : null}
-            {quote.data ? (
-              <dl className="grid grid-cols-2 gap-2 text-sm">
-                <dt>المجموع الفرعي</dt><dd className="text-end">{quote.data.totals.subtotal} ج.م</dd>
-                <dt>الخصم</dt><dd className="text-end">{quote.data.totals.discountAmount} ج.م</dd>
-                <dt>الضريبة</dt><dd className="text-end">{quote.data.totals.taxAmount} ج.م</dd>
-                <dt className="font-semibold">الإجمالي</dt><dd className="text-end text-lg font-semibold">{quote.data.totals.total} ج.م</dd>
-              </dl>
-            ) : null}
-            <div className="grid gap-3 sm:grid-cols-2">
-              {paymentMethods.map(({ method, label }) => (
-                <div key={method} className="space-y-1">
-                  <Label htmlFor={`payment-${method}`}>{label}</Label>
-                  <Input
-                    id={`payment-${method}`}
-                    inputMode="decimal"
-                    dir="ltr"
-                    value={payments[method]}
-                    onChange={(event) => {
-                      setPaymentsTouched(true);
-                      setPayments((current) => ({ ...current, [method]: event.target.value }));
-                    }}
-                  />
+            <Card className="shadow-card">
+              <CardHeader><CardTitle><StepTitle step={2} label="الخدمات والمنتجات" /></CardTitle></CardHeader>
+              <CardContent className="space-y-5 p-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => {
+                    const found = current.find(({ service: item, itemType }) => itemType !== 'product' && item.id === service.id);
+                    return found
+                      ? current.map((line) => line.itemType !== 'product' && line.service.id === service.id
+                        ? { ...line, quantity: line.quantity + 1 }
+                        : line)
+                      : [...current, { service, quantity: 1, itemType: 'service' }];
+                  })} />
+                  <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
+                    const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
+                    return found
+                      ? current.map((line) => line.itemType === 'product' && line.service.id === product.id
+                        ? { ...line, quantity: Math.min(line.quantity + 1, product.quantityAvailable) }
+                        : line)
+                      : [...current, { service: product, quantity: 1, itemType: 'product' }];
+                  })} />
                 </div>
-              ))}
-            </div>
-            {remaining !== null ? (
-              <p role="status" className={remaining === BigInt(0) ? 'text-success' : 'text-warning'}>
-                {remaining === BigInt(0)
-                  ? 'تم سداد الإجمالي بالكامل'
-                  : remaining > BigInt(0)
-                    ? `المتبقي ${money(remaining)} ج.م`
-                    : `المدفوع زائد بمقدار ${money(-remaining)} ج.م`}
-              </p>
-            ) : null}
-            {completion.error && !ambiguous ? <p role="alert" className="text-danger">{errorMessage(completion.error)}</p> : null}
-            {storageError ? (
-              <p role="alert" className="text-danger">
-                تعذر حفظ طلب البيع بأمان. تأكد من إتاحة تخزين المتصفح ثم حاول مرة أخرى.
-              </p>
-            ) : null}
-            <Button className="w-full" disabled={!ready} onClick={() => setConfirming(true)}>
-              مراجعة وإتمام البيع
-            </Button>
-          </CardContent></Card>
-        </div>
+
+                {lines.length > 0 ? (
+                  <ul className="space-y-2 border-t border-line/70 pt-4">
+                    {lines.map((line) => (
+                      <li
+                        key={`${line.itemType ?? 'service'}:${line.service.id}`}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line bg-surface/50 p-3"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{line.service.name}</span>
+                          <span className="tabular text-[13px] text-muted">{line.service.price} ج.م</span>
+                        </span>
+                        {/* The most-tapped control in the app: kept at a 44px touch target. */}
+                        <span className="flex items-center gap-1 rounded-control border border-line bg-paper p-0.5">
+                          <Button variant="ghost" className="size-11 px-0" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => current.flatMap((item) => item.service.id !== line.service.id || item.itemType !== line.itemType ? [item] : item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }] : []))}><Minus className="size-4" aria-hidden /></Button>
+                          <span className="tabular w-8 text-center text-sm font-semibold">{line.quantity}</span>
+                          <Button variant="ghost" className="size-11 px-0" disabled={line.itemType === 'product' && line.quantity >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => current.map((item) => item.service.id === line.service.id && item.itemType === line.itemType ? { ...item, quantity: item.quantity + 1 } : item))}><Plus className="size-4" aria-hidden /></Button>
+                          <Button variant="ghost" className="size-11 px-0" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => current.filter((item) => item.service.id !== line.service.id || item.itemType !== line.itemType))}><Trash2 className="size-4" aria-hidden /></Button>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card">
+              <CardHeader><CardTitle><StepTitle step={3} label="الموظف" /></CardTitle></CardHeader>
+              <CardContent className="p-5">
+                <PresentEmployeePicker
+                  selected={employee}
+                  onSelect={setEmployee}
+                  {...(branchId === undefined ? {} : { branchId })}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* The summary follows the cart on a wide till, but it must scroll on its
+              own so the submit button is never pinned below the fold. */}
+          <div className="scroll-thin min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
+            <Card className="shadow-card">
+              <CardHeader><CardTitle><StepTitle step={4} label="الخصم والضريبة" /></CardTitle></CardHeader>
+              <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
+                <AdjustmentInput label="الخصم" kind={discountKind} value={discountValue} onKind={setDiscountKind} onValue={setDiscountValue} />
+                <AdjustmentInput label="الضريبة" kind={taxKind} value={taxValue} onKind={setTaxKind} onValue={setTaxValue} />
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card">
+              <CardHeader><CardTitle><StepTitle step={5} label="الإجمالي والمدفوعات" /></CardTitle></CardHeader>
+              <CardContent className="space-y-4 p-5">
+                {quote.isPending && lines.length > 0 ? (
+                  <LoadingState label="جارٍ حساب الإجمالي من الخادم…" className="justify-start p-0" />
+                ) : null}
+                {quote.isError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p role="alert" className="text-[13px] text-danger">{errorMessage(quote.error)}</p>
+                    <Button variant="secondary" size="sm" onClick={() => void quote.refetch()}>
+                      إعادة حساب الإجمالي
+                    </Button>
+                  </div>
+                ) : null}
+                {quote.data ? (
+                  <dl className="space-y-1.5 rounded-control border border-line bg-surface/50 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-muted">المجموع الفرعي</dt>
+                      <dd className="tabular">{quote.data.totals.subtotal} ج.م</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-muted">الخصم</dt>
+                      <dd className="tabular">{quote.data.totals.discountAmount} ج.م</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-muted">الضريبة</dt>
+                      <dd className="tabular">{quote.data.totals.taxAmount} ج.م</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 border-t border-line pt-2">
+                      <dt className="font-semibold">الإجمالي</dt>
+                      <dd className="tabular text-xl font-semibold">{quote.data.totals.total} ج.م</dd>
+                    </div>
+                  </dl>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {paymentMethods.map(({ method, label }) => (
+                    <div key={method} className="space-y-1.5">
+                      <Label htmlFor={`payment-${method}`}>{label}</Label>
+                      <Input
+                        id={`payment-${method}`}
+                        inputMode="decimal"
+                        dir="ltr"
+                        className="text-start"
+                        value={payments[method]}
+                        onChange={(event) => {
+                          setPaymentsTouched(true);
+                          setPayments((current) => ({ ...current, [method]: event.target.value }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {remaining !== null ? (
+                  <p
+                    role="status"
+                    className={cn(
+                      'rounded-control border px-3 py-2 text-[13px] font-medium',
+                      remaining === BigInt(0)
+                        ? 'border-success/20 bg-success-soft text-success'
+                        : 'border-warning/20 bg-warning-soft text-warning',
+                    )}
+                  >
+                    {remaining === BigInt(0)
+                      ? 'تم سداد الإجمالي بالكامل'
+                      : remaining > BigInt(0)
+                        ? `المتبقي ${money(remaining)} ج.م`
+                        : `المدفوع زائد بمقدار ${money(-remaining)} ج.م`}
+                  </p>
+                ) : null}
+                {completion.error && !ambiguous ? <p role="alert" className="text-[13px] text-danger">{errorMessage(completion.error)}</p> : null}
+                {storageError ? (
+                  <p role="alert" className="text-[13px] text-danger">
+                    تعذر حفظ طلب البيع بأمان. تأكد من إتاحة تخزين المتصفح ثم حاول مرة أخرى.
+                  </p>
+                ) : null}
+                <Button size="lg" className="w-full" disabled={!ready} onClick={() => setConfirming(true)}>
+                  مراجعة وإتمام البيع
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </fieldset>
 
       {confirming ? (
         <Modal title="تأكيد البيع" onClose={() => setConfirming(false)}>
-          <p>سيتم حفظ الفاتورة نهائيًا بقيمة {quote.data?.totals.total} ج.م.</p>
+          <p className="text-sm">سيتم حفظ الفاتورة نهائيًا بقيمة {quote.data?.totals.total} ج.م.</p>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setConfirming(false)}>رجوع</Button>
             <Button disabled={completion.isPending} onClick={submit}>تأكيد البيع</Button>
@@ -978,9 +1053,9 @@ function SaleWorkspace({
           setDiscardError(false);
           setDiscarding(null);
         }}>
-          <p>سيُحذف الطلب المحفوظ من هذا المتصفح ولن تتم مزامنته لاحقًا.</p>
+          <p className="text-sm">سيُحذف الطلب المحفوظ من هذا المتصفح ولن تتم مزامنته لاحقًا.</p>
           {discardError ? (
-            <p role="alert" className="text-sm text-danger">
+            <p role="alert" className="text-[13px] text-danger">
               تعذر حذف البيع المعلق من المتصفح. سيبقى محفوظًا ولن نخفيه حتى ينجح الحذف.
             </p>
           ) : null}
@@ -1011,6 +1086,21 @@ function SaleWorkspace({
   );
 }
 
+/** Numbered step marker shared by the five sale panels. */
+function StepTitle({ step, label }: { step: number; label: string }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span
+        aria-hidden
+        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-paper"
+      >
+        {step}
+      </span>
+      {label}
+    </span>
+  );
+}
+
 function AdjustmentInput(props: {
   label: string;
   kind: AdjustmentKind;
@@ -1019,22 +1109,23 @@ function AdjustmentInput(props: {
   onValue: (value: string) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <Label>{props.label}</Label>
       <div className="flex gap-2">
-        <select
+        <Select
           aria-label={`نوع ${props.label}`}
-          className="h-9 rounded-control border border-line bg-paper px-2 text-sm"
+          className="w-auto shrink-0 px-2"
           value={props.kind}
           onChange={(event) => props.onKind(event.target.value as AdjustmentKind)}
         >
           <option value="percentage">نسبة %</option>
           <option value="fixed">مبلغ ثابت</option>
-        </select>
+        </Select>
         <Input
           aria-label={`قيمة ${props.label}`}
           inputMode="decimal"
           dir="ltr"
+          className="text-start"
           value={props.value}
           onChange={(event) => props.onValue(event.target.value)}
         />

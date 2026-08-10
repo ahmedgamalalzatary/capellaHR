@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { PageHeader } from '@/components/layout/page-header';
 import { ServicePicker } from '@/features/catalog';
 
 export const metadata: Metadata = { title: 'الخدمات' };
@@ -10,9 +11,9 @@ export const metadata: Metadata = { title: 'الخدمات' };
  */
 export default function ServicesPage() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold text-ink">الخدمات</h1>
+    <section className="space-y-6">
+      <PageHeader title="الخدمات" description="تصفّح الخدمات المتاحة للبيع وأسعارها الثابتة." />
       <ServicePicker />
-    </div>
+    </section>
   );
 }

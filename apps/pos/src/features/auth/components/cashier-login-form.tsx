@@ -44,8 +44,8 @@ export function CashierLoginForm() {
   const formError = errors.username?.message ?? errors.password?.message ?? serverError;
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardContent className="py-6">
+    <Card className="shadow-card">
+      <CardContent className="p-5">
         <form
           noValidate
           onSubmit={handleSubmit((values) => login.mutate(values))}

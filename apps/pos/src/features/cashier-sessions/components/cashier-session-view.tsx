@@ -1,9 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock3 } from 'lucide-react';
+import { Building2, Clock3, UserRound } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import {
   Badge,
@@ -18,6 +18,9 @@ import {
 } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { FieldError, Notice } from '@/components/feedback/notice';
+import { Select } from '@/components/form/select';
+import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -42,6 +45,26 @@ const errorMessage = (error: unknown): string | null => {
   if (!error) return null;
   return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
+
+function SessionFact({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: typeof Clock3;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-control border border-line bg-surface/60 px-3 py-2.5">
+      <dt className="flex items-center gap-1.5 text-[12px] text-muted">
+        <Icon className="size-3.5 shrink-0" aria-hidden />
+        {label}
+      </dt>
+      <dd className="mt-1 truncate text-sm font-medium text-ink">{children}</dd>
+    </div>
+  );
+}
 
 export function CashierSessionView() {
   const queryClient = useQueryClient();
@@ -119,21 +142,21 @@ export function CashierSessionView() {
     && session.openedByAccountId === actor.accountId;
 
   return (
-    <section className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink">وردية الكاشير</h1>
-        <p className="mt-1 text-sm text-muted">فتح الوردية ومتابعة مالكها وإغلاقها بأمان.</p>
-      </div>
+    <section className="mx-auto w-full max-w-3xl space-y-6">
+      <PageHeader
+        title="وردية الكاشير"
+        description="فتح الوردية ومتابعة مالكها وإغلاقها بأمان."
+      />
 
       {isAdmin ? (
-        <Card>
-          <CardContent className="space-y-2">
+        <Card className="shadow-card">
+          <CardContent className="space-y-1.5 p-4 sm:p-5">
             <Label htmlFor="cashier-session-branch">الفرع</Label>
-            <select
+            <Select
               id="cashier-session-branch"
+              className="max-w-sm"
               value={selectedBranchId ?? ''}
               disabled={branchesQuery.isPending || branchesQuery.isError}
-              className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm text-ink disabled:opacity-70"
               onChange={(event) => {
                 setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
                 openMutation.reset();
@@ -145,12 +168,10 @@ export function CashierSessionView() {
               {(branchesQuery.data ?? []).map((branch) => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
-            </select>
+            </Select>
             {branchesQuery.isError ? (
-              <div className="flex items-center gap-2">
-                <p role="alert" className="text-[13px] text-danger">
-                  {errorMessage(branchesQuery.error)}
-                </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <FieldError>{errorMessage(branchesQuery.error)}</FieldError>
                 <Button variant="ghost" size="sm" onClick={() => void branchesQuery.refetch()}>
                   إعادة المحاولة
                 </Button>
@@ -161,13 +182,19 @@ export function CashierSessionView() {
       ) : null}
 
       {!isAdmin && !isCashier ? (
-        <Card><LoadingState label="جارٍ تحميل بيانات الحساب…" className="text-start" /></Card>
+        <Card className="shadow-card">
+          <LoadingState label="جارٍ تحميل بيانات الحساب…" />
+        </Card>
       ) : isAdmin && selectedBranchId === undefined ? (
-        <EmptyState title="اختر فرعًا لعرض وردية الكاشير" />
+        <Card className="shadow-card">
+          <EmptyState title="اختر فرعًا لعرض وردية الكاشير" />
+        </Card>
       ) : currentQuery.isPending ? (
-        <Card><LoadingState label="جارٍ تحميل الوردية…" className="text-start" /></Card>
+        <Card className="shadow-card">
+          <LoadingState label="جارٍ تحميل الوردية…" />
+        </Card>
       ) : currentQuery.isError ? (
-        <Card>
+        <Card className="shadow-card">
           <EmptyState
             title="تعذر تحميل الوردية"
             description={errorMessage(currentQuery.error) ?? undefined}
@@ -179,40 +206,28 @@ export function CashierSessionView() {
           />
         </Card>
       ) : session ? (
-        <Card>
+        <Card className="shadow-card">
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle>الوردية الحالية</CardTitle>
             <Badge variant="success">مفتوحة</Badge>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <dl className="grid gap-3 text-sm sm:grid-cols-3">
-              <div>
-                <dt className="text-muted">الفرع</dt>
-                <dd className="mt-1 font-medium text-ink">{session.branchName}</dd>
-              </div>
-              <div>
-                <dt className="text-muted">فتحها</dt>
-                <dd className="mt-1 font-medium text-ink">{session.openedByUsername}</dd>
-              </div>
-              <div>
-                <dt className="text-muted">وقت الفتح — القاهرة</dt>
-                <dd className="mt-1 flex items-center gap-1.5 font-medium text-ink">
-                  <Clock3 className="size-4" aria-hidden />
-                  <time dateTime={session.openedAt}>{formatCairoDateTime(session.openedAt)}</time>
-                </dd>
-              </div>
+          <CardContent className="space-y-4 p-5">
+            <dl className="grid gap-2 sm:grid-cols-3">
+              <SessionFact icon={Building2} label="الفرع">{session.branchName}</SessionFact>
+              <SessionFact icon={UserRound} label="فتحها">{session.openedByUsername}</SessionFact>
+              <SessionFact icon={Clock3} label="وقت الفتح — القاهرة">
+                <time dateTime={session.openedAt}>{formatCairoDateTime(session.openedAt)}</time>
+              </SessionFact>
             </dl>
 
             {isCashier && !ownsSession ? (
-              <p role="status" className="rounded-control bg-warning/10 px-3 py-2 text-sm text-ink">
-                الوردية مفتوحة بواسطة كاشير آخر
-              </p>
+              <Notice tone="warning">الوردية مفتوحة بواسطة كاشير آخر</Notice>
             ) : null}
 
-            {actionError ? <p role="alert" className="text-[13px] text-danger">{actionError}</p> : null}
+            {actionError ? <FieldError>{actionError}</FieldError> : null}
 
             {ownsSession ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
                 <Link
                   href="/sales"
                   className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper transition-colors hover:bg-ink/85"
@@ -224,14 +239,16 @@ export function CashierSessionView() {
                 </Button>
               </div>
             ) : isAdmin ? (
-              <Button variant="danger" onClick={() => setRecoveryOpen(true)}>
-                إغلاق استثنائي
-              </Button>
+              <div className="border-t border-line/70 pt-4">
+                <Button variant="danger" onClick={() => setRecoveryOpen(true)}>
+                  إغلاق استثنائي
+                </Button>
+              </div>
             ) : null}
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="shadow-card">
           <EmptyState
             title="لا توجد وردية مفتوحة"
             description={isCashier ? 'افتح ورديتك قبل بدء عمليات البيع.' : 'لا توجد وردية مفتوحة لهذا الفرع.'}
@@ -241,7 +258,9 @@ export function CashierSessionView() {
               </Button>
             ) : undefined}
           />
-          {actionError ? <p role="alert" className="px-5 pb-4 text-center text-[13px] text-danger">{actionError}</p> : null}
+          {actionError ? (
+            <FieldError className="px-5 pb-4 text-center">{actionError}</FieldError>
+          ) : null}
         </Card>
       )}
 

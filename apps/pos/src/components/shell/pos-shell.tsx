@@ -1,11 +1,9 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
 import { useIsMutating, useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
-
-import { Button, cn } from '@capella/ui';
+import { ShieldCheck, UserRound } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { useLogout, useSession } from '@/features/auth';
 import {
@@ -14,56 +12,12 @@ import {
 } from '@/features/cashier-sessions';
 import { clearAllSaleDrafts } from '@/features/sales';
 
-type NavigationItem = { href: string; label: string };
-type NavigationGroup = { label: string; items: NavigationItem[] };
-
-const adminNavigation: NavigationGroup[] = [
-  {
-    label: 'المبيعات والعملاء',
-    items: [
-      { href: '/', label: 'لوحة الإدارة' },
-      { href: '/sales', label: 'بيع جديد' },
-      { href: '/invoices', label: 'الفواتير' },
-      { href: '/clients', label: 'العملاء' },
-    ],
-  },
-  {
-    label: 'الإدارة',
-    items: [
-      { href: '/cashier-sessions', label: 'ورديات الكاشير' },
-      { href: '/catalog', label: 'الكتالوج' },
-      { href: '/products', label: 'المنتجات والمخزون' },
-      { href: '/suppliers', label: 'الموردون والمشتريات' },
-      { href: '/expenses', label: 'المصروفات' },
-    ],
-  },
-  {
-    label: 'المتابعة',
-    items: [
-      { href: '/commissions', label: 'العمولات' },
-      { href: '/reports', label: 'التقارير' },
-    ],
-  },
-  {
-    label: 'النظام',
-    items: [{ href: '/cashier-accounts', label: 'حسابات الكاشير' }],
-  },
-];
-
-const cashierNavigation: NavigationGroup[] = [{
-  label: 'نقطة البيع',
-  items: [
-    { href: '/', label: 'الوردية' },
-    { href: '/sales', label: 'بيع جديد' },
-    { href: '/invoices', label: 'الفواتير' },
-    { href: '/clients', label: 'العملاء' },
-    { href: '/services', label: 'الخدمات' },
-  ],
-}];
+import { adminNavigation, cashierNavigation } from './nav';
+import { Sidebar, SIDEBAR_ID } from './sidebar';
+import { Topbar } from './topbar';
 
 export function PosShell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const session = useSession();
   const logout = useLogout();
   const navigationLocked = useIsMutating() > 0;
@@ -76,6 +30,102 @@ export function PosShell({ children }: { children: ReactNode }) {
   });
   const visibleNavigation = isAdmin ? adminNavigation : cashierNavigation;
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const wideRef = useRef(false);
+
+  useEffect(() => {
+    const breakpoint = window.matchMedia('(min-width: 48rem)');
+    wideRef.current = breakpoint.matches;
+    if (breakpoint.matches) setSidebarOpen(false);
+    const onBreakpointChange = (event: MediaQueryListEvent) => {
+      wideRef.current = event.matches;
+      if (event.matches) setSidebarOpen(false);
+    };
+    breakpoint.addEventListener('change', onBreakpointChange);
+    return () => breakpoint.removeEventListener('change', onBreakpointChange);
+  }, []);
+
+  // The open state is only reachable through the md:hidden toggle, so this effect
+  // manages the mobile drawer: move focus in, trap Tab, restore it on close.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const sidebar = document.getElementById(SIDEBAR_ID);
+    const focusables = () =>
+      Array.from(sidebar?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? []);
+    focusables()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSidebarOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (sidebar && (active === null || !sidebar.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (trigger?.isConnected && !wideRef.current) {
+        const style = window.getComputedStyle(trigger);
+        if (!trigger.hidden && style.display !== 'none' && style.visibility !== 'hidden') {
+          trigger.focus();
+        }
+      }
+    };
+  }, [sidebarOpen]);
+
+  const shiftStatus = isCashier ? (
+    <div
+      className="flex min-w-0 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs"
+      aria-live="polite"
+    >
+      {cashierSession.isPending ? (
+        <span className="text-muted">جارٍ التحقق من الوردية…</span>
+      ) : cashierSession.isError ? (
+        <button type="button" className="text-danger" onClick={() => void cashierSession.refetch()}>
+          تعذر التحقق — إعادة المحاولة
+        </button>
+      ) : cashierSession.data ? (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
+          <span className="whitespace-nowrap font-medium text-success">الوردية مفتوحة</span>
+          <span aria-hidden className="h-3 w-px shrink-0 bg-line" />
+          <span className="truncate text-muted">{cashierSession.data.branchName}</span>
+        </span>
+      ) : (
+        <span className="flex items-center gap-1.5 text-muted">
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted" />
+          <span className="whitespace-nowrap">لا توجد وردية مفتوحة</span>
+        </span>
+      )}
+    </div>
+  ) : null;
+
+  const accountFooter = isAdmin || isCashier ? (
+    <p className="flex items-center gap-2 rounded-control bg-surface px-2.5 py-2 text-[12px] text-muted">
+      {isAdmin ? (
+        <ShieldCheck className="size-4 shrink-0" aria-hidden />
+      ) : (
+        <UserRound className="size-4 shrink-0" aria-hidden />
+      )}
+      {isAdmin ? 'حساب المدير' : 'حساب كاشير'}
+    </p>
+  ) : null;
+
   return (
     <div className="min-h-dvh">
       <a
@@ -84,79 +134,45 @@ export function PosShell({ children }: { children: ReactNode }) {
       >
         الانتقال إلى المحتوى
       </a>
-      <header className="sticky top-0 z-20 border-b border-line bg-paper/95 px-3 py-3 backdrop-blur sm:px-4">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/"
-            aria-disabled={navigationLocked || undefined}
-            className={cn('text-sm font-bold text-ink', navigationLocked && 'pointer-events-none opacity-50')}
-            onClick={(event) => { if (navigationLocked) event.preventDefault(); }}
-          >كابيلا — نقطة البيع</Link>
-          <div className="flex items-center gap-2">
-            {isCashier ? (
-              <div className="rounded-full border border-line px-3 py-1 text-xs" aria-live="polite">
-                {cashierSession.isPending ? 'جارٍ التحقق من الوردية…' : cashierSession.isError ? (
-                  <button type="button" className="text-danger" onClick={() => void cashierSession.refetch()}>
-                    تعذر التحقق — إعادة المحاولة
-                  </button>
-                ) : cashierSession.data ? (
-                  <span><span className="font-medium text-success">الوردية مفتوحة</span> · {cashierSession.data.branchName}</span>
-                ) : 'لا توجد وردية مفتوحة'}
-              </div>
-            ) : isAdmin ? <span className="text-xs text-muted">حساب المدير</span> : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={logout.isPending || navigationLocked}
-              onClick={() => {
-                if (navigationLocked) return;
-                clearAllSaleDrafts();
-                logout.mutate(undefined, { onSuccess: () => router.replace('/login') });
-              }}
-            >
-              تسجيل الخروج
-            </Button>
-          </div>
-        </div>
-        <nav aria-label="التنقل الرئيسي" className="mx-auto mt-3 max-w-7xl overflow-x-auto pb-1">
-          <div className={cn('grid min-w-max gap-2', isAdmin ? 'grid-cols-4' : 'grid-cols-1')}>
-            {visibleNavigation.map((group) => (
-              <div
-                key={group.label}
-                role="group"
-                aria-label={group.label}
-                className="rounded-control border border-line/80 p-1"
-              >
-                {isAdmin ? (
-                  <p className="px-2 pb-0.5 text-[11px] font-medium text-muted">{group.label}</p>
-                ) : null}
-                <div className="flex gap-1">
-                  {group.items.map((item) => {
-                    const active = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        aria-current={active ? 'page' : undefined}
-                        aria-disabled={navigationLocked || undefined}
-                        onClick={(event) => { if (navigationLocked) event.preventDefault(); }}
-                        className={cn(
-                          'whitespace-nowrap rounded-control px-2.5 py-1.5 text-sm transition-colors',
-                          active ? 'bg-ink text-paper' : 'text-muted hover:bg-surface hover:text-ink',
-                          navigationLocked && 'pointer-events-none opacity-50',
-                        )}
-                      >
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </nav>
-      </header>
-      <main id="pos-content" tabIndex={-1} className="p-3 sm:p-4">{children}</main>
+
+      {sidebarOpen ? (
+        <div
+          data-testid="sidebar-backdrop"
+          aria-hidden
+          className="fixed inset-0 z-30 bg-ink/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
+
+      <Sidebar
+        navigation={visibleNavigation}
+        open={sidebarOpen}
+        locked={navigationLocked}
+        {...(accountFooter ? { footer: accountFooter } : {})}
+        onNavigate={() => setSidebarOpen(false)}
+      />
+
+      <div className="flex min-h-dvh flex-col md:ms-56 lg:ms-64">
+        <Topbar
+          menuOpen={sidebarOpen}
+          onMenuToggle={() => setSidebarOpen((open) => !open)}
+          {...(shiftStatus ? { status: shiftStatus } : {})}
+          locked={navigationLocked}
+          logoutPending={logout.isPending}
+          onLogout={() => {
+            if (navigationLocked) return;
+            clearAllSaleDrafts();
+            logout.mutate(undefined, { onSuccess: () => router.replace('/login') });
+          }}
+        />
+        <main
+          id="pos-content"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-7xl flex-1 px-3 py-5 sm:px-6 sm:py-6"
+        >
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

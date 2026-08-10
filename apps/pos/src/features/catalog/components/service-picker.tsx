@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Card, EmptyState, Input } from '@capella/ui';
@@ -45,15 +46,19 @@ export function ServicePicker({
 
   return (
     <div className="space-y-3">
-      <Input
-        aria-label="بحث عن خدمة"
-        placeholder="اسم الخدمة"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-      />
+      <div className="relative">
+        <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+        <Input
+          aria-label="بحث عن خدمة"
+          placeholder="اسم الخدمة"
+          className="ps-9"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </div>
 
       {servicesQuery.isPending ? (
-        <LoadingState label="جارٍ تحميل الخدمات…" className="p-0 text-start" />
+        <LoadingState label="جارٍ تحميل الخدمات…" align="start" className="p-0" />
       ) : servicesQuery.isError ? (
         <EmptyState
           title="تعذر تحميل الخدمات"
@@ -70,16 +75,16 @@ export function ServicePicker({
           description={trimmed ? 'جرب اسمًا آخر.' : 'أضف الخدمات من إدارة الكتالوج.'}
         />
       ) : (
-        <Card>
+        <Card className="scroll-thin max-h-72 overflow-y-auto shadow-card">
           <ul>
             {items.map((service) => {
               const body = (
                 <>
-                  <span>
-                    <span className="block text-sm font-medium">{service.name}</span>
-                    <span className="block text-[13px] text-muted">{service.categoryName}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{service.name}</span>
+                    <span className="block truncate text-[13px] text-muted">{service.categoryName}</span>
                   </span>
-                  <span className="tabular text-sm font-medium" dir="ltr">
+                  <span className="tabular shrink-0 text-sm font-semibold text-ink">
                     {`${service.price} ج.م`}
                   </span>
                 </>
@@ -90,7 +95,7 @@ export function ServicePicker({
                   {onSelect ? (
                     <button
                       type="button"
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start hover:bg-line/20"
+                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start transition-colors hover:bg-surface"
                       onClick={() => onSelect(service)}
                     >
                       {body}

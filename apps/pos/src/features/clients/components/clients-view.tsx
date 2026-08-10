@@ -1,12 +1,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
+import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
+import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
+import { Select } from '@/components/form/select';
+import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -63,60 +67,59 @@ export function ClientsView() {
   const meta = clientsQuery.data?.meta;
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-ink">إدارة العملاء</h1>
-        <p className="mt-1 text-sm text-muted">إضافة بيانات العملاء والبحث فيها وتحديثها.</p>
-      </div>
-      {isAdmin ? (
-        <Card><CardContent className="space-y-2">
-          <Label htmlFor="clients-branch">الفرع</Label>
-          <select
-            id="clients-branch"
-            value={selectedBranchId ?? ''}
-            disabled={formPending || branchesQuery.isPending || branchesQuery.isError}
-            className="h-9 w-full max-w-xs rounded-control border border-line bg-paper px-3 text-sm"
-            onChange={(event) => {
-              if (formPending) return;
-              setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
-              setPage(1);
-              setCreateOpen(false);
-              setEditing(null);
-            }}
+    <section className="space-y-6">
+      <PageHeader
+        title="إدارة العملاء"
+        description="إضافة بيانات العملاء والبحث فيها وتحديثها."
+        actions={(
+          <Button
+            size="sm"
+            disabled={!scopeReady || formPending}
+            onClick={() => { setCreateOpen(true); setEditing(null); }}
           >
-            <option value="">اختر الفرع</option>
-            {(branchesQuery.data ?? []).map((branch) => (
-              <option key={branch.id} value={branch.id}>{branch.name}</option>
-            ))}
-          </select>
-          {branchesQuery.isError ? (
-            <EmptyState
-              title="تعذر تحميل الفروع"
-              description={serverErrorMessage(branchesQuery.error) ?? undefined}
-              action={
-                <Button variant="secondary" size="sm" onClick={() => void branchesQuery.refetch()}>
-                  إعادة المحاولة
-                </Button>
-              }
-            />
-          ) : null}
-        </CardContent></Card>
+            <Plus className="size-4" aria-hidden />
+            إضافة عميل
+          </Button>
+        )}
+      />
+
+      {isAdmin ? (
+        <Card className="shadow-card">
+          <CardContent className="space-y-1.5 p-4 sm:p-5">
+            <Label htmlFor="clients-branch">الفرع</Label>
+            <Select
+              id="clients-branch"
+              className="max-w-sm"
+              value={selectedBranchId ?? ''}
+              disabled={formPending || branchesQuery.isPending || branchesQuery.isError}
+              onChange={(event) => {
+                if (formPending) return;
+                setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
+                setPage(1);
+                setCreateOpen(false);
+                setEditing(null);
+              }}
+            >
+              <option value="">اختر الفرع</option>
+              {(branchesQuery.data ?? []).map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </Select>
+            {branchesQuery.isError ? (
+              <EmptyState
+                title="تعذر تحميل الفروع"
+                description={serverErrorMessage(branchesQuery.error) ?? undefined}
+                className="py-8"
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => void branchesQuery.refetch()}>
+                    إعادة المحاولة
+                  </Button>
+                }
+              />
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="w-full max-w-xs">
-          <Input
-            aria-label="بحث بالاسم أو رقم الهاتف"
-            placeholder="بحث بالاسم أو رقم الهاتف"
-            value={search}
-            disabled={!scopeReady}
-            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-          />
-        </div>
-        <Button size="sm" disabled={!scopeReady || formPending} onClick={() => { setCreateOpen(true); setEditing(null); }}>
-          <Plus className="size-4" aria-hidden />
-          إضافة عميل
-        </Button>
-      </div>
 
       {createOpen ? (
         <ClientForm {...branchScope} onDone={() => setCreateOpen(false)} onCancel={() => setCreateOpen(false)} onPendingChange={setFormPending} />
@@ -132,7 +135,24 @@ export function ClientsView() {
         />
       ) : null}
 
-      <Card>
+      <Card className="overflow-hidden shadow-card">
+        <div className="border-b border-line/70 p-3 sm:p-4">
+          <div className="relative w-full max-w-sm">
+            <Search
+              className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted"
+              aria-hidden
+            />
+            <Input
+              aria-label="بحث بالاسم أو رقم الهاتف"
+              placeholder="بحث بالاسم أو رقم الهاتف"
+              className="ps-9"
+              value={search}
+              disabled={!scopeReady}
+              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+            />
+          </div>
+        </div>
+
         {!scopeReady ? (
           <EmptyState title="اختر فرعًا لعرض العملاء" />
         ) : clientsQuery.isPending ? (
@@ -153,23 +173,17 @@ export function ClientsView() {
             description={trimmedSearch ? 'جرب رقمًا أو اسمًا آخر.' : 'ابدأ بإضافة أول عميل.'}
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line text-[12px] text-muted">
-                  {columns.map((column) => (
-                    <th key={column.key} className="px-4 py-2.5 text-start font-medium">
-                      {column.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((client) => (
-                  <tr key={client.id} className="border-b border-line/60 last:border-b-0">
-                    <td className="px-4 py-3 font-medium">{client.fullName}</td>
-                    <td className="px-4 py-3 tabular text-muted" dir="ltr">{client.phone}</td>
-                    <td className="px-4 py-3">
+          <DataTable>
+            <THead>
+              {columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
+            </THead>
+            <tbody>
+              {items.map((client) => (
+                <TR key={client.id}>
+                  <TD className="font-medium">{client.fullName}</TD>
+                  <TD className="tabular text-muted">{client.phone}</TD>
+                  <TD>
+                    <RowActions>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -179,42 +193,30 @@ export function ClientsView() {
                         <Pencil className="size-4" aria-hidden />
                         تعديل
                       </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </RowActions>
+                  </TD>
+                </TR>
+              ))}
+            </tbody>
+          </DataTable>
         )}
-      </Card>
 
-      {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> عميل
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
-      ) : null}
-    </div>
+        {meta && meta.totalPages > 1 ? (
+          <Pagination
+            summary={(
+              <>
+                صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
+                {' — '}
+                <span className="tabular">{meta.total}</span> عميل
+              </>
+            )}
+            previousDisabled={meta.page <= 1}
+            nextDisabled={meta.page >= meta.totalPages}
+            onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+            onNext={() => setPage((current) => current + 1)}
+          />
+        ) : null}
+      </Card>
+    </section>
   );
 }

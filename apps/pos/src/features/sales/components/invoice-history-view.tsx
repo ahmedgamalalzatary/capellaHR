@@ -1,12 +1,17 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
+import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
+import { Notice } from '@/components/feedback/notice';
+import { Select } from '@/components/form/select';
+import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 
@@ -22,6 +27,13 @@ const statusLabels = {
   partially_refunded: 'مستردة جزئيًا',
   refunded: 'مستردة',
   voided: 'ملغاة',
+} as const;
+
+const statusTones = {
+  completed: 'success',
+  partially_refunded: 'warning',
+  refunded: 'warning',
+  voided: 'danger',
 } as const;
 
 export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: number }) {
@@ -52,36 +64,135 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
     enabled: Boolean(actor) && (!isAdmin || branchId !== undefined),
   });
 
-  return <section className="mx-auto max-w-5xl space-y-4">
-    <div><h1 className="text-2xl font-semibold">الفواتير والإيصالات</h1><p className="text-sm text-muted">اعرض الفاتورة المخزنة وأعد طباعة إيصالها دون إعادة البيع.</p></div>
-    <form className="flex max-w-xl items-end gap-2" onSubmit={(event) => {
-      event.preventDefault();
-      setSearch(searchDraft.trim() || undefined);
-      setPage(1);
-    }}>
-      <Label htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
-      <Input className="grow" id="invoice-search" value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} />
-      <Button type="submit">بحث</Button>
-    </form>
-    {isAdmin ? <div className="max-w-sm space-y-1">
-      <Label htmlFor="invoice-branch">الفرع</Label>
-      <select id="invoice-branch" disabled={branches.isPending || branches.isError} className="w-full rounded-control border border-line bg-paper px-3 py-2" value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}>
-        <option value="">اختر الفرع</option>
-        {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-      </select>
-    </div> : null}
-    {isAdmin && branches.isPending ? <LoadingState label="جارٍ تحميل الفروع…" className="p-0 text-start" /> : null}
-    {isAdmin && branches.isError ? <div role="alert" className="rounded-control bg-danger-soft p-4 text-danger"><p>تعذر تحميل الفروع.</p><Button variant="secondary" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></div> : null}
-    {isAdmin && branches.data?.items.length === 0 ? <EmptyState title="لا توجد فروع" description="أضف فرعًا قبل عرض الفواتير." /> : null}
-    {invoices.isPending && (!isAdmin || branchId !== undefined) ? <LoadingState label="جارٍ تحميل الفواتير…" className="p-0 text-start" /> : null}
-    {invoices.isError ? <div role="alert" className="rounded-control bg-danger-soft p-4 text-danger"><p>تعذر تحميل الفواتير.</p><Button variant="secondary" onClick={() => void invoices.refetch()}>إعادة المحاولة</Button></div> : null}
-    {invoices.data?.items.length === 0 ? <EmptyState title="لا توجد فواتير" description="ستظهر الفواتير المكتملة هنا." /> : null}
-    <div className="space-y-2">
-      {invoices.data?.items.map((invoice) => <Card key={invoice.id}><CardContent className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-        <div><div className="flex flex-wrap items-center gap-2"><Link className="font-mono font-semibold underline" dir="ltr" href={`/invoices/${invoice.id}${branchId ? `?branchId=${branchId}` : ''}`}>{invoice.invoiceNumber}</Link><Badge>{statusLabels[invoice.status]}</Badge></div><p>{invoice.client.name} · {invoice.assignedEmployee.name}</p><time className="text-sm text-muted" dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></div>
-        <strong>{invoice.total} ج.م</strong>
-      </CardContent></Card>)}
-    </div>
-    {invoices.data && invoices.data.meta.totalPages > 1 ? <div className="flex justify-between"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>السابق</Button><span>{page} / {invoices.data.meta.totalPages}</span><Button variant="secondary" disabled={page >= invoices.data.meta.totalPages} onClick={() => setPage((value) => value + 1)}>التالي</Button></div> : null}
-  </section>;
+  return (
+    <section className="mx-auto w-full max-w-5xl space-y-6">
+      <PageHeader
+        title="الفواتير والإيصالات"
+        description="اعرض الفاتورة المخزنة وأعد طباعة إيصالها دون إعادة البيع."
+      />
+
+      <Card className="shadow-card">
+        <CardContent className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 md:items-end">
+          <form
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setSearch(searchDraft.trim() || undefined);
+              setPage(1);
+            }}
+          >
+            <div className="grow space-y-1.5">
+              <Label htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+                <Input
+                  className="grow ps-9"
+                  id="invoice-search"
+                  value={searchDraft}
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                />
+              </div>
+            </div>
+            <Button type="submit">بحث</Button>
+          </form>
+
+          {isAdmin ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="invoice-branch">الفرع</Label>
+              <Select
+                id="invoice-branch"
+                disabled={branches.isPending || branches.isError}
+                value={branchId ?? ''}
+                onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}
+              >
+                <option value="">اختر الفرع</option>
+                {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </Select>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {isAdmin && branches.isPending ? <LoadingState label="جارٍ تحميل الفروع…" align="start" className="p-0" /> : null}
+      {isAdmin && branches.isError ? (
+        <Notice tone="danger" role="alert">
+          <p>تعذر تحميل الفروع.</p>
+          <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>
+            إعادة المحاولة
+          </Button>
+        </Notice>
+      ) : null}
+      {isAdmin && branches.data?.items.length === 0 ? (
+        <Card className="shadow-card">
+          <EmptyState title="لا توجد فروع" description="أضف فرعًا قبل عرض الفواتير." />
+        </Card>
+      ) : null}
+      {invoices.isPending && (!isAdmin || branchId !== undefined) ? (
+        <LoadingState label="جارٍ تحميل الفواتير…" align="start" className="p-0" />
+      ) : null}
+      {invoices.isError ? (
+        <Notice tone="danger" role="alert">
+          <p>تعذر تحميل الفواتير.</p>
+          <Button variant="secondary" size="sm" className="mt-2" onClick={() => void invoices.refetch()}>
+            إعادة المحاولة
+          </Button>
+        </Notice>
+      ) : null}
+      {invoices.data?.items.length === 0 ? (
+        <Card className="shadow-card">
+          <EmptyState title="لا توجد فواتير" description="ستظهر الفواتير المكتملة هنا." />
+        </Card>
+      ) : null}
+
+      <ul className="space-y-2">
+        {invoices.data?.items.map((invoice) => (
+          <li key={invoice.id}>
+            <Card className="shadow-card transition-shadow hover:shadow-raised">
+              <CardContent className="grid gap-2 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      className="font-mono font-semibold text-ink underline underline-offset-4"
+                      dir="ltr"
+                      href={`/invoices/${invoice.id}${branchId ? `?branchId=${branchId}` : ''}`}
+                    >
+                      {invoice.invoiceNumber}
+                    </Link>
+                    <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
+                  </div>
+                  <p className="truncate text-sm text-ink">
+                    {invoice.client.name} · {invoice.assignedEmployee.name}
+                  </p>
+                  <time className="block text-[13px] text-muted" dateTime={invoice.soldAt}>
+                    {formatCairoDateTime(invoice.soldAt)}
+                  </time>
+                </div>
+                <strong className="tabular text-lg font-semibold text-ink sm:text-end">
+                  {invoice.total} ج.م
+                </strong>
+              </CardContent>
+            </Card>
+          </li>
+        ))}
+      </ul>
+
+      {invoices.data && invoices.data.meta.totalPages > 1 ? (
+        <Card className="overflow-hidden shadow-card">
+          <Pagination
+            summary={(
+              <>
+                صفحة <span className="tabular">{page}</span> من{' '}
+                <span className="tabular">{invoices.data.meta.totalPages}</span>
+              </>
+            )}
+            previousDisabled={page <= 1}
+            nextDisabled={page >= invoices.data.meta.totalPages}
+            className="border-t-0"
+            onPrevious={() => setPage((value) => value - 1)}
+            onNext={() => setPage((value) => value + 1)}
+          />
+        </Card>
+      ) : null}
+    </section>
+  );
 }

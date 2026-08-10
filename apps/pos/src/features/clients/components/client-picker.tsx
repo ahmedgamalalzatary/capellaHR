@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Check, UserPlus } from 'lucide-react';
+import { Check, ChevronLeft, Search, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Card, EmptyState, Input } from '@capella/ui';
@@ -51,11 +51,16 @@ export function ClientPicker({
 
   if (selected) {
     return (
-      <Card>
+      <Card className="border-ink/20 bg-surface/60">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">{selected.fullName}</p>
-            <p className="tabular text-[13px] text-muted" dir="ltr">{selected.phone}</p>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ink text-paper">
+              <Check className="size-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium">{selected.fullName}</span>
+              <span className="tabular block text-[13px] text-muted" dir="ltr">{selected.phone}</span>
+            </span>
           </div>
           <Button variant="ghost" size="sm" onClick={() => {
             setSearch('');
@@ -71,13 +76,17 @@ export function ClientPicker({
 
   return (
     <div className="space-y-3">
-      <Input
-        aria-label="ابحث عن العميل برقم الهاتف أو الاسم"
-        placeholder="رقم الهاتف أو الاسم"
-        inputMode="tel"
-        value={search}
-        onChange={(event) => { setSearch(event.target.value); setCreating(false); }}
-      />
+      <div className="relative">
+        <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+        <Input
+          aria-label="ابحث عن العميل برقم الهاتف أو الاسم"
+          placeholder="رقم الهاتف أو الاسم"
+          className="ps-9"
+          inputMode="tel"
+          value={search}
+          onChange={(event) => { setSearch(event.target.value); setCreating(false); }}
+        />
+      </div>
 
       {creating ? (
         <ClientForm
@@ -118,20 +127,20 @@ export function ClientPicker({
           }
         />
       ) : (
-        <Card>
+        <Card className="scroll-thin max-h-72 overflow-y-auto shadow-card">
           <ul>
             {items.map((client) => (
               <li key={client.id} className="border-b border-line/60 last:border-b-0">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start hover:bg-line/20"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start transition-colors hover:bg-surface"
                   onClick={() => onSelect(client)}
                 >
-                  <span>
-                    <span className="block text-sm font-medium">{client.fullName}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{client.fullName}</span>
                     <span className="tabular block text-[13px] text-muted" dir="ltr">{client.phone}</span>
                   </span>
-                  <Check className="size-4 text-muted" aria-hidden />
+                  <ChevronLeft className="size-4 shrink-0 text-muted" aria-hidden />
                 </button>
               </li>
             ))}

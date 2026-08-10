@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { Select } from '@/components/form/select';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { createCategory, updateCategory, type Category } from '../api/catalog-api';
@@ -55,34 +56,33 @@ export function CategoryForm({
   const formError = errors.name?.message ?? errors.type?.message ?? serverErrorMessage(save.error);
 
   return (
-    <Card>
-      <CardContent className="space-y-4 py-5">
+    <Card className="shadow-card">
+      <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم التصنيف" htmlFor="category-name" required>
               <Input id="category-name" autoComplete="off" disabled={save.isPending} {...register('name')} />
             </Field>
             <Field label="النوع" htmlFor="category-type" required>
-              <select
+              <Select
                 id="category-type"
-                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:opacity-70"
                 disabled={isEdit || save.isPending}
                 {...register('type')}
               >
                 <option value="service">خدمات</option>
                 <option value="expense">مصروفات</option>
-              </select>
+              </Select>
             </Field>
           </div>
 
           {formError ? <p role="alert" className="text-[13px] text-danger">{formError}</p> : null}
 
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={save.isPending}>
+          <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+            <Button type="submit" disabled={save.isPending}>
               {save.isPending ? 'جارٍ الحفظ…' : 'حفظ التصنيف'}
             </Button>
             {onCancel ? (
-              <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onCancel}>إلغاء</Button>
+              <Button type="button" variant="ghost" disabled={save.isPending} onClick={onCancel}>إلغاء</Button>
             ) : null}
           </div>
         </form>

@@ -46,12 +46,20 @@ function renderShell(children = <p>المحتوى</p>) {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 beforeEach(() => {
   pathname.current = '/sales';
   getCurrentSessionMock.mockResolvedValue(null);
+  // jsdom ships no matchMedia; the shell watches the md breakpoint to close the
+  // mobile drawer, so tests run as a narrow viewport with the drawer available.
+  vi.stubGlobal('matchMedia', vi.fn(() => ({
+    matches: false, media: '(min-width: 48rem)', onchange: null,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+  })));
 });
 
 describe('PosShell', () => {

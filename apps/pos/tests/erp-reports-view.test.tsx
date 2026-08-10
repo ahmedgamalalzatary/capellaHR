@@ -106,7 +106,8 @@ describe('ErpReportsView', () => {
 
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
-    expect(await screen.findAllByRole('tab', { name: /تقرير/ })).toHaveLength(15);
+    const selector = await screen.findByRole('group', { name: 'أنواع تقارير ERP' });
+    expect(within(selector).getAllByRole('button')).toHaveLength(15);
     await screen.findByRole('option', { name: 'الفرع الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-08-01' } });
@@ -180,7 +181,7 @@ describe('ErpReportsView', () => {
       reportType: 'erp-sales', page: 2,
     })));
 
-    fireEvent.click(screen.getByRole('tab', { name: 'تقرير طرق الدفع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تقرير طرق الدفع' }));
     await waitFor(() => expect(mocks.listExports).toHaveBeenCalledWith(expect.objectContaining({
       reportType: 'erp-payment-methods', page: 1,
     })));

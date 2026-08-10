@@ -71,8 +71,8 @@ export function ClientForm({
   }, [onPendingChange, save.isPending]);
 
   return (
-    <Card>
-      <CardContent className="space-y-4 py-5">
+    <Card className="shadow-card">
+      <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم العميل" htmlFor="client-name" required>
@@ -95,12 +95,12 @@ export function ClientForm({
             <p role="alert" className="text-[13px] text-danger">{formError}</p>
           ) : null}
 
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={save.isPending}>
+          <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+            <Button type="submit" disabled={save.isPending}>
               {save.isPending ? 'جارٍ الحفظ…' : isEdit ? 'حفظ التعديل' : 'إضافة العميل'}
             </Button>
             {onCancel ? (
-              <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onCancel}>
+              <Button type="button" variant="ghost" disabled={save.isPending} onClick={onCancel}>
                 إلغاء
               </Button>
             ) : null}

@@ -4,6 +4,8 @@ import { useState } from 'react';
 
 import { Button, Label, Modal } from '@capella/ui';
 
+import { Textarea } from '@/components/form/textarea';
+
 interface RecoveryCloseDialogProps {
   pending: boolean;
   serverError: string | null;
@@ -41,7 +43,7 @@ export function RecoveryCloseDialog({
       </p>
       <div className="space-y-1.5">
         <Label htmlFor="recovery-close-reason">سبب الإغلاق الاستثنائي</Label>
-        <textarea
+        <Textarea
           id="recovery-close-reason"
           value={reason}
           maxLength={1000}
@@ -49,7 +51,6 @@ export function RecoveryCloseDialog({
           disabled={pending}
           aria-invalid={validationError ? true : undefined}
           aria-describedby={validationError ? 'recovery-close-reason-error' : undefined}
-          className="w-full rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink disabled:opacity-70"
           onChange={(event) => {
             setReason(event.target.value);
             if (validationError) setValidationError(null);

@@ -29,17 +29,17 @@ describe('LoginView', () => {
     expect(screen.queryByLabelText(/البريد الإلكتروني/)).toBeNull();
   });
 
-  test('switches to the admin login form when the admin tab is selected', () => {
+  test('switches to the admin login form when the admin button is selected', () => {
     renderView();
-    fireEvent.click(screen.getByRole('tab', { name: 'مدير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
     expect(screen.getByLabelText(/البريد الإلكتروني/)).toBeDefined();
     expect(screen.queryByLabelText(/اسم المستخدم/)).toBeNull();
   });
 
-  test('switches back to the cashier login form when the cashier tab is selected', () => {
+  test('switches back to the cashier login form when the cashier button is selected', () => {
     renderView();
-    fireEvent.click(screen.getByRole('tab', { name: 'مدير' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'كاشير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'كاشير' }));
     expect(screen.getByLabelText(/اسم المستخدم/)).toBeDefined();
   });
 });

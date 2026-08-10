@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { Button, Card, EmptyState } from '@capella/ui';
+import { Button, Card, EmptyState, cn } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { Notice } from '@/components/feedback/notice';
 import { ApiError } from '@/lib/api/client';
 
 import { listAssignableEmployees, type AssignableEmployee } from '../api/assignable-employees-api';
@@ -71,13 +72,11 @@ export function PresentEmployeePicker({
       </div>
 
       {staleNotice ? (
-        <p role="status" className="rounded-md bg-warning-soft px-3 py-2 text-[13px] text-warning">
-          {STALE_SELECTION_MESSAGE}
-        </p>
+        <Notice tone="warning">{STALE_SELECTION_MESSAGE}</Notice>
       ) : null}
 
       {presentQuery.isPending ? (
-        <LoadingState label="جارٍ تحميل الموظفين…" className="p-0 text-start" />
+        <LoadingState label="جارٍ تحميل الموظفين…" align="start" className="p-0" />
       ) : presentQuery.isError ? (
         <EmptyState
           title="تعذر تحميل الموظفين المسجلين حضورًا"
@@ -94,7 +93,7 @@ export function PresentEmployeePicker({
           description="لا يمكن إسناد الفاتورة إلا لموظف مسجل حضوره، سجّل حضوره أولًا."
         />
       ) : (
-        <Card>
+        <Card className="scroll-thin max-h-72 overflow-y-auto shadow-card">
           <ul>
             {(items ?? []).map((employee) => {
               const isSelected = selected?.id === employee.id && !staleNotice;
@@ -103,20 +102,25 @@ export function PresentEmployeePicker({
                   <button
                     type="button"
                     aria-pressed={isSelected}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-start hover:bg-line/20"
+                    className={cn(
+                      'flex w-full items-center justify-between gap-3 px-4 py-3 text-start transition-colors hover:bg-surface',
+                      isSelected && 'bg-surface',
+                    )}
                     onClick={() => {
                       setStaleNotice(false);
                       onSelect(employee);
                     }}
                   >
-                    <span>
-                      <span className="block text-sm font-medium">{employee.fullName}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{employee.fullName}</span>
                       <span className="tabular block text-[13px] text-muted" dir="ltr">
                         {employee.employeeCode}
                       </span>
                     </span>
                     {isSelected ? (
-                      <Check className="size-4 text-success" aria-hidden />
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-success text-paper">
+                        <Check className="size-3.5" aria-hidden />
+                      </span>
                     ) : null}
                   </button>
                 </li>
