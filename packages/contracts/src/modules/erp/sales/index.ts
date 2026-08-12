@@ -53,6 +53,12 @@ const positiveMoneySchema = exactMoneySchema.refine(
   'يجب أن يكون المبلغ أكبر من صفر',
 );
 
+// Invoice lines use decimal(12,2): at most ten whole digits plus two decimals.
+const serviceUnitPriceSchema = z.string()
+  .regex(/^\d{1,10}(?:\.\d{1,2})?$/, 'يجب إدخال سعر صحيح بدقة قرش واحد')
+  .transform(normalizeDecimal)
+  .refine((value) => value !== '0.00', 'يجب أن يكون السعر أكبر من صفر');
+
 const percentageSchema = z.string()
   .regex(/^\d{1,3}(?:\.\d{1,2})?$/, 'يجب إدخال نسبة صحيحة')
   .transform(normalizeDecimal)
@@ -83,6 +89,7 @@ const saleLineSchema = z.discriminatedUnion('itemType', [
     itemType: z.literal('service'),
     serviceId: positiveMysqlIntSchema,
     quantity: positiveMysqlIntSchema,
+    unitPrice: serviceUnitPriceSchema,
   }).strict(),
   z.object({
     itemType: z.literal('product'),
@@ -520,6 +527,7 @@ export const saleErrorSchema = z.object({
     'EMPLOYEE_NOT_ASSIGNABLE',
     'CASHIER_SESSION_NOT_OPEN',
     'SERVICE_UNAVAILABLE',
+    'PRICE_CHANGED',
     'PRODUCT_UNAVAILABLE',
     'INSUFFICIENT_STOCK',
     'PAYMENT_TOTAL_MISMATCH',
@@ -542,7 +550,7 @@ export const saleFixtures = {
     assignedEmployeeId: 8,
     cashierSessionId: 13,
     idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-    lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+    lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
     discount: { kind: 'percentage', value: '10.00' },
     tax: { kind: 'fixed', value: '5.00' },
     payments: [

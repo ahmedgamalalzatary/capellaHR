@@ -115,6 +115,9 @@ export const createDrizzleServiceRepository = (
         .where(scope).for('update').limit(1))[0];
       if (!before) return null;
       if (Object.keys(changes).length === 0) return toRecord(before);
+      if (changes.price !== undefined && changes.price !== null && before.price !== null) {
+        return 'price_locked';
+      }
 
       const updatedAt = now();
       if (changes.categoryId !== undefined && changes.categoryId !== before.categoryId) {

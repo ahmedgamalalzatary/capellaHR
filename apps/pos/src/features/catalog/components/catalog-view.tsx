@@ -447,7 +447,7 @@ export function CatalogView() {
                         <TR key={service.id}>
                           <TD className="font-medium">{service.name}</TD>
                           <TD className="text-muted">{service.categoryName}</TD>
-                          <TD numeric>{service.price}</TD>
+                          <TD numeric>{service.price ?? 'عند البيع'}</TD>
                           <TD numeric className="text-muted">
                             {`${service.commissionPercent}%`}
                           </TD>

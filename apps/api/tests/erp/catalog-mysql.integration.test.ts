@@ -223,6 +223,24 @@ describe('MySQL-backed ERP services', () => {
     expect(read.commissionPercent).toBe('12.50');
   });
 
+  it('stores an open price and atomically prevents replacing a fixed price', async () => {
+    const branchId = await seedBranch();
+    const category = await createCategory(branchId);
+    const created = await module.services.create(ADMIN, {
+      name: 'بروتين شعر', categoryId: category.id, price: null,
+      commissionPercent: '10.00', branchId,
+    });
+    expect(created.price).toBeNull();
+
+    const fixed = await module.services.update(ADMIN, created.id, { price: '800.00', branchId });
+    expect(fixed.price).toBe('800.00');
+    await expect(module.services.update(ADMIN, created.id, { price: '1000.00', branchId }))
+      .rejects.toMatchObject({ code: 'SERVICE_PRICE_LOCKED' });
+
+    const open = await module.services.update(ADMIN, created.id, { price: null, branchId });
+    expect(open.price).toBeNull();
+  });
+
   it('rejects a non-positive price and an out-of-range rate at the database level', async () => {
     const branchId = await seedBranch();
     const category = await createCategory(branchId);
@@ -297,18 +315,23 @@ describe('MySQL-backed ERP services', () => {
       .toBe(1);
   });
 
-  it('audits service creation and updates without losing the previous values', async () => {
+  it('audits service price deletion and replacement without losing previous values', async () => {
     const branchId = await seedBranch();
     const category = await createCategory(branchId);
     const created = await createService(branchId, category.id, { price: '150.00' });
 
+    await module.services.update(ADMIN, created.id, { price: null, branchId });
     await module.services.update(ADMIN, created.id, { price: '175.00', branchId });
 
     const events = await database.select().from(auditEvents)
       .where(eq(auditEvents.entityType, 'service')).orderBy(asc(auditEvents.id));
-    expect(events.map(({ action }) => action)).toEqual(['create', 'update']);
+    expect(events.map(({ action }) => action)).toEqual(['create', 'update', 'update']);
     expect(events[1]).toMatchObject({
       beforeState: expect.objectContaining({ price: '150.00' }),
+      afterState: expect.objectContaining({ price: null }),
+    });
+    expect(events[2]).toMatchObject({
+      beforeState: expect.objectContaining({ price: null }),
       afterState: expect.objectContaining({ price: '175.00' }),
     });
   });

@@ -50,6 +50,7 @@ import { completeSale, quoteSale } from '../api/sales-api';
 import {
   enqueueOfflineSale,
   getOfflineSaleQueueVersion,
+  hasUnrecoverableOfflineSales,
   listOfflineSales,
   markOfflineSaleFailed,
   migrateLegacyPendingSales,
@@ -78,7 +79,12 @@ const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
   { method: 'vodafone_cash', label: 'فودافون كاش' },
 ];
 
-type Line = { service: ServiceListItem | ProductSaleItem; quantity: number; itemType?: 'service' | 'product' };
+type Line = {
+  service: ServiceListItem | ProductSaleItem;
+  quantity: number;
+  unitPrice: string;
+  itemType?: 'service' | 'product';
+};
 type AdjustmentKind = 'percentage' | 'fixed';
 /** Admin is a database-enforced singleton and has no public account id. */
 type PendingSaleOwner = SaleDraftOwner;
@@ -91,6 +97,12 @@ const toCents = (value: string) => {
 };
 
 const money = (value: bigint) => `${value / BigInt(100)}.${(value % BigInt(100)).toString().padStart(2, '0')}`;
+
+const validServiceUnitPrice = (value: string) => {
+  if (!/^\d{1,10}(?:\.\d{1,2})?$/.test(value)) return false;
+  const cents = toCents(value);
+  return cents !== null && cents > BigInt(0);
+};
 
 const errorMessage = (error: unknown) => (
   error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.'
@@ -365,6 +377,7 @@ function SaleWorkspace({
   const offlineQueueSnapshot = useMemo(() => ({
     version: queueVersion,
     items: listOfflineSales(),
+    hasUnrecoverable: hasUnrecoverableOfflineSales(),
   }), [queueVersion]);
   const offlineQueue = offlineQueueSnapshot.items;
   const workspaceQueue = useMemo(() => offlineQueue.filter((item) => (
@@ -534,11 +547,16 @@ function SaleWorkspace({
     };
   }, [draftHydrated, matchesActiveDraft, queryClient, workspaceOwner]);
 
+  const servicePricesValid = lines.every((line) => {
+    if (line.itemType === 'product') return true;
+    return validServiceUnitPrice(line.unitPrice);
+  });
+
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
-    lines: lines.map(({ service, quantity, itemType }) => itemType === 'product'
+    lines: lines.map(({ service, quantity, unitPrice, itemType }) => itemType === 'product'
       ? { itemType: 'product' as const, productId: service.id, quantity }
-      : { itemType: 'service' as const, serviceId: service.id, quantity }),
+      : { itemType: 'service' as const, serviceId: service.id, quantity, unitPrice }),
     ...(discountValue ? { discount: { kind: discountKind, value: discountValue } } : {}),
     ...(taxValue ? { tax: { kind: taxKind, value: taxValue } } : {}),
   }), [branchId, discountKind, discountValue, lines, taxKind, taxValue]);
@@ -546,7 +564,7 @@ function SaleWorkspace({
   const quote = useQuery({
     queryKey: salesQueryKeys.quote(quoteInput),
     queryFn: () => quoteSale(quoteInput),
-    enabled: lines.length > 0,
+    enabled: lines.length > 0 && servicePricesValid,
   });
 
   useEffect(() => {
@@ -654,7 +672,7 @@ function SaleWorkspace({
   const totalCents = quote.data ? toCents(quote.data.totals.total) : null;
   const remaining = paidCents === null || totalCents === null ? null : totalCents - paidCents;
   const ready = Boolean(
-    client && employee && lines.length > 0 && quote.data && !quote.isFetching
+    client && employee && lines.length > 0 && servicePricesValid && quote.data && !quote.isFetching
     && remaining === BigInt(0) && !completion.isPending && !pendingSale,
   );
 
@@ -870,6 +888,15 @@ function SaleWorkspace({
         </Notice>
       ) : null}
 
+      {offlineQueueSnapshot.hasUnrecoverable ? (
+        <Notice tone="warning">
+          <p className="text-sm font-medium">يوجد بيع محفوظ من إصدار أقدم يحتاج مراجعة يدوية</p>
+          <p className="mt-0.5 text-muted">
+            تعذر استعادة سعر الخدمة بأمان، لذلك احتفظ النظام بالطلب ولم يرسله أو يحذفه.
+          </p>
+        </Notice>
+      ) : null}
+
       <fieldset
         disabled={Boolean(pendingInput)}
         className="m-0 min-w-0 border-0 p-0"
@@ -894,7 +921,12 @@ function SaleWorkspace({
                       ? current.map((line) => line.itemType !== 'product' && line.service.id === service.id
                         ? { ...line, quantity: line.quantity + 1 }
                         : line)
-                      : [...current, { service, quantity: 1, itemType: 'service' }];
+                      : [...current, {
+                          service,
+                          quantity: 1,
+                          unitPrice: service.price ?? '',
+                          itemType: 'service',
+                        }];
                   })} />
                   <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
                     const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
@@ -902,7 +934,12 @@ function SaleWorkspace({
                       ? current.map((line) => line.itemType === 'product' && line.service.id === product.id
                         ? { ...line, quantity: Math.min(line.quantity + 1, product.quantityAvailable) }
                         : line)
-                      : [...current, { service: product, quantity: 1, itemType: 'product' }];
+                      : [...current, {
+                          service: product,
+                          quantity: 1,
+                          unitPrice: product.price,
+                          itemType: 'product',
+                        }];
                   })} />
                 </div>
 
@@ -915,7 +952,23 @@ function SaleWorkspace({
                       >
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{line.service.name}</span>
-                          <span className="tabular text-[13px] text-muted">{line.service.price} ج.م</span>
+                          {line.itemType !== 'product' && line.service.price === null ? (
+                            <Input
+                              aria-label={`سعر ${line.service.name}`}
+                              inputMode="decimal"
+                              dir="ltr"
+                              className="mt-1 h-9 w-36 text-start"
+                              placeholder="سعر الوحدة"
+                              value={line.unitPrice}
+                              onChange={(event) => setLines((current) => current.map((item) => (
+                                item.service.id === line.service.id && item.itemType === line.itemType
+                                  ? { ...item, unitPrice: event.target.value }
+                                  : item
+                              )))}
+                            />
+                          ) : (
+                            <span className="tabular text-[13px] text-muted">{line.service.price} ج.م</span>
+                          )}
                         </span>
                         {/* The most-tapped control in the app: kept at a 44px touch target. */}
                         <span className="flex items-center gap-1 rounded-control border border-line bg-paper p-0.5">
@@ -963,9 +1016,22 @@ function SaleWorkspace({
                 {quote.isError ? (
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p role="alert" className="text-[13px] text-danger">{errorMessage(quote.error)}</p>
-                    <Button variant="secondary" size="sm" onClick={() => void quote.refetch()}>
-                      إعادة حساب الإجمالي
-                    </Button>
+                    {quote.error instanceof ApiError && quote.error.code === 'PRICE_CHANGED' ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setLines((current) => current.filter((line) => line.itemType === 'product'));
+                          void invalidateErpCaches(queryClient, 'catalog');
+                        }}
+                      >
+                        إزالة الخدمات وإعادة اختيارها
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={() => void quote.refetch()}>
+                        إعادة حساب الإجمالي
+                      </Button>
+                    )}
                   </div>
                 ) : null}
                 {quote.data ? (

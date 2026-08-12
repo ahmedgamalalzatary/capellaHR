@@ -39,6 +39,7 @@ export function ServiceForm({
 }) {
   const queryClient = useQueryClient();
   const isEdit = service !== undefined;
+  const hasFixedPrice = service?.price !== null && service?.price !== undefined;
 
   const { register, handleSubmit, formState: { errors } } =
     useForm<ServiceFormInput, unknown, ServiceFormValues>({
@@ -66,23 +67,34 @@ export function ServiceForm({
     : activeCategories;
 
   const save = useMutation({
-    mutationFn: (values: ServiceFormValues) => (
-      isEdit
-        ? updateService(service.id, { ...values, ...branchScope })
-        : createService({ ...values, ...branchScope })
-    ),
+    mutationFn: (values: ServiceFormValues) => {
+      if (!isEdit) return createService({ ...values, ...branchScope });
+      if (!hasFixedPrice) return updateService(service.id, { ...values, ...branchScope });
+      const { price: _lockedPrice, ...editableValues } = values;
+      return updateService(service.id, { ...editableValues, ...branchScope });
+    },
     onSuccess: async (saved) => {
       await invalidateErpCaches(queryClient, 'catalog');
       onDone?.(saved);
     },
   });
 
+  const deletePrice = useMutation({
+    mutationFn: () => updateService(service!.id, { price: null, ...branchScope }),
+    onSuccess: async (saved) => {
+      await invalidateErpCaches(queryClient, 'catalog');
+      onDone?.(saved);
+    },
+  });
+  const pending = save.isPending || deletePrice.isPending;
+
   const formError = errors.name?.message
     ?? errors.categoryId?.message
     ?? errors.price?.message
     ?? errors.commissionPercent?.message
     ?? errors.description?.message
-    ?? serverErrorMessage(save.error);
+    ?? serverErrorMessage(save.error)
+    ?? serverErrorMessage(deletePrice.error);
 
   return (
     <Card className="shadow-card">
@@ -90,12 +102,12 @@ export function ServiceForm({
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم الخدمة" htmlFor="service-name" required>
-              <Input id="service-name" autoComplete="off" disabled={save.isPending} {...register('name')} />
+              <Input id="service-name" autoComplete="off" disabled={pending} {...register('name')} />
             </Field>
             <Field label="التصنيف" htmlFor="service-category" required>
               <Select
                 id="service-category"
-                disabled={save.isPending}
+                disabled={pending}
                 {...register('categoryId')}
               >
                 <option value="">اختر التصنيف…</option>
@@ -104,17 +116,29 @@ export function ServiceForm({
                 ))}
               </Select>
             </Field>
-            {/* One fixed price per service: no ranges, and the cashier never edits it. */}
-            <Field label="السعر (ج.م)" htmlFor="service-price" required>
+            <Field label="السعر (ج.م)" htmlFor="service-price">
               <Input
                 id="service-price"
                 inputMode="decimal"
                 autoComplete="off"
                 dir="ltr"
                 className="text-start"
-                disabled={save.isPending}
+                disabled={pending || hasFixedPrice}
+                placeholder="يحدد عند البيع إذا تُرك فارغًا"
                 {...register('price')}
               />
+              {hasFixedPrice ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  className="mt-2"
+                  disabled={pending}
+                  onClick={() => deletePrice.mutate()}
+                >
+                  حذف السعر الثابت
+                </Button>
+              ) : null}
             </Field>
             <Field label="نسبة العمولة %" htmlFor="service-commission">
               <Input
@@ -124,23 +148,23 @@ export function ServiceForm({
                 dir="ltr"
                 className="text-start"
                 placeholder="0"
-                disabled={save.isPending}
+                disabled={pending}
                 {...register('commissionPercent')}
               />
             </Field>
           </div>
           <Field label="الوصف" htmlFor="service-description">
-            <Input id="service-description" autoComplete="off" disabled={save.isPending} {...register('description')} />
+            <Input id="service-description" autoComplete="off" disabled={pending} {...register('description')} />
           </Field>
 
           {formError ? <p role="alert" className="text-[13px] text-danger">{formError}</p> : null}
 
           <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الخدمة'}
+            <Button type="submit" disabled={pending}>
+              {pending ? 'جارٍ الحفظ…' : 'حفظ الخدمة'}
             </Button>
             {onCancel ? (
-              <Button type="button" variant="ghost" disabled={save.isPending} onClick={onCancel}>إلغاء</Button>
+              <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>إلغاء</Button>
             ) : null}
           </div>
         </form>

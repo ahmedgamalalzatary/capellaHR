@@ -196,7 +196,13 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
     }
     if (path === '/erp/sales/quote' && request.method() === 'POST') {
       const payload = request.postDataJSON() as {
-        lines: Array<{ itemType: 'service' | 'product'; serviceId?: number; productId?: number; quantity: number }>;
+        lines: Array<{
+          itemType: 'service' | 'product';
+          serviceId?: number;
+          productId?: number;
+          quantity: number;
+          unitPrice?: string;
+        }>;
       };
       const lines = payload.lines.map((line) => ({
         itemType: line.itemType,
@@ -335,7 +341,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
     assignedEmployeeId: 18,
     cashierSessionId: 14,
     lines: [
-      { itemType: 'service', serviceId: 21, quantity: 1 },
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' },
       { itemType: 'product', productId: 31, quantity: 1 },
     ],
     payments: [{ method: 'cash', amount: '250.00' }],

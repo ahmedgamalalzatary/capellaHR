@@ -14,8 +14,8 @@ import { serverErrorMessage } from './catalog-messages';
 /**
  * Counter-side service browsing and search. Only sellable services are offered —
  * the server treats "active" as the service and its category both being live —
- * and the fixed price is displayed, never edited: the locked rule is one fixed
- * price per service, with the invoice-level discount as the only variation.
+ * and a fixed price is displayed when present. A price-less service is clearly
+ * marked so the seller knows its unit price will be required on the sale line.
  *
  * Without `onSelect` this is a read-only catalog view; the ERP 9 sale workflow
  * passes a handler to turn each row into a selectable line.
@@ -85,7 +85,7 @@ export function ServicePicker({
                     <span className="block truncate text-[13px] text-muted">{service.categoryName}</span>
                   </span>
                   <span className="tabular shrink-0 text-sm font-semibold text-ink">
-                    {`${service.price} ج.م`}
+                    {service.price === null ? 'يحدد السعر عند البيع' : `${service.price} ج.م`}
                   </span>
                 </>
               );

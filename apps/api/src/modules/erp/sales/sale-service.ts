@@ -73,6 +73,7 @@ type SaleErrorCode =
   | 'EMPLOYEE_NOT_ASSIGNABLE'
   | 'CASHIER_SESSION_NOT_OPEN'
   | 'SERVICE_UNAVAILABLE'
+  | 'PRICE_CHANGED'
   | 'PRODUCT_UNAVAILABLE'
   | 'INSUFFICIENT_STOCK'
   | 'PAYMENT_TOTAL_MISMATCH'
@@ -90,6 +91,7 @@ const messages: Record<SaleErrorCode, string> = {
   EMPLOYEE_NOT_ASSIGNABLE: 'الموظف غير مسجل الحضور حاليًا',
   CASHIER_SESSION_NOT_OPEN: 'جلسة الكاشير غير مفتوحة',
   SERVICE_UNAVAILABLE: 'إحدى الخدمات غير متاحة',
+  PRICE_CHANGED: 'تغير سعر إحدى الخدمات؛ راجع السعر وأعد المحاولة',
   PRODUCT_UNAVAILABLE: 'إحدى المنتجات غير متاحة',
   INSUFFICIENT_STOCK: 'الكمية المتاحة من أحد المنتجات غير كافية',
   PAYMENT_TOTAL_MISMATCH: 'مجموع المدفوعات غير صحيح',

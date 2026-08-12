@@ -58,11 +58,8 @@ describe('serviceFormSchema', () => {
     expect(parsed.description).toBeNull();
   });
 
-  test('asks for a price in Arabic when it is blank', () => {
-    const result = serviceFormSchema.safeParse({ ...service, price: '' });
-
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe('السعر مطلوب');
+  test('converts a blank optional price to an open price', () => {
+    expect(serviceFormSchema.parse({ ...service, price: '' }).price).toBeNull();
   });
 });
 

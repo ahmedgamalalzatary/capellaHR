@@ -62,6 +62,7 @@ describe('erp services schema', () => {
     const price = getTableConfig(erpServices).columns.find((column) => column.name === 'price');
 
     expect(price?.getSQLType()).toBe('decimal(12,2)');
+    expect(price?.notNull).toBe(false);
   });
 
   it('stores the default commission rate as an exact decimal percentage', () => {

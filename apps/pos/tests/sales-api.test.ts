@@ -32,7 +32,9 @@ describe('sales API', () => {
   });
 
   it('posts quote and completion requests to the sales aggregate endpoints', async () => {
-    const quote = { lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1 }] };
+    const quote = {
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+    };
     await quoteSale(quote);
     expect(mocks.post).toHaveBeenCalledWith('/erp/sales/quote', quote);
 

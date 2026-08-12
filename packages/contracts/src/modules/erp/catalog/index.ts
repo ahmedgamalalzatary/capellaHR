@@ -34,7 +34,7 @@ const servicePrice = z.string()
   });
 
 /**
- * A commission rate is an exact percentage of the pre-discount list price.
+ * A commission rate is an exact percentage of the pre-discount sale unit price.
  * Zero is legitimate — it means the service earns no commission.
  */
 const commissionPercent = z.string()
@@ -109,7 +109,7 @@ export const listCategoriesQuerySchema = z.object({
 export const createServiceSchema = z.object({
   name: serviceName,
   categoryId: coercedMysqlIntSchema,
-  price: servicePrice,
+  price: servicePrice.nullable().default(null),
   description: serviceDescription.optional(),
   commissionPercent: commissionPercent.default('0'),
   ...branchScope,
@@ -118,7 +118,7 @@ export const createServiceSchema = z.object({
 export const updateServiceSchema = z.object({
   name: serviceName.optional(),
   categoryId: coercedMysqlIntSchema.optional(),
-  price: servicePrice.optional(),
+  price: servicePrice.nullable().optional(),
   description: serviceDescription.optional(),
   commissionPercent: commissionPercent.optional(),
   isActive: z.boolean().optional(),

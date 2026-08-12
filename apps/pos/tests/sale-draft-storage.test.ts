@@ -10,6 +10,7 @@ import {
   type SaleDraft,
   type SaleDraftOwner,
 } from '../src/features/sales/sale-draft-storage';
+import type { ServiceListItem } from '../src/features/catalog';
 
 const owner: SaleDraftOwner = {
   accountId: 3,
@@ -44,6 +45,7 @@ const draft: SaleDraft = {
       updatedAt: '',
     },
     quantity: 1,
+    unitPrice: '200.00',
   }],
   discountKind: 'percentage',
   discountValue: '10.00',
@@ -71,6 +73,20 @@ describe('sale draft storage', () => {
     expect(saleDraftStorageKey(owner, draft.idempotencyKey)).toContain(
       `cashier:3:2:13:${draft.idempotencyKey}`,
     );
+  });
+
+  it('keeps the entered unit price for an open-price service', () => {
+    const openPriceDraft: SaleDraft = {
+      ...draft,
+      lines: [{
+        ...draft.lines[0]!,
+        service: { ...draft.lines[0]!.service, price: null } as ServiceListItem,
+        unitPrice: '800',
+      }],
+    };
+
+    expect(writeSaleDraft(owner, openPriceDraft)).toBe(true);
+    expect(readSaleDraft(owner)?.lines[0]?.unitPrice).toBe('800');
   });
 
   it('persists only client identifiers, not client personal data', () => {

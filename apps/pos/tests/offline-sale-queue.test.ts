@@ -7,6 +7,7 @@ import {
   classifySaleSubmissionError,
   enqueueOfflineSale,
   getOfflineSaleQueueVersion,
+  hasUnrecoverableOfflineSales,
   listOfflineSales,
   markOfflineSaleFailed,
   markOfflineSaleSyncing,
@@ -31,7 +32,7 @@ const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey,
-  lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
   payments: [{ method: 'cash', amount: '185.00' }],
 });
 
@@ -47,8 +48,9 @@ const recoveryDraft = (idempotencyKey: string): SaleDraft => ({
       name: 'صبغة شعر', description: null, price: '185.00', commissionPercent: '10.00',
       isActive: true, createdAt: '', updatedAt: '',
     },
-    quantity: 1,
-    itemType: 'service',
+      quantity: 1,
+      unitPrice: '200.00',
+      itemType: 'service',
   }],
   discountKind: 'percentage',
   discountValue: '',
@@ -197,6 +199,43 @@ describe('offline sale queue', () => {
     ]);
     expect(localStorage.getItem('capella:pending-sale')).toBeNull();
     expect(localStorage.getItem(`capella:pending-sale:${second.idempotencyKey}`)).toBeNull();
+  });
+
+  it('upgrades a pre-price queue item from its fixed-price recovery draft', () => {
+    const input = sale();
+    localStorage.setItem(offlineSaleQueueStorageKey(input.idempotencyKey), JSON.stringify({
+      version: 1,
+      owner,
+      input: {
+        ...input,
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+      },
+      state: 'pending',
+      attempts: 0,
+      createdAt: 1,
+      updatedAt: 1,
+      failure: null,
+      recoveryDraft: recoveryDraft(input.idempotencyKey),
+    }));
+
+    expect(listOfflineSales(owner)[0]?.input.lines).toEqual([
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' },
+    ]);
+    expect(hasUnrecoverableOfflineSales()).toBe(false);
+  });
+
+  it('retains and exposes a pre-price legacy request whose price cannot be recovered', () => {
+    const input = sale();
+    const key = 'capella:pending-sale';
+    localStorage.setItem(key, JSON.stringify({
+      owner,
+      input: { ...input, lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }] },
+    }));
+
+    migrateLegacyPendingSales();
+
+    expect(localStorage.getItem(key)).not.toBeNull();
+    expect(hasUnrecoverableOfflineSales()).toBe(true);
   });
 
   it('fails closed when durable storage is unavailable', () => {

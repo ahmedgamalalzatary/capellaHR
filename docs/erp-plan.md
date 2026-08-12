@@ -177,7 +177,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Employee assignment | **One employee per invoice** (the client's whole visit). Consequence, accepted: a client served by two specialists in one visit gets two invoices |
 | Clients on invoices | **Mandatory** — every invoice references a client record; no anonymous sales |
 | Payment timing | **Always paid in full at sale.** No deposits, tabs, installments, or prepaid packages — explicitly out of scope |
-| Service pricing | One **fixed price** per service — no ranges, no cashier price entry; discounts are the only variation |
+| Service pricing | Optional catalog price: fixed prices are locked during sale; services without a catalog price require a positive seller-entered unit price. Admins convert modes by deleting or adding the catalog price. |
 | Assignment eligibility | **Strictly checked-in employees**, no cashier override — an unchecked-in employee checks in via HR first |
 | Product commission | **None** — commission applies to services only; product sales are tracked per invoice but earn nothing |
 | Deployment model | **Per-customer installation** (own server + own MySQL) — confirmed; §4 rests on this |
@@ -187,7 +187,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Split payments | **Allowed** — one invoice may be paid by a mix of methods (e.g. part cash, part Visa); per-method amounts recorded, must sum to the invoice total |
 | Discounts | **Invoice-level only** (no line discounts), as **% or fixed amount**, applied/edited freely by the cashier, recorded with the acting account |
 | Tax | Symmetric with discount: an invoice-level **% or fixed amount** that can be activated/edited per invoice (adds where discount subtracts) |
-| Commission base | **Pre-discount list price.** Discounts are the shop's cost, never the employee's — invoice discounts don't touch the commission ledger |
+| Commission base | **Pre-discount sale unit price.** For open-price services this is the seller-entered price. Discounts are the shop's cost, never the employee's — invoice discounts don't touch the commission ledger |
 | Roles | **Admin + Cashier only, final.** Admin = full (HR + ERP); Cashier = ERP/POS login only, HR rejects it; employees = HR attendance/self-service only (§6) |
 | Refund after payroll finalized | Becomes an HR **deduction** for the employee (submitted via public capability). Employees can **view their commission totals** |
 | Invoice numbers | `INV-YYYY.MM.DD-HH.MM-<seq>` in Cairo time; `<seq>` is a daily incrementing counter; gaps from rolled-back transactions are acceptable (numbers are never reused) |
@@ -244,7 +244,7 @@ Either the whole sale exists or none of it does. Receipt **printing is outside t
 Invoices are **facts about the past** and must never change when the catalog changes. Each **line** snapshots at sale time:
 
 - Item name and type (service/product)
-- Unit price (list price — also the commission base, §7)
+- Unit price (fixed catalog price or seller-entered open price — also the commission base, §7)
 - Commission rule and rate used
 - Cost basis, where relevant (products)
 

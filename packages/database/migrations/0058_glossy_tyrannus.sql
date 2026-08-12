@@ -1,0 +1,1 @@
+ALTER TABLE `erp_services` MODIFY COLUMN `price` decimal(12,2);

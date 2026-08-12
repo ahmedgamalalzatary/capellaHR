@@ -24,7 +24,7 @@ const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey,
-  lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
   payments: [{ method: 'cash', amount: '185.00' }],
 });
 

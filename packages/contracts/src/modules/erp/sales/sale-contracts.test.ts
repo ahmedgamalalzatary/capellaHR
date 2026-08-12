@@ -29,7 +29,7 @@ const validDraft = {
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
   lines: [
-    { itemType: 'service' as const, serviceId: 21, quantity: 1 },
+    { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200' },
     { itemType: 'product' as const, productId: 34, quantity: 2 },
   ],
   discount: { kind: 'percentage' as const, value: '10' },
@@ -138,6 +138,22 @@ describe('ERP complete-sale contracts', () => {
         { method: 'cash', amount: '50' },
         { method: 'cash', amount: '130' },
       ],
+    }).success).toBe(false);
+  });
+
+  it('requires and normalizes a positive unit price for every service sale line', () => {
+    expect(completeSaleSchema.parse(validDraft).lines[0]).toMatchObject({ unitPrice: '200.00' });
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '0' }],
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '12345678901' }],
     }).success).toBe(false);
   });
 
@@ -292,17 +308,20 @@ describe('ERP complete-sale contracts', () => {
     expect(saleErrorSchema.parse({
       code: 'INVOICE_NOT_FOUND', message: 'الفاتورة غير موجودة',
     }).code).toBe('INVOICE_NOT_FOUND');
+    expect(saleErrorSchema.parse({
+      code: 'PRICE_CHANGED', message: 'تغير سعر الخدمة',
+    }).code).toBe('PRICE_CHANGED');
   });
 
   it('publishes a mixed catalog quote request and authoritative quote response', () => {
     expect(quoteSaleInputSchema.parse({
       branchId: 2,
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2, unitPrice: '200' }],
       discount: { kind: 'percentage', value: '10' },
       tax: { kind: 'fixed', value: '5' },
     })).toEqual({
       branchId: 2,
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2, unitPrice: '200.00' }],
       discount: { kind: 'percentage', value: '10.00' },
       tax: { kind: 'fixed', value: '5.00' },
     });

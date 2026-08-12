@@ -253,7 +253,12 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
     cashierSessionId: invoice.cashierSessionId,
     idempotencyKey: invoice.idempotencyKey,
     lines: lines.map((line) => line.itemType === 'service'
-      ? { itemType: 'service' as const, serviceId: line.serviceId!, quantity: line.quantity }
+      ? {
+          itemType: 'service' as const,
+          serviceId: line.serviceId!,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+        }
       : { itemType: 'product' as const, productId: line.productId!, quantity: line.quantity }),
     ...(invoice.discountKind ? {
       discount: { kind: invoice.discountKind, value: invoice.discountValue! },
@@ -268,10 +273,11 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
 const quoteServices = async (
   executor: Executor,
   branchId: number,
-  lines: Array<{ serviceId: number; quantity: number }>,
+  lines: Array<{ serviceId: number; quantity: number; unitPrice: string }>,
+  lockRows = false,
 ) => {
   const ids = [...new Set(lines.map(({ serviceId }) => serviceId))];
-  const rows = await executor.select({
+  const query = executor.select({
     id: erpServices.id,
     name: erpServices.name,
     price: erpServices.price,
@@ -286,19 +292,25 @@ const quoteServices = async (
       eq(erpCategories.isActive, true),
       eq(erpCategories.type, 'service'),
       inArray(erpServices.id, ids),
-    ));
+    ))
+    .orderBy(asc(erpServices.id));
+  const rows = lockRows ? await query.for('update') : await query;
   const byId = new Map(rows.map((row) => [row.id, row]));
   if (byId.size !== ids.length) throw new SaleError('SERVICE_UNAVAILABLE');
   try {
     return lines.map((line) => {
       const service = byId.get(line.serviceId)!;
+      if (service.price !== null && service.price !== line.unitPrice) {
+        throw new SaleError('PRICE_CHANGED');
+      }
+      const unitPrice = service.price ?? line.unitPrice;
       return {
         itemType: 'service' as const,
         sourceId: service.id,
         name: service.name,
         quantity: line.quantity,
-        unitPrice: service.price,
-        lineTotal: calculateLineTotal(service.price, line.quantity),
+        unitPrice,
+        lineTotal: calculateLineTotal(unitPrice, line.quantity),
       };
     });
   } catch (error) {
@@ -530,7 +542,7 @@ export const createDrizzleSaleRepository = (
 
           const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
           const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
-          const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs);
+          const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs, true);
           const quotedProducts = await quoteProducts(transaction, input.branchId, productInputs, true);
           const serviceIds = [...new Set(serviceInputs.map(({ serviceId }) => serviceId))];
           const serviceRows = await transaction.select({

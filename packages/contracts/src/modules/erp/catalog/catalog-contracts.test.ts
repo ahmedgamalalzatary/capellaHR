@@ -78,6 +78,16 @@ describe('erp service contracts', () => {
     },
   );
 
+  it('creates an open-priced service when the catalog price is absent or null', () => {
+    const withoutPrice = {
+      name: service.name,
+      categoryId: service.categoryId,
+    };
+
+    expect(createServiceSchema.parse(withoutPrice).price).toBeNull();
+    expect(createServiceSchema.parse({ ...withoutPrice, price: null }).price).toBeNull();
+  });
+
   it('rejects a zero, negative, float or over-precise price', () => {
     // Money never arrives as a float: a JS number cannot represent 0.1 exactly.
     expect(createServiceSchema.safeParse({ ...service, price: 150 }).success).toBe(false);
@@ -116,6 +126,7 @@ describe('erp service contracts', () => {
     expect(updateServiceSchema.safeParse({ branchId: 1 }).success).toBe(false);
     expect(updateServiceSchema.safeParse({ isActive: false }).success).toBe(true);
     expect(updateServiceSchema.parse({ price: '99.9' }).price).toBe('99.90');
+    expect(updateServiceSchema.parse({ price: null }).price).toBeNull();
   });
 
   it('lets an update clear the description back to nothing', () => {

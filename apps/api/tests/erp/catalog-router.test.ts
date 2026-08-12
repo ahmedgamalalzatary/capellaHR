@@ -254,6 +254,25 @@ describe('ERP services HTTP API', () => {
     }));
   });
 
+  it('creates an open-priced service when price is omitted', async () => {
+    const create = vi.fn(async (input: Parameters<ServiceRepository['create']>[0]) => service(input));
+    const response = await request(makeApp(ADMIN, { services: serviceRepository({ create }) }))
+      .post('/api/v1/erp/services')
+      .send({ name: 'بروتين شعر', categoryId: 1, branchId: 1 });
+
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ price: null }));
+  });
+
+  it('returns a conflict when replacing a fixed catalog price directly', async () => {
+    const response = await request(makeApp(ADMIN))
+      .patch('/api/v1/erp/services/1')
+      .send({ price: '175', branchId: 1 });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('SERVICE_PRICE_LOCKED');
+  });
+
   it('rejects a float price rather than rounding it', async () => {
     const response = await request(makeApp(ADMIN)).post('/api/v1/erp/services')
       .send({ name: 'صبغة', categoryId: 1, price: 150.5, branchId: 1 });

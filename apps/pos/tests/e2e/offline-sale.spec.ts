@@ -27,7 +27,7 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
     assignedEmployeeId: 18,
     cashierSessionId: 14,
     idempotencyKey: originalKey,
-    lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+    lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '185.00' }],
     payments: [{ method: 'cash', amount: '185.00' }],
   } as const;
   const queued = {
@@ -58,6 +58,7 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
           updatedAt: '',
         },
         quantity: 1,
+        unitPrice: '185.00',
         itemType: 'service',
       }],
       discountKind: 'percentage',

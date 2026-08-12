@@ -188,7 +188,12 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
     assignedEmployeeId: data.employeeId,
     cashierSessionId: data.cashierSessionId,
     idempotencyKey: key,
-    lines: [{ itemType: 'service' as const, serviceId: data.serviceId, quantity: 1 }],
+    lines: [{
+      itemType: 'service' as const,
+      serviceId: data.serviceId,
+      quantity: 1,
+      unitPrice: '200.00',
+    }],
     discount: { kind: 'percentage' as const, value: '10.00' },
     tax: { kind: 'fixed' as const, value: '5.00' },
     payments: [{ method: 'cash' as const, amount: '185.00' }],
@@ -1067,7 +1072,9 @@ describe('ERP sale repository MySQL integration', () => {
       .where(eq(erpServices.id, data.serviceId));
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
-    sale.input.lines = [{ itemType: 'service', serviceId: data.serviceId, quantity: 3 }];
+    sale.input.lines = [{
+      itemType: 'service', serviceId: data.serviceId, quantity: 3, unitPrice: '0.10',
+    }];
     sale.input.discount = undefined;
     sale.input.tax = undefined;
     sale.input.payments = [{ method: 'cash', amount: '0.30' }];
@@ -1387,6 +1394,39 @@ describe('ERP sale repository MySQL integration', () => {
     })).resolves.toBeNull();
   });
 
+  it('rejects a submitted price that differs from a fixed service price', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{
+      itemType: 'service', serviceId: data.serviceId, quantity: 1, unitPrice: '175.00',
+    }];
+
+    await expect(repository.complete(request)).rejects.toMatchObject({ code: 'PRICE_CHANGED' });
+    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
+      .toHaveLength(0);
+  });
+
+  it('uses an open service sale price for totals, invoice snapshots, and commission', async () => {
+    const data = await fixture();
+    await database.update(erpServices).set({ price: null }).where(eq(erpServices.id, data.serviceId));
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{
+      itemType: 'service', serviceId: data.serviceId, quantity: 2, unitPrice: '800.00',
+    }];
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '1600.00' }];
+
+    const completed = await repository.complete(request);
+
+    expect(completed).toMatchObject({
+      totals: { subtotal: '1600.00', total: '1600.00' },
+      lines: [{ unitPrice: '800.00', lineTotal: '1600.00', commissionAmount: '240.00' }],
+    });
+  });
+
   it('rolls back the aggregate when attendance revalidation fails', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -1463,7 +1503,9 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     await expect(repository.quote(data.branchId, {
-      lines: [{ itemType: 'service', serviceId: data.serviceId, quantity: 1 }],
+      lines: [{
+        itemType: 'service', serviceId: data.serviceId, quantity: 1, unitPrice: '200.00',
+      }],
       discount: { kind: 'fixed', value: '200.01' },
     })).rejects.toMatchObject({ code: 'SALE_VALIDATION_FAILED' });
   });

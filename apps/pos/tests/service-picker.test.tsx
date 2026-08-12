@@ -76,6 +76,14 @@ describe('ServicePicker', () => {
     expect(screen.queryByLabelText(/السعر/)).toBeNull();
   });
 
+  test('marks a service without a catalog price as priced during the sale', async () => {
+    mocks.listServices.mockResolvedValue(pageOf([{ ...colouring, price: null }]));
+    renderPicker();
+
+    await screen.findByText('صبغة');
+    expect(screen.getByText('يحدد السعر عند البيع')).toBeDefined();
+  });
+
   test('shows an Arabic loading state before results arrive', () => {
     renderPicker();
 

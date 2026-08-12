@@ -47,9 +47,9 @@ export const erpCategories = mysqlTable('erp_categories', {
 ]);
 
 /**
- * A service carries one fixed EGP price — no ranges and no cashier-entered
- * pricing — plus the default commission percentage applied to the pre-discount
- * list price. Money and rates are exact `decimal` values, never floats.
+ * A service may carry a locked fixed EGP price or null when its unit price is
+ * entered during the sale. Its default commission percentage applies to that
+ * pre-discount sale unit price. Money and rates are exact `decimal` values.
  *
  * There is deliberately no delete operation and no soft-delete column: an
  * invoice line snapshots the service's name, price and commission rate at sale
@@ -64,7 +64,7 @@ export const erpServices = mysqlTable('erp_services', {
   name: varchar('name', { length: 255 }).notNull(),
   nameNormalized: varchar('name_normalized', { length: 64 }).notNull(),
   description: varchar('description', { length: 1000 }),
-  price: decimal('price', { precision: 12, scale: 2 }).notNull(),
+  price: decimal('price', { precision: 12, scale: 2 }),
   commissionPercent: decimal('commission_percent', { precision: 5, scale: 2 }).notNull().default('0.00'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),

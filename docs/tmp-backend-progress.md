@@ -573,13 +573,13 @@ Cross-branch isolation is enforced on every read and write: a client outside the
 - [x] Add one category table with `service` and `expense` type values (`erp_categories`, migration `0045_easy_lizard.sql`).
 - [x] Enforce category-name uniqueness within each type. Uniqueness is `(branch_id, type, name_normalized)`: ERP records are branch-scoped, so "unique per type" is enforced inside each branch's own catalog, the same way ERP 5 scopes client phone uniqueness per branch. Normalization reuses the Branches sha256 lower-cased form.
 - [x] Implement category create, read, update, list, and safe deletion/deactivation behavior. `is_active` retires a category; `has_ever_been_referenced` is set transactionally the first time a service points at it and permanently blocks deletion (the Branches protection-hook pattern), so deletion only ever removes a category nothing has used. ERP 15 expenses reuse the same `markCategoryReferenced` hook. Category `type` is immutable.
-- [x] Add service schema with name, description, fixed EGP price, category, default commission settings, and active state (`erp_services`). Price is `decimal(12,2)` with a `> 0` check; the default commission is `decimal(5,2)` percent of the pre-discount list price with a `between 0 and 100` check. Names are unique per branch.
+- [x] Add service schema with name, description, optional fixed EGP price, category, default commission settings, and active state (`erp_services`). A non-null price is `decimal(12,2)` with a `> 0` check; the default commission is `decimal(5,2)` percent of the pre-discount sale unit price with a `between 0 and 100` check. Names are unique per branch.
 - [x] Add per-employee service commission overrides (`erp_service_commission_overrides`, unique on `(service_id, employee_id)`, same exact-decimal percentage and range check). Overrides are validated against the acting branch's employees through the HR employee capability.
 - [x] Implement service and commission-override administration endpoints. Writes are Admin-only; reads are open to any ERP account so a Cashier can browse the catalog.
 - [x] Prevent catalog edits from changing historical invoice facts. Structural: services have no delete operation and no soft-delete column, categories cannot be deleted once referenced, and category type cannot change — so every fact an ERP 8 invoice line will snapshot (name, price, commission rate, category) stays resolvable and every edit affects future invoices only.
 - [x] Add exact-money, validation, authorization, branch, lifecycle, and MySQL tests.
 - [x] Add Arabic/RTL POS Admin category, service, and employee commission-override management (`/catalog`, admin-only, with the branch selector an Admin needs because they belong to no branch).
-- [x] Add POS service browsing and search with active-state, fixed-price, empty, loading, and error behavior (`/services`, `ServicePicker`). "Active" means the service *and* its category are live, so retiring a category removes its services from the counter.
+- [x] Add POS service browsing and search with active-state, fixed/open-price, empty, loading, and error behavior (`/services`, `ServicePicker`). "Active" means the service *and* its category are live, so retiring a category removes its services from the counter.
 - [x] Add component coverage for catalog administration and POS service discovery (schema, view, and picker tests; no dedicated e2e framework exists in this repo, matching `apps/web` and ERP 1–5).
 
 Current catalog endpoints:
@@ -588,7 +588,7 @@ Current catalog endpoints:
 - `POST|GET /api/v1/erp/services`, `GET|PATCH /api/v1/erp/services/:id`
 - `GET|PUT /api/v1/erp/services/:id/commission-overrides`, `DELETE /api/v1/erp/services/:id/commission-overrides/:employeeId`
 
-Commission is modelled as a percentage rate only (no fixed-amount commission kind): the locked decisions describe a "configurable **rate** per service" and ERP 9 calculates commission *from the pre-discount list price*, and fixed-amount commission is never mentioned. The "commission rule" ERP 8 must snapshot is therefore which rule applied — the per-employee override or the service default — alongside the rate itself.
+Commission is modelled as a percentage rate only (no fixed-amount commission kind): the configured rate is calculated from the pre-discount unit price used on the sale, including a seller-entered price for an open-price service. The "commission rule" ERP 8 snapshots which rule applied — the per-employee override or the service default — alongside the rate itself.
 
 ## ERP 7. Attendance assignment capability — Complete
 
@@ -608,7 +608,7 @@ No migration was needed: assignment eligibility owns no tables and reads live At
 
 - [x] Add invoice schema with branch, client, assigned employee, acting account, Cashier session, status, totals, timestamps, and historical snapshots.
 - [x] Add invoice-line schema for services and products.
-- [x] Snapshot line item name, type, list price, commission rule/rate, and product cost basis where applicable.
+- [x] Snapshot line item name, type, sale unit price, commission rule/rate, and product cost basis where applicable.
 - [x] Add invoice-level percentage/fixed discount fields and computed amount snapshot.
 - [x] Add invoice-level percentage/fixed tax fields and computed amount snapshot.
 - [x] Add payment records supporting Cash, Visa, InstaPay, and Vodafone Cash.
@@ -628,7 +628,7 @@ Complete. This persistence foundation intentionally has no standalone screen. Th
 
 - [x] Implement server-side price, discount, tax, payment, and total calculation.
 - [x] Assign exactly one present employee to the complete invoice.
-- [x] Calculate service commission from the pre-discount list price.
+- [x] Calculate service commission from the pre-discount sale unit price.
 - [x] Resolve per-employee commission override before the service default.
 - [x] Complete invoice, lines, payments, invoice number, commission entries, and audit event in one database transaction.
 - [x] Return the existing invoice for a repeated idempotency key.
@@ -854,7 +854,7 @@ The HR protected-area route performs its server-side session check through the p
 
 - No ETA/e-invoice or government integration.
 - No anonymous clients, deposits, tabs, installments, prepaid packages, appointments, or service price ranges.
-- No cashier-entered service pricing; invoice-level discount is the permitted price variation.
+- A service may have a locked fixed catalog price or no catalog price. Price-less services require any seller to enter a positive unit price on the sale; completed invoices always snapshot a non-null unit price.
 - No employee assignment without a live Attendance check-in.
 - No product commissions or tracked service consumables.
 - No supplier credit, supplier balances, supplier returns, product variants, multiple units, stock transfers, or negative stock.

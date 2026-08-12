@@ -228,6 +228,47 @@ describe('ERP service catalog service', () => {
     }));
   });
 
+  it('creates an open-priced service with a null catalog price', async () => {
+    const create = vi.fn(async (input: Parameters<ServiceRepository['create']>[0]) => service(input));
+    await services(serviceRepository({ create })).create(ADMIN, {
+      name: 'بروتين شعر',
+      categoryId: 1,
+      price: null,
+      commissionPercent: '10.00',
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ price: null }));
+  });
+
+  it('converts fixed and open pricing only through delete then set transitions', async () => {
+    const update = vi.fn(async (_id: number, _branchId: number, changes: Parameters<ServiceRepository['update']>[2]) => (
+      service({ price: changes.price === undefined ? '150.00' : changes.price })
+    ));
+    const fixedCatalog = services(serviceRepository({ update }));
+
+    await expect(fixedCatalog.update(ADMIN, 1, { price: '175.00' }))
+      .rejects.toMatchObject({ code: 'SERVICE_PRICE_LOCKED' });
+    await expect(fixedCatalog.update(ADMIN, 1, { price: null }))
+      .resolves.toMatchObject({ price: null });
+
+    const openCatalog = services(serviceRepository({
+      findById: vi.fn(async () => service({ price: null })),
+      update,
+    }));
+    await expect(openCatalog.update(ADMIN, 1, { price: '175.00' }))
+      .resolves.toMatchObject({ price: '175.00' });
+  });
+
+  it('maps an atomic repository price race to the locked-price conflict', async () => {
+    const repository = serviceRepository({
+      findById: vi.fn(async () => service({ price: null })),
+      update: vi.fn(async () => 'price_locked' as const),
+    });
+
+    await expect(services(repository).update(ADMIN, 1, { price: '175.00' }))
+      .rejects.toMatchObject({ code: 'SERVICE_PRICE_LOCKED' });
+  });
+
   it('refuses service administration by a cashier', async () => {
     await expect(services(serviceRepository())
       .create(CASHIER, { name: 'صبغة', categoryId: 1, price: '150.00', commissionPercent: '0.00' }))

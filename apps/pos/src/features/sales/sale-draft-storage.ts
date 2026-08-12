@@ -16,7 +16,12 @@ export type SaleDraftOwner = {
 export type SaleDraft = {
   client: Client | null;
   employee: AssignableEmployee | null;
-  lines: Array<{ service: ServiceListItem | ProductSaleItem; quantity: number; itemType?: 'service' | 'product' }>;
+  lines: Array<{
+    service: ServiceListItem | ProductSaleItem;
+    quantity: number;
+    unitPrice: string;
+    itemType?: 'service' | 'product';
+  }>;
   discountKind: 'percentage' | 'fixed';
   discountValue: string;
   taxKind: 'percentage' | 'fixed';
@@ -110,7 +115,8 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
       && isRecord(line.service)
       && typeof line.service.id === 'number'
       && typeof line.service.name === 'string'
-      && typeof line.service.price === 'string')
+      && (typeof line.service.price === 'string' || line.service.price === null)
+      && (line.unitPrice === undefined || typeof line.unitPrice === 'string'))
     && (value.discountKind === 'percentage' || value.discountKind === 'fixed')
     && typeof value.discountValue === 'string'
     && (value.taxKind === 'percentage' || value.taxKind === 'fixed')
@@ -126,6 +132,10 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
 export const sanitizeSaleDraft = (draft: StoredSaleDraft | SaleDraft): StoredSaleDraft => ({
   ...draft,
   client: draft.client ? { id: draft.client.id, branchId: draft.client.branchId } : null,
+  lines: draft.lines.map((line) => ({
+    ...line,
+    unitPrice: line.unitPrice ?? line.service.price ?? '',
+  })),
 });
 
 export const parseStoredSaleDraft = (value: unknown): StoredSaleDraft | null => (

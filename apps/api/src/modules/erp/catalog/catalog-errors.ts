@@ -7,6 +7,7 @@ export type CatalogErrorCode =
   | 'CATEGORY_INACTIVE'
   | 'SERVICE_NOT_FOUND'
   | 'SERVICE_NAME_EXISTS'
+  | 'SERVICE_PRICE_LOCKED'
   | 'CATALOG_EMPLOYEE_NOT_FOUND'
   | 'COMMISSION_OVERRIDE_NOT_FOUND';
 
@@ -34,6 +35,7 @@ export const CATALOG_MESSAGES = {
   CATEGORY_INACTIVE: 'التصنيف موقوف',
   SERVICE_NOT_FOUND: 'الخدمة غير موجودة',
   SERVICE_NAME_EXISTS: 'اسم الخدمة مستخدم بالفعل',
+  SERVICE_PRICE_LOCKED: 'احذف سعر الخدمة الحالي قبل إضافة سعر ثابت جديد',
   CATALOG_EMPLOYEE_NOT_FOUND: 'الموظف غير موجود في هذا الفرع',
   COMMISSION_OVERRIDE_NOT_FOUND: 'لا توجد نسبة عمولة خاصة لهذا الموظف',
 } as const satisfies Record<CatalogErrorCode, string>;

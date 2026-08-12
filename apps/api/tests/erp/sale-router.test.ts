@@ -80,12 +80,12 @@ describe('ERP sales router', () => {
   it('quotes a normalized service sale draft', async () => {
     const { app, quote } = setup();
     const response = await request(app).post('/erp/sales/quote').send({
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2, unitPrice: '200' }],
       discount: { kind: 'percentage', value: '10' },
     });
     expect(response.status).toBe(200);
     expect(quote).toHaveBeenCalledWith(actor, {
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 2 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2, unitPrice: '200.00' }],
       discount: { kind: 'percentage', value: '10.00' },
     });
   });
@@ -97,7 +97,7 @@ describe('ERP sales router', () => {
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
       payments: [{ method: 'cash', amount: '200' }],
     });
     expect(response.status).toBe(201);
@@ -152,7 +152,7 @@ describe('ERP sales router', () => {
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
       payments: [{ method: 'cash', amount: '200' }],
     });
     expect(conflict.status).toBe(409);
@@ -162,7 +162,7 @@ describe('ERP sales router', () => {
   it('forwards unknown errors to Express error middleware', async () => {
     const { app } = setup({ quote: vi.fn().mockRejectedValue(new Error('database secret')) });
     const response = await request(app).post('/erp/sales/quote').send({
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
     });
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: { code: 'UNEXPECTED' } });

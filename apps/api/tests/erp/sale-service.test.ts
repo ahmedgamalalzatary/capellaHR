@@ -14,7 +14,7 @@ const input: CompleteSaleInput = {
   assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-  lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
   discount: { kind: 'percentage', value: '10.00' },
   tax: { kind: 'fixed', value: '5.00' },
   payments: [{ method: 'cash', amount: '185.00' }],
@@ -183,10 +183,10 @@ describe('ERP sale service', () => {
   it('returns a server-authoritative quote in the resolved branch', async () => {
     const { service, quoteRepository } = setup();
     await expect(service.quote(actor, {
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
     })).resolves.toEqual(quote);
     expect(quoteRepository).toHaveBeenCalledWith(2, {
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
     });
   });
 

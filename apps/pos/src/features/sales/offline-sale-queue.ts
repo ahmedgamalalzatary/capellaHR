@@ -82,6 +82,22 @@ const parseFailure = (value: unknown): OfflineSaleQueueItem['failure'] => {
   return { kind: value.kind, code: value.code, message: value.message };
 };
 
+const recoverPrePriceInput = (value: unknown, draft?: StoredSaleDraft) => {
+  if (!isRecord(value) || !Array.isArray(value.lines) || !draft) return value;
+  const prices = new Map(draft.lines.flatMap((line) => {
+    if (line.itemType === 'product' || line.service.price === null) return [];
+    return [[line.service.id, line.unitPrice || line.service.price] as const];
+  }));
+  return {
+    ...value,
+    lines: value.lines.map((line) => {
+      if (!isRecord(line) || line.itemType !== 'service' || line.unitPrice !== undefined) return line;
+      const unitPrice = prices.get(Number(line.serviceId));
+      return unitPrice ? { ...line, unitPrice } : line;
+    }),
+  };
+};
+
 const parseQueueItem = (value: string | null): OfflineSaleQueueItem | null => {
   if (!value) return null;
   try {
@@ -94,12 +110,12 @@ const parseQueueItem = (value: string | null): OfflineSaleQueueItem | null => {
       || typeof parsed.createdAt !== 'number'
       || typeof parsed.updatedAt !== 'number') return null;
     const owner = parseOwner(parsed.owner);
-    const input = completeSaleSchema.safeParse(parsed.input);
-    const failure = parseFailure(parsed.failure);
-    if (!owner || !input.success || (parsed.failure !== null && !failure)) return null;
     const recoveryDraft = parsed.recoveryDraft === undefined
       ? undefined
       : parseStoredSaleDraft(parsed.recoveryDraft) ?? undefined;
+    const input = completeSaleSchema.safeParse(recoverPrePriceInput(parsed.input, recoveryDraft));
+    const failure = parseFailure(parsed.failure);
+    if (!owner || !input.success || (parsed.failure !== null && !failure)) return null;
     return {
       version: 1,
       owner,
@@ -307,10 +323,30 @@ const parseLegacy = (value: string | null) => {
     const parsed: unknown = JSON.parse(value);
     if (!isRecord(parsed)) return null;
     const owner = parseOwner(parsed.owner);
-    const input = completeSaleSchema.safeParse(parsed.input);
+    const recoveryDraft = parsed.recoveryDraft === undefined
+      ? undefined
+      : parseStoredSaleDraft(parsed.recoveryDraft) ?? undefined;
+    const input = completeSaleSchema.safeParse(recoverPrePriceInput(parsed.input, recoveryDraft));
     return owner && input.success ? { owner, input: input.data } : null;
   } catch {
     return null;
+  }
+};
+
+export const hasUnrecoverableOfflineSales = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+      .some((key) => {
+        if (!key) return false;
+        if (key.startsWith(QUEUE_PREFIX)) return parseQueueItem(localStorage.getItem(key)) === null;
+        if (key === LEGACY_KEY || key.startsWith(LEGACY_PREFIX)) {
+          return parseLegacy(localStorage.getItem(key)) === null;
+        }
+        return false;
+      });
+  } catch {
+    return false;
   }
 };
 

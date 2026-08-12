@@ -20,8 +20,8 @@ export interface Service {
   categoryId: number;
   name: string;
   description: string | null;
-  /** Exact EGP decimal string; the cashier can never edit it. */
-  price: string;
+  /** Exact fixed EGP price, or null when the seller must price the service. */
+  price: string | null;
   commissionPercent: string;
   isActive: boolean;
   createdAt: string;
@@ -97,7 +97,7 @@ export function listServices(params: ListServicesParams = {}) {
 export function createService(input: {
   name: string;
   categoryId: number;
-  price: string;
+  price: string | null;
   commissionPercent: string;
   description?: string | null;
 } & BranchScoped) {
@@ -107,7 +107,7 @@ export function createService(input: {
 export function updateService(id: number, input: {
   name?: string;
   categoryId?: number;
-  price?: string;
+  price?: string | null;
   commissionPercent?: string;
   description?: string | null;
   isActive?: boolean;

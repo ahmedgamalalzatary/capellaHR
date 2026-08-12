@@ -15,9 +15,9 @@ export type ServiceRecord = {
   categoryId: number;
   name: string;
   description: string | null;
-  /** Exact EGP decimal string; never a float. */
-  price: string;
-  /** Exact percentage of the pre-discount list price. */
+  /** Exact fixed EGP decimal string, or null when the seller prices each sale. */
+  price: string | null;
+  /** Exact percentage of the pre-discount unit price used on the sale. */
   commissionPercent: string;
   isActive: boolean;
   createdAt: Date;
@@ -45,7 +45,7 @@ export type ServiceWrite = {
   name: string;
   nameNormalized: string;
   description: string | null;
-  price: string;
+  price: string | null;
   commissionPercent: string;
 };
 
@@ -54,7 +54,7 @@ export type ServiceChanges = {
   name?: string;
   nameNormalized?: string;
   description?: string | null;
-  price?: string;
+  price?: string | null;
   commissionPercent?: string;
   isActive?: boolean;
 };
@@ -67,7 +67,11 @@ export interface ServiceRepository {
     branchId: number,
     query: ListServicesQuery,
   ): Promise<{ items: ServiceListItem[]; total: number }>;
-  update(id: number, branchId: number, changes: ServiceChanges): Promise<ServiceRecord | null>;
+  update(
+    id: number,
+    branchId: number,
+    changes: ServiceChanges,
+  ): Promise<ServiceRecord | 'price_locked' | null>;
   listOverrides(serviceId: number): Promise<CommissionOverrideRecord[]>;
   setOverride(
     serviceId: number,
@@ -140,7 +144,7 @@ export const createServiceCatalogService = (dependencies: {
       input: {
         name: string;
         categoryId: number;
-        price: string;
+        price: string | null;
         commissionPercent: string;
         description?: string | null | undefined;
         branchId?: number | undefined;
@@ -184,7 +188,7 @@ export const createServiceCatalogService = (dependencies: {
       input: {
         name?: string | undefined;
         categoryId?: number | undefined;
-        price?: string | undefined;
+        price?: string | null | undefined;
         commissionPercent?: string | undefined;
         description?: string | null | undefined;
         isActive?: boolean | undefined;
@@ -193,7 +197,11 @@ export const createServiceCatalogService = (dependencies: {
     ) {
       assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, input.branchId);
-      await readInBranch(branchId, id);
+      const current = await readInBranch(branchId, id);
+
+      if (input.price !== undefined && input.price !== null && current.price !== null) {
+        throw catalogError('SERVICE_PRICE_LOCKED');
+      }
 
       const changes: ServiceChanges = {};
       if (input.categoryId !== undefined) {
@@ -212,12 +220,13 @@ export const createServiceCatalogService = (dependencies: {
         changes.nameNormalized = nameNormalized;
       }
 
-      let record: ServiceRecord | null;
+      let record: ServiceRecord | 'price_locked' | null;
       try {
         record = await repository.update(id, branchId, changes);
       } catch (error) {
         return await asConflict(branchId, changes.nameNormalized ?? '', error);
       }
+      if (record === 'price_locked') throw catalogError('SERVICE_PRICE_LOCKED');
       if (!record) throw catalogError('SERVICE_NOT_FOUND');
       return record;
     },

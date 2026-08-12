@@ -28,7 +28,9 @@ const appAs = (session: unknown) => createApp({
 
 describe('ERP sales mounting', () => {
   it('serves quote endpoints only to authenticated ERP accounts', async () => {
-    const body = { lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }] };
+    const body = {
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
+    };
     const cashier = await request(appAs({
       actorType: 'account', accountRole: 'cashier', accountId: 2, employeeId: 4,
     })).post('/api/v1/erp/sales/quote').send(body);

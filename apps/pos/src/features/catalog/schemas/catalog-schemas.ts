@@ -21,7 +21,9 @@ export const categoryFormSchema = z.object({
 export const serviceFormSchema = z.object({
   name: requiredText('اسم الخدمة مطلوب').pipe(createServiceSchema.shape.name),
   categoryId: requiredText('يجب اختيار التصنيف').pipe(createServiceSchema.shape.categoryId),
-  price: requiredText('السعر مطلوب').pipe(createServiceSchema.shape.price),
+  price: z.string().trim()
+    .transform((value) => (value === '' ? null : value))
+    .pipe(createServiceSchema.shape.price),
   // An empty commission box means "no commission", not a validation failure.
   commissionPercent: z.string().trim()
     .transform((value) => (value === '' ? '0' : value))

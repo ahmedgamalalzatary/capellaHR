@@ -117,7 +117,7 @@ beforeAll(async () => {
       branchId, clientId, assignedEmployeeId: employeeId, cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
       lines: [
-        { itemType: 'service', serviceId, quantity: 1 },
+        { itemType: 'service', serviceId, quantity: 1, unitPrice: '200.00' },
         { itemType: 'product', productId, quantity: 1 },
       ],
       discount: { kind: 'percentage', value: '10.00' },

@@ -379,6 +379,42 @@ describe('CatalogView services', () => {
     });
   });
 
+  test('creates an open-price service when the optional price is blank', async () => {
+    mocks.createService.mockResolvedValue({ ...colouring, id: 6, price: null });
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'إضافة خدمة' }));
+
+    fireEvent.change(screen.getByLabelText(/^اسم الخدمة/), { target: { value: 'بروتين الشعر' } });
+    fireEvent.change(screen.getByLabelText(/^التصنيف/), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الخدمة' }));
+
+    await waitFor(() => expect(mocks.createService).toHaveBeenCalledTimes(1));
+    expect(mocks.createService.mock.calls[0]?.[0]).toMatchObject({
+      name: 'بروتين الشعر', categoryId: 1, price: null, branchId: 3,
+    });
+  });
+
+  test('locks a fixed price until the admin deletes it', async () => {
+    mocks.updateService.mockResolvedValue({ ...colouring, price: null });
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+    fireEvent.click(within((await screen.findByText('صبغة')).closest('tr')!)
+      .getByRole('button', { name: 'تعديل' }));
+
+    expect(screen.getByLabelText(/^السعر/)).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'حذف السعر الثابت' }));
+
+    await waitFor(() => expect(mocks.updateService).toHaveBeenCalledWith(5, {
+      price: null,
+      branchId: 3,
+    }));
+  });
+
   test('keeps the service editor open while saving', async () => {
     mocks.createService.mockReturnValue(new Promise(() => undefined));
     renderView();
