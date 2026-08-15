@@ -1,6 +1,8 @@
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { reconcileDefiners, type DefinerReport } from './definer-reconciler.js';
+
 interface CommandResult {
   error?: Error;
   signal: NodeJS.Signals | null;
@@ -20,6 +22,7 @@ interface OutputWriter {
 interface MigrationRunnerOptions {
   execute?: ExecuteCommand;
   now?: () => Date;
+  reconcile?: () => Promise<DefinerReport>;
   stderr?: OutputWriter;
   stdout?: OutputWriter;
 }
@@ -30,9 +33,27 @@ function writeLog(output: OutputWriter, now: () => Date, message: string): void 
   output.write(`[${now().toISOString()}] [migrate] ${message}\n`);
 }
 
-export function runMigrations(options: MigrationRunnerOptions = {}): number {
+/** Runs on the same credentials as the application, so repaired objects end up owned by it. */
+async function reconcileConnectedDefiners(): Promise<DefinerReport> {
+  const connectionUrl = process.env.DATABASE_URL;
+  if (!connectionUrl) throw new Error('DATABASE_URL is not set');
+
+  const { createConnection } = await import('mysql2/promise');
+  const connection = await createConnection(connectionUrl);
+  try {
+    return await reconcileDefiners(async (sql) => {
+      const [rows] = await connection.query(sql);
+      return Array.isArray(rows) ? rows : [];
+    });
+  } finally {
+    await connection.end();
+  }
+}
+
+export async function runMigrations(options: MigrationRunnerOptions = {}): Promise<number> {
   const execute = options.execute ?? spawnSync;
   const now = options.now ?? (() => new Date());
+  const reconcile = options.reconcile ?? reconcileConnectedDefiners;
   const stderr = options.stderr ?? process.stderr;
   const stdout = options.stdout ?? process.stdout;
 
@@ -60,6 +81,29 @@ export function runMigrations(options: MigrationRunnerOptions = {}): number {
     return result.status ?? 1;
   }
 
+  try {
+    const report = await reconcile();
+    if (report.warning) {
+      writeLog(stdout, now, `Skipped the database ownership check: ${report.warning}.`);
+    } else {
+      writeLog(
+        stdout,
+        now,
+        report.repaired.length === 0
+          ? `Every database trigger and routine belongs to an account this server has.`
+          : `Reassigned ${report.repaired.length} database objects to ${report.account}: ${report.repaired.join(', ')}.`,
+      );
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    writeLog(
+      stderr,
+      now,
+      `Could not reassign database objects to the application account: ${reason}.`,
+    );
+    return 1;
+  }
+
   writeLog(stdout, now, 'Database migrations completed successfully.');
   return 0;
 }
@@ -67,5 +111,5 @@ export function runMigrations(options: MigrationRunnerOptions = {}): number {
 const entrypoint = process.argv[1];
 
 if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
-  process.exitCode = runMigrations();
+  process.exitCode = await runMigrations();
 }
