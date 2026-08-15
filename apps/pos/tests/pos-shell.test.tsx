@@ -155,6 +155,19 @@ describe('PosShell', () => {
     expect(link.getAttribute('href')).toBe('/sales');
   });
 
+  test('shows the refunds workflow link to every ERP account', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+    expect((await screen.findByRole('link', { name: 'المرتجعات' })).getAttribute('href'))
+      .toBe('/refunds');
+
+    cleanup();
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    expect((await screen.findByRole('link', { name: 'المرتجعات' })).getAttribute('href'))
+      .toBe('/refunds');
+  });
+
   test('marks the active destination in the responsive primary navigation', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();
