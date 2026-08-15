@@ -168,6 +168,19 @@ describe('PosShell', () => {
       .toBe('/refunds');
   });
 
+  test('shows the expenses workflow link to every ERP account', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+    expect((await screen.findByRole('link', { name: 'المصروفات' })).getAttribute('href'))
+      .toBe('/expenses');
+
+    cleanup();
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    expect((await screen.findByRole('link', { name: 'المصروفات' })).getAttribute('href'))
+      .toBe('/expenses');
+  });
+
   test('marks the active destination in the responsive primary navigation', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();

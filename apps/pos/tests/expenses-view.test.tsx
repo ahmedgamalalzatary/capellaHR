@@ -1,8 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), correct: vi.fn(), list: vi.fn(), categories: vi.fn(), branches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }], meta: { totalPages: 1 } })) }));
+const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({
+    data: { actor: actor.current === 'admin'
+      ? { type: 'admin', accountId: 1 }
+      : { type: 'cashier', accountId: 2, employeeId: 3 } },
+  }),
+}));
 const expense = { id: 10, branchId: 2, categoryId: 4, categoryName: 'تشغيل', amount: '125.50', expenseDate: '2026-08-05', description: 'مستلزمات', actingAccountId: 7, actingUsername: 'admin', kind: 'expense', status: 'active', reversalOfId: null, supersedesId: null, correctionReason: null, createdAt: '2026-08-05T10:00:00Z' };
 vi.mock('../src/features/catalog', () => ({
   listCatalogBranches: mocks.branches,
@@ -18,6 +26,7 @@ import { ExpensesView } from '../src/features/expenses';
 import { ApiError } from '../src/lib/api/client';
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+beforeEach(() => { actor.current = 'admin'; });
 const mount = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={queryClient}><ExpensesView /></QueryClientProvider>);
@@ -142,6 +151,38 @@ describe('ExpensesView', () => {
     mocks.branches.mockImplementation(async (page = 1) => ({ items: page === 1 ? [{ id: 2, name: 'الرئيسي' }] : [{ id: 3, name: 'فرع ثانٍ' }], meta: { totalPages: 2 } }));
     mount();
     expect(await screen.findByRole('option', { name: 'فرع ثانٍ' })).toBeTruthy();
+  });
+
+  it('records an expense for a cashier without asking which branch', async () => {
+    actor.current = 'cashier';
+    mocks.categories.mockResolvedValue({ items: [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], meta: { totalPages: 1 } });
+    mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mocks.create.mockResolvedValue(expense);
+    mount();
+
+    // The server pins a cashier to the branch of their own account, so there is nothing to pick.
+    expect(screen.queryByLabelText('الفرع')).toBeNull();
+    expect(mocks.branches).not.toHaveBeenCalled();
+    await screen.findAllByRole('option', { name: 'تشغيل' });
+    fireEvent.change(screen.getByLabelText('التصنيف'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '125.50' } });
+    fireEvent.change(screen.getByLabelText('تاريخ المصروف'), { target: { value: '2026-08-05' } });
+    fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'مستلزمات' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل المصروف' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith({ branchId: undefined, categoryId: 4, amount: '125.50', expenseDate: '2026-08-05', description: 'مستلزمات' }));
+    expect(mocks.list).toHaveBeenCalledWith(expect.not.objectContaining({ branchId: expect.anything() }));
+    expect(mocks.categories).toHaveBeenCalledWith(expect.not.objectContaining({ branchId: expect.anything() }));
+  });
+
+  it('hides expense correction from a cashier', async () => {
+    actor.current = 'cashier';
+    mocks.categories.mockResolvedValue({ items: [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], meta: { totalPages: 1 } });
+    mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mount();
+
+    await screen.findByText('مستلزمات');
+    expect(screen.queryByRole('button', { name: 'تصحيح' })).toBeNull();
   });
 
   it('offers retry when branch options fail to load', async () => {

@@ -18,7 +18,7 @@ const repository = (): ExpenseRepository => ({
 const resolver = vi.fn().mockResolvedValue({ accountId: 7, branchId: 2 });
 
 describe('expense service', () => {
-  it('allows only an admin and uses resolved branch and acting account', async () => {
+  it('uses the resolved branch and acting account when an admin records an expense', async () => {
     const repo = repository();
     const service = createExpenseService({ repository: repo, resolveBranchContext: resolver });
     await service.create(admin, { branchId: 2, categoryId: 4, amount: '125.50', expenseDate: '2026-08-05', description: 'مستلزمات' });
@@ -26,14 +26,31 @@ describe('expense service', () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const create = vi.mocked(repo.create);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, actingAccountId: 7 }));
-    await expect(service.create(cashier, { categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x' })).rejects.toMatchObject({ code: 'ERP_EXPENSE_ADMIN_REQUIRED' });
   });
 
-  it('rejects every read and correction operation for a cashier', async () => {
+  it('lets a cashier record and read expenses under the branch resolved for the account', async () => {
+    const repo = repository();
+    const cashierScope = vi.fn().mockResolvedValue({ accountId: 8, branchId: 2 });
+    const service = createExpenseService({ repository: repo, resolveBranchContext: cashierScope });
+
+    await service.create(cashier, { categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x' });
+
+    // The repository contract owns methods; the mock intentionally extracts one for call inspection.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const create = vi.mocked(repo.create);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, actingAccountId: 8 }));
+    // The branch is never taken from the request body; the resolver decides it for a cashier.
+    expect(cashierScope).toHaveBeenCalledWith(cashier, undefined);
+    await expect(service.get(cashier, 10)).resolves.toMatchObject({ id: 10 });
+    await expect(service.list(cashier, { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 1 });
+  });
+
+  it('keeps correcting a recorded expense an admin-only action', async () => {
     const service = createExpenseService({ repository: repository(), resolveBranchContext: resolver });
-    await expect(service.get(cashier, 10, 2)).rejects.toMatchObject({ code: 'ERP_EXPENSE_ADMIN_REQUIRED' });
-    await expect(service.list(cashier, { branchId: 2, page: 1, pageSize: 20 })).rejects.toMatchObject({ code: 'ERP_EXPENSE_ADMIN_REQUIRED' });
-    await expect(service.correct(cashier, 10, { branchId: 2, categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' })).rejects.toMatchObject({ code: 'ERP_EXPENSE_ADMIN_REQUIRED' });
+    await expect(service.correct(cashier, 10, { branchId: 2, categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' })).rejects.toMatchObject({
+      code: 'ERP_EXPENSE_ADMIN_REQUIRED',
+      message: 'تصحيح المصروفات متاح للمدير فقط',
+    });
   });
 
   it('hides another branch record as not found', async () => {

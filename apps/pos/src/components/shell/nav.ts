@@ -69,6 +69,7 @@ export const cashierNavigation: NavGroup[] = [
       { href: '/', label: 'الوردية', icon: Clock3 },
       { href: '/sales', label: 'بيع جديد', icon: ShoppingCart },
       { href: '/invoices', label: 'الفواتير', icon: ReceiptText },
+      { href: '/expenses', label: 'المصروفات', icon: Wallet },
       { href: '/refunds', label: 'المرتجعات', icon: RotateCcw },
       { href: '/clients', label: 'العملاء', icon: Users },
       { href: '/services', label: 'الخدمات', icon: Scissors },

@@ -22,15 +22,26 @@ test('Admin creates, filters and safely corrects an expense', async ({ page }) =
   await expect.poll(() => correction).toMatchObject({ branchId: 2, amount: '100', reason: 'قيمة خاطئة' }); await expect(page.getByText('قيد عكسي')).toBeVisible();
 });
 
-test('Cashier cannot open the Admin expenses workflow', async ({ page }) => {
+test('Cashier records an expense in their own branch and cannot correct one', async ({ page }) => {
+  let rows: Record<string, unknown>[] = []; let created: Record<string, unknown> | undefined;
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request(); const path = new URL(request.url()).pathname.replace('/api/v1', '');
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/auth/session') return json(route, { actor: { type: 'cashier', accountId: 8, employeeId: 17 } });
     if (path === '/erp/cashier-sessions/current') return json(route, null);
+    if (path === '/erp/categories') return json(route, [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], { page: 1, pageSize: 100, total: 1, totalPages: 1 });
+    if (path === '/erp/expenses' && request.method() === 'GET') return json(route, rows, { page: 1, pageSize: 20, total: rows.length, totalPages: rows.length ? 1 : 0 });
+    if (path === '/erp/expenses' && request.method() === 'POST') { created = request.postDataJSON() as Record<string, unknown>; rows = [{ id: 10, branchId: 2, ...created, categoryName: 'تشغيل', actingUsername: 'cashier1', kind: 'expense', status: 'active', reversalOfId: null, supersedesId: null, correctionReason: null }]; return json(route, rows[0], undefined, 201); }
     return route.fulfill({ status: 404, headers, body: '{}' });
   });
   await page.goto('/expenses');
-  await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'المصروفات' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'المصروفات' })).toBeVisible();
+  await expect(page.getByLabel('الفرع')).toHaveCount(0);
+  await page.getByLabel('التصنيف', { exact: true }).selectOption('4');
+  await page.getByLabel('المبلغ').fill('40.00'); await page.getByLabel('تاريخ المصروف').fill('2026-08-05'); await page.getByLabel('الوصف').fill('مياه');
+  await page.getByRole('button', { name: 'تسجيل المصروف' }).click();
+  // The branch is never sent: the server pins the entry to the branch of the cashier account.
+  await expect.poll(() => created).toEqual({ categoryId: 4, amount: '40.00', expenseDate: '2026-08-05', description: 'مياه' });
+  await expect(page.getByText('مياه')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'تصحيح' })).toHaveCount(0);
 });

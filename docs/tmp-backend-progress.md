@@ -733,8 +733,9 @@ Complete. Posted purchases atomically update stock and the last-purchase-cost ba
 - [x] Add Arabic/RTL POS Admin expense create, read, list/filter, and safe correction workflows.
 - [x] Add validation, category-type, authorization, branch, audit, and MySQL tests.
 - [x] Add component and end-to-end coverage for expense creation, filtering, correction, authorization, and audit behavior.
+- [x] Open expense recording and history to the Cashier, scoped by the server to the branch of the acting account and with no branch picker; correcting a posted expense stays Admin-only.
 
-Complete. Admin-only expense workflows use branch-scoped active expense categories, exact positive EGP amounts, valid Cairo calendar dates, and immutable database facts. Corrections atomically append a reversal and active replacement, preserve chained lineage, require a complete pair before the original status can change, and audit all three mutation facts. API, component, real-MySQL rollback/concurrency, and wide/compact browser coverage verifies creation, pagination/filtering, correction, branch isolation, authorization, and audit behavior.
+Complete. Expense workflows use branch-scoped active expense categories, exact positive EGP amounts, valid Cairo calendar dates, and immutable database facts. Corrections atomically append a reversal and active replacement, preserve chained lineage, require a complete pair before the original status can change, and audit all three mutation facts. API, component, real-MySQL rollback/concurrency, and wide/compact browser coverage verifies creation, pagination/filtering, correction, branch isolation, authorization, and audit behavior.
 
 ## ERP 16. Voids and refunds — Complete
 

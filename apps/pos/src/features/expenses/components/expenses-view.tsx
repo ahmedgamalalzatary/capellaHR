@@ -12,6 +12,7 @@ import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
+import { useSession } from '@/features/auth';
 import { listCatalogBranches, listCategories } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -31,31 +32,41 @@ const kindTone = (expense: Expense) => expense.kind === 'reversal'
 
 export function ExpensesView() {
   const client = useQueryClient();
+  /**
+   * A cashier records the spending of their own shift: the server pins every request to the
+   * branch of their account, so there is no branch to choose. Correcting a posted expense
+   * rewrites the ledger and stays with the admin.
+   */
+  const actor = useSession().data?.actor;
+  const isAdmin = actor?.type === 'admin';
   const [branchId, setBranchId] = useState<number>();
   const [categoryId, setCategoryId] = useState<number>();
   const [amount, setAmount] = useState(''); const [expenseDate, setExpenseDate] = useState(todayInCairo()); const [description, setDescription] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState<number>(); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState(''); const [status, setStatus] = useState<'' | 'active' | 'corrected'>(''); const [page, setPage] = useState(1);
   const [correcting, setCorrecting] = useState<Expense | null>(null); const [reason, setReason] = useState('');
   const [successMessage, setSuccessMessage] = useState<string>();
-  const branches = useQuery({ queryKey: ['expense-branches'], queryFn: () => fetchAllPages((branchesPage) => listCatalogBranches(branchesPage)) });
+  const branches = useQuery({ queryKey: ['expense-branches'], queryFn: () => fetchAllPages((branchesPage) => listCatalogBranches(branchesPage)), enabled: isAdmin });
+  /** An admin works one chosen branch at a time; a cashier waits only for the session to resolve. */
+  const scopeReady = isAdmin ? branchId !== undefined : Boolean(actor);
+  const branchScope = branchId === undefined ? {} : { branchId };
   const activeCategories = useQuery({
     queryKey: expenseCategoryQueryKeys.active(branchId),
-    queryFn: () => fetchAllPages((categoriesPage) => listCategories({ branchId: branchId!, type: 'expense', isActive: true, page: categoriesPage, pageSize: 100 })),
-    enabled: branchId !== undefined,
+    queryFn: () => fetchAllPages((categoriesPage) => listCategories({ ...branchScope, type: 'expense', isActive: true, page: categoriesPage, pageSize: 100 })),
+    enabled: scopeReady,
   });
   const allCategories = useQuery({
     queryKey: expenseCategoryQueryKeys.forBranch(branchId),
-    queryFn: () => fetchAllPages((categoriesPage) => listCategories({ branchId: branchId!, type: 'expense', page: categoriesPage, pageSize: 100 })),
-    enabled: branchId !== undefined,
+    queryFn: () => fetchAllPages((categoriesPage) => listCategories({ ...branchScope, type: 'expense', page: categoriesPage, pageSize: 100 })),
+    enabled: scopeReady,
   });
-  const params = { ...(branchId === undefined ? {} : { branchId }), ...(filterCategoryId ? { categoryId: filterCategoryId } : {}), ...(fromDate ? { fromDate } : {}), ...(toDate ? { toDate } : {}), ...(status ? { status } : {}), page, pageSize: 20 };
-  const expenses = useQuery({ queryKey: expenseQueryKeys.list(params), queryFn: () => listExpenses(params), enabled: branchId !== undefined });
+  const params = { ...branchScope, ...(filterCategoryId ? { categoryId: filterCategoryId } : {}), ...(fromDate ? { fromDate } : {}), ...(toDate ? { toDate } : {}), ...(status ? { status } : {}), page, pageSize: 20 };
+  const expenses = useQuery({ queryKey: expenseQueryKeys.list(params), queryFn: () => listExpenses(params), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(client, 'expense');
   const create = useMutation({ mutationFn: () => createExpense({ branchId, categoryId: categoryId!, amount, expenseDate, description }), onSuccess: async () => { setAmount(''); setDescription(''); setSuccessMessage('تم تسجيل المصروف.'); await refresh(); } });
   const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { branchId, categoryId: categoryId!, amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); await refresh(); } });
   const clearDraft = () => { setCorrecting(null); setCategoryId(undefined); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
   const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setCategoryId(activeCategories.data?.some((category) => category.id === expense.categoryId) ? expense.categoryId : undefined); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
-  const canSubmit = branchId && categoryId && amount && expenseDate && description.trim();
+  const canSubmit = scopeReady && categoryId && amount && expenseDate && description.trim();
   const commandPending = create.isPending || correction.isPending;
   const amountLabel = correcting ? 'المبلغ الصحيح' : 'المبلغ';
 
@@ -67,40 +78,46 @@ export function ExpensesView() {
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
-      <Card className="shadow-card">
-        <CardContent className="p-4 sm:p-5">
-          {branches.isError ? (
-            <EmptyState
-              title="تعذر تحميل الفروع"
-              className="py-8"
-              action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
-            />
-          ) : (
-            <div className="space-y-1.5">
-              <Label htmlFor="expense-branch">الفرع</Label>
-              <Select
-                id="expense-branch"
-                className="max-w-sm"
-                value={branchId ?? ''}
-                disabled={commandPending}
-                onChange={(event) => {
-                  if (commandPending) return;
-                  setBranchId(event.target.value ? Number(event.target.value) : undefined);
-                  clearDraft();
-                  setFilterCategoryId(undefined);
-                  setPage(1);
-                }}
-              >
-                <option value="">اختر الفرع</option>
-                {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </Select>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {isAdmin ? (
+        <Card className="shadow-card">
+          <CardContent className="p-4 sm:p-5">
+            {branches.isError ? (
+              <EmptyState
+                title="تعذر تحميل الفروع"
+                className="py-8"
+                action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
+              />
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="expense-branch">الفرع</Label>
+                <Select
+                  id="expense-branch"
+                  className="max-w-sm"
+                  value={branchId ?? ''}
+                  disabled={commandPending}
+                  onChange={(event) => {
+                    if (commandPending) return;
+                    setBranchId(event.target.value ? Number(event.target.value) : undefined);
+                    clearDraft();
+                    setFilterCategoryId(undefined);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">اختر الفرع</option>
+                  {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </Select>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {branchId === undefined ? (
-        <Card className="shadow-card"><EmptyState title="اختر فرعًا لإدارة مصروفاته" /></Card>
+      {!scopeReady ? (
+        <Card className="shadow-card">
+          {isAdmin
+            ? <EmptyState title="اختر فرعًا لإدارة مصروفاته" />
+            : <LoadingState label="جارٍ التحقق من الجلسة…" className="py-16" />}
+        </Card>
       ) : (
         <>
           <Card className="shadow-card">
@@ -225,7 +242,7 @@ export function ExpensesView() {
                           <TH>الوصف</TH>
                           <TH numeric>المبلغ</TH>
                           <TH>الحالة والمنفذ</TH>
-                          <TH>الإجراء</TH>
+                          {isAdmin ? <TH>الإجراء</TH> : null}
                         </THead>
                         <tbody>
                           {expenses.data.items.map((expense) => (
@@ -245,11 +262,13 @@ export function ExpensesView() {
                                   {expense.actingUsername}{expense.reversalOfId ? ` · يعكس #${expense.reversalOfId}` : expense.supersedesId ? ` · بديل #${expense.supersedesId}` : ''}
                                 </span>
                               </TD>
-                              <TD>
-                                {expense.kind === 'expense' && expense.status === 'active' ? (
-                                  <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => beginCorrection(expense)}>تصحيح</Button>
-                                ) : null}
-                              </TD>
+                              {isAdmin ? (
+                                <TD>
+                                  {expense.kind === 'expense' && expense.status === 'active' ? (
+                                    <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => beginCorrection(expense)}>تصحيح</Button>
+                                  ) : null}
+                                </TD>
+                              ) : null}
                             </TR>
                           ))}
                         </tbody>

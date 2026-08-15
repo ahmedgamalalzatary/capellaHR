@@ -24,7 +24,7 @@ export interface ExpenseRepository {
 
 export type ExpenseErrorCode = 'ERP_EXPENSE_ADMIN_REQUIRED' | 'EXPENSE_NOT_FOUND' | 'EXPENSE_CATEGORY_INVALID' | 'EXPENSE_ALREADY_CORRECTED' | 'EXPENSE_CORRECTION_TARGET_INVALID';
 const messages: Record<ExpenseErrorCode, string> = {
-  ERP_EXPENSE_ADMIN_REQUIRED: 'إدارة المصروفات متاحة للمدير فقط',
+  ERP_EXPENSE_ADMIN_REQUIRED: 'تصحيح المصروفات متاح للمدير فقط',
   EXPENSE_NOT_FOUND: 'المصروف غير موجود',
   EXPENSE_CATEGORY_INVALID: 'يجب اختيار تصنيف مصروفات نشط من نفس الفرع',
   EXPENSE_ALREADY_CORRECTED: 'تم تصحيح هذا المصروف من قبل',
@@ -38,9 +38,15 @@ const fail = (code: ExpenseErrorCode): never => { throw new ExpenseError(code); 
 export const createExpenseService = ({ repository, resolveBranchContext }: {
   repository: ExpenseRepository; resolveBranchContext: ErpBranchContextResolver;
 }) => {
-  const context = async (actor: ErpAccountIdentity, branchId?: number) => {
+  /**
+   * A cashier records and reads the spending of the shift; the resolver pins the branch to
+   * the account, so a requested branch id can never widen that scope. Correcting a posted
+   * expense rewrites the ledger, so it stays with the admin.
+   */
+  const context = (actor: ErpAccountIdentity, branchId?: number) => resolveBranchContext(actor, branchId);
+  const adminContext = async (actor: ErpAccountIdentity, branchId?: number) => {
     if (actor.role !== 'admin') fail('ERP_EXPENSE_ADMIN_REQUIRED');
-    return resolveBranchContext(actor, branchId);
+    return context(actor, branchId);
   };
   return {
     async create(actor: ErpAccountIdentity, input: CreateExpenseInput): Promise<ExpenseRecord> {
@@ -60,7 +66,7 @@ export const createExpenseService = ({ repository, resolveBranchContext }: {
       return repository.list(scope.branchId, query);
     },
     async correct(actor: ErpAccountIdentity, id: number, input: CorrectExpenseInput): Promise<CorrectionResult> {
-      const scope = await context(actor, input.branchId);
+      const scope = await adminContext(actor, input.branchId);
       const current = await repository.findById(id);
       if (!current || current.branchId !== scope.branchId) return fail('EXPENSE_NOT_FOUND');
       const result = await repository.correct(id, { ...input, branchId: scope.branchId, actingAccountId: scope.accountId, reason: input.reason });
