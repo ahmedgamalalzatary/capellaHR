@@ -20,11 +20,11 @@ export const requestReference = (error: unknown) => {
   return typeof requestId === 'string' ? requestId : null;
 };
 
-export const responseMessage = (error: unknown) => {
-  if (typeof error !== 'object' || error === null) return 'تعذر تحميل الفاتورة.';
+export const responseMessage = (error: unknown, fallback: string) => {
+  if (typeof error !== 'object' || error === null) return fallback;
   const status = Reflect.get(error, 'status');
   const message = Reflect.get(error, 'message');
-  return typeof status === 'number' && typeof message === 'string' && message.length > 0
+  return typeof status === 'number' && typeof message === 'string' && message.trim().length > 0
     ? message
-    : 'تعذر تحميل الفاتورة.';
+    : fallback;
 };

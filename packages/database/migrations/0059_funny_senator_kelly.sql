@@ -2,6 +2,14 @@ ALTER TABLE `erp_invoices` MODIFY COLUMN `assigned_employee_id` int;--> statemen
 ALTER TABLE `erp_invoices` MODIFY COLUMN `employee_name_snapshot` varchar(255);--> statement-breakpoint
 ALTER TABLE `erp_invoices` MODIFY COLUMN `employee_code_snapshot` int;--> statement-breakpoint
 ALTER TABLE `erp_invoices` ADD CONSTRAINT `erp_invoices_employee_assignment_consistent` CHECK ((`erp_invoices`.`assigned_employee_id` is null and `erp_invoices`.`employee_name_snapshot` is null and `erp_invoices`.`employee_code_snapshot` is null) or (`erp_invoices`.`assigned_employee_id` is not null and `erp_invoices`.`employee_name_snapshot` is not null and `erp_invoices`.`employee_code_snapshot` is not null));--> statement-breakpoint
+CREATE TRIGGER `erp_invoices_require_draft_on_insert`
+BEFORE INSERT ON `erp_invoices`
+FOR EACH ROW
+BEGIN
+  IF NEW.status <> 'draft' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'New invoices must start as draft';
+  END IF;
+END;--> statement-breakpoint
 CREATE TRIGGER `erp_invoices_validate_employee_assignment`
 BEFORE UPDATE ON `erp_invoices`
 FOR EACH ROW

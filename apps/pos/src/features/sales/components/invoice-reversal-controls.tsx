@@ -72,7 +72,10 @@ export function InvoiceReversalControls({
         lines: selectedLines,
         payments: quoted!.payments.flatMap((payment) => {
           const amount = paymentAmounts[payment.method].trim();
-          return cents(amount) && cents(amount)! > BigInt(0) ? [{ method: payment.method, amount }] : [];
+          const parsedAmount = cents(amount);
+          return parsedAmount !== null && parsedAmount > BigInt(0)
+            ? [{ method: payment.method, amount }]
+            : [];
         }),
       };
       return refundInvoice(invoice.id, {
@@ -113,15 +116,40 @@ export function InvoiceReversalControls({
     close();
     setMode(nextMode);
   }
-  const tenderTotal = quoted?.payments.reduce(
-    (sum, payment) => sum + (cents(paymentAmounts[payment.method].trim()) ?? BigInt(0)), BigInt(0),
-  ) ?? BigInt(0);
+  const parsedTenders = quoted?.payments.map((payment) => {
+    const rawAmount = paymentAmounts[payment.method].trim();
+    return {
+      enteredAmount: rawAmount === '' ? BigInt(0) : cents(rawAmount),
+      refundableAmount: cents(payment.refundableAmount),
+    };
+  }) ?? [];
+  const tenderTotal = parsedTenders.reduce<bigint | null>(
+    (sum, payment) => sum === null || payment.enteredAmount === null
+      ? null
+      : sum + payment.enteredAmount,
+    BigInt(0),
+  );
+  const quotedTotal = quoted === null ? null : cents(quoted.totals.total);
+  const hasUnparsableTender = quoted !== null && (
+    quotedTotal === null
+    || tenderTotal === null
+    || parsedTenders.some((payment) => payment.refundableAmount === null)
+  );
   const tenderValid = quoted !== null
-    && tenderTotal === cents(quoted.totals.total)
-    && quoted.payments.every((payment) => (
-      (cents(paymentAmounts[payment.method].trim()) ?? BigInt(0)) <= cents(payment.refundableAmount)!
+    && !hasUnparsableTender
+    && tenderTotal === quotedTotal
+    && parsedTenders.every((payment) => (
+      payment.enteredAmount !== null
+      && payment.refundableAmount !== null
+      && payment.enteredAmount <= payment.refundableAmount
     ));
-  const error = quote.error ?? refund.error ?? voidMutation.error;
+  const errorMessage = quote.error
+    ? responseMessage(quote.error, 'تعذر حساب مبلغ الاسترداد.')
+    : refund.error
+      ? responseMessage(refund.error, 'تعذر تنفيذ الاسترداد.')
+      : voidMutation.error
+        ? responseMessage(voidMutation.error, 'تعذر إلغاء الفاتورة.')
+        : null;
 
   return <div data-print-controls className="mx-auto w-full max-w-2xl space-y-3">
     <div className="flex flex-wrap gap-2">
@@ -141,6 +169,7 @@ export function InvoiceReversalControls({
           <span className="text-sm">{paymentLabels[payment.method]} · متاح {payment.refundableAmount} ج.م</span>
           <Input aria-label={`مبلغ الاسترداد ${paymentLabels[payment.method]}`} inputMode="decimal" dir="ltr" className="bg-paper text-start" value={paymentAmounts[payment.method]} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [payment.method]: event.target.value }))} />
         </label>)}
+        {hasUnparsableTender ? <p role="alert" className="text-[13px] text-danger">لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.</p> : null}
         <label className="grid gap-1.5"><span className="text-sm font-medium text-ink">سبب الاسترداد</span><Textarea aria-label="سبب الاسترداد" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="flex flex-wrap gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
       </div> : null}
@@ -151,7 +180,7 @@ export function InvoiceReversalControls({
       <label className="grid gap-1.5"><span className="text-sm font-medium text-ink">سبب الإلغاء</span><Textarea aria-label="سبب الإلغاء" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
       <div className="flex flex-wrap gap-2"><Button variant="danger" disabled={!reason.trim() || voidMutation.isPending} onClick={() => voidMutation.mutate()}>{voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
     </CardContent></Card> : null}
-    {error ? <p role="alert" className="rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{responseMessage(error)}</p> : null}
+    {errorMessage ? <p role="alert" className="rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{errorMessage}</p> : null}
     {invoice.reversals.length ? <Card className="shadow-card"><CardContent className="space-y-3 p-4 sm:p-5"><h2 className="text-sm font-semibold text-ink">سجل الإلغاء والاسترداد</h2>{invoice.reversals.map((reversal) => <div key={reversal.id} className="space-y-2 border-t border-line pt-3 first:border-0 first:pt-0"><p className="font-medium">{reversal.type === 'void' ? 'إلغاء كامل' : 'استرداد'} · {reversal.totals.total} ج.م</p><p className="text-[13px] text-muted">{reversal.reason}</p><ul className="space-y-0.5 text-[13px]">{reversal.lines.map((line) => <li key={line.invoiceLineId}>{line.name} × {line.quantity} · {line.total} ج.م</li>)}</ul>{reversal.payments.length ? <ul className="space-y-0.5 text-[13px]">{reversal.payments.map((payment) => <li key={payment.method}>{paymentLabels[payment.method]} · {payment.amount} ج.م</li>)}</ul> : <p className="text-[13px]">لا توجد حركة دفع لهذا الاسترداد</p>}<p className="text-xs text-muted">{reversal.actingAccount.username} · {formatCairoDateTime(reversal.createdAt)}</p></div>)}</CardContent></Card> : null}
   </div>;
 }

@@ -40,6 +40,18 @@ describe('ERP sales migration', () => {
     expect(optionalEmployeeMigration).toContain('Every service invoice requires an employee');
     expect(optionalEmployeeMigration).toContain('Product-only invoices cannot have an employee');
   });
+  it('requires invoices to be inserted as drafts before completion validation can run', () => {
+    expect(optionalEmployeeMigration).toContain(
+      'CREATE TRIGGER `erp_invoices_require_draft_on_insert`',
+    );
+    expect(optionalEmployeeMigration).toContain('BEFORE INSERT ON `erp_invoices`');
+    expect(optionalEmployeeMigration).toContain("IF NEW.status <> 'draft' THEN");
+    expect(optionalEmployeeMigration).toContain('New invoices must start as draft');
+    expect(optionalEmployeeMigration).toContain(
+      'CREATE TRIGGER `erp_invoices_validate_employee_assignment`',
+    );
+    expect(optionalEmployeeMigration).toContain('BEFORE UPDATE ON `erp_invoices`');
+  });
   it('guards normalized reversal facts and invoice lifecycle transitions', () => {
     for (const table of [
       'erp_invoice_reversals', 'erp_invoice_reversal_lines',

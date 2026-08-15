@@ -151,6 +151,91 @@ describe('refunds tab', () => {
     })));
   });
 
+  it('shows operation-specific fallbacks for quote, refund, and void failures', async () => {
+    quoteRefund.mockRejectedValueOnce(new Error('network failure'));
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    expect(await screen.findByText('تعذر حساب مبلغ الاسترداد.')).toBeDefined();
+
+    quoteRefund.mockResolvedValueOnce({
+      lines: [{
+        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+        quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
+      target: { value: '185.00' },
+    });
+    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    refundInvoice.mockRejectedValueOnce(new Error('network failure'));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    expect(await screen.findByText('تعذر تنفيذ الاسترداد.')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+    fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'اختبار' } });
+    voidInvoice.mockRejectedValueOnce(new Error('network failure'));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    expect(await screen.findByText('تعذر إلغاء الفاتورة.')).toBeDefined();
+  });
+
+  it('disables refund confirmation and explains an unparsable entered tender', async () => {
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
+      target: { value: 'invalid' },
+    });
+    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+
+    expect(screen.getByText('لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
+      .toBe(true);
+  });
+
+  it('disables refund confirmation for an unparsable server refundable amount', async () => {
+    quoteRefund.mockResolvedValueOnce({
+      lines: [{
+        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+        quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+      payments: [{ method: 'cash', refundableAmount: 'invalid' }],
+    });
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
+      target: { value: '185.00' },
+    });
+    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+
+    expect(screen.getByText('لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
+      .toBe(true);
+  });
+
   it('searches stored invoices by number or client before choosing one', async () => {
     renderView();
     await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` });

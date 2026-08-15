@@ -54,7 +54,7 @@ function ReversalPanel({
   if (invoice.isError) {
     return (
       <Notice tone="danger" role="alert">
-        <p>{responseMessage(invoice.error)}</p>
+        <p>{responseMessage(invoice.error, 'تعذر تحميل الفاتورة.')}</p>
         <Button variant="secondary" size="sm" className="mt-2" onClick={() => void invoice.refetch()}>
           إعادة المحاولة
         </Button>

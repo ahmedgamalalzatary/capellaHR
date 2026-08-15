@@ -146,7 +146,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   if (query.isError) {
     const reference = requestReference(query.error);
     return <div role="alert" className="mx-auto w-full max-w-2xl space-y-3 rounded-card border border-danger/20 bg-danger-soft p-5 text-danger">
-      <p className="text-sm font-medium">{responseMessage(query.error)}</p>
+      <p className="text-sm font-medium">{responseMessage(query.error, 'تعذر تحميل الفاتورة.')}</p>
       {reference ? <p className="text-xs">مرجع الطلب: {reference}</p> : null}
       <Button variant="secondary" onClick={() => void query.refetch()}><RotateCcw className="size-4" aria-hidden />إعادة المحاولة</Button>
     </div>;
