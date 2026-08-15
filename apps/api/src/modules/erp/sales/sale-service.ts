@@ -29,7 +29,7 @@ export type CompleteSaleOperation = {
   actingEmployeeId: number | null;
   invoiceNumber: string;
   soldAt: Date;
-  assertEmployee(context: unknown): Promise<AssignableEmployee>;
+  assertEmployee?(context: unknown): Promise<AssignableEmployee>;
 };
 
 type ReverseInvoiceOperationBase = {
@@ -171,6 +171,7 @@ export const createSaleService = (dependencies: {
 
       const number = await invoiceNumbers.allocate();
       try {
+        const hasService = resolved.lines.some((line) => line.itemType === 'service');
         const invoice = await repository.complete({
           input: resolved,
           actingAccountId: accountId,
@@ -178,10 +179,12 @@ export const createSaleService = (dependencies: {
           actingEmployeeId: actor.role === 'cashier' ? actor.employeeId : null,
           invoiceNumber: number.invoiceNumber,
           soldAt: number.allocatedAt,
-          assertEmployee: (context) => assignment.assertAssignable(actor, {
-            employeeId: resolved.assignedEmployeeId,
-            branchId: resolved.branchId,
-          }, context),
+          ...(hasService ? {
+            assertEmployee: (context: unknown) => assignment.assertAssignable(actor, {
+              employeeId: resolved.assignedEmployeeId!,
+              branchId: resolved.branchId,
+            }, context),
+          } : {}),
         });
         return publicInvoice(actor, invoice);
       } catch (error) {

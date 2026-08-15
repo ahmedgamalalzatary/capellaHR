@@ -141,6 +141,50 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(false);
   });
 
+  it('requires an employee only when the sale contains a service', () => {
+    const productOnly = {
+      ...validDraft,
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+    };
+    delete (productOnly as Partial<typeof productOnly>).assignedEmployeeId;
+
+    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
+    expect(completeSaleSchema.parse({
+      ...productOnly,
+      assignedEmployeeId: 8,
+    })).not.toHaveProperty('assignedEmployeeId');
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      assignedEmployeeId: undefined,
+    }).success).toBe(false);
+  });
+
+  it('publishes product-only invoices without an assigned employee', () => {
+    const productOnlyInvoice = {
+      ...saleFixtures.completedInvoice,
+      assignedEmployee: null,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        itemType: 'product' as const,
+        sourceId: 34,
+        commissionRule: 'none' as const,
+        commissionRate: '0.00',
+        commissionAmount: '0.00',
+        productCostBasis: '50.00',
+      }],
+    };
+
+    expect(invoiceSchema.safeParse(productOnlyInvoice).success).toBe(true);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      assignedEmployee: null,
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...productOnlyInvoice,
+      assignedEmployee: saleFixtures.completedInvoice.assignedEmployee,
+    }).success).toBe(true);
+  });
+
   it('requires and normalizes a positive unit price for every service sale line', () => {
     expect(completeSaleSchema.parse(validDraft).lines[0]).toMatchObject({ unitPrice: '200.00' });
     expect(completeSaleSchema.safeParse({

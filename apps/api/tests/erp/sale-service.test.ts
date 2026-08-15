@@ -20,6 +20,14 @@ const input: CompleteSaleInput = {
   payments: [{ method: 'cash', amount: '185.00' }],
 };
 
+const productInput: CompleteSaleInput = {
+  clientId: 5,
+  cashierSessionId: 13,
+  idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
+  lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+  payments: [{ method: 'cash', amount: '200.00' }],
+};
+
 const invoice = {
   id: 44,
   invoiceNumber: 'INV-2026.08.03-14.35-17',
@@ -65,6 +73,7 @@ const quote = {
 
 const productInvoice = {
   ...invoice,
+  assignedEmployee: null,
   lines: [{
     ...invoice.lines[0]!,
     itemType: 'product' as const,
@@ -209,7 +218,7 @@ describe('ERP sale service', () => {
       findInvoiceById: vi.fn().mockResolvedValue(productInvoice),
     });
 
-    const completed = await service.complete(actor, input);
+    const completed = await service.complete(actor, productInput);
     const detail = await service.getInvoice(actor, productInvoice.id);
 
     expect(completed.lines[0]).not.toHaveProperty('productCostBasis');
@@ -241,7 +250,7 @@ describe('ERP sale service', () => {
     await service.complete(actor, input);
     const operation = completeRepository.mock.calls[0]![0];
     const transaction = { id: 'transaction' };
-    await operation.assertEmployee(transaction);
+    await operation.assertEmployee!(transaction);
     expect(assertAssignable).toHaveBeenCalledWith(
       actor,
       { employeeId: 8, branchId: 2 },
@@ -252,9 +261,23 @@ describe('ERP sale service', () => {
     expect(operation.actingAccountRole).toBe('cashier');
   });
 
+  it('completes a product-only invoice without employee assignment or attendance checks', async () => {
+    const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(productInvoice);
+    const { service, assertAssignable } = setup({ complete: completeRepository });
+
+    await expect(service.complete(actor, productInput)).resolves.toMatchObject({
+      assignedEmployee: null,
+    });
+
+    const operation = completeRepository.mock.calls[0]![0];
+    expect(operation.input).toEqual({ ...productInput, branchId: 2 });
+    expect(Reflect.get(operation, 'assertEmployee')).toBeUndefined();
+    expect(assertAssignable).not.toHaveBeenCalled();
+  });
+
   it('maps an attendance race to the stable sale error', async () => {
     const repositoryComplete = vi.fn<SaleRepository['complete']>(async (operation) => {
-      await operation.assertEmployee({});
+      await operation.assertEmployee!({});
       return invoice;
     });
     const { repository } = setup({ complete: repositoryComplete });

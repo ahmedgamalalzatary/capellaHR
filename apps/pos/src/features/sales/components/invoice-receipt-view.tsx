@@ -210,7 +210,7 @@ function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 border-b border-dashed border-ink py-3">
         <dt>العميل:</dt><dd>{invoice.client.name}</dd>
         <dt>الهاتف:</dt><dd dir="ltr" className="text-end">{invoice.client.phone}</dd>
-        <dt>الموظف:</dt><dd>{invoice.assignedEmployee.name}</dd>
+        <dt>الموظف:</dt><dd>{invoice.assignedEmployee?.name ?? 'بدون موظف'}</dd>
         <dt>بواسطة:</dt><dd>{invoice.authorizedBy.username}</dd>
       </dl>
       <div className="border-b border-dashed border-ink py-3">

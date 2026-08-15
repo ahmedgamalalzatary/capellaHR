@@ -215,7 +215,8 @@ const employeeFacts = (filters: ReportFilters) => sql`
   FROM erp_invoices invoice
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
-    sql`invoice.status <> 'draft'`, ...branchFilter(filters, 'invoice.branch_id'),
+    sql`invoice.status <> 'draft'`, sql`invoice.assigned_employee_id IS NOT NULL`,
+    ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.employee_name_snapshot',
@@ -232,7 +233,8 @@ const employeeFacts = (filters: ReportFilters) => sql`
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
   INNER JOIN branches branch ON branch.id = reversal.branch_id
   ${condition([
-    sql`reversal.status = 'finalized'`, ...branchFilter(filters, 'reversal.branch_id'),
+    sql`reversal.status = 'finalized'`, sql`invoice.assigned_employee_id IS NOT NULL`,
+    ...branchFilter(filters, 'reversal.branch_id'),
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.employee_name_snapshot',

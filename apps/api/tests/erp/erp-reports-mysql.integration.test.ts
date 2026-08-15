@@ -48,6 +48,7 @@ const adminPasswordSentinel = 'ERP_REPORT_ADMIN_PASSWORD_SENTINEL';
 let branchId: number;
 let otherBranchId: number;
 let invoiceId: number;
+let productOnlyInvoiceId: number;
 let serviceLineId: number;
 let productLineId: number;
 let employeeId: number;
@@ -140,6 +141,22 @@ beforeAll(async () => {
   invoiceId = completed.id;
   serviceLineId = completed.lines.find((line) => line.itemType === 'service')!.id;
   productLineId = completed.lines.find((line) => line.itemType === 'product')!.id;
+  const productOnly = await sales.complete({
+    input: {
+      branchId,
+      clientId,
+      cashierSessionId,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'product', productId, quantity: 1 }],
+      payments: [{ method: 'cash', amount: '50.00' }],
+    },
+    actingAccountId: cashierId,
+    actingAccountRole: 'cashier',
+    actingEmployeeId: employeeId,
+    invoiceNumber: 'INV.2026.07.09.0001',
+    soldAt: new Date('2026-07-09T09:00:00.000Z'),
+  });
+  productOnlyInvoiceId = productOnly.id;
   await sales.reverse({
     type: 'refund', invoiceId,
     input: {
@@ -168,6 +185,27 @@ afterAll(async () => {
 }, 30_000);
 
 describe('ERP reports MySQL reader', () => {
+  it('includes product-only invoices in sales but not employee performance', async () => {
+    const reader = createErpReportsModule(database).reader;
+    const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };
+
+    const sales = await reader.read(
+      'erp-sales', filters, { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+    const employees = await reader.read(
+      'erp-employees', filters, { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+
+    expect(sales).toMatchObject({ kind: 'success', total: 2 });
+    expect(employees).toMatchObject({ kind: 'success', total: 2 });
+    if (employees.kind === 'success') {
+      expect(employees.snapshot.rows).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ invoiceNumber: 'INV.2026.07.09.0001' }),
+      ]));
+    }
+    expect(productOnlyInvoiceId).toBeGreaterThan(0);
+  });
+
   it('reads every ERP report tab through one safe branch/date-filtered capability', async () => {
     const reader = createErpReportsModule(database).reader;
     for (const reportType of erpTabReportTypes) {

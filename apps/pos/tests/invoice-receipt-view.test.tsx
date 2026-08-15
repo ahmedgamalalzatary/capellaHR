@@ -154,6 +154,18 @@ describe('stored invoice receipt', () => {
     }
   });
 
+  it('labels a product-only receipt as having no assigned employee', async () => {
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      assignedEmployee: null,
+      lines: [{ ...saleFixtures.completedInvoice.lines[0], itemType: 'product' }],
+    });
+
+    renderView();
+
+    expect(await screen.findByText('بدون موظف')).toBeDefined();
+  });
+
   it('locks refund quantities while an exact quote is pending', async () => {
     let resolveQuote!: (value: Awaited<ReturnType<typeof quoteRefund>>) => void;
     quoteRefund.mockReturnValueOnce(new Promise((resolve) => { resolveQuote = resolve; }));

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   quoteSale: vi.fn(),
   completeSale: vi.fn(),
   synchronizeOfflineSales: vi.fn(),
+  listSellableProducts: vi.fn(),
   clientPickerProps: vi.fn(),
   servicePickerProps: vi.fn(),
 }));
@@ -52,6 +53,10 @@ vi.mock('../src/features/catalog', () => ({
       </button>
     </>
   ),
+}));
+vi.mock('../src/features/products/api/products-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  listSellableProducts: mocks.listSellableProducts,
 }));
 vi.mock('../src/features/employee-assignment', () => ({
   PresentEmployeePicker: ({ onSelect }: { onSelect: (value: unknown) => void }) => (
@@ -142,6 +147,14 @@ describe('ERP service-sale view', () => {
       totals: { subtotal: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
     });
     mocks.completeSale.mockReset().mockResolvedValue(invoice);
+    mocks.listSellableProducts.mockReset().mockResolvedValue({
+      items: [{
+        id: 31, branchId: 2, name: 'شامبو', description: null,
+        sellingPrice: '50.00', lastPurchaseCost: '30.00', lowStockThreshold: 1,
+        isActive: true, quantity: 4, createdAt: '', updatedAt: '',
+      }],
+      meta: { page: 1, pageSize: 50, total: 1, totalPages: 1 },
+    });
     mocks.synchronizeOfflineSales.mockReset();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
@@ -176,6 +189,40 @@ describe('ERP service-sale view', () => {
     for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
       expect(queryClient.getQueryState([key, 'existing'])?.isInvalidated).toBe(true);
     }
+  });
+
+  it('completes a product-only invoice without selecting or submitting an employee', async () => {
+    mocks.quoteSale.mockResolvedValue({
+      lines: [{
+        itemType: 'product', sourceId: 31, name: 'شامبو', quantity: 1,
+        unitPrice: '50.00', lineTotal: '50.00',
+      }],
+      discount: null,
+      tax: null,
+      totals: {
+        subtotal: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
+      },
+    });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(await screen.findByRole('button', { name: /شامبو/ }));
+    await screen.findByText('تم سداد الإجمالي بالكامل');
+
+    expect(screen.queryByRole('button', { name: 'اختر الموظف' })).toBeNull();
+    const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع' });
+    await waitFor(() => expect(review).toHaveProperty('disabled', false));
+    fireEvent.click(review);
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      clientId: 5,
+      cashierSessionId: 13,
+      lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+      payments: [{ method: 'cash', amount: '50.00' }],
+    }));
+    expect(mocks.completeSale.mock.calls[0]?.[0]).not.toHaveProperty('assignedEmployeeId');
   });
 
   it('requires and submits a positive unit price for an open-price service', async () => {

@@ -174,7 +174,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Clients | Real clients database: search by phone at POS, visit history — not free text per invoice |
 | Payment methods | Cash, Visa, InstaPay, Vodafone Cash (fixed list; adding one is a code change — accepted) |
 | Locale | Egypt: EGP single currency, `Africa/Cairo`, `ar-EG`; receipts and PDFs Arabic-only |
-| Employee assignment | **One employee per invoice** (the client's whole visit). Consequence, accepted: a client served by two specialists in one visit gets two invoices |
+| Employee assignment | **One employee per invoice that contains services** (the client's whole service visit); product-only invoices have no employee assignment. Consequence, accepted: a client served by two specialists in one visit gets two invoices |
 | Clients on invoices | **Mandatory** — every invoice references a client record; no anonymous sales |
 | Payment timing | **Always paid in full at sale.** No deposits, tabs, installments, or prepaid packages — explicitly out of scope |
 | Service pricing | Optional catalog price: fixed prices are locked during sale; services without a catalog price require a positive seller-entered unit price. Admins convert modes by deleting or adding the catalog price. |
@@ -248,7 +248,7 @@ Invoices are **facts about the past** and must never change when the catalog cha
 - Commission rule and rate used
 - Cost basis, where relevant (products)
 
-The **invoice** snapshots: the assigned employee (§7), the discount (kind: % or fixed, value, and computed amount), the tax (same shape), the resulting totals, and the per-method payment breakdown.
+The **invoice** snapshots: the assigned employee when the invoice contains services (§7), the discount (kind: % or fixed, value, and computed amount), the tax (same shape), the resulting totals, and the per-method payment breakdown. New product-only invoices keep all employee assignment snapshot fields null; historical product-only invoices retain the employee snapshot required when they were created.
 
 Renaming a service or changing its price affects future invoices only.
 
@@ -298,7 +298,7 @@ All owner-level questions from the original list are now **answered and locked i
 
 2. **Full Drizzle schemas** for every ERP table + the accounts/roles migration in HR core (including retiring the `admin_credentials` singleton).
 3. **Void vs refund definitions** — the *authority* is decided (§7: cashier or admin, no hierarchy); the exact semantics to draft: void = same-day full cancellation, refund = full or partial after the fact; both reverse stock (products) and append commission reversals.
-4. **POS screen flow** (owner delegated the default): search/pick client → add service/product lines → assign present employee → discount/tax if any → mixed payment entry → complete (one transaction) → print/reprint. To be drafted as wireframes with the Arabic RTL layout.
+4. **POS screen flow** (owner delegated the default): search/pick client → add service/product lines → when any service is present, assign one checked-in employee → discount/tax if any → mixed payment entry → complete (one transaction) → print/reprint. Product-only sales skip employee assignment. To be drafted as wireframes with the Arabic RTL layout.
 5. **Employee commission visibility — delivered in ERP17:** employees see their own monthly earned, reversed, and net totals in HR self-service through a public capability; Admins get branch/month totals and invoice-line/reversal traceability in the POS.
 6. **Offline queue design** — the §7/§8 local-queue-with-idempotency-keys mechanism, drafted concretely (storage, replay, failure UX at the counter).
 7. **Invoice sequence implementation** — the daily counter behind `INV-YYYY.MM.DD-HH.MM-<seq>` (same singleton-sequence pattern the repo already uses for `employee_code_sequence`).

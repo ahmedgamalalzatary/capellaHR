@@ -414,6 +414,13 @@
       "when": 1786555785011,
       "tag": "0058_glossy_tyrannus",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1786780307861,
+      "tag": "0059_funny_senator_kelly",
+      "breakpoints": true
     }
   ]
 }

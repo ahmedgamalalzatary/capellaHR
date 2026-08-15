@@ -64,6 +64,17 @@ describe('invoice history', () => {
     expect(mocks.listInvoices).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
   });
 
+  it('labels product-only invoices as having no assigned employee', async () => {
+    mocks.listInvoices.mockResolvedValueOnce({
+      items: [{ ...item, assignedEmployee: null }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+
+    renderView();
+
+    expect(await screen.findByText(new RegExp(`${item.client.name}.*بدون موظف`))).toBeDefined();
+  });
+
   it('searches invoices by trimmed invoice or client text', async () => {
     renderView();
     await screen.findByRole('link', { name: item.invoiceNumber });

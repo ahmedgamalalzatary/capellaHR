@@ -201,6 +201,47 @@ describe('offline sale queue', () => {
     expect(localStorage.getItem(`capella:pending-sale:${second.idempotencyKey}`)).toBeNull();
   });
 
+  it('durably stores a product-only sale without an employee assignment', () => {
+    const input: CompleteSaleInput = {
+      clientId: 5,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+      payments: [{ method: 'cash', amount: '50.00' }],
+    };
+
+    expect(enqueueOfflineSale({ owner, input })).toMatchObject({ input });
+    expect(listOfflineSales(owner)[0]?.input).not.toHaveProperty('assignedEmployeeId');
+  });
+
+  it('keeps a pending product-only sale written by the previous employee-required client', () => {
+    const idempotencyKey = crypto.randomUUID();
+    localStorage.setItem(offlineSaleQueueStorageKey(idempotencyKey), JSON.stringify({
+      version: 1,
+      owner,
+      input: {
+        clientId: 5,
+        assignedEmployeeId: 8,
+        cashierSessionId: 13,
+        idempotencyKey,
+        lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '50.00' }],
+      },
+      state: 'pending',
+      attempts: 0,
+      createdAt: 1,
+      updatedAt: 1,
+      failure: null,
+    }));
+
+    expect(listOfflineSales(owner)).toEqual([
+      expect.objectContaining({
+        input: expect.not.objectContaining({ assignedEmployeeId: expect.anything() }),
+      }),
+    ]);
+    expect(hasUnrecoverableOfflineSales()).toBe(false);
+  });
+
   it('upgrades a pre-price queue item from its fixed-price recovery draft', () => {
     const input = sale();
     localStorage.setItem(offlineSaleQueueStorageKey(input.idempotencyKey), JSON.stringify({

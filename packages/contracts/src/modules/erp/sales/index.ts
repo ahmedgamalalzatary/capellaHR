@@ -199,7 +199,7 @@ export const paymentBreakdownSchema = z.object({
 export const completeSaleSchema = z.object({
   branchId: positiveMysqlIntSchema.optional(),
   clientId: positiveMysqlIntSchema,
-  assignedEmployeeId: positiveMysqlIntSchema,
+  assignedEmployeeId: positiveMysqlIntSchema.optional(),
   cashierSessionId: positiveMysqlIntSchema,
   idempotencyKey: z.string().uuid(),
   lines: z.array(saleLineSchema).min(1).max(100),
@@ -207,6 +207,14 @@ export const completeSaleSchema = z.object({
   tax: adjustmentSchema.optional(),
   payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
 }).strict().superRefine((value, context) => {
+  const hasService = value.lines.some((line) => line.itemType === 'service');
+  if (hasService && value.assignedEmployeeId === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['assignedEmployeeId'],
+      message: 'يجب اختيار موظف حاضر لفاتورة تحتوي على خدمة',
+    });
+  }
   const seen = new Set<string>();
   value.payments.forEach((payment, index) => {
     if (seen.has(payment.method)) {
@@ -218,6 +226,12 @@ export const completeSaleSchema = z.object({
     }
     seen.add(payment.method);
   });
+}).transform((value) => {
+  if (value.lines.some((line) => line.itemType === 'service')
+    || value.assignedEmployeeId === undefined) return value;
+  const productOnly = { ...value };
+  Reflect.deleteProperty(productOnly, 'assignedEmployeeId');
+  return productOnly;
 });
 
 export const quoteSaleInputSchema = z.object({
@@ -425,7 +439,7 @@ export const invoiceSchema = z.object({
     id: positiveMysqlIntSchema,
     employeeCode: positiveMysqlIntSchema,
     name: z.string().min(1).max(255),
-  }).strict(),
+  }).strict().nullable(),
   authorizedBy: z.object({
     accountId: positiveMysqlIntSchema,
     username: z.string().min(1).max(255),
@@ -439,6 +453,14 @@ export const invoiceSchema = z.object({
   eligibility: z.object({ canVoid: z.boolean(), canRefund: z.boolean() }).strict(),
   soldAt: isoDateTimeSchema,
 }).strict().superRefine((value, context) => {
+  const hasService = value.lines.some((line) => line.itemType === 'service');
+  if (hasService && value.assignedEmployee === null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['assignedEmployee'],
+      message: 'ربط الموظف لا يتوافق مع بنود الفاتورة',
+    });
+  }
   const lineSubtotal = value.lines.reduce(
     (sum, line) => sum + toCents(line.lineTotal),
     BigInt(0),
@@ -504,7 +526,7 @@ export const invoiceHistoryItemSchema = z.object({
   assignedEmployee: z.object({
     id: positiveMysqlIntSchema,
     name: z.string().min(1).max(255),
-  }).strict(),
+  }).strict().nullable(),
   soldAt: isoDateTimeSchema,
 }).strict();
 
@@ -516,7 +538,7 @@ export const clientVisitSummarySchema = z.object({
   assignedEmployee: z.object({
     id: positiveMysqlIntSchema,
     name: z.string().min(1).max(255),
-  }).strict(),
+  }).strict().nullable(),
   soldAt: isoDateTimeSchema,
 }).strict();
 

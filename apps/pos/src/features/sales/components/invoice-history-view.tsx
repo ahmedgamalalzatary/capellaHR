@@ -161,7 +161,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                     <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
                   </div>
                   <p className="truncate text-sm text-ink">
-                    {invoice.client.name} · {invoice.assignedEmployee.name}
+                    {invoice.client.name} · {invoice.assignedEmployee?.name ?? 'بدون موظف'}
                   </p>
                   <time className="block text-[13px] text-muted" dateTime={invoice.soldAt}>
                     {formatCairoDateTime(invoice.soldAt)}

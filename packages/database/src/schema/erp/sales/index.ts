@@ -52,7 +52,7 @@ export const invoices = mysqlTable('erp_invoices', {
   id: int('id').autoincrement().primaryKey(),
   branchId: int('branch_id').notNull(),
   clientId: int('client_id').notNull(),
-  assignedEmployeeId: int('assigned_employee_id').notNull(),
+  assignedEmployeeId: int('assigned_employee_id'),
   actingAccountId: int('acting_account_id').notNull(),
   cashierSessionId: int('cashier_session_id').notNull(),
   invoiceNumber: varchar('invoice_number', { length: 40 }).notNull(),
@@ -60,8 +60,8 @@ export const invoices = mysqlTable('erp_invoices', {
   status: mysqlEnum('status', invoiceStatuses).notNull().default('draft'),
   clientNameSnapshot: varchar('client_name_snapshot', { length: 255 }).notNull(),
   clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }).notNull(),
-  employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }).notNull(),
-  employeeCodeSnapshot: int('employee_code_snapshot').notNull(),
+  employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }),
+  employeeCodeSnapshot: int('employee_code_snapshot'),
   authorizedBySnapshot: varchar('authorized_by_snapshot', { length: 255 }).notNull(),
   subtotal: decimal('subtotal', { precision: 14, scale: 2 }).notNull(),
   discountKind: mysqlEnum('discount_kind', invoiceAdjustmentKinds),
@@ -100,6 +100,10 @@ export const invoices = mysqlTable('erp_invoices', {
     sql`(tax_kind is null and tax_value is null and tax_amount = 0) or (tax_kind is not null and tax_value is not null and tax_value >= 0 and tax_amount >= 0 and (tax_kind <> 'percentage' or tax_value <= 100))`,
   ),
   check('erp_invoices_employee_code_positive', sql`${table.employeeCodeSnapshot} > 0`),
+  check(
+    'erp_invoices_employee_assignment_consistent',
+    sql`(${table.assignedEmployeeId} is null and ${table.employeeNameSnapshot} is null and ${table.employeeCodeSnapshot} is null) or (${table.assignedEmployeeId} is not null and ${table.employeeNameSnapshot} is not null and ${table.employeeCodeSnapshot} is not null)`,
+  ),
 ]);
 
 export const invoiceLines = mysqlTable('erp_invoice_lines', {

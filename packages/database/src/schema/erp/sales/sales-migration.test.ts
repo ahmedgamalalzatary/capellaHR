@@ -24,8 +24,22 @@ const migration55Name = readdirSync(migrationsDirectory).find((name) => /^0055_.
 const ownershipRepairMigration = migration55Name
   ? readFileSync(`${migrationsDirectory}/${migration55Name}`, 'utf8')
   : '';
+const optionalEmployeeMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0059_.*\.sql$/.test(name));
+const optionalEmployeeMigration = optionalEmployeeMigrationName
+  ? readFileSync(`${migrationsDirectory}/${optionalEmployeeMigrationName}`, 'utf8')
+  : '';
 
 describe('ERP sales migration', () => {
+  it('allows employee-free product invoices while guarding service assignment', () => {
+    expect(optionalEmployeeMigrationName).toBeDefined();
+    expect(optionalEmployeeMigration).toContain('assigned_employee_id');
+    expect(optionalEmployeeMigration).toContain('employee_name_snapshot');
+    expect(optionalEmployeeMigration).toContain('employee_code_snapshot');
+    expect(optionalEmployeeMigration).toContain('erp_invoices_employee_assignment_consistent');
+    expect(optionalEmployeeMigration).toContain('Every service invoice requires an employee');
+    expect(optionalEmployeeMigration).toContain('Product-only invoices cannot have an employee');
+  });
   it('guards normalized reversal facts and invoice lifecycle transitions', () => {
     for (const table of [
       'erp_invoice_reversals', 'erp_invoice_reversal_lines',

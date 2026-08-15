@@ -1,3 +1,4 @@
+import { completeSaleSchema } from '@capella/contracts';
 import { type createDatabase } from '@capella/database';
 import {
   accounts,
@@ -33,7 +34,6 @@ import {
   or,
 } from 'drizzle-orm';
 import { isDeepStrictEqual } from 'node:util';
-
 import type { ErpAuditCapability, ErpPayrollCapability } from '../hr-capabilities.js';
 import { cairoMonth, nextMonth, startOfCairoDate } from '../cairo-calendar.js';
 import { SaleError, type CompleteSaleOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
@@ -143,10 +143,10 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       name: invoice.clientNameSnapshot,
       phone: invoice.clientPhoneSnapshot,
     },
-    assignedEmployee: {
+    assignedEmployee: invoice.assignedEmployeeId === null ? null : {
       id: invoice.assignedEmployeeId,
-      employeeCode: invoice.employeeCodeSnapshot,
-      name: invoice.employeeNameSnapshot,
+      employeeCode: invoice.employeeCodeSnapshot!,
+      name: invoice.employeeNameSnapshot!,
     },
     authorizedBy: {
       accountId: invoice.actingAccountId,
@@ -246,10 +246,12 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
   const payments = await executor.select().from(invoicePayments)
     .where(eq(invoicePayments.invoiceId, invoiceId)).orderBy(asc(invoicePayments.id));
-  return {
+  const reconstructed = completeSaleSchema.parse({
     branchId: invoice.branchId,
     clientId: invoice.clientId,
-    assignedEmployeeId: invoice.assignedEmployeeId,
+    ...(invoice.assignedEmployeeId === null ? {} : {
+      assignedEmployeeId: invoice.assignedEmployeeId,
+    }),
     cashierSessionId: invoice.cashierSessionId,
     idempotencyKey: invoice.idempotencyKey,
     lines: lines.map((line) => line.itemType === 'service'
@@ -267,7 +269,8 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
       tax: { kind: invoice.taxKind, value: invoice.taxValue! },
     } : {}),
     payments: payments.map(({ method, amount }) => ({ method, amount })),
-  };
+  });
+  return { ...reconstructed, branchId: invoice.branchId };
 };
 
 const quoteServices = async (
@@ -497,6 +500,13 @@ export const createDrizzleSaleRepository = (
       try {
         return await database.transaction(async (transaction) => {
           const { input } = operation;
+          const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
+          const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
+          if (serviceInputs.length && (
+            input.assignedEmployeeId === undefined || operation.assertEmployee === undefined
+          )) {
+            throw new SaleError('SALE_VALIDATION_FAILED');
+          }
           const session = (await transaction.select().from(cashierSessions).where(and(
             eq(cashierSessions.id, input.cashierSessionId),
             eq(cashierSessions.branchId, input.branchId),
@@ -506,8 +516,8 @@ export const createDrizzleSaleRepository = (
             && session.openedByAccountId !== operation.actingAccountId)) {
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
-          if (payroll && input.lines.some((line) => line.itemType === 'service')) {
-            await payroll.lockCommissionEmployee(input.assignedEmployeeId, transaction);
+          if (payroll && serviceInputs.length) {
+            await payroll.lockCommissionEmployee(input.assignedEmployeeId!, transaction);
           }
 
           const client = (await transaction.select().from(clients).where(and(
@@ -538,22 +548,21 @@ export const createDrizzleSaleRepository = (
               )).for('update').limit(1))[0];
             if (!actingEmployee) throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
-          const employee = await operation.assertEmployee(transaction);
-
-          const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
-          const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
+          const employee = serviceInputs.length
+            ? await operation.assertEmployee!(transaction)
+            : null;
           const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs, true);
           const quotedProducts = await quoteProducts(transaction, input.branchId, productInputs, true);
           const serviceIds = [...new Set(serviceInputs.map(({ serviceId }) => serviceId))];
-          const serviceRows = await transaction.select({
+          const serviceRows = serviceIds.length ? await transaction.select({
             id: erpServices.id,
             commissionPercent: erpServices.commissionPercent,
-          }).from(erpServices).where(inArray(erpServices.id, serviceIds));
-          const overrides = await transaction.select().from(erpServiceCommissionOverrides)
+          }).from(erpServices).where(inArray(erpServices.id, serviceIds)) : [];
+          const overrides = serviceIds.length ? await transaction.select().from(erpServiceCommissionOverrides)
             .where(and(
               inArray(erpServiceCommissionOverrides.serviceId, serviceIds),
-              eq(erpServiceCommissionOverrides.employeeId, input.assignedEmployeeId),
-            ));
+              eq(erpServiceCommissionOverrides.employeeId, input.assignedEmployeeId!),
+            )) : [];
           const rates = new Map<number, {
             rule: 'service_default' | 'employee_override';
             rate: string;
@@ -598,15 +607,15 @@ export const createDrizzleSaleRepository = (
           const inserted = await transaction.insert(invoices).values({
             branchId: input.branchId,
             clientId: input.clientId,
-            assignedEmployeeId: input.assignedEmployeeId,
+            assignedEmployeeId: employee?.id ?? null,
             actingAccountId: operation.actingAccountId,
             cashierSessionId: input.cashierSessionId,
             invoiceNumber: operation.invoiceNumber,
             idempotencyKey: input.idempotencyKey,
             clientNameSnapshot: client.fullName,
             clientPhoneSnapshot: client.phone,
-            employeeNameSnapshot: employee.fullName,
-            employeeCodeSnapshot: employee.employeeCode,
+            employeeNameSnapshot: employee?.fullName ?? null,
+            employeeCodeSnapshot: employee?.employeeCode ?? null,
             authorizedBySnapshot: account.username,
             subtotal: totals.subtotal,
             discountKind: input.discount?.kind ?? null,
@@ -640,7 +649,7 @@ export const createDrizzleSaleRepository = (
             const invoiceLineId = Number(insertedLine[0].insertId);
             if (line.itemType === 'service') {
               await transaction.insert(commissionLedgerEntries).values({
-                invoiceId, invoiceLineId, employeeId: input.assignedEmployeeId,
+                invoiceId, invoiceLineId, employeeId: input.assignedEmployeeId!,
                 actingAccountId: operation.actingAccountId, entryType: 'earned',
                 commissionRuleSnapshot: line.commissionRule, commissionRateSnapshot: line.commissionRate,
                 baseAmount: line.lineTotal, amount: line.commissionAmount, createdAt: operation.soldAt,
@@ -667,7 +676,7 @@ export const createDrizzleSaleRepository = (
           if (calculatedLines.some((line) => line.itemType === 'service')) {
             await projectCommission(
               transaction,
-              input.assignedEmployeeId,
+              input.assignedEmployeeId!,
               cairoMonth(operation.soldAt),
             );
           }
@@ -682,7 +691,7 @@ export const createDrizzleSaleRepository = (
             relatedIds: {
               branchId: input.branchId,
               clientId: input.clientId,
-              employeeId: input.assignedEmployeeId,
+              ...(employee === null ? {} : { employeeId: employee.id }),
               cashierSessionId: input.cashierSessionId,
             },
             createdAt: operation.soldAt,
@@ -714,7 +723,7 @@ export const createDrizzleSaleRepository = (
             ne(invoices.status, 'draft'),
           )).for('update').limit(1))[0];
           if (!original) throw new SaleError('INVOICE_NOT_FOUND');
-          if (payroll) {
+          if (payroll && original.assignedEmployeeId !== null) {
             await payroll.lockCommissionEmployee(original.assignedEmployeeId, transaction);
           }
           const replay = await existingReversal(operation, transaction);
@@ -917,7 +926,7 @@ export const createDrizzleSaleRepository = (
             await transaction.insert(commissionLedgerEntries).values({
               invoiceId: original.id,
               invoiceLineId: line.id,
-              employeeId: original.assignedEmployeeId,
+              employeeId: original.assignedEmployeeId!,
               actingAccountId: operation.actingAccountId,
               entryType: 'reversal',
               reversesEntryId: earned.id,
@@ -937,15 +946,15 @@ export const createDrizzleSaleRepository = (
             const month = cairoMonth(original.soldAt);
             const projection = await projectCommission(
               transaction,
-              original.assignedEmployeeId,
+              original.assignedEmployeeId!,
               month,
             );
             if (projection === 'payroll_finalized') {
               await payroll.recordPostPayrollDeduction({
-                employeeId: original.assignedEmployeeId,
+                employeeId: original.assignedEmployeeId!,
                 occurredAt: operation.reversedAt,
                 amount: signedMoney(reversedCommission),
-                reference: `erp-commission-reversal:${reversalId}:${original.assignedEmployeeId}`,
+                reference: `erp-commission-reversal:${reversalId}:${original.assignedEmployeeId!}`,
               }, transaction);
             }
           }
@@ -1001,7 +1010,10 @@ export const createDrizzleSaleRepository = (
           invoiceNumber: row.invoiceNumber,
           status: row.status as Exclude<typeof row.status, 'draft'>,
           total: row.total,
-          assignedEmployee: { id: row.employeeId, name: row.employeeName },
+          assignedEmployee: row.employeeId === null ? null : {
+            id: row.employeeId,
+            name: row.employeeName!,
+          },
           soldAt: asIso(row.soldAt),
         })),
         total,
@@ -1040,7 +1052,10 @@ export const createDrizzleSaleRepository = (
           status: row.status as Exclude<typeof row.status, 'draft'>,
           total: row.total,
           client: { id: row.clientId, name: row.clientName },
-          assignedEmployee: { id: row.employeeId, name: row.employeeName },
+          assignedEmployee: row.employeeId === null ? null : {
+            id: row.employeeId,
+            name: row.employeeName!,
+          },
           soldAt: asIso(row.soldAt),
         })),
         total,

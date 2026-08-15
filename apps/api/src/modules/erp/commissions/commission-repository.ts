@@ -5,7 +5,7 @@ import {
   invoiceLines,
   invoices,
 } from '@capella/database/schema';
-import { and, asc, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm';
 
 import type { CommissionEntry, CommissionListQuery, CommissionSummary } from '@capella/contracts';
 import { nextMonth, startOfCairoDate } from '../cairo-calendar.js';
@@ -106,12 +106,13 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
           ),
         ).where(and(
           eq(invoices.branchId, branchId),
+          isNotNull(invoices.assignedEmployeeId),
           gte(invoices.soldAt, start),
           lt(invoices.soldAt, end),
           ...(query.employeeId === undefined
             ? []
             : [eq(invoices.assignedEmployeeId, query.employeeId)]),
-        ))).map(({ employeeId }) => employeeId);
+        ))).map(({ employeeId }) => employeeId).filter((id): id is number => id !== null);
       if (ids.length === 0) return { items: [], total: 0 };
       const ordered = await database.select({ id: employees.id }).from(employees)
         .where(inArray(employees.id, ids)).orderBy(asc(employees.employeeCode));

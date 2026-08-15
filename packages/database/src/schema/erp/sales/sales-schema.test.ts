@@ -64,6 +64,9 @@ describe('ERP sales persistence foundation', () => {
       'total', 'soldAt', 'createdAt',
     ]));
     expect(Reflect.get(invoices, 'paymentTotal')).toBeUndefined();
+    expect(salesSchema.invoices.assignedEmployeeId.notNull).toBe(false);
+    expect(salesSchema.invoices.employeeNameSnapshot.notNull).toBe(false);
+    expect(salesSchema.invoices.employeeCodeSnapshot.notNull).toBe(false);
     expect(salesSchema.invoiceStatuses).toEqual([
       'draft', 'completed', 'partially_refunded', 'refunded', 'voided',
     ]);
@@ -80,6 +83,7 @@ describe('ERP sales persistence foundation', () => {
       'erp_invoices_totals_consistent',
       'erp_invoices_discount_consistent',
       'erp_invoices_tax_consistent',
+      'erp_invoices_employee_assignment_consistent',
     ]));
     expect(config.foreignKeys.map((value) => value.getName())).toEqual(expect.arrayContaining([
       'erp_invoices_client_branch_fk',

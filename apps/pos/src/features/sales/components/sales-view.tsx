@@ -551,6 +551,13 @@ function SaleWorkspace({
     if (line.itemType === 'product') return true;
     return validServiceUnitPrice(line.unitPrice);
   });
+  const hasServiceLines = lines.some((line) => line.itemType !== 'product');
+  const adjustmentsStep = hasServiceLines ? 4 : 3;
+  const paymentsStep = hasServiceLines ? 5 : 4;
+
+  useEffect(() => {
+    if (!hasServiceLines && employee !== null) setEmployee(null);
+  }, [employee, hasServiceLines]);
 
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
@@ -672,12 +679,13 @@ function SaleWorkspace({
   const totalCents = quote.data ? toCents(quote.data.totals.total) : null;
   const remaining = paidCents === null || totalCents === null ? null : totalCents - paidCents;
   const ready = Boolean(
-    client && employee && lines.length > 0 && servicePricesValid && quote.data && !quote.isFetching
+    client && (!hasServiceLines || employee) && lines.length > 0
+    && servicePricesValid && quote.data && !quote.isFetching
     && remaining === BigInt(0) && !completion.isPending && !pendingSale,
   );
 
   const makeInput = (): CompleteSaleInput | null => {
-    if (!client || !employee || !quote.data || remaining !== BigInt(0)) return null;
+    if (!client || (hasServiceLines && !employee) || !quote.data || remaining !== BigInt(0)) return null;
     const paymentRows = paymentMethods.flatMap(({ method }) => {
       const amount = payments[method];
       return amount && toCents(amount)! > BigInt(0) ? [{ method, amount }] : [];
@@ -685,7 +693,7 @@ function SaleWorkspace({
     return {
       ...(branchId === undefined ? {} : { branchId }),
       clientId: client.id,
-      assignedEmployeeId: employee.id,
+      ...(hasServiceLines ? { assignedEmployeeId: employee!.id } : {}),
       cashierSessionId,
       idempotencyKey,
       lines: quoteInput.lines,
@@ -706,7 +714,7 @@ function SaleWorkspace({
       input,
       recoveryDraft: {
         client,
-        employee,
+        employee: hasServiceLines ? employee : null,
         lines,
         discountKind,
         discountValue,
@@ -984,7 +992,8 @@ function SaleWorkspace({
               </CardContent>
             </Card>
 
-            <Card className="shadow-card">
+            {hasServiceLines ? (
+              <Card className="shadow-card">
               <CardHeader><CardTitle><StepTitle step={3} label="الموظف" /></CardTitle></CardHeader>
               <CardContent className="p-5">
                 <PresentEmployeePicker
@@ -993,14 +1002,15 @@ function SaleWorkspace({
                   {...(branchId === undefined ? {} : { branchId })}
                 />
               </CardContent>
-            </Card>
+              </Card>
+            ) : null}
           </div>
 
           {/* The summary follows the cart on a wide till, but it must scroll on its
               own so the submit button is never pinned below the fold. */}
           <div className="scroll-thin min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
             <Card className="shadow-card">
-              <CardHeader><CardTitle><StepTitle step={4} label="الخصم والضريبة" /></CardTitle></CardHeader>
+              <CardHeader><CardTitle><StepTitle step={adjustmentsStep} label="الخصم والضريبة" /></CardTitle></CardHeader>
               <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
                 <AdjustmentInput label="الخصم" kind={discountKind} value={discountValue} onKind={setDiscountKind} onValue={setDiscountValue} />
                 <AdjustmentInput label="الضريبة" kind={taxKind} value={taxValue} onKind={setTaxKind} onValue={setTaxValue} />
@@ -1008,7 +1018,7 @@ function SaleWorkspace({
             </Card>
 
             <Card className="shadow-card">
-              <CardHeader><CardTitle><StepTitle step={5} label="الإجمالي والمدفوعات" /></CardTitle></CardHeader>
+              <CardHeader><CardTitle><StepTitle step={paymentsStep} label="الإجمالي والمدفوعات" /></CardTitle></CardHeader>
               <CardContent className="space-y-4 p-5">
                 {quote.isPending && lines.length > 0 ? (
                   <LoadingState label="جارٍ حساب الإجمالي من الخادم…" className="justify-start p-0" />

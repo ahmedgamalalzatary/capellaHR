@@ -1274,17 +1274,45 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const request = operation(data, crypto.randomUUID());
     request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    delete request.input.assignedEmployeeId;
+    delete request.assertEmployee;
     delete request.input.discount;
     delete request.input.tax;
     request.input.payments = [{ method: 'cash', amount: '100.00' }];
     const result = await repository.complete(request);
 
+    expect(result.assignedEmployee).toBeNull();
     expect(result.lines[0]).toMatchObject({ sourceId: data.productId, productCostBasis: '30.00', commissionRule: 'none', commissionAmount: '0.00' });
+    expect((await database.select().from(invoices).where(eq(invoices.id, result.id)))[0])
+      .toMatchObject({
+        assignedEmployeeId: null,
+        employeeNameSnapshot: null,
+        employeeCodeSnapshot: null,
+      });
     expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(0);
     expect(await database.select().from(erpStockMovements).where(eq(erpStockMovements.sourceId, result.id))).toEqual([
       expect.objectContaining({ productId: data.productId, reason: 'sale', quantityDelta: -2, balanceAfter: 0 }),
     ]);
     expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(0);
+    await expect(repository.listInvoices(data.branchId, { page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: result.id, assignedEmployee: null }),
+        ]),
+      });
+    await expect(repository.listClientVisits(data.branchId, data.clientId, { page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: result.id, assignedEmployee: null }),
+        ]),
+      });
+    await expect(repository.findByIdempotencyKey(request.input.idempotencyKey, {
+      actingAccountId: request.actingAccountId,
+      actingAccountRole: request.actingAccountRole,
+    })).resolves.toMatchObject({
+      input: request.input,
+      invoice: { id: result.id, assignedEmployee: null },
+    });
   });
 
   it('allows only one concurrent sale of the last product unit', async () => {
