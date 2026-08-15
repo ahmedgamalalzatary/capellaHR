@@ -25,6 +25,11 @@ const routine = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** The reconciler awaits every statement, so a synchronous answer is handed back as a promise. */
+const respond = (answer: (sql: string) => unknown[]) => (
+  (sql: string) => Promise.resolve(answer(sql))
+);
+
 /** Records every statement while answering the reconciler's lookups. */
 const fakeDatabase = ({
   triggers = [] as ReturnType<typeof trigger>[],
@@ -33,20 +38,25 @@ const fakeDatabase = ({
   createProcedure = 'CREATE DEFINER=`capella_hr`@`%` PROCEDURE `correct_erp_expense`()\nBEGIN\n  SELECT 1;\nEND',
 } = {}) => {
   const statements: string[] = [];
-  const query = vi.fn(async (sql: string) => {
+  const query = vi.fn(respond((sql: string) => {
     statements.push(sql);
     if (sql.includes('CURRENT_USER()')) return [{ account: appAccount }];
     if (sql.includes('mysql.user')) return accounts.map((account) => ({ account }));
     if (sql.includes('information_schema.TRIGGERS')) return triggers;
     if (sql.includes('information_schema.ROUTINES')) return routines;
+    const routineDefinition = {
+      sql_mode: 'STRICT_TRANS_TABLES',
+      character_set_client: 'latin1',
+      collation_connection: 'latin1_swedish_ci',
+    };
     if (sql.includes('SHOW CREATE PROCEDURE')) {
-      return [{ 'Create Procedure': createProcedure, sql_mode: 'STRICT_TRANS_TABLES' }];
+      return [{ 'Create Procedure': createProcedure, ...routineDefinition }];
     }
     if (sql.includes('SHOW CREATE FUNCTION')) {
-      return [{ 'Create Function': createProcedure, sql_mode: 'STRICT_TRANS_TABLES' }];
+      return [{ 'Create Function': createProcedure, ...routineDefinition }];
     }
     return [];
-  });
+  }));
   return { query, statements };
 };
 
@@ -84,11 +94,11 @@ describe('definer reconciler', () => {
 
   it('does nothing but warn when it cannot read the server account list', async () => {
     const database = fakeDatabase({ triggers: [trigger({ DEFINER: 'capella_hr@%' })] });
-    database.query.mockImplementation(async (sql: string) => {
+    database.query.mockImplementation(respond((sql: string) => {
       if (sql.includes('CURRENT_USER()')) return [{ account: appAccount }];
       if (sql.includes('mysql.user')) throw new Error('SELECT command denied');
       return [];
-    });
+    }));
 
     const report = await reconcileDefiners(database.query);
 
@@ -138,9 +148,11 @@ describe('definer reconciler', () => {
     const report = await reconcileDefiners(database.query);
 
     expect(report.repaired).toEqual(['trigger stale_guard']);
-    const statements = database.statements.join('\n');
-    expect(statements).toContain('DROP TRIGGER IF EXISTS `stale_guard`');
-    expect(statements).not.toContain('healthy_guard');
+    // The healthy trigger may only be named as an ordering anchor, never dropped or recreated.
+    const touched = ddl(database.statements).map(
+      (sql) => /TRIGGER (?:IF EXISTS )?`([^`]+)`/.exec(sql)?.[1],
+    );
+    expect(touched).toEqual(['stale_guard', 'stale_guard']);
   });
 
   it('recreates triggers in their recorded firing order', async () => {
@@ -168,16 +180,113 @@ describe('definer reconciler', () => {
     expect(statements).toContain('SELECT 1;');
   });
 
-  it('surfaces the object it could not repair instead of reporting success', async () => {
+  /**
+   * A recreated trigger is appended to the end of its activation group, so without an
+   * explicit ordering clause a repair silently reorders it past the healthy triggers that
+   * used to run after it.
+   */
+  it('keeps a repaired trigger in its original position among healthy ones', async () => {
+    const database = fakeDatabase({
+      triggers: [
+        trigger({ TRIGGER_NAME: 'first_guard', ACTION_ORDER: 1 }),
+        trigger({ TRIGGER_NAME: 'second_guard', ACTION_ORDER: 2, DEFINER: 'capella_hr@%' }),
+        trigger({ TRIGGER_NAME: 'third_guard', ACTION_ORDER: 3 }),
+      ],
+    });
+
+    const report = await reconcileDefiners(database.query);
+
+    expect(report.repaired).toEqual(['trigger second_guard']);
+    expect(database.statements.join('\n')).toContain('FOR EACH ROW FOLLOWS `first_guard`');
+  });
+
+  it('places a repaired trigger ahead of the group when nothing preceded it', async () => {
+    const database = fakeDatabase({
+      triggers: [
+        trigger({ TRIGGER_NAME: 'lead_guard', ACTION_ORDER: 1, DEFINER: 'capella_hr@%' }),
+        trigger({ TRIGGER_NAME: 'trailing_guard', ACTION_ORDER: 2 }),
+      ],
+    });
+
+    await reconcileDefiners(database.query);
+
+    expect(database.statements.join('\n')).toContain('FOR EACH ROW PRECEDES `trailing_guard`');
+  });
+
+  it('recreates a routine under the character set it was written with', async () => {
+    const database = fakeDatabase({ routines: [routine({ DEFINER: 'capella_hr@%' })] });
+
+    await reconcileDefiners(database.query);
+
+    expect(database.statements.join('\n')).toContain('SET NAMES latin1 COLLATE latin1_swedish_ci');
+  });
+
+  /** A dropped guard is worse than an unrepaired one, so a failed replacement is undone. */
+  it('puts the original trigger back when the replacement cannot be created', async () => {
     const database = fakeDatabase({ triggers: [trigger({ DEFINER: 'capella_hr@%' })] });
-    database.query.mockImplementation(async (sql: string) => {
+    const { query } = database;
+    query.mockImplementation(respond((sql: string) => {
+      database.statements.push(sql);
       if (sql.includes('CURRENT_USER()')) return [{ account: appAccount }];
       if (sql.includes('mysql.user')) return [{ account: appAccount }];
       if (sql.includes('information_schema.TRIGGERS')) return [trigger({ DEFINER: 'capella_hr@%' })];
       if (sql.includes('information_schema.ROUTINES')) return [];
       if (sql.startsWith('CREATE TRIGGER')) throw new Error('syntax error');
       return [];
-    });
+    }));
+
+    await expect(reconcileDefiners(query)).rejects.toThrow(/put back/);
+    expect(database.statements.join('\n')).toContain(
+      'CREATE DEFINER=`capella_hr`@`%` TRIGGER `erp_expenses_guard_insert`',
+    );
+  });
+
+  it('reports separately when the original could not be put back either', async () => {
+    const database = fakeDatabase({ triggers: [trigger({ DEFINER: 'capella_hr@%' })] });
+    const { query } = database;
+    query.mockImplementation(respond((sql: string) => {
+      database.statements.push(sql);
+      if (sql.includes('CURRENT_USER()')) return [{ account: appAccount }];
+      if (sql.includes('mysql.user')) return [{ account: appAccount }];
+      if (sql.includes('information_schema.TRIGGERS')) return [trigger({ DEFINER: 'capella_hr@%' })];
+      if (sql.includes('information_schema.ROUTINES')) return [];
+      if (sql.startsWith('CREATE TRIGGER')) throw new Error('syntax error');
+      if (sql.startsWith('CREATE DEFINER')) throw new Error('access denied');
+      return [];
+    }));
+
+    await expect(reconcileDefiners(query)).rejects.toThrow(
+      /erp_expenses_guard_insert.*syntax error.*access denied/s,
+    );
+  });
+
+  it('leaves the object alone when the drop itself failed', async () => {
+    const database = fakeDatabase({ triggers: [trigger({ DEFINER: 'capella_hr@%' })] });
+    const { query } = database;
+    query.mockImplementation(respond((sql: string) => {
+      database.statements.push(sql);
+      if (sql.includes('CURRENT_USER()')) return [{ account: appAccount }];
+      if (sql.includes('mysql.user')) return [{ account: appAccount }];
+      if (sql.includes('information_schema.TRIGGERS')) return [trigger({ DEFINER: 'capella_hr@%' })];
+      if (sql.includes('information_schema.ROUTINES')) return [];
+      if (sql.startsWith('DROP TRIGGER')) throw new Error('access denied');
+      return [];
+    }));
+
+    await expect(reconcileDefiners(query)).rejects.toThrow(/erp_expenses_guard_insert/);
+    expect(database.statements.some((sql) => sql.startsWith('CREATE'))).toBe(false);
+  });
+
+  it('surfaces the object it could not repair instead of reporting success', async () => {
+    const database = fakeDatabase({ triggers: [trigger({ DEFINER: 'capella_hr@%' })] });
+    database.query.mockImplementation(respond((sql: string) => {
+      if (sql.includes('CURRENT_USER()')) return [{ account: appAccount }];
+      if (sql.includes('mysql.user')) return [{ account: appAccount }];
+      if (sql.includes('information_schema.TRIGGERS')) return [trigger({ DEFINER: 'capella_hr@%' })];
+      if (sql.includes('information_schema.ROUTINES')) return [];
+      if (sql.startsWith('CREATE TRIGGER')) throw new Error('syntax error');
+      return [];
+    }));
 
     await expect(reconcileDefiners(database.query)).rejects.toThrow(
       /erp_expenses_guard_insert/,

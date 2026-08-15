@@ -135,14 +135,23 @@ export function InvoiceReversalControls({
     || tenderTotal === null
     || parsedTenders.some((payment) => payment.refundableAmount === null)
   );
+  const exceedsRefundable = !hasUnparsableTender && parsedTenders.some((payment) => (
+    payment.enteredAmount !== null
+    && payment.refundableAmount !== null
+    && payment.enteredAmount > payment.refundableAmount
+  ));
   const tenderValid = quoted !== null
     && !hasUnparsableTender
-    && tenderTotal === quotedTotal
-    && parsedTenders.every((payment) => (
-      payment.enteredAmount !== null
-      && payment.refundableAmount !== null
-      && payment.enteredAmount <= payment.refundableAmount
-    ));
+    && !exceedsRefundable
+    && tenderTotal === quotedTotal;
+  /** Confirmation stays disabled until this is null, so it must name every blocking reason. */
+  const tenderMessage = quoted === null || tenderValid
+    ? null
+    : hasUnparsableTender
+      ? 'لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.'
+      : exceedsRefundable
+        ? 'أحد المبالغ المدخلة يتجاوز المتاح لطريقة الدفع.'
+        : 'مجموع المبالغ المدخلة يجب أن يساوي الإجمالي المسترد.';
   const errorMessage = quote.error
     ? responseMessage(quote.error, 'تعذر حساب مبلغ الاسترداد.')
     : refund.error
@@ -169,7 +178,7 @@ export function InvoiceReversalControls({
           <span className="text-sm">{paymentLabels[payment.method]} · متاح {payment.refundableAmount} ج.م</span>
           <Input aria-label={`مبلغ الاسترداد ${paymentLabels[payment.method]}`} inputMode="decimal" dir="ltr" className="bg-paper text-start" value={paymentAmounts[payment.method]} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [payment.method]: event.target.value }))} />
         </label>)}
-        {hasUnparsableTender ? <p role="alert" className="text-[13px] text-danger">لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.</p> : null}
+        {tenderMessage ? <p role="alert" className="text-[13px] text-danger">{tenderMessage}</p> : null}
         <label className="grid gap-1.5"><span className="text-sm font-medium text-ink">سبب الاسترداد</span><Textarea aria-label="سبب الاسترداد" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="flex flex-wrap gap-2"><Button disabled={!reason.trim() || !tenderValid || refund.isPending} onClick={() => refund.mutate()}>{refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}</Button><Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button></div>
       </div> : null}
