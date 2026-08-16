@@ -107,7 +107,7 @@ test('Cashier cannot open product or supplier administration directly', async ({
       return;
     }
     if (path === '/auth/session') {
-      await json(route, { actor: { type: 'cashier', accountId: 8, employeeId: 17 } });
+      await json(route, { actor: { type: 'cashier', accountId: 8 } });
       return;
     }
     if (path === '/erp/cashier-sessions/current') {

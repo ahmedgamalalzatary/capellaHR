@@ -17,14 +17,14 @@ import {
 import type { ErpEmployeeCapability } from '../../src/modules/erp/index.js';
 
 const ADMIN: ErpAccountIdentity = { role: 'admin', accountId: 1 };
-const CASHIER: ErpAccountIdentity = { role: 'cashier', accountId: 9, employeeId: 4 };
+const CASHIER: ErpAccountIdentity = { role: 'cashier', accountId: 9, branchId: 4 };
 
 /** Stands in for the real resolver, which is covered by its own tests. */
 const resolverFor = (branchId: number): ErpBranchContextResolver => async (actor) => ({
   accountId: actor.accountId,
   accountRole: actor.role,
   branchId,
-  employeeId: actor.role === 'cashier' ? actor.employeeId : null,
+    employeeId: null,
 });
 
 const category = (overrides: Partial<CategoryRecord> = {}): CategoryRecord => ({

@@ -57,14 +57,13 @@ export const createDrizzleAuthRepositories = (
         username: accounts.username,
         passwordHash: accounts.passwordHash,
         role: accounts.role,
-        employeeId: accounts.employeeId,
         active: accounts.active,
       }).from(accounts).where(and(
         eq(accounts.username, username),
         eq(accounts.role, 'cashier'),
       )).limit(1))[0];
-      return row?.role === 'cashier' && row.employeeId !== null
-        ? { ...row, role: 'cashier' as const, employeeId: row.employeeId }
+      return row?.role === 'cashier'
+        ? { ...row, role: 'cashier' as const }
         : null;
     },
   },
@@ -96,8 +95,8 @@ export const createDrizzleAuthRepositories = (
         if (!account || !account.active) {
           return 'account_invalid';
         }
-        if (account.role === 'cashier') {
-          if (account.employeeId === null) return 'account_invalid';
+        if (account.role === 'cashier' && account.employeeId !== null) {
+          // Legacy employee-linked logins stay usable only while their employee is active.
           const employee = (await tx.select({
             id: employees.id,
             employmentStatus: employees.employmentStatus,
@@ -174,6 +173,7 @@ export const createDrizzleAuthRepositories = (
       const account = (await database.select({
         role: accounts.role,
         employeeId: accounts.employeeId,
+        branchId: accounts.branchId,
       }).from(accounts).leftJoin(employees, eq(employees.id, accounts.employeeId)).where(and(
         eq(accounts.id, row.accountId!),
         eq(accounts.active, true),
@@ -181,12 +181,17 @@ export const createDrizzleAuthRepositories = (
           eq(accounts.role, 'admin'),
           and(
             eq(accounts.role, 'cashier'),
-            eq(employees.employmentStatus, 'active'),
-            isNull(employees.deletedAt),
+            or(
+              isNull(accounts.employeeId),
+              and(
+                eq(employees.employmentStatus, 'active'),
+                isNull(employees.deletedAt),
+              ),
+            ),
           ),
         ),
       )).limit(1))[0];
-      if (!account || (account.role === 'cashier' && account.employeeId === null)) {
+      if (!account) {
         await database.transaction(async (tx) => {
           const revokedAt = now();
           const result = await tx.update(authSessions).set({ revokedAt }).where(and(
@@ -211,7 +216,8 @@ export const createDrizzleAuthRepositories = (
       }
       return {
         ...row,
-        employeeId: account.employeeId,
+        employeeId: null,
+        branchId: account.role === 'cashier' ? account.branchId : null,
         accountRole: account.role,
       };
     },

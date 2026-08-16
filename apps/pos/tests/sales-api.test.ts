@@ -40,6 +40,7 @@ describe('sales API', () => {
 
     const complete = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),

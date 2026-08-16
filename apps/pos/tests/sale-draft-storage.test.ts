@@ -29,6 +29,7 @@ const draft: SaleDraft = {
     updatedAt: '',
   },
   employee: { id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 },
+  seller: { id: 9, employeeCode: 1009, fullName: 'أحمد جمال' },
   lines: [{
     service: {
       id: 21,

@@ -2,6 +2,7 @@ import { createDatabase } from '@capella/database';
 import {
   accounts,
   auditEvents,
+  branchCashierRoster,
   branches,
   cashierSessions,
   clients,
@@ -34,6 +35,7 @@ import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { ErpAssignmentError } from '../../src/modules/erp/assignment/index.js';
 import { createDrizzleCommissionRepository } from '../../src/modules/erp/commissions/index.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
+import { createDrizzleBranchCashierRosterRepository } from '../../src/modules/erp/sales/branch-cashier-roster-repository.js';
 import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock/index.js';
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
@@ -122,11 +124,26 @@ const fixture = async () => {
     createdAt: at,
     updatedAt: at,
   }))[0].insertId);
+  const sellerEmployeeId = Number((await database.insert(employees).values({
+    employeeCode: employeeCode + 1,
+    fullName: `Seller ${marker}`,
+    personalPhone: `015${uniqueNumber}`,
+    whatsappPhone: `015${uniqueNumber}`,
+    pinHash: 'unused',
+    age: 30,
+    address: 'Cairo',
+    branchId,
+    shiftDurationMinutes: 480,
+    monthlyBaseSalary: '5000.00',
+    createdAt: at,
+    updatedAt: at,
+  }))[0].insertId);
+  await database.insert(branchCashierRoster).values({ branchId, employeeId: sellerEmployeeId, createdAt: at });
   const accountId = Number((await database.insert(accounts).values({
     username: marker,
     passwordHash: 'unused',
     role: 'cashier',
-    employeeId,
+    branchId,
     createdAt: at,
     updatedAt: at,
   }))[0].insertId);
@@ -176,7 +193,8 @@ const fixture = async () => {
     openedAt: at,
   }))[0].insertId);
   return {
-    marker, clientPhone, at, branchId, employeeId, employeeCode, accountId, adminAccountId,
+    marker, clientPhone, at, branchId, employeeId, employeeCode, sellerEmployeeId,
+    accountId, adminAccountId,
     clientId, serviceId, productId, cashierSessionId,
   };
 };
@@ -186,6 +204,7 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
     branchId: data.branchId,
     clientId: data.clientId,
     assignedEmployeeId: data.employeeId,
+    sellerEmployeeId: data.sellerEmployeeId,
     cashierSessionId: data.cashierSessionId,
     idempotencyKey: key,
     lines: [{
@@ -200,7 +219,6 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
   },
   actingAccountId: data.accountId,
   actingAccountRole: 'cashier' as const,
-  actingEmployeeId: data.employeeId,
   invoiceNumber: `INV-2026.08.03-14.35-${data.branchId}`,
   soldAt: data.at,
   assertEmployee: async () => ({
@@ -212,6 +230,50 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('audits inactive roster rows before replacing the full branch roster', async () => {
+    const data = await fixture();
+    await database.update(employees).set({ employmentStatus: 'inactive' })
+      .where(eq(employees.id, data.sellerEmployeeId));
+    const repository = createDrizzleBranchCashierRosterRepository(
+      database,
+      createErpAuditCapability(),
+    );
+
+    await repository.replace({
+      branchId: data.branchId,
+      employeeIds: [],
+      replacedAt: data.at,
+    });
+
+    const event = (await database.select().from(auditEvents).where(and(
+      eq(auditEvents.module, 'erp_cashier_roster'),
+      eq(auditEvents.entityId, String(data.branchId)),
+    )).orderBy(sql`${auditEvents.id} desc`).limit(1))[0];
+    expect(event?.beforeState).toEqual({ members: [data.sellerEmployeeId] });
+  });
+
+  it('rejects removing the seller from a completed invoice', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    await expect(database.update(invoices).set({
+      sellerEmployeeId: null,
+      sellerNameSnapshot: null,
+    }).where(eq(invoices.id, completed.id))).rejects.toThrow();
+  });
+
+  it('rejects a seller who is not on the branch roster', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const outside = operation(data, crypto.randomUUID());
+    outside.input = { ...outside.input, sellerEmployeeId: data.employeeId };
+
+    await expect(repository.complete(outside)).rejects.toMatchObject({
+      code: 'SELLER_NOT_ON_ROSTER',
+    });
+  });
+
   it('projects the changing net commission into one live payroll input', async () => {
     const data = await fixture();
     const payroll = createErpPayrollCapability(database);
@@ -222,6 +284,10 @@ describe('ERP sale repository MySQL integration', () => {
     );
     const completed = await repository.complete(operation(data, crypto.randomUUID()));
 
+    expect(completed.seller).toMatchObject({
+      id: data.sellerEmployeeId,
+      name: `Seller ${data.marker}`,
+    });
     expect(await database.select().from(erpCommissionPayrollInputs).where(
       eq(erpCommissionPayrollInputs.employeeId, data.employeeId),
     )).toEqual([expect.objectContaining({
@@ -1498,15 +1564,16 @@ describe('ERP sale repository MySQL integration', () => {
       .toHaveLength(0);
   });
 
-  it('rejects a sale when the acting Cashier moved to another branch before the transaction', async () => {
+  it('rejects a sale when the seller left the branch roster before the transaction', async () => {
     const data = await fixture();
-    const anotherBranch = await fixture();
-    await database.update(employees).set({ branchId: anotherBranch.branchId })
-      .where(eq(employees.id, data.employeeId));
+    await database.delete(branchCashierRoster).where(and(
+      eq(branchCashierRoster.branchId, data.branchId),
+      eq(branchCashierRoster.employeeId, data.sellerEmployeeId),
+    ));
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
 
     await expect(repository.complete(operation(data, crypto.randomUUID())))
-      .rejects.toMatchObject({ code: 'CASHIER_SESSION_NOT_OPEN' });
+      .rejects.toMatchObject({ code: 'SELLER_NOT_ON_ROSTER' });
     expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
       .toHaveLength(0);
   });
@@ -1518,7 +1585,6 @@ describe('ERP sale repository MySQL integration', () => {
       ...operation(data, crypto.randomUUID()),
       actingAccountId: data.adminAccountId,
       actingAccountRole: 'admin',
-      actingEmployeeId: null,
     } as CompleteSaleOperation;
 
     await expect(repository.complete(request)).resolves.toMatchObject({
@@ -1572,6 +1638,28 @@ describe('ERP sale repository MySQL integration', () => {
 
     await expect(repository.complete(operation(data, crypto.randomUUID())))
       .rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+  });
+
+  it('maps a sellerless legacy idempotency row to a deterministic conflict', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+    const stored = (await database.select().from(invoices)
+      .where(eq(invoices.id, completed.id)).limit(1))[0]!;
+    const legacyKey = crypto.randomUUID();
+    await database.insert(invoices).values({
+      ...stored,
+      id: undefined,
+      status: 'draft',
+      invoiceNumber: `${stored.invoiceNumber}-LEGACY`,
+      idempotencyKey: legacyKey,
+      sellerEmployeeId: null,
+      sellerNameSnapshot: null,
+    });
+    await expect(repository.findByIdempotencyKey(legacyKey, {
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+    })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
   });
 
   it.each([

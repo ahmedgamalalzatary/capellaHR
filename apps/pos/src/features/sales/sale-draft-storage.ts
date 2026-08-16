@@ -4,6 +4,7 @@ import type { ServiceListItem } from '@/features/catalog';
 import type { ProductSaleItem } from '@/features/products';
 import type { Client } from '@/features/clients';
 import type { AssignableEmployee } from '@/features/employee-assignment';
+import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 import { createUuid } from '@/lib/uuid';
 
 export type SaleDraftOwner = {
@@ -16,6 +17,7 @@ export type SaleDraftOwner = {
 export type SaleDraft = {
   client: Client | null;
   employee: AssignableEmployee | null;
+  seller: BranchCashierRosterMember | null;
   lines: Array<{
     service: ServiceListItem | ProductSaleItem;
     quantity: number;
@@ -107,6 +109,11 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
     && typeof value.client.branchId === 'number'))
     && (value.employee === null || (hasIdentity(value.employee)
       && typeof value.employee.employeeCode === 'number'))
+    // Drafts saved before sellers existed may lack the field entirely.
+    && (value.seller === undefined || value.seller === null || (isRecord(value.seller)
+      && typeof value.seller.id === 'number'
+      && typeof value.seller.employeeCode === 'number'
+      && typeof value.seller.fullName === 'string'))
     && Array.isArray(value.lines)
     && value.lines.every((line) => isRecord(line)
       && Number.isInteger(line.quantity)

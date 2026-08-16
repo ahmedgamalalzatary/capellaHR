@@ -13,10 +13,11 @@ const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
       if (!actorType || token !== 'valid-token') return null;
       return {
         id: 'session-id', tokenHash: 'hash', actorType,
-        employeeId: actorType === 'employee' || actorType === 'account' ? 7 : null,
+        employeeId: actorType === 'employee' ? 7 : null,
         expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
         accountId: actorType === 'account' ? 21 : null,
         accountRole: actorType === 'account' ? 'cashier' as const : null,
+        ...(actorType === 'account' ? { branchId: 3 } : {}),
       };
     },
   };
@@ -84,7 +85,7 @@ describe('authorization middleware', () => {
     expect(erp.body.actor).toEqual({
       type: 'cashier',
       accountId: 21,
-      employeeId: 7,
+      branchId: 3,
     });
     expect(admin.status).toBe(403);
   });

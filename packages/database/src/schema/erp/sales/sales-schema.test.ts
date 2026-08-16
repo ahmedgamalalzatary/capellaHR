@@ -1,3 +1,4 @@
+import { getTableName } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
@@ -141,6 +142,39 @@ describe('ERP sales persistence foundation', () => {
     expect(getTableConfig(sequences).checks.map((value) => value.name)).toContain(
       'erp_invoice_daily_sequences_value_positive',
     );
+  });
+
+  it('records the selling cashier and the branch roster behind the shared login', () => {
+    const invoices = table('invoices');
+    expect(Object.keys(invoices)).toEqual(expect.arrayContaining([
+      'sellerEmployeeId', 'sellerNameSnapshot',
+    ]));
+    expect(salesSchema.invoices.sellerEmployeeId.notNull).toBe(false);
+    expect(salesSchema.invoices.sellerNameSnapshot.notNull).toBe(false);
+    const invoiceConfig = getTableConfig(invoices);
+    expect(invoiceConfig.indexes.map((value) => value.config.name)).toContain(
+      'erp_invoices_seller_sold_idx',
+    );
+    expect(invoiceConfig.checks.map((value) => value.name)).toContain(
+      'erp_invoices_seller_consistent',
+    );
+    expect(invoiceConfig.foreignKeys.map((value) => value.getName())).toContain(
+      'erp_invoices_seller_branch_fk',
+    );
+
+    const roster = table('branchCashierRoster');
+    expect(getTableName(roster)).toBe('erp_branch_cashier_roster');
+    expect(Object.keys(roster)).toEqual(expect.arrayContaining([
+      'id', 'branchId', 'employeeId', 'createdAt',
+    ]));
+    const rosterConfig = getTableConfig(roster);
+    expect(rosterConfig.indexes.map((value) => value.config.name)).toContain(
+      'erp_branch_cashier_roster_branch_employee_unique',
+    );
+    expect(rosterConfig.foreignKeys.map((value) => value.getName())).toEqual(expect.arrayContaining([
+      'erp_branch_cashier_roster_branch_fk',
+      'erp_branch_cashier_roster_employee_branch_fk',
+    ]));
   });
 
   it('defines append-only commission facts and traceable reversals', () => {

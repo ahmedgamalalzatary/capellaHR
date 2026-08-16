@@ -62,7 +62,7 @@ test('Cashier cannot open commission reporting', async ({ page }) => {
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/auth/session') return json(route, {
-      actor: { type: 'cashier', accountId: 8, employeeId: 17 },
+      actor: { type: 'cashier', accountId: 8 },
     });
     if (path === '/erp/cashier-sessions/current') return json(route, null);
     return route.fulfill({ status: 404, headers, body: '{}' });

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createErpSalesRouter } from '../../src/modules/erp/sales/sale-router.js';
 import { SaleError, type SaleService } from '../../src/modules/erp/sales/sale-service.js';
 
-const actor = { role: 'cashier' as const, accountId: 3, employeeId: 9 };
+const actor = { role: 'cashier' as const, accountId: 3, branchId: 2 };
 
 const setup = (overrides: Partial<SaleService> = {}) => {
   const quote = vi.fn().mockResolvedValue({ lines: [], totals: {} });
@@ -30,7 +30,7 @@ const setup = (overrides: Partial<SaleService> = {}) => {
   const app = express();
   app.use(express.json());
   app.use((_request, response, next) => {
-    response.locals.actor = { type: 'cashier', accountId: 3, employeeId: 9 };
+    response.locals.actor = { type: 'cashier', accountId: 3, branchId: 2 };
     next();
   });
   app.use('/erp/sales', createErpSalesRouter(service));
@@ -95,6 +95,7 @@ describe('ERP sales router', () => {
     const response = await request(app).post('/erp/sales').send({
       clientId: 5,
       assignedEmployeeId: 8,
+      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
@@ -150,6 +151,7 @@ describe('ERP sales router', () => {
     }).app).post('/erp/sales').send({
       clientId: 5,
       assignedEmployeeId: 8,
+      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],

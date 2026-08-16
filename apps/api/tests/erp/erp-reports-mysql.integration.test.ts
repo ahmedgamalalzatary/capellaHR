@@ -1,6 +1,7 @@
 import { createDatabase } from '@capella/database';
 import {
   accounts,
+  branchCashierRoster,
   branches,
   cashierSessions,
   clients,
@@ -110,12 +111,16 @@ beforeAll(async () => {
   await database.insert(erpServiceCommissionOverrides).values({
     serviceId, employeeId, commissionPercent: '15.00', createdAt: soldAt, updatedAt: soldAt,
   });
+  await database.insert(branchCashierRoster).values({
+    branchId, employeeId, createdAt: soldAt,
+  });
   const cashierSessionId = Number((await database.insert(cashierSessions).values({
     branchId, openedByAccountId: cashierId, openedAt: soldAt,
   }))[0].insertId);
   const operation: CompleteSaleOperation = {
     input: {
-      branchId, clientId, assignedEmployeeId: employeeId, cashierSessionId,
+      branchId, clientId, assignedEmployeeId: employeeId, sellerEmployeeId: employeeId,
+      cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
       lines: [
         { itemType: 'service', serviceId, quantity: 1, unitPrice: '200.00' },
@@ -127,7 +132,6 @@ beforeAll(async () => {
     },
     actingAccountId: cashierId,
     actingAccountRole: 'cashier',
-    actingEmployeeId: employeeId,
     invoiceNumber: 'INV.2026.08.09.0001',
     soldAt,
     assertEmployee: async () => ({
@@ -145,6 +149,7 @@ beforeAll(async () => {
     input: {
       branchId,
       clientId,
+      sellerEmployeeId: employeeId,
       cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'product', productId, quantity: 1 }],
@@ -152,7 +157,6 @@ beforeAll(async () => {
     },
     actingAccountId: cashierId,
     actingAccountRole: 'cashier',
-    actingEmployeeId: employeeId,
     invoiceNumber: 'INV.2026.07.09.0001',
     soldAt: new Date('2026-07-09T09:00:00.000Z'),
   });

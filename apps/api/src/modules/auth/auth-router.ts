@@ -5,8 +5,8 @@ import {
   employeeLoginSchema,
   listCashierAccountsSchema,
   positiveMysqlIntSchema,
-  promoteCashierSchema,
   resetCashierPasswordSchema,
+  upsertBranchCashierSchema,
 } from '@capella/contracts';
 import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
@@ -26,9 +26,9 @@ const CASHIER_SESSION_MAX_AGE_MS = 24 * 60 * 60_000;
 const publicActor = (
   actor:
     | { type: 'admin' | 'employee' }
-    | { type: 'cashier'; accountId: number; employeeId: number },
+    | { type: 'cashier'; accountId: number },
 ) => actor.type === 'cashier'
-  ? { type: actor.type, accountId: actor.accountId, employeeId: actor.employeeId }
+  ? { type: actor.type, accountId: actor.accountId }
   : { type: actor.type };
 
 export const createAuthRouter = (
@@ -83,8 +83,8 @@ export const createAuthRouter = (
       middleware.authenticate,
       middleware.requireAdmin,
       async (request, response) => {
-        const input = promoteCashierSchema.parse(request.body);
-        const account = await options.cashierAccounts!.promote(input);
+        const input = upsertBranchCashierSchema.parse(request.body);
+        const account = await options.cashierAccounts!.upsert(input);
         response.status(201).json({ data: account });
       },
     );
@@ -150,7 +150,6 @@ export const createAuthRouter = (
         : publicActor({
             type: 'cashier',
             accountId: session.accountId!,
-            employeeId: session.employeeId!,
           })
       : publicActor({ type: session.actorType });
     response.json({ data: { actor } });
@@ -187,7 +186,11 @@ export const createAuthRouter = (
       return;
     }
     if (error instanceof CashierAccountError) {
-      const status = error.code === 'EMPLOYEE_NOT_FOUND' || error.code === 'ACCOUNT_NOT_FOUND' ? 404 : 409;
+      const status = error.code === 'EMPLOYEE_NOT_FOUND'
+        || error.code === 'ACCOUNT_NOT_FOUND'
+        || error.code === 'BRANCH_NOT_FOUND'
+        ? 404
+        : 409;
       response.status(status).json({
         error: { code: error.code, message: error.message, requestId },
       });

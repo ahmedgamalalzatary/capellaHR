@@ -7,8 +7,10 @@ import {
   type CashierAccountsService,
 } from '../modules/auth/index.js';
 import {
+  createBranchCashierRosterRouter,
   createCashierSessionsRouter,
   createErpSalesRouter,
+  type BranchCashierRosterService,
   type CashierSessionService,
   type SaleService,
 } from '../modules/erp/sales/index.js';
@@ -62,6 +64,7 @@ export const createApiRouter = (dependencies: {
   attendanceService?: AttendanceService;
   dashboardService?: DashboardService;
   cashierSessionService?: CashierSessionService;
+  erpBranchCashierRosterService?: BranchCashierRosterService;
   erpSaleService?: SaleService;
   erpClientService?: ClientService;
   erpCategoryService?: CategoryService;
@@ -163,6 +166,15 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createCashierSessionsRouter(dependencies.cashierSessionService),
+      );
+    }
+    if (dependencies.erpBranchCashierRosterService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/branch-cashier-roster',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createBranchCashierRosterRouter(dependencies.erpBranchCashierRosterService),
       );
     }
     if (dependencies.erpSaleService) {

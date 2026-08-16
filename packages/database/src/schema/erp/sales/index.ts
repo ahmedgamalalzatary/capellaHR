@@ -53,6 +53,7 @@ export const invoices = mysqlTable('erp_invoices', {
   branchId: int('branch_id').notNull(),
   clientId: int('client_id').notNull(),
   assignedEmployeeId: int('assigned_employee_id'),
+  sellerEmployeeId: int('seller_employee_id'),
   actingAccountId: int('acting_account_id').notNull(),
   cashierSessionId: int('cashier_session_id').notNull(),
   invoiceNumber: varchar('invoice_number', { length: 40 }).notNull(),
@@ -62,6 +63,7 @@ export const invoices = mysqlTable('erp_invoices', {
   clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }).notNull(),
   employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }),
   employeeCodeSnapshot: int('employee_code_snapshot'),
+  sellerNameSnapshot: varchar('seller_name_snapshot', { length: 255 }),
   authorizedBySnapshot: varchar('authorized_by_snapshot', { length: 255 }).notNull(),
   subtotal: decimal('subtotal', { precision: 14, scale: 2 }).notNull(),
   discountKind: mysqlEnum('discount_kind', invoiceAdjustmentKinds),
@@ -77,6 +79,7 @@ export const invoices = mysqlTable('erp_invoices', {
   foreignKey({ name: 'erp_invoices_branch_fk', columns: [table.branchId], foreignColumns: [branches.id] }),
   foreignKey({ name: 'erp_invoices_client_branch_fk', columns: [table.clientId, table.branchId], foreignColumns: [clients.id, clients.branchId] }),
   foreignKey({ name: 'erp_invoices_employee_branch_fk', columns: [table.assignedEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
+  foreignKey({ name: 'erp_invoices_seller_branch_fk', columns: [table.sellerEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   foreignKey({ name: 'erp_invoices_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   foreignKey({ name: 'erp_invoices_session_branch_fk', columns: [table.cashierSessionId, table.branchId], foreignColumns: [cashierSessions.id, cashierSessions.branchId] }),
   uniqueIndex('erp_invoices_id_branch_unique').on(table.id, table.branchId),
@@ -85,6 +88,7 @@ export const invoices = mysqlTable('erp_invoices', {
   index('erp_invoices_branch_sold_idx').on(table.branchId, table.soldAt),
   index('erp_invoices_client_sold_idx').on(table.clientId, table.soldAt),
   index('erp_invoices_employee_sold_idx').on(table.assignedEmployeeId, table.soldAt),
+  index('erp_invoices_seller_sold_idx').on(table.sellerEmployeeId, table.soldAt),
   index('erp_invoices_session_idx').on(table.cashierSessionId),
   check('erp_invoices_subtotal_positive', sql`${table.subtotal} > 0`),
   check(
@@ -104,6 +108,25 @@ export const invoices = mysqlTable('erp_invoices', {
     'erp_invoices_employee_assignment_consistent',
     sql`(${table.assignedEmployeeId} is null and ${table.employeeNameSnapshot} is null and ${table.employeeCodeSnapshot} is null) or (${table.assignedEmployeeId} is not null and ${table.employeeNameSnapshot} is not null and ${table.employeeCodeSnapshot} is not null)`,
   ),
+  check(
+    'erp_invoices_seller_consistent',
+    sql`(${table.sellerEmployeeId} is null and ${table.sellerNameSnapshot} is null) or (${table.sellerEmployeeId} is not null and ${table.sellerNameSnapshot} is not null)`,
+  ),
+]);
+
+/**
+ * The employees allowed to sell under a branch's shared cashier login.
+ * Membership must track the employee's own branch, hence the composite FK.
+ */
+export const branchCashierRoster = mysqlTable('erp_branch_cashier_roster', {
+  id: int('id').autoincrement().primaryKey(),
+  branchId: int('branch_id').notNull(),
+  employeeId: int('employee_id').notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({ name: 'erp_branch_cashier_roster_branch_fk', columns: [table.branchId], foreignColumns: [branches.id] }),
+  foreignKey({ name: 'erp_branch_cashier_roster_employee_branch_fk', columns: [table.employeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
+  uniqueIndex('erp_branch_cashier_roster_branch_employee_unique').on(table.branchId, table.employeeId),
 ]);
 
 export const invoiceLines = mysqlTable('erp_invoice_lines', {

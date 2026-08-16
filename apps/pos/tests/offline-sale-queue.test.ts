@@ -29,6 +29,7 @@ const owner: OfflineSaleOwner = {
 
 const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   clientId: 5,
+  sellerEmployeeId: 9,
   assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey,
@@ -42,6 +43,7 @@ const recoveryDraft = (idempotencyKey: string): SaleDraft => ({
     createdAt: '', updatedAt: '',
   },
   employee: { id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 },
+  seller: { id: 9, employeeCode: 1009, fullName: 'أحمد جمال' },
   lines: [{
     service: {
       id: 21, branchId: 2, categoryId: 1, categoryName: 'شعر', categoryIsActive: true,
@@ -204,6 +206,7 @@ describe('offline sale queue', () => {
   it('durably stores a product-only sale without an employee assignment', () => {
     const input: CompleteSaleInput = {
       clientId: 5,
+      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
@@ -221,6 +224,7 @@ describe('offline sale queue', () => {
       owner,
       input: {
         clientId: 5,
+        sellerEmployeeId: 9,
         assignedEmployeeId: 8,
         cashierSessionId: 13,
         idempotencyKey,

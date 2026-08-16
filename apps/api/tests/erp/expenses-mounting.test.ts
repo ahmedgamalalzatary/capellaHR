@@ -13,7 +13,7 @@ const repository: ExpenseRepository = {
 };
 const service = createExpenseService({
   repository,
-  resolveBranchContext: async (actor, branchId) => ({ accountId: actor.accountId, accountRole: actor.role, employeeId: 'employeeId' in actor ? actor.employeeId : null, branchId: branchId ?? 1 }),
+  resolveBranchContext: async (actor, branchId) => ({ accountId: actor.accountId, accountRole: actor.role, employeeId: null, branchId: branchId ?? 1 }),
 });
 const appAs = (session: unknown) => createApp({
   authService: { authenticate: async () => session } as unknown as AuthService,
@@ -21,7 +21,7 @@ const appAs = (session: unknown) => createApp({
 });
 
 const admin = { actorType: 'account', accountRole: 'admin', accountId: 2, employeeId: null };
-const cashier = { actorType: 'account', accountRole: 'cashier', accountId: 3, employeeId: 4 };
+const cashier = { actorType: 'account', accountRole: 'cashier', accountId: 3, employeeId: null, branchId: 1 };
 
 describe('ERP expenses mounting', () => {
   it('mounts expense history behind ERP authentication for both account roles', async () => {

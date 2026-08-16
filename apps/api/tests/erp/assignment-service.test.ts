@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createErpBranchContextResolver,
   type ErpBranchCapability,
-  type ErpEmployeeCapability,
 } from '../../src/modules/erp/index.js';
 import {
   createEmployeeAssignmentService,
@@ -17,14 +16,8 @@ const branches = {
   findById: vi.fn(async (id: number) => (id === 1 || id === 2 ? { id, name: `فرع ${id}` } : null)),
 } as unknown as ErpBranchCapability;
 
-const employees = {
-  findActiveById: vi.fn(async (id: number) => (
-    id === 4 ? { id: 4, employeeCode: 100, fullName: 'كاشير', branchId: 1 } : null
-  )),
-} as unknown as ErpEmployeeCapability;
-
 const ADMIN = { role: 'admin' as const, accountId: 1 };
-const CASHIER = { role: 'cashier' as const, accountId: 2, employeeId: 4 };
+const CASHIER = { role: 'cashier' as const, accountId: 2, branchId: 1 };
 
 const service = (attendance: {
   listPresentEmployees?: (branchId: number) => Promise<typeof nada[]>;
@@ -36,7 +29,7 @@ const service = (attendance: {
     listPresentEmployees: attendance.listPresentEmployees ?? (async () => [nada]),
     findPresentEmployee: attendance.findPresentEmployee ?? (async () => nada),
   },
-  resolveBranchContext: createErpBranchContextResolver({ branches, employees }),
+  resolveBranchContext: createErpBranchContextResolver({ branches }),
 });
 
 const code = async (run: Promise<unknown>) => {

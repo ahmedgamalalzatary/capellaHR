@@ -1,7 +1,6 @@
 import type {
   ErpAccountIdentity,
   ErpBranchCapability,
-  ErpEmployeeCapability,
 } from './hr-capabilities.js';
 
 export type ErpBranchContext = {
@@ -34,7 +33,6 @@ export type ErpBranchContextResolver = (
 
 export const createErpBranchContextResolver = (capabilities: {
   branches: ErpBranchCapability;
-  employees: ErpEmployeeCapability;
 }) => async (
   actor: ErpAccountIdentity,
   requestedBranchId?: number,
@@ -54,14 +52,14 @@ export const createErpBranchContextResolver = (capabilities: {
     };
   }
 
-  const employee = await capabilities.employees.findActiveById(actor.employeeId);
-  if (!employee) {
+  // The branch login's identity already carries its branch; no HR lookup needed.
+  if (typeof actor.branchId !== 'number') {
     throw new ErpBranchContextError(
       'ERP_CASHIER_EMPLOYEE_UNAVAILABLE',
-      'الموظف المرتبط بحساب الكاشير غير متاح',
+      'حساب كاشير الفرع غير متاح',
     );
   }
-  if (requestedBranchId !== undefined && requestedBranchId !== employee.branchId) {
+  if (requestedBranchId !== undefined && requestedBranchId !== actor.branchId) {
     throw new ErpBranchContextError(
       'ERP_BRANCH_FORBIDDEN',
       'لا يمكن للكاشير تنفيذ عمليات على فرع آخر',
@@ -70,7 +68,7 @@ export const createErpBranchContextResolver = (capabilities: {
   return {
     accountId: actor.accountId,
     accountRole: actor.role,
-    branchId: employee.branchId,
-    employeeId: employee.id,
+    branchId: actor.branchId,
+    employeeId: null,
   };
 };

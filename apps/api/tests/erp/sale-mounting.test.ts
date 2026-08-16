@@ -32,7 +32,7 @@ describe('ERP sales mounting', () => {
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
     };
     const cashier = await request(appAs({
-      actorType: 'account', accountRole: 'cashier', accountId: 2, employeeId: 4,
+      actorType: 'account', accountRole: 'cashier', accountId: 2, branchId: 4,
     })).post('/api/v1/erp/sales/quote').send(body);
     expect(cashier.status).toBe(200);
     expect(cashier.body.data.totals.total).toBe('200.00');
@@ -43,7 +43,7 @@ describe('ERP sales mounting', () => {
 
   it('protects invoice history and detail with the same ERP account boundary', async () => {
     const cashierSession = {
-      actorType: 'account', accountRole: 'cashier', accountId: 2, employeeId: 4,
+      actorType: 'account', accountRole: 'cashier', accountId: 2, branchId: 4,
     };
     expect((await request(appAs(cashierSession)).get('/api/v1/erp/sales')).status).toBe(200);
     expect((await request(appAs(cashierSession)).get('/api/v1/erp/sales/44')).status).toBe(200);
@@ -59,7 +59,7 @@ describe('ERP sales mounting', () => {
     } as unknown as SaleService;
     const response = await request(createApp({
       authService: { authenticate: async () => ({
-        actorType: 'account', accountRole: 'cashier', accountId: 2, employeeId: 4,
+        actorType: 'account', accountRole: 'cashier', accountId: 2, branchId: 4,
       }) } as unknown as AuthService,
       erpSaleService: failing,
     })).get('/api/v1/erp/sales/44').set('x-request-id', 'receipt-correlation-4');

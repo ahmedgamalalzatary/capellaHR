@@ -70,7 +70,10 @@ function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <dt>العميل</dt><dd>{invoice.client.name}</dd>
         <dt>الهاتف</dt><dd dir="ltr" className="text-end">{invoice.client.phone}</dd>
         <dt>الموظف</dt><dd>{invoice.assignedEmployee?.name ?? 'بدون موظف'}</dd>
-        <dt>بواسطة</dt><dd>{invoice.authorizedBy.username}</dd>
+        {invoice.seller
+          ? <dt>الكاشير</dt>
+          : <dt>بواسطة</dt>}
+        <dd>{invoice.seller?.name ?? invoice.authorizedBy.username}</dd>
       </dl>
       <table className="mt-3 w-full border-collapse text-xs">
         <thead>

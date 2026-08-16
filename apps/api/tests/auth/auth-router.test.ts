@@ -24,7 +24,7 @@ const makeApp = () => {
       }
       return {
         token: 'cashier-token',
-        actor: { type: 'cashier' as const, accountId: 21, employeeId: 7 },
+        actor: { type: 'cashier' as const, accountId: 21 },
       };
     },
     async beginEmployeeDeviceAuthentication() { return { challengeId: 'challenge', options: {} }; },
@@ -47,22 +47,28 @@ const makeApp = () => {
   const app = express();
   app.use(express.json());
   const cashierAccounts = {
-    async promote(input: { employeeId: number; username: string }) {
+    async upsert(input: { branchId: number; username: string }) {
       return {
         id: 21,
         username: input.username.toLowerCase(),
         role: 'cashier' as const,
-        employeeId: input.employeeId,
-        branchId: 3,
+        branchId: input.branchId,
+        branchName: 'فرع مدينة نصر',
         active: true,
       };
     },
     async list() { return { items: [], total: 0 }; },
     async setActive(accountId: number, active: boolean) {
-      return { id: accountId, username: 'cashier.one', role: 'cashier' as const, employeeId: 7, branchId: 3, active };
+      return {
+        id: accountId, username: 'cashier.one', role: 'cashier' as const,
+        branchId: 3, branchName: 'فرع مدينة نصر', active,
+      };
     },
     async resetPassword(accountId: number) {
-      return { id: accountId, username: 'cashier.one', role: 'cashier' as const, employeeId: 7, branchId: 3, active: true };
+      return {
+        id: accountId, username: 'cashier.one', role: 'cashier' as const,
+        branchId: 3, branchName: 'فرع مدينة نصر', active: true,
+      };
     },
   };
   app.use('/api/v1/auth', createAuthRouter(service, {
@@ -129,7 +135,7 @@ describe('authentication HTTP API', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      data: { actor: { type: 'cashier', accountId: 21, employeeId: 7 } },
+      data: { actor: { type: 'cashier', accountId: 21 } },
     });
     expect(response.headers['set-cookie']?.[0]).toContain('capella_session=cashier-token');
     expect(response.body).not.toHaveProperty('data.token');
@@ -163,24 +169,24 @@ describe('authentication HTTP API', () => {
     expect(response.headers['set-cookie']?.[0]).toContain('capella_session=;');
   });
 
-  it('allows only an Admin session to promote an employee to Cashier', async () => {
+  it('allows only an Admin session to assign a branch cashier login', async () => {
     const unauthorized = await request(makeApp())
       .post('/api/v1/auth/cashier-accounts')
-      .send({ employeeId: 7, username: 'Cashier.One', password: 'secret' });
-    const promoted = await request(makeApp())
+      .send({ branchId: 3, username: 'Cashier.One', password: 'secret' });
+    const assigned = await request(makeApp())
       .post('/api/v1/auth/cashier-accounts')
       .set('Cookie', 'capella_session=admin-token')
-      .send({ employeeId: 7, username: 'Cashier.One', password: 'secret' });
+      .send({ branchId: 3, username: 'Cashier.One', password: 'secret' });
 
     expect(unauthorized.status).toBe(401);
-    expect(promoted.status).toBe(201);
-    expect(promoted.body).toEqual({
+    expect(assigned.status).toBe(201);
+    expect(assigned.body).toEqual({
       data: {
         id: 21,
         username: 'cashier.one',
         role: 'cashier',
-        employeeId: 7,
         branchId: 3,
+        branchName: 'فرع مدينة نصر',
         active: true,
       },
     });
@@ -197,7 +203,7 @@ describe('authentication HTTP API', () => {
       .set(cookie).send({ password: 'new-secret' })).status).toBe(200);
   });
 
-  it('maps Cashier promotion conflicts to stable HTTP errors', async () => {
+  it('maps branch cashier conflicts to stable HTTP errors', async () => {
     const createAuthRouter = Reflect.get(auth, 'createAuthRouter');
     const app = express();
     app.use(express.json());
@@ -221,7 +227,7 @@ describe('authentication HTTP API', () => {
     }, {
       secureCookies: false,
       cashierAccounts: {
-        async promote() {
+        async upsert() {
           throw new auth.CashierAccountError('USERNAME_TAKEN', 'Username is already in use');
         },
         async list() { return { items: [], total: 0 }; },
@@ -233,9 +239,47 @@ describe('authentication HTTP API', () => {
     const response = await request(app)
       .post('/api/v1/auth/cashier-accounts')
       .set('Cookie', 'capella_session=admin-token')
-      .send({ employeeId: 7, username: 'cashier.one', password: 'secret' });
+      .send({ branchId: 3, username: 'cashier.one', password: 'secret' });
 
     expect(response.status).toBe(409);
     expect(response.body.error).toMatchObject({ code: 'USERNAME_TAKEN' });
+  });
+
+  it('maps a missing cashier branch to HTTP 404', async () => {
+    const createAuthRouter = Reflect.get(auth, 'createAuthRouter');
+    const app = express();
+    app.use(express.json());
+    app.use('/api/v1/auth', createAuthRouter({
+      async loginAdmin() { throw new Error('not used'); },
+      async loginCashier() { throw new Error('not used'); },
+      async loginEmployee() { throw new Error('not used'); },
+      async logout() { return false; },
+      async authenticate() {
+        return {
+          id: 'admin-session', tokenHash: 'hash', actorType: 'admin' as const,
+          employeeId: null, accountId: null,
+          expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
+        };
+      },
+      async revokeEmployeeSessions() {},
+    }, {
+      secureCookies: false,
+      cashierAccounts: {
+        async upsert() {
+          throw new auth.CashierAccountError('BRANCH_NOT_FOUND', 'Branch not found');
+        },
+        async list() { return { items: [], total: 0 }; },
+        async setActive() { throw new Error('unused'); },
+        async resetPassword() { throw new Error('unused'); },
+      },
+    }));
+
+    const response = await request(app)
+      .post('/api/v1/auth/cashier-accounts')
+      .set('Cookie', 'capella_session=admin-token')
+      .send({ branchId: 999, username: 'missing.branch', password: 'secret' });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toMatchObject({ code: 'BRANCH_NOT_FOUND' });
   });
 });

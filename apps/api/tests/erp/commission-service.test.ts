@@ -28,7 +28,7 @@ describe('ERP commission service', () => {
       }),
     });
 
-    await expect(service.list({ role: 'cashier', accountId: 2, employeeId: 7 }, {
+    await expect(service.list({ role: 'cashier', accountId: 2, branchId: 1 }, {
       month: '2026-08', page: 1, pageSize: 20,
     })).rejects.toBeInstanceOf(CommissionError);
     await expect(service.list({ role: 'admin', accountId: 1 }, {

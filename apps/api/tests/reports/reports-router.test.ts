@@ -61,6 +61,7 @@ const auth = (actorType: 'admin' | 'employee' | 'account' | null = 'admin') => (
     employeeId: actorType === 'employee' ? 1 : null,
     accountId: actorType === 'account' ? 2 : null,
     accountRole: actorType === 'account' ? 'cashier' : null,
+    branchId: actorType === 'account' ? 1 : null,
   }),
 }) as unknown as AuthService;
 const service = (): ReportService => ({

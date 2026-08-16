@@ -35,16 +35,16 @@ const actorFrom = (response: Response): ErpAccountIdentity => {
   const actor = response.locals.actor as {
     type?: string;
     accountId?: number;
-    employeeId?: number;
+    branchId?: number;
   } | undefined;
   if (actor?.type === 'admin' && actor.accountId) {
     return { role: 'admin', accountId: actor.accountId };
   }
-  if (actor?.type === 'cashier' && actor.accountId && actor.employeeId) {
+  if (actor?.type === 'cashier' && actor.accountId && actor.branchId) {
     return {
       role: 'cashier',
       accountId: actor.accountId,
-      employeeId: actor.employeeId,
+      branchId: actor.branchId,
     };
   }
   throw new CashierSessionError(

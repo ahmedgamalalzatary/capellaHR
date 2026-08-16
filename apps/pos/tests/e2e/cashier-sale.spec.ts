@@ -28,7 +28,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   let completedSale: Record<string, unknown> | undefined;
   let completedSaleRequests = 0;
 
-  const actor = { actor: { type: 'cashier', accountId: 8, employeeId: 17 } };
+  const actor = { actor: { type: 'cashier', accountId: 8 } };
   const session = {
     id: 14,
     branchId: 3,
@@ -48,6 +48,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
     cashierSessionId: 14,
     client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
     assignedEmployee: { id: 18, employeeCode: 1018, name: 'سارة علي' },
+    seller: { id: 17, employeeCode: 1017, name: 'أحمد جمال' },
     authorizedBy: { accountId: 8, username: 'cashier.one' },
     lines: [
       {
@@ -194,6 +195,10 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
       await json(route, [{ id: 18, employeeCode: 1018, fullName: 'سارة علي', branchId: 3 }]);
       return;
     }
+    if (path === '/erp/branch-cashier-roster') {
+      await json(route, [{ id: 17, employeeCode: 1017, fullName: 'أحمد جمال' }]);
+      return;
+    }
     if (path === '/erp/sales/quote' && request.method() === 'POST') {
       const payload = request.postDataJSON() as {
         lines: Array<{
@@ -302,6 +307,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: /صبغة شعر/ }).click();
   await page.getByRole('button', { name: /شامبو/ }).click();
+  await page.getByLabel('الكاشير').selectOption('17');
   await page.getByRole('button', { name: /سارة علي/ }).click();
   await expect(page.getByText('تم سداد الإجمالي بالكامل')).toBeVisible();
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
@@ -339,6 +345,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   expect(completedSale).toMatchObject({
     clientId: 5,
     assignedEmployeeId: 18,
+    sellerEmployeeId: 17,
     cashierSessionId: 14,
     lines: [
       { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' },
@@ -351,7 +358,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByLabel('ابحث عن العميل برقم الهاتف أو الاسم').fill('منى');
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: /شامبو/ }).click();
-  await page.getByRole('button', { name: /سارة علي/ }).click();
+  await page.getByLabel('الكاشير').selectOption('17');
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
   await page.getByRole('button', { name: 'تأكيد البيع' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'تم بيع آخر وحدة من شامبو' })).toBeVisible();

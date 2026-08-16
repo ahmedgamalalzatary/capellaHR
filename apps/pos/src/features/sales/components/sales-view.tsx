@@ -35,6 +35,7 @@ import {
   getCurrentCashierSession,
   listCashierSessionBranches,
 } from '@/features/cashier-sessions';
+import { cashierAccountQueryKeys, listBranchCashierRoster } from '@/features/cashier-accounts';
 import { ClientPicker, type Client } from '@/features/clients';
 import { ServicePicker, type ServiceListItem } from '@/features/catalog';
 import { ProductPicker, type ProductSaleItem } from '@/features/products';
@@ -42,6 +43,7 @@ import {
   PresentEmployeePicker,
   type AssignableEmployee,
 } from '@/features/employee-assignment';
+import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { createUuid } from '@/lib/uuid';
@@ -321,6 +323,17 @@ function SaleWorkspace({
   }), [accountId, cashierSessionId, role, workspaceBranchId]);
   const [client, setClient] = useState<Client | null>(null);
   const [employee, setEmployee] = useState<AssignableEmployee | null>(null);
+  const [seller, setSeller] = useState<BranchCashierRosterMember | null>(null);
+  const roster = useQuery({
+    queryKey: cashierAccountQueryKeys.roster(workspaceBranchId),
+    queryFn: () => listBranchCashierRoster({ branchId: workspaceBranchId }),
+  });
+  const sellerOnRoster = Boolean(
+    seller && roster.data?.some((member) => member.id === seller.id),
+  );
+  useEffect(() => {
+    if (roster.isSuccess && seller && !sellerOnRoster) setSeller(null);
+  }, [roster.isSuccess, seller, sellerOnRoster]);
   const [lines, setLines] = useState<Line[]>([]);
   const [discountKind, setDiscountKind] = useState<AdjustmentKind>('percentage');
   const [discountValue, setDiscountValue] = useState('');
@@ -351,7 +364,7 @@ function SaleWorkspace({
   const mounted = useRef(true);
   const submitting = useRef(false);
   const hasDraftProgress = Boolean(
-    client || employee || lines.length > 0 || discountValue || taxValue || paymentsTouched,
+    client || employee || seller || lines.length > 0 || discountValue || taxValue || paymentsTouched,
   );
   const matchesActiveDraft = useCallback((pending: PendingSale) => (
     pending.owner.accountId === workspaceOwner.accountId
@@ -433,6 +446,7 @@ function SaleWorkspace({
       if (draft) {
         setClient(null);
         setEmployee(draft.employee);
+        setSeller(draft.seller ?? null);
         setLines(draft.lines);
         setDiscountKind(draft.discountKind);
         setDiscountValue(draft.discountValue);
@@ -552,8 +566,8 @@ function SaleWorkspace({
     return validServiceUnitPrice(line.unitPrice);
   });
   const hasServiceLines = lines.some((line) => line.itemType !== 'product');
-  const adjustmentsStep = hasServiceLines ? 4 : 3;
-  const paymentsStep = hasServiceLines ? 5 : 4;
+  const adjustmentsStep = hasServiceLines ? 5 : 4;
+  const paymentsStep = hasServiceLines ? 6 : 5;
 
   useEffect(() => {
     if (!hasServiceLines && employee !== null) setEmployee(null);
@@ -590,6 +604,7 @@ function SaleWorkspace({
     const saved = writeSaleDraft(workspaceOwner, {
       client,
       employee,
+      seller,
       lines,
       discountKind,
       discountValue,
@@ -611,6 +626,7 @@ function SaleWorkspace({
     lines,
     payments,
     paymentsTouched,
+    seller,
     taxKind,
     taxValue,
     workspaceOwner,
@@ -679,13 +695,14 @@ function SaleWorkspace({
   const totalCents = quote.data ? toCents(quote.data.totals.total) : null;
   const remaining = paidCents === null || totalCents === null ? null : totalCents - paidCents;
   const ready = Boolean(
-    client && (!hasServiceLines || employee) && lines.length > 0
-    && servicePricesValid && quote.data && !quote.isFetching
-    && remaining === BigInt(0) && !completion.isPending && !pendingSale,
+    client && sellerOnRoster && (!hasServiceLines || employee) && lines.length > 0
+      && servicePricesValid && quote.data && !quote.isFetching
+      && remaining === BigInt(0) && !completion.isPending && !pendingSale,
   );
 
   const makeInput = (): CompleteSaleInput | null => {
-    if (!client || (hasServiceLines && !employee) || !quote.data || remaining !== BigInt(0)) return null;
+    if (!client || !seller || !sellerOnRoster || (hasServiceLines && !employee)
+      || !quote.data || remaining !== BigInt(0)) return null;
     const paymentRows = paymentMethods.flatMap(({ method }) => {
       const amount = payments[method];
       return amount && toCents(amount)! > BigInt(0) ? [{ method, amount }] : [];
@@ -693,6 +710,7 @@ function SaleWorkspace({
     return {
       ...(branchId === undefined ? {} : { branchId }),
       clientId: client.id,
+      sellerEmployeeId: seller.id,
       ...(hasServiceLines ? { assignedEmployeeId: employee!.id } : {}),
       cashierSessionId,
       idempotencyKey,
@@ -715,6 +733,7 @@ function SaleWorkspace({
       recoveryDraft: {
         client,
         employee: hasServiceLines ? employee : null,
+        seller,
         lines,
         discountKind,
         discountValue,
@@ -745,6 +764,7 @@ function SaleWorkspace({
     removeSaleDraft(workspaceOwner, idempotencyKey);
     setClient(null);
     setEmployee(draft.employee);
+    setSeller(draft.seller ?? null);
     setLines(draft.lines);
     setDiscountKind(draft.discountKind);
     setDiscountValue(draft.discountValue);
@@ -763,6 +783,7 @@ function SaleWorkspace({
   const reset = () => {
     setClient(null);
     setEmployee(null);
+    setSeller(null);
     setLines([]);
     setPayments({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
     setPaymentsTouched(false);
@@ -920,7 +941,45 @@ function SaleWorkspace({
             </Card>
 
             <Card className="shadow-card">
-              <CardHeader><CardTitle><StepTitle step={2} label="الخدمات والمنتجات" /></CardTitle></CardHeader>
+              <CardHeader><CardTitle><StepTitle step={2} label="الكاشير" /></CardTitle></CardHeader>
+              <CardContent className="p-5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="sale-seller">الكاشير</Label>
+                  <Select
+                    id="sale-seller"
+                    disabled={roster.isPending || roster.isError}
+                    value={seller?.id ?? ''}
+                    onChange={(event) => {
+                      const id = Number(event.target.value);
+                      setSeller(roster.data?.find((member) => member.id === id) ?? null);
+                    }}
+                  >
+                    <option value="">اختر اسمك</option>
+                    {(roster.data ?? []).map((member) => (
+                      <option key={member.id} value={member.id}>{member.fullName}</option>
+                    ))}
+                  </Select>
+                  {roster.isError ? (
+                    <Notice tone="danger" role="alert">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>{errorMessage(roster.error)}</span>
+                        <Button variant="secondary" onClick={() => void roster.refetch()}>
+                          إعادة المحاولة
+                        </Button>
+                      </div>
+                    </Notice>
+                  ) : null}
+                  {roster.isSuccess && (roster.data ?? []).length === 0 ? (
+                    <p className="text-[13px] text-muted">
+                      لا يوجد موظفون في وردية هذا الفرع؛ اطلب من المسؤول إضافتهم من صفحة حسابات كاشير الفروع.
+                    </p>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card">
+              <CardHeader><CardTitle><StepTitle step={3} label="الخدمات والمنتجات" /></CardTitle></CardHeader>
               <CardContent className="space-y-5 p-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => {
@@ -994,7 +1053,7 @@ function SaleWorkspace({
 
             {hasServiceLines ? (
               <Card className="shadow-card">
-              <CardHeader><CardTitle><StepTitle step={3} label="الموظف" /></CardTitle></CardHeader>
+              <CardHeader><CardTitle><StepTitle step={4} label="الموظف" /></CardTitle></CardHeader>
               <CardContent className="p-5">
                 <PresentEmployeePicker
                   selected={employee}

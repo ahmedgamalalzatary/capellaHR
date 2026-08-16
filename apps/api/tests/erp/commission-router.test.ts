@@ -41,7 +41,7 @@ describe('ERP commission router', () => {
   });
 
   it('rejects cashier access and invalid months', async () => {
-    const cashier = appFor({ type: 'cashier', accountId: 2, employeeId: 7 });
+    const cashier = appFor({ type: 'cashier', accountId: 2, branchId: 1 });
     expect((await request(cashier).get('/commissions?month=2026-08')).status).toBe(403);
     expect((await request(appFor({ type: 'admin', accountId: 1 }))
       .get('/commissions?month=bad')).status).toBe(400);

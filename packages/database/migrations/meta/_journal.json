@@ -421,6 +421,13 @@
       "when": 1786780307861,
       "tag": "0059_funny_senator_kelly",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1786871921313,
+      "tag": "0060_same_captain_stacy",
+      "breakpoints": true
     }
   ]
 }

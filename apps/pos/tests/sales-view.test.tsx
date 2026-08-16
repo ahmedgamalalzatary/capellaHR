@@ -1,15 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
-  actor: { current: { type: 'cashier', accountId: 3, employeeId: 9 } as
-    { type: 'cashier'; accountId: number; employeeId: number } | { type: 'admin'; accountId: number } },
+  actor: { current: { type: 'cashier', accountId: 3 } as
+    { type: 'cashier'; accountId: number } | { type: 'admin'; accountId: number } },
   getCurrentSession: vi.fn(),
   listBranches: vi.fn(),
+  listBranchCashierRoster: vi.fn(),
   quoteSale: vi.fn(),
   completeSale: vi.fn(),
   synchronizeOfflineSales: vi.fn(),
@@ -24,6 +25,10 @@ vi.mock('../src/features/auth', () => ({
 vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', () => ({
   getCurrentCashierSession: mocks.getCurrentSession,
   listCashierSessionBranches: mocks.listBranches,
+}));
+vi.mock('../src/features/cashier-accounts/api/branch-roster-api', () => ({
+  listBranchCashierRoster: mocks.listBranchCashierRoster,
+  replaceBranchCashierRoster: vi.fn(),
 }));
 vi.mock('../src/features/clients', () => ({
   ClientPicker: (props: { branchId?: number; selected?: unknown; onSelect: (value: unknown) => void }) => (
@@ -81,6 +86,7 @@ vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
 });
 
 import { SalesView } from '../src/features/sales/components/sales-view';
+import { cashierAccountQueryKeys } from '../src/features/cashier-accounts/query-keys';
 import {
   enqueueOfflineSale,
   markOfflineSaleFailed,
@@ -119,6 +125,7 @@ const buildDraft = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
   fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
+  fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
   await screen.findByText('185.00 ج.م');
 };
 
@@ -132,12 +139,16 @@ describe('ERP service-sale view', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
-    mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
+    mocks.actor.current = { type: 'cashier', accountId: 3 };
     mocks.getCurrentSession.mockReset().mockResolvedValue({ id: 13, branchId: 2, openedByAccountId: 3 });
     mocks.listBranches.mockReset().mockResolvedValue({
       items: [{ id: 2, name: 'Main' }],
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
     });
+    mocks.listBranchCashierRoster.mockReset().mockResolvedValue([
+      { id: 9, employeeCode: 1009, fullName: 'أحمد جمال' },
+      { id: 10, employeeCode: 1010, fullName: 'منى سعيد' },
+    ]);
     mocks.clientPickerProps.mockReset();
     mocks.servicePickerProps.mockReset();
     mocks.quoteSale.mockReset().mockResolvedValue({
@@ -179,6 +190,7 @@ describe('ERP service-sale view', () => {
     expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       clientId: 5,
       assignedEmployeeId: 8,
+      sellerEmployeeId: 9,
       cashierSessionId: 13,
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
       payments: [{ method: 'cash', amount: '185.00' }],
@@ -207,6 +219,7 @@ describe('ERP service-sale view', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(await screen.findByRole('button', { name: /شامبو/ }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
     await screen.findByText('تم سداد الإجمالي بالكامل');
 
     expect(screen.queryByRole('button', { name: 'اختر الموظف' })).toBeNull();
@@ -218,11 +231,56 @@ describe('ERP service-sale view', () => {
     await screen.findByText('تم حفظ الفاتورة');
     expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       clientId: 5,
+      sellerEmployeeId: 9,
       cashierSessionId: 13,
       lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
       payments: [{ method: 'cash', amount: '50.00' }],
     }));
     expect(mocks.completeSale.mock.calls[0]?.[0]).not.toHaveProperty('assignedEmployeeId');
+  });
+
+  it('blocks submission until a roster seller is chosen', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
+    await screen.findByText('185.00 ج.م');
+
+    const seller = await screen.findByLabelText('الكاشير') as HTMLSelectElement;
+    expect(within(seller).getByText('أحمد جمال')).toBeDefined();
+    expect(within(seller).getByText('منى سعيد')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع' }))
+      .toHaveProperty('disabled', true);
+
+    fireEvent.change(seller, { target: { value: '10' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع' }))
+      .toHaveProperty('disabled', false));
+  });
+
+  it('uses the shared roster cache key and shows load failures', async () => {
+    mocks.listBranchCashierRoster.mockRejectedValue(new ApiError(500, {
+      code: 'UNEXPECTED_ERROR',
+      message: 'roster unavailable',
+    }));
+    const queryClient = renderView();
+
+    expect(await screen.findByText('roster unavailable')).toBeDefined();
+    expect(document.querySelector('#sale-seller')).toHaveProperty('disabled', true);
+    expect(queryClient.getQueryState(cashierAccountQueryKeys.roster(2))).toBeDefined();
+  });
+
+  it('blocks a restored sale when its selected seller leaves the roster', async () => {
+    const queryClient = renderView();
+    await buildDraft();
+    const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع' });
+    await waitFor(() => expect(review).toHaveProperty('disabled', false));
+
+    queryClient.setQueryData(cashierAccountQueryKeys.roster(2), [
+      { id: 10, employeeCode: 1010, fullName: 'منى سعيد' },
+    ]);
+
+    await waitFor(() => expect(review).toHaveProperty('disabled', true));
   });
 
   it('requires and submits a positive unit price for an open-price service', async () => {
@@ -373,6 +431,7 @@ describe('ERP service-sale view', () => {
       owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
       input: {
         clientId: 6,
+        sellerEmployeeId: 9,
         assignedEmployeeId: 8,
         cashierSessionId: 13,
         idempotencyKey: otherIdempotencyKey,
@@ -411,6 +470,7 @@ describe('ERP service-sale view', () => {
       owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
       input: {
         clientId: 6,
+        sellerEmployeeId: 9,
         assignedEmployeeId: 8,
         cashierSessionId: 13,
         idempotencyKey: otherIdempotencyKey,
@@ -441,6 +501,7 @@ describe('ERP service-sale view', () => {
   it('shows and retries a failed predecessor before completing the active queued draft', async () => {
     const predecessor = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
@@ -488,6 +549,7 @@ describe('ERP service-sale view', () => {
   it('keeps a delayed failed-sale retry when draft state reruns synchronization', async () => {
     const predecessor = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
@@ -519,6 +581,7 @@ describe('ERP service-sale view', () => {
   it('replays a failed sale once across an online-offline-online connectivity flap', async () => {
     const predecessor = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
@@ -559,6 +622,7 @@ describe('ERP service-sale view', () => {
   it('updates the pending queue label from connectivity events', async () => {
     const input = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
@@ -653,6 +717,7 @@ describe('ERP service-sale view', () => {
   it('replays a durable pending request after the app reloads online', async () => {
     const pending = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
@@ -671,6 +736,7 @@ describe('ERP service-sale view', () => {
   it('replays every queued request for the current workspace in creation order', async () => {
     const first = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
@@ -695,6 +761,7 @@ describe('ERP service-sale view', () => {
   it('recovers the matching workspace request when another owner record sorts first', async () => {
     const matching = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
@@ -719,6 +786,7 @@ describe('ERP service-sale view', () => {
   it('recovers a committed pending sale after its Cashier session has closed', async () => {
     const pending = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
@@ -740,6 +808,7 @@ describe('ERP service-sale view', () => {
   it('replays every queued sale for the cashier even after the session has closed', async () => {
     const first = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: '33333333-3333-4333-8333-333333333333',
@@ -761,6 +830,7 @@ describe('ERP service-sale view', () => {
   it('retries a closed-session queued sale when connectivity returns', async () => {
     const pending = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
@@ -787,6 +857,7 @@ describe('ERP service-sale view', () => {
   it('replays an older-session queue in the background after a new session opens', async () => {
     const pending = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
@@ -818,6 +889,7 @@ describe('ERP service-sale view', () => {
   it('reopens an older-session conflict under the current session with a fresh key', async () => {
     const oldInput = {
       clientId: 5,
+      sellerEmployeeId: 9,
       assignedEmployeeId: 8,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
@@ -830,6 +902,7 @@ describe('ERP service-sale view', () => {
       recoveryDraft: {
         client: { id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678', createdAt: '', updatedAt: '' },
         employee: { id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 },
+        seller: { id: 9, employeeCode: 1009, fullName: 'أحمد جمال' },
         lines: [{
           service: {
             id: 21, branchId: 2, categoryId: 1, categoryName: 'شعر', categoryIsActive: true,
@@ -884,6 +957,7 @@ describe('ERP service-sale view', () => {
       owner: { accountId: 4, role: 'cashier', branchId: 2, cashierSessionId: 12 },
       input: {
         clientId: 5,
+        sellerEmployeeId: 9,
         assignedEmployeeId: 8,
         cashierSessionId: 12,
         idempotencyKey: crypto.randomUUID(),

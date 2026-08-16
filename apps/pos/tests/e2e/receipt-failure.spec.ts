@@ -22,7 +22,7 @@ test('receipt loading exposes a safe request reference and recovers without a sa
     if (path === '/auth/session') {
       await route.fulfill({
         contentType: 'application/json', headers: corsHeaders,
-        body: JSON.stringify({ data: { actor: { type: 'cashier', accountId: 3, employeeId: 9 } } }),
+        body: JSON.stringify({ data: { actor: { type: 'cashier', accountId: 3 } } }),
       });
       return;
     }

@@ -25,6 +25,7 @@ These instructions apply to the entire repository. Follow the user's explicit in
 - Use completion-triggered waiting only: the running command or agent must wake you when it completes. If other work is available, continue that work and let the completion notification arrive on its own.
 - A timed wait that expires must never be followed by another status check or timed wait. Treat any repeated check as prohibited polling.
 - Prefer commands that return the smallest useful output for the task to reduce token usage. Filter or limit output when the full result is unnecessary, for example with `tail -40`, `head -40`, or a search for only the relevant task/status lines.
+- For every command, constrain the displayed output to the smallest useful portion with `head`, `tail`, PowerShell `Select-Object -First/-Last`, or a narrower filter; never consume unfiltered full command output.
 - Move quickly through red/green TDD phases and work in small, focused slices. Use TDD to catch wrong directions early rather than allowing the process itself to slow down delivery.
 - Assume commands copied from this chat CLI may be broken or split at line wraps. When the user must copy and run a command, keep it short, provide it as a single copy-safe line, avoid fragile line continuations, and provide commands one at a time when practical.
 

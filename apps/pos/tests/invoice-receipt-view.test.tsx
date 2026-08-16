@@ -114,12 +114,26 @@ describe('stored invoice receipt', () => {
     expect(screen.getByText(saleFixtures.completedInvoice.client.name)).toBeDefined();
     expect(screen.getByText(saleFixtures.completedInvoice.assignedEmployee.name)).toBeDefined();
     expect(screen.getByText(new RegExp(saleFixtures.completedInvoice.lines[0].name))).toBeDefined();
-    expect(screen.getByText(saleFixtures.completedInvoice.authorizedBy.username)).toBeDefined();
+    expect(screen.getByText('الكاشير')).toBeDefined();
+    expect(screen.getByText(saleFixtures.completedInvoice.seller.name)).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
     expect(print).toHaveBeenCalledOnce();
     expect(getInvoice).toHaveBeenCalledTimes(1);
     expect(getInvoice).toHaveBeenCalledWith(44, 2);
+  });
+
+  it('falls back to the authorizing account for legacy invoices without a seller', async () => {
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      seller: null,
+    });
+    renderView();
+
+    expect(await screen.findByText(saleFixtures.completedInvoice.invoiceNumber)).toBeDefined();
+    expect(screen.getByText('بواسطة')).toBeDefined();
+    expect(screen.getByText(saleFixtures.completedInvoice.authorizedBy.username)).toBeDefined();
+    expect(screen.queryByText('الكاشير')).toBeNull();
   });
 
   it('brands the receipt header and encodes the invoice number as a QR code', async () => {
@@ -205,7 +219,7 @@ describe('stored invoice receipt', () => {
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
       assignedEmployee: null,
-      lines: [{ ...saleFixtures.completedInvoice.lines[0], itemType: 'product' }],
+      lines: [{ ...saleFixtures.completedInvoice.lines[0]!, itemType: 'product' }],
     });
 
     renderView();

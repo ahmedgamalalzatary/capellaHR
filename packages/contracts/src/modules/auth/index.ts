@@ -29,8 +29,8 @@ export const cashierLoginSchema = z.object({
   password: z.string().min(1).max(1024),
 }).strict();
 
-export const promoteCashierSchema = z.object({
-  employeeId: positiveMysqlIntSchema,
+export const upsertBranchCashierSchema = z.object({
+  branchId: positiveMysqlIntSchema,
   username: cashierUsernameSchema,
   password: z.string().min(1).max(1024),
 }).strict();
@@ -52,8 +52,8 @@ export const publicCashierAccountSchema = z.object({
   id: positiveMysqlIntSchema,
   username: cashierUsernameSchema,
   role: z.literal('cashier'),
-  employeeId: positiveMysqlIntSchema,
   branchId: positiveMysqlIntSchema,
+  branchName: z.string().min(1).max(255),
   active: z.boolean(),
 }).strict();
 
@@ -62,7 +62,6 @@ export const accountSessionActorSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('cashier'),
     accountId: positiveMysqlIntSchema,
-    employeeId: positiveMysqlIntSchema,
   }).strict(),
 ]);
 
@@ -86,7 +85,7 @@ export const employeeLoginSchema = z.object({
 
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
 export type CashierLoginInput = z.infer<typeof cashierLoginSchema>;
-export type PromoteCashierInput = z.infer<typeof promoteCashierSchema>;
+export type UpsertBranchCashierInput = z.infer<typeof upsertBranchCashierSchema>;
 export type ListCashierAccountsInput = z.infer<typeof listCashierAccountsSchema>;
 export type CashierAccountStatusInput = z.infer<typeof cashierAccountStatusSchema>;
 export type ResetCashierPasswordInput = z.infer<typeof resetCashierPasswordSchema>;

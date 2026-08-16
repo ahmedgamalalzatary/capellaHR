@@ -24,7 +24,8 @@ describe('public HR capabilities for ERP', () => {
               actorType: 'account' as const,
               accountId: 3,
               accountRole: 'cashier' as const,
-              employeeId: 7,
+              employeeId: null,
+              branchId: 4,
             }
           : token === 'employee'
             ? {
@@ -43,7 +44,7 @@ describe('public HR capabilities for ERP', () => {
     await expect(capability.authenticateAccount('cashier')).resolves.toEqual({
       role: 'cashier',
       accountId: 3,
-      employeeId: 7,
+      branchId: 4,
     });
     await expect(capability.authenticateAccount('employee')).resolves.toBeNull();
     await expect(capability.authenticateAccount('missing')).resolves.toBeNull();

@@ -1,4 +1,4 @@
-import { promoteCashierSchema, resetCashierPasswordSchema } from '@capella/contracts';
+import { resetCashierPasswordSchema, upsertBranchCashierSchema } from '@capella/contracts';
 import { z } from 'zod';
 
 const codePoints = (value: string) => [...value].length;
@@ -21,17 +21,17 @@ const passwordFormSchema = z
   .max(1024, 'كلمة المرور طويلة جدًا');
 
 /** Contract schema with Arabic messages layered on for form display. */
-export const promoteCashierFormSchema = promoteCashierSchema.extend({
-  employeeId: z.coerce
-    .number({ invalid_type_error: 'يجب اختيار الموظف' })
-    .int('يجب اختيار الموظف')
-    .positive('يجب اختيار الموظف')
-    .max(2147483647, 'يجب اختيار الموظف'),
+export const branchCashierCredentialsFormSchema = upsertBranchCashierSchema.extend({
+  branchId: z.coerce
+    .number({ invalid_type_error: 'يجب اختيار الفرع' })
+    .int('يجب اختيار الفرع')
+    .positive('يجب اختيار الفرع')
+    .max(2147483647, 'يجب اختيار الفرع'),
   username: usernameFormSchema,
   password: passwordFormSchema,
 });
 
-export type PromoteCashierFormValues = z.infer<typeof promoteCashierFormSchema>;
+export type BranchCashierCredentialsFormValues = z.infer<typeof branchCashierCredentialsFormSchema>;
 
 export const resetCashierPasswordFormSchema = resetCashierPasswordSchema.extend({
   password: passwordFormSchema,

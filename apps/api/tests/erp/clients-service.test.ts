@@ -8,7 +8,7 @@ import {
   type ClientRepository,
 } from '../../src/modules/erp/clients/index.js';
 
-const CASHIER: ErpAccountIdentity = { role: 'cashier', accountId: 9, employeeId: 4 };
+const CASHIER: ErpAccountIdentity = { role: 'cashier', accountId: 9, branchId: 4 };
 
 /** Stands in for the real resolver, which is covered by its own tests. */
 const resolverFor = (branchId: number): ErpBranchContextResolver => async () => ({

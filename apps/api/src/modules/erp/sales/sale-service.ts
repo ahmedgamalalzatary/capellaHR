@@ -26,7 +26,6 @@ export type CompleteSaleOperation = {
   input: ResolvedCompleteSaleInput;
   actingAccountId: number;
   actingAccountRole: 'admin' | 'cashier';
-  actingEmployeeId: number | null;
   invoiceNumber: string;
   soldAt: Date;
   assertEmployee?(context: unknown): Promise<AssignableEmployee>;
@@ -71,6 +70,7 @@ type SaleErrorCode =
   | 'SALE_VALIDATION_FAILED'
   | 'CLIENT_NOT_FOUND'
   | 'EMPLOYEE_NOT_ASSIGNABLE'
+  | 'SELLER_NOT_ON_ROSTER'
   | 'CASHIER_SESSION_NOT_OPEN'
   | 'SERVICE_UNAVAILABLE'
   | 'PRICE_CHANGED'
@@ -89,6 +89,7 @@ const messages: Record<SaleErrorCode, string> = {
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
   CLIENT_NOT_FOUND: 'العميل غير موجود',
   EMPLOYEE_NOT_ASSIGNABLE: 'الموظف غير مسجل الحضور حاليًا',
+  SELLER_NOT_ON_ROSTER: 'الكاشير المحدد غير مضاف لوردية هذا الفرع',
   CASHIER_SESSION_NOT_OPEN: 'جلسة الكاشير غير مفتوحة',
   SERVICE_UNAVAILABLE: 'إحدى الخدمات غير متاحة',
   PRICE_CHANGED: 'تغير سعر إحدى الخدمات؛ راجع السعر وأعد المحاولة',
@@ -176,7 +177,6 @@ export const createSaleService = (dependencies: {
           input: resolved,
           actingAccountId: accountId,
           actingAccountRole: actor.role,
-          actingEmployeeId: actor.role === 'cashier' ? actor.employeeId : null,
           invoiceNumber: number.invoiceNumber,
           soldAt: number.allocatedAt,
           ...(hasService ? {

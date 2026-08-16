@@ -200,6 +200,7 @@ export const completeSaleSchema = z.object({
   branchId: positiveMysqlIntSchema.optional(),
   clientId: positiveMysqlIntSchema,
   assignedEmployeeId: positiveMysqlIntSchema.optional(),
+  sellerEmployeeId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
   idempotencyKey: z.string().uuid(),
   lines: z.array(saleLineSchema).min(1).max(100),
@@ -440,6 +441,11 @@ export const invoiceSchema = z.object({
     employeeCode: positiveMysqlIntSchema,
     name: z.string().min(1).max(255),
   }).strict().nullable(),
+  seller: z.object({
+    id: positiveMysqlIntSchema,
+    employeeCode: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255),
+  }).strict().nullable(),
   authorizedBy: z.object({
     accountId: positiveMysqlIntSchema,
     username: z.string().min(1).max(255),
@@ -497,6 +503,32 @@ export const invoiceSchema = z.object({
   }
 });
 
+export const branchCashierRosterQuerySchema = z.object({
+  branchId: coercedMysqlIntSchema.optional(),
+}).strict();
+
+export const branchCashierRosterItemSchema = z.object({
+  id: positiveMysqlIntSchema,
+  employeeCode: positiveMysqlIntSchema,
+  fullName: z.string().min(1).max(255),
+}).strict();
+
+export const replaceBranchCashierRosterSchema = z.object({
+  employeeIds: z.array(positiveMysqlIntSchema).max(100),
+}).strict().superRefine((value, context) => {
+  const seen = new Set<number>();
+  value.employeeIds.forEach((employeeId, index) => {
+    if (seen.has(employeeId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['employeeIds', index],
+        message: 'لا يمكن تكرار الموظف في الوردية',
+      });
+    }
+    seen.add(employeeId);
+  });
+});
+
 export const clientVisitHistoryQuerySchema = z.object({
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
@@ -547,6 +579,7 @@ export const saleErrorSchema = z.object({
     'SALE_VALIDATION_FAILED',
     'CLIENT_NOT_FOUND',
     'EMPLOYEE_NOT_ASSIGNABLE',
+    'SELLER_NOT_ON_ROSTER',
     'CASHIER_SESSION_NOT_OPEN',
     'SERVICE_UNAVAILABLE',
     'PRICE_CHANGED',
@@ -570,6 +603,7 @@ export const saleFixtures = {
     branchId: 2,
     clientId: 5,
     assignedEmployeeId: 8,
+    sellerEmployeeId: 9,
     cashierSessionId: 13,
     idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
     lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
@@ -588,6 +622,7 @@ export const saleFixtures = {
     cashierSessionId: 13,
     client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
     assignedEmployee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+    seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال' },
     authorizedBy: { accountId: 3, username: 'cashier.one' },
     lines: [{
       id: 81,
@@ -630,6 +665,9 @@ export const saleFixtures = {
 } as const;
 
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
+export type BranchCashierRosterQuery = z.infer<typeof branchCashierRosterQuerySchema>;
+export type BranchCashierRosterItem = z.infer<typeof branchCashierRosterItemSchema>;
+export type ReplaceBranchCashierRosterInput = z.infer<typeof replaceBranchCashierRosterSchema>;
 export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;
 export type RefundInvoiceInput = z.infer<typeof refundInvoiceSchema>;
 export type RefundQuoteInput = z.infer<typeof refundQuoteInputSchema>;

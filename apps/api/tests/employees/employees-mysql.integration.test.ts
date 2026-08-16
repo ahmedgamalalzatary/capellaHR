@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branchCashierRoster, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -16,16 +16,23 @@ const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', p
 // fields and only the deactivation itself is under test.
 const deactivation = { advanceDecision: 'sum_all', negativeBalanceDecision: 'record_debt', expectedUnpaidInstallmentCount: 0, expectedUnpaidAdvanceAmount: '0.00', expectedProjectedNetSalary: '0.00', expectedAmountOwed: '0.00' } as const;
 
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(branchCashierRoster); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
   it('atomically reassigns a checked-out employee and preserves branch history', async () => {
     const oldBranch = await branchModule.service.create({ name: 'Old branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const newBranch = await branchModule.service.create({ name: 'New branch', location: 'Giza', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const created = await employeeModule.service.create(employee(oldBranch.id, '01012345678'));
+    await database.insert(branchCashierRoster).values({
+      branchId: oldBranch.id,
+      employeeId: created.id,
+      createdAt: new Date(),
+    });
 
     const updated = await employeeModule.service.update(created.id, { branchId: newBranch.id });
 
     expect(updated.employee.branchId).toBe(newBranch.id);
+    expect(await database.select().from(branchCashierRoster)
+      .where(eq(branchCashierRoster.employeeId, created.id))).toHaveLength(0);
     const history = await database.select().from(employeeBranchAssignments)
       .where(eq(employeeBranchAssignments.employeeId, created.id)).orderBy(asc(employeeBranchAssignments.effectiveFrom));
     expect(history).toHaveLength(2);
@@ -38,6 +45,13 @@ describe('MySQL-backed employees', () => {
     const event = (await database.select().from(auditEvents)
       .where(eq(auditEvents.action, 'branch_reassign')).limit(1))[0];
     expect(event?.relatedIds).toEqual({ previousBranchId: String(oldBranch.id), branchId: String(newBranch.id) });
+    const rosterEvent = (await database.select().from(auditEvents)
+      .where(eq(auditEvents.action, 'remove_on_branch_reassign')).limit(1))[0];
+    expect(rosterEvent).toMatchObject({
+      entityType: 'branch_cashier_roster',
+      entityId: String(oldBranch.id),
+      relatedIds: { branchId: String(oldBranch.id), employeeId: String(created.id) },
+    });
   });
   it('creates concurrent employees with distinct incremental codes and locks the branch', async () => {
     const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

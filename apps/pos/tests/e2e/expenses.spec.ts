@@ -27,7 +27,7 @@ test('Cashier records an expense in their own branch and cannot correct one', as
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request(); const path = new URL(request.url()).pathname.replace('/api/v1', '');
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    if (path === '/auth/session') return json(route, { actor: { type: 'cashier', accountId: 8, employeeId: 17 } });
+    if (path === '/auth/session') return json(route, { actor: { type: 'cashier', accountId: 8 } });
     if (path === '/erp/cashier-sessions/current') return json(route, null);
     if (path === '/erp/categories') return json(route, [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], { page: 1, pageSize: 100, total: 1, totalPages: 1 });
     if (path === '/erp/expenses' && request.method() === 'GET') return json(route, rows, { page: 1, pageSize: 20, total: rows.length, totalPages: rows.length ? 1 : 0 });

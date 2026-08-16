@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createErpBranchContextResolver,
   type ErpBranchCapability,
-  type ErpEmployeeCapability,
 } from '../../src/modules/erp/index.js';
 import {
   createClientService,
@@ -29,12 +28,6 @@ const branches = {
   findById: vi.fn(async (id: number) => (id === 1 || id === 2 ? { id, name: `فرع ${id}` } : null)),
 } as unknown as ErpBranchCapability;
 
-const employees = {
-  findActiveById: vi.fn(async (id: number) => (
-    id === 4 ? { id: 4, employeeCode: 100, fullName: 'كاشير', branchId: 1 } : null
-  )),
-} as unknown as ErpEmployeeCapability;
-
 const repository = (overrides: Partial<ClientRepository> = {}): ClientRepository => ({
   create: vi.fn(async (input: Parameters<ClientRepository['create']>[0]) => record(input)),
   findById: vi.fn(async () => record()),
@@ -45,14 +38,14 @@ const repository = (overrides: Partial<ClientRepository> = {}): ClientRepository
 });
 
 const ADMIN = { type: 'admin', accountId: 1 };
-const CASHIER = { type: 'cashier', accountId: 2, employeeId: 4 };
+const CASHIER = { type: 'cashier', accountId: 2, branchId: 1 };
 
 /** Real service and real resolver over a fake repository, so the HTTP layer
  *  exercises the actual branch rules rather than a stubbed service. */
 const makeApp = (actor: unknown, repo: ClientRepository = repository()) => {
   const service = createClientService({
     repository: repo,
-    resolveBranchContext: createErpBranchContextResolver({ branches, employees }),
+    resolveBranchContext: createErpBranchContextResolver({ branches }),
   });
   const app = express();
   app.use(express.json());

@@ -8,9 +8,10 @@ import {
 } from '../../src/modules/erp/sales/sale-service.js';
 import { ErpAssignmentError } from '../../src/modules/erp/assignment/assignment-service.js';
 
-const actor = { role: 'cashier' as const, accountId: 3, employeeId: 9 };
+const actor = { role: 'cashier' as const, accountId: 3, branchId: 2 };
 const input: CompleteSaleInput = {
   clientId: 5,
+  sellerEmployeeId: 9,
   assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
@@ -22,6 +23,7 @@ const input: CompleteSaleInput = {
 
 const productInput: CompleteSaleInput = {
   clientId: 5,
+  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
   lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
@@ -36,6 +38,7 @@ const invoice = {
   cashierSessionId: 13,
   client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
   assignedEmployee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+  seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال' },
   authorizedBy: { accountId: 3, username: 'cashier.one' },
   lines: [{
     id: 81, lineNumber: 1, itemType: 'service' as const, sourceId: 21,

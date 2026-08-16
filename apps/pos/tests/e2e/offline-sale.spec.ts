@@ -24,6 +24,7 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
   const owner = { accountId: 8, role: 'cashier', branchId: 3, cashierSessionId: 14 } as const;
   const input = {
     clientId: 5,
+    sellerEmployeeId: 17,
     assignedEmployeeId: 18,
     cashierSessionId: 14,
     idempotencyKey: originalKey,
@@ -42,6 +43,7 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
     recoveryDraft: {
       client: { id: 5, branchId: 3 },
       employee: { id: 18, employeeCode: 1018, fullName: 'سارة علي', branchId: 3 },
+      seller: { id: 17, employeeCode: 1017, fullName: 'أحمد جمال' },
       lines: [{
         service: {
           id: 21,
@@ -101,7 +103,7 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
       return;
     }
     if (path === '/auth/session') {
-      await json(route, { actor: { type: 'cashier', accountId: 8, employeeId: 17 } });
+      await json(route, { actor: { type: 'cashier', accountId: 8 } });
       return;
     }
     if (path === '/erp/cashier-sessions/current') {
@@ -149,6 +151,10 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
     }
     if (path === '/erp/assignable-employees') {
       await json(route, [{ id: 18, employeeCode: 1018, fullName: 'سارة علي', branchId: 3 }]);
+      return;
+    }
+    if (path === '/erp/branch-cashier-roster') {
+      await json(route, [{ id: 17, employeeCode: 1017, fullName: 'أحمد جمال' }]);
       return;
     }
     if (path === '/erp/sales/quote' && request.method() === 'POST') {

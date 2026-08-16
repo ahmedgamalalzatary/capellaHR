@@ -2,7 +2,8 @@ export type CashierAccountInput = {
   username: string;
   passwordHash: string;
   role: 'cashier';
-  employeeId: number;
+  branchId: number;
+  employeeId: null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -11,8 +12,8 @@ export type PublicCashierAccount = {
   id: number;
   username: string;
   role: 'cashier';
-  employeeId: number;
   branchId: number;
+  branchName: string;
   active: boolean;
 };
 
@@ -24,12 +25,12 @@ export class CashierAccountError extends Error {
 }
 
 export interface CashierAccountRepository {
-  promoteEmployeeToCashier(input: CashierAccountInput): Promise<
+  /** Exactly one login per branch: creates it or rewrites the existing one. */
+  upsert(input: CashierAccountInput): Promise<
     | { kind: 'created'; account: PublicCashierAccount }
-    | { kind: 'employee_not_found' }
-    | { kind: 'employee_inactive' }
+    | { kind: 'updated'; account: PublicCashierAccount }
+    | { kind: 'branch_not_found' }
     | { kind: 'username_taken' }
-    | { kind: 'employee_already_has_account' }
   >;
   listCashiers(query: { page: number; pageSize: number }): Promise<{
     items: PublicCashierAccount[];
@@ -38,7 +39,6 @@ export interface CashierAccountRepository {
   setCashierActive(input: { accountId: number; active: boolean; updatedAt: Date }): Promise<
     | { kind: 'updated'; account: PublicCashierAccount }
     | { kind: 'not_found' }
-    | { kind: 'employee_inactive' }
   >;
   updateCashierPassword(input: {
     accountId: number;
@@ -58,44 +58,34 @@ export const createCashierAccountsService = (dependencies: {
   const unwrap = (
     result:
       | { kind: 'updated'; account: PublicCashierAccount }
-      | { kind: 'not_found' }
-      | { kind: 'employee_inactive' },
+      | { kind: 'not_found' },
   ) => {
     if (result.kind === 'not_found') {
       throw new CashierAccountError('ACCOUNT_NOT_FOUND', 'حساب الكاشير غير موجود');
-    }
-    if (result.kind === 'employee_inactive') {
-      throw new CashierAccountError('EMPLOYEE_INACTIVE', 'الموظف غير نشط');
     }
     return result.account;
   };
 
   return {
-  async promote(input: { employeeId: number; username: string; password: string }) {
-    const timestamp = (dependencies.now ?? (() => new Date()))();
-    const result = await dependencies.accounts.promoteEmployeeToCashier({
-      username: input.username.trim().toLowerCase(),
-      passwordHash: await dependencies.hashPassword(input.password),
-      role: 'cashier',
-      employeeId: input.employeeId,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-    if (result.kind === 'employee_not_found') {
-      throw new CashierAccountError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
-    }
-    if (result.kind === 'employee_inactive') {
-      throw new CashierAccountError('EMPLOYEE_INACTIVE', 'الموظف غير نشط');
-    }
-    if (result.kind === 'username_taken') {
-      throw new CashierAccountError('USERNAME_TAKEN', 'اسم المستخدم مستخدم بالفعل');
-    }
-    if (result.kind === 'employee_already_has_account') {
-      throw new CashierAccountError('EMPLOYEE_ALREADY_HAS_ACCOUNT', 'يمتلك الموظف حسابًا بالفعل');
-    }
-    const { id, username, role, employeeId, branchId, active } = result.account;
-    return { id, username, role, employeeId, branchId, active };
-  },
+    async upsert(input: { branchId: number; username: string; password: string }) {
+      const timestamp = (dependencies.now ?? (() => new Date()))();
+      const result = await dependencies.accounts.upsert({
+        username: input.username.trim().toLowerCase(),
+        passwordHash: await dependencies.hashPassword(input.password),
+        role: 'cashier',
+        branchId: input.branchId,
+        employeeId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      if (result.kind === 'branch_not_found') {
+        throw new CashierAccountError('BRANCH_NOT_FOUND', 'الفرع غير موجود');
+      }
+      if (result.kind === 'username_taken') {
+        throw new CashierAccountError('USERNAME_TAKEN', 'اسم المستخدم مستخدم بالفعل');
+      }
+      return result.account;
+    },
     list(query: { page: number; pageSize: number }) {
       return dependencies.accounts.listCashiers(query);
     },

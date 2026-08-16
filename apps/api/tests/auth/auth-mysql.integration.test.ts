@@ -176,7 +176,7 @@ describe('MySQL-backed authentication', () => {
     expect(reportCleanupError).toHaveBeenCalledWith(cleanupError);
   });
 
-  it('promotes an active employee and persists a Cashier session across app instances', async () => {
+  it('assigns a branch login and persists a Cashier session across app instances', async () => {
     const now = new Date('2026-07-29T12:00:00.000Z');
     const branchId = Number((await database.insert(branches).values({
       name: 'Cashier integration branch',
@@ -187,20 +187,6 @@ describe('MySQL-backed authentication', () => {
       gpsAccuracyMeters: 5,
       attendanceRadiusMeters: 100,
       hasEverBeenReferenced: true,
-      createdAt: now,
-      updatedAt: now,
-    }))[0].insertId);
-    const employeeId = Number((await database.insert(employees).values({
-      employeeCode: 900001,
-      fullName: 'Cashier integration employee',
-      personalPhone: '01009000001',
-      whatsappPhone: '01009000001',
-      pinHash: 'unused',
-      age: 30,
-      address: 'Cairo',
-      branchId,
-      shiftDurationMinutes: 480,
-      monthlyBaseSalary: '5000.00',
       createdAt: now,
       updatedAt: now,
     }))[0].insertId);
@@ -219,10 +205,10 @@ describe('MySQL-backed authentication', () => {
       .post('/api/v1/auth/admin/login')
       .send({ email: 'admin@capella.test', password: 'integration-password' });
     const adminCookie = adminLogin.headers['set-cookie']?.[0]?.split(';')[0];
-    const promotion = await request(firstApp)
+    const assignment = await request(firstApp)
       .post('/api/v1/auth/cashier-accounts')
       .set('Cookie', adminCookie ?? '')
-      .send({ employeeId, username: 'Cashier.Integration', password: 'cashier-password' });
+      .send({ branchId, username: 'Cashier.Integration', password: 'cashier-password' });
     const cashierLogin = await request(firstApp)
       .post('/api/v1/auth/cashier/login')
       .send({ username: 'cashier.integration', password: 'cashier-password' });
@@ -237,34 +223,22 @@ describe('MySQL-backed authentication', () => {
     const session = await request(secondApp)
       .get('/api/v1/auth/session')
       .set('Cookie', cashierCookie ?? '');
-    await database.update(employees).set({ employmentStatus: 'inactive' })
-      .where(eq(employees.id, employeeId));
-    const invalidated = await request(secondApp)
-      .get('/api/v1/auth/session')
-      .set('Cookie', cashierCookie ?? '');
-    await database.update(employees).set({ employmentStatus: 'active' })
-      .where(eq(employees.id, employeeId));
-    const replayed = await request(secondApp)
-      .get('/api/v1/auth/session')
-      .set('Cookie', cashierCookie ?? '');
 
-    expect(promotion.status).toBe(201);
-    expect(promotion.body.data).toMatchObject({
+    expect(assignment.status).toBe(201);
+    expect(assignment.body.data).toMatchObject({
       username: 'cashier.integration',
       role: 'cashier',
-      employeeId,
       branchId,
       active: true,
     });
+    expect(assignment.body.data).not.toHaveProperty('employeeId');
     expect(cashierLogin.status).toBe(200);
     expect(session.status).toBe(200);
-    expect(invalidated.status).toBe(401);
-    expect(replayed.status).toBe(401);
-    expect(session.body.data.actor).toMatchObject({
+    expect(session.body.data.actor).toEqual({
       type: 'cashier',
-      employeeId,
+      accountId: assignment.body.data.id,
     });
-    expect(JSON.stringify(promotion.body)).not.toContain('passwordHash');
+    expect(JSON.stringify(assignment.body)).not.toContain('passwordHash');
     expect((await database.select().from(auditEvents)
       .where(eq(auditEvents.actorType, 'account'))).length).toBeGreaterThan(0);
   });
@@ -279,7 +253,7 @@ describe('MySQL-backed authentication', () => {
       attendanceRadiusMeters: 100, hasEverBeenReferenced: true,
       createdAt: new Date(), updatedAt: new Date(),
     });
-    const employee = await database.insert(employees).values({
+    await database.insert(employees).values({
       employeeCode: 900001, fullName: 'Cashier', personalPhone: '01009000001',
       whatsappPhone: '01009000001', pinHash: 'hash', credentialVersion: 1,
       age: 25, address: 'Cairo', branchId: Number(branch[0].insertId),
@@ -294,10 +268,10 @@ describe('MySQL-backed authentication', () => {
     const adminLogin = await request(app).post('/api/v1/auth/admin/login')
       .send({ email: 'admin@capella.test', password: 'admin-password' });
     const adminCookie = adminLogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
-    const promoted = await request(app).post('/api/v1/auth/cashier-accounts')
+    const assigned = await request(app).post('/api/v1/auth/cashier-accounts')
       .set('Cookie', adminCookie)
-      .send({ employeeId: Number(employee[0].insertId), username: 'cashier.one', password: 'old-password' });
-    const accountId = promoted.body.data.id as number;
+      .send({ branchId: Number(branch[0].insertId), username: 'cashier.one', password: 'old-password' });
+    const accountId = assigned.body.data.id as number;
     const cashierLogin = await request(app).post('/api/v1/auth/cashier/login')
       .send({ username: 'cashier.one', password: 'old-password' });
     const cashierCookie = cashierLogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
@@ -305,27 +279,9 @@ describe('MySQL-backed authentication', () => {
     await request(app).patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
       .set('Cookie', adminCookie).send({ active: false }).expect(200);
     await request(app).get('/api/v1/auth/session').set('Cookie', cashierCookie).expect(401);
-    const employeeId = Number(employee[0].insertId);
-    await database.update(employees).set({ employmentStatus: 'inactive' })
-      .where(eq(employees.id, employeeId));
-    const inactiveEnable = await request(app)
-      .patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
-      .set('Cookie', adminCookie).send({ active: true }).expect(409);
-    expect(inactiveEnable.body.error).toMatchObject({ code: 'EMPLOYEE_INACTIVE' });
-
-    await database.update(employees).set({
-      employmentStatus: 'active',
-      deletedAt: new Date(),
-    }).where(eq(employees.id, employeeId));
-    const deletedEnable = await request(app)
-      .patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
-      .set('Cookie', adminCookie).send({ active: true }).expect(409);
-    expect(deletedEnable.body.error).toMatchObject({ code: 'EMPLOYEE_INACTIVE' });
     expect((await database.select({ active: accounts.active }).from(accounts)
       .where(eq(accounts.id, accountId)).limit(1))[0]?.active).toBe(false);
 
-    await database.update(employees).set({ deletedAt: null })
-      .where(eq(employees.id, employeeId));
     await request(app).patch(`/api/v1/auth/cashier-accounts/${accountId}/status`)
       .set('Cookie', adminCookie).send({ active: true }).expect(200);
     const relogin = await request(app).post('/api/v1/auth/cashier/login')

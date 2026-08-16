@@ -46,7 +46,7 @@ const setup = () => {
     accountId: actor.accountId,
     accountRole: actor.role,
     branchId: branchId ?? 3,
-    employeeId: actor.role === 'cashier' ? 7 : null,
+    employeeId: null,
   }));
   const createService = Reflect.get(sales, 'createCashierSessionService');
   const service = createService({ repository, resolveBranchContext, now: () => now });
@@ -60,7 +60,7 @@ describe('ERP Cashier-session service', () => {
 
   it('opens a session only for the Cashier branch derived by the ERP boundary', async () => {
     const { repository, resolveBranchContext, service } = setup();
-    const actor = { role: 'cashier' as const, accountId: 8, employeeId: 7 };
+    const actor = { role: 'cashier' as const, accountId: 8, branchId: 3 };
 
     await expect(service.open(actor)).resolves.toEqual(session);
     expect(resolveBranchContext).toHaveBeenCalledWith(actor, undefined);
@@ -87,7 +87,7 @@ describe('ERP Cashier-session service', () => {
 
   it('returns the open session for a Cashier branch or an Admin-selected branch', async () => {
     const { repository, resolveBranchContext, service } = setup();
-    const cashier = { role: 'cashier' as const, accountId: 8, employeeId: 7 };
+    const cashier = { role: 'cashier' as const, accountId: 8, branchId: 3 };
     const admin = { role: 'admin' as const, accountId: 1 };
 
     await expect(service.current(cashier)).resolves.toEqual(session);
@@ -100,7 +100,7 @@ describe('ERP Cashier-session service', () => {
 
   it('guards future counter-sale mutations with the acting Cashier open session', async () => {
     const active = setup();
-    const cashier = { role: 'cashier' as const, accountId: 8, employeeId: 7 };
+    const cashier = { role: 'cashier' as const, accountId: 8, branchId: 3 };
 
     await expect(active.service.requireOpenForCashier(cashier)).resolves.toEqual(session);
     expect(active.resolveBranchContext).toHaveBeenCalledWith(cashier, undefined);
@@ -125,14 +125,14 @@ describe('ERP Cashier-session service', () => {
     const { repository, service } = setup();
     repository.open.mockResolvedValueOnce({ kind: 'already_open', session });
 
-    await expect(service.open({ role: 'cashier', accountId: 8, employeeId: 7 }))
+    await expect(service.open({ role: 'cashier', accountId: 8, branchId: 3 }))
       .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_ALREADY_OPEN' });
   });
 
   it('closes only the session owned by the acting Cashier', async () => {
     const { repository, service } = setup();
 
-    await service.close({ role: 'cashier', accountId: 8, employeeId: 7 });
+    await service.close({ role: 'cashier', accountId: 8, branchId: 3 });
 
     expect(repository.close).toHaveBeenCalledWith({
       branchId: 3,
@@ -144,12 +144,12 @@ describe('ERP Cashier-session service', () => {
   it('returns stable close errors for no open session and another Cashier owner', async () => {
     const first = setup();
     first.repository.close.mockResolvedValueOnce({ kind: 'not_open' });
-    await expect(first.service.close({ role: 'cashier', accountId: 8, employeeId: 7 }))
+    await expect(first.service.close({ role: 'cashier', accountId: 8, branchId: 3 }))
       .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_OPEN' });
 
     const second = setup();
     second.repository.close.mockResolvedValueOnce({ kind: 'not_owner', session });
-    await expect(second.service.close({ role: 'cashier', accountId: 9, employeeId: 9 }))
+    await expect(second.service.close({ role: 'cashier', accountId: 9, branchId: 3 }))
       .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_OWNER' });
   });
 
@@ -169,7 +169,7 @@ describe('ERP Cashier-session service', () => {
     });
 
     await expect(service.recoveryClose(
-      { role: 'cashier', accountId: 8, employeeId: 7 },
+      { role: 'cashier', accountId: 8, branchId: 3 },
       14,
       'سبب',
     )).rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_ADMIN_REQUIRED' });

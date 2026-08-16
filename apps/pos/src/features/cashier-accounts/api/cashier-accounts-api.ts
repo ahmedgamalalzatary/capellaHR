@@ -1,4 +1,4 @@
-import type { PublicCashierAccount, PromoteCashierInput } from '@capella/contracts';
+import type { PublicCashierAccount, UpsertBranchCashierInput } from '@capella/contracts';
 
 import { api } from '@/lib/api/client';
 
@@ -17,7 +17,8 @@ export function listCashierAccounts(params: ListCashierAccountsParams = {}) {
   return api.getPage<CashierAccount>(`/auth/cashier-accounts${suffix}`);
 }
 
-export function promoteCashier(input: PromoteCashierInput) {
+/** Creates or rewrites the single shared login of a branch. */
+export function upsertBranchCashier(input: UpsertBranchCashierInput) {
   return api.post<CashierAccount>('/auth/cashier-accounts', input);
 }
 

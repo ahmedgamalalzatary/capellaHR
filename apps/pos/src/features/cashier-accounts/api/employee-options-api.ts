@@ -5,7 +5,8 @@ export interface EmployeeOption {
   fullName: string;
 }
 
-/** Only what the promote-cashier select needs; active employees only. */
-export function listActiveEmployeeOptions(page: number) {
-  return api.getPage<EmployeeOption>(`/employees?status=active&page=${page}`);
+/** Only what the roster editor needs; active employees of one branch. */
+export function listActiveEmployeeOptions(page: number, branchId?: number) {
+  const branchQuery = branchId === undefined ? '' : `&branchId=${encodeURIComponent(String(branchId))}`;
+  return api.getPage<EmployeeOption>(`/employees?status=active${branchQuery}&page=${page}`);
 }

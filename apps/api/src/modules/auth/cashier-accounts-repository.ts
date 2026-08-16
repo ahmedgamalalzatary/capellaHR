@@ -1,11 +1,13 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, authSessions, employees } from '@capella/database/schema';
-import { and, count, eq, isNull, or } from 'drizzle-orm';
+import { accounts, authSessions, branches } from '@capella/database/schema';
+import { and, count, eq, isNull, ne } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import type { CashierAccountRepository } from './cashier-accounts-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+type Executor = Database | Transaction;
 
 const errorCode = (error: unknown): string | undefined => {
   let current = error;
@@ -17,152 +19,107 @@ const errorCode = (error: unknown): string | undefined => {
   return undefined;
 };
 
+// Branch logins only; legacy employee-linked cashier rows stay hidden history.
+const branchCashier = and(eq(accounts.role, 'cashier'), isNull(accounts.employeeId));
+
+const selectPublic = async (executor: Executor, accountId: number) => {
+  const row = (await executor.select({
+    id: accounts.id,
+    username: accounts.username,
+    role: accounts.role,
+    branchId: accounts.branchId,
+    branchName: branches.name,
+    active: accounts.active,
+  }).from(accounts).innerJoin(branches, eq(branches.id, accounts.branchId))
+    .where(and(eq(accounts.id, accountId), branchCashier)).limit(1))[0];
+  return row?.role === 'cashier' && row.branchId !== null
+    ? { ...row, role: 'cashier' as const, branchId: row.branchId }
+    : null;
+};
+
 export const createDrizzleCashierAccountRepository = (
   database: Database,
-): CashierAccountRepository => {
-  const selectPublic = async (
-    executor: Parameters<Parameters<Database['transaction']>[0]>[0] | Database,
-    accountId: number,
-  ) => {
-    const row = (await executor.select({
-      id: accounts.id,
-      username: accounts.username,
-      role: accounts.role,
-      employeeId: accounts.employeeId,
-      branchId: employees.branchId,
-      active: accounts.active,
-    }).from(accounts).innerJoin(employees, eq(employees.id, accounts.employeeId)).where(and(
-      eq(accounts.id, accountId),
-      eq(accounts.role, 'cashier'),
-    )).limit(1))[0];
-    return row?.role === 'cashier' && row.employeeId !== null
-      ? { ...row, role: 'cashier' as const, employeeId: row.employeeId }
-      : null;
-  };
-
-  const selectCashierForUpdate = async (
-    executor: Parameters<Parameters<Database['transaction']>[0]>[0],
-    accountId: number,
-  ) => {
-    const row = (await executor.select({
-      id: accounts.id,
-      username: accounts.username,
-      role: accounts.role,
-      employeeId: accounts.employeeId,
-      active: accounts.active,
-    }).from(accounts).where(and(
-      eq(accounts.id, accountId),
-      eq(accounts.role, 'cashier'),
-    )).for('update').limit(1))[0];
-    return row?.role === 'cashier' && row.employeeId !== null
-      ? { ...row, role: 'cashier' as const, employeeId: row.employeeId }
-      : null;
-  };
-
-  return {
-  promoteEmployeeToCashier(input) {
+): CashierAccountRepository => ({
+  upsert(input) {
     return database.transaction(async (tx) => {
-      const employee = (await tx.select({
-        id: employees.id,
-        branchId: employees.branchId,
-        employmentStatus: employees.employmentStatus,
-        deletedAt: employees.deletedAt,
-      }).from(employees).where(eq(employees.id, input.employeeId)).for('update').limit(1))[0];
-      if (!employee || employee.deletedAt) return { kind: 'employee_not_found' as const };
-      if (employee.employmentStatus !== 'active') return { kind: 'employee_inactive' as const };
+      const branch = (await tx.select({ id: branches.id }).from(branches)
+        .where(eq(branches.id, input.branchId)).for('update').limit(1))[0];
+      if (!branch) return { kind: 'branch_not_found' as const };
 
-      const existing = (await tx.select({
+      const current = (await tx.select({
+        id: accounts.id,
         username: accounts.username,
-        employeeId: accounts.employeeId,
-      }).from(accounts).where(or(
-        eq(accounts.username, input.username),
-        eq(accounts.employeeId, input.employeeId),
-      )).limit(1))[0];
-      if (existing?.employeeId === input.employeeId) {
-        return { kind: 'employee_already_has_account' as const };
-      }
-      if (existing) return { kind: 'username_taken' as const };
+        active: accounts.active,
+      }).from(accounts).where(and(branchCashier, eq(accounts.branchId, input.branchId)))
+        .for('update').limit(1))[0];
 
-      let id: number;
+      const usernameOwner = (await tx.select({ id: accounts.id }).from(accounts).where(and(
+        eq(accounts.username, input.username),
+        ...(current ? [ne(accounts.id, current.id)] : []),
+      )).limit(1))[0];
+      if (usernameOwner) return { kind: 'username_taken' as const };
+
+      const persist = async (kind: 'created' | 'updated', accountId: number) => {
+        const account = await selectPublic(tx, accountId);
+        await writeAudit(tx, {
+          module: 'auth',
+          action: 'branch_cashier_upsert',
+          entityType: 'account',
+          entityId: accountId,
+          ...(current ? { beforeState: { username: current.username, active: current.active } } : {}),
+          afterState: account,
+          relatedIds: { accountId, branchId: input.branchId },
+          createdAt: input.updatedAt,
+        });
+        return { kind, account: account! };
+      };
+
+      if (current) {
+        await tx.update(accounts).set({
+          username: input.username,
+          passwordHash: input.passwordHash,
+          active: true,
+          updatedAt: input.updatedAt,
+        }).where(eq(accounts.id, current.id));
+        await tx.update(authSessions).set({ revokedAt: input.updatedAt }).where(and(
+          eq(authSessions.accountId, current.id),
+          isNull(authSessions.revokedAt),
+        ));
+        return persist('updated', current.id);
+      }
+
       try {
         const inserted = await tx.insert(accounts).values(input);
-        id = Number(inserted[0].insertId);
+        return persist('created', Number(inserted[0].insertId));
       } catch (error) {
+        // A concurrent upsert for the same branch or username landed first; both
+        // manifest as a taken username and a retry converges on one account.
         if (errorCode(error) !== 'ER_DUP_ENTRY') throw error;
-        const conflict = (await tx.select({
-          username: accounts.username,
-          employeeId: accounts.employeeId,
-        }).from(accounts).where(or(
-          eq(accounts.username, input.username),
-          eq(accounts.employeeId, input.employeeId),
-        )).limit(1))[0];
-        return conflict?.employeeId === input.employeeId
-          ? { kind: 'employee_already_has_account' as const }
-          : { kind: 'username_taken' as const };
+        return { kind: 'username_taken' as const };
       }
-
-      const account = {
-        id,
-        username: input.username,
-        role: 'cashier' as const,
-        employeeId: input.employeeId,
-        branchId: employee.branchId,
-        active: true,
-      };
-      await writeAudit(tx, {
-        module: 'auth',
-        action: 'cashier_promote',
-        entityType: 'account',
-        entityId: id,
-        afterState: account,
-        relatedIds: {
-          accountId: id,
-          employeeId: input.employeeId,
-          branchId: employee.branchId,
-        },
-        createdAt: input.createdAt,
-      });
-      return { kind: 'created' as const, account };
     });
   },
     async listCashiers(query) {
-      const where = eq(accounts.role, 'cashier');
       const [items, totals] = await Promise.all([
         database.select({
           id: accounts.id, username: accounts.username, role: accounts.role,
-          employeeId: accounts.employeeId, branchId: employees.branchId, active: accounts.active,
-        }).from(accounts).innerJoin(employees, eq(employees.id, accounts.employeeId))
-          .where(where).orderBy(accounts.id)
+          branchId: accounts.branchId, branchName: branches.name, active: accounts.active,
+        }).from(accounts).innerJoin(branches, eq(branches.id, accounts.branchId))
+          .where(branchCashier).orderBy(accounts.branchId)
           .limit(query.pageSize).offset((query.page - 1) * query.pageSize),
-        database.select({ total: count() }).from(accounts).where(where),
+        database.select({ total: count() }).from(accounts).where(branchCashier),
       ]);
       return {
-        items: items.flatMap((row) => row.role === 'cashier' && row.employeeId !== null
-          ? [{ ...row, role: 'cashier' as const, employeeId: row.employeeId }]
+        items: items.flatMap((row) => row.role === 'cashier' && row.branchId !== null
+          ? [{ ...row, role: 'cashier' as const, branchId: row.branchId }]
           : []),
         total: totals[0]?.total ?? 0,
       };
     },
     setCashierActive(input) {
       return database.transaction(async (tx) => {
-        let before = await selectPublic(tx, input.accountId);
+        const before = await selectPublic(tx, input.accountId);
         if (!before) return { kind: 'not_found' as const };
-        if (input.active) {
-          const employee = (await tx.select({
-            branchId: employees.branchId,
-            employmentStatus: employees.employmentStatus,
-            deletedAt: employees.deletedAt,
-          }).from(employees).where(eq(employees.id, before.employeeId))
-            .for('update').limit(1))[0];
-          if (!employee || employee.deletedAt || employee.employmentStatus !== 'active') {
-            return { kind: 'employee_inactive' as const };
-          }
-          const lockedAccount = await selectCashierForUpdate(tx, input.accountId);
-          if (!lockedAccount || lockedAccount.employeeId !== before.employeeId) {
-            return { kind: 'not_found' as const };
-          }
-          before = { ...lockedAccount, branchId: employee.branchId };
-        }
         await tx.update(accounts).set({ active: input.active, updatedAt: input.updatedAt })
           .where(eq(accounts.id, input.accountId));
         if (!input.active) {
@@ -173,10 +130,10 @@ export const createDrizzleCashierAccountRepository = (
         }
         const account = { ...before, active: input.active };
         await writeAudit(tx, {
-          module: 'auth', action: input.active ? 'cashier_enable' : 'cashier_disable',
+          module: 'auth', action: input.active ? 'branch_cashier_enable' : 'branch_cashier_disable',
           entityType: 'account', entityId: input.accountId,
           beforeState: before, afterState: account,
-          relatedIds: { accountId: input.accountId, employeeId: before.employeeId },
+          relatedIds: { accountId: input.accountId, branchId: before.branchId },
           createdAt: input.updatedAt,
         });
         return { kind: 'updated' as const, account };
@@ -195,15 +152,14 @@ export const createDrizzleCashierAccountRepository = (
           isNull(authSessions.revokedAt),
         ));
         await writeAudit(tx, {
-          module: 'auth', action: 'cashier_password_reset',
+          module: 'auth', action: 'branch_cashier_password_reset',
           entityType: 'account', entityId: input.accountId,
           beforeState: { credentialsChanged: false },
           afterState: { credentialsChanged: true },
-          relatedIds: { accountId: input.accountId, employeeId: account.employeeId },
+          relatedIds: { accountId: input.accountId, branchId: account.branchId },
           createdAt: input.updatedAt,
         });
         return { kind: 'updated' as const, account };
       });
     },
-  };
-};
+  });

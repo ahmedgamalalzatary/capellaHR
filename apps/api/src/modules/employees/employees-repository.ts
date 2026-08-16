@@ -1,5 +1,5 @@
 import { type createDatabase } from '@capella/database';
-import { authSessions, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePendingDeactivations, employeePhoneReservations, employees } from '@capella/database/schema';
+import { authSessions, branchCashierRoster, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePendingDeactivations, employeePhoneReservations, employees } from '@capella/database/schema';
 import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
 import { writeAudit } from '../audit/index.js';
 import type { EmployeeDeactivationDecisions, EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
@@ -122,6 +122,7 @@ export const createDrizzleEmployeeRepository = (
       const { images, ...fields } = changes;
       const updatedAt = now();
       const branchChanged = fields.branchId !== undefined && fields.branchId !== current.branchId;
+      let removedRosterMembership = false;
       if (branchChanged) {
         const destination = (await tx.select({
           id: branches.id,
@@ -129,6 +130,15 @@ export const createDrizzleEmployeeRepository = (
         }).from(branches).where(eq(branches.id, fields.branchId!)).for('update').limit(1))[0];
         if (!destination) return 'branch_not_found' as const;
         if (!hasOpenSession || await hasOpenSession(id, tx)) return 'checked_in' as const;
+        const rosterMembership = (await tx.select({ id: branchCashierRoster.id })
+          .from(branchCashierRoster).where(and(
+            eq(branchCashierRoster.employeeId, id),
+            eq(branchCashierRoster.branchId, current.branchId),
+          )).for('update').limit(1))[0];
+        if (rosterMembership) {
+          await tx.delete(branchCashierRoster).where(eq(branchCashierRoster.id, rosterMembership.id));
+          removedRosterMembership = true;
+        }
         await tx.update(employeeBranchAssignments).set({ effectiveTo: updatedAt })
           .where(and(eq(employeeBranchAssignments.employeeId, id), isNull(employeeBranchAssignments.effectiveTo)));
         await tx.insert(employeeBranchAssignments).values({
@@ -163,6 +173,12 @@ export const createDrizzleEmployeeRepository = (
       });
       if (images) for (const [kind, image] of Object.entries(images) as [ImageKind, EmployeeImages[ImageKind]][]) await tx.update(employeeImages).set({ ...image, updatedAt }).where(and(eq(employeeImages.employeeId, id), eq(employeeImages.kind, kind)));
       const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
+      if (removedRosterMembership) await writeAudit(tx, {
+        module: 'erp_cashier_roster', action: 'remove_on_branch_reassign',
+        entityType: 'branch_cashier_roster', entityId: current.branchId,
+        beforeState: { branchId: current.branchId, employeeId: id }, afterState: null,
+        relatedIds: { branchId: current.branchId, employeeId: id }, createdAt: updatedAt,
+      });
       const replacedImages = Object.fromEntries(Object.keys(images ?? {}).map((kind) => [kind, before.images[kind as ImageKind]])) as Partial<EmployeeImages>;
       await writeAudit(tx, {
         module: 'employees', action: branchChanged ? 'branch_reassign' : revokeSessions ? 'pin_reset' : 'update',

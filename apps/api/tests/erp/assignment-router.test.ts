@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createErpBranchContextResolver,
   type ErpBranchCapability,
-  type ErpEmployeeCapability,
 } from '../../src/modules/erp/index.js';
 import {
   createEmployeeAssignmentService,
@@ -19,14 +18,8 @@ const branches = {
   findById: vi.fn(async (id: number) => (id === 1 || id === 2 ? { id, name: `فرع ${id}` } : null)),
 } as unknown as ErpBranchCapability;
 
-const employees = {
-  findActiveById: vi.fn(async (id: number) => (
-    id === 4 ? { id: 4, employeeCode: 100, fullName: 'كاشير', branchId: 1 } : null
-  )),
-} as unknown as ErpEmployeeCapability;
-
 const ADMIN = { type: 'admin', accountId: 1 };
-const CASHIER = { type: 'cashier', accountId: 2, employeeId: 4 };
+const CASHIER = { type: 'cashier', accountId: 2, branchId: 1 };
 
 /** Real service and real resolver over a fake capability, so the HTTP layer
  *  exercises the actual branch rules rather than a stubbed service. */
@@ -36,7 +29,7 @@ const makeApp = (
 ) => {
   const service = createEmployeeAssignmentService({
     attendance: { listPresentEmployees, findPresentEmployee: async () => nada },
-    resolveBranchContext: createErpBranchContextResolver({ branches, employees }),
+    resolveBranchContext: createErpBranchContextResolver({ branches }),
   });
   const app = express();
   app.use(express.json());

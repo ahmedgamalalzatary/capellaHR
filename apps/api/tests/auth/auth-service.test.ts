@@ -122,7 +122,6 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
                 username,
                 passwordHash: adminHash,
                 role: 'cashier' as const,
-                employeeId: 7,
                 active: true,
               }
             : null;
@@ -165,7 +164,7 @@ describe('authentication service', () => {
 
     const result = await service.loginCashier('CASHIER.ONE', 'correct horse battery staple');
 
-    expect(result.actor).toEqual({ type: 'cashier', accountId: 21, employeeId: 7 });
+    expect(result.actor).toEqual({ type: 'cashier', accountId: 21 });
     expect(sessions.rows).toEqual([
       expect.objectContaining({
         actorType: 'account',

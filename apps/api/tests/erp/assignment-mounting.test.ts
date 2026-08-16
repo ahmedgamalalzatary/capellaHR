@@ -17,11 +17,6 @@ const service = createEmployeeAssignmentService({
   },
   resolveBranchContext: createErpBranchContextResolver({
     branches: { findById: async (id: number) => ({ id, name: 'فرع' }) },
-    employees: {
-      findActiveById: async (id: number) => (
-        id === 4 ? { id: 4, employeeCode: 100, fullName: 'كاشير', branchId: 1 } : null
-      ),
-    },
   }),
 });
 
@@ -31,7 +26,7 @@ const appAs = (session: unknown) => createApp({
 });
 
 const CASHIER_SESSION = {
-  actorType: 'account', accountRole: 'cashier', accountId: 2, employeeId: 4,
+  actorType: 'account', accountRole: 'cashier', accountId: 2, employeeId: null, branchId: 1,
 };
 
 describe('ERP assignable-employees mounting', () => {

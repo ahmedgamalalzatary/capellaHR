@@ -45,7 +45,8 @@ const setup = () => {
           actorType: 'account' as const,
           accountId: 8,
           accountRole: 'cashier' as const,
-          employeeId: 7,
+          employeeId: null,
+          branchId: 3,
         }
       : token === 'admin'
         ? {
@@ -59,7 +60,7 @@ const setup = () => {
               actorType: 'employee' as const,
               accountId: null,
               accountRole: null,
-              employeeId: 7,
+              branchId: 3,
             }
           : null),
   };
@@ -84,7 +85,7 @@ describe('ERP Cashier-session routes', () => {
     expect(service.open).toHaveBeenCalledWith({
       role: 'cashier',
       accountId: 8,
-      employeeId: 7,
+      branchId: 3,
     });
   });
 
@@ -94,7 +95,7 @@ describe('ERP Cashier-session routes', () => {
       .get('/api/v1/erp/cashier-sessions/current')
       .set('Cookie', 'capella_session=cashier')).status).toBe(200);
     expect(cashier.service.current).toHaveBeenCalledWith({
-      role: 'cashier', accountId: 8, employeeId: 7,
+      role: 'cashier', accountId: 8, branchId: 3,
     }, undefined);
 
     const admin = setup();
@@ -114,7 +115,7 @@ describe('ERP Cashier-session routes', () => {
 
     expect(response.status).toBe(200);
     expect(service.close).toHaveBeenCalledWith({
-      role: 'cashier', accountId: 8, employeeId: 7,
+      role: 'cashier', accountId: 8, branchId: 3,
     });
   });
 
@@ -194,7 +195,7 @@ describe('ERP Cashier-session routes', () => {
     const handler = openLayer?.route?.stack[0]?.handle;
     const next = vi.fn();
     const response = {
-      locals: { actor: { type: 'cashier', accountId: 8, employeeId: 7 } },
+      locals: { actor: { type: 'cashier', accountId: 8, branchId: 3 } },
       status: vi.fn().mockReturnThis(),
       json: vi.fn(),
     };

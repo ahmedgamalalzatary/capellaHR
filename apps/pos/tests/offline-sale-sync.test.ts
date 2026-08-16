@@ -21,6 +21,7 @@ const owner: OfflineSaleOwner = {
 
 const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   clientId: 5,
+  sellerEmployeeId: 9,
   assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey,
@@ -36,6 +37,7 @@ const invoice = (input: CompleteSaleInput): PublicInvoiceDto => ({
   cashierSessionId: 13,
   client: { id: 5, name: 'عميل', phone: '01000000000' },
   assignedEmployee: { id: 8, employeeCode: 1008, name: 'موظف' },
+  seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال' },
   authorizedBy: { accountId: 3, username: 'cashier' },
   lines: [],
   discount: null,

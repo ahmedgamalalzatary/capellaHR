@@ -2,6 +2,7 @@ import { completeSaleSchema } from '@capella/contracts';
 import { type createDatabase } from '@capella/database';
 import {
   accounts,
+  branchCashierRoster,
   cashierSessions,
   clients,
   commissionLedgerEntries,
@@ -92,6 +93,10 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
   const invoice = (await executor.select().from(invoices)
     .where(eq(invoices.id, invoiceId)).limit(1))[0];
   if (!invoice || invoice.status === 'draft') return null;
+  // The seller's code lives on the employee row; historical invoices may predate sellers.
+  const sellerEmployee = invoice.sellerEmployeeId === null ? null
+    : (await executor.select({ employeeCode: employees.employeeCode }).from(employees)
+      .where(eq(employees.id, invoice.sellerEmployeeId)).limit(1))[0] ?? null;
   const lines = await executor.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
   const payments = await executor.select().from(invoicePayments)
@@ -147,6 +152,11 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       id: invoice.assignedEmployeeId,
       employeeCode: invoice.employeeCodeSnapshot!,
       name: invoice.employeeNameSnapshot!,
+    },
+    seller: invoice.sellerEmployeeId === null || sellerEmployee === null ? null : {
+      id: invoice.sellerEmployeeId,
+      employeeCode: sellerEmployee.employeeCode,
+      name: invoice.sellerNameSnapshot!,
     },
     authorizedBy: {
       accountId: invoice.actingAccountId,
@@ -251,6 +261,9 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
     clientId: invoice.clientId,
     ...(invoice.assignedEmployeeId === null ? {} : {
       assignedEmployeeId: invoice.assignedEmployeeId,
+    }),
+    ...(invoice.sellerEmployeeId === null ? {} : {
+      sellerEmployeeId: invoice.sellerEmployeeId,
     }),
     cashierSessionId: invoice.cashierSessionId,
     idempotencyKey: invoice.idempotencyKey,
@@ -396,9 +409,13 @@ export const createDrizzleSaleRepository = (
           eq(invoices.actingAccountId, actor.actingAccountId),
         )
       : eq(invoices.idempotencyKey, key);
-    const row = (await database.select({ id: invoices.id }).from(invoices)
+    const row = (await database.select({
+      id: invoices.id,
+      sellerEmployeeId: invoices.sellerEmployeeId,
+    }).from(invoices)
       .where(predicate).limit(1))[0];
     if (!row) return null;
+    if (row.sellerEmployeeId === null) throw new SaleError('IDEMPOTENCY_CONFLICT');
     const invoice = await hydrateInvoice(database, row.id);
     if (!invoice) return null;
     return { input: await reconstructInput(database, row.id), invoice };
@@ -535,19 +552,20 @@ export const createDrizzleSaleRepository = (
           if (!account || !account.active || account.role !== operation.actingAccountRole) {
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
-          if (operation.actingAccountRole === 'cashier') {
-            if (account.employeeId !== operation.actingEmployeeId) {
-              throw new SaleError('CASHIER_SESSION_NOT_OPEN');
-            }
-            const actingEmployee = (await transaction.select({ id: employees.id }).from(employees)
-              .where(and(
-                eq(employees.id, operation.actingEmployeeId!),
-                eq(employees.branchId, input.branchId),
-                eq(employees.employmentStatus, 'active'),
-                isNull(employees.deletedAt),
-              )).for('update').limit(1))[0];
-            if (!actingEmployee) throw new SaleError('CASHIER_SESSION_NOT_OPEN');
-          }
+          // The seller must still be on the branch roster when the sale settles.
+          const seller = (await transaction.select({
+            id: employees.id,
+            fullName: employees.fullName,
+          }).from(branchCashierRoster).innerJoin(employees, and(
+            eq(employees.id, branchCashierRoster.employeeId),
+            eq(employees.branchId, branchCashierRoster.branchId),
+          )).where(and(
+            eq(branchCashierRoster.branchId, input.branchId),
+            eq(branchCashierRoster.employeeId, input.sellerEmployeeId),
+            eq(employees.employmentStatus, 'active'),
+            isNull(employees.deletedAt),
+          )).for('update').limit(1))[0];
+          if (!seller) throw new SaleError('SELLER_NOT_ON_ROSTER');
           const employee = serviceInputs.length
             ? await operation.assertEmployee!(transaction)
             : null;
@@ -608,6 +626,7 @@ export const createDrizzleSaleRepository = (
             branchId: input.branchId,
             clientId: input.clientId,
             assignedEmployeeId: employee?.id ?? null,
+            sellerEmployeeId: seller.id,
             actingAccountId: operation.actingAccountId,
             cashierSessionId: input.cashierSessionId,
             invoiceNumber: operation.invoiceNumber,
@@ -616,6 +635,7 @@ export const createDrizzleSaleRepository = (
             clientPhoneSnapshot: client.phone,
             employeeNameSnapshot: employee?.fullName ?? null,
             employeeCodeSnapshot: employee?.employeeCode ?? null,
+            sellerNameSnapshot: seller.fullName,
             authorizedBySnapshot: account.username,
             subtotal: totals.subtotal,
             discountKind: input.discount?.kind ?? null,
@@ -692,6 +712,7 @@ export const createDrizzleSaleRepository = (
               branchId: input.branchId,
               clientId: input.clientId,
               ...(employee === null ? {} : { employeeId: employee.id }),
+              sellerEmployeeId: seller.id,
               cashierSessionId: input.cashierSessionId,
             },
             createdAt: operation.soldAt,
@@ -738,21 +759,15 @@ export const createDrizzleSaleRepository = (
           }
 
           const account = (await transaction.select({
-            role: accounts.role, employeeId: accounts.employeeId, active: accounts.active,
+            role: accounts.role, branchId: accounts.branchId, active: accounts.active,
           }).from(accounts).where(eq(accounts.id, operation.actingAccountId))
             .for('update').limit(1))[0];
           if (!account || !account.active || account.role !== operation.actingAccountRole) {
             throw new SaleError('INVOICE_NOT_REVERSIBLE');
           }
-          if (operation.actingAccountRole === 'cashier') {
-            const employee = (await transaction.select({ id: employees.id }).from(employees)
-              .where(and(
-                eq(employees.id, account.employeeId!),
-                eq(employees.branchId, operation.input.branchId),
-                eq(employees.employmentStatus, 'active'),
-                isNull(employees.deletedAt),
-              )).for('update').limit(1))[0];
-            if (!employee) throw new SaleError('INVOICE_NOT_REVERSIBLE');
+          if (operation.actingAccountRole === 'cashier'
+            && account.branchId !== operation.input.branchId) {
+            throw new SaleError('INVOICE_NOT_REVERSIBLE');
           }
 
           const originalLines = await transaction.select().from(invoiceLines)

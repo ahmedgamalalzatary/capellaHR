@@ -13,16 +13,16 @@ import type { ErpAccountIdentity } from './hr-capabilities.js';
 export const erpActorFromLocals = (actor: unknown): ErpAccountIdentity | null => {
   if (typeof actor !== 'object' || actor === null) return null;
 
-  const { type, accountId, employeeId } = actor as {
+  const { type, accountId, branchId } = actor as {
     type?: unknown;
     accountId?: unknown;
-    employeeId?: unknown;
+    branchId?: unknown;
   };
   if (typeof accountId !== 'number') return null;
 
   if (type === 'admin') return { role: 'admin', accountId };
-  if (type === 'cashier' && typeof employeeId === 'number') {
-    return { role: 'cashier', accountId, employeeId };
+  if (type === 'cashier' && typeof branchId === 'number') {
+    return { role: 'cashier', accountId, branchId };
   }
   return null;
 };

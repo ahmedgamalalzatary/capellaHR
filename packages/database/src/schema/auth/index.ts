@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  foreignKey,
   index,
   int,
   json,
@@ -12,15 +13,20 @@ import {
   varchar,
 } from 'drizzle-orm/mysql-core';
 import { employees } from '../employees/index.js';
+import { branches } from '../organization/index.js';
 
 export const accounts = mysqlTable('accounts', {
   id: int('id').autoincrement().primaryKey(),
   username: varchar('username', { length: 255 }).notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   role: mysqlEnum('role', ['admin', 'cashier']).notNull(),
+  // Legacy cashier logins are employee-linked; branch logins carry the branch instead.
   employeeId: int('employee_id').references(() => employees.id),
+  branchId: int('branch_id'),
   adminSingleton: int('admin_singleton')
     .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'admin' then 1 else null end`, { mode: 'stored' }),
+  activeCashierBranch: int('active_cashier_branch')
+    .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'cashier' and ${sql.raw('employee_id')} is null and active then branch_id else null end`, { mode: 'stored' }),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -28,9 +34,11 @@ export const accounts = mysqlTable('accounts', {
   uniqueIndex('accounts_username_unique').on(table.username),
   uniqueIndex('accounts_employee_unique').on(table.employeeId),
   uniqueIndex('accounts_admin_singleton_unique').on(table.adminSingleton),
+  uniqueIndex('accounts_active_cashier_branch_unique').on(table.activeCashierBranch),
+  foreignKey({ name: 'accounts_branch_fk', columns: [table.branchId], foreignColumns: [branches.id] }),
   check(
     'accounts_role_scope_consistency',
-    sql`(${table.role} = 'admin' and ${table.employeeId} is null) or (${table.role} = 'cashier' and ${table.employeeId} is not null)`,
+    sql`(${table.role} = 'admin' and ${table.employeeId} is null and ${table.branchId} is null) or (${table.role} = 'cashier' and ((${table.employeeId} is not null and ${table.branchId} is null) or (${table.employeeId} is null and ${table.branchId} is not null)))`,
   ),
 ]);
 

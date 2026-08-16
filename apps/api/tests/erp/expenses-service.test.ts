@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createExpenseService, type ExpenseRecord, type ExpenseRepository } from '../../src/modules/erp/expenses/expense-service.js';
 
 const admin = { accountId: 7, role: 'admin' as const, employeeId: null };
-const cashier = { accountId: 8, role: 'cashier' as const, employeeId: 3 };
+const cashier = { accountId: 8, role: 'cashier' as const, branchId: 2 };
 const record: ExpenseRecord = {
   id: 10, branchId: 2, categoryId: 4, categoryName: 'تشغيل', amount: '125.50', expenseDate: '2026-08-05',
   description: 'مستلزمات', actingAccountId: 7, actingUsername: 'admin', kind: 'expense', status: 'active',

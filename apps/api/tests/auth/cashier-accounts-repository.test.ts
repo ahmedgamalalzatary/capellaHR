@@ -1,51 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { accounts, auditEvents, employees } from '@capella/database/schema';
+import { accounts, auditEvents, authSessions, branches } from '@capella/database/schema';
 
 import * as auth from '../../src/modules/auth/index.js';
 
-describe('Cashier account persistence', () => {
+const accountRow = {
+  id: 5,
+  username: 'nasr',
+  role: 'cashier' as const,
+  branchId: 3,
+  branchName: 'فرع مدينة نصر',
+  active: false,
+};
+
+describe('branch cashier account persistence', () => {
   it('exports the production Drizzle repository', () => {
     expect(Reflect.get(auth, 'createDrizzleCashierAccountRepository')).toBeTypeOf('function');
   });
 
-  it('locks and re-reads the account after locking the employee when enabling', async () => {
+  it('creates the first branch login and audits it in one transaction', async () => {
     const events: string[] = [];
-    const auditRows: Array<{ beforeState?: unknown }> = [];
-    const initial = {
-      id: 5,
-      username: 'stale-name',
-      role: 'cashier' as const,
-      employeeId: 7,
-      branchId: 3,
-      active: false,
-    };
-    const fresh = { ...initial, username: 'fresh-name' };
+    const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
     let accountReads = 0;
 
     const transaction = {
       select() {
         return {
           from(table: unknown) {
-            let locked = false;
             const builder = {
               innerJoin() { return builder; },
               where() { return builder; },
-              for() {
-                locked = true;
-                events.push(table === employees ? 'employee-lock' : 'account-lock');
-                return builder;
-              },
+              for() { return builder; },
               limit() {
-                if (table === employees) {
-                  return Promise.resolve([{
-                    branchId: 3,
-                    employmentStatus: 'active',
-                    deletedAt: null,
-                  }]);
-                }
+                if (table === branches) return Promise.resolve([{ id: 3 }]);
                 accountReads += 1;
-                events.push(`account-read-${accountReads}${locked ? '-locked' : ''}`);
-                return Promise.resolve([accountReads === 1 ? initial : fresh]);
+                events.push(`account-read-${accountReads}`);
+                // 1st: existing branch login, 2nd: username owner, 3rd: re-read after insert.
+                return Promise.resolve(accountReads === 3 ? [{ ...accountRow, active: true }] : []);
               },
             };
             return builder;
@@ -57,7 +47,7 @@ describe('Cashier account persistence', () => {
           set() {
             return {
               where() {
-                if (table === accounts) events.push('account-update');
+                events.push(table === accounts ? 'account-update' : 'session-revoke');
                 return Promise.resolve();
               },
             };
@@ -66,13 +56,157 @@ describe('Cashier account persistence', () => {
       },
       insert(table: unknown) {
         return {
-          values(value: { beforeState?: unknown }) {
-            if (table === auditEvents) {
-              events.push('audit');
-              auditRows.push(value);
-            }
-            return Promise.resolve();
+          values(value: Record<string, unknown>) {
+            inserts.push({ table, values: value });
+            if (table === auditEvents) events.push('audit');
+            return Promise.resolve(table === accounts ? [{ insertId: 5 }] : []);
           },
+        };
+      },
+    };
+    const database = {
+      transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>) => callback(transaction),
+    };
+    const repository = auth.createDrizzleCashierAccountRepository(database as never);
+
+    const result = await repository.upsert({
+      username: 'nasr',
+      passwordHash: 'hash:secret',
+      role: 'cashier',
+      branchId: 3,
+      employeeId: null,
+      createdAt: new Date('2026-08-16T10:00:00.000Z'),
+      updatedAt: new Date('2026-08-16T10:00:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      kind: 'created',
+      account: { id: 5, username: 'nasr', branchId: 3, branchName: 'فرع مدينة نصر', active: true },
+    });
+    expect(inserts).toEqual([
+      expect.objectContaining({
+        table: accounts,
+        values: expect.objectContaining({
+          username: 'nasr',
+          passwordHash: 'hash:secret',
+          role: 'cashier',
+          branchId: 3,
+          employeeId: null,
+        }),
+      }),
+      expect.objectContaining({ table: auditEvents }),
+    ]);
+    expect(events).toEqual(['account-read-1', 'account-read-2', 'account-read-3', 'audit']);
+  });
+
+  it('rewrites the existing branch login instead of adding a second one', async () => {
+    let accountReads = 0;
+    const updates: unknown[] = [];
+    const events: string[] = [];
+    const transaction = {
+      select() {
+        return {
+          from(table: unknown) {
+            const builder = {
+              innerJoin() { return builder; },
+              where() { return builder; },
+              for() { return builder; },
+              limit() {
+                if (table === branches) return Promise.resolve([{ id: 3 }]);
+                accountReads += 1;
+                // 1st: existing branch login row, 2nd: username owner (none), 3rd: re-read.
+                return Promise.resolve(accountReads === 1
+                  ? [{ id: 5, username: 'old-name', active: false }]
+                  : accountReads === 3
+                    ? [{ ...accountRow, active: true }]
+                    : []);
+              },
+            };
+            return builder;
+          },
+        };
+      },
+      update(table: unknown) {
+        return {
+          set(values: unknown) {
+            return {
+              where() {
+                if (table === accounts) {
+                  updates.push(values);
+                  events.push('account-update');
+                } else if (table === authSessions) {
+                  events.push('session-revoke');
+                }
+                return Promise.resolve();
+              },
+            };
+          },
+        };
+      },
+      insert() {
+        return {
+          values() { return Promise.resolve([]); },
+        };
+      },
+    };
+    const database = {
+      transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>) => callback(transaction),
+    };
+    const repository = auth.createDrizzleCashierAccountRepository(database as never);
+
+    const result = await repository.upsert({
+      username: 'nasr',
+      passwordHash: 'hash:next',
+      role: 'cashier',
+      branchId: 3,
+      employeeId: null,
+      createdAt: new Date('2026-08-16T10:00:00.000Z'),
+      updatedAt: new Date('2026-08-16T11:00:00.000Z'),
+    });
+
+    expect(result.kind).toBe('updated');
+    expect(updates).toEqual([expect.objectContaining({
+      username: 'nasr',
+      passwordHash: 'hash:next',
+      active: true,
+    })]);
+    expect(events).toEqual(['account-update', 'session-revoke']);
+  });
+
+  it('revokes live sessions when a branch login is disabled', async () => {
+    const events: string[] = [];
+    const transaction = {
+      select() {
+        return {
+          from(table: unknown) {
+            const builder = {
+              innerJoin() { return builder; },
+              where() { return builder; },
+              for() { return builder; },
+              limit() {
+                if (table === branches) return Promise.resolve([{ id: 3 }]);
+                return Promise.resolve([accountRow]);
+              },
+            };
+            return builder;
+          },
+        };
+      },
+      update(table: unknown) {
+        return {
+          set() {
+            return {
+              where() {
+                events.push(table === authSessions ? 'session-revoke' : 'account-update');
+                return Promise.resolve();
+              },
+            };
+          },
+        };
+      },
+      insert() {
+        return {
+          values() { return Promise.resolve([]); },
         };
       },
     };
@@ -83,25 +217,11 @@ describe('Cashier account persistence', () => {
 
     const result = await repository.setCashierActive({
       accountId: 5,
-      active: true,
-      updatedAt: new Date('2026-07-30T10:00:00.000Z'),
+      active: false,
+      updatedAt: new Date('2026-08-16T12:00:00.000Z'),
     });
 
-    expect(result).toMatchObject({
-      kind: 'updated',
-      account: { username: 'fresh-name', active: true },
-    });
-    expect(auditRows[0]?.beforeState).toMatchObject({
-      username: 'fresh-name',
-      active: false,
-    });
-    expect(events).toEqual([
-      'account-read-1',
-      'employee-lock',
-      'account-lock',
-      'account-read-2-locked',
-      'account-update',
-      'audit',
-    ]);
+    expect(result).toMatchObject({ kind: 'updated', account: { active: false } });
+    expect(events).toEqual(['account-update', 'session-revoke']);
   });
 });

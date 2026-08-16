@@ -94,7 +94,7 @@ const serviceRepository = (overrides: Partial<ServiceRepository> = {}): ServiceR
 });
 
 const ADMIN = { type: 'admin', accountId: 1 };
-const CASHIER = { type: 'cashier', accountId: 2, employeeId: 4 };
+const CASHIER = { type: 'cashier', accountId: 2, branchId: 1 };
 
 /** Real services and the real resolver over fake repositories, so the HTTP layer
  *  exercises the actual branch and role rules rather than a stubbed service. */
@@ -103,7 +103,7 @@ const makeApp = (
   repositories: { categories?: CategoryRepository; services?: ServiceRepository } = {},
 ) => {
   const categories = repositories.categories ?? categoryRepository();
-  const resolveBranchContext = createErpBranchContextResolver({ branches, employees });
+  const resolveBranchContext = createErpBranchContextResolver({ branches });
   const app = express();
   app.use(express.json());
   app.use((_request, response, next) => { response.locals.actor = actor; next(); });

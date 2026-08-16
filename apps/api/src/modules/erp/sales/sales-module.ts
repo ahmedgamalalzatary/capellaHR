@@ -8,6 +8,8 @@ import type {
   ErpEmployeeCapability,
   ErpPayrollCapability,
 } from '../hr-capabilities.js';
+import { createDrizzleBranchCashierRosterRepository } from './branch-cashier-roster-repository.js';
+import { createBranchCashierRosterService } from './branch-cashier-roster-service.js';
 import { createDrizzleCashierSessionRepository } from './cashier-sessions-repository.js';
 import { createCashierSessionService } from './cashier-sessions-service.js';
 import { createDrizzleInvoiceSequenceStore } from './invoice-sequence-store.js';
@@ -33,6 +35,10 @@ export const createSalesModule = (
     repository: cashierSessionRepository,
     resolveBranchContext: createErpBranchContextResolver(capabilities),
   });
+  const branchCashierRoster = createBranchCashierRosterService({
+    repository: createDrizzleBranchCashierRosterRepository(database, capabilities.audit),
+    resolveBranchContext: createErpBranchContextResolver(capabilities),
+  });
   const saleRepository = createDrizzleSaleRepository(
     database,
     capabilities.audit,
@@ -44,5 +50,5 @@ export const createSalesModule = (
     assignment: capabilities.assignment,
     invoiceNumbers: createInvoiceNumberAllocator(createDrizzleInvoiceSequenceStore(database)),
   });
-  return { cashierSessionRepository, cashierSessions, saleRepository, sales };
+  return { cashierSessionRepository, cashierSessions, branchCashierRoster, saleRepository, sales };
 };

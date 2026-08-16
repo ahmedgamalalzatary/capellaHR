@@ -1,6 +1,6 @@
 export type ErpAccountIdentity =
   | { role: 'admin'; accountId: number }
-  | { role: 'cashier'; accountId: number; employeeId: number };
+  | { role: 'cashier'; accountId: number; branchId: number };
 
 type ErpSessionReader = {
   authenticate(token: string): Promise<{
@@ -8,6 +8,7 @@ type ErpSessionReader = {
     accountId?: number | null;
     accountRole?: 'admin' | 'cashier' | null;
     employeeId: number | null;
+    branchId?: number | null;
   } | null>;
 };
 
@@ -18,11 +19,11 @@ export const createErpAuthCapability = (sessions: ErpSessionReader) => ({
     if (session.accountRole === 'admin') {
       return { role: 'admin', accountId: session.accountId };
     }
-    if (session.accountRole === 'cashier' && session.employeeId) {
+    if (session.accountRole === 'cashier' && typeof session.branchId === 'number') {
       return {
         role: 'cashier',
         accountId: session.accountId,
-        employeeId: session.employeeId,
+        branchId: session.branchId,
       };
     }
     return null;

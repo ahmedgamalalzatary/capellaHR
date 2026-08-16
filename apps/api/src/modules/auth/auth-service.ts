@@ -11,6 +11,8 @@ type StoredSession = {
   employeeId: number | null;
   accountId?: number | null;
   accountRole?: 'admin' | 'cashier' | null;
+  /** Branch cashier logins carry their branch so ERP routing needs no extra lookup. */
+  branchId?: number | null;
   expiresAt: Date;
   revokedAt: Date | null;
 };
@@ -68,7 +70,6 @@ export interface AccountCredentialRepository {
     username: string;
     passwordHash: string;
     role: 'cashier';
-    employeeId: number;
     active: boolean;
   } | null>;
 }
@@ -240,7 +241,6 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
         actor: {
           type: 'cashier' as const,
           accountId: account.id,
-          employeeId: account.employeeId,
         },
       };
     },

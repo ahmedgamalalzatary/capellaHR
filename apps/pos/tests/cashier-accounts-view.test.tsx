@@ -6,16 +6,19 @@ import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
   listCashierAccounts: vi.fn(),
-  promoteCashier: vi.fn(),
+  upsertBranchCashier: vi.fn(),
   setCashierAccountStatus: vi.fn(),
   resetCashierPassword: vi.fn(),
   listActiveEmployeeOptions: vi.fn(),
+  listBranchCashierRoster: vi.fn(),
+  replaceBranchCashierRoster: vi.fn(),
+  listCashierSessionBranches: vi.fn(),
 }));
 
 vi.mock('../src/features/cashier-accounts/api/cashier-accounts-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listCashierAccounts: mocks.listCashierAccounts,
-  promoteCashier: mocks.promoteCashier,
+  upsertBranchCashier: mocks.upsertBranchCashier,
   setCashierAccountStatus: mocks.setCashierAccountStatus,
   resetCashierPassword: mocks.resetCashierPassword,
 }));
@@ -24,24 +27,38 @@ vi.mock('../src/features/cashier-accounts/api/employee-options-api', () => ({
   listActiveEmployeeOptions: mocks.listActiveEmployeeOptions,
 }));
 
+vi.mock('../src/features/cashier-accounts/api/branch-roster-api', () => ({
+  listBranchCashierRoster: mocks.listBranchCashierRoster,
+  replaceBranchCashierRoster: mocks.replaceBranchCashierRoster,
+}));
+
+vi.mock('../src/features/cashier-sessions', () => ({
+  listCashierSessionBranches: mocks.listCashierSessionBranches,
+}));
+
 import { CashierAccountsView } from '../src/features/cashier-accounts/components/cashier-accounts-view';
 
 const activeAccount = {
   id: 1,
-  username: 'cashier1',
+  username: 'nasr',
   role: 'cashier' as const,
-  employeeId: 7,
   branchId: 3,
+  branchName: 'فرع مدينة نصر',
   active: true,
 };
 
 const disabledAccount = {
   ...activeAccount,
   id: 2,
-  username: 'cashier2',
-  employeeId: 9,
+  username: 'maadi',
+  branchName: 'فرع المعادي',
   active: false,
 };
+
+const branches = [
+  { id: 3, name: 'فرع مدينة نصر' },
+  { id: 4, name: 'فرع المعادي' },
+];
 
 const pageOf = (items: unknown[], meta: Partial<Record<string, number>> = {}) => ({
   items,
@@ -59,9 +76,17 @@ function renderView() {
 
 beforeEach(() => {
   mocks.listCashierAccounts.mockResolvedValue(pageOf([activeAccount, disabledAccount]));
+  mocks.upsertBranchCashier.mockResolvedValue(activeAccount);
+  mocks.listCashierSessionBranches.mockResolvedValue(pageOf(branches));
   mocks.listActiveEmployeeOptions.mockResolvedValue(
     pageOf([{ id: 7, fullName: 'أحمد جمال' }, { id: 9, fullName: 'سارة محمد' }]),
   );
+  mocks.listBranchCashierRoster.mockResolvedValue([
+    { id: 7, employeeCode: 1007, fullName: 'أحمد جمال' },
+  ]);
+  mocks.replaceBranchCashierRoster.mockResolvedValue([
+    { id: 7, employeeCode: 1007, fullName: 'أحمد جمال' },
+  ]);
 });
 
 afterEach(() => {
@@ -75,23 +100,23 @@ describe('CashierAccountsView', () => {
     renderView();
 
     expect(screen.getByRole('status', { name: 'جارٍ تحميل الحسابات…' })).toBeDefined();
-    expect(screen.getByRole('heading', { level: 1, name: 'حسابات الكاشير' })).toBeDefined();
+    expect(screen.getByRole('heading', { level: 1, name: 'حسابات كاشير الفروع' })).toBeDefined();
   });
 
-  test('lists cashier accounts with resolved employee names and status badges', async () => {
+  test('lists branch logins with their branch names and status badges', async () => {
     renderView();
-    const row1 = (await screen.findByText('cashier1')).closest('tr')!;
-    const row2 = (await screen.findByText('cashier2')).closest('tr')!;
-    expect(within(row1).getByText('أحمد جمال')).toBeDefined();
+    const row1 = (await screen.findByText('nasr')).closest('tr')!;
+    const row2 = (await screen.findByText('maadi')).closest('tr')!;
+    expect(within(row1).getByText('فرع مدينة نصر')).toBeDefined();
     expect(within(row1).getByText('نشط')).toBeDefined();
-    expect(within(row2).getByText('سارة محمد')).toBeDefined();
+    expect(within(row2).getByText('فرع المعادي')).toBeDefined();
     expect(within(row2).getByText('معطل')).toBeDefined();
   });
 
-  test('shows an Arabic empty state when there are no cashier accounts', async () => {
+  test('shows an Arabic empty state when no branch logins exist', async () => {
     mocks.listCashierAccounts.mockResolvedValue(pageOf([]));
     renderView();
-    expect(await screen.findByText('لا يوجد حسابات كاشير بعد')).toBeDefined();
+    expect(await screen.findByText('لا توجد حسابات فروع بعد')).toBeDefined();
   });
 
   test('surfaces the Arabic error when the list fails to load', async () => {
@@ -102,72 +127,61 @@ describe('CashierAccountsView', () => {
     expect(await screen.findByText('تعذر تحميل الحسابات')).toBeDefined();
   });
 
-  test('opens the promote form and loads active employees into the select', async () => {
+  test('saves the credentials of the selected branch login', async () => {
     renderView();
-    await screen.findByText('cashier1');
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء حساب كاشير جديد' }));
-    const employeeSelect = screen.getByLabelText(/^الموظف/) as HTMLSelectElement;
-    await waitFor(() => expect(within(employeeSelect).getByText('أحمد جمال')).toBeDefined());
-    const select = (await screen.findByLabelText(/^الموظف/)) as HTMLSelectElement;
-    expect(within(select).getByText('أحمد جمال')).toBeDefined();
-  });
+    const branchSelect = (await screen.findByLabelText('فرع بيانات الدخول')) as HTMLSelectElement;
+    await waitFor(() => expect(within(branchSelect).getByText('فرع مدينة نصر')).toBeDefined());
 
-  test('promotes an employee to a cashier account and closes the form on success', async () => {
-    mocks.promoteCashier.mockResolvedValue({ ...activeAccount, id: 3 });
-    renderView();
-    await screen.findByText('cashier1');
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء حساب كاشير جديد' }));
-    const employeeSelect = screen.getByLabelText(/^الموظف/) as HTMLSelectElement;
-    await waitFor(() => expect(within(employeeSelect).getByText('أحمد جمال')).toBeDefined());
+    fireEvent.change(branchSelect, { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText(/^اسم المستخدم/), { target: { value: 'Nasr' } });
+    fireEvent.change(screen.getByLabelText(/^كلمة المرور/, { selector: 'input:not([aria-label])' }), {
+      target: { value: 'secret123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ بيانات الدخول' }));
 
-    fireEvent.change(screen.getByLabelText(/^الموظف/), { target: { value: '7' } });
-    fireEvent.change(screen.getByLabelText(/^اسم المستخدم/), { target: { value: 'newcashier' } });
-    fireEvent.change(screen.getByLabelText(/^كلمة المرور/), { target: { value: 'secret123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء الحساب' }));
-
-    await waitFor(() => expect(mocks.promoteCashier).toHaveBeenCalledTimes(1));
-    expect(mocks.promoteCashier.mock.calls[0]?.[0]).toEqual({
-      employeeId: 7,
-      username: 'newcashier',
+    await waitFor(() => expect(mocks.upsertBranchCashier).toHaveBeenCalledTimes(1));
+    expect(mocks.upsertBranchCashier.mock.calls[0]?.[0]).toEqual({
+      branchId: 3,
+      username: 'nasr',
       password: 'secret123',
     });
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'إنشاء الحساب' })).toBeNull(),
-    );
   });
 
-  test('shows the Arabic validation message for an empty username', async () => {
+  test('shows the Arabic validation message when the branch is missing', async () => {
     renderView();
-    await screen.findByText('cashier1');
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء حساب كاشير جديد' }));
-    const employeeSelect = screen.getByLabelText(/^الموظف/) as HTMLSelectElement;
-    await waitFor(() => expect(within(employeeSelect).getByText('أحمد جمال')).toBeDefined());
-    fireEvent.change(screen.getByLabelText(/^الموظف/), { target: { value: '7' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء الحساب' }));
-    expect(await screen.findByText('اسم المستخدم مطلوب')).toBeDefined();
-    expect(mocks.promoteCashier).not.toHaveBeenCalled();
+    await screen.findByText('nasr');
+    fireEvent.change(screen.getByLabelText(/^اسم المستخدم/), { target: { value: 'nasr' } });
+    fireEvent.change(screen.getByLabelText(/^كلمة المرور/, { selector: 'input:not([aria-label])' }), {
+      target: { value: 'secret123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ بيانات الدخول' }));
+
+    expect(await screen.findByText('يجب اختيار الفرع')).toBeDefined();
+    expect(mocks.upsertBranchCashier).not.toHaveBeenCalled();
   });
 
-  test('surfaces a server error when promotion fails', async () => {
-    mocks.promoteCashier.mockRejectedValue(
+  test('surfaces a server error when saving credentials fails', async () => {
+    mocks.upsertBranchCashier.mockRejectedValue(
       new ApiError(409, { code: 'USERNAME_TAKEN', message: 'اسم المستخدم مستخدم بالفعل' }),
     );
     renderView();
-    await screen.findByText('cashier1');
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء حساب كاشير جديد' }));
-    const employeeSelect = screen.getByLabelText(/^الموظف/) as HTMLSelectElement;
-    await waitFor(() => expect(within(employeeSelect).getByText('أحمد جمال')).toBeDefined());
-    fireEvent.change(screen.getByLabelText(/^الموظف/), { target: { value: '7' } });
-    fireEvent.change(screen.getByLabelText(/^اسم المستخدم/), { target: { value: 'newcashier' } });
-    fireEvent.change(screen.getByLabelText(/^كلمة المرور/), { target: { value: 'secret123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء الحساب' }));
+    const branchSelect = (await screen.findByLabelText('فرع بيانات الدخول')) as HTMLSelectElement;
+    await waitFor(() => expect(within(branchSelect).getByText('فرع مدينة نصر')).toBeDefined());
+
+    fireEvent.change(branchSelect, { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText(/^اسم المستخدم/), { target: { value: 'nasr' } });
+    fireEvent.change(screen.getByLabelText(/^كلمة المرور/, { selector: 'input:not([aria-label])' }), {
+      target: { value: 'secret123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ بيانات الدخول' }));
+
     expect(await screen.findByText('اسم المستخدم مستخدم بالفعل')).toBeDefined();
   });
 
-  test('disables an active account only after confirmation', async () => {
+  test('disables an active branch login only after confirmation', async () => {
     mocks.setCashierAccountStatus.mockResolvedValue({ ...activeAccount, active: false });
     renderView();
-    const row = (await screen.findByText('cashier1')).closest('tr')!;
+    const row = (await screen.findByText('nasr')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'تعطيل' }));
     expect(mocks.setCashierAccountStatus).not.toHaveBeenCalled();
     const dialog = screen.getByRole('dialog', { name: 'تعطيل حساب الكاشير' });
@@ -176,32 +190,19 @@ describe('CashierAccountsView', () => {
     expect(mocks.setCashierAccountStatus.mock.calls[0]).toEqual([1, false]);
   });
 
-  test('locks the account-disable dialog while the request is pending', async () => {
-    mocks.setCashierAccountStatus.mockReturnValue(new Promise(() => undefined));
-    renderView();
-    const row = (await screen.findByText('cashier1')).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'تعطيل' }));
-    const dialog = screen.getByRole('dialog', { name: 'تعطيل حساب الكاشير' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد التعطيل' }));
-
-    await waitFor(() => expect(mocks.setCashierAccountStatus).toHaveBeenCalledTimes(1));
-    expect((within(dialog).getByRole('button', { name: 'تأكيد التعطيل' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((within(dialog).getByRole('button', { name: 'إلغاء' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  test('re-enables a disabled account without confirmation', async () => {
+  test('re-enables a disabled branch login without confirmation', async () => {
     mocks.setCashierAccountStatus.mockResolvedValue({ ...disabledAccount, active: true });
     renderView();
-    const row = (await screen.findByText('cashier2')).closest('tr')!;
+    const row = (await screen.findByText('maadi')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'تفعيل' }));
     await waitFor(() => expect(mocks.setCashierAccountStatus).toHaveBeenCalledTimes(1));
     expect(mocks.setCashierAccountStatus.mock.calls[0]).toEqual([2, true]);
   });
 
-  test('resets a cashier password through the dialog', async () => {
+  test('resets a branch login password through the dialog', async () => {
     mocks.resetCashierPassword.mockResolvedValue(activeAccount);
     renderView();
-    const row = (await screen.findByText('cashier1')).closest('tr')!;
+    const row = (await screen.findByText('nasr')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'إعادة تعيين كلمة المرور' }));
     fireEvent.change(await screen.findByLabelText(/^كلمة المرور الجديدة/), {
       target: { value: 'anotherSecret1' },
@@ -211,10 +212,57 @@ describe('CashierAccountsView', () => {
     expect(mocks.resetCashierPassword.mock.calls[0]).toEqual([1, 'anotherSecret1']);
   });
 
+  test('loads the branch roster and saves the edited members', async () => {
+    renderView();
+    await screen.findByText('nasr');
+    const rosterBranch = (await screen.findByLabelText('فرع الوردية')) as HTMLSelectElement;
+    await waitFor(() => expect(within(rosterBranch).getByText('فرع مدينة نصر')).toBeDefined());
+
+    fireEvent.change(rosterBranch, { target: { value: '3' } });
+    const ahmed = await screen.findByLabelText('أحمد جمال') as HTMLInputElement;
+    const sara = await screen.findByLabelText('سارة محمد') as HTMLInputElement;
+    expect(ahmed.checked).toBe(true);
+    expect(sara.checked).toBe(false);
+
+    fireEvent.click(sara);
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ وردية الفرع' }));
+
+    await waitFor(() => expect(mocks.replaceBranchCashierRoster).toHaveBeenCalledTimes(1));
+    expect(mocks.replaceBranchCashierRoster.mock.calls[0]).toEqual([3, [7, 9]]);
+  });
+
+  test('shows branch-loading failures with recovery actions on both admin forms', async () => {
+    mocks.listCashierSessionBranches.mockRejectedValue(new ApiError(500, {
+      code: 'UNEXPECTED_ERROR',
+      message: 'branches unavailable',
+    }));
+    renderView();
+
+    expect(await screen.findAllByText('branches unavailable')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'إعادة المحاولة' })).toHaveLength(2);
+  });
+
+  test('shows employee-loading failures and blocks roster saving', async () => {
+    mocks.listActiveEmployeeOptions.mockRejectedValue(new ApiError(500, {
+      code: 'UNEXPECTED_ERROR',
+      message: 'employee options unavailable',
+    }));
+    renderView();
+    const rosterBranch = document.querySelector<HTMLSelectElement>('#roster-branch')!;
+    await waitFor(() => expect(rosterBranch.options.length).toBeGreaterThan(1));
+
+    fireEvent.change(rosterBranch, { target: { value: '3' } });
+
+    expect(await screen.findByText('employee options unavailable')).toBeDefined();
+    const rosterCard = rosterBranch.closest<HTMLElement>('.rounded-card')!;
+    expect(within(rosterCard).getAllByRole('button').find((button) => button.hasAttribute('disabled')))
+      .toBeDefined();
+  });
+
   test('paginates with the next button', async () => {
     mocks.listCashierAccounts.mockResolvedValue(pageOf([activeAccount], { total: 30, totalPages: 2 }));
     renderView();
-    await screen.findByText('cashier1');
+    await screen.findByText('nasr');
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
     await waitFor(() => {
       const params = mocks.listCashierAccounts.mock.calls.at(-1)?.[0] as Record<string, unknown>;

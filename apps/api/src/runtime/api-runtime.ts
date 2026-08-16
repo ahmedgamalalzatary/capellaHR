@@ -310,6 +310,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     ...(dashboardModule ? { dashboardService: dashboardModule.service } : {}),
     ...(salesModule ? {
       cashierSessionService: salesModule.cashierSessions,
+      erpBranchCashierRosterService: salesModule.branchCashierRoster,
       erpSaleService: salesModule.sales,
     } : {}),
     ...(erpClientsModule ? { erpClientService: erpClientsModule.service } : {}),

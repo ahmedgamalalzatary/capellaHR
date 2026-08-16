@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createProductStockService, ProductStockError, type ProductStockRepository } from '../../src/modules/erp/stock/index.js';
 
 const admin = { role: 'admin' as const, accountId: 7 };
-const cashier = { role: 'cashier' as const, accountId: 8, employeeId: 3 };
+const cashier = { role: 'cashier' as const, accountId: 8, branchId: 2 };
 const product = {
   id: 11, branchId: 2, name: 'Shampoo', description: null, sellingPrice: '120.00',
   lastPurchaseCost: '70.00', lowStockThreshold: 3, isActive: true, quantity: 5,
@@ -24,7 +24,7 @@ const service = (repo = repository()) => createProductStockService({
   repository: repo,
   resolveBranchContext: vi.fn(async (actor, requested) => ({
     accountId: actor.accountId, accountRole: actor.role, branchId: requested ?? 2,
-    employeeId: actor.role === 'cashier' ? actor.employeeId : null,
+    employeeId: null,
   })),
 });
 

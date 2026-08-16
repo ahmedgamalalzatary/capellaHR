@@ -19,7 +19,7 @@ test('Admin navigation connects related ERP workspaces without page overflow', a
   const workspaces = [
     { link: 'الكتالوج', path: '/catalog', heading: 'إدارة الكتالوج' },
     { link: 'العملاء', path: '/clients', heading: 'إدارة العملاء' },
-    { link: 'حسابات الكاشير', path: '/cashier-accounts', heading: 'حسابات الكاشير' },
+    { link: 'حسابات الكاشير', path: '/cashier-accounts', heading: 'حسابات كاشير الفروع' },
     { link: 'العمولات', path: '/commissions', heading: 'العمولات' },
     { link: 'التقارير', path: '/reports', heading: 'التقارير والتصدير' },
   ] as const;

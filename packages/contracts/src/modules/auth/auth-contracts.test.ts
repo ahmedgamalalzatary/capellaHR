@@ -30,14 +30,15 @@ describe('authentication contracts', () => {
     }).success).toBe(false);
   });
 
-  it('validates cashier promotion credentials at the boundary', () => {
-    const schema = Reflect.get(contracts, 'promoteCashierSchema');
+  it('validates branch cashier credentials at the boundary', () => {
+    const schema = Reflect.get(contracts, 'upsertBranchCashierSchema');
 
-    expect(schema.parse({ employeeId: 7, username: ' Cashier.One ', password: 'long-secret' }))
-      .toEqual({ employeeId: 7, username: 'cashier.one', password: 'long-secret' });
-    expect(schema.safeParse({ employeeId: 7, username: ' ', password: 'long-secret' }).success).toBe(false);
-    expect(schema.safeParse({ employeeId: 7, username: 'cashier', password: '' }).success).toBe(false);
-    expect(schema.safeParse({ employeeId: 7, username: 'x'.repeat(256), password: 'long-secret' }).success).toBe(false);
+    expect(schema.parse({ branchId: 2, username: ' Cashier.One ', password: 'long-secret' }))
+      .toEqual({ branchId: 2, username: 'cashier.one', password: 'long-secret' });
+    expect(schema.safeParse({ branchId: 2, username: ' ', password: 'long-secret' }).success).toBe(false);
+    expect(schema.safeParse({ branchId: 2, username: 'cashier', password: '' }).success).toBe(false);
+    expect(schema.safeParse({ branchId: 0, username: 'cashier', password: 'long-secret' }).success).toBe(false);
+    expect(schema.safeParse({ branchId: 2, username: 'x'.repeat(256), password: 'long-secret' }).success).toBe(false);
   });
 
   it('validates cashier account-management requests', () => {
@@ -53,13 +54,13 @@ describe('authentication contracts', () => {
       .toBe(false);
   });
 
-  it('validates password-safe Cashier account responses', () => {
+  it('validates password-safe branch cashier account responses', () => {
     const account = {
       id: 3,
       username: 'cashier.one',
       role: 'cashier' as const,
-      employeeId: 7,
       branchId: 2,
+      branchName: 'فرع مدينة نصر',
       active: true,
     };
 
@@ -68,14 +69,21 @@ describe('authentication contracts', () => {
       ...account,
       passwordHash: 'must-not-leak',
     }).success).toBe(false);
+    expect(contracts.publicCashierAccountSchema.safeParse({
+      ...account,
+      employeeId: 7,
+    }).success).toBe(false);
   });
 
   it('keeps ERP account sessions distinct from employee self-service sessions', () => {
     expect(contracts.accountSessionDataSchema.parse({ actor: { type: 'admin' } }))
       .toEqual({ actor: { type: 'admin' } });
     expect(contracts.accountSessionDataSchema.parse({
+      actor: { type: 'cashier', accountId: 3 },
+    })).toEqual({ actor: { type: 'cashier', accountId: 3 } });
+    expect(contracts.accountSessionDataSchema.safeParse({
       actor: { type: 'cashier', accountId: 3, employeeId: 7 },
-    })).toEqual({ actor: { type: 'cashier', accountId: 3, employeeId: 7 } });
+    }).success).toBe(false);
     expect(contracts.accountSessionDataSchema.safeParse({ actor: { type: 'employee' } }).success)
       .toBe(false);
     expect(contracts.authSessionDataSchema.parse({ actor: { type: 'employee' } }))

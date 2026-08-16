@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createSupplierPurchaseService, isSupplierDuplicateEntryError, PurchaseError, type SupplierPurchaseRepository } from '../../src/modules/erp/suppliers/index.js';
 
 const admin = { role: 'admin' as const, accountId: 7 };
-const cashier = { role: 'cashier' as const, accountId: 8, employeeId: 3 };
+const cashier = { role: 'cashier' as const, accountId: 8, branchId: 2 };
 const supplier = { id: 3, branchId: 2, name: 'Nile', phone: null, notes: null, isActive: true, createdAt: new Date(), updatedAt: new Date() };
 const purchase = { id: 9, branchId: 2, supplierId: 3, supplierName: 'Nile', status: 'posted' as const, purchaseDate: '2026-08-05', total: '25.00', actingAccountId: 7, actingUsername: 'admin', cancelledAt: null, cancelledByAccountId: null, cancellationReason: null, correctsPurchaseId: null, correctedByPurchaseId: null, createdAt: new Date(), lines: [] };
 const repository = (): SupplierPurchaseRepository => ({

@@ -23,20 +23,26 @@ describe('authentication database schema', () => {
     expect(attempts.reason).toBeDefined();
   });
 
-  it('defines employee-linked cashier accounts with branch scope', () => {
+  it('defines branch-scoped cashier accounts with one active login per branch', () => {
     const accounts = Reflect.get(authSchema, 'accounts');
 
     expect(accounts).toBeDefined();
     expect(getTableName(accounts)).toBe('accounts');
     expect(accounts.role).toBeDefined();
+    // Legacy per-employee cashier rows keep their link; new logins carry the branch.
     expect(accounts.employeeId).toBeDefined();
-    expect(Reflect.get(accounts, 'branchId')).toBeUndefined();
+    expect(accounts.branchId).toBeDefined();
+    expect(accounts.activeCashierBranch).toBeDefined();
     expect(accounts.passwordHash).toBeDefined();
     expect(accounts.active).toBeDefined();
     expect(accounts.adminSingleton).toBeDefined();
-    expect(getTableConfig(accounts).indexes.some(
-      (item) => item.config.name === 'accounts_admin_singleton_unique',
-    )).toBe(true);
+    const config = getTableConfig(accounts);
+    expect(config.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      'accounts_admin_singleton_unique',
+      'accounts_active_cashier_branch_unique',
+    ]));
+    expect(config.foreignKeys.map((item) => item.getName())).toContain('accounts_branch_fk');
+    expect(config.checks.map((item) => item.name)).toContain('accounts_role_scope_consistency');
   });
 
   it('links account sessions to accounts without storing a duplicate employee identity', () => {

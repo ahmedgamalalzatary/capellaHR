@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
+  branchCashierRosterItemSchema,
+  branchCashierRosterQuerySchema,
+  replaceBranchCashierRosterSchema,
   completeSaleSchema,
   invoiceSchema,
   invoiceHistoryItemSchema,
@@ -26,6 +29,7 @@ const validDraft = {
   branchId: 2,
   clientId: 5,
   assignedEmployeeId: 8,
+  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
   lines: [
@@ -159,6 +163,21 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(false);
   });
 
+  it('requires the selling cashier on every sale, services and products alike', () => {
+    const { sellerEmployeeId, ...withoutSeller } = validDraft;
+    expect(sellerEmployeeId).toBeDefined();
+    expect(completeSaleSchema.safeParse(withoutSeller).success).toBe(false);
+
+    const productOnly = {
+      ...withoutSeller,
+      sellerEmployeeId,
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+    };
+    delete (productOnly as Partial<typeof productOnly>).assignedEmployeeId;
+    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
+    expect(completeSaleSchema.safeParse({ ...productOnly, sellerEmployeeId: 0 }).success).toBe(false);
+  });
+
   it('publishes product-only invoices without an assigned employee', () => {
     const productOnlyInvoice = {
       ...saleFixtures.completedInvoice,
@@ -241,6 +260,30 @@ describe('ERP complete-sale contracts', () => {
         { method: 'visa', amount: '84.99' },
       ],
     }).success).toBe(false);
+  });
+
+  it('publishes the selling cashier on invoices and keeps legacy invoices seller-free', () => {
+    expect(invoiceSchema.parse(saleFixtures.completedInvoice).seller)
+      .toEqual(saleFixtures.completedInvoice.seller);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      seller: null,
+    }).success).toBe(true);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال', username: 'must-not-leak' },
+    }).success).toBe(false);
+  });
+
+  it('validates branch cashier roster reads and full replacements', () => {
+    expect(branchCashierRosterQuerySchema.parse({ branchId: '2' })).toEqual({ branchId: 2 });
+    expect(branchCashierRosterQuerySchema.parse({})).toEqual({});
+    const member = { id: 8, employeeCode: 1008, fullName: 'سارة علي' };
+    expect(branchCashierRosterItemSchema.parse(member)).toEqual(member);
+    expect(replaceBranchCashierRosterSchema.parse({ employeeIds: [8, 9] }))
+      .toEqual({ employeeIds: [8, 9] });
+    expect(replaceBranchCashierRosterSchema.parse({ employeeIds: [] })).toEqual({ employeeIds: [] });
+    expect(replaceBranchCashierRosterSchema.safeParse({ employeeIds: [8, 8] }).success).toBe(false);
   });
 
   it('publishes stored historical invoice facts without persistence-only fields', () => {

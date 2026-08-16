@@ -29,7 +29,7 @@ const setup = (options: {
   return {
     branches,
     employees,
-    resolve: createErpBranchContextResolver({ branches, employees }),
+    resolve: createErpBranchContextResolver({ branches }),
   };
 };
 
@@ -65,20 +65,20 @@ describe('ERP branch context', () => {
     });
   });
 
-  it('derives a Cashier branch from the linked active employee', async () => {
+  it('derives a Cashier branch from the account identity itself', async () => {
     const { branches, employees, resolve } = setup();
 
     await expect(resolve({
       role: 'cashier',
       accountId: 8,
-      employeeId: 7,
+      branchId: 3,
     })).resolves.toEqual({
       accountId: 8,
       accountRole: 'cashier',
       branchId: 3,
-      employeeId: 7,
+      employeeId: null,
     });
-    expect(employees.findActiveById).toHaveBeenCalledWith(7);
+    expect(employees.findActiveById).not.toHaveBeenCalled();
     expect(branches.findById).not.toHaveBeenCalled();
   });
 
@@ -88,28 +88,22 @@ describe('ERP branch context', () => {
     await expect(resolve({
       role: 'cashier',
       accountId: 8,
-      employeeId: 7,
+      branchId: 3,
     }, 4)).rejects.toMatchObject({
       code: 'ERP_BRANCH_FORBIDDEN',
       message: 'لا يمكن للكاشير تنفيذ عمليات على فرع آخر',
     });
   });
 
-  it('fails closed when the Cashier employee is unavailable', async () => {
-    const { resolve } = setup({ employee: null });
+  it('fails closed when the Cashier account has no branch', async () => {
+    const { resolve } = setup();
 
-    await expect(resolve({
-      role: 'cashier',
-      accountId: 8,
-      employeeId: 7,
-    })).rejects.toBeInstanceOf(ErpBranchContextError);
-    await expect(resolve({
-      role: 'cashier',
-      accountId: 8,
-      employeeId: 7,
-    })).rejects.toMatchObject({
-      code: 'ERP_CASHIER_EMPLOYEE_UNAVAILABLE',
-      message: 'الموظف المرتبط بحساب الكاشير غير متاح',
-    });
+    await expect(resolve({ role: 'cashier', accountId: 8 } as never))
+      .rejects.toBeInstanceOf(ErpBranchContextError);
+    await expect(resolve({ role: 'cashier', accountId: 8 } as never))
+      .rejects.toMatchObject({
+        code: 'ERP_CASHIER_EMPLOYEE_UNAVAILABLE',
+        message: 'حساب كاشير الفرع غير متاح',
+      });
   });
 });

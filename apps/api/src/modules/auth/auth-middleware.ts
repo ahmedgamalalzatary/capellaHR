@@ -16,15 +16,22 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
       reject(401, 'UNAUTHENTICATED', 'يجب تسجيل الدخول')(request, response, next);
       return;
     }
+    const branchId = (session as { branchId?: number | null }).branchId;
     response.locals.actor = session.actorType === 'admin' || session.accountRole === 'admin'
       ? { type: 'admin' as const, ...(session.accountId ? { accountId: session.accountId } : {}) }
       : session.actorType === 'employee'
         ? { type: 'employee' as const, employeeId: session.employeeId }
-        : {
-            type: 'cashier' as const,
-            accountId: session.accountId,
-            employeeId: session.employeeId,
-          };
+        : session.accountRole === 'cashier' && session.accountId && typeof branchId === 'number'
+          ? {
+              type: 'cashier' as const,
+              accountId: session.accountId,
+              branchId,
+            }
+          : null;
+    if (!response.locals.actor) {
+      reject(401, 'UNAUTHENTICATED', 'يجب تسجيل الدخول')(request, response, next);
+      return;
+    }
     setAuditActor(session.actorType === 'admin'
       ? { type: 'admin', identifier: 'admin' }
       : session.actorType === 'employee'

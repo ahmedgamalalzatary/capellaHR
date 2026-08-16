@@ -67,55 +67,46 @@ afterEach(async () => {
 });
 
 const fixture = async () => {
-  const unique = `${Date.now()}-${Math.random()}`;
-  const branchId = Number((await database.insert(branches).values({
-    name: `ERP 4 ${unique}`,
-    nameNormalized: `erp4-${unique}`,
-    location: 'Cairo',
-    latitude: 30,
-    longitude: 31,
-    gpsAccuracyMeters: 5,
-    attendanceRadiusMeters: 100,
-    hasEverBeenReferenced: true,
-    createdAt: now,
-    updatedAt: now,
-  }))[0].insertId);
-  created.branchIds.push(branchId);
-
-  const makeAccount = async (suffix: number) => {
-    const employeeId = Number((await database.insert(employees).values({
-      employeeCode: 940000 + suffix + Math.floor(Math.random() * 1000),
-      fullName: `ERP 4 Cashier ${suffix}`,
-      personalPhone: `01009${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`,
-      whatsappPhone: `01109${String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')}`,
-      pinHash: 'unused',
-      age: 30,
-      address: 'Cairo',
-      branchId,
-      shiftDurationMinutes: 480,
-      monthlyBaseSalary: '5000.00',
+  const makeBranch = async (suffix: number) => {
+    const uniqueBranch = `${Date.now()}-${Math.random()}-${suffix}`;
+    const id = Number((await database.insert(branches).values({
+      name: `ERP 4 ${uniqueBranch}`,
+      nameNormalized: `erp4-${uniqueBranch}`,
+      location: 'Cairo',
+      latitude: 30,
+      longitude: 31,
+      gpsAccuracyMeters: 5,
+      attendanceRadiusMeters: 100,
+      hasEverBeenReferenced: true,
       createdAt: now,
       updatedAt: now,
     }))[0].insertId);
-    created.employeeIds.push(employeeId);
-    const username = `erp4.${suffix}.${unique}`.slice(0, 255);
+    created.branchIds.push(id);
+    return id;
+  };
+
+  // One shared branch login per branch: the second account lives on another branch.
+  const makeAccount = async (branchId: number, suffix: number) => {
+    const username = `erp4.${suffix}.${Date.now()}-${Math.random()}`.slice(0, 255);
     const accountId = Number((await database.insert(accounts).values({
       username,
       passwordHash: 'unused',
       role: 'cashier',
-      employeeId,
+      employeeId: null,
+      branchId,
       active: true,
       createdAt: now,
       updatedAt: now,
     }))[0].insertId);
     created.accountIds.push(accountId);
-    return { accountId, employeeId, username };
+    return { accountId, branchId, username };
   };
 
+  const branchId = await makeBranch(1);
   return {
     branchId,
-    first: await makeAccount(1),
-    second: await makeAccount(2),
+    first: await makeAccount(branchId, 1),
+    second: await makeAccount(await makeBranch(2), 2),
   };
 };
 
@@ -315,8 +306,8 @@ describe('ERP Cashier-session repository', () => {
       .set('Cookie', firstCookie);
     const conflict = await request(makeApp())
       .post('/api/v1/erp/cashier-sessions/open')
-      .set('Cookie', secondCookie);
-    const wrongOwner = await request(makeApp())
+      .set('Cookie', firstCookie);
+    const otherBranchClose = await request(makeApp())
       .post('/api/v1/erp/cashier-sessions/close')
       .set('Cookie', secondCookie);
     const closed = await request(makeApp())
@@ -352,8 +343,8 @@ describe('ERP Cashier-session repository', () => {
     expect(restored.body.data.id).toBe(opened.body.data.id);
     expect(conflict.status).toBe(409);
     expect(conflict.body.error.code).toBe('ERP_CASHIER_SESSION_ALREADY_OPEN');
-    expect(wrongOwner.status).toBe(403);
-    expect(wrongOwner.body.error.code).toBe('ERP_CASHIER_SESSION_NOT_OWNER');
+    expect(otherBranchClose.status).toBe(409);
+    expect(otherBranchClose.body.error.code).toBe('ERP_CASHIER_SESSION_NOT_OPEN');
     expect(closed.status).toBe(200);
     expect(closed.body.data.closedByAccountId).toBe(data.first.accountId);
     expect(afterClose.status).toBe(200);
