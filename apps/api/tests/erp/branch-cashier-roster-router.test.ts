@@ -1,8 +1,12 @@
+import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/app.js';
-import type { BranchCashierRosterService } from '../../src/modules/erp/sales/index.js';
+import {
+  createBranchCashierRosterRouter,
+  type BranchCashierRosterService,
+} from '../../src/modules/erp/sales/index.js';
 
 const members = [{ id: 7, employeeCode: 1007, fullName: 'أحمد جمال' }];
 
@@ -43,6 +47,19 @@ const setup = () => {
 };
 
 describe('ERP branch cashier roster routes', () => {
+  it('distinguishes a missing ERP account from a non-admin account', async () => {
+    const app = express();
+    app.use('/api/v1/erp/branch-cashier-roster', createBranchCashierRosterRouter({
+      list: vi.fn(),
+      replace: vi.fn(),
+    }));
+
+    const response = await request(app).get('/api/v1/erp/branch-cashier-roster');
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatchObject({ code: 'ERP_ACCOUNT_REQUIRED' });
+  });
+
   it('serves the roster to an authenticated cashier of the branch', async () => {
     const { app } = setup();
     const response = await request(app)

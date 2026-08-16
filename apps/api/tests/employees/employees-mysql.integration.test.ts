@@ -27,6 +27,9 @@ describe('MySQL-backed employees', () => {
       employeeId: created.id,
       createdAt: new Date(),
     });
+    const rosterMembership = (await database.select({ id: branchCashierRoster.id })
+      .from(branchCashierRoster).where(eq(branchCashierRoster.employeeId, created.id)).limit(1))[0];
+    if (!rosterMembership) throw new Error('Expected the roster membership fixture to exist');
 
     const updated = await employeeModule.service.update(created.id, { branchId: newBranch.id });
 
@@ -49,7 +52,7 @@ describe('MySQL-backed employees', () => {
       .where(eq(auditEvents.action, 'remove_on_branch_reassign')).limit(1))[0];
     expect(rosterEvent).toMatchObject({
       entityType: 'branch_cashier_roster',
-      entityId: String(oldBranch.id),
+      entityId: String(rosterMembership.id),
       relatedIds: { branchId: String(oldBranch.id), employeeId: String(created.id) },
     });
   });

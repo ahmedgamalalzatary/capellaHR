@@ -39,6 +39,7 @@ describe('branch cashier migration', () => {
     expect(migration).toContain('erp_invoices_validate_seller_insert');
     expect(migration).toContain("NEW.status <> 'draft' AND NEW.seller_employee_id IS NULL");
     expect(migration).toContain("OLD.status = 'draft' AND NEW.status <> 'draft'");
+    expect(migration).toContain("OLD.status <> 'draft' AND NEW.status = 'draft'");
     expect(migration).toContain('Completed invoices require a seller');
   });
 });

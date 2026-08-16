@@ -21,6 +21,7 @@ export interface BranchCashierRosterRepository {
 }
 
 export type BranchCashierRosterErrorCode =
+  | 'ERP_ACCOUNT_REQUIRED'
   | 'ERP_ROSTER_ADMIN_REQUIRED'
   | 'ERP_ROSTER_EMPLOYEE_INVALID';
 

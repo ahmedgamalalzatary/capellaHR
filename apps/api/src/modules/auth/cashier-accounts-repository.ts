@@ -74,21 +74,21 @@ export const createDrizzleCashierAccountRepository = (
         return { kind, account: account! };
       };
 
-      if (current) {
-        await tx.update(accounts).set({
-          username: input.username,
-          passwordHash: input.passwordHash,
-          active: true,
-          updatedAt: input.updatedAt,
-        }).where(eq(accounts.id, current.id));
-        await tx.update(authSessions).set({ revokedAt: input.updatedAt }).where(and(
-          eq(authSessions.accountId, current.id),
-          isNull(authSessions.revokedAt),
-        ));
-        return persist('updated', current.id);
-      }
-
       try {
+        if (current) {
+          await tx.update(accounts).set({
+            username: input.username,
+            passwordHash: input.passwordHash,
+            active: true,
+            updatedAt: input.updatedAt,
+          }).where(eq(accounts.id, current.id));
+          await tx.update(authSessions).set({ revokedAt: input.updatedAt }).where(and(
+            eq(authSessions.accountId, current.id),
+            isNull(authSessions.revokedAt),
+          ));
+          return persist('updated', current.id);
+        }
+
         const inserted = await tx.insert(accounts).values(input);
         return persist('created', Number(inserted[0].insertId));
       } catch (error) {

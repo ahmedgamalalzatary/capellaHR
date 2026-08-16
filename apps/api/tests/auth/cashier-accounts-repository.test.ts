@@ -173,6 +173,65 @@ describe('branch cashier account persistence', () => {
     expect(events).toEqual(['account-update', 'session-revoke']);
   });
 
+  it('translates a duplicate username race during update without revoking sessions', async () => {
+    let accountReads = 0;
+    const events: string[] = [];
+    const transaction = {
+      select() {
+        return {
+          from(table: unknown) {
+            const builder = {
+              innerJoin() { return builder; },
+              where() { return builder; },
+              for() { return builder; },
+              limit() {
+                if (table === branches) return Promise.resolve([{ id: 3 }]);
+                accountReads += 1;
+                return Promise.resolve(accountReads === 1
+                  ? [{ id: 5, username: 'old-name', active: true }]
+                  : []);
+              },
+            };
+            return builder;
+          },
+        };
+      },
+      update(table: unknown) {
+        return {
+          set() {
+            return {
+              where() {
+                events.push(table === accounts ? 'account-update' : 'session-revoke');
+                if (table === accounts) {
+                  return Promise.reject(Object.assign(
+                    new Error('duplicate username'),
+                    { cause: { code: 'ER_DUP_ENTRY' } },
+                  ));
+                }
+                return Promise.resolve();
+              },
+            };
+          },
+        };
+      },
+    };
+    const database = {
+      transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>) => callback(transaction),
+    };
+    const repository = auth.createDrizzleCashierAccountRepository(database as never);
+
+    await expect(repository.upsert({
+      username: 'claimed-concurrently',
+      passwordHash: 'hash:next',
+      role: 'cashier',
+      branchId: 3,
+      employeeId: null,
+      createdAt: new Date('2026-08-16T10:00:00.000Z'),
+      updatedAt: new Date('2026-08-16T11:00:00.000Z'),
+    })).resolves.toEqual({ kind: 'username_taken' });
+    expect(events).toEqual(['account-update']);
+  });
+
   it('revokes live sessions when a branch login is disabled', async () => {
     const events: string[] = [];
     const transaction = {

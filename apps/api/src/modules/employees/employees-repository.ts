@@ -122,7 +122,7 @@ export const createDrizzleEmployeeRepository = (
       const { images, ...fields } = changes;
       const updatedAt = now();
       const branchChanged = fields.branchId !== undefined && fields.branchId !== current.branchId;
-      let removedRosterMembership = false;
+      let removedRosterMembership: { id: number } | null = null;
       if (branchChanged) {
         const destination = (await tx.select({
           id: branches.id,
@@ -137,7 +137,7 @@ export const createDrizzleEmployeeRepository = (
           )).for('update').limit(1))[0];
         if (rosterMembership) {
           await tx.delete(branchCashierRoster).where(eq(branchCashierRoster.id, rosterMembership.id));
-          removedRosterMembership = true;
+          removedRosterMembership = rosterMembership;
         }
         await tx.update(employeeBranchAssignments).set({ effectiveTo: updatedAt })
           .where(and(eq(employeeBranchAssignments.employeeId, id), isNull(employeeBranchAssignments.effectiveTo)));
@@ -175,7 +175,7 @@ export const createDrizzleEmployeeRepository = (
       const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
       if (removedRosterMembership) await writeAudit(tx, {
         module: 'erp_cashier_roster', action: 'remove_on_branch_reassign',
-        entityType: 'branch_cashier_roster', entityId: current.branchId,
+        entityType: 'branch_cashier_roster', entityId: removedRosterMembership.id,
         beforeState: { branchId: current.branchId, employeeId: id }, afterState: null,
         relatedIds: { branchId: current.branchId, employeeId: id }, createdAt: updatedAt,
       });

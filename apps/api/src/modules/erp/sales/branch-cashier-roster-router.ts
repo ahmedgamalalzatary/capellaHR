@@ -41,7 +41,7 @@ const actorFrom = (response: Response): ErpAccountIdentity => {
     return { role: 'cashier', accountId: actor.accountId, branchId: actor.branchId };
   }
   throw new BranchCashierRosterError(
-    'ERP_ROSTER_ADMIN_REQUIRED',
+    'ERP_ACCOUNT_REQUIRED',
     'حساب نقطة بيع صالح مطلوب',
   );
 };
@@ -66,7 +66,10 @@ const handleError = (error: unknown, response: Response, next: NextFunction) => 
     return;
   }
   if (error instanceof BranchCashierRosterError) {
-    const status = error.code === 'ERP_ROSTER_ADMIN_REQUIRED' ? 403 : 409;
+    const status = error.code === 'ERP_ACCOUNT_REQUIRED'
+      || error.code === 'ERP_ROSTER_ADMIN_REQUIRED'
+      ? 403
+      : 409;
     failure(response, status, error.code, error.message);
     return;
   }

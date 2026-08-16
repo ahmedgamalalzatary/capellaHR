@@ -15,7 +15,7 @@ const resolverFor = (branchId: number): ErpBranchContextResolver => async () => 
   accountId: 9,
   accountRole: 'cashier',
   branchId,
-  employeeId: 4,
+  employeeId: null,
 });
 
 const record = (overrides: Partial<ClientRecord> = {}): ClientRecord => ({

@@ -178,6 +178,29 @@ describe('CashierAccountsView', () => {
     expect(await screen.findByText('اسم المستخدم مستخدم بالفعل')).toBeDefined();
   });
 
+  test('preserves server field errors that do not include the branch', async () => {
+    mocks.upsertBranchCashier.mockRejectedValue(new ApiError(400, {
+      code: 'VALIDATION_ERROR',
+      message: 'invalid credentials',
+      fieldErrors: { username: ['username rejected by server'] },
+    }));
+    renderView();
+    const branchSelect = document.querySelector<HTMLSelectElement>('#branch-login-branch')!;
+    await waitFor(() => expect(branchSelect.options.length).toBeGreaterThan(1));
+    fireEvent.change(branchSelect, { target: { value: '3' } });
+    fireEvent.change(document.querySelector<HTMLInputElement>('#branch-login-username')!, {
+      target: { value: 'nasr' },
+    });
+    fireEvent.change(document.querySelector<HTMLInputElement>('#branch-login-password')!, {
+      target: { value: 'secret123' },
+    });
+    const card = branchSelect.closest<HTMLElement>('.rounded-card')!;
+    fireEvent.click(within(card).getByRole('button'));
+
+    expect(await screen.findByText('username rejected by server')).toBeDefined();
+    expect(screen.queryByText('invalid credentials')).toBeNull();
+  });
+
   test('disables an active branch login only after confirmation', async () => {
     mocks.setCashierAccountStatus.mockResolvedValue({ ...activeAccount, active: false });
     renderView();
@@ -229,6 +252,42 @@ describe('CashierAccountsView', () => {
 
     await waitFor(() => expect(mocks.replaceBranchCashierRoster).toHaveBeenCalledTimes(1));
     expect(mocks.replaceBranchCashierRoster.mock.calls[0]).toEqual([3, [7, 9]]);
+  });
+
+  test('excludes roster members hidden from the active employee list when saving', async () => {
+    mocks.listBranchCashierRoster.mockResolvedValue([
+      { id: 99, employeeCode: 1099, fullName: 'inactive employee' },
+    ]);
+    renderView();
+    const rosterBranch = document.querySelector<HTMLSelectElement>('#roster-branch')!;
+    await waitFor(() => expect(rosterBranch.options.length).toBeGreaterThan(1));
+    fireEvent.change(rosterBranch, { target: { value: '3' } });
+    const card = rosterBranch.closest<HTMLElement>('.rounded-card')!;
+    await waitFor(() => expect(card.querySelectorAll('input[type="checkbox"]')).toHaveLength(2));
+    fireEvent.click(within(card).getByRole('button'));
+
+    await waitFor(() => expect(mocks.replaceBranchCashierRoster).toHaveBeenCalledWith(3, []));
+  });
+
+  test('re-seeds an identical roster when switching branches', async () => {
+    renderView();
+    const rosterBranch = document.querySelector<HTMLSelectElement>('#roster-branch')!;
+    await waitFor(() => expect(rosterBranch.options.length).toBeGreaterThan(1));
+    fireEvent.change(rosterBranch, { target: { value: '3' } });
+    const card = rosterBranch.closest<HTMLElement>('.rounded-card')!;
+    await waitFor(() => {
+      const first = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      expect(first.checked).toBe(true);
+    });
+    fireEvent.click(card.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
+    expect(card.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+
+    fireEvent.change(rosterBranch, { target: { value: '4' } });
+
+    await waitFor(() => {
+      const first = card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+      expect(first.checked).toBe(true);
+    });
   });
 
   test('shows branch-loading failures with recovery actions on both admin forms', async () => {

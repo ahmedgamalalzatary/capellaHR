@@ -65,7 +65,8 @@ function BranchLoginCredentialsCard() {
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.fieldErrors.branchId) {
+      if (error instanceof ApiError
+        && Object.values(error.fieldErrors).some((messages) => messages?.length)) {
         setFieldErrors(error.fieldErrors as Record<string, string[]>);
         return;
       }
@@ -168,11 +169,16 @@ function BranchRosterCard() {
   });
 
   // Re-seed the checkboxes whenever a fresh roster (or branch switch) arrives.
-  const rosterKey = roster.data?.map(({ id }) => id).join(',') ?? '';
+  const activeEmployeeIds = new Set((employees.data ?? []).map(({ id }) => id));
+  const rosterKey = [
+    branchId ?? '',
+    roster.data?.map(({ id }) => id).join(',') ?? '',
+    [...activeEmployeeIds].join(','),
+  ].join(':');
   const [syncedRosterKey, setSyncedRosterKey] = useState('');
-  if (rosterKey !== syncedRosterKey) {
+  if (roster.isSuccess && employees.isSuccess && rosterKey !== syncedRosterKey) {
     setSyncedRosterKey(rosterKey);
-    setSelected(roster.data?.map(({ id }) => id) ?? []);
+    setSelected(roster.data.map(({ id }) => id).filter((id) => activeEmployeeIds.has(id)));
   }
 
   const toggle = (employeeId: number) => {
@@ -184,7 +190,10 @@ function BranchRosterCard() {
   };
 
   const save = useMutation({
-    mutationFn: () => replaceBranchCashierRoster(branchId!, selected),
+    mutationFn: () => replaceBranchCashierRoster(
+      branchId!,
+      selected.filter((id) => activeEmployeeIds.has(id)),
+    ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: cashierAccountQueryKeys.roster(branchId!),

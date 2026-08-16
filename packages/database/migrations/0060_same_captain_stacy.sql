@@ -38,7 +38,9 @@ CREATE TRIGGER `erp_invoices_validate_seller_assignment`
 BEFORE UPDATE ON `erp_invoices`
 FOR EACH ROW
 BEGIN
-  IF OLD.status = 'draft' AND NEW.status <> 'draft' AND NEW.seller_employee_id IS NULL THEN
+  IF OLD.status <> 'draft' AND NEW.status = 'draft' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Completed invoices cannot return to draft';
+  ELSEIF OLD.status = 'draft' AND NEW.status <> 'draft' AND NEW.seller_employee_id IS NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Completed invoices require a seller';
   ELSEIF OLD.status <> 'draft' AND OLD.seller_employee_id IS NOT NULL
     AND (NOT (NEW.seller_employee_id <=> OLD.seller_employee_id)
