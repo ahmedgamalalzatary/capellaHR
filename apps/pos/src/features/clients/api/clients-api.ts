@@ -36,6 +36,11 @@ export function listClientBranches(page = 1) {
   return api.getPage<ClientBranch>(`/branches?page=${page}&pageSize=100`);
 }
 
+/** Used to put a saved draft's client back on screen; drafts store only the id. */
+export function getClient(id: number, branchId?: number) {
+  return api.get<Client>(`/erp/clients/${id}${queryString({ branchId })}`);
+}
+
 export function findClientByPhone(phone: string, branchId?: number) {
   return api.get<Client>(`/erp/clients/by-phone${queryString({ phone, branchId })}`);
 }

@@ -9,7 +9,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, Minus, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import {
   Button,
@@ -27,6 +27,7 @@ import {
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { PageHeader } from '@/components/layout/page-header';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
@@ -36,7 +37,7 @@ import {
   listCashierSessionBranches,
 } from '@/features/cashier-sessions';
 import { cashierAccountQueryKeys, listBranchCashierRoster } from '@/features/cashier-accounts';
-import { ClientPicker, type Client } from '@/features/clients';
+import { ClientPicker, getClient, type Client } from '@/features/clients';
 import { ServicePicker, type ServiceListItem } from '@/features/catalog';
 import { ProductPicker, type ProductSaleItem } from '@/features/products';
 import {
@@ -67,6 +68,7 @@ import { salesQueryKeys } from '../query-keys';
 import {
   acquireSaleDraftTab,
   readSaleDraft,
+  type StoredSaleDraft,
   removeSaleDraft,
   writeSaleDraft,
   type SaleDraftOwner,
@@ -145,8 +147,13 @@ export function SalesView() {
     enabled: actor?.type === 'cashier' || (isAdmin && branchId !== undefined),
   });
 
-  if (isAdmin && branchId === undefined) {
-    const branchContent = branches.isError ? (
+  /**
+   * The branch stays on screen for the whole visit, like every other admin page:
+   * a wrong pick is corrected in place instead of forcing a reload, and a branch
+   * with no open shift no longer strands the admin on a dead-end screen.
+   */
+  const branchPicker = !isAdmin ? null : branches.isError ? (
+    <Card className="shadow-card"><CardContent className="p-4 sm:p-5">
       <EmptyState
         title="تعذر تحميل الفروع"
         description={errorMessage(branches.error)}
@@ -156,43 +163,49 @@ export function SalesView() {
           </Button>
         }
       />
-    ) : branches.isSuccess && branches.data.length === 0 ? (
+    </CardContent></Card>
+  ) : branches.isSuccess && branches.data.length === 0 ? (
+    <Card className="shadow-card"><CardContent className="p-4 sm:p-5">
       <EmptyState title="لا توجد فروع متاحة" />
-    ) : (
-      <>
-        <Label htmlFor="sale-branch">الفرع</Label>
-        <Select
-          id="sale-branch"
-          disabled={branches.isPending}
-          value={selectedBranchId ?? ''}
-          onChange={(event) => setSelectedBranchId(Number(event.target.value) || undefined)}
-        >
-          <option value="">اختر الفرع</option>
-          {(branches.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </Select>
-      </>
-    );
-    return (
-      <section className="mx-auto w-full max-w-2xl space-y-6">
-        <PageHeader title="بيع جديد" description="اختر الفرع الذي ستُسجَّل عليه العملية." />
-        <Card className="shadow-card"><CardContent className="space-y-1.5 p-5">
-          {branchContent}
-        </CardContent></Card>
-      </section>
-    );
-  }
+    </CardContent></Card>
+  ) : (
+    <Card className="shadow-card"><CardContent className="space-y-1.5 p-4 sm:p-5">
+      <Label htmlFor="sale-branch">الفرع</Label>
+      <Select
+        id="sale-branch"
+        className="max-w-sm"
+        disabled={branches.isPending}
+        value={selectedBranchId ?? ''}
+        onChange={(event) => setSelectedBranchId(Number(event.target.value) || undefined)}
+      >
+        <option value="">اختر الفرع</option>
+        {(branches.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </Select>
+    </CardContent></Card>
+  );
+
+  /** Every state below the picker shares one frame, so the branch never moves. */
+  const shell = (content: ReactNode, description = 'اختر الفرع الذي ستُسجَّل عليه العملية.') => (
+    <section className="mx-auto w-full max-w-2xl space-y-6">
+      <PageHeader title="بيع جديد" description={description} />
+      {branchPicker}
+      {content}
+    </section>
+  );
+
+  if (isAdmin && branchId === undefined) return shell(null);
 
   if (auth.isPending) {
-    return <Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>;
+    return shell(<Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>);
   }
   if (!actor || actor.type === 'employee') {
-    return <Card className="shadow-card"><EmptyState title="هذا الحساب غير مخول لاستخدام نقطة البيع" /></Card>;
+    return shell(<Card className="shadow-card"><EmptyState title="هذا الحساب غير مخول لاستخدام نقطة البيع" /></Card>);
   }
   if (session.isPending) {
-    return <Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>;
+    return shell(<Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>);
   }
   if (session.isError) {
-    return (
+    return shell(
       <EmptyState
         title="تعذر تحميل وردية الكاشير"
         description={errorMessage(session.error)}
@@ -201,7 +214,7 @@ export function SalesView() {
             إعادة المحاولة
           </Button>
         }
-      />
+      />,
     );
   }
   if (!session.data || (actor?.type === 'cashier' && session.data.openedByAccountId !== actor.accountId)) {
@@ -213,12 +226,30 @@ export function SalesView() {
       && pending.owner.role === actor.type
       && pending.owner.accountId === actorAccountId
       && (actor.type === 'cashier' || pending.owner.branchId === branchId);
-    if (canRecover) return <PendingSaleRecovery pending={pending} />;
-    return (
+    if (canRecover) return shell(<PendingSaleRecovery pending={pending} />);
+    return shell(
       <EmptyState
         title="لا توجد وردية بيع متاحة لهذا الحساب"
-        description="افتح ورديتك من الصفحة الرئيسية قبل إتمام أي عملية بيع."
-      />
+        description={isAdmin
+          ? 'اختر فرعًا آخر، أو افتح وردية هذا الفرع من الصفحة الرئيسية.'
+          : 'افتح ورديتك من الصفحة الرئيسية قبل إتمام أي عملية بيع.'}
+      />,
+    );
+  }
+
+  if (isAdmin) {
+    return (
+      <section className="space-y-5">
+        {branchPicker}
+        <SaleWorkspace
+          key={`admin:${session.data.branchId}:${session.data.id}`}
+          {...(branchId === undefined ? {} : { branchId })}
+          workspaceBranchId={session.data.branchId}
+          cashierSessionId={session.data.id}
+          accountId={null}
+          role="admin"
+        />
+      </section>
     );
   }
 
@@ -346,6 +377,8 @@ function SaleWorkspace({
   const [paymentsTouched, setPaymentsTouched] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  /** Found in storage and waiting for the cashier to accept or drop it. */
+  const [offeredDraft, setOfferedDraft] = useState<StoredSaleDraft | null>(null);
   const [draftStorageError, setDraftStorageError] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
@@ -446,21 +479,9 @@ function SaleWorkspace({
         return;
       }
       releaseLease = release;
-      const draft = readSaleDraft(workspaceOwner);
-      if (draft) {
-        setClient(null);
-        setEmployee(draft.employee);
-        setSeller(draft.seller ?? null);
-        setLines(draft.lines);
-        setDiscountKind(draft.discountKind);
-        setDiscountValue(draft.discountValue);
-        setTaxKind(draft.taxKind);
-        setTaxValue(draft.taxValue);
-        setPayments(draft.payments);
-        setPaymentsTouched(draft.paymentsTouched);
-        setIdempotencyKey(draft.idempotencyKey);
-        setDraftRestored(true);
-      }
+      // Offered, never applied on its own: the cashier decides, exactly as on the
+      // other counter screens.
+      setOfferedDraft(readSaleDraft(workspaceOwner));
       setDraftHydrated(true);
     });
     return () => {
@@ -821,6 +842,39 @@ function SaleWorkspace({
     setIdempotencyKey(createUuid());
   };
 
+  /**
+   * Puts the offered draft back on screen. The client is refetched by id because the
+   * stored copy deliberately holds no personal data — only the identifiers.
+   */
+  const restoreOfferedDraft = () => {
+    const draft = offeredDraft;
+    if (!draft) return;
+    setOfferedDraft(null);
+    setEmployee(draft.employee);
+    setSeller(draft.seller ?? null);
+    setLines(draft.lines);
+    setDiscountKind(draft.discountKind);
+    setDiscountValue(draft.discountValue);
+    setTaxKind(draft.taxKind);
+    setTaxValue(draft.taxValue);
+    setPayments(draft.payments);
+    setPaymentsTouched(draft.paymentsTouched);
+    setIdempotencyKey(draft.idempotencyKey);
+    setDraftRestored(true);
+    setClient(null);
+    if (draft.client) {
+      void getClient(draft.client.id, branchId)
+        .then((saved) => { if (mounted.current) setClient(saved); })
+        .catch(() => undefined);
+    }
+  };
+
+  const discardOfferedDraft = () => {
+    const draft = offeredDraft;
+    setOfferedDraft(null);
+    if (draft) removeSaleDraft(workspaceOwner, draft.idempotencyKey);
+  };
+
   if (completed) {
     return (
       <>
@@ -872,6 +926,14 @@ function SaleWorkspace({
         title="بيع جديد"
         description="اختر العميل والخدمات أو المنتجات والموظف ثم راجع الإجمالي المحسوب من الخادم."
       />
+
+      {offeredDraft ? (
+        <DraftNotice
+          label="لديك مسودة بيع غير مكتملة لهذه الوردية."
+          onRestore={restoreOfferedDraft}
+          onDiscard={discardOfferedDraft}
+        />
+      ) : null}
 
       {draftRestored ? (
         <Notice tone="success">تم استعادة مسودة البيع المحفوظة لهذا الحساب والوردية.</Notice>

@@ -7,7 +7,9 @@ import { useRef, useState } from 'react';
 
 import { Button, Input, Modal } from '@capella/ui';
 
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Textarea } from '@/components/form/textarea';
+import { useFormDraft } from '@/lib/form-draft';
 import { createUuid } from '@/lib/uuid';
 
 import { quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
@@ -87,6 +89,17 @@ export function InvoiceReversalControls({
       || quantity < 0 || quantity > line.refundableQuantity);
   });
   const tenders = quoted === null ? null : allocateTenders(quoted);
+  /**
+   * A reversal is typed against one invoice, so the memory is keyed by that
+   * invoice: the quantities and the reason survive a trip to another tab.
+   */
+  const lastMode = useRef<'refund' | 'void'>('refund');
+  if (mode !== null) lastMode.current = mode;
+  const draft = useFormDraft(
+    `reversal:${invoice.id}`,
+    { mode: mode ?? lastMode.current, quantities, reason },
+    reason.trim() !== '' || Object.values(quantities).some((value) => value !== ''),
+  );
   const quote = useMutation({
     mutationFn: () => quoteRefund(invoice.id, {
       ...(branchId === undefined ? {} : { branchId }), lines: selectedLines,
@@ -132,9 +145,15 @@ export function InvoiceReversalControls({
   const reversalPending = refund.isPending || voidMutation.isPending;
   function close(requestSettled = false) {
     if (reversalPending && !requestSettled) return;
+    // Closing the dialog is not abandoning the reversal: only a stored one, or an
+    // explicit تجاهل, retires the draft. A backdrop click leaves the typed
+    // quantities and reason exactly where they were.
+    if (requestSettled) {
+      draft.clear();
+      setReason('');
+      setQuantities({});
+    }
     setMode(null);
-    setReason('');
-    setQuantities({});
     setQuoted(null);
     commandIdentity.current = null;
     quote.reset();
@@ -188,6 +207,20 @@ export function InvoiceReversalControls({
           </Button>
         ) : null}
       </div>
+
+      {draft.pending ? (
+        <DraftNotice
+          label="لديك مرتجع غير مكتمل لهذه الفاتورة."
+          onRestore={() => {
+            const stored = draft.restore();
+            if (!stored) return;
+            setMode(stored.mode);
+            setQuantities(stored.quantities);
+            setReason(stored.reason);
+          }}
+          onDiscard={draft.discard}
+        />
+      ) : null}
 
       {errorMessage && mode === null ? (
         <p role="alert" className="rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">

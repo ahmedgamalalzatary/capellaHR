@@ -7,8 +7,10 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { useFormDraft } from '@/lib/form-draft';
 
 import { createClient, updateClient, type Client } from '../api/clients-api';
 import {
@@ -46,6 +48,8 @@ export function ClientForm({
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<ClientFormFields, unknown, ClientFormValues>({
     resolver: zodResolver(clientFormSchema),
@@ -55,6 +59,17 @@ export function ClientForm({
     },
   });
 
+  const fields = watch();
+  /**
+   * Only a new client is remembered. An edit already has a stored record behind it,
+   * and an old draft reappearing over someone else's row would be a trap.
+   */
+  const draft = useFormDraft(
+    isEdit ? null : `client:${branchId ?? 'own'}`,
+    fields,
+    fields.fullName.trim() !== '' || fields.phone.trim() !== '',
+  );
+
   const save = useMutation({
     mutationFn: (values: ClientFormValues) => (
       isEdit
@@ -62,6 +77,7 @@ export function ClientForm({
         : createClient({ ...values, ...(branchId === undefined ? {} : { branchId }) })
     ),
     onSuccess: async (saved) => {
+      draft.clear();
       await invalidateErpCaches(queryClient, 'client');
       onDone?.(saved);
     },
@@ -78,6 +94,17 @@ export function ClientForm({
     <Card className="shadow-card">
       <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
+          {draft.pending ? (
+            <DraftNotice
+              onRestore={() => {
+                const stored = draft.restore();
+                if (!stored) return;
+                setValue('fullName', stored.fullName);
+                setValue('phone', stored.phone);
+              }}
+              onDiscard={draft.discard}
+            />
+          ) : null}
           <p className="text-[13px] text-muted">يكفي إدخال الاسم أو رقم الهاتف.</p>
           <div className="grid gap-4 sm:grid-cols-2">
             {/* One of the two is enough: the counter records whichever it has. */}

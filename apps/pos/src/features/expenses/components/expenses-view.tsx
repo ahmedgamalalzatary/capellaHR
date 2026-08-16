@@ -7,6 +7,7 @@ import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@cap
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
@@ -15,8 +16,9 @@ import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCatalogBranches, listCategories } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
-import { invalidateErpCaches } from '@/lib/erp-cache';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { invalidateErpCaches } from '@/lib/erp-cache';
+import { useFormDraft } from '@/lib/form-draft';
 
 import { correctExpense, createExpense, listExpenses, type Expense } from '../api/expenses-api';
 import { expenseCategoryQueryKeys, expenseQueryKeys } from '../query-keys';
@@ -65,6 +67,14 @@ export function ExpensesView() {
   const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, categoryId: categoryId!, amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); await refresh(); } });
   const clearDraft = () => { setCorrecting(null); setCategoryId(undefined); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
   const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setCategoryId(activeCategories.data?.some((category) => category.id === expense.categoryId) ? expense.categoryId : undefined); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
+  /** Only a new expense is remembered; a correction is started from a stored row. */
+  const draft = useFormDraft(
+    correcting === null ? `expense:${branchId ?? 'own'}` : null,
+    { categoryId, amount, expenseDate, description },
+    // Only typed money or wording counts as work: a lone category is not a draft,
+    // and clearing both on save is what retires the stored copy.
+    amount !== '' || description !== '',
+  );
   const canSubmit = scopeReady && categoryId && amount && expenseDate && description.trim();
   const commandPending = create.isPending || correction.isPending;
   const amountLabel = correcting ? 'المبلغ الصحيح' : 'المبلغ';
@@ -127,6 +137,19 @@ export function ExpensesView() {
                   ? 'يُسجَّل التصحيح كقيد جديد؛ القيد الأصلي يبقى في السجل.'
                   : 'المبلغ والتاريخ والوصف مطلوبة لكل مصروف.'}
               />
+              {draft.pending ? (
+                <DraftNotice
+                  onRestore={() => {
+                    const stored = draft.restore();
+                    if (!stored) return;
+                    setCategoryId(stored.categoryId);
+                    setAmount(stored.amount);
+                    setExpenseDate(stored.expenseDate);
+                    setDescription(stored.description);
+                  }}
+                  onDiscard={draft.discard}
+                />
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="expense-category">التصنيف</Label>

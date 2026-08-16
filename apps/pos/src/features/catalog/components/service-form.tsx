@@ -6,8 +6,10 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Select } from '@/components/form/select';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { useFormDraft } from '@/lib/form-draft';
 
 import {
   createService,
@@ -41,7 +43,7 @@ export function ServiceForm({
   const isEdit = service !== undefined;
   const hasFixedPrice = service?.price !== null && service?.price !== undefined;
 
-  const { register, handleSubmit, formState: { errors } } =
+  const { register, handleSubmit, watch, setValue, formState: { errors } } =
     useForm<ServiceFormInput, unknown, ServiceFormValues>({
       resolver: zodResolver(serviceFormSchema),
       defaultValues: {
@@ -52,6 +54,14 @@ export function ServiceForm({
         description: service?.description ?? '',
       },
     });
+
+  const fields = watch();
+  /** A new service only: an edit is anchored to a stored row. */
+  const draft = useFormDraft(
+    isEdit ? null : `service:${branchId ?? 'own'}`,
+    fields,
+    fields.name.trim() !== '' || fields.price.trim() !== '',
+  );
 
   const branchScope = branchId === undefined ? {} : { branchId };
   const activeCategories = categories.filter(
@@ -74,6 +84,7 @@ export function ServiceForm({
       return updateService(service.id, { ...editableValues, ...branchScope });
     },
     onSuccess: async (saved) => {
+      draft.clear();
       await invalidateErpCaches(queryClient, 'catalog');
       onDone?.(saved);
     },
@@ -100,6 +111,20 @@ export function ServiceForm({
     <Card className="shadow-card">
       <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
+          {draft.pending ? (
+            <DraftNotice
+              onRestore={() => {
+                const stored = draft.restore();
+                if (!stored) return;
+                setValue('name', stored.name);
+                setValue('categoryId', stored.categoryId);
+                setValue('price', stored.price);
+                setValue('commissionPercent', stored.commissionPercent);
+                setValue('description', stored.description);
+              }}
+              onDiscard={draft.discard}
+            />
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم الخدمة" htmlFor="service-name" required>
               <Input id="service-name" autoComplete="off" disabled={pending} {...register('name')} />

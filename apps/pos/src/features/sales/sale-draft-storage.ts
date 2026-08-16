@@ -70,22 +70,38 @@ const holdTabLock = (tabId: string) => new Promise<(() => void) | null>((resolve
   ).catch(reject);
 });
 
+/**
+ * The lease belongs to the document, not to one mounting of the sale screen, and it
+ * is never handed back: a browser tab keeps its identity until it is closed.
+ *
+ * Releasing on unmount used to make leaving /sales and returning look exactly like a
+ * duplicated tab — the lock is freed asynchronously, so the returning screen found it
+ * still held, minted a new identity and dropped the pointer to the draft it was about
+ * to restore. Only a genuinely different document can now trigger that reset.
+ */
+let tabLease: Promise<void> | null = null;
+
+const claimTabIdentity = async (owner: SaleDraftOwner) => {
+  let tabId = sessionStorage.getItem(TAB_KEY) ?? createUuid();
+  sessionStorage.setItem(TAB_KEY, tabId);
+  if (await holdTabLock(tabId)) return;
+
+  // The id came from a duplicated tab, whose document still holds the lock.
+  tabId = createUuid();
+  sessionStorage.setItem(TAB_KEY, tabId);
+  sessionStorage.removeItem(activeDraftKey(owner));
+  await holdTabLock(tabId);
+};
+
 export const acquireSaleDraftTab = async (owner: SaleDraftOwner): Promise<() => void> => {
   if (typeof window === 'undefined' || !navigator.locks) return () => undefined;
   try {
-    let tabId = sessionStorage.getItem(TAB_KEY) ?? createUuid();
-    sessionStorage.setItem(TAB_KEY, tabId);
-    let release = await holdTabLock(tabId);
-    if (release) return release;
-
-    tabId = createUuid();
-    sessionStorage.setItem(TAB_KEY, tabId);
-    sessionStorage.removeItem(activeDraftKey(owner));
-    release = await holdTabLock(tabId);
-    return release ?? (() => undefined);
+    tabLease ??= claimTabIdentity(owner);
+    await tabLease;
   } catch {
-    return () => undefined;
+    tabLease = null;
   }
+  return () => undefined;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (

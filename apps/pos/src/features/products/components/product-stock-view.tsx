@@ -8,6 +8,7 @@ import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Lab
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
@@ -18,6 +19,7 @@ import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { useFormDraft } from '@/lib/form-draft';
 
 import {
   adjustProductStock,
@@ -90,6 +92,13 @@ export function ProductStockView() {
   const refresh = () => invalidateErpCaches(queryClient, 'product');
   const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setThreshold('0'); };
   const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setThreshold(String(product.lowStockThreshold)); };
+
+  /** A new product only: editing starts from a stored row. */
+  const draft = useFormDraft(
+    editing === null ? `product:${branchId ?? 'own'}` : null,
+    { name, description, price, cost, threshold },
+    name.trim() !== '' || description.trim() !== '' || price.trim() !== '',
+  );
 
   const save = useMutation({
     mutationFn: () => editing
@@ -165,6 +174,20 @@ export function ProductStockView() {
                 title={editing ? `تعديل ${editing.name}` : 'إضافة منتج'}
                 description="السعر والتكلفة بالجنيه؛ حد المخزون المنخفض يشغّل التنبيه في القائمة."
               />
+              {draft.pending ? (
+                <DraftNotice
+                  onRestore={() => {
+                    const stored = draft.restore();
+                    if (!stored) return;
+                    setName(stored.name);
+                    setDescription(stored.description);
+                    setPrice(stored.price);
+                    setCost(stored.cost);
+                    setThreshold(stored.threshold);
+                  }}
+                  onDiscard={draft.discard}
+                />
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="product-name">اسم المنتج</Label>

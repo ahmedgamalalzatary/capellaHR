@@ -8,6 +8,7 @@ import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Lab
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
@@ -18,6 +19,7 @@ import { listCatalogBranches } from '@/features/catalog';
 import { listAllProducts, productQueryKeys } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { useFormDraft } from '@/lib/form-draft';
 import { createUuid } from '@/lib/uuid';
 
 import {
@@ -132,6 +134,18 @@ export function SuppliersPurchasesView() {
     setIdempotencyKey(createUuid());
     setLineKey((value) => value + 1);
   };
+  /** Two separate workbenches on one screen, so each keeps its own memory. */
+  const supplierDraft = useFormDraft(
+    editing === null ? `supplier:${branchId ?? 'own'}` : null,
+    { supplierName, phone, notes },
+    supplierName.trim() !== '' || phone.trim() !== '' || notes.trim() !== '',
+  );
+  const purchaseDraft = useFormDraft(
+    correctionOf === undefined ? `purchase:${branchId ?? 'own'}` : null,
+    { supplierId, purchaseDate, lines },
+    supplierId !== '' || lines.some((line) => line.productId !== '' || line.unitCost !== ''),
+  );
+
   const changeBranch = (value: string) => {
     if (saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending) return;
     setSelectedBranchId(value ? Number(value) : undefined);
@@ -166,7 +180,7 @@ export function SuppliersPurchasesView() {
           ...branchScope, name: supplierName,
           ...(phone.trim() ? { phone: phone.trim() } : {}), notes,
         }),
-    onSuccess: async () => { clearSupplier(); setSuccessMessage('تم حفظ المورد.'); await refresh(); },
+    onSuccess: async () => { supplierDraft.clear(); clearSupplier(); setSuccessMessage('تم حفظ المورد.'); await refresh(); },
   });
   const toggleSupplier = useMutation({
     mutationFn: (supplier: Supplier) => updateSupplier(
@@ -190,7 +204,7 @@ export function SuppliersPurchasesView() {
       })),
       ...(correctionOf === undefined ? {} : { correctsPurchaseId: correctionOf }),
     }),
-    onSuccess: async () => { resetDraft(); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
+    onSuccess: async () => { purchaseDraft.clear(); resetDraft(); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
   });
   const cancel = useMutation({
     mutationFn: () => cancelPurchase(cancelling!.id, { ...branchScope, reason }),
@@ -252,6 +266,18 @@ export function SuppliersPurchasesView() {
                 title="إدارة الموردين"
                 description="المورد الموقوف يبقى في السجل ولا يظهر في مشتريات جديدة."
               />
+              {supplierDraft.pending ? (
+                <DraftNotice
+                  onRestore={() => {
+                    const stored = supplierDraft.restore();
+                    if (!stored) return;
+                    setSupplierName(stored.supplierName);
+                    setPhone(stored.phone);
+                    setNotes(stored.notes);
+                  }}
+                  onDiscard={supplierDraft.discard}
+                />
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="supplier-name">اسم المورد</Label>
@@ -321,6 +347,19 @@ export function SuppliersPurchasesView() {
                 title={correctionOf === undefined ? 'ترحيل مشتريات جديدة' : `تصحيح للمشتريات #${correctionOf}`}
                 description="المشتريات مدفوعة بالكامل عند الترحيل، ولا تُعدَّل بعده إلا بتصحيح جديد."
               />
+              {purchaseDraft.pending ? (
+                <DraftNotice
+                  onRestore={() => {
+                    const stored = purchaseDraft.restore();
+                    if (!stored) return;
+                    setSupplierId(stored.supplierId);
+                    setPurchaseDate(stored.purchaseDate);
+                    setLines(stored.lines);
+                    setLineKey(Math.max(...stored.lines.map((line) => line.key), 0) + 1);
+                  }}
+                  onDiscard={purchaseDraft.discard}
+                />
+              ) : null}
               {suppliers.isError || activeProducts.isError ? (
                 <EmptyState title="تعذر تحميل خيارات المشتريات" className="py-8" action={<Button onClick={() => { void suppliers.refetch(); void activeProducts.refetch(); }}>إعادة المحاولة</Button>} />
               ) : suppliers.isPending || activeProducts.isPending ? (

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   actor: { current: { type: 'cashier', accountId: 3 } as
     { type: 'cashier'; accountId: number } | { type: 'admin'; accountId: number } },
   getCurrentSession: vi.fn(),
+  getClient: vi.fn(async () => ({ id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678' })),
   listBranches: vi.fn(),
   listBranchCashierRoster: vi.fn(),
   quoteSale: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('../src/features/cashier-accounts/api/branch-roster-api', () => ({
   replaceBranchCashierRoster: vi.fn(),
 }));
 vi.mock('../src/features/clients', () => ({
+  getClient: mocks.getClient,
   ClientPicker: (props: { branchId?: number; selected?: unknown; onSelect: (value: unknown) => void }) => (
     mocks.clientPickerProps(props),
     <button onClick={() => props.onSelect({ id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678' })}>
@@ -712,18 +714,37 @@ describe('ERP service-sale view', () => {
     cleanup();
     renderView();
 
+    // The draft is offered, not applied: the workspace stays empty until asked.
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+
     expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    // The stored draft holds only the client id, so the record is fetched back.
+    await waitFor(() => expect(mocks.getClient).toHaveBeenCalledWith(5, undefined));
     await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
-      expect.objectContaining({ selected: null }),
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
     ));
-    expect((screen.getByRole('button', {
-      name: 'مراجعة وإتمام البيع + طباعة',
-    }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'اختر العميل' }));
     await waitFor(() => expect((screen.getByRole('button', {
       name: 'مراجعة وإتمام البيع + طباعة',
     }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.getByText(/تم استعادة مسودة البيع/)).toBeDefined();
+  });
+
+  it('drops the offered draft when the cashier chooses to ignore it', async () => {
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
+
+    cleanup();
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'تجاهل' }));
+
+    expect(screen.queryByText('صبغة شعر')).toBeNull();
+    cleanup();
+    renderView();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'استعادة' })).toBeNull());
   });
 
   it('keeps the server render hydration-safe when a browser draft exists', async () => {
@@ -1052,6 +1073,40 @@ describe('ERP service-sale view', () => {
 
     await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2 })));
     expect(mocks.servicePickerProps).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2 }));
+  });
+
+  it('keeps the branch selectable so an Admin can correct a wrong pick', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.listBranches.mockResolvedValue({
+      items: [{ id: 2, name: 'Main' }, { id: 3, name: 'Second' }],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    renderView();
+
+    await screen.findByRole('option', { name: 'Main' });
+    fireEvent.change(await screen.findByLabelText('الفرع'), { target: { value: '2' } });
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 2 }),
+    ));
+
+    // The picker is still on screen above the workspace, so the branch can change.
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ branchId: 3 }),
+    ));
+  });
+
+  it('offers a branch change instead of a dead end when the branch has no open shift', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.getCurrentSession.mockResolvedValue(null);
+    renderView();
+
+    await screen.findByRole('option', { name: 'Main' });
+    fireEvent.change(await screen.findByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(await screen.findByText('لا توجد وردية بيع متاحة لهذا الحساب')).toBeDefined();
+    expect(screen.getByLabelText('الفرع')).toBeDefined();
   });
 
   it('shows and retries an Admin branch-loading error', async () => {

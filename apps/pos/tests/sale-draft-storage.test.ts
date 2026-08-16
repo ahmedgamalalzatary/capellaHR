@@ -122,8 +122,9 @@ describe('sale draft storage', () => {
     expect(sessionStorage.getItem(saleDraftStorageKey(owner, secondDraft.idempotencyKey))).not.toBeNull();
   });
 
-  it('gives a duplicated browser tab a fresh draft selection lease', async () => {
-    const heldLocks = new Set<string>();
+  /** Another document already holding the inherited lock is the real duplicate. */
+  const stubLocks = (heldByAnotherDocument: string[] = []) => {
+    const heldLocks = new Set<string>(heldByAnotherDocument);
     Object.defineProperty(navigator, 'locks', {
       configurable: true,
       value: {
@@ -142,16 +143,36 @@ describe('sale draft storage', () => {
         },
       },
     });
-    sessionStorage.setItem('capella:sale-draft-tab', 'copied-tab');
+  };
+
+  it('keeps the draft when the sale screen is left and reopened in the same tab', async () => {
+    stubLocks();
+    sessionStorage.setItem('capella:sale-draft-tab', 'this-tab');
     writeSaleDraft(owner, draft);
 
-    const releaseOriginal = await acquireSaleDraftTab(owner);
-    const releaseDuplicate = await acquireSaleDraftTab(owner);
+    // Leaving /sales releases the lease; returning acquires it again.
+    const first = await acquireSaleDraftTab(owner);
+    first();
+    const second = await acquireSaleDraftTab(owner);
+
+    expect(sessionStorage.getItem('capella:sale-draft-tab')).toBe('this-tab');
+    expect(readSaleDraft(owner)).not.toBeNull();
+    second();
+  });
+
+  it('gives a duplicated browser tab a fresh draft selection lease', async () => {
+    // A duplicate is a second document that inherited the sessionStorage of the
+    // first, so it is loaded fresh while the original still holds the lock.
+    stubLocks(['capella:sale-draft-tab:copied-tab']);
+    sessionStorage.setItem('capella:sale-draft-tab', 'copied-tab');
+    writeSaleDraft(owner, draft);
+    vi.resetModules();
+    const duplicate = await import('../src/features/sales/sale-draft-storage');
+
+    await duplicate.acquireSaleDraftTab(owner);
 
     expect(sessionStorage.getItem('capella:sale-draft-tab')).not.toBe('copied-tab');
     expect(readSaleDraft(owner)).toBeNull();
-    releaseDuplicate();
-    releaseOriginal();
   });
 
   it('expires stale drafts so abandoned shifts do not retain client data indefinitely', () => {

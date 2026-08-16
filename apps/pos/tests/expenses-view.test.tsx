@@ -34,6 +34,25 @@ const mount = () => {
 };
 
 describe('ExpensesView', () => {
+  it('keeps a half-written expense when the cashier visits another tab and returns', async () => {
+    sessionStorage.clear();
+    mocks.categories.mockResolvedValue({ items: [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], meta: { totalPages: 1 } });
+    mocks.list.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 1 } });
+    actor.current = 'cashier';
+    mount();
+    fireEvent.change(await screen.findByLabelText('المبلغ'), { target: { value: '125.50' } });
+    fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'مستلزمات' } });
+
+    // Leaving the tab unmounts the screen; coming back mounts a fresh one.
+    cleanup();
+    mount();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+    expect((screen.getByLabelText('المبلغ') as HTMLInputElement).value).toBe('125.50');
+    expect((screen.getByLabelText('الوصف') as HTMLInputElement).value).toBe('مستلزمات');
+    sessionStorage.clear();
+  });
+
   it('announces loading the expense history', async () => {
     mocks.categories.mockResolvedValue({ items: [], meta: { totalPages: 1 } });
     mocks.list.mockReturnValue(new Promise(() => undefined));

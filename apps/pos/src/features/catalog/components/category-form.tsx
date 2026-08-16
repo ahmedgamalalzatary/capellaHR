@@ -6,7 +6,9 @@ import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
+import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Select } from '@/components/form/select';
+import { useFormDraft } from '@/lib/form-draft';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { createCategory, updateCategory, type Category } from '../api/catalog-api';
@@ -31,13 +33,20 @@ export function CategoryForm({
   const queryClient = useQueryClient();
   const isEdit = category !== undefined;
 
-  const { register, handleSubmit, formState: { errors } } = useForm<CategoryFormValues>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
     defaultValues: {
       name: category?.name ?? '',
       type: category?.type ?? 'service',
     } as CategoryFormValues,
   });
+
+  const fields = watch();
+  const draft = useFormDraft(
+    isEdit ? null : `category:${branchId ?? 'own'}`,
+    fields,
+    fields.name.trim() !== '',
+  );
 
   const branchScope = branchId === undefined ? {} : { branchId };
 
@@ -59,6 +68,17 @@ export function CategoryForm({
     <Card className="shadow-card">
       <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
+          {draft.pending ? (
+            <DraftNotice
+              onRestore={() => {
+                const stored = draft.restore();
+                if (!stored) return;
+                setValue('name', stored.name);
+                setValue('type', stored.type);
+              }}
+              onDiscard={draft.discard}
+            />
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="اسم التصنيف" htmlFor="category-name" required>
               <Input id="category-name" autoComplete="off" disabled={save.isPending} {...register('name')} />
