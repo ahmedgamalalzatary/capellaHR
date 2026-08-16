@@ -50,7 +50,7 @@ export function ClientForm({
     handleSubmit,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<ClientFormFields, unknown, ClientFormValues>({
     resolver: zodResolver(clientFormSchema),
     defaultValues: {
@@ -63,11 +63,15 @@ export function ClientForm({
   /**
    * Only a new client is remembered. An edit already has a stored record behind it,
    * and an old draft reappearing over someone else's row would be a trap.
+   *
+   * Dirtiness comes from the form, not from the field values: opening this during a
+   * sale pre-fills the number the cashier typed into the picker, which is not work
+   * the user did here and must not replace a stored draft or dismiss its offer.
    */
   const draft = useFormDraft(
     isEdit ? null : `client:${branchId ?? 'own'}`,
     fields,
-    fields.fullName.trim() !== '' || fields.phone.trim() !== '',
+    isDirty,
   );
 
   const save = useMutation({
@@ -99,8 +103,8 @@ export function ClientForm({
               onRestore={() => {
                 const stored = draft.restore();
                 if (!stored) return;
-                setValue('fullName', stored.fullName);
-                setValue('phone', stored.phone);
+                setValue('fullName', stored.fullName, { shouldDirty: true });
+                setValue('phone', stored.phone, { shouldDirty: true });
               }}
               onDiscard={draft.discard}
             />

@@ -379,6 +379,16 @@ function SaleWorkspace({
   const [draftRestored, setDraftRestored] = useState(false);
   /** Found in storage and waiting for the cashier to accept or drop it. */
   const [offeredDraft, setOfferedDraft] = useState<StoredSaleDraft | null>(null);
+  /**
+   * Identifies the client lookup a restore started. Any later choice — picking a
+   * client by hand, resetting, or restoring again — invalidates it, so a slow
+   * lookup can never land on top of a newer selection.
+   */
+  const clientLookup = useRef(0);
+  const selectClient = useCallback((next: Client | null) => {
+    clientLookup.current += 1;
+    setClient(next);
+  }, []);
   const [draftStorageError, setDraftStorageError] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
@@ -789,7 +799,7 @@ function SaleWorkspace({
     const draft = item.recoveryDraft;
     if (!draft) return;
     removeSaleDraft(workspaceOwner, idempotencyKey);
-    setClient(null);
+    selectClient(null);
     setEmployee(draft.employee);
     setSeller(draft.seller ?? null);
     setLines(draft.lines);
@@ -822,7 +832,7 @@ function SaleWorkspace({
   };
 
   const reset = () => {
-    setClient(null);
+    selectClient(null);
     setEmployee(null);
     setSeller(null);
     setLines([]);
@@ -861,10 +871,13 @@ function SaleWorkspace({
     setPaymentsTouched(draft.paymentsTouched);
     setIdempotencyKey(draft.idempotencyKey);
     setDraftRestored(true);
-    setClient(null);
+    selectClient(null);
     if (draft.client) {
+      const lookup = clientLookup.current;
       void getClient(draft.client.id, branchId)
-        .then((saved) => { if (mounted.current) setClient(saved); })
+        .then((saved) => {
+          if (mounted.current && clientLookup.current === lookup) setClient(saved);
+        })
         .catch(() => undefined);
     }
   };
@@ -1041,7 +1054,7 @@ function SaleWorkspace({
             <Card className="shadow-card">
               <CardHeader><CardTitle><StepTitle step={1} label="العميل" /></CardTitle></CardHeader>
               <CardContent className="p-5">
-                <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
+                <ClientPicker selected={client} onSelect={selectClient} {...(branchId === undefined ? {} : { branchId })} />
               </CardContent>
             </Card>
 

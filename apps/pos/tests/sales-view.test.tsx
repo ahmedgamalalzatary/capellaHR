@@ -1,6 +1,6 @@
 import { saleFixtures } from '@capella/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -727,6 +727,33 @@ describe('ERP service-sale view', () => {
       name: 'مراجعة وإتمام البيع + طباعة',
     }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.getByText(/تم استعادة مسودة البيع/)).toBeDefined();
+  });
+
+  it('never lets a slow restored client overwrite the one just chosen', async () => {
+    let resolveClient!: (value: { id: number; branchId: number; fullName: string; phone: string }) => void;
+    mocks.getClient.mockReturnValueOnce(new Promise((resolve) => { resolveClient = resolve; }));
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
+
+    cleanup();
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+    // The cashier does not wait for the lookup and picks someone else.
+    fireEvent.click(screen.getByRole('button', { name: 'اختر العميل' }));
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    ));
+    await act(async () => {
+      resolveClient({ id: 9, branchId: 2, fullName: 'عميل قديم', phone: '01000000000' });
+    });
+
+    expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    );
   });
 
   it('drops the offered draft when the cashier chooses to ignore it', async () => {

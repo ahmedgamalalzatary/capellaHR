@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/features/catalog/api/catalog-api', () => ({
   createService: vi.fn(),
   updateService: vi.fn(),
+  createCategory: vi.fn(),
+  updateCategory: vi.fn(),
 }));
 
 import { ServiceForm } from '../src/features/catalog/components/service-form';
@@ -50,5 +52,29 @@ describe('service form draft', () => {
     } as ServiceListItem);
 
     expect(screen.queryByRole('button', { name: 'استعادة' })).toBeNull();
+  });
+});
+
+describe('category form draft', () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(cleanup);
+
+  it('retires the draft once the category is stored', async () => {
+    const { CategoryForm } = await import('../src/features/catalog/components/category-form');
+    const { createCategory } = await import('../src/features/catalog/api/catalog-api');
+    (createCategory as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 4, branchId: 1, type: 'service', name: 'أظافر', isActive: true,
+      createdAt: '', updatedAt: '',
+    });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CategoryForm branchId={1} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/^اسم التصنيف/), { target: { value: 'أظافر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التصنيف' }));
+
+    await waitFor(() => expect(sessionStorage.getItem('capella:form-draft:category:1')).toBeNull());
   });
 });

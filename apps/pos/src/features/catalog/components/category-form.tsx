@@ -57,6 +57,9 @@ export function CategoryForm({
         : createCategory({ ...values, ...branchScope })
     ),
     onSuccess: async (saved) => {
+      // The stored category is no longer a draft; leaving it would offer it back
+      // the next time someone opens the form.
+      draft.clear();
       await invalidateErpCaches(queryClient, 'catalog');
       onDone?.(saved);
     },
