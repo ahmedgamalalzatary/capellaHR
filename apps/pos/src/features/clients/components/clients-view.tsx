@@ -180,8 +180,8 @@ export function ClientsView() {
             <tbody>
               {items.map((client) => (
                 <TR key={client.id}>
-                  <TD className="font-medium">{client.fullName}</TD>
-                  <TD className="tabular text-muted">{client.phone}</TD>
+                  <TD className="font-medium">{client.fullName ?? <span className="text-muted">بدون اسم</span>}</TD>
+                  <TD className="tabular text-muted">{client.phone ?? '—'}</TD>
                   <TD>
                     <RowActions>
                       <Button

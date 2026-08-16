@@ -27,6 +27,16 @@ describe('clients schema', () => {
     expect(names).toContain('clients_phone_format');
   });
 
+  it('lets a client be identified by a name or a phone, but never by neither', () => {
+    const columns = getTableConfig(clients).columns;
+    const identity = (name: string) => columns.find((column) => column.name === name);
+
+    expect(identity('full_name')?.notNull).toBe(false);
+    expect(identity('phone')?.notNull).toBe(false);
+    expect(getTableConfig(clients).checks.map((constraint) => constraint.name))
+      .toContain('clients_identity_present');
+  });
+
   it('has no soft-delete column, because clients referenced by invoices are never removed', () => {
     const columns = getTableConfig(clients).columns.map((column) => column.name);
 

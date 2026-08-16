@@ -3,8 +3,9 @@ import { api } from '@/lib/api/client';
 export interface Client {
   id: number;
   branchId: number;
-  fullName: string;
-  phone: string;
+  /** A client carries a name, a number, or both — never neither. */
+  fullName: string | null;
+  phone: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,7 +40,7 @@ export function findClientByPhone(phone: string, branchId?: number) {
   return api.get<Client>(`/erp/clients/by-phone${queryString({ phone, branchId })}`);
 }
 
-export function createClient(input: { fullName: string; phone: string; branchId?: number }) {
+export function createClient(input: { fullName?: string; phone?: string; branchId?: number }) {
   return api.post<Client>('/erp/clients', input);
 }
 

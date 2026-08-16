@@ -14,6 +14,7 @@ import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { invoiceClientLabel } from '@/lib/client-label';
 
 import { listInvoices } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
@@ -160,7 +161,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                     <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
                   </div>
                   <p className="truncate text-sm text-ink">
-                    {invoice.client.name} · {invoice.assignedEmployee?.name ?? 'بدون موظف'}
+                    {invoiceClientLabel(invoice.client)} · {invoice.assignedEmployee?.name ?? 'بدون موظف'}
                   </p>
                   <time className="block text-[13px] text-muted" dateTime={invoice.soldAt}>
                     {formatCairoDateTime(invoice.soldAt)}

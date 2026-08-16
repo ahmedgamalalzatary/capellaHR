@@ -28,6 +28,9 @@ const clientPhone = z.string().transform((value, context) => {
   return normalized;
 });
 
+/** Exported so the POS form normalizes a typed number exactly as the server does. */
+export const clientPhoneSchema = clientPhone;
+
 const clientName = z.string().trim().min(1)
   .refine((value) => codePoints(value) <= 255, { message: 'اسم العميل طويل جدًا' });
 
@@ -39,11 +42,20 @@ const clientName = z.string().trim().min(1)
  */
 const branchScope = { branchId: coercedMysqlIntSchema.optional() };
 
+/**
+ * A walk-in is sometimes only a name, and a phone booking is sometimes only a
+ * number: either one identifies the client, but a record with neither identifies
+ * nobody and is refused here and by the table's own check constraint.
+ */
 export const createClientSchema = z.object({
-  fullName: clientName,
-  phone: clientPhone,
+  fullName: clientName.optional(),
+  phone: clientPhone.optional(),
   ...branchScope,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.fullName === undefined && value.phone === undefined) {
+    context.addIssue({ code: 'custom', message: 'أدخل اسم العميل أو رقم هاتفه على الأقل' });
+  }
+});
 
 export const updateClientSchema = z.object({
   fullName: clientName.optional(),

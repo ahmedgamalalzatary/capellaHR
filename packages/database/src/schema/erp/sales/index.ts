@@ -59,8 +59,9 @@ export const invoices = mysqlTable('erp_invoices', {
   invoiceNumber: varchar('invoice_number', { length: 40 }).notNull(),
   idempotencyKey: varchar('idempotency_key', { length: 36 }).notNull(),
   status: mysqlEnum('status', invoiceStatuses).notNull().default('draft'),
-  clientNameSnapshot: varchar('client_name_snapshot', { length: 255 }).notNull(),
-  clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }).notNull(),
+  // Mirrors the client record: whichever of the two identified them at the till.
+  clientNameSnapshot: varchar('client_name_snapshot', { length: 255 }),
+  clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }),
   employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }),
   employeeCodeSnapshot: int('employee_code_snapshot'),
   sellerNameSnapshot: varchar('seller_name_snapshot', { length: 255 }),

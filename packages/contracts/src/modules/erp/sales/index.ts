@@ -431,10 +431,11 @@ export const invoiceSchema = z.object({
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   branchId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
+  // Either half may be missing: a client is identified by a name or by a number.
   client: z.object({
     id: positiveMysqlIntSchema,
-    name: z.string().min(1).max(255),
-    phone: z.string().regex(/^01[0125]\d{8}$/),
+    name: z.string().min(1).max(255).nullable(),
+    phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
   }).strict(),
   assignedEmployee: z.object({
     id: positiveMysqlIntSchema,
@@ -553,7 +554,7 @@ export const invoiceHistoryItemSchema = z.object({
   total: positiveMoneySchema,
   client: z.object({
     id: positiveMysqlIntSchema,
-    name: z.string().min(1).max(255),
+    name: z.string().min(1).max(255).nullable(),
   }).strict(),
   assignedEmployee: z.object({
     id: positiveMysqlIntSchema,

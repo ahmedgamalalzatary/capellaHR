@@ -4,6 +4,8 @@ import type { PublicInvoiceDto } from '@capella/contracts';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
+import { invoiceClientLabel } from '@/lib/client-label';
+
 import { formatCairoDateTime, paymentLabels } from './invoice-format';
 
 function ReceiptQr({ value }: { value: string }) {
@@ -67,8 +69,8 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 border-b border-dashed border-ink py-3">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt><dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>
-        <dt>العميل</dt><dd>{invoice.client.name}</dd>
-        <dt>الهاتف</dt><dd className="text-start">{invoice.client.phone}</dd>
+        <dt>العميل</dt><dd>{invoiceClientLabel(invoice.client)}</dd>
+        <dt>الهاتف</dt><dd className="text-start">{invoice.client.phone ?? '—'}</dd>
         <dt>الموظف</dt><dd>{invoice.assignedEmployee?.name ?? 'بدون موظف'}</dd>
         {invoice.seller
           ? <dt>الكاشير</dt>

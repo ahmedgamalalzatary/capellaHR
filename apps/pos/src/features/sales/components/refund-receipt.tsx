@@ -2,6 +2,8 @@
 
 import type { PublicInvoiceDto } from '@capella/contracts';
 
+import { invoiceClientLabel } from '@/lib/client-label';
+
 import { formatCairoDateTime, paymentLabels } from './invoice-format';
 import { ReceiptFooter } from './receipt';
 
@@ -32,7 +34,7 @@ export function RefundReceipt({
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt>
         <dd><time dateTime={reversal.createdAt}>{formatCairoDateTime(reversal.createdAt)}</time></dd>
-        <dt>العميل</dt><dd>{invoice.client.name}</dd>
+        <dt>العميل</dt><dd>{invoiceClientLabel(invoice.client)}</dd>
         <dt>بواسطة</dt><dd>{reversal.actingAccount.username}</dd>
         <dt>السبب</dt><dd>{reversal.reason}</dd>
       </dl>

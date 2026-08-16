@@ -18,6 +18,8 @@ import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { getInvoice, listInvoices } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
+import { invoiceClientLabel } from '@/lib/client-label';
+
 import { formatCairoDateTime, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
 
@@ -73,7 +75,7 @@ function ReversalDialog({
       {invoice.data ? (
         <>
           <div className="rounded-control border border-line bg-surface/50 p-3">
-            <p className="text-sm text-ink">{invoice.data.client.name}</p>
+            <p className="text-sm text-ink">{invoiceClientLabel(invoice.data.client)}</p>
             <p className="tabular text-lg font-semibold text-ink">
               {invoice.data.totals.total} ج.م
             </p>
@@ -230,7 +232,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
                     </span>
                   </TD>
                   <TD>
-                    <span className="text-ink">{invoice.client.name}</span>
+                    <span className="text-ink">{invoiceClientLabel(invoice.client)}</span>
                     <span className="block text-[13px] text-muted">
                       {invoice.assignedEmployee?.name ?? 'بدون موظف'}
                     </span>

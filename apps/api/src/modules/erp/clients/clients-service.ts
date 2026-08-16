@@ -6,13 +6,13 @@ import type { ErpAccountIdentity } from '../hr-capabilities.js';
 export type ClientRecord = {
   id: number;
   branchId: number;
-  fullName: string;
-  phone: string;
+  fullName: string | null;
+  phone: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
-export type ClientWrite = { branchId: number; fullName: string; phone: string };
+export type ClientWrite = { branchId: number; fullName: string | null; phone: string | null };
 
 export interface ClientRepository {
   create(input: ClientWrite): Promise<ClientRecord>;
@@ -22,7 +22,7 @@ export interface ClientRepository {
   update(
     id: number,
     branchId: number,
-    changes: { fullName?: string; phone?: string },
+    changes: { fullName?: string | null; phone?: string | null },
   ): Promise<ClientRecord | null>;
 }
 
@@ -81,24 +81,34 @@ export const createClientService = (dependencies: {
    * and is translated back into the same conflict the pre-check would have
    * produced, including the winning client's id.
    */
-  const asConflict = async (branchId: number, phone: string, error: unknown): Promise<never> => {
+  const asConflict = async (
+    branchId: number,
+    phone: string | null,
+    error: unknown,
+  ): Promise<never> => {
     if (!isDuplicateEntryError(error)) throw error;
-    const existing = await repository.findByPhone(branchId, phone);
+    const existing = phone === null ? null : await repository.findByPhone(branchId, phone);
     throw new ClientError('CLIENT_PHONE_EXISTS', DUPLICATE_MESSAGE, existing?.id);
   };
 
   return {
     async create(
       actor: ErpAccountIdentity,
-      input: { fullName: string; phone: string; branchId?: number | undefined },
+      input: {
+        fullName?: string | undefined;
+        phone?: string | undefined;
+        branchId?: number | undefined;
+      },
     ) {
       const { branchId } = await resolveBranchContext(actor, input.branchId);
-      const fullName = input.fullName.trim();
-      await rejectDuplicate(branchId, input.phone);
+      const fullName = input.fullName?.trim() ?? null;
+      const phone = input.phone ?? null;
+      // Only a stored number can collide; two nameless-phone-less rows cannot exist.
+      if (phone !== null) await rejectDuplicate(branchId, phone);
       try {
-        return await repository.create({ branchId, fullName, phone: input.phone });
+        return await repository.create({ branchId, fullName, phone });
       } catch (error) {
-        return await asConflict(branchId, input.phone, error);
+        return await asConflict(branchId, phone, error);
       }
     },
 
@@ -143,7 +153,7 @@ export const createClientService = (dependencies: {
       try {
         client = await repository.update(id, branchId, changes);
       } catch (error) {
-        return await asConflict(branchId, input.phone ?? '', error);
+        return await asConflict(branchId, input.phone ?? null, error);
       }
       if (!client) throw new ClientError('CLIENT_NOT_FOUND', NOT_FOUND_MESSAGE);
       return client;

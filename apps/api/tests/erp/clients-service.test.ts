@@ -58,6 +58,27 @@ describe('ERP client service', () => {
     expect(create).toHaveBeenCalledWith({ branchId: 7, fullName: 'ندى سمير', phone: '01001234567' });
   });
 
+  it('stores a walk-in known only by name without looking for a phone clash', async () => {
+    const create = vi.fn(async (input: Parameters<ClientRepository['create']>[0]) => record(input));
+    const findByPhone = vi.fn(async () => null);
+
+    await service(repository({ create, findByPhone }), 7).create(CASHIER, { fullName: 'ندى' });
+
+    expect(create).toHaveBeenCalledWith({ branchId: 7, fullName: 'ندى', phone: null });
+    expect(findByPhone).not.toHaveBeenCalled();
+  });
+
+  it('stores a booking known only by number and still guards the number', async () => {
+    const create = vi.fn(async (input: Parameters<ClientRepository['create']>[0]) => record(input));
+    const findByPhone = vi.fn(async () => null);
+
+    await service(repository({ create, findByPhone }), 7)
+      .create(CASHIER, { phone: '01001234567' });
+
+    expect(create).toHaveBeenCalledWith({ branchId: 7, fullName: null, phone: '01001234567' });
+    expect(findByPhone).toHaveBeenCalledWith(7, '01001234567');
+  });
+
   it('reports a duplicate phone with the existing client so the counter can continue', async () => {
     const repo = repository({ findByPhone: vi.fn(async () => record({ id: 42 })) });
 

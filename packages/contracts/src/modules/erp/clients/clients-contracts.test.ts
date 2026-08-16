@@ -44,6 +44,20 @@ describe('client contracts', () => {
     expect(createClientSchema.safeParse({ ...client, fullName: astral.repeat(256) }).success).toBe(false);
   });
 
+  it('accepts a client identified by a name alone or by a phone alone', () => {
+    expect(createClientSchema.parse({ fullName: 'ندى سمير' }))
+      .toEqual({ fullName: 'ندى سمير' });
+    expect(createClientSchema.parse({ phone: '01001234567' }))
+      .toEqual({ phone: '01001234567' });
+  });
+
+  it('rejects a client carrying neither a name nor a phone', () => {
+    const result = createClientSchema.safeParse({});
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('أدخل اسم العميل أو رقم هاتفه على الأقل');
+  });
+
   it('rejects unknown fields so a client cannot smuggle server-owned columns', () => {
     expect(createClientSchema.safeParse({ ...client, id: 5 }).success).toBe(false);
     expect(createClientSchema.safeParse({ ...client, createdAt: new Date() }).success).toBe(false);

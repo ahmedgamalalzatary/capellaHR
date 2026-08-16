@@ -11,7 +11,11 @@ import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { createClient, updateClient, type Client } from '../api/clients-api';
-import { clientFormSchema, type ClientFormValues } from '../schemas/client-schemas';
+import {
+  clientFormSchema,
+  type ClientFormFields,
+  type ClientFormValues,
+} from '../schemas/client-schemas';
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -43,12 +47,12 @@ export function ClientForm({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<ClientFormValues>({
+  } = useForm<ClientFormFields, unknown, ClientFormValues>({
     resolver: zodResolver(clientFormSchema),
     defaultValues: {
       fullName: client?.fullName ?? '',
       phone: client?.phone ?? defaultPhone ?? '',
-    } as ClientFormValues,
+    },
   });
 
   const save = useMutation({
@@ -74,11 +78,13 @@ export function ClientForm({
     <Card className="shadow-card">
       <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
+          <p className="text-[13px] text-muted">يكفي إدخال الاسم أو رقم الهاتف.</p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="اسم العميل" htmlFor="client-name" required>
+            {/* One of the two is enough: the counter records whichever it has. */}
+            <Field label="اسم العميل" htmlFor="client-name">
               <Input id="client-name" autoComplete="off" disabled={save.isPending} {...register('fullName')} />
             </Field>
-            <Field label="رقم الهاتف" htmlFor="client-phone" required>
+            <Field label="رقم الهاتف" htmlFor="client-phone">
               <Input
                 id="client-phone"
                 inputMode="tel"

@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Button, Card, EmptyState, Input } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { clientLabel } from '@/lib/client-label';
 
 import { listClients, type Client } from '../api/clients-api';
 import { clientQueryKeys } from '../query-keys';
@@ -58,8 +59,10 @@ export function ClientPicker({
               <Check className="size-4" aria-hidden />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">{selected.fullName}</span>
-              <span className="tabular block text-[13px] text-muted">{selected.phone}</span>
+              <span className="block truncate text-sm font-medium">{clientLabel(selected)}</span>
+              <span className="tabular block text-[13px] text-muted">
+                {selected.fullName === null ? '' : selected.phone ?? ''}
+              </span>
             </span>
           </div>
           <Button variant="ghost" size="sm" onClick={() => {
@@ -137,8 +140,10 @@ export function ClientPicker({
                   onClick={() => onSelect(client)}
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{client.fullName}</span>
-                    <span className="tabular block text-[13px] text-muted">{client.phone}</span>
+                    <span className="block truncate text-sm font-medium">{clientLabel(client)}</span>
+                    <span className="tabular block text-[13px] text-muted">
+                      {client.fullName === null ? '' : client.phone ?? ''}
+                    </span>
                   </span>
                   <ChevronLeft className="size-4 shrink-0 text-muted" aria-hidden />
                 </button>
