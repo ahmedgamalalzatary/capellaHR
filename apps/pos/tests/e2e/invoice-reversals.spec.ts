@@ -178,11 +178,11 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
   });
 
-  await page.goto('/invoices');
+  await page.goto('/refunds');
   await page.getByLabel('بحث برقم الفاتورة أو العميل').fill(`  ${refundInvoice.client.name}  `);
   await page.getByRole('button', { name: 'بحث', exact: true }).click();
   await expect.poll(() => search).toBe(refundInvoice.client.name);
-  await page.getByRole('link', { name: refundInvoice.invoiceNumber }).click();
+  await page.getByRole('button', { name: `فتح مرتجع ${refundInvoice.invoiceNumber}` }).click();
 
   await page.getByRole('button', { name: 'استرداد', exact: true }).click();
   await page.getByLabel(`كمية استرداد ${refundInvoice.lines[0]!.name}`).fill('1');
@@ -193,7 +193,6 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
   await expect(page.getByRole('heading', { name: 'سجل الإلغاء والاسترداد' })).toBeVisible();
   await expect(page.getByText('عدم رضا العميل')).toBeVisible();
   await expect(page.getByText(`${refundInvoice.lines[0]!.name} × 1 · 92.50 ج.م`)).toBeVisible();
-  await expect(page.getByText('تم استرداد 92.50 ج.م · متبقي 92.50 ج.م')).toBeVisible();
   expect(refundRequest).toMatchObject({
     reason: 'عدم رضا العميل',
     lines: [{ invoiceLineId: refundInvoice.lines[0]!.id, quantity: 1 }],

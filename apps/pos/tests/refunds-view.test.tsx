@@ -328,4 +328,72 @@ describe('refunds tab', () => {
     expect(getInvoice).toHaveBeenCalledWith(44, undefined);
     expect(listBranches).not.toHaveBeenCalled();
   });
+
+  it('locks refund quantities while an exact quote is pending', async () => {
+    let resolveQuote!: (value: Awaited<ReturnType<typeof quoteRefund>>) => void;
+    quoteRefund.mockReturnValueOnce(new Promise((resolve) => { resolveQuote = resolve; }));
+    renderView();
+    await openInvoice();
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    const quantity = screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ) as HTMLInputElement;
+    fireEvent.change(quantity, { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+
+    await waitFor(() => expect(quantity.disabled).toBe(true));
+    resolveQuote({
+      lines: [{
+        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+        quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+    });
+    await waitFor(() => expect(quantity.disabled).toBe(false));
+  });
+
+  it('does not quote quantities above the refundable balance', async () => {
+    renderView();
+    await openInvoice();
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '2' } });
+
+    const quoteButton = screen.getByRole('button', { name: 'احسب الاسترداد' }) as HTMLButtonElement;
+    expect(quoteButton.disabled).toBe(true);
+    fireEvent.click(quoteButton);
+    expect(quoteRefund).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pending refund panel and its idempotency identity when navigation is attempted', async () => {
+    let rejectRefund!: (error: Error) => void;
+    refundInvoice.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectRefund = reject; }));
+    renderView();
+    await openInvoice();
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '185.00' } });
+    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledOnce());
+    const originalKey = refundInvoice.mock.calls[0]![1].idempotencyKey;
+
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'استرداد' }));
+
+    expect(screen.getByRole('heading', { name: 'استرداد جزئي أو كامل' })).toBeDefined();
+    expect((screen.getByLabelText('سبب الاسترداد') as HTMLTextAreaElement).value).toBe('عدم رضا العميل');
+    rejectRefund(new Error('network timeout'));
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(2));
+    expect(refundInvoice.mock.calls[1]![1].idempotencyKey).toBe(originalKey);
+  });
 });

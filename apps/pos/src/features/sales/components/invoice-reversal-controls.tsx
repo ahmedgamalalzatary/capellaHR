@@ -22,10 +22,13 @@ export function InvoiceReversalControls({
   invoice,
   branchId,
   onUpdated,
+  showRefundAction = true,
 }: {
   invoice: PublicInvoiceDto;
   branchId?: number;
   onUpdated(invoice: PublicInvoiceDto): void;
+  /** The refunds tab owns refunding; the receipt page keeps void and history only. */
+  showRefundAction?: boolean;
 }) {
   const [mode, setMode] = useState<'refund' | 'void' | null>(null);
   const [reason, setReason] = useState('');
@@ -162,7 +165,7 @@ export function InvoiceReversalControls({
 
   return <div data-print-controls className="mx-auto w-full max-w-2xl space-y-3">
     <div className="flex flex-wrap gap-2">
-      {invoice.eligibility.canRefund ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('refund')}>استرداد</Button> : null}
+      {invoice.eligibility.canRefund && showRefundAction ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('refund')}>استرداد</Button> : null}
       {invoice.eligibility.canVoid ? <Button variant="secondary" disabled={reversalPending} onClick={() => openMode('void')}>إلغاء الفاتورة</Button> : null}
     </div>
     {mode === 'refund' ? <Card className="shadow-card"><CardContent className="space-y-4 p-4 sm:p-5">
