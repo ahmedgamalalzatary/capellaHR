@@ -113,7 +113,7 @@ export function PresentEmployeePicker({
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">{employee.fullName}</span>
-                      <span className="tabular block text-[13px] text-muted" dir="ltr">
+                      <span className="tabular block text-[13px] text-muted">
                         {employee.employeeCode}
                       </span>
                     </span>

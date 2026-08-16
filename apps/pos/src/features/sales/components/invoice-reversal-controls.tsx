@@ -172,7 +172,7 @@ export function InvoiceReversalControls({
               <div key={reversal.id} className="space-y-1.5 border-t border-line pt-3 first:border-0 first:pt-0">
                 <p className="font-medium">
                   {reversal.type === 'void' ? 'إلغاء كامل' : 'استرداد'} ·{' '}
-                  <span className="tabular" dir="ltr">{reversal.totals.total} ج.م</span>
+                  <span className="tabular">{reversal.totals.total} ج.م</span>
                 </p>
                 <p className="text-[13px] text-muted">{reversal.reason}</p>
                 <ul className="space-y-0.5 text-[13px]">
@@ -219,7 +219,6 @@ export function InvoiceReversalControls({
                   min={0}
                   max={line.refundableQuantity}
                   disabled={quote.isPending}
-                  dir="ltr"
                   className="text-start"
                   value={quantities[line.id] ?? ''}
                   onChange={(event) => {
@@ -243,14 +242,14 @@ export function InvoiceReversalControls({
             <div className="space-y-3 rounded-control border border-line bg-surface/50 p-3">
               <p className="flex items-baseline justify-between font-semibold">
                 <span>الإجمالي المسترد</span>
-                <span className="tabular text-lg" dir="ltr">{quoted.totals.total} ج.م</span>
+                <span className="tabular text-lg">{quoted.totals.total} ج.م</span>
               </p>
               {/* The split is shown, not asked for: the money returns the way it came in. */}
               <ul className="space-y-1 text-[13px] text-muted">
                 {(tenders ?? []).map((tender) => (
                   <li key={tender.method} className="flex items-baseline justify-between">
                     <span>يُرد عبر {paymentLabels[tender.method]}</span>
-                    <span className="tabular" dir="ltr">{tender.amount} ج.م</span>
+                    <span className="tabular">{tender.amount} ج.م</span>
                   </li>
                 ))}
               </ul>

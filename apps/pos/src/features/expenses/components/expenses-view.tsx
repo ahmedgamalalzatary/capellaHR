@@ -143,7 +143,7 @@ export function ExpensesView() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="expense-amount">{amountLabel}</Label>
-                  <Input id="expense-amount" aria-label={amountLabel} inputMode="decimal" dir="ltr" className="text-start" disabled={commandPending} value={amount} onChange={(event) => setAmount(event.target.value)} />
+                  <Input id="expense-amount" aria-label={amountLabel} inputMode="decimal" className="text-start" disabled={commandPending} value={amount} onChange={(event) => setAmount(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="expense-date">تاريخ المصروف</Label>
@@ -253,7 +253,7 @@ export function ExpensesView() {
                                 {expense.correctionReason ? <span className="block text-xs text-muted">السبب: {expense.correctionReason}</span> : null}
                               </TD>
                               <TD numeric className="whitespace-nowrap font-medium">
-                                <span dir="ltr">{expense.kind === 'reversal' ? '-' : ''}{expense.amount}</span> ج.م
+                                <span>{expense.kind === 'reversal' ? '-' : ''}{expense.amount}</span> ج.م
                               </TD>
                               <TD>
                                 <Badge variant={kindTone(expense)}>{kindLabel(expense)}</Badge>

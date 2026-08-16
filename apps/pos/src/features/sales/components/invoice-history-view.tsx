@@ -153,7 +153,6 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
                       className="font-mono font-semibold text-ink underline underline-offset-4"
-                      dir="ltr"
                       href={`/invoices/${invoice.id}${branchId ? `?branchId=${branchId}` : ''}`}
                     >
                       {invoice.invoiceNumber}
@@ -167,7 +166,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                     {formatCairoDateTime(invoice.soldAt)}
                   </time>
                 </div>
-                <strong className="tabular text-lg font-semibold text-ink sm:text-end">
+                <strong className="tabular text-lg font-semibold text-ink sm:text-start">
                   {invoice.total} ج.م
                 </strong>
               </CardContent>

@@ -120,7 +120,7 @@ export function CommissionOverridesDialog({
             {overrides.map((override) => (
               <tr key={override.id} className="border-b border-line/60 last:border-b-0">
                 <td className="px-2 py-2">{employeeName(override.employeeId)}</td>
-                <td className="tabular px-2 py-2" dir="ltr">{`${override.commissionPercent}%`}</td>
+                <td className="tabular px-2 py-2">{`${override.commissionPercent}%`}</td>
                 <td className="px-2 py-2">
                   <Button
                     variant="ghost"
@@ -158,7 +158,6 @@ export function CommissionOverridesDialog({
               id="override-percent"
               inputMode="decimal"
               autoComplete="off"
-              dir="ltr"
               className="text-start"
               disabled={overridePending}
               {...register('commissionPercent')}

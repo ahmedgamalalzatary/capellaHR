@@ -272,7 +272,7 @@ function PendingSaleRecovery({ pending }: { pending: PendingSale }) {
       <Card className="mx-auto max-w-lg shadow-card">
         <CardHeader><CardTitle>تم حفظ الفاتورة</CardTitle></CardHeader>
         <CardContent className="space-y-2 p-5 text-center">
-          <p className="font-mono text-lg font-semibold" dir="ltr">{recovery.data.invoiceNumber}</p>
+          <p className="font-mono text-lg font-semibold">{recovery.data.invoiceNumber}</p>
           <p className="tabular text-2xl font-semibold text-ink">{recovery.data.totals.total} ج.م</p>
         </CardContent>
       </Card>
@@ -831,7 +831,7 @@ function SaleWorkspace({
               <CircleCheck className="size-6" aria-hidden />
             </span>
             <div className="space-y-1">
-              <p className="font-mono text-sm font-semibold text-muted" dir="ltr">{completed.invoiceNumber}</p>
+              <p className="font-mono text-sm font-semibold text-muted">{completed.invoiceNumber}</p>
               <p className="tabular text-3xl font-semibold text-ink">{completed.totals.total} ج.م</p>
             </div>
             {printError ? <p role="alert" className="text-[13px] text-danger">{printError}</p> : null}
@@ -1066,7 +1066,6 @@ function SaleWorkspace({
                             <Input
                               aria-label={`سعر ${line.service.name}`}
                               inputMode="decimal"
-                              dir="ltr"
                               className="mt-1 h-9 w-36 text-start"
                               placeholder="سعر الوحدة"
                               value={line.unitPrice}
@@ -1173,7 +1172,6 @@ function SaleWorkspace({
                       <Input
                         id={`payment-${method}`}
                         inputMode="decimal"
-                        dir="ltr"
                         className="text-start"
                         value={payments[method]}
                         onChange={(event) => {
@@ -1302,7 +1300,6 @@ function AdjustmentInput(props: {
         <Input
           aria-label={`قيمة ${props.label}`}
           inputMode="decimal"
-          dir="ltr"
           className="text-start"
           value={props.value}
           onChange={(event) => props.onValue(event.target.value)}

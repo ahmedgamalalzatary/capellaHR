@@ -121,7 +121,6 @@ export function ServiceForm({
                 id="service-price"
                 inputMode="decimal"
                 autoComplete="off"
-                dir="ltr"
                 className="text-start"
                 disabled={pending || hasFixedPrice}
                 placeholder="يحدد عند البيع إذا تُرك فارغًا"
@@ -145,7 +144,6 @@ export function ServiceForm({
                 id="service-commission"
                 inputMode="decimal"
                 autoComplete="off"
-                dir="ltr"
                 className="text-start"
                 placeholder="0"
                 disabled={pending}

@@ -59,7 +59,7 @@ export function ClientPicker({
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium">{selected.fullName}</span>
-              <span className="tabular block text-[13px] text-muted" dir="ltr">{selected.phone}</span>
+              <span className="tabular block text-[13px] text-muted">{selected.phone}</span>
             </span>
           </div>
           <Button variant="ghost" size="sm" onClick={() => {
@@ -138,7 +138,7 @@ export function ClientPicker({
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{client.fullName}</span>
-                    <span className="tabular block text-[13px] text-muted" dir="ltr">{client.phone}</span>
+                    <span className="tabular block text-[13px] text-muted">{client.phone}</span>
                   </span>
                   <ChevronLeft className="size-4 shrink-0 text-muted" aria-hidden />
                 </button>

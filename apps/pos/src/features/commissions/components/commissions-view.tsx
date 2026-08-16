@@ -75,7 +75,7 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
                           {cairoDateTime(entry.occurredAt)}
                         </time>
                       </TD>
-                      <TD><span className="tabular" dir="ltr">{entry.invoiceNumber}</span></TD>
+                      <TD><span className="tabular">{entry.invoiceNumber}</span></TD>
                       <TD>
                         {entry.serviceName}
                         <span className="mt-1 block text-xs text-muted">بند #{entry.lineNumber}</span>

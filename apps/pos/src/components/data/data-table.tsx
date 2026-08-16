@@ -43,7 +43,7 @@ export function TH({
       scope="col"
       className={cn(
         'whitespace-nowrap px-4 py-2.5 text-[12px] font-semibold tracking-wide text-muted',
-        numeric ? 'text-end' : 'text-start',
+        numeric ? 'text-start' : 'text-start',
         className,
       )}
       {...props}
@@ -72,7 +72,7 @@ export function TD({
     <td
       className={cn(
         'px-4 py-3 align-middle',
-        numeric ? 'tabular text-end' : 'text-start',
+        numeric ? 'tabular text-start' : 'text-start',
         className,
       )}
       {...props}

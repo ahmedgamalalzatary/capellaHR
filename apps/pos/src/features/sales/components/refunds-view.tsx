@@ -74,7 +74,7 @@ function ReversalDialog({
         <>
           <div className="rounded-control border border-line bg-surface/50 p-3">
             <p className="text-sm text-ink">{invoice.data.client.name}</p>
-            <p className="tabular text-lg font-semibold text-ink" dir="ltr">
+            <p className="tabular text-lg font-semibold text-ink">
               {invoice.data.totals.total} ج.م
             </p>
             <time className="block text-[13px] text-muted" dateTime={invoice.data.soldAt}>
@@ -225,7 +225,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
               {invoices.data.items.map((invoice) => (
                 <TR key={invoice.id}>
                   <TD>
-                    <span className="font-mono font-semibold text-ink" dir="ltr">
+                    <span className="font-mono font-semibold text-ink">
                       {invoice.invoiceNumber}
                     </span>
                   </TD>

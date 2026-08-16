@@ -83,7 +83,6 @@ export function ClientForm({
                 id="client-phone"
                 inputMode="tel"
                 autoComplete="off"
-                dir="ltr"
                 className="text-start"
                 disabled={save.isPending}
                 {...register('phone')}

@@ -176,15 +176,15 @@ export function ProductStockView() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="product-price">سعر البيع</Label>
-                  <Input id="product-price" aria-label="سعر البيع" dir="ltr" className="text-start" placeholder="سعر البيع" disabled={commandPending} value={price} onChange={(event) => setPrice(event.target.value)} />
+                  <Input id="product-price" aria-label="سعر البيع" className="text-start" placeholder="سعر البيع" disabled={commandPending} value={price} onChange={(event) => setPrice(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="product-cost">آخر تكلفة شراء</Label>
-                  <Input id="product-cost" aria-label="آخر تكلفة شراء" dir="ltr" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
+                  <Input id="product-cost" aria-label="آخر تكلفة شراء" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="product-threshold">حد المخزون المنخفض</Label>
-                  <Input id="product-threshold" aria-label="حد المخزون المنخفض" type="number" min="0" dir="ltr" className="text-start" disabled={commandPending} value={threshold} onChange={(event) => setThreshold(event.target.value)} />
+                  <Input id="product-threshold" aria-label="حد المخزون المنخفض" type="number" min="0" className="text-start" disabled={commandPending} value={threshold} onChange={(event) => setThreshold(event.target.value)} />
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
@@ -280,7 +280,7 @@ export function ProductStockView() {
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="adjust-delta">تغيير الكمية</Label>
-                    <Input id="adjust-delta" aria-label="تغيير الكمية" type="number" dir="ltr" className="text-start" disabled={commandPending} value={delta} onChange={(event) => setDelta(event.target.value)} />
+                    <Input id="adjust-delta" aria-label="تغيير الكمية" type="number" className="text-start" disabled={commandPending} value={delta} onChange={(event) => setDelta(event.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="adjust-reason">سبب التسوية</Label>
@@ -340,7 +340,7 @@ export function ProductStockView() {
                               {movement.note ? <span className="block text-xs text-muted">{movement.note}</span> : null}
                             </TD>
                             <TD numeric className="whitespace-nowrap">
-                              <span dir="ltr">{movement.quantityDelta > 0 ? '+' : ''}{movement.quantityDelta} → {movement.balanceAfter}</span>
+                              <span>{movement.quantityDelta > 0 ? '+' : ''}{movement.quantityDelta} → {movement.balanceAfter}</span>
                             </TD>
                             <TD className="text-muted">
                               {sourceLabels[movement.sourceType] ?? movement.sourceType}{movement.sourceId ? ` #${movement.sourceId}` : ''}

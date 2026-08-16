@@ -45,10 +45,10 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <ReceiptQr value={invoice.invoiceNumber} />
       </header>
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 border-b border-dashed border-ink py-3">
-        <dt>رقم الفاتورة</dt><dd className="font-mono text-xs" dir="ltr">{invoice.invoiceNumber}</dd>
+        <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt><dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>
         <dt>العميل</dt><dd>{invoice.client.name}</dd>
-        <dt>الهاتف</dt><dd dir="ltr" className="text-end">{invoice.client.phone}</dd>
+        <dt>الهاتف</dt><dd className="text-start">{invoice.client.phone}</dd>
         <dt>الموظف</dt><dd>{invoice.assignedEmployee?.name ?? 'بدون موظف'}</dd>
         {invoice.seller
           ? <dt>الكاشير</dt>
@@ -68,9 +68,9 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           {invoice.lines.map((line) => (
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">{line.name}</td>
-              <td className="border border-line px-1 py-1.5 text-center tabular" dir="ltr">{line.unitPrice}</td>
-              <td className="border border-line px-1 py-1.5 text-center tabular" dir="ltr">{line.quantity}</td>
-              <td className="border border-line px-1 py-1.5 text-center tabular" dir="ltr">{line.lineTotal}</td>
+              <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrice}</td>
+              <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
+              <td className="border border-line px-1 py-1.5 text-center tabular">{line.lineTotal}</td>
             </tr>
           ))}
         </tbody>
@@ -78,31 +78,31 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
       <div className="space-y-1 border-b border-dashed border-ink py-3 text-xs">
         <div className="flex justify-between text-muted">
           <span>عدد الأصناف</span>
-          <span className="tabular" dir="ltr">{invoice.lines.length}</span>
+          <span className="tabular">{invoice.lines.length}</span>
         </div>
         <div className="flex justify-between text-muted">
           <span>إجمالي الكميات</span>
-          <span className="tabular" dir="ltr">{totalQuantity}</span>
+          <span className="tabular">{totalQuantity}</span>
         </div>
         <div className="flex justify-between">
           <span>المجموع الفرعي</span>
-          <span className="tabular" dir="ltr">{invoice.totals.subtotal} ج.م</span>
+          <span className="tabular">{invoice.totals.subtotal} ج.م</span>
         </div>
         {invoice.discount ? (
           <div className="flex justify-between">
             <span>الخصم</span>
-            <span className="tabular" dir="ltr">- {invoice.discount.amount} ج.م</span>
+            <span className="tabular">- {invoice.discount.amount} ج.م</span>
           </div>
         ) : null}
         {invoice.tax ? (
           <div className="flex justify-between">
             <span>الضريبة</span>
-            <span className="tabular" dir="ltr">+ {invoice.tax.amount} ج.م</span>
+            <span className="tabular">+ {invoice.tax.amount} ج.م</span>
           </div>
         ) : null}
         <div data-grand-total className="mt-1.5 flex items-baseline justify-between border-y-2 border-ink py-1.5 text-sm font-bold">
           <span>الإجمالي النهائي</span>
-          <span className="tabular" dir="ltr">{invoice.totals.total} ج.م</span>
+          <span className="tabular">{invoice.totals.total} ج.م</span>
         </div>
       </div>
       <div className="border-b border-dashed border-ink py-3">
@@ -111,12 +111,12 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           {invoice.payments.map((payment) => (
             <div key={payment.method} className="flex justify-between">
               <span>{paymentLabels[payment.method]}</span>
-              <span className="tabular" dir="ltr">{payment.amount} ج.م</span>
+              <span className="tabular">{payment.amount} ج.م</span>
             </div>
           ))}
           <div className="flex justify-between border-t border-dashed border-line pt-1.5 font-bold">
             <span>المدفوع</span>
-            <span className="tabular" dir="ltr">{invoice.totals.paymentTotal} ج.م</span>
+            <span className="tabular">{invoice.totals.paymentTotal} ج.م</span>
           </div>
         </div>
       </div>

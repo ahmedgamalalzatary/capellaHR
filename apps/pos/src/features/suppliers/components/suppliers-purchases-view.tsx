@@ -259,7 +259,7 @@ export function SuppliersPurchasesView() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="supplier-phone">هاتف المورد</Label>
-                  <Input id="supplier-phone" aria-label="هاتف المورد" placeholder="الهاتف (اختياري)" dir="ltr" className="text-start" disabled={commandPending} value={phone} onChange={(event) => setPhone(event.target.value)} />
+                  <Input id="supplier-phone" aria-label="هاتف المورد" placeholder="الهاتف (اختياري)" className="text-start" disabled={commandPending} value={phone} onChange={(event) => setPhone(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="supplier-notes">ملاحظات المورد</Label>
@@ -364,11 +364,11 @@ export function SuppliersPurchasesView() {
                           </div>
                           <div className="space-y-1.5">
                             <Label htmlFor={`purchase-quantity-${line.key}`}>الكمية</Label>
-                            <Input id={`purchase-quantity-${line.key}`} type="number" min="1" dir="ltr" className="text-start" disabled={commandPending} value={line.quantity} onChange={(event) => { if (!commandPending) updateLine(line.key, { quantity: event.target.value }); }} />
+                            <Input id={`purchase-quantity-${line.key}`} type="number" min="1" className="text-start" disabled={commandPending} value={line.quantity} onChange={(event) => { if (!commandPending) updateLine(line.key, { quantity: event.target.value }); }} />
                           </div>
                           <div className="space-y-1.5">
                             <Label htmlFor={`purchase-cost-${line.key}`}>تكلفة الوحدة</Label>
-                            <Input id={`purchase-cost-${line.key}`} inputMode="decimal" dir="ltr" className="text-start" disabled={commandPending} value={line.unitCost} onChange={(event) => { if (!commandPending) updateLine(line.key, { unitCost: event.target.value }); }} />
+                            <Input id={`purchase-cost-${line.key}`} inputMode="decimal" className="text-start" disabled={commandPending} value={line.unitCost} onChange={(event) => { if (!commandPending) updateLine(line.key, { unitCost: event.target.value }); }} />
                           </div>
                           <Button
                             variant="ghost"

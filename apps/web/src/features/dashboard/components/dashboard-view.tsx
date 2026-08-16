@@ -133,7 +133,7 @@ function EmployeeLine({ employee, detail, danger = false }: {
         </p>
         <p className="mt-0.5 truncate text-[12px] text-muted">{employee.branchName}</p>
       </div>
-      {detail ? <div className={danger ? 'max-w-[55%] text-end text-[12px] text-danger' : 'max-w-[55%] text-end text-[12px] text-muted'}>{detail}</div> : null}
+      {detail ? <div className={danger ? 'max-w-[55%] text-start text-[12px] text-danger' : 'max-w-[55%] text-start text-[12px] text-muted'}>{detail}</div> : null}
     </li>
   );
 }
