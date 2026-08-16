@@ -146,7 +146,7 @@ describe('stored invoice receipt', () => {
       expect.objectContaining({ type: 'svg' }),
     ));
     expect(screen.getByTestId('receipt-qr').innerHTML).toContain('svg');
-    expect(screen.getByText('Capella')).toBeDefined();
+    expect(screen.getByText('Capella Care')).toBeDefined();
     expect(screen.getByText('إيصال بيع')).toBeDefined();
     expect(screen.getByText('رقم الفاتورة')).toBeDefined();
     expect(screen.getByText('التاريخ')).toBeDefined();
@@ -159,11 +159,23 @@ describe('stored invoice receipt', () => {
 
     const table = screen.getByRole('table');
     expect(within(table).getAllByRole('columnheader').map((header) => header.textContent))
-      .toEqual(['الصنف', 'السعر', 'الكمية', 'الإجمالي']);
+      .toEqual(['الصنف', 'عدد', 'سعر', 'قيمة']);
     const rows = within(table).getAllByRole('row');
     expect(rows).toHaveLength(2);
     expect(within(rows[1]!).getAllByRole('cell').map((cell) => cell.textContent))
-      .toEqual(['صبغة شعر', '200.00', '1', '200.00']);
+      .toEqual(['صبغة شعر', '1', '200.00', '200.00']);
+  });
+
+  it('prints the counter contact details and the consumer-protection return policy', async () => {
+    renderView();
+    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    expect(screen.getByText('Capella Care')).toBeDefined();
+    expect(screen.getByText(/01034660596/)).toBeDefined();
+    expect(screen.getByText('www.capellacares.com')).toBeDefined();
+    expect(screen.getByText('سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك')).toBeDefined();
+    expect(screen.getByText(/خلال 14 يوم/)).toBeDefined();
+    expect(screen.getByText(/19588/)).toBeDefined();
   });
 
   it('summarizes item counts, discount and tax with an emphasized final total', async () => {

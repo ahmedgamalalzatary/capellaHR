@@ -32,13 +32,33 @@ function ReceiptQr({ value }: { value: string }) {
   );
 }
 
+/**
+ * The tail of the printed slip, matching the counter's existing paper: how to reach
+ * the branch, and the return window the consumer-protection law obliges us to print.
+ */
+export function ReceiptFooter() {
+  return (
+    <footer className="pt-3 text-center">
+      <p>شكرًا لزيارتكم</p>
+      <p className="mt-1 text-xs">Tel : 01034660596 - 01034668590</p>
+      <p className="text-xs">www.capellacares.com</p>
+      <div className="mt-2 space-y-0.5 text-[11px] leading-snug text-muted">
+        <p>سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك</p>
+        <p>1- خلال 14 يوم إذا كان المنتج بحالته الأصلية</p>
+        <p>2- خلال 30 يوم إذا كان المنتج به عيب صناعة</p>
+        <p>3- التواصل مع حماية المستهلك 19588</p>
+      </div>
+    </footer>
+  );
+}
+
 export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
   const totalQuantity = invoice.lines.reduce((sum, line) => sum + line.quantity, 0);
   return (
     <article data-receipt className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink">
       <header className="flex items-start justify-between gap-3 border-b border-dashed border-ink pb-3">
         <div>
-          <p className="font-serif text-2xl italic leading-none">Capella</p>
+          <p className="font-serif text-2xl italic leading-none">Capella Care</p>
           <h1 className="mt-1.5 text-lg font-bold">كابيلا</h1>
           <p className="text-xs text-muted">إيصال بيع</p>
         </div>
@@ -59,17 +79,17 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <thead>
           <tr className="bg-surface">
             <th scope="col" className="border border-line px-1.5 py-1.5 text-start font-medium">الصنف</th>
-            <th scope="col" className="border border-line px-1 py-1.5 font-medium">السعر</th>
-            <th scope="col" className="border border-line px-1 py-1.5 font-medium">الكمية</th>
-            <th scope="col" className="border border-line px-1 py-1.5 font-medium">الإجمالي</th>
+            <th scope="col" className="border border-line px-1 py-1.5 font-medium">عدد</th>
+            <th scope="col" className="border border-line px-1 py-1.5 font-medium">سعر</th>
+            <th scope="col" className="border border-line px-1 py-1.5 font-medium">قيمة</th>
           </tr>
         </thead>
         <tbody>
           {invoice.lines.map((line) => (
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">{line.name}</td>
-              <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrice}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
+              <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrice}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.lineTotal}</td>
             </tr>
           ))}
@@ -120,10 +140,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           </div>
         </div>
       </div>
-      <footer className="pt-3 text-center">
-        <p>شكرًا لزيارتكم</p>
-        <p className="mt-1 text-xs text-muted">Capella · كابيلا</p>
-      </footer>
+      <ReceiptFooter />
     </article>
   );
 }

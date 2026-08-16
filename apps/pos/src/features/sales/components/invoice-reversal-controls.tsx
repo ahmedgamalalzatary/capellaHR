@@ -2,6 +2,7 @@
 
 import type { PublicInvoiceDto, RefundQuote } from '@capella/contracts';
 import { useMutation } from '@tanstack/react-query';
+import { Printer } from 'lucide-react';
 import { useRef, useState } from 'react';
 
 import { Button, Input, Modal } from '@capella/ui';
@@ -11,6 +12,7 @@ import { createUuid } from '@/lib/uuid';
 
 import { quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
 import { formatCairoDateTime, paymentLabels, responseMessage } from './invoice-format';
+import { RefundReceipt } from './refund-receipt';
 
 const cents = (value: string) => {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
@@ -56,6 +58,13 @@ export function InvoiceReversalControls({
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<number, string>>({});
   const [quoted, setQuoted] = useState<RefundQuote | null>(null);
+  /**
+   * Asked once per stored refund: the money has already gone back, the slip the client
+   * takes with them is optional.
+   */
+  const [refunded, setRefunded] = useState<PublicInvoiceDto | null>(null);
+  const [printPrompt, setPrintPrompt] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
   const commandIdentity = useRef<{ fingerprint: string; key: string } | null>(null);
   const idempotencyKeyFor = (payload: unknown) => {
     const fingerprint = JSON.stringify(payload);
@@ -97,7 +106,15 @@ export function InvoiceReversalControls({
         idempotencyKey: idempotencyKeyFor(payload),
       });
     },
-    onSuccess: (value) => { onUpdated(value); close(true); },
+    onSuccess: (value) => {
+      onUpdated(value);
+      close(true);
+      setPrintError(null);
+      if (value.reversals.length) {
+        setRefunded(value);
+        setPrintPrompt(true);
+      }
+    },
   });
   const voidMutation = useMutation({
     mutationFn: () => {
@@ -127,8 +144,25 @@ export function InvoiceReversalControls({
   function openMode(nextMode: 'refund' | 'void') {
     if (reversalPending) return;
     close();
+    setRefunded(null);
+    setPrintPrompt(false);
+    setPrintError(null);
     setMode(nextMode);
   }
+  /** The note is printed by the browser, so the counter printer needs no extra driver. */
+  const printRefundNote = () => {
+    setPrintError(null);
+    if (typeof window.print !== 'function') {
+      setPrintError('الطباعة غير متاحة في هذا المتصفح. افتح الفاتورة واطبع الإيصال من صفحتها.');
+      return;
+    }
+    try {
+      window.print();
+    } catch {
+      setPrintError('تعذر فتح نافذة الطباعة. تحقق من إعدادات المتصفح والطابعة ثم حاول مرة أخرى.');
+    }
+  };
+  const printableReversal = refunded?.reversals.at(-1);
   const tenderMessage = quoted !== null && tenders === null
     ? 'تعذر توزيع المبلغ المسترد على طرق الدفع المسجلة للفاتورة.'
     : null;
@@ -158,6 +192,11 @@ export function InvoiceReversalControls({
       {errorMessage && mode === null ? (
         <p role="alert" className="rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">
           {errorMessage}
+        </p>
+      ) : null}
+      {printError ? (
+        <p role="alert" className="rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">
+          {printError}
         </p>
       ) : null}
 
@@ -314,6 +353,30 @@ export function InvoiceReversalControls({
               onClick={() => voidMutation.mutate()}
             >
               {voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}
+            </Button>
+          </div>
+        </Modal>
+      ) : null}
+
+      {/* Only the note reaches the paper; the print stylesheet hides everything else. */}
+      {refunded && printableReversal ? (
+        <div className="hidden print:block">
+          <RefundReceipt invoice={refunded} reversal={printableReversal} />
+        </div>
+      ) : null}
+
+      {printPrompt && printableReversal ? (
+        <Modal title="طباعة إيصال الاسترداد" onClose={() => setPrintPrompt(false)}>
+          <p className="text-sm">
+            تم تنفيذ الاسترداد بمبلغ{' '}
+            <span className="tabular font-semibold">{printableReversal.totals.total} ج.م</span>.
+            هل تريد طباعة إيصال للعميل؟
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPrintPrompt(false)}>لا، شكراً</Button>
+            <Button onClick={() => { setPrintPrompt(false); printRefundNote(); }}>
+              <Printer className="size-4" aria-hidden />
+              نعم، اطبع
             </Button>
           </div>
         </Modal>

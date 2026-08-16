@@ -44,6 +44,25 @@ const historyItem = {
   soldAt: saleFixtures.completedInvoice.soldAt,
 };
 
+const storedRefund = {
+  id: 7,
+  type: 'refund' as const,
+  reason: 'عدم رضا العميل',
+  actingAccount: { id: 1, username: 'admin' },
+  approvingAccount: null,
+  lines: [{
+    invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+    lineNumber: 1,
+    itemType: saleFixtures.completedInvoice.lines[0].itemType,
+    name: saleFixtures.completedInvoice.lines[0].name,
+    quantity: 1,
+    grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+  }],
+  payments: [{ method: 'cash' as const, amount: '185.00' }],
+  totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+  createdAt: saleFixtures.completedInvoice.soldAt,
+};
+
 /** `null` renders the tab with no preselected branch, as a cashier sees it. */
 const renderView = (branchId: number | null = 2) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -86,6 +105,7 @@ describe('refunds tab', () => {
     refundInvoice.mockReset().mockResolvedValue({
       ...saleFixtures.completedInvoice,
       status: 'refunded',
+      reversals: [storedRefund],
       eligibility: { canVoid: false, canRefund: false },
     });
     voidInvoice.mockReset().mockResolvedValue({
@@ -182,6 +202,45 @@ describe('refunds tab', () => {
     voidInvoice.mockRejectedValueOnce(new Error('network failure'));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
     expect(await screen.findByText('تعذر إلغاء الفاتورة.')).toBeDefined();
+  });
+
+  const confirmRefund = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+  };
+
+  it('offers to print the refund note once the refund is stored', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await openInvoice();
+
+    await confirmRefund();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'نعم، اطبع' }));
+    expect(print).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the stored refund when the print offer is declined', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await openInvoice();
+
+    await confirmRefund();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'لا، شكراً' }));
+    expect(print).not.toHaveBeenCalled();
+    await waitFor(() => expect(
+      screen.queryByRole('dialog', { name: 'طباعة إيصال الاسترداد' }),
+    ).toBeNull());
+    vi.unstubAllGlobals();
   });
 
   it('spreads the refund over the payment methods the sale was paid with', async () => {
