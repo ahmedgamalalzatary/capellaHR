@@ -1,0 +1,512 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+import {
+  branchCashierRosterItemSchema,
+  branchCashierRosterQuerySchema,
+  replaceBranchCashierRosterSchema,
+  completeSaleSchema,
+  invoiceSchema,
+  invoiceHistoryItemSchema,
+  invoiceHistoryQuerySchema,
+  invoiceParamsSchema,
+  invoiceTotalsSchema,
+  paymentBreakdownSchema,
+  paymentMethodSchema,
+  quoteSaleInputSchema,
+  saleQuoteSchema,
+  clientVisitHistoryQuerySchema,
+  clientVisitSummarySchema,
+  saleErrorSchema,
+  saleFixtures,
+  refundInvoiceSchema,
+  refundQuoteInputSchema,
+  refundQuoteSchema,
+  voidInvoiceSchema,
+} from '../../../../src/modules/erp/sales/index.js';
+
+const validDraft = {
+  branchId: 2,
+  clientId: 5,
+  assignedEmployeeId: 8,
+  sellerEmployeeId: 9,
+  cashierSessionId: 13,
+  idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+  lines: [
+    { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200' },
+    { itemType: 'product' as const, productId: 34, quantity: 2 },
+  ],
+  discount: { kind: 'percentage' as const, value: '10' },
+  tax: { kind: 'fixed' as const, value: '5.00' },
+  payments: [
+    { method: 'cash' as const, amount: '100' },
+    { method: 'visa' as const, amount: '80.00' },
+  ],
+};
+
+describe('ERP complete-sale contracts', () => {
+  it('validates idempotent void commands with a required trimmed reason', () => {
+    expect(voidInvoiceSchema.parse({
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
+      reason: '  إدخال مكرر  ',
+    })).toEqual({
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
+      reason: 'إدخال مكرر',
+    });
+    expect(voidInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631', reason: '   ',
+    }).success).toBe(false);
+  });
+
+  it('validates partial refund quantities and original payment-method allocation', () => {
+    const value = {
+      branchId: 2,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632',
+      reason: 'عدم رضا العميل',
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+      payments: [
+        { method: 'cash' as const, amount: '80' },
+        { method: 'visa' as const, amount: '20.00' },
+      ],
+    };
+    expect(refundInvoiceSchema.parse(value).payments).toEqual([
+      { method: 'cash', amount: '80.00' },
+      { method: 'visa', amount: '20.00' },
+    ]);
+    expect(refundInvoiceSchema.safeParse({
+      ...value,
+      lines: [...value.lines, value.lines[0]],
+    }).success).toBe(false);
+    expect(refundInvoiceSchema.safeParse({
+      ...value,
+      payments: [value.payments[0], value.payments[0]],
+    }).success).toBe(false);
+  });
+
+  it('publishes an authoritative partial-refund quote with remaining tenders', () => {
+    expect(refundQuoteInputSchema.parse({
+      branchId: '2', lines: [{ invoiceLineId: 81, quantity: 1 }],
+    })).toEqual({ branchId: 2, lines: [{ invoiceLineId: 81, quantity: 1 }] });
+    expect(refundQuoteSchema.safeParse({
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '200.00',
+        discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: {
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      },
+      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+    }).success).toBe(true);
+  });
+
+  it('keeps validation messages as correctly decoded Arabic', () => {
+    const source = readFileSync(
+      new URL('../../../../src/modules/erp/sales/index.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).not.toContain('Ã');
+    for (const message of [
+      'قيمة التعديل الثابت غير متسقة',
+      'عمولة الخدمة غير متسقة',
+      'مجموع البنود لا يساوي المجموع الفرعي',
+      'قيمة التعديل غير متسقة',
+    ]) expect(source).toContain(message);
+  });
+
+  it('accepts the locked payment methods only', () => {
+    expect(paymentMethodSchema.options).toEqual(['cash', 'visa', 'instapay', 'vodafone_cash']);
+    expect(paymentMethodSchema.safeParse('mastercard').success).toBe(false);
+  });
+
+  it('normalizes exact money and percentage/fixed adjustments without JS floats', () => {
+    const parsed = completeSaleSchema.parse(validDraft);
+    expect(parsed.discount).toEqual({ kind: 'percentage', value: '10.00' });
+    expect(parsed.tax).toEqual({ kind: 'fixed', value: '5.00' });
+    expect(parsed.payments).toEqual([
+      { method: 'cash', amount: '100.00' },
+      { method: 'visa', amount: '80.00' },
+    ]);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      payments: [{ method: 'cash', amount: 180 }],
+    }).success).toBe(false);
+  });
+
+  it('requires one source matching each line type and forbids duplicate payment methods', () => {
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', productId: 4, quantity: 1 }],
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      payments: [
+        { method: 'cash', amount: '50' },
+        { method: 'cash', amount: '130' },
+      ],
+    }).success).toBe(false);
+  });
+
+  it('requires an employee only when the sale contains a service', () => {
+    const productOnly = {
+      ...validDraft,
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+    };
+    delete (productOnly as Partial<typeof productOnly>).assignedEmployeeId;
+
+    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
+    expect(completeSaleSchema.parse({
+      ...productOnly,
+      assignedEmployeeId: 8,
+    })).not.toHaveProperty('assignedEmployeeId');
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      assignedEmployeeId: undefined,
+    }).success).toBe(false);
+  });
+
+  it('requires the selling cashier on every sale, services and products alike', () => {
+    const { sellerEmployeeId, ...withoutSeller } = validDraft;
+    expect(sellerEmployeeId).toBeDefined();
+    expect(completeSaleSchema.safeParse(withoutSeller).success).toBe(false);
+
+    const productOnly = {
+      ...withoutSeller,
+      sellerEmployeeId,
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+    };
+    delete (productOnly as Partial<typeof productOnly>).assignedEmployeeId;
+    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
+    expect(completeSaleSchema.safeParse({ ...productOnly, sellerEmployeeId: 0 }).success).toBe(false);
+  });
+
+  it('publishes product-only invoices without an assigned employee', () => {
+    const productOnlyInvoice = {
+      ...saleFixtures.completedInvoice,
+      assignedEmployee: null,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        itemType: 'product' as const,
+        sourceId: 34,
+        commissionRule: 'none' as const,
+        commissionRate: '0.00',
+        commissionAmount: '0.00',
+        productCostBasis: '50.00',
+      }],
+    };
+
+    expect(invoiceSchema.safeParse(productOnlyInvoice).success).toBe(true);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      assignedEmployee: null,
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...productOnlyInvoice,
+      assignedEmployee: saleFixtures.completedInvoice.assignedEmployee,
+    }).success).toBe(true);
+  });
+
+  it('requires and normalizes a positive unit price for every service sale line', () => {
+    expect(completeSaleSchema.parse(validDraft).lines[0]).toMatchObject({ unitPrice: '200.00' });
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1 }],
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '0' }],
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '12345678901' }],
+    }).success).toBe(false);
+  });
+
+  it('caps percentage adjustments at 100 and keeps fixed adjustments as money', () => {
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      discount: { kind: 'percentage', value: '100.01' },
+    }).success).toBe(false);
+    expect(completeSaleSchema.parse({
+      ...validDraft,
+      discount: { kind: 'fixed', value: '100.01' },
+    }).discount).toEqual({ kind: 'fixed', value: '100.01' });
+  });
+
+  it('publishes exact server-computed totals and rejects inconsistent arithmetic', () => {
+    const totals = {
+      subtotal: '200.00',
+      discountAmount: '20.00',
+      taxAmount: '5.00',
+      total: '185.00',
+      paymentTotal: '185.00',
+    };
+    expect(invoiceTotalsSchema.parse(totals)).toEqual(totals);
+    expect(invoiceTotalsSchema.safeParse({ ...totals, total: '184.99' }).success).toBe(false);
+    expect(invoiceTotalsSchema.safeParse({ ...totals, paymentTotal: '184.99' }).success).toBe(false);
+  });
+
+  it('requires individual payment rows to sum exactly to the invoice total', () => {
+    const valid = {
+      total: '185.00',
+      payments: [
+        { method: 'cash', amount: '100.00' },
+        { method: 'visa', amount: '85.00' },
+      ],
+    };
+    expect(paymentBreakdownSchema.parse(valid)).toEqual(valid);
+    expect(paymentBreakdownSchema.safeParse({
+      ...valid,
+      payments: [
+        { method: 'cash', amount: '100.00' },
+        { method: 'visa', amount: '84.99' },
+      ],
+    }).success).toBe(false);
+  });
+
+  it('publishes the selling cashier on invoices and keeps legacy invoices seller-free', () => {
+    expect(invoiceSchema.parse(saleFixtures.completedInvoice).seller)
+      .toEqual(saleFixtures.completedInvoice.seller);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      seller: null,
+    }).success).toBe(true);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال', username: 'must-not-leak' },
+    }).success).toBe(false);
+  });
+
+  it('validates branch cashier roster reads and full replacements', () => {
+    expect(branchCashierRosterQuerySchema.parse({ branchId: '2' })).toEqual({ branchId: 2 });
+    expect(branchCashierRosterQuerySchema.parse({})).toEqual({});
+    const member = { id: 8, employeeCode: 1008, fullName: 'سارة علي' };
+    expect(branchCashierRosterItemSchema.parse(member)).toEqual(member);
+    expect(replaceBranchCashierRosterSchema.parse({ employeeIds: [8, 9] }))
+      .toEqual({ employeeIds: [8, 9] });
+    expect(replaceBranchCashierRosterSchema.parse({ employeeIds: [] })).toEqual({ employeeIds: [] });
+    expect(replaceBranchCashierRosterSchema.safeParse({ employeeIds: [8, 8] }).success).toBe(false);
+  });
+
+  it('publishes stored historical invoice facts without persistence-only fields', () => {
+    expect(completeSaleSchema.parse(saleFixtures.serviceSaleDraft))
+      .toEqual(saleFixtures.serviceSaleDraft);
+    expect(invoiceSchema.parse(saleFixtures.completedInvoice)).toEqual(saleFixtures.completedInvoice);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      internalSequenceDate: '2026-08-03',
+    }).success).toBe(false);
+  });
+
+  it('publishes reversal history and remaining refundable quantities and tenders', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: saleFixtures.completedInvoice.lines.map((line) => ({
+        ...line, refundedQuantity: 0, refundableQuantity: line.quantity,
+      })),
+      payments: saleFixtures.completedInvoice.payments.map((payment) => ({
+        ...payment, refundedAmount: '0.00', refundableAmount: payment.amount,
+      })),
+      reversals: [],
+      eligibility: { canVoid: true, canRefund: true },
+    }).success).toBe(true);
+  });
+
+  it('supports zero-net refund lines without a payment movement', () => {
+    expect(refundInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632',
+      reason: 'إرجاع بند مخصوم بالكامل',
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+      payments: [],
+    }).success).toBe(true);
+    expect(refundQuoteSchema.safeParse({
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '0.01',
+        discountAmount: '0.01', taxAmount: '0.00', total: '0.00',
+      }],
+      totals: {
+        grossAmount: '0.01', discountAmount: '0.01', taxAmount: '0.00', total: '0.00',
+      },
+      payments: [],
+    }).success).toBe(true);
+  });
+
+  it('rejects duplicate invoice lines in refund quote requests', () => {
+    expect(refundQuoteInputSchema.safeParse({
+      lines: [
+        { invoiceLineId: 81, quantity: 1 },
+        { invoiceLineId: 81, quantity: 1 },
+      ],
+    }).success).toBe(false);
+  });
+
+  it('rejects stored adjustment and commission states that cannot be persisted', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      discount: { kind: 'percentage', value: '100.01', amount: '20.00' },
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{ ...saleFixtures.completedInvoice.lines[0], commissionRule: 'none' }],
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        itemType: 'product',
+        productCostBasis: '50.00',
+        commissionRule: 'none',
+        commissionRate: '10.00',
+        commissionAmount: '20.00',
+      }],
+    }).success).toBe(false);
+  });
+
+  it('rejects stored invoice snapshots whose cross-field arithmetic is inconsistent', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        unitPrice: '199.00',
+        lineTotal: '199.00',
+        commissionAmount: '29.85',
+      }],
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      discount: null,
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      tax: { kind: 'fixed', value: '5.00', amount: '4.00' },
+    }).success).toBe(false);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        commissionAmount: '29.99',
+      }],
+    }).success).toBe(false);
+  });
+
+  it('publishes stable validation and conflict errors for the POS', () => {
+    for (const value of Object.values(saleFixtures.errors)) {
+      expect(saleErrorSchema.parse(value)).toEqual(value);
+    }
+    expect(saleErrorSchema.safeParse({ code: 'SQL_FAILURE', message: 'secret' }).success).toBe(false);
+    expect(saleErrorSchema.parse({
+      code: 'INVOICE_NOT_FOUND', message: 'الفاتورة غير موجودة',
+    }).code).toBe('INVOICE_NOT_FOUND');
+    expect(saleErrorSchema.parse({
+      code: 'PRICE_CHANGED', message: 'تغير سعر الخدمة',
+    }).code).toBe('PRICE_CHANGED');
+  });
+
+  it('publishes a mixed catalog quote request and authoritative quote response', () => {
+    expect(quoteSaleInputSchema.parse({
+      branchId: 2,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2, unitPrice: '200' }],
+      discount: { kind: 'percentage', value: '10' },
+      tax: { kind: 'fixed', value: '5' },
+    })).toEqual({
+      branchId: 2,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 2, unitPrice: '200.00' }],
+      discount: { kind: 'percentage', value: '10.00' },
+      tax: { kind: 'fixed', value: '5.00' },
+    });
+    expect(quoteSaleInputSchema.parse({
+      lines: [{ itemType: 'product', productId: 34, quantity: 1 }],
+    }).lines).toEqual([{ itemType: 'product', productId: 34, quantity: 1 }]);
+
+    expect(saleQuoteSchema.safeParse({
+      lines: [{
+        itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 2,
+        unitPrice: '200.00', lineTotal: '400.00',
+      }],
+      discount: { kind: 'percentage', value: '10.00', amount: '40.00' },
+      tax: { kind: 'fixed', value: '5.00', amount: '5.00' },
+      totals: { subtotal: '400.00', discountAmount: '40.00', taxAmount: '5.00', total: '365.00' },
+    }).success).toBe(true);
+  });
+
+  it('rejects quote totals and adjustments that do not match the quoted lines', () => {
+    const quote = {
+      lines: [{
+        itemType: 'service' as const, sourceId: 21, name: 'صبغة شعر', quantity: 2,
+        unitPrice: '200.00', lineTotal: '400.00',
+      }],
+      discount: { kind: 'percentage' as const, value: '10.00', amount: '40.00' },
+      tax: { kind: 'fixed' as const, value: '5.00', amount: '5.00' },
+      totals: { subtotal: '400.00', discountAmount: '40.00', taxAmount: '5.00', total: '365.00' },
+    };
+
+    expect(saleQuoteSchema.safeParse({
+      ...quote,
+      totals: { ...quote.totals, subtotal: '500.00', total: '465.00' },
+    }).success).toBe(false);
+    expect(saleQuoteSchema.safeParse({
+      ...quote,
+      totals: { ...quote.totals, discountAmount: '30.00', total: '375.00' },
+    }).success).toBe(false);
+    expect(saleQuoteSchema.safeParse({
+      ...quote,
+      tax: { ...quote.tax, amount: '4.00' },
+    }).success).toBe(false);
+  });
+
+  it('publishes paged client visit-history summaries', () => {
+    expect(clientVisitHistoryQuerySchema.parse({ page: '2', pageSize: '10', branchId: '3' }))
+      .toEqual({ page: 2, pageSize: 10, branchId: 3 });
+    expect(clientVisitSummarySchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      assignedEmployee: { id: 8, name: 'سارة علي' },
+      soldAt: '2026-08-03T11:35:00.000Z',
+    }).success).toBe(true);
+  });
+
+  it('publishes branch-scoped paged invoice history and detail parameters', () => {
+    expect(invoiceHistoryQuerySchema.parse({
+      page: '2', pageSize: '10', branchId: '3', search: '  01012345678  ',
+    })).toEqual({ page: 2, pageSize: 10, branchId: 3, search: '01012345678' });
+    expect(invoiceParamsSchema.parse({ invoiceId: '44' })).toEqual({ invoiceId: 44 });
+    expect(invoiceParamsSchema.safeParse({ invoiceId: '0' }).success).toBe(false);
+  });
+
+  it('publishes receipt-safe stored invoice history summaries', () => {
+    expect(invoiceHistoryItemSchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      assignedEmployee: { id: 8, name: 'سارة علي' },
+      soldAt: '2026-08-03T11:35:00.000Z',
+    }).success).toBe(true);
+  });
+
+  it('keeps a phone-only client identifiable in the stored history summary', () => {
+    const parsed = invoiceHistoryItemSchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      client: { id: 5, name: null, phone: '01012345678' },
+      assignedEmployee: null,
+      soldAt: '2026-08-03T11:35:00.000Z',
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.client.phone).toBe('01012345678');
+  });
+
+  it('refuses a stored invoice that names no client at all', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      client: { ...saleFixtures.completedInvoice.client, name: null, phone: null },
+    }).success).toBe(false);
+  });
+});

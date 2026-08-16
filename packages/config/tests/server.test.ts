@@ -1,0 +1,168 @@
+import { describe, expect, it, vi } from 'vitest';
+import { ZodError } from 'zod';
+
+describe('server environment', () => {
+  it('accepts a plain admin password instead of an Argon2 hash', async () => {
+    vi.stubEnv('DATABASE_URL', 'mysql://user:password@localhost/capella_hr-test');
+    vi.stubEnv('ADMIN_EMAIL', 'admin@capella.test');
+    vi.stubEnv('ADMIN_PASSWORD', 'plain-admin-password');
+    const { parseServerEnv } = await import('../src/server.js');
+    const env = parseServerEnv({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'mysql://user:password@localhost/capella_hr-test',
+      ADMIN_EMAIL: 'admin@capella.test',
+      ADMIN_PASSWORD: 'plain-admin-password',
+    });
+
+    expect(env.ADMIN_PASSWORD).toBe('plain-admin-password');
+    expect(env).not.toHaveProperty('ADMIN_PASSWORD_HASH');
+  });
+
+  it('rejects ports outside the TCP range', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({ ...base, API_PORT: '65536' })).toThrow();
+  });
+
+  it('normalizes an explicit development CORS origin list', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(parseServerEnv({
+      ...base,
+      NODE_ENV: 'development',
+      DEV_CORS_ORIGINS: 'http://localhost:3000/, http://localhost:3001/path',
+    }).DEV_CORS_ORIGINS).toEqual(['http://localhost:3000', 'http://localhost:3001']);
+    expect(parseServerEnv({ ...base }).DEV_CORS_ORIGINS).toEqual([]);
+    expect(() => parseServerEnv({ ...base, DEV_CORS_ORIGINS: 'data:text/plain,x' })).toThrow(ZodError);
+  });
+
+  it('rejects cross-origin allowances in production', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({
+      ...base,
+      NODE_ENV: 'production',
+      PUBLIC_ORIGINS: 'https://hr.example.com',
+      DEV_CORS_ORIGINS: 'https://hr.example.com',
+    })).toThrow('DEV_CORS_ORIGINS is development-only');
+  });
+
+  it('requires and normalizes canonical public origins in production', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({ ...base, NODE_ENV: 'production' })).toThrow(
+      'PUBLIC_ORIGINS is required in production',
+    );
+    expect(parseServerEnv({
+      ...base,
+      NODE_ENV: 'production',
+      PUBLIC_ORIGINS: 'https://hr.example.com/, https://pos.example.com/path',
+    }).PUBLIC_ORIGINS).toEqual(['https://hr.example.com', 'https://pos.example.com']);
+  });
+
+  it('accepts only a bounded explicit trusted-proxy hop count', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(parseServerEnv({ ...base }).TRUST_PROXY_HOPS).toBeUndefined();
+    expect(parseServerEnv({ ...base, TRUST_PROXY_HOPS: '1' }).TRUST_PROXY_HOPS).toBe(1);
+    expect(() => parseServerEnv({ ...base, TRUST_PROXY_HOPS: '0' })).toThrow();
+    expect(() => parseServerEnv({ ...base, TRUST_PROXY_HOPS: '11' })).toThrow();
+  });
+
+  it('parses backend-owned display settings and employee upload limits', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(parseServerEnv({
+      ...base,
+      APP_TIME_ZONE: 'Africa/Cairo',
+      APP_LOCALE: 'ar-EG-u-nu-latn',
+      MAX_EMPLOYEE_IMAGE_BYTES: '16777216',
+    })).toMatchObject({
+      APP_TIME_ZONE: 'Africa/Cairo',
+      APP_LOCALE: 'ar-EG-u-nu-latn',
+      MAX_EMPLOYEE_IMAGE_BYTES: 16_777_216,
+    });
+  });
+
+  it('rejects display settings outside the locked Cairo and Arabic product configuration', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({ ...base, APP_TIME_ZONE: 'Not/AZone' })).toThrow();
+    expect(() => parseServerEnv({ ...base, APP_TIME_ZONE: 'UTC' })).toThrow(
+      'APP_TIME_ZONE must be Africa/Cairo',
+    );
+    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'not_a_locale' })).toThrow(
+      'APP_LOCALE must be ar-EG-u-nu-latn',
+    );
+    expect(() => parseServerEnv({ ...base, APP_LOCALE: 'en-US' })).toThrow(
+      'APP_LOCALE must be ar-EG-u-nu-latn',
+    );
+  });
+
+  it('rejects upload limits above the database ceiling', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(() => parseServerEnv({ ...base, MAX_EMPLOYEE_IMAGE_BYTES: '16777217' })).toThrow();
+  });
+
+  it('parses bounded report-worker polling and optional shared storage settings', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+
+    expect(parseServerEnv(base)).toMatchObject({ REPORT_WORKER_POLL_MS: 2_000 });
+    expect(parseServerEnv({
+      ...base,
+      REPORT_WORKER_POLL_MS: '500',
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+    })).toMatchObject({
+      REPORT_WORKER_POLL_MS: 500,
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+    });
+    expect(() => parseServerEnv({ ...base, REPORT_WORKER_POLL_MS: '99' })).toThrow();
+    expect(() => parseServerEnv({ ...base, REPORT_WORKER_POLL_MS: '60001' })).toThrow();
+  });
+
+  it('parses worker settings without accepting server credentials', async () => {
+    const { parseWorkerEnv } = await import('../src/worker.js');
+    const parsed = parseWorkerEnv({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://user:password@db/capella_hr',
+      APP_TIME_ZONE: 'Africa/Cairo',
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+      ADMIN_EMAIL: 'must-not-enter-worker@capella.test',
+      ADMIN_PASSWORD: 'must-not-enter-worker',
+    });
+
+    expect(parsed).toMatchObject({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'mysql://user:password@db/capella_hr',
+      APP_TIME_ZONE: 'Africa/Cairo',
+      REPORT_FILES_ROOT: '/app/uploads/reports',
+    });
+    expect(parsed).not.toHaveProperty('ADMIN_EMAIL');
+    expect(parsed).not.toHaveProperty('ADMIN_PASSWORD');
+  });
+
+  it('passes optional edition deployment settings through to the shared startup resolver', async () => {
+    const { parseServerEnv } = await import('../src/server.js');
+    const { parseWorkerEnv } = await import('../src/worker.js');
+    const base = {
+      DATABASE_URL: 'mysql://user:password@localhost/capella_hr',
+      ADMIN_EMAIL: 'admin@capella.test',
+      ADMIN_PASSWORD: 'password',
+      EDITION: 'erp',
+      COMPOSE_PROFILES: 'erp',
+    };
+
+    expect(parseServerEnv(base)).toMatchObject({ EDITION: 'erp', COMPOSE_PROFILES: 'erp' });
+    expect(parseWorkerEnv(base)).toMatchObject({ EDITION: 'erp', COMPOSE_PROFILES: 'erp' });
+  });
+});
