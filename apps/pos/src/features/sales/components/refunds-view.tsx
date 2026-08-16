@@ -4,8 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 
+import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
@@ -34,12 +35,18 @@ const statusTones = {
   voided: 'danger',
 } as const;
 
-function ReversalPanel({
+/**
+ * The chosen invoice takes over the screen instead of unfolding under its row: a
+ * reversal is one decision at a time, and the till operator should see nothing else.
+ */
+function ReversalDialog({
   invoiceId,
+  invoiceNumber,
   branchId,
   onClose,
 }: {
   invoiceId: number;
+  invoiceNumber: string;
   branchId?: number;
   onClose(): void;
 }) {
@@ -50,48 +57,47 @@ function ReversalPanel({
     retry: false,
   });
 
-  if (invoice.isPending) return <LoadingState label="جارٍ تحميل الفاتورة…" align="start" className="p-0" />;
-  if (invoice.isError) {
-    return (
-      <Notice tone="danger" role="alert">
-        <p>{responseMessage(invoice.error, 'تعذر تحميل الفاتورة.')}</p>
-        <Button variant="secondary" size="sm" className="mt-2" onClick={() => void invoice.refetch()}>
-          إعادة المحاولة
-        </Button>
-      </Notice>
-    );
-  }
-
-  const { canRefund, canVoid } = invoice.data.eligibility;
-
   return (
-    <Card className="shadow-card">
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="space-y-1">
-            <p className="font-mono font-semibold text-ink" dir="ltr">{invoice.data.invoiceNumber}</p>
-            <p className="text-sm text-ink">
-              {invoice.data.client.name} · {invoice.data.totals.total} ج.م
+    <Modal title={`مرتجع الفاتورة ${invoiceNumber}`} className="max-w-xl" onClose={onClose}>
+      {invoice.isPending ? (
+        <LoadingState label="جارٍ تحميل الفاتورة…" align="start" className="p-0" />
+      ) : null}
+      {invoice.isError ? (
+        <Notice tone="danger" role="alert">
+          <p>{responseMessage(invoice.error, 'تعذر تحميل الفاتورة.')}</p>
+          <Button variant="secondary" size="sm" className="mt-2" onClick={() => void invoice.refetch()}>
+            إعادة المحاولة
+          </Button>
+        </Notice>
+      ) : null}
+      {invoice.data ? (
+        <>
+          <div className="rounded-control border border-line bg-surface/50 p-3">
+            <p className="text-sm text-ink">{invoice.data.client.name}</p>
+            <p className="tabular text-lg font-semibold text-ink" dir="ltr">
+              {invoice.data.totals.total} ج.م
             </p>
             <time className="block text-[13px] text-muted" dateTime={invoice.data.soldAt}>
               {formatCairoDateTime(invoice.data.soldAt)}
             </time>
           </div>
-          <Button variant="ghost" onClick={onClose}>إغلاق</Button>
-        </div>
-        {canRefund || canVoid ? null : (
-          <p className="text-[13px] text-muted">لا يمكن استرداد أو إلغاء هذه الفاتورة.</p>
-        )}
-        <InvoiceReversalControls
-          invoice={invoice.data}
-          {...(branchId === undefined ? {} : { branchId })}
-          onUpdated={(updated) => {
-            queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), updated);
-            void invalidateErpCaches(queryClient, 'reversal');
-          }}
-        />
-      </CardContent>
-    </Card>
+          {invoice.data.eligibility.canRefund || invoice.data.eligibility.canVoid ? null : (
+            <p className="text-[13px] text-muted">لا يمكن استرداد أو إلغاء هذه الفاتورة.</p>
+          )}
+          <InvoiceReversalControls
+            invoice={invoice.data}
+            {...(branchId === undefined ? {} : { branchId })}
+            onUpdated={(updated) => {
+              queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), updated);
+              void invalidateErpCaches(queryClient, 'reversal');
+            }}
+          />
+        </>
+      ) : null}
+      <div className="flex justify-end">
+        <Button variant="ghost" onClick={onClose}>إغلاق</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -123,6 +129,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
     }),
     enabled: Boolean(actor) && (!isAdmin || branchId !== undefined),
   });
+  const selectedInvoice = invoices.data?.items.find((invoice) => invoice.id === selectedInvoiceId);
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6">
@@ -203,49 +210,69 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
         </Card>
       ) : null}
 
-      <ul className="space-y-2">
-        {invoices.data?.items.map((invoice) => (
-          <li key={invoice.id}>
-            <Card className="shadow-card transition-shadow hover:shadow-raised">
-              <CardContent className="grid gap-2 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono font-semibold text-ink" dir="ltr">{invoice.invoiceNumber}</span>
+      {invoices.data?.items.length ? (
+        <Card className="overflow-hidden shadow-card">
+          <DataTable>
+            <THead>
+              <TH>الفاتورة</TH>
+              <TH>العميل</TH>
+              <TH>التاريخ</TH>
+              <TH numeric>الإجمالي</TH>
+              <TH>الحالة</TH>
+              <TH><span className="sr-only">إجراءات</span></TH>
+            </THead>
+            <tbody>
+              {invoices.data.items.map((invoice) => (
+                <TR key={invoice.id}>
+                  <TD>
+                    <span className="font-mono font-semibold text-ink" dir="ltr">
+                      {invoice.invoiceNumber}
+                    </span>
+                  </TD>
+                  <TD>
+                    <span className="text-ink">{invoice.client.name}</span>
+                    <span className="block text-[13px] text-muted">
+                      {invoice.assignedEmployee?.name ?? 'بدون موظف'}
+                    </span>
+                  </TD>
+                  <TD>
+                    <time className="text-[13px] text-muted" dateTime={invoice.soldAt}>
+                      {formatCairoDateTime(invoice.soldAt)}
+                    </time>
+                  </TD>
+                  <TD numeric>
+                    <strong className="font-semibold text-ink">{invoice.total} ج.م</strong>
+                  </TD>
+                  <TD>
                     <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
-                  </div>
-                  <p className="truncate text-sm text-ink">
-                    {invoice.client.name} · {invoice.assignedEmployee?.name ?? 'بدون موظف'}
-                  </p>
-                  <time className="block text-[13px] text-muted" dateTime={invoice.soldAt}>
-                    {formatCairoDateTime(invoice.soldAt)}
-                  </time>
-                </div>
-                <span className="flex items-center gap-3 sm:justify-end">
-                  <strong className="tabular text-lg font-semibold text-ink">{invoice.total} ج.م</strong>
-                  <Button
-                    variant="secondary"
-                    aria-label={`فتح مرتجع ${invoice.invoiceNumber}`}
-                    onClick={() => setSelectedInvoiceId(
-                      selectedInvoiceId === invoice.id ? undefined : invoice.id,
-                    )}
-                  >
-                    مرتجع
-                  </Button>
-                </span>
-              </CardContent>
-            </Card>
-            {selectedInvoiceId === invoice.id ? (
-              <div className="mt-2">
-                <ReversalPanel
-                  invoiceId={invoice.id}
-                  {...(branchId === undefined ? {} : { branchId })}
-                  onClose={() => setSelectedInvoiceId(undefined)}
-                />
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+                  </TD>
+                  <TD>
+                    <RowActions>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        aria-label={`فتح مرتجع ${invoice.invoiceNumber}`}
+                        onClick={() => setSelectedInvoiceId(invoice.id)}
+                      >
+                        مرتجع
+                      </Button>
+                    </RowActions>
+                  </TD>
+                </TR>
+              ))}
+            </tbody>
+          </DataTable>
+        </Card>
+      ) : null}
+
+      {selectedInvoice ? (
+        <ReversalDialog
+          invoiceId={selectedInvoice.id}
+          invoiceNumber={selectedInvoice.invoiceNumber}
+          {...(branchId === undefined ? {} : { branchId })}
+          onClose={() => setSelectedInvoiceId(undefined)}
+        />
+      ) : null}
 
       {invoices.data && invoices.data.meta.totalPages > 1 ? (
         <Card className="overflow-hidden shadow-card">

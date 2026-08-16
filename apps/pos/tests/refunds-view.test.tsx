@@ -97,16 +97,17 @@ describe('refunds tab', () => {
 
   afterEach(cleanup);
 
-  it('loads the chosen invoice into the reversal panel without leaving the tab', async () => {
+  it('loads the chosen invoice into a dialog without leaving the tab', async () => {
     renderView();
 
     await openInvoice();
 
     expect(await screen.findByRole('button', { name: 'استرداد' })).toBeDefined();
+    expect(screen.getByRole('dialog', { name: `مرتجع الفاتورة ${invoiceNumber}` })).toBeDefined();
     expect(getInvoice).toHaveBeenCalledWith(44, 2);
   });
 
-  it('quotes and confirms a partial refund with exact tender allocation and reason', async () => {
+  it('quotes and confirms a partial refund with automatic tender allocation and reason', async () => {
     const queryClient = renderView();
     for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {
       queryClient.setQueryData([key, 'existing'], { cached: true });
@@ -118,10 +119,7 @@ describe('refunds tab', () => {
       target: { value: '1' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
-      target: { value: '185.00' },
-    });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
 
     await waitFor(() => expect(refundInvoice).toHaveBeenCalledWith(44, expect.objectContaining({
@@ -173,10 +171,7 @@ describe('refunds tab', () => {
       payments: [{ method: 'cash', refundableAmount: '185.00' }],
     });
     fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
-      target: { value: '185.00' },
-    });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
     refundInvoice.mockRejectedValueOnce(new Error('network failure'));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
     expect(await screen.findByText('تعذر تنفيذ الاسترداد.')).toBeDefined();
@@ -189,73 +184,7 @@ describe('refunds tab', () => {
     expect(await screen.findByText('تعذر إلغاء الفاتورة.')).toBeDefined();
   });
 
-  it('disables refund confirmation and explains an unparsable entered tender', async () => {
-    renderView();
-    await openInvoice();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
-    fireEvent.change(screen.getByLabelText(
-      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
-    ), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
-      target: { value: 'invalid' },
-    });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
-
-    expect(screen.getByText('لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.')).toBeDefined();
-    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
-      .toBe(true);
-  });
-
-  it('disables refund confirmation for an unparsable server refundable amount', async () => {
-    quoteRefund.mockResolvedValueOnce({
-      lines: [{
-        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
-        quantity: 1,
-        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
-      }],
-      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
-      payments: [{ method: 'cash', refundableAmount: 'invalid' }],
-    });
-    renderView();
-    await openInvoice();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
-    fireEvent.change(screen.getByLabelText(
-      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
-    ), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
-      target: { value: '185.00' },
-    });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
-
-    expect(screen.getByText('لا يمكن تأكيد الاسترداد لأن أحد المبالغ غير صالح.')).toBeDefined();
-    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
-      .toBe(true);
-  });
-
-  it('explains a tender allocation that does not add up to the quoted refund', async () => {
-    renderView();
-    await openInvoice();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
-    fireEvent.change(screen.getByLabelText(
-      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
-    ), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
-      target: { value: '100.00' },
-    });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
-
-    expect(screen.getByText('مجموع المبالغ المدخلة يجب أن يساوي الإجمالي المسترد.')).toBeDefined();
-    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
-      .toBe(true);
-  });
-
-  it('explains a tender that exceeds what one payment method can refund', async () => {
+  it('spreads the refund over the payment methods the sale was paid with', async () => {
     quoteRefund.mockResolvedValueOnce({
       lines: [{
         invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
@@ -265,7 +194,7 @@ describe('refunds tab', () => {
       totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
       payments: [
         { method: 'cash', refundableAmount: '85.00' },
-        { method: 'visa', refundableAmount: '100.00' },
+        { method: 'visa', refundableAmount: '150.00' },
       ],
     });
     renderView();
@@ -276,13 +205,38 @@ describe('refunds tab', () => {
       `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
     ), { target: { value: '1' } });
     fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    // The total still matches the quote, so only the per-method ceiling is broken.
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), {
-      target: { value: '185.00' },
-    });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
 
-    expect(screen.getByText('أحد المبالغ المدخلة يتجاوز المتاح لطريقة الدفع.')).toBeDefined();
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledWith(44, expect.objectContaining({
+      payments: [
+        { method: 'cash', amount: '85.00' },
+        { method: 'visa', amount: '100.00' },
+      ],
+    })));
+  });
+
+  it('blocks the refund when the paid amounts cannot cover the quoted total', async () => {
+    quoteRefund.mockResolvedValueOnce({
+      lines: [{
+        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+        quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+      payments: [{ method: 'cash', refundableAmount: '85.00' }],
+    });
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+
+    expect(screen.getByText('تعذر توزيع المبلغ المسترد على طرق الدفع المسجلة للفاتورة.')).toBeDefined();
     expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
       .toBe(true);
   });
@@ -378,8 +332,7 @@ describe('refunds tab', () => {
       `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
     ), { target: { value: '1' } });
     fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
-    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '185.00' } });
-    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
     await waitFor(() => expect(refundInvoice).toHaveBeenCalledOnce());
     const originalKey = refundInvoice.mock.calls[0]![1].idempotencyKey;

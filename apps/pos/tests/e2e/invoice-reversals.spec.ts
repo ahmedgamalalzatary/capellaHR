@@ -187,7 +187,6 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
   await page.getByRole('button', { name: 'استرداد', exact: true }).click();
   await page.getByLabel(`كمية استرداد ${refundInvoice.lines[0]!.name}`).fill('1');
   await page.getByRole('button', { name: 'احسب الاسترداد' }).click();
-  await page.getByLabel('مبلغ الاسترداد نقدي').fill('92.50');
   await page.getByLabel('سبب الاسترداد').fill('عدم رضا العميل');
   await page.getByRole('button', { name: 'تأكيد الاسترداد' }).click();
   await expect(page.getByRole('heading', { name: 'سجل الإلغاء والاسترداد' })).toBeVisible();
