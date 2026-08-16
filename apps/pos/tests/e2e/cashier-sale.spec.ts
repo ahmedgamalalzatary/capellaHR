@@ -310,7 +310,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByLabel('الكاشير').selectOption('17');
   await page.getByRole('button', { name: /سارة علي/ }).click();
   await expect(page.getByText('تم سداد الإجمالي بالكامل')).toBeVisible();
-  await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
+  await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
   await page.getByRole('button', { name: 'تأكيد البيع' }).evaluate((button) => {
     (button as HTMLButtonElement).click();
     (button as HTMLButtonElement).click();
@@ -359,7 +359,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: /شامبو/ }).click();
   await page.getByLabel('الكاشير').selectOption('17');
-  await page.getByRole('button', { name: 'مراجعة وإتمام البيع' }).click();
+  await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
   await page.getByRole('button', { name: 'تأكيد البيع' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'تم بيع آخر وحدة من شامبو' })).toBeVisible();
   expect(completedSaleRequests).toBe(2);

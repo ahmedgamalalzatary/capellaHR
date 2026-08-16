@@ -49,6 +49,7 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 import { createUuid } from '@/lib/uuid';
 
 import { completeSale, quoteSale } from '../api/sales-api';
+import { Receipt } from './receipt';
 import {
   enqueueOfflineSale,
   getOfflineSaleQueueVersion,
@@ -351,6 +352,9 @@ function SaleWorkspace({
   const [storageError, setStorageError] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
   const [completed, setCompleted] = useState<PublicInvoiceDto | null>(null);
+  /** Asked once per saved sale: the receipt is optional, the invoice is already stored. */
+  const [printPrompt, setPrintPrompt] = useState(false);
+  const [printError, setPrintError] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(createUuid);
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
   const [conflictRestored, setConflictRestored] = useState(false);
@@ -661,6 +665,8 @@ function SaleWorkspace({
       setConflictRestored(false);
       setReplacesIdempotencyKey(null);
       setCompleted(invoice);
+      setPrintError(null);
+      setPrintPrompt(true);
       void invalidateErpCaches(queryClient, 'sale');
     },
     onError: (error, input) => {
@@ -780,6 +786,20 @@ function SaleWorkspace({
     completion.reset();
   };
 
+  /** The receipt is printed by the browser, so the counter printer needs no extra driver. */
+  const printReceipt = () => {
+    setPrintError(null);
+    if (typeof window.print !== 'function') {
+      setPrintError('الطباعة غير متاحة في هذا المتصفح. افتح الإيصال واطبعه من صفحة الفاتورة.');
+      return;
+    }
+    try {
+      window.print();
+    } catch {
+      setPrintError('تعذر فتح نافذة الطباعة. تحقق من إعدادات المتصفح والطابعة ثم حاول مرة أخرى.');
+    }
+  };
+
   const reset = () => {
     setClient(null);
     setEmployee(null);
@@ -790,6 +810,8 @@ function SaleWorkspace({
     setDiscountValue('');
     setTaxValue('');
     setCompleted(null);
+    setPrintPrompt(false);
+    setPrintError(null);
     setDraftRestored(false);
     setDraftStorageError(false);
     setConflictRestored(false);
@@ -801,25 +823,46 @@ function SaleWorkspace({
 
   if (completed) {
     return (
-      <Card className="mx-auto max-w-lg shadow-raised">
-        <CardHeader className="text-center"><CardTitle>تم حفظ الفاتورة</CardTitle></CardHeader>
-        <CardContent className="space-y-5 p-6 text-center">
-          <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-soft text-success">
-            <CircleCheck className="size-6" aria-hidden />
-          </span>
-          <div className="space-y-1">
-            <p className="font-mono text-sm font-semibold text-muted" dir="ltr">{completed.invoiceNumber}</p>
-            <p className="tabular text-3xl font-semibold text-ink">{completed.totals.total} ج.م</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <Link className="inline-flex h-9 items-center justify-center gap-2 rounded-control bg-ink px-4 text-sm font-medium text-paper transition-colors hover:bg-ink/85" href={`/invoices/${completed.id}${branchId ? `?branchId=${branchId}` : ''}`}>
-              <Printer className="size-4" aria-hidden />
-              عرض وطباعة الإيصال
-            </Link>
-            <Button variant="secondary" onClick={reset}><RotateCcw className="size-4" aria-hidden />بيع جديد</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <>
+        <Card data-print-controls className="mx-auto max-w-lg shadow-raised">
+          <CardHeader className="text-center"><CardTitle>تم حفظ الفاتورة</CardTitle></CardHeader>
+          <CardContent className="space-y-5 p-6 text-center">
+            <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-soft text-success">
+              <CircleCheck className="size-6" aria-hidden />
+            </span>
+            <div className="space-y-1">
+              <p className="font-mono text-sm font-semibold text-muted" dir="ltr">{completed.invoiceNumber}</p>
+              <p className="tabular text-3xl font-semibold text-ink">{completed.totals.total} ج.م</p>
+            </div>
+            {printError ? <p role="alert" className="text-[13px] text-danger">{printError}</p> : null}
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+              <Button onClick={printReceipt}><Printer className="size-4" aria-hidden />طباعة الإيصال</Button>
+              <Link className="inline-flex h-9 items-center justify-center gap-2 rounded-control border border-line px-4 text-sm font-medium text-ink transition-colors hover:bg-surface" href={`/invoices/${completed.id}${branchId ? `?branchId=${branchId}` : ''}`}>
+                عرض الإيصال
+              </Link>
+              <Button variant="secondary" onClick={reset}><RotateCcw className="size-4" aria-hidden />بيع جديد</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Only the receipt reaches the paper; the print stylesheet hides everything else. */}
+        <div className="hidden print:block">
+          <Receipt invoice={completed} />
+        </div>
+
+        {printPrompt ? (
+          <Modal title="طباعة الإيصال" onClose={() => setPrintPrompt(false)}>
+            <p className="text-sm">تم حفظ الفاتورة. هل تريد طباعة إيصال للعميل؟</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPrintPrompt(false)}>لا، شكراً</Button>
+              <Button onClick={() => { setPrintPrompt(false); printReceipt(); }}>
+                <Printer className="size-4" aria-hidden />
+                نعم، اطبع
+              </Button>
+            </div>
+          </Modal>
+        ) : null}
+      </>
     );
   }
 
@@ -1165,7 +1208,7 @@ function SaleWorkspace({
                   </p>
                 ) : null}
                 <Button size="lg" className="w-full" disabled={!ready} onClick={() => setConfirming(true)}>
-                  مراجعة وإتمام البيع
+                  مراجعة وإتمام البيع + طباعة
                 </Button>
               </CardContent>
             </Card>
