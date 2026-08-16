@@ -431,12 +431,17 @@ export const invoiceSchema = z.object({
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   branchId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
-  // Either half may be missing: a client is identified by a name or by a number.
+  // Either half may be missing, but never both: a client is identified by a
+  // name or by a number, and an invoice must say who it was sold to.
   client: z.object({
     id: positiveMysqlIntSchema,
     name: z.string().min(1).max(255).nullable(),
     phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
-  }).strict(),
+  }).strict().superRefine((value, context) => {
+    if (value.name === null && value.phone === null) {
+      context.addIssue({ code: 'custom', message: 'الفاتورة يجب أن تحمل اسم العميل أو رقم هاتفه' });
+    }
+  }),
   assignedEmployee: z.object({
     id: positiveMysqlIntSchema,
     employeeCode: positiveMysqlIntSchema,
@@ -552,9 +557,12 @@ export const invoiceHistoryItemSchema = z.object({
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   total: positiveMoneySchema,
+  // The phone travels with the row: a client recorded without a name is
+  // otherwise unidentifiable in the invoice list.
   client: z.object({
     id: positiveMysqlIntSchema,
     name: z.string().min(1).max(255).nullable(),
+    phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
   }).strict(),
   assignedEmployee: z.object({
     id: positiveMysqlIntSchema,

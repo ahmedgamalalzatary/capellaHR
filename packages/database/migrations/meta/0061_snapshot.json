@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "4d187a10-6274-48eb-a832-fe9b17fe77b6",
+  "id": "b5c98661-4db1-41d6-9d87-e14d2414be10",
   "prevId": "6a174016-7ef7-4c7d-ad28-ea1b8bdced3f",
   "tables": {
     "accounts": {
@@ -6715,6 +6715,10 @@
       },
       "uniqueConstraints": {},
       "checkConstraint": {
+        "erp_invoices_client_identity_present": {
+          "name": "erp_invoices_client_identity_present",
+          "value": "`erp_invoices`.`client_name_snapshot` is not null or `erp_invoices`.`client_phone_snapshot` is not null"
+        },
         "erp_invoices_subtotal_positive": {
           "name": "erp_invoices_subtotal_positive",
           "value": "`erp_invoices`.`subtotal` > 0"

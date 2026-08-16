@@ -479,9 +479,31 @@ describe('ERP complete-sale contracts', () => {
       invoiceNumber: 'INV-2026.08.03-14.35-17',
       status: 'completed',
       total: '185.00',
-      client: { id: 5, name: 'منى أحمد' },
+      client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
       assignedEmployee: { id: 8, name: 'سارة علي' },
       soldAt: '2026-08-03T11:35:00.000Z',
     }).success).toBe(true);
+  });
+
+  it('keeps a phone-only client identifiable in the stored history summary', () => {
+    const parsed = invoiceHistoryItemSchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      client: { id: 5, name: null, phone: '01012345678' },
+      assignedEmployee: null,
+      soldAt: '2026-08-03T11:35:00.000Z',
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.client.phone).toBe('01012345678');
+  });
+
+  it('refuses a stored invoice that names no client at all', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      client: { ...saleFixtures.completedInvoice.client, name: null, phone: null },
+    }).success).toBe(false);
   });
 });

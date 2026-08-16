@@ -188,8 +188,9 @@ describe('ExpensesView', () => {
     fireEvent.change(screen.getByLabelText('سبب التصحيح'), { target: { value: 'قيمة خاطئة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد التصحيح' }));
 
-    // The branch stays the account's own: it is never sent from the browser.
-    await waitFor(() => expect(mocks.correct).toHaveBeenCalledWith(10, expect.objectContaining({ branchId: undefined, amount: '100', reason: 'قيمة خاطئة' })));
+    // The branch stays the account's own: the key is absent, not merely undefined.
+    await waitFor(() => expect(mocks.correct).toHaveBeenCalledWith(10, expect.objectContaining({ amount: '100', reason: 'قيمة خاطئة' })));
+    expect(Object.hasOwn(mocks.correct.mock.calls[0]![1], 'branchId')).toBe(false);
   });
 
   it('offers retry when branch options fail to load', async () => {

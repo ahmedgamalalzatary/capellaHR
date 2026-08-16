@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { clientFormSchema } from '../src/features/clients/schemas/client-schemas';
 
 describe('clientFormSchema', () => {
-  test('requires a name or a phone, not both', () => {
+  test('requires a name or a phone', () => {
     const result = clientFormSchema.safeParse({ fullName: '   ', phone: '' });
 
     expect(result.success).toBe(false);

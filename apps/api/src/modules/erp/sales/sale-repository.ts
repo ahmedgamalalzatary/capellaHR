@@ -1055,6 +1055,7 @@ export const createDrizzleSaleRepository = (
         total: invoices.total,
         clientId: invoices.clientId,
         clientName: invoices.clientNameSnapshot,
+        clientPhone: invoices.clientPhoneSnapshot,
         employeeId: invoices.assignedEmployeeId,
         employeeName: invoices.employeeNameSnapshot,
         soldAt: invoices.soldAt,
@@ -1066,7 +1067,7 @@ export const createDrizzleSaleRepository = (
           invoiceNumber: row.invoiceNumber,
           status: row.status as Exclude<typeof row.status, 'draft'>,
           total: row.total,
-          client: { id: row.clientId, name: row.clientName },
+          client: { id: row.clientId, name: row.clientName, phone: row.clientPhone },
           assignedEmployee: row.employeeId === null ? null : {
             id: row.employeeId,
             name: row.employeeName!,

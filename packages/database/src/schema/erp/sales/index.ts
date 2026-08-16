@@ -83,6 +83,12 @@ export const invoices = mysqlTable('erp_invoices', {
   foreignKey({ name: 'erp_invoices_seller_branch_fk', columns: [table.sellerEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   foreignKey({ name: 'erp_invoices_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   foreignKey({ name: 'erp_invoices_session_branch_fk', columns: [table.cashierSessionId, table.branchId], foreignColumns: [cashierSessions.id, cashierSessions.branchId] }),
+  // The same rule the clients table enforces, kept on the ledger copy: an
+  // invoice must record who it was sold to, by name or by number.
+  check(
+    'erp_invoices_client_identity_present',
+    sql`${table.clientNameSnapshot} is not null or ${table.clientPhoneSnapshot} is not null`,
+  ),
   uniqueIndex('erp_invoices_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('erp_invoices_number_unique').on(table.invoiceNumber),
   uniqueIndex('erp_invoices_idempotency_unique').on(table.idempotencyKey),
