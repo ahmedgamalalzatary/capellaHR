@@ -150,7 +150,6 @@ export const createServiceCatalogService = (dependencies: {
         branchId?: number | undefined;
       },
     ) {
-      assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       await requireServiceCategory(branchId, input.categoryId);
 
@@ -195,7 +194,6 @@ export const createServiceCatalogService = (dependencies: {
         branchId?: number | undefined;
       },
     ) {
-      assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       const current = await readInBranch(branchId, id);
 

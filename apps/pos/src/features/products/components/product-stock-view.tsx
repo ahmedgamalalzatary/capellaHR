@@ -14,6 +14,7 @@ import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 
+import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -43,8 +44,20 @@ const cairoDate = (value: string) => new Intl.DateTimeFormat('ar-EG', {
 
 export function ProductStockView() {
   const queryClient = useQueryClient();
-  const branches = useQuery({ queryKey: ['product-branches'], queryFn: () => listCatalogBranches() });
-  const [branchId, setBranchId] = useState<number>();
+  /**
+   * A cashier manages the products of their own branch: the server pins every request to the
+   * branch of their account, so only an admin picks which branch to work on.
+   */
+  const session = useSession();
+  const isAdmin = session.data?.actor.type === 'admin';
+  const branches = useQuery({
+    queryKey: ['product-branches'],
+    queryFn: () => listCatalogBranches(),
+    enabled: isAdmin,
+  });
+  const [selectedBranchId, setSelectedBranchId] = useState<number>();
+  const branchId = isAdmin ? selectedBranchId : undefined;
+  const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
   const [search, setSearch] = useState('');
   const [lowStock, setLowStock] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -72,27 +85,27 @@ export function ProductStockView() {
     ...(movementProductId === undefined ? {} : { productId: movementProductId }),
     page: movementPage, pageSize: 20,
   };
-  const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listAllProducts(productParams), enabled: branchId !== undefined });
-  const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: branchId !== undefined });
+  const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listAllProducts(productParams), enabled: scopeReady });
+  const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(queryClient, 'product');
   const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setThreshold('0'); };
   const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setThreshold(String(product.lowStockThreshold)); };
 
   const save = useMutation({
     mutationFn: () => editing
-      ? updateProduct(editing.id, { branchId: branchId!, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold) })
-      : createProduct({ branchId: branchId!, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold) }),
+      ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold) })
+      : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold) }),
     onSuccess: async () => { clearProductForm(); setSuccessMessage('تم حفظ المنتج.'); await refresh(); },
   });
   const toggle = useMutation({
     mutationFn: (product: Product) => updateProduct(
       product.id,
-      { branchId: branchId!, isActive: !product.isActive },
+      { branchId, isActive: !product.isActive },
     ),
     onSuccess: async (_saved, product) => { setConfirmingToggle(null); setSuccessMessage(product.isActive ? 'تم إيقاف المنتج.' : 'تم تفعيل المنتج.'); await refresh(); },
   });
   const adjust = useMutation({
-    mutationFn: () => adjustProductStock(adjusting!.id, { branchId: branchId!, quantityDelta: Number(delta), reason, ...(note.trim() ? { note: note.trim() } : {}) }),
+    mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta: Number(delta), reason, ...(note.trim() ? { note: note.trim() } : {}) }),
     onSuccess: async () => { setAdjusting(null); setDelta(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); await refresh(); },
   });
   const commandPending = save.isPending || toggle.isPending || adjust.isPending;
@@ -105,39 +118,45 @@ export function ProductStockView() {
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
-      <Card className="shadow-card">
-        <CardContent className="p-4 sm:p-5">
-          {branches.isError ? (
-            <EmptyState
-              title="تعذر تحميل الفروع"
-              className="py-8"
-              action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
-            />
-          ) : (
-            <div className="space-y-1.5">
-              <Label htmlFor="product-branch">الفرع</Label>
-              <Select
-                id="product-branch"
-                className="max-w-sm"
-                value={branchId ?? ''}
-                disabled={commandPending}
-                onChange={(event) => {
-                  if (commandPending) return;
-                  setBranchId(event.target.value ? Number(event.target.value) : undefined);
-                  setEditing(null); setConfirmingToggle(null); setAdjusting(null);
-                  setMovementProductId(undefined); setMovementPage(1);
-                }}
-              >
-                <option value="">اختر الفرع</option>
-                {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </Select>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {isAdmin ? (
+        <Card className="shadow-card">
+          <CardContent className="p-4 sm:p-5">
+            {branches.isError ? (
+              <EmptyState
+                title="تعذر تحميل الفروع"
+                className="py-8"
+                action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
+              />
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="product-branch">الفرع</Label>
+                <Select
+                  id="product-branch"
+                  className="max-w-sm"
+                  value={selectedBranchId ?? ''}
+                  disabled={commandPending}
+                  onChange={(event) => {
+                    if (commandPending) return;
+                    setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
+                    setEditing(null); setConfirmingToggle(null); setAdjusting(null);
+                    setMovementProductId(undefined); setMovementPage(1);
+                  }}
+                >
+                  <option value="">اختر الفرع</option>
+                  {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </Select>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {branchId === undefined ? (
-        <Card className="shadow-card"><EmptyState title="اختر فرعًا لإدارة مخزونه" /></Card>
+      {!scopeReady ? (
+        <Card className="shadow-card">
+          {isAdmin
+            ? <EmptyState title="اختر فرعًا لإدارة مخزونه" />
+            : <LoadingState label="جارٍ التحقق من الجلسة…" className="py-16" />}
+        </Card>
       ) : (
         <>
           <Card className="shadow-card">

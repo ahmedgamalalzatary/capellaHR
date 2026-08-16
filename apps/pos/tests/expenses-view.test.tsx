@@ -175,14 +175,21 @@ describe('ExpensesView', () => {
     expect(mocks.categories).toHaveBeenCalledWith(expect.not.objectContaining({ branchId: expect.anything() }));
   });
 
-  it('hides expense correction from a cashier', async () => {
+  it('offers expense correction to a cashier for their own branch', async () => {
     actor.current = 'cashier';
     mocks.categories.mockResolvedValue({ items: [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], meta: { totalPages: 1 } });
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mocks.correct.mockResolvedValue({ original: expense, reversal: expense, replacement: expense });
     mount();
 
     await screen.findByText('مستلزمات');
-    expect(screen.queryByRole('button', { name: 'تصحيح' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تصحيح' }));
+    fireEvent.change(screen.getByLabelText('المبلغ الصحيح'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('سبب التصحيح'), { target: { value: 'قيمة خاطئة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد التصحيح' }));
+
+    // The branch stays the account's own: it is never sent from the browser.
+    await waitFor(() => expect(mocks.correct).toHaveBeenCalledWith(10, expect.objectContaining({ branchId: undefined, amount: '100', reason: 'قيمة خاطئة' })));
   });
 
   it('offers retry when branch options fail to load', async () => {

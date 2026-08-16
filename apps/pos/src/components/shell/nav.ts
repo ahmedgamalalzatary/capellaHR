@@ -7,7 +7,6 @@ import {
   Percent,
   ReceiptText,
   RotateCcw,
-  Scissors,
   ShoppingCart,
   Truck,
   UserCog,
@@ -62,6 +61,11 @@ export const adminNavigation: NavGroup[] = [
   },
 ];
 
+/**
+ * The Cashier runs the same branch operations an Admin does. Only oversight of
+ * other cashiers (shifts, accounts) and the money-analysis screens (commissions,
+ * reports) stay with the Admin.
+ */
 export const cashierNavigation: NavGroup[] = [
   {
     label: 'نقطة البيع',
@@ -69,10 +73,17 @@ export const cashierNavigation: NavGroup[] = [
       { href: '/', label: 'الوردية', icon: Clock3 },
       { href: '/sales', label: 'بيع جديد', icon: ShoppingCart },
       { href: '/invoices', label: 'الفواتير', icon: ReceiptText },
-      { href: '/expenses', label: 'المصروفات', icon: Wallet },
       { href: '/refunds', label: 'المرتجعات', icon: RotateCcw },
       { href: '/clients', label: 'العملاء', icon: Users },
-      { href: '/services', label: 'الخدمات', icon: Scissors },
+    ],
+  },
+  {
+    label: 'الإدارة',
+    items: [
+      { href: '/catalog', label: 'الكتالوج', icon: LayoutList },
+      { href: '/products', label: 'المنتجات والمخزون', icon: Package },
+      { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },
+      { href: '/expenses', label: 'المصروفات', icon: Wallet },
     ],
   },
 ];

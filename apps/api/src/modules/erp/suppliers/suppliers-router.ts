@@ -12,7 +12,7 @@ const failure = (response: Response, status: number, code: string, message: stri
 const actorFrom = (response: Response): ErpAccountIdentity => { const actor = erpActorFromLocals(response.locals.actor); if (!actor) throw new ErpBranchContextError('ERP_BRANCH_FORBIDDEN', 'غير مصرح لك بتنفيذ هذا الإجراء'); return actor; };
 const handle = (cause: unknown, response: Response) => {
   if (cause instanceof ZodError) { const fieldErrors: Record<string, string[]> = {}; for (const issue of cause.issues) (fieldErrors[issue.path.join('.') || '_root'] ??= []).push(issue.message); failure(response, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة', { fieldErrors }); return; }
-  if (cause instanceof PurchaseError) { const status = cause.code === 'ERP_PURCHASE_ADMIN_REQUIRED' ? 403 : cause.code.endsWith('NOT_FOUND') ? 404 : 409; failure(response, status, cause.code, cause.message, cause.existingId === undefined ? undefined : { existingId: cause.existingId }); return; }
+  if (cause instanceof PurchaseError) { const status = cause.code.endsWith('NOT_FOUND') ? 404 : 409; failure(response, status, cause.code, cause.message, cause.existingId === undefined ? undefined : { existingId: cause.existingId }); return; }
   if (cause instanceof ErpBranchContextError) { failure(response, cause.code === 'ERP_BRANCH_REQUIRED' ? 400 : cause.code === 'ERP_BRANCH_NOT_FOUND' ? 404 : 403, cause.code, cause.message); return; }
   throw cause;
 };

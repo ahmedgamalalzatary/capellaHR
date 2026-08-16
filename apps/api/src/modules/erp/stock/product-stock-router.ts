@@ -31,8 +31,7 @@ const handle = (cause: unknown, response: Response) => {
     return;
   }
   if (cause instanceof ProductStockError) {
-    const status = cause.code === 'ERP_STOCK_ADMIN_REQUIRED' ? 403
-      : cause.code === 'PRODUCT_NOT_FOUND' ? 404 : 409;
+    const status = cause.code === 'PRODUCT_NOT_FOUND' ? 404 : 409;
     failure(response, status, cause.code, cause.message, cause.existingId === undefined ? undefined : { existingId: cause.existingId });
     return;
   }

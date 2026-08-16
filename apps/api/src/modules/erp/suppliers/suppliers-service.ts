@@ -28,10 +28,10 @@ export interface SupplierPurchaseRepository {
   cancelPurchase(id: number, branchId: number, reason: string, actingAccountId: number): Promise<PurchaseRecord>;
 }
 
-export type PurchaseErrorCode = 'ERP_PURCHASE_ADMIN_REQUIRED' | 'SUPPLIER_NOT_FOUND' | 'SUPPLIER_INACTIVE' | 'SUPPLIER_NAME_EXISTS' | 'PURCHASE_NOT_FOUND' | 'PURCHASE_ALREADY_CANCELLED' | 'PURCHASE_CORRECTION_INVALID' | 'PURCHASE_IDEMPOTENCY_CONFLICT' | 'PURCHASE_PRODUCT_NOT_FOUND' | 'PURCHASE_PRODUCT_INACTIVE' | 'PURCHASE_CANCELLATION_UNSAFE' | 'PURCHASE_STOCK_OVERFLOW';
+export type PurchaseErrorCode = 'SUPPLIER_NOT_FOUND' | 'SUPPLIER_INACTIVE' | 'SUPPLIER_NAME_EXISTS' | 'PURCHASE_NOT_FOUND' | 'PURCHASE_ALREADY_CANCELLED' | 'PURCHASE_CORRECTION_INVALID' | 'PURCHASE_IDEMPOTENCY_CONFLICT' | 'PURCHASE_PRODUCT_NOT_FOUND' | 'PURCHASE_PRODUCT_INACTIVE' | 'PURCHASE_CANCELLATION_UNSAFE' | 'PURCHASE_STOCK_OVERFLOW';
 export class PurchaseError extends Error { constructor(public readonly code: PurchaseErrorCode, message: string, public readonly existingId?: number) { super(message); this.name = 'PurchaseError'; } }
 const messages: Record<PurchaseErrorCode, string> = {
-  ERP_PURCHASE_ADMIN_REQUIRED: 'إدارة الموردين والمشتريات متاحة للمدير فقط', SUPPLIER_NOT_FOUND: 'المورد غير موجود',
+  SUPPLIER_NOT_FOUND: 'المورد غير موجود',
   SUPPLIER_INACTIVE: 'المورد غير نشط', SUPPLIER_NAME_EXISTS: 'اسم المورد مستخدم بالفعل', PURCHASE_NOT_FOUND: 'المشتريات غير موجودة',
   PURCHASE_ALREADY_CANCELLED: 'تم إلغاء المشتريات من قبل', PURCHASE_CORRECTION_INVALID: 'مرجع التصحيح غير صالح أو سبق تصحيحه',
   PURCHASE_IDEMPOTENCY_CONFLICT: 'مفتاح إعادة المحاولة مستخدم لمشتريات مختلفة',
@@ -53,10 +53,7 @@ const cents = (money: string) => {
 const money = (value: bigint) => `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
 
 export const createSupplierPurchaseService = ({ repository, resolveBranchContext }: { repository: SupplierPurchaseRepository; resolveBranchContext: ErpBranchContextResolver }) => {
-  const context = async (actor: ErpAccountIdentity, branchId?: number) => {
-    if (actor.role !== 'admin') throw purchaseError('ERP_PURCHASE_ADMIN_REQUIRED');
-    return resolveBranchContext(actor, branchId);
-  };
+  const context = (actor: ErpAccountIdentity, branchId?: number) => resolveBranchContext(actor, branchId);
   const supplierInBranch = async (branchId: number, id: number) => {
     const record = await repository.findSupplierById(id);
     if (!record || record.branchId !== branchId) throw purchaseError('SUPPLIER_NOT_FOUND');

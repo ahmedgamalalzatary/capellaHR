@@ -41,12 +41,18 @@ describe('ERP product stock service', () => {
     }), 7);
   });
 
-  it('allows Cashiers to search their branch but not administer products', async () => {
+  it('lets a Cashier administer the products of their own branch', async () => {
+    // The Cashier owns the products screen, so they read and write the same
+    // record an Admin does — the resolver still pins the branch.
     const result = await service().list(cashier, { page: 1, pageSize: 20 });
     expect(result).toMatchObject({ total: 1 });
-    expect(result.items[0]).not.toHaveProperty('lastPurchaseCost');
-    expect(result.items[0]).not.toHaveProperty('lowStockThreshold');
-    await expect(service().update(cashier, 11, { name: 'X' })).rejects.toMatchObject({ code: 'ERP_STOCK_ADMIN_REQUIRED' });
+    expect(result.items[0]).toMatchObject({ lastPurchaseCost: '70.00', lowStockThreshold: 3 });
+
+    await expect(service().update(cashier, 11, { name: 'X' })).resolves.toMatchObject({ id: 11 });
+    await expect(service().adjust(cashier, 11, { quantityDelta: 1, reason: 'count_correction' }))
+      .resolves.toMatchObject({ movementId: 44 });
+    await expect(service().listMovements(cashier, { page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ total: 0 });
   });
 
   it('rejects an adjustment that would make stock negative', async () => {

@@ -3,7 +3,6 @@ import type {
   ClientVisitSummary,
   CompleteSaleInput,
   InvoiceDto,
-  PublicInvoiceDto,
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
@@ -127,18 +126,6 @@ export const createSaleService = (dependencies: {
   };
 }) => {
   const { repository, resolveBranchContext, assignment, invoiceNumbers } = dependencies;
-  const publicInvoice = (actor: ErpAccountIdentity, invoice: InvoiceDto): InvoiceDto | PublicInvoiceDto => {
-    if (actor.role === 'admin') return invoice;
-    return {
-      ...invoice,
-      lines: invoice.lines.map((line) => {
-        const safeLine = { ...line };
-        Reflect.deleteProperty(safeLine, 'productCostBasis');
-        return safeLine;
-      }),
-    };
-  };
-
   const resolveInput = async (actor: ErpAccountIdentity, input: CompleteSaleInput) => {
     const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
     return { resolved: { ...input, branchId }, accountId };
@@ -168,7 +155,7 @@ export const createSaleService = (dependencies: {
         }),
         resolved,
       );
-      if (existing) return publicInvoice(actor, existing);
+      if (existing) return existing;
 
       const number = await invoiceNumbers.allocate();
       try {
@@ -186,7 +173,7 @@ export const createSaleService = (dependencies: {
             }, context),
           } : {}),
         });
-        return publicInvoice(actor, invoice);
+        return invoice;
       } catch (error) {
         if (error instanceof ErpAssignmentError) {
           throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
@@ -201,7 +188,7 @@ export const createSaleService = (dependencies: {
         type: 'refund', invoiceId, input: { ...input, branchId },
         actingAccountId: accountId, actingAccountRole: actor.role, reversedAt: new Date(),
       });
-      return publicInvoice(actor, invoice);
+      return invoice;
     },
 
     async quoteRefund(actor: ErpAccountIdentity, invoiceId: number, input: RefundQuoteInput) {
@@ -250,7 +237,7 @@ export const createSaleService = (dependencies: {
         type: 'void', invoiceId, input: { ...input, branchId },
         actingAccountId: accountId, actingAccountRole: actor.role, reversedAt: new Date(),
       });
-      return publicInvoice(actor, invoice);
+      return invoice;
     },
 
     async listClientVisits(
@@ -275,7 +262,7 @@ export const createSaleService = (dependencies: {
       const { branchId } = await resolveBranchContext(actor, requestedBranchId);
       const invoice = await repository.findInvoiceById(branchId, invoiceId);
       if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
-      return publicInvoice(actor, invoice);
+      return invoice;
     },
   };
 };

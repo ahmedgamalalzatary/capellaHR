@@ -5,6 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ createSupplier: vi.fn(), updateSupplier: vi.fn(), postPurchase: vi.fn(), cancelPurchase: vi.fn(), listPurchases: vi.fn(), listSuppliers: vi.fn(), listProducts: vi.fn() }));
 const supplier = { id: 3, branchId: 2, name: 'مورد النيل', phone: '0100', notes: null, isActive: true, createdAt: '2026-08-05T10:00:00Z', updatedAt: '2026-08-05T10:00:00Z' };
 const purchase = { id: 9, branchId: 2, supplierId: 3, supplierName: 'مورد النيل', status: 'posted', purchaseDate: '2026-08-05', total: '25.00', actingAccountId: 1, actingUsername: 'admin', cancelledAt: null, cancelledByAccountId: null, cancellationReason: null, correctsPurchaseId: null, correctedByPurchaseId: null, createdAt: '2026-08-05T10:00:00Z', lines: [{ id: 1, purchaseId: 9, branchId: 2, productId: 4, productNameSnapshot: 'شامبو', quantity: 2, unitCost: '12.50', previousUnitCost: '8.00', lineTotal: '25.00', postedBalanceAfter: 7, cancellationBalanceAfter: null }] };
+const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({
+    isSuccess: true,
+    data: { actor: actor.current === 'admin' ? { type: 'admin', accountId: 1 } : { type: 'cashier', accountId: 2 } },
+  }),
+}));
 vi.mock('../src/features/catalog', () => ({ listCatalogBranches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }, { id: 5, name: 'الفرع الثاني' }] })) }));
 vi.mock('../src/features/products/api/products-api', () => ({ listAllProducts: mocks.listProducts }));
 vi.mock('../src/features/suppliers/api/suppliers-api', () => ({
@@ -20,10 +27,24 @@ const renderView = () => {
   return queryClient;
 };
 
-beforeEach(() => { mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
+beforeEach(() => { actor.current = 'admin'; mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('SuppliersPurchasesView', () => {
+  it('runs suppliers and purchases for a cashier branch without asking which branch', async () => {
+    actor.current = 'cashier';
+    renderView();
+
+    // The server pins a cashier to the branch of their own account, so there is nothing to pick.
+    await screen.findByText('#9');
+    expect(screen.queryByLabelText('الفرع')).toBeNull();
+    fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
+
+    await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledWith(expect.not.objectContaining({ branchId: expect.anything() })));
+    expect(mocks.listPurchases).toHaveBeenCalledWith(expect.not.objectContaining({ branchId: expect.anything() }));
+  });
+
   it('announces supplier and purchase-history loading', async () => {
     mocks.listSuppliers.mockReturnValue(new Promise(() => undefined));
     mocks.listPurchases.mockReturnValue(new Promise(() => undefined));

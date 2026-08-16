@@ -33,9 +33,8 @@ const kindTone = (expense: Expense) => expense.kind === 'reversal'
 export function ExpensesView() {
   const client = useQueryClient();
   /**
-   * A cashier records the spending of their own shift: the server pins every request to the
-   * branch of their account, so there is no branch to choose. Correcting a posted expense
-   * rewrites the ledger and stays with the admin.
+   * A cashier records, reads and corrects the spending of their own branch: the server pins
+   * every request to the branch of their account, so there is no branch to choose.
    */
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
@@ -242,7 +241,7 @@ export function ExpensesView() {
                           <TH>الوصف</TH>
                           <TH numeric>المبلغ</TH>
                           <TH>الحالة والمنفذ</TH>
-                          {isAdmin ? <TH>الإجراء</TH> : null}
+                          <TH>الإجراء</TH>
                         </THead>
                         <tbody>
                           {expenses.data.items.map((expense) => (
@@ -262,13 +261,11 @@ export function ExpensesView() {
                                   {expense.actingUsername}{expense.reversalOfId ? ` · يعكس #${expense.reversalOfId}` : expense.supersedesId ? ` · بديل #${expense.supersedesId}` : ''}
                                 </span>
                               </TD>
-                              {isAdmin ? (
-                                <TD>
-                                  {expense.kind === 'expense' && expense.status === 'active' ? (
-                                    <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => beginCorrection(expense)}>تصحيح</Button>
-                                  ) : null}
-                                </TD>
-                              ) : null}
+                              <TD>
+                                {expense.kind === 'expense' && expense.status === 'active' ? (
+                                  <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => beginCorrection(expense)}>تصحيح</Button>
+                                ) : null}
+                              </TD>
                             </TR>
                           ))}
                         </tbody>

@@ -131,21 +131,24 @@ describe('PosShell', () => {
     expect(screen.queryByRole('link', { name: 'حسابات الكاشير' })).toBeNull();
   });
 
-  test('shows the catalog-administration link for an admin actor only', async () => {
+  test('gives a cashier the same operating sections an admin has', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+
+    for (const label of ['الكتالوج', 'المنتجات والمخزون', 'الموردون والمشتريات', 'المصروفات', 'العملاء']) {
+      expect(await screen.findByRole('link', { name: label })).toBeDefined();
+    }
+  });
+
+  test('hides the cashier-sessions oversight link from a cashier', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell();
-    expect(await screen.findByRole('link', { name: 'الكتالوج' })).toBeDefined();
+    expect(await screen.findByRole('link', { name: 'ورديات الكاشير' })).toBeDefined();
 
     cleanup();
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'الكتالوج' })).toBeNull());
-  });
-
-  test('shows the service-browsing link to a cashier, who needs it to sell', async () => {
-    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
-    renderShell();
-    expect(await screen.findByRole('link', { name: 'الخدمات' })).toBeDefined();
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ورديات الكاشير' })).toBeNull());
   });
 
   test('shows the service-sale workflow link to every ERP account', async () => {

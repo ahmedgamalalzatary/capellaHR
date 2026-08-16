@@ -5,6 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   update: vi.fn(), adjust: vi.fn(), create: vi.fn(), listProducts: vi.fn(), movements: vi.fn(),
 }));
+const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({
+    isSuccess: true,
+    data: { actor: actor.current === 'admin' ? { type: 'admin', accountId: 1 } : { type: 'cashier', accountId: 2 } },
+  }),
+}));
 const product = {
   id: 4, branchId: 2, name: 'شامبو', description: 'للشعر', sellingPrice: '100.00',
   lastPurchaseCost: '60.00', lowStockThreshold: 2, isActive: true, quantity: 5,
@@ -29,6 +36,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  actor.current = 'admin';
   mocks.listProducts.mockResolvedValue({
     items: [product], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
   });
@@ -139,6 +147,22 @@ describe('ProductStockView', () => {
     fireEvent.click(dismiss);
     expect(mocks.update).toHaveBeenCalledTimes(1);
     expect(dialog).toBeDefined();
+  });
+
+  it('manages the products of a cashier branch without asking which branch', async () => {
+    mocks.update.mockResolvedValue(product);
+    actor.current = 'cashier';
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+
+    // The server pins a cashier to the branch of their own account, so there is nothing to pick.
+    await screen.findAllByText('شامبو');
+    expect(screen.queryByLabelText('الفرع')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    fireEvent.change(screen.getByLabelText('سعر البيع'), { target: { value: '110' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التعديل' }));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(4, expect.objectContaining({ branchId: undefined, sellingPrice: '110' })));
+    expect(mocks.listProducts).toHaveBeenCalledWith(expect.not.objectContaining({ branchId: expect.anything() }));
   });
 
   it('clears branch-specific state when the branch changes', async () => {

@@ -88,15 +88,6 @@ const productInvoice = {
     productCostBasis: '60.00',
   }],
 } satisfies InvoiceDto;
-const cashierInvoice = {
-  ...invoice,
-  lines: invoice.lines.map((line) => {
-    const safeLine = { ...line };
-    Reflect.deleteProperty(safeLine, 'productCostBasis');
-    return safeLine;
-  }),
-};
-
 const setup = (overrides: Partial<SaleRepository> = {}) => {
   const quoteRepository = vi.fn().mockResolvedValue(quote);
   const findByIdempotencyKey = vi.fn().mockResolvedValue(null);
@@ -173,7 +164,7 @@ describe('ERP sale service', () => {
       void(actorValue: typeof actor, invoiceId: number, input: {
         idempotencyKey: string; reason: string;
       }): Promise<unknown>;
-    }).refund(actor, 44, refund)).resolves.toEqual(cashierInvoice);
+    }).refund(actor, 44, refund)).resolves.toEqual(invoice);
     await (service as unknown as {
       void(actorValue: typeof actor, invoiceId: number, input: {
         idempotencyKey: string; reason: string;
@@ -207,7 +198,7 @@ describe('ERP sale service', () => {
     const { service, completeRepository } = setup({
       findByIdempotencyKey,
     });
-    await expect(service.complete(actor, input)).resolves.toEqual(cashierInvoice);
+    await expect(service.complete(actor, input)).resolves.toEqual(invoice);
     expect(findByIdempotencyKey).toHaveBeenCalledWith(input.idempotencyKey, {
       actingAccountId: actor.accountId,
       actingAccountRole: actor.role,
@@ -215,7 +206,8 @@ describe('ERP sale service', () => {
     expect(completeRepository).not.toHaveBeenCalled();
   });
 
-  it('never exposes product cost basis to a Cashier on completion or invoice detail', async () => {
+  it('shows a Cashier the same invoice an Admin reads, cost basis included', async () => {
+    // The Cashier runs the products screen, so the cost is theirs to see here too.
     const { service } = setup({
       complete: vi.fn().mockResolvedValue(productInvoice),
       findInvoiceById: vi.fn().mockResolvedValue(productInvoice),
@@ -224,8 +216,8 @@ describe('ERP sale service', () => {
     const completed = await service.complete(actor, productInput);
     const detail = await service.getInvoice(actor, productInvoice.id);
 
-    expect(completed.lines[0]).not.toHaveProperty('productCostBasis');
-    expect(detail.lines[0]).not.toHaveProperty('productCostBasis');
+    expect(completed.lines[0]).toHaveProperty('productCostBasis', '60.00');
+    expect(detail.lines[0]).toHaveProperty('productCostBasis', '60.00');
   });
 
   it('retains product cost basis for Admin invoice responses', async () => {
@@ -307,7 +299,7 @@ describe('ERP sale service', () => {
   it('lists and reads stored invoices only through the resolved branch', async () => {
     const { service, listInvoices, findInvoiceById } = setup();
     await service.listInvoices(actor, { page: 2, pageSize: 10 });
-    await expect(service.getInvoice(actor, 44, undefined)).resolves.toEqual(cashierInvoice);
+    await expect(service.getInvoice(actor, 44, undefined)).resolves.toEqual(invoice);
 
     expect(listInvoices).toHaveBeenCalledWith(2, { page: 2, pageSize: 10 });
     expect(findInvoiceById).toHaveBeenCalledWith(2, 44);

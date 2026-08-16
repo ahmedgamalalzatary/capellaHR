@@ -45,12 +45,10 @@ describe('expense service', () => {
     await expect(service.list(cashier, { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 1 });
   });
 
-  it('keeps correcting a recorded expense an admin-only action', async () => {
+  it('lets a cashier correct an expense of their own branch', async () => {
     const service = createExpenseService({ repository: repository(), resolveBranchContext: resolver });
-    await expect(service.correct(cashier, 10, { branchId: 2, categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' })).rejects.toMatchObject({
-      code: 'ERP_EXPENSE_ADMIN_REQUIRED',
-      message: 'تصحيح المصروفات متاح للمدير فقط',
-    });
+    await expect(service.correct(cashier, 10, { categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' }))
+      .resolves.toMatchObject({ reversal: { id: 11 }, replacement: { id: 12 } });
   });
 
   it('hides another branch record as not found', async () => {

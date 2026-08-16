@@ -129,10 +129,13 @@ describe('ERP category service', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 7, name: 'شعر', type: 'service' }));
   });
 
-  it('refuses catalog administration by a cashier', async () => {
-    // Catalog administration is Admin work; a Cashier may only browse.
-    await expect(categories(categoryRepository()).create(CASHIER, { name: 'شعر', type: 'service' }))
-      .rejects.toMatchObject({ code: 'ERP_CATALOG_ADMIN_REQUIRED' });
+  it('lets a cashier administer the catalog of their own branch', async () => {
+    // The Cashier owns the catalog screen; the resolver still pins the branch.
+    const create = vi.fn(async (input: Parameters<CategoryRepository['create']>[0]) => category(input));
+    await categories(categoryRepository({ create }), 4)
+      .create(CASHIER, { name: 'شعر', type: 'service', branchId: 999 });
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ branchId: 4, name: 'شعر' }));
   });
 
   it('lets a cashier browse categories without naming a branch', async () => {
@@ -269,10 +272,11 @@ describe('ERP service catalog service', () => {
       .rejects.toMatchObject({ code: 'SERVICE_PRICE_LOCKED' });
   });
 
-  it('refuses service administration by a cashier', async () => {
-    await expect(services(serviceRepository())
-      .create(CASHIER, { name: 'صبغة', categoryId: 1, price: '150.00', commissionPercent: '0.00' }))
-      .rejects.toMatchObject({ code: 'ERP_CATALOG_ADMIN_REQUIRED' });
+  it('lets a cashier administer services of their own branch', async () => {
+    const created = await services(serviceRepository())
+      .create(CASHIER, { name: 'صبغة', categoryId: 1, price: '150.00', commissionPercent: '0.00' });
+
+    expect(created).toMatchObject({ name: 'صبغة' });
   });
 
   it('rejects a category that belongs to another branch', async () => {

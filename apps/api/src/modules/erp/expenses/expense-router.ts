@@ -21,7 +21,7 @@ const handle = (cause: unknown, response: Response) => {
     failure(response, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة', { fieldErrors }); return;
   }
   if (cause instanceof ExpenseError) {
-    const status = cause.code === 'ERP_EXPENSE_ADMIN_REQUIRED' ? 403 : cause.code === 'EXPENSE_NOT_FOUND' ? 404 : 409;
+    const status = cause.code === 'EXPENSE_NOT_FOUND' ? 404 : 409;
     failure(response, status, cause.code, cause.message); return;
   }
   if (cause instanceof ErpBranchContextError) {

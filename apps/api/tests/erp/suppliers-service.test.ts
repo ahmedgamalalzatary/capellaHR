@@ -24,11 +24,20 @@ describe('ERP supplier and purchase service', () => {
     expect(isSupplierDuplicateEntryError({ cause: 'ER_DUP_ENTRY' })).toBe(false);
   });
 
-  it('normalizes and creates branch-scoped suppliers for Admin only', async () => {
+  it('normalizes and creates branch-scoped suppliers', async () => {
     const repo = repository();
     await service(repo).createSupplier(admin, { branchId: 2, name: '  NILE  ', phone: '0100', notes: null });
     expect(vi.mocked(Reflect.get(repo, 'createSupplier'))).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, name: 'NILE', nameNormalized: expect.stringMatching(/^[a-f0-9]{64}$/) }), 7);
-    await expect(service().createSupplier(cashier, { name: 'X' })).rejects.toMatchObject({ code: 'ERP_PURCHASE_ADMIN_REQUIRED' });
+  });
+
+  it('lets a Cashier run suppliers and purchases for their own branch', async () => {
+    // Suppliers and purchases are a Cashier screen now; the resolver pins the branch.
+    await expect(service().createSupplier(cashier, { name: 'X' })).resolves.toMatchObject({ id: 3 });
+    await expect(service().listPurchases(cashier, { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 1 });
+    await expect(service().postPurchase(cashier, {
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631', supplierId: 3, purchaseDate: '2026-08-05',
+      lines: [{ productId: 11, quantity: 1, unitCost: '10.00' }],
+    })).resolves.toMatchObject({ id: 9 });
   });
 
   it('calculates exact line totals and posts through one repository transaction', async () => {

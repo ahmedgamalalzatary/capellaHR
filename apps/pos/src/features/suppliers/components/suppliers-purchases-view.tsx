@@ -13,6 +13,7 @@ import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
+import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
 import { listAllProducts, productQueryKeys } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
@@ -54,7 +55,15 @@ const exactTotal = (lines: DraftLine[]) => {
 
 export function SuppliersPurchasesView() {
   const queryClient = useQueryClient();
-  const [branchId, setBranchId] = useState<number>();
+  /**
+   * A cashier runs the suppliers and purchases of their own branch: the server pins every
+   * request to the branch of their account, so only an admin picks which branch to work on.
+   */
+  const session = useSession();
+  const isAdmin = session.data?.actor.type === 'admin';
+  const [selectedBranchId, setSelectedBranchId] = useState<number>();
+  const branchId = isAdmin ? selectedBranchId : undefined;
+  const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
   const [supplierName, setSupplierName] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
@@ -74,24 +83,29 @@ export function SuppliersPurchasesView() {
   const [reason, setReason] = useState('');
   const [successMessage, setSuccessMessage] = useState<string>();
 
-  const branches = useQuery({ queryKey: ['supplier-branches'], queryFn: () => listCatalogBranches() });
-  const supplierParams = { ...(branchId === undefined ? {} : { branchId }), pageSize: 100 };
+  const branches = useQuery({
+    queryKey: ['supplier-branches'],
+    queryFn: () => listCatalogBranches(),
+    enabled: isAdmin,
+  });
+  const branchScope = branchId === undefined ? {} : { branchId };
+  const supplierParams = { ...branchScope, pageSize: 100 };
   const suppliers = useQuery({
     queryKey: supplierQueryKeys.suppliers(supplierParams),
     queryFn: () => listAllSuppliers(supplierParams),
-    enabled: branchId !== undefined,
+    enabled: scopeReady,
   });
   const activeProductParams = { ...(branchId === undefined ? {} : { branchId }), isActive: true };
   const historyProductParams = branchId === undefined ? {} : { branchId };
   const activeProducts = useQuery({
     queryKey: productQueryKeys.list(activeProductParams),
     queryFn: () => listAllProducts(activeProductParams),
-    enabled: branchId !== undefined,
+    enabled: scopeReady,
   });
   const historyProducts = useQuery({
     queryKey: productQueryKeys.list(historyProductParams),
     queryFn: () => listAllProducts(historyProductParams),
-    enabled: branchId !== undefined,
+    enabled: scopeReady,
   });
   const historyParams = {
     ...(branchId === undefined ? {} : { branchId }),
@@ -104,7 +118,7 @@ export function SuppliersPurchasesView() {
   const purchases = useQuery({
     queryKey: supplierQueryKeys.purchases(historyParams),
     queryFn: () => listPurchases(historyParams),
-    enabled: branchId !== undefined,
+    enabled: scopeReady,
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: supplierQueryKeys.all });
@@ -120,7 +134,7 @@ export function SuppliersPurchasesView() {
   };
   const changeBranch = (value: string) => {
     if (saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending) return;
-    setBranchId(value ? Number(value) : undefined);
+    setSelectedBranchId(value ? Number(value) : undefined);
     clearSupplier(); resetDraft(); setHistorySupplier(''); setHistoryProduct(''); setStatus('');
     setPage(1); setConfirmingToggle(null); setCancelling(null); setReason('');
   };
@@ -147,9 +161,9 @@ export function SuppliersPurchasesView() {
 
   const saveSupplier = useMutation({
     mutationFn: () => editing
-      ? updateSupplier(editing.id, { branchId: branchId!, name: supplierName, phone, notes })
+      ? updateSupplier(editing.id, { ...branchScope, name: supplierName, phone, notes })
       : createSupplier({
-          branchId: branchId!, name: supplierName,
+          ...branchScope, name: supplierName,
           ...(phone.trim() ? { phone: phone.trim() } : {}), notes,
         }),
     onSuccess: async () => { clearSupplier(); setSuccessMessage('تم حفظ المورد.'); await refresh(); },
@@ -157,7 +171,7 @@ export function SuppliersPurchasesView() {
   const toggleSupplier = useMutation({
     mutationFn: (supplier: Supplier) => updateSupplier(
       supplier.id,
-      { branchId: branchId!, isActive: !supplier.isActive },
+      { ...branchScope, isActive: !supplier.isActive },
     ),
     onSuccess: async (_updated, supplier) => {
       setConfirmingToggle(null);
@@ -170,7 +184,7 @@ export function SuppliersPurchasesView() {
   });
   const post = useMutation({
     mutationFn: () => postPurchase({
-      branchId: branchId!, idempotencyKey, supplierId: Number(supplierId), purchaseDate,
+      ...branchScope, idempotencyKey, supplierId: Number(supplierId), purchaseDate,
       lines: lines.map((line) => ({
         productId: Number(line.productId), quantity: Number(line.quantity), unitCost: line.unitCost,
       })),
@@ -179,7 +193,7 @@ export function SuppliersPurchasesView() {
     onSuccess: async () => { resetDraft(); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
   });
   const cancel = useMutation({
-    mutationFn: () => cancelPurchase(cancelling!.id, { branchId: branchId!, reason }),
+    mutationFn: () => cancelPurchase(cancelling!.id, { ...branchScope, reason }),
     onSuccess: async () => { closeCancellation(); setSuccessMessage('تم إلغاء المشتريات وعكس أثر المخزون.'); await refreshPurchase(); },
   });
   const validLines = lines.length > 0 && lines.every((line) => (
@@ -196,34 +210,40 @@ export function SuppliersPurchasesView() {
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
-      <Card className="shadow-card">
-        <CardContent className="p-4 sm:p-5">
-          {branches.isError ? (
-            <EmptyState
-              title="تعذر تحميل الفروع"
-              className="py-8"
-              action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
-            />
-          ) : (
-            <div className="space-y-1.5">
-              <Label htmlFor="supplier-branch">الفرع</Label>
-              <Select
-                id="supplier-branch"
-                className="max-w-sm"
-                value={branchId ?? ''}
-                disabled={commandPending}
-                onChange={(event) => changeBranch(event.target.value)}
-              >
-                <option value="">اختر الفرع</option>
-                {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </Select>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {isAdmin ? (
+        <Card className="shadow-card">
+          <CardContent className="p-4 sm:p-5">
+            {branches.isError ? (
+              <EmptyState
+                title="تعذر تحميل الفروع"
+                className="py-8"
+                action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>}
+              />
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="supplier-branch">الفرع</Label>
+                <Select
+                  id="supplier-branch"
+                  className="max-w-sm"
+                  value={selectedBranchId ?? ''}
+                  disabled={commandPending}
+                  onChange={(event) => changeBranch(event.target.value)}
+                >
+                  <option value="">اختر الفرع</option>
+                  {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </Select>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
-      {branchId === undefined ? (
-        <Card className="shadow-card"><EmptyState title="اختر فرعاً لإدارة الموردين والمشتريات" /></Card>
+      {!scopeReady ? (
+        <Card className="shadow-card">
+          {isAdmin
+            ? <EmptyState title="اختر فرعاً لإدارة الموردين والمشتريات" />
+            : <LoadingState label="جارٍ التحقق من الجلسة…" className="py-16" />}
+        </Card>
       ) : (
         <>
           <Card className="overflow-hidden shadow-card">

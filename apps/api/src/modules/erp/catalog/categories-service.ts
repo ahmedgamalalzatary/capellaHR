@@ -49,8 +49,9 @@ export const normalizeCatalogName = (name: string) => (
 );
 
 /**
- * Catalog administration is Admin work: a Cashier may browse the catalog but
- * never change what is sellable or what it costs.
+ * A Cashier runs the catalog of their own branch, but per-employee commission
+ * percentages are pay data: those stay with the Admin, like the commission and
+ * report screens the Cashier cannot open.
  */
 export const assertCatalogAdmin = (actor: ErpAccountIdentity) => {
   if (actor.role !== 'admin') throw catalogError('ERP_CATALOG_ADMIN_REQUIRED');
@@ -100,7 +101,6 @@ export const createCategoryService = (dependencies: {
       actor: ErpAccountIdentity,
       input: { name: string; type: ErpCategoryType; branchId?: number | undefined },
     ) {
-      assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       const name = input.name.trim();
       const nameNormalized = normalizeCatalogName(name);
@@ -128,7 +128,6 @@ export const createCategoryService = (dependencies: {
       // Explicit `| undefined` because the API compiles with exactOptionalPropertyTypes.
       input: { name?: string | undefined; isActive?: boolean | undefined; branchId?: number | undefined },
     ) {
-      assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       const current = await readInBranch(branchId, id);
 
@@ -158,7 +157,6 @@ export const createCategoryService = (dependencies: {
      * be deactivated.
      */
     async remove(actor: ErpAccountIdentity, id: number, requestedBranchId?: number) {
-      assertCatalogAdmin(actor);
       const { branchId } = await resolveBranchContext(actor, requestedBranchId);
       const outcome = await repository.delete(id, branchId);
       if (outcome === 'referenced') throw catalogError('CATEGORY_IN_USE');

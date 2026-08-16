@@ -31,12 +31,14 @@ describe('ERP expenses mounting', () => {
     expect((await request(appAs({ actorType: 'employee', employeeId: 4 })).get('/api/v1/erp/expenses?branchId=1')).status).toBe(403);
   });
 
-  it('refuses a correction from a cashier', async () => {
+  it('accepts a correction from a cashier for their own branch', async () => {
     const response = await request(appAs(cashier))
       .post('/api/v1/erp/expenses/10/corrections')
       .send({ categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' });
 
-    expect(response.status).toBe(403);
-    expect(response.body.error.code).toBe('ERP_EXPENSE_ADMIN_REQUIRED');
+    // The stub repository holds no expense, so reaching "not found" proves the
+    // cashier passed authorization instead of being refused the action.
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('EXPENSE_NOT_FOUND');
   });
 });

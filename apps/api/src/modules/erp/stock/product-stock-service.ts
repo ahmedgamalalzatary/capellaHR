@@ -22,9 +22,6 @@ export type ProductStockRecord = {
   createdAt: Date;
   updatedAt: Date;
 };
-export type SellableProductRecord = Pick<ProductStockRecord,
-  'id' | 'branchId' | 'name' | 'description' | 'sellingPrice' | 'isActive' | 'quantity'>;
-
 export type ProductStockWrite = Omit<ProductStockRecord, 'id' | 'quantity' | 'createdAt' | 'updatedAt'> & {
   nameNormalized: string;
   openingQuantity: number;
@@ -48,7 +45,7 @@ export interface ProductStockRepository {
   listMovements(branchId: number, query: ListStockMovementsQuery): Promise<{ items: StockMovementRecord[]; total: number }>;
 }
 
-export type ProductStockErrorCode = 'ERP_STOCK_ADMIN_REQUIRED' | 'PRODUCT_NOT_FOUND' | 'PRODUCT_NAME_EXISTS' | 'INSUFFICIENT_STOCK';
+export type ProductStockErrorCode = 'PRODUCT_NOT_FOUND' | 'PRODUCT_NAME_EXISTS' | 'INSUFFICIENT_STOCK';
 export class ProductStockError extends Error {
   constructor(public readonly code: ProductStockErrorCode, message: string, public readonly existingId?: number) {
     super(message);
@@ -56,7 +53,6 @@ export class ProductStockError extends Error {
   }
 }
 const messages: Record<ProductStockErrorCode, string> = {
-  ERP_STOCK_ADMIN_REQUIRED: 'إدارة المنتجات والمخزون متاحة للمدير فقط',
   PRODUCT_NOT_FOUND: 'المنتج غير موجود',
   PRODUCT_NAME_EXISTS: 'اسم المنتج مستخدم بالفعل',
   INSUFFICIENT_STOCK: 'الكمية المتاحة غير كافية',
@@ -71,19 +67,11 @@ export const createProductStockService = (dependencies: {
   resolveBranchContext: ErpBranchContextResolver;
 }) => {
   const { repository, resolveBranchContext } = dependencies;
-  const adminContext = async (actor: ErpAccountIdentity, branchId?: number) => {
-    if (actor.role !== 'admin') throw error('ERP_STOCK_ADMIN_REQUIRED');
-    return resolveBranchContext(actor, branchId);
-  };
   const inBranch = async (branchId: number, id: number) => {
     const record = await repository.findById(id);
     if (!record || record.branchId !== branchId) throw error('PRODUCT_NOT_FOUND');
     return record;
   };
-  const sellable = (record: ProductStockRecord): SellableProductRecord => ({
-    id: record.id, branchId: record.branchId, name: record.name, description: record.description,
-    sellingPrice: record.sellingPrice, isActive: record.isActive, quantity: record.quantity,
-  });
   const rejectDuplicate = async (branchId: number, normalized: string, allowedId?: number) => {
     const existing = await repository.findByNormalizedName(branchId, normalized);
     if (existing && existing.id !== allowedId) throw error('PRODUCT_NAME_EXISTS', existing.id);
@@ -93,7 +81,7 @@ export const createProductStockService = (dependencies: {
       branchId?: number | undefined; name: string; description?: string | null | undefined; sellingPrice: string;
       lastPurchaseCost: string; lowStockThreshold: number;
     }) {
-      const context = await adminContext(actor, input.branchId);
+      const context = await resolveBranchContext(actor, input.branchId);
       const name = input.name.trim();
       const nameNormalized = normalizeCatalogName(name);
       await rejectDuplicate(context.branchId, nameNormalized);
@@ -111,16 +99,14 @@ export const createProductStockService = (dependencies: {
     },
     async get(actor: ErpAccountIdentity, id: number, requestedBranchId?: number) {
       const context = await resolveBranchContext(actor, requestedBranchId);
-      const record = await inBranch(context.branchId, id);
-      return actor.role === 'cashier' ? sellable(record) : record;
+      return inBranch(context.branchId, id);
     },
     async list(actor: ErpAccountIdentity, query: ListProductsQuery) {
       const context = await resolveBranchContext(actor, query.branchId);
-      const result = await repository.list(context.branchId, query);
-      return actor.role === 'cashier' ? { ...result, items: result.items.map(sellable) } : result;
+      return repository.list(context.branchId, query);
     },
     async update(actor: ErpAccountIdentity, id: number, input: UpdateProductInput) {
-      const context = await adminContext(actor, input.branchId);
+      const context = await resolveBranchContext(actor, input.branchId);
       await inBranch(context.branchId, id);
       const changes: ProductStockChanges = {};
       if (input.name !== undefined) {
@@ -144,12 +130,12 @@ export const createProductStockService = (dependencies: {
       }
     },
     async adjust(actor: ErpAccountIdentity, id: number, input: AdjustProductStockInput) {
-      const context = await adminContext(actor, input.branchId);
+      const context = await resolveBranchContext(actor, input.branchId);
       await inBranch(context.branchId, id);
       return repository.adjust(id, context.branchId, input, context.accountId);
     },
     async listMovements(actor: ErpAccountIdentity, query: ListStockMovementsQuery) {
-      const context = await adminContext(actor, query.branchId);
+      const context = await resolveBranchContext(actor, query.branchId);
       return repository.listMovements(context.branchId, query);
     },
   };

@@ -151,18 +151,18 @@ describe('ERP categories HTTP API', () => {
     expect(response.body.meta).toMatchObject({ page: 1, total: 1, totalPages: 1 });
   });
 
-  it('refuses a cashier creating, editing or deleting a category', async () => {
+  it('lets a cashier create, edit and delete a category of their own branch', async () => {
     const app = makeApp(CASHIER);
 
-    for (const call of [
-      request(app).post('/api/v1/erp/categories').send({ name: 'شعر', type: 'service' }),
-      request(app).patch('/api/v1/erp/categories/1').send({ name: 'شعر' }),
-      request(app).delete('/api/v1/erp/categories/1'),
-    ]) {
-      const response = await call;
-      expect(response.status).toBe(403);
-      expect(response.body.error.code).toBe('ERP_CATALOG_ADMIN_REQUIRED');
-    }
+    const created = await request(app)
+      .post('/api/v1/erp/categories').send({ name: 'شعر', type: 'service' });
+    expect(created.status).toBe(201);
+
+    const updated = await request(app).patch('/api/v1/erp/categories/1').send({ name: 'شعر' });
+    expect(updated.status).toBe(200);
+
+    const deleted = await request(app).delete('/api/v1/erp/categories/1');
+    expect(deleted.status).toBe(204);
   });
 
   it('creates a category for the branch the admin named', async () => {
@@ -234,12 +234,12 @@ describe('ERP services HTTP API', () => {
     expect(response.body.error.code).toBe('ERP_BRANCH_FORBIDDEN');
   });
 
-  it('refuses a cashier creating or editing a service', async () => {
+  it('lets a cashier create and edit a service of their own branch', async () => {
     const app = makeApp(CASHIER);
     const body = { name: 'صبغة', categoryId: 1, price: '150' };
 
-    expect((await request(app).post('/api/v1/erp/services').send(body)).status).toBe(403);
-    expect((await request(app).patch('/api/v1/erp/services/1').send({ price: '150' })).status).toBe(403);
+    expect((await request(app).post('/api/v1/erp/services').send(body)).status).toBe(201);
+    expect((await request(app).patch('/api/v1/erp/services/1').send({ isActive: false })).status).toBe(200);
   });
 
   it('creates a service with the exact price the contract normalized', async () => {

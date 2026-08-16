@@ -497,15 +497,18 @@ export function CatalogView() {
                               >
                                 {service.isActive ? 'إيقاف' : 'تفعيل'}
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={commandPending}
-                                onClick={() => { if (!commandPending) setOverridesFor(service); }}
-                              >
-                                <Percent className="size-4" aria-hidden />
-                                العمولات
-                              </Button>
+                              {/* Commission percentages are pay data: admin-only, like the commission screen. */}
+                              {isAdmin ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={commandPending}
+                                  onClick={() => { if (!commandPending) setOverridesFor(service); }}
+                                >
+                                  <Percent className="size-4" aria-hidden />
+                                  العمولات
+                                </Button>
+                              ) : null}
                             </RowActions>
                           </TD>
                         </TR>

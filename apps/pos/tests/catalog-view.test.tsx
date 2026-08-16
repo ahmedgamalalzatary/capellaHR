@@ -135,6 +135,16 @@ describe('CatalogView branch scope', () => {
     expect(mocks.listCategories.mock.calls.at(-1)?.[0]?.branchId).toBeUndefined();
     expect(screen.queryByLabelText('الفرع')).toBeNull();
   });
+
+  test('keeps per-employee commission overrides out of the cashier catalog', async () => {
+    // Commission percentages are pay data: they stay on the admin-only screens.
+    mocks.getSession.mockResolvedValue({ actor: { type: 'cashier', accountId: 2, employeeId: 4 } });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'الخدمات' }));
+    await screen.findByText('صبغة');
+    expect(screen.queryByRole('button', { name: /العمولات/ })).toBeNull();
+  });
 });
 
 describe('CatalogView categories', () => {
