@@ -449,6 +449,27 @@
       "when": 1786953540505,
       "tag": "0063_cashier_auto_close_window",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "5",
+      "when": 1786959361673,
+      "tag": "0064_regular_anita_blake",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "5",
+      "when": 1786961335039,
+      "tag": "0065_short_scarlet_witch",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1786963030779,
+      "tag": "0066_transfer_invoice_final",
+      "breakpoints": true
     }
   ]
 }

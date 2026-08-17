@@ -23,7 +23,7 @@ import type {
   CashierSessionService,
   SaleService,
 } from './modules/erp/sales/index.js';
-import type { ClientService, ExpenseService, ProductStockService, SupplierPurchaseService } from './modules/erp/index.js';
+import type { ClientService, ExpenseService, ProductStockService, StockTransferService, SupplierPurchaseService } from './modules/erp/index.js';
 import type { CategoryService, ServiceCatalogService } from './modules/erp/index.js';
 import type { EmployeeAssignmentService } from './modules/erp/assignment/index.js';
 import type { CommissionService } from './modules/erp/commissions/index.js';
@@ -63,6 +63,7 @@ export interface AppDependencies {
   erpServiceCatalogService?: ServiceCatalogService;
   erpProductStockService?: ProductStockService;
   erpSupplierPurchaseService?: SupplierPurchaseService;
+  erpStockTransferService?: StockTransferService;
   erpExpenseService?: ExpenseService;
   erpAssignmentService?: EmployeeAssignmentService;
   erpCommissionService?: CommissionService;

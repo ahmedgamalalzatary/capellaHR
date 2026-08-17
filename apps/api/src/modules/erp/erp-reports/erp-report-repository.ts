@@ -87,6 +87,9 @@ const saleLineEvents = (
   const lineConditions = [
     sql`line.item_type = ${itemType}`,
     sql`invoice.status <> 'draft'`,
+    // Internal trade between branches is not a unit sold, cash taken or a
+    // client's spend; only the sales report shows it, labelled as a transfer.
+    sql`invoice.kind = 'sale'`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
@@ -144,6 +147,7 @@ const salesFacts = (filters: ReportFilters) => sql`
     invoice.sold_at businessDate, branch.name branchName,
     invoice.client_name_snapshot clientName, invoice.client_phone_snapshot clientPhone,
     invoice.employee_name_snapshot employeeName, invoice.authorized_by_snapshot authorizedBy,
+    CASE WHEN invoice.kind = 'branch_transfer' THEN 'تحويل بين الفروع' ELSE 'بيع' END saleKind,
     invoice.subtotal subtotal, invoice.discount_amount discountAmount,
     invoice.tax_amount taxAmount, invoice.total total
   FROM erp_invoices invoice
@@ -168,6 +172,7 @@ const paymentFacts = (filters: ReportFilters) => sql`
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
     sql`invoice.status <> 'draft'`,
+    sql`invoice.kind = 'sale'`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, ['invoice.invoice_number', 'payment.method']),
@@ -427,7 +432,7 @@ const clientFacts = (filters: ReportFilters) => sql`
   FROM erp_invoices invoice
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
-    sql`invoice.status <> 'draft'`, ...branchFilter(filters, 'invoice.branch_id'),
+    sql`invoice.status <> 'draft'`, sql`invoice.kind = 'sale'`, ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.client_name_snapshot', 'invoice.client_phone_snapshot',

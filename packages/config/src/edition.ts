@@ -10,7 +10,7 @@ export const MODULE_NAMES = [
   'attendance', 'weekly-day-offs', 'payroll', 'bonuses', 'deductions', 'advances',
   'reports', 'self-service', 'dashboard',
   'erp-assignment', 'erp-catalog', 'erp-clients', 'erp-stock', 'erp-suppliers',
-  'erp-expenses', 'erp-sales', 'erp-commissions', 'erp-reports',
+  'erp-expenses', 'erp-sales', 'erp-commissions', 'erp-reports', 'erp-transfers',
 ] as const;
 
 export type ModuleName = (typeof MODULE_NAMES)[number];
@@ -53,6 +53,8 @@ export const MODULE_REGISTRY = {
   'erp-suppliers': module('sellable', ['erp-stock']),
   'erp-expenses': module('sellable', []),
   'erp-sales': module('sellable', ['erp-assignment']),
+  // Moving stock between branches is a sale from one branch to the other.
+  'erp-transfers': module('sellable', ['erp-stock', 'erp-sales']),
   'erp-commissions': module('sellable', ['erp-sales']),
   'erp-reports': module('sellable', [
     'reports',
@@ -92,6 +94,7 @@ const ERP_MODULES: readonly ModuleName[] = [
   'erp-sales',
   'erp-commissions',
   'erp-reports',
+  'erp-transfers',
 ];
 
 const EDITION_ROOTS: Record<EditionName, readonly ModuleName[]> = {

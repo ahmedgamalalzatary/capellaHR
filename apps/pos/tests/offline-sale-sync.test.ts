@@ -33,6 +33,7 @@ const invoice = (input: CompleteSaleInput): PublicInvoiceDto => ({
   id: 44,
   invoiceNumber: `INV-${input.idempotencyKey}`,
   status: 'completed',
+  kind: 'sale',
   branchId: 2,
   cashierSessionId: 13,
   client: { id: 5, name: 'عميل', phone: '01000000000' },

@@ -14,6 +14,11 @@ describe('hr web app manifest', () => {
     expect(result.display).toBe('standalone');
     expect(result.start_url).toBe('/');
     expect(result.short_name).toBeTruthy();
+    // Arabic RTL, and the launch colours the logo was cut against.
+    expect(result.lang).toBe('ar');
+    expect(result.dir).toBe('rtl');
+    expect(result.background_color).toBe('#292524');
+    expect(result.theme_color).toBe('#292524');
   });
 
   it('declares any and maskable icons in the required sizes', () => {

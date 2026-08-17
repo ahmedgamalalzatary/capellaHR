@@ -28,7 +28,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createErpClientsRouter, createErpExpensesRouter, createErpProductsRouter, createErpSuppliersRouter, type ClientService, type ExpenseService, type ProductStockService, type SupplierPurchaseService } from '../modules/erp/index.js';
+import { createErpClientsRouter, createErpExpensesRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type ClientService, type ExpenseService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -71,6 +71,7 @@ export const createApiRouter = (dependencies: {
   erpServiceCatalogService?: ServiceCatalogService;
   erpProductStockService?: ProductStockService;
   erpSupplierPurchaseService?: SupplierPurchaseService;
+  erpStockTransferService?: StockTransferService;
   erpExpenseService?: ExpenseService;
   erpAssignmentService?: EmployeeAssignmentService;
   erpCommissionService?: CommissionService;
@@ -234,6 +235,15 @@ export const createApiRouter = (dependencies: {
     if (dependencies.erpSupplierPurchaseService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
       router.use('/erp/suppliers', erpAuth.authenticate, erpAuth.requireErpAccount, createErpSuppliersRouter(dependencies.erpSupplierPurchaseService));
+    }
+    if (dependencies.erpStockTransferService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/stock-transfers',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpStockTransfersRouter(dependencies.erpStockTransferService),
+      );
     }
     if (dependencies.erpExpenseService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);

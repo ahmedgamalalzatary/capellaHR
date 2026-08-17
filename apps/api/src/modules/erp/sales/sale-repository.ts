@@ -143,6 +143,7 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     status: invoice.status,
+    kind: invoice.kind,
     branchId: invoice.branchId,
     cashierSessionId: invoice.cashierSessionId,
     client: {
@@ -258,7 +259,7 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
   const payments = await executor.select().from(invoicePayments)
     .where(eq(invoicePayments.invoiceId, invoiceId)).orderBy(asc(invoicePayments.id));
-  const reconstructed = completeSaleSchema.parse({
+  const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
     ...(invoice.assignedEmployeeId === null ? {} : {
@@ -284,7 +285,13 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
       tax: { kind: invoice.taxKind, value: invoice.taxValue! },
     } : {}),
     payments: payments.map(({ method, amount }) => ({ method, amount })),
-  });
+  };
+  // The sale contract requires a seller, and a branch transfer has none. These
+  // rows are our own writes, so re-validating them buys nothing there; every
+  // request-driven sale still goes through the contract.
+  const reconstructed = invoice.sellerEmployeeId === null
+    ? candidate
+    : completeSaleSchema.parse(candidate);
   return { ...reconstructed, branchId: invoice.branchId };
 };
 
@@ -342,6 +349,9 @@ const quoteProducts = async (
   branchId: number,
   lines: Array<{ productId: number; quantity: number }>,
   lock = false,
+  // The shelf price, except for a transfer between branches, which moves goods
+  // at what they cost so neither branch books a profit on the move.
+  pricing: 'selling' | 'cost' = 'selling',
 ) => {
   if (!lines.length) return [];
   const ids = [...new Set(lines.map(({ productId }) => productId))].sort((left, right) => left - right);
@@ -363,10 +373,11 @@ const quoteProducts = async (
     const balanceBefore = remaining.get(line.productId)!;
     if (balanceBefore < line.quantity) throw new SaleError('INSUFFICIENT_STOCK');
     remaining.set(line.productId, balanceBefore - line.quantity);
+    const unitPrice = pricing === 'cost' ? product.cost : product.price;
     return {
       itemType: 'product' as const, sourceId: product.id, name: product.name,
-      quantity: line.quantity, unitPrice: product.price,
-      lineTotal: calculateLineTotal(product.price, line.quantity),
+      quantity: line.quantity, unitPrice,
+      lineTotal: calculateLineTotal(unitPrice, line.quantity),
       productCostBasis: product.cost, balanceBefore,
     };
   });
@@ -413,11 +424,16 @@ export const createDrizzleSaleRepository = (
       : eq(invoices.idempotencyKey, key);
     const row = (await database.select({
       id: invoices.id,
+      kind: invoices.kind,
       sellerEmployeeId: invoices.sellerEmployeeId,
     }).from(invoices)
       .where(predicate).limit(1))[0];
     if (!row) return null;
-    if (row.sellerEmployeeId === null) throw new SaleError('IDEMPOTENCY_CONFLICT');
+    // A sale without a seller is either a branch transfer, which replays like
+    // any other, or a row that predates sellers and can no longer be replayed.
+    if (row.sellerEmployeeId === null && row.kind === 'sale') {
+      throw new SaleError('IDEMPOTENCY_CONFLICT');
+    }
     const invoice = await hydrateInvoice(database, row.id);
     if (!invoice) return null;
     return { input: await reconstructInput(database, row.id), invoice };
@@ -562,24 +578,31 @@ export const createDrizzleSaleRepository = (
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
           // The seller must still be on the branch roster when the sale settles.
-          const seller = (await transaction.select({
-            id: employees.id,
-            fullName: employees.fullName,
-          }).from(branchCashierRoster).innerJoin(employees, and(
-            eq(employees.id, branchCashierRoster.employeeId),
-            eq(employees.branchId, branchCashierRoster.branchId),
-          )).where(and(
-            eq(branchCashierRoster.branchId, input.branchId),
-            eq(branchCashierRoster.employeeId, input.sellerEmployeeId),
-            eq(employees.employmentStatus, 'active'),
-            isNull(employees.deletedAt),
-          )).for('update').limit(1))[0];
-          if (!seller) throw new SaleError('SELLER_NOT_ON_ROSTER');
+          // A transfer between branches has none: no person sold anything, and
+          // products earn no commission, so the invoice records no seller.
+          const seller = input.sellerEmployeeId === undefined ? null
+            : (await transaction.select({
+              id: employees.id,
+              fullName: employees.fullName,
+            }).from(branchCashierRoster).innerJoin(employees, and(
+              eq(employees.id, branchCashierRoster.employeeId),
+              eq(employees.branchId, branchCashierRoster.branchId),
+            )).where(and(
+              eq(branchCashierRoster.branchId, input.branchId),
+              eq(branchCashierRoster.employeeId, input.sellerEmployeeId),
+              eq(employees.employmentStatus, 'active'),
+              isNull(employees.deletedAt),
+            )).for('update').limit(1))[0];
+          if (input.sellerEmployeeId !== undefined && !seller) {
+            throw new SaleError('SELLER_NOT_ON_ROSTER');
+          }
           const employee = serviceInputs.length
             ? await operation.assertEmployee!(transaction)
             : null;
           const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs, true);
-          const quotedProducts = await quoteProducts(transaction, input.branchId, productInputs, true);
+          const quotedProducts = await quoteProducts(
+            transaction, input.branchId, productInputs, true, operation.pricing,
+          );
           const serviceIds = [...new Set(serviceInputs.map(({ serviceId }) => serviceId))];
           const serviceRows = serviceIds.length ? await transaction.select({
             id: erpServices.id,
@@ -635,16 +658,17 @@ export const createDrizzleSaleRepository = (
             branchId: input.branchId,
             clientId: input.clientId,
             assignedEmployeeId: employee?.id ?? null,
-            sellerEmployeeId: seller.id,
+            sellerEmployeeId: seller?.id ?? null,
             actingAccountId: operation.actingAccountId,
             cashierSessionId: input.cashierSessionId,
             invoiceNumber: operation.invoiceNumber,
             idempotencyKey: input.idempotencyKey,
+            kind: operation.kind ?? 'sale',
             clientNameSnapshot: client.fullName,
             clientPhoneSnapshot: client.phone,
             employeeNameSnapshot: employee?.fullName ?? null,
             employeeCodeSnapshot: employee?.employeeCode ?? null,
-            sellerNameSnapshot: seller.fullName,
+            sellerNameSnapshot: seller?.fullName ?? null,
             authorizedBySnapshot: account.username,
             subtotal: totals.subtotal,
             discountKind: input.discount?.kind ?? null,
@@ -721,11 +745,14 @@ export const createDrizzleSaleRepository = (
               branchId: input.branchId,
               clientId: input.clientId,
               ...(employee === null ? {} : { employeeId: employee.id }),
-              sellerEmployeeId: seller.id,
+              ...(seller ? { sellerEmployeeId: seller.id } : {}),
               cashierSessionId: input.cashierSessionId,
             },
             createdAt: operation.soldAt,
           });
+          // The receiving branch of a transfer settles here, so the sale and the
+          // stock it moved either both commit or both roll back.
+          await operation.afterInvoice?.(transaction, completed);
           return completed;
         });
       } catch (error) {
@@ -753,6 +780,9 @@ export const createDrizzleSaleRepository = (
             ne(invoices.status, 'draft'),
           )).for('update').limit(1))[0];
           if (!original) throw new SaleError('INVOICE_NOT_FOUND');
+          // Reversing internal trade would return the stock to the sending
+          // branch while the receiving branch keeps it: stock from nothing.
+          if (original.kind !== 'sale') throw new SaleError('TRANSFER_NOT_REVERSIBLE');
           if (payroll && original.assignedEmployeeId !== null) {
             await payroll.lockCommissionEmployee(original.assignedEmployeeId, transaction);
           }

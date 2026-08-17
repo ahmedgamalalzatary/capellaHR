@@ -44,7 +44,8 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     columns: [
       ['id', 'المعرف'], ['invoiceNumber', 'رقم الفاتورة'], ['businessDate', 'تاريخ البيع'],
       ['branchName', 'الفرع'], ['clientName', 'العميل'], ['clientPhone', 'الهاتف'],
-      ['employeeName', 'الموظف'], ['authorizedBy', 'المصرح'], ['subtotal', 'قبل الخصم والضريبة'],
+      ['employeeName', 'الموظف'], ['authorizedBy', 'المصرح'], ['saleKind', 'النوع'],
+      ['subtotal', 'قبل الخصم والضريبة'],
       ['discountAmount', 'الخصم'], ['taxAmount', 'الضريبة'], ['total', 'الإجمالي'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },

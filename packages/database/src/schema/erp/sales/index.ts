@@ -48,6 +48,11 @@ export const cashierSessions = mysqlTable('erp_cashier_sessions', {
 ]);
 
 export const invoiceStatuses = ['draft', 'completed', 'partially_refunded', 'refunded', 'voided'] as const;
+/**
+ * A customer sale, or internal trade between two branches. A transfer has no
+ * seller and earns no commission, so the seller rule applies to sales only.
+ */
+export const invoiceKinds = ['sale', 'branch_transfer'] as const;
 export const invoiceAdjustmentKinds = ['percentage', 'fixed'] as const;
 export const invoiceItemTypes = ['service', 'product'] as const;
 export const commissionRules = ['service_default', 'employee_override', 'none'] as const;
@@ -64,6 +69,7 @@ export const invoices = mysqlTable('erp_invoices', {
   invoiceNumber: varchar('invoice_number', { length: 40 }).notNull(),
   idempotencyKey: varchar('idempotency_key', { length: 36 }).notNull(),
   status: mysqlEnum('status', invoiceStatuses).notNull().default('draft'),
+  kind: mysqlEnum('kind', invoiceKinds).notNull().default('sale'),
   // Mirrors the client record: whichever of the two identified them at the till.
   clientNameSnapshot: varchar('client_name_snapshot', { length: 255 }),
   clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }),
@@ -124,6 +130,12 @@ export const invoices = mysqlTable('erp_invoices', {
     'erp_invoices_seller_consistent',
     sql`(${table.sellerEmployeeId} is null and ${table.sellerNameSnapshot} is null) or (${table.sellerEmployeeId} is not null and ${table.sellerNameSnapshot} is not null)`,
   ),
+  // Internal trade names no seller; a customer sale always does.
+  check(
+    'erp_invoices_transfer_has_no_seller',
+    sql`${table.kind} = 'sale' or ${table.sellerEmployeeId} is null`,
+  ),
+  index('erp_invoices_kind_sold_idx').on(table.kind, table.soldAt),
 ]);
 
 /**

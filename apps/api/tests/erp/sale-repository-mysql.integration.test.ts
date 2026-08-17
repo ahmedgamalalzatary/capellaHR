@@ -1580,6 +1580,63 @@ describe('ERP sale repository MySQL integration', () => {
       .toHaveLength(0);
   });
 
+  it('prices product lines at cost and commits the caller\'s work in the same transaction', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const visited: string[] = [];
+
+    // 2 units at the product's 30.00 cost, not its 50.00 shelf price.
+    const invoice = await repository.complete({
+      ...operation(data, crypto.randomUUID()),
+      input: {
+        branchId: data.branchId,
+        clientId: data.clientId,
+        sellerEmployeeId: data.sellerEmployeeId,
+        cashierSessionId: data.cashierSessionId,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ itemType: 'product' as const, productId: data.productId, quantity: 2 }],
+        payments: [{ method: 'cash' as const, amount: '60.00' }],
+      },
+      pricing: 'cost',
+      afterInvoice: async (transaction, completed) => {
+        visited.push(completed.invoiceNumber);
+        await transaction.update(erpProducts).set({ lowStockThreshold: 7 })
+          .where(eq(erpProducts.id, data.productId));
+      },
+    });
+
+    expect(invoice.lines[0]).toMatchObject({ unitPrice: '30.00', lineTotal: '60.00' });
+    expect(invoice.totals.total).toBe('60.00');
+    expect(visited).toEqual([invoice.invoiceNumber]);
+    expect((await database.select({ threshold: erpProducts.lowStockThreshold }).from(erpProducts)
+      .where(eq(erpProducts.id, data.productId)).limit(1))[0]?.threshold).toBe(7);
+  });
+
+  it('rolls the whole sale back when the caller\'s work inside it fails', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+
+    await expect(repository.complete({
+      ...operation(data, crypto.randomUUID()),
+      input: {
+        branchId: data.branchId,
+        clientId: data.clientId,
+        sellerEmployeeId: data.sellerEmployeeId,
+        cashierSessionId: data.cashierSessionId,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ itemType: 'product' as const, productId: data.productId, quantity: 2 }],
+        payments: [{ method: 'cash' as const, amount: '60.00' }],
+      },
+      pricing: 'cost',
+      afterInvoice: async () => { throw new Error('destination stock refused'); },
+    })).rejects.toThrow('destination stock refused');
+
+    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
+      .toHaveLength(0);
+    expect((await database.select({ quantity: erpProductStocks.quantity }).from(erpProductStocks)
+      .where(eq(erpProductStocks.productId, data.productId)).limit(1))[0]?.quantity).toBe(2);
+  });
+
   it('rejects a sale at the exact instant a shift reaches its sixteen-hour limit', async () => {
     const data = await fixture();
     await database.update(cashierSessions)

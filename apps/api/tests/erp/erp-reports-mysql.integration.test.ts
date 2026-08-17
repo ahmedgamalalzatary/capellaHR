@@ -161,6 +161,26 @@ beforeAll(async () => {
     soldAt: new Date('2026-07-09T09:00:00.000Z'),
   });
   productOnlyInvoiceId = productOnly.id;
+  // Internal trade between branches: a real invoice, priced at cost, no seller.
+  await database.update(erpProductStocks).set({ quantity: 5, updatedAt: soldAt })
+    .where(eq(erpProductStocks.productId, productId));
+  await sales.complete({
+    input: {
+      branchId,
+      clientId,
+      cashierSessionId,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'product', productId, quantity: 1 }],
+      // At the product's 30.00 cost, not its 50.00 shelf price.
+      payments: [{ method: 'cash', amount: '30.00' }],
+    },
+    actingAccountId: adminId,
+    actingAccountRole: 'admin',
+    invoiceNumber: 'INV.2026.07.10.0001',
+    soldAt: new Date('2026-07-10T09:00:00.000Z'),
+    pricing: 'cost',
+    kind: 'branch_transfer',
+  });
   await sales.reverse({
     type: 'refund', invoiceId,
     input: {
@@ -200,7 +220,8 @@ describe('ERP reports MySQL reader', () => {
       'erp-employees', filters, { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
     );
 
-    expect(sales).toMatchObject({ kind: 'success', total: 2 });
+    // Two customer sales plus the branch transfer, which is a sale too.
+    expect(sales).toMatchObject({ kind: 'success', total: 3 });
     expect(employees).toMatchObject({ kind: 'success', total: 2 });
     if (employees.kind === 'success') {
       expect(employees.snapshot.rows).not.toEqual(expect.arrayContaining([
@@ -208,6 +229,36 @@ describe('ERP reports MySQL reader', () => {
       ]));
     }
     expect(productOnlyInvoiceId).toBeGreaterThan(0);
+  });
+
+  it('keeps internal trade out of the money reports it would distort', async () => {
+    const reader = createErpReportsModule(database).reader;
+    const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };
+    const read = async (reportType: 'erp-sales' | 'erp-payment-methods' | 'erp-products' | 'erp-client-history') => {
+      const result = await reader.read(
+        reportType, filters, { mode: 'all' }, { page: 1, pageSize: 50 }, reversedAt,
+      );
+      if (result.kind !== 'success') throw new Error(`report ${reportType} unavailable`);
+      return result.snapshot.rows;
+    };
+    const transferNumber = 'INV.2026.07.10.0001';
+    const carries = (rows: Array<Record<string, unknown>>) => rows.some((row) => (
+      row.invoiceNumber === transferNumber
+    ));
+
+    // The sales report shows it, labelled, because it is a sale.
+    const salesRows = await read('erp-sales');
+    expect(carries(salesRows)).toBe(true);
+    expect(salesRows.find((row) => row.invoiceNumber === transferNumber))
+      .toMatchObject({ saleKind: 'تحويل بين الفروع' });
+    expect(salesRows.find((row) => row.invoiceNumber === 'INV.2026.08.09.0001'))
+      .toMatchObject({ saleKind: 'بيع' });
+
+    // The rest would be wrong: no cash entered the drawer, no unit was sold to
+    // a customer, and the receiving branch is not a client.
+    expect(carries(await read('erp-payment-methods'))).toBe(false);
+    expect(carries(await read('erp-products'))).toBe(false);
+    expect(carries(await read('erp-client-history'))).toBe(false);
   });
 
   it('reads every ERP report tab through one safe branch/date-filtered capability', async () => {

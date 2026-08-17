@@ -41,6 +41,7 @@ const adminGroups: ReadonlyArray<{
       { href: '/catalog', label: 'إدارة الكتالوج' },
       { href: '/products', label: 'المنتجات والمخزون' },
       { href: '/suppliers', label: 'الموردون والمشتريات' },
+      { href: '/transfers', label: 'تحويل المنتجات بين الفروع' },
     ],
   },
   {

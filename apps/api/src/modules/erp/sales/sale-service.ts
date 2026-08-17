@@ -11,6 +11,7 @@ import type {
   SaleQuote,
   VoidInvoiceInput,
 } from '@capella/contracts';
+import type { createDatabase } from '@capella/database';
 import { isDeepStrictEqual } from 'node:util';
 
 import { ErpAssignmentError } from '../assignment/assignment-service.js';
@@ -19,7 +20,19 @@ import type { ErpAccountIdentity } from '../hr-capabilities.js';
 import type { AssignableEmployee } from '../assignment/assignment-service.js';
 import { allocateReversalAmounts, MoneyCalculationError } from './services/sale-calculations.js';
 
-export type ResolvedCompleteSaleInput = CompleteSaleInput & { branchId: number };
+/**
+ * A sale posted from inside the system rather than from a request: a transfer
+ * between branches has no seller, because nobody sold anything and products
+ * carry no commission. Every request-driven sale still names one.
+ */
+export type InternalCompleteSaleInput = Omit<CompleteSaleInput, 'sellerEmployeeId'>
+  & { sellerEmployeeId?: number };
+
+export type ResolvedCompleteSaleInput = InternalCompleteSaleInput & { branchId: number };
+
+type Database = ReturnType<typeof createDatabase>;
+/** The sale's own transaction, handed to work that must commit alongside it. */
+export type SaleTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 export type CompleteSaleOperation = {
   input: ResolvedCompleteSaleInput;
@@ -28,6 +41,18 @@ export type CompleteSaleOperation = {
   invoiceNumber: string;
   soldAt: Date;
   assertEmployee?(context: unknown): Promise<AssignableEmployee>;
+  /**
+   * Product lines normally sell at the shelf price, which the request may never
+   * override. A branch-to-branch transfer is the one sale priced at cost.
+   */
+  pricing?: 'selling' | 'cost';
+  /** Internal trade between branches is a different document from a sale. */
+  kind?: 'sale' | 'branch_transfer';
+  /**
+   * Work that must land with the invoice or not at all — the receiving branch's
+   * side of a transfer. It runs inside the sale's own transaction.
+   */
+  afterInvoice?(transaction: SaleTransaction, invoice: InvoiceDto): Promise<void>;
 };
 
 type ReverseInvoiceOperationBase = {
@@ -79,6 +104,7 @@ type SaleErrorCode =
   | 'IDEMPOTENCY_CONFLICT'
   | 'INVOICE_NOT_FOUND'
   | 'INVOICE_NOT_REVERSIBLE'
+  | 'TRANSFER_NOT_REVERSIBLE'
   | 'VOID_DATE_EXPIRED'
   | 'REFUND_QUANTITY_EXCEEDED'
   | 'REFUND_PAYMENT_MISMATCH'
@@ -98,6 +124,7 @@ const messages: Record<SaleErrorCode, string> = {
   IDEMPOTENCY_CONFLICT: 'مفتاح العملية مستخدم لطلب مختلف',
   INVOICE_NOT_FOUND: 'الفاتورة غير موجودة',
   INVOICE_NOT_REVERSIBLE: 'لا يمكن إلغاء أو استرداد هذه الفاتورة',
+  TRANSFER_NOT_REVERSIBLE: 'فاتورة تحويل بين الفروع لا تُلغى ولا تُسترد؛ نفّذ تحويلاً معاكساً',
   VOID_DATE_EXPIRED: 'الإلغاء الكامل متاح في يوم البيع فقط',
   REFUND_QUANTITY_EXCEEDED: 'الكمية المستردة تتجاوز الكمية المتبقية',
   REFUND_PAYMENT_MISMATCH: 'توزيع مبلغ الاسترداد غير صحيح',
@@ -126,7 +153,7 @@ export const createSaleService = (dependencies: {
   };
 }) => {
   const { repository, resolveBranchContext, assignment, invoiceNumbers } = dependencies;
-  const resolveInput = async (actor: ErpAccountIdentity, input: CompleteSaleInput) => {
+  const resolveInput = async (actor: ErpAccountIdentity, input: InternalCompleteSaleInput) => {
     const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
     return { resolved: { ...input, branchId }, accountId };
   };
@@ -146,7 +173,13 @@ export const createSaleService = (dependencies: {
       return repository.quote(branchId, input);
     },
 
-    async complete(actor: ErpAccountIdentity, input: CompleteSaleInput) {
+    async complete(
+      actor: ErpAccountIdentity,
+      input: InternalCompleteSaleInput,
+      // Only a branch-to-branch transfer passes these: it prices at cost and
+      // settles the receiving branch inside this sale's transaction.
+      options?: Pick<CompleteSaleOperation, 'pricing' | 'kind' | 'afterInvoice'>,
+    ) {
       const { resolved, accountId } = await resolveInput(actor, input);
       const existing = existingOrConflict(
         await repository.findByIdempotencyKey(input.idempotencyKey, {
@@ -166,6 +199,9 @@ export const createSaleService = (dependencies: {
           actingAccountRole: actor.role,
           invoiceNumber: number.invoiceNumber,
           soldAt: number.allocatedAt,
+          ...(options?.pricing ? { pricing: options.pricing } : {}),
+          ...(options?.kind ? { kind: options.kind } : {}),
+          ...(options?.afterInvoice ? { afterInvoice: options.afterInvoice } : {}),
           ...(hasService ? {
             assertEmployee: (context: unknown) => assignment.assertAssignable(actor, {
               employeeId: resolved.assignedEmployeeId!,

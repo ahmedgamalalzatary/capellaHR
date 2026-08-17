@@ -431,6 +431,8 @@ export const invoiceSchema = z.object({
   id: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
+  // A customer sale, or internal trade moving stock to another branch.
+  kind: z.enum(['sale', 'branch_transfer']),
   branchId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
   // Either half may be missing, but never both: a client is identified by a
@@ -629,6 +631,7 @@ export const saleFixtures = {
     id: 44,
     invoiceNumber: 'INV-2026.08.03-14.35-17',
     status: 'completed',
+    kind: 'sale',
     branchId: 2,
     cashierSessionId: 13,
     client: { id: 5, name: 'منى أحمد', phone: '01012345678' },

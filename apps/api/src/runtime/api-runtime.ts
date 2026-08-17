@@ -31,6 +31,7 @@ import {
   createErpSuppliersModule,
 } from '../modules/erp/index.js';
 import { createSalesModule } from '../modules/erp/sales/index.js';
+import { createErpTransfersModule } from '../modules/erp/transfers/index.js';
 import { createPayrollModule } from '../modules/payroll/index.js';
 import { createReportsModule } from '../modules/reports/index.js';
 import { createSelfServiceModule } from '../modules/self-service/index.js';
@@ -245,6 +246,13 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     assignment: required(erpAssignmentModule, 'erp-assignment').service,
     ...(payrollModule ? { payroll: payrollModule.erp } : {}),
   }) : undefined;
+  const erpTransfersModule = enabled('erp-transfers') && salesModule
+    ? createErpTransfersModule(database, {
+        audit: auditModule.erp,
+        branches: branchModule.erp,
+        sales: salesModule.sales,
+      })
+    : undefined;
   const commissionModule = enabled('erp-commissions') ? createCommissionModule(database, {
     branches: branchModule.erp,
     employees: employeeModule.erp,
@@ -320,6 +328,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     } : {}),
     ...(erpStockModule ? { erpProductStockService: erpStockModule.service } : {}),
     ...(erpSuppliersModule ? { erpSupplierPurchaseService: erpSuppliersModule.service } : {}),
+    ...(erpTransfersModule ? { erpStockTransferService: erpTransfersModule.service } : {}),
     ...(erpExpensesModule ? { erpExpenseService: erpExpensesModule.service } : {}),
     ...(erpAssignmentModule ? { erpAssignmentService: erpAssignmentModule.service } : {}),
     ...(commissionModule ? { erpCommissionService: commissionModule.service } : {}),

@@ -521,22 +521,25 @@ export const renderReportPdfToStream = async (
   });
   document.pipe(output);
   let pageNumber = 0;
+  // PDFKit's first shaped run for an embedded Arabic font initializes its
+  // subset. Prime both subsets outside the printable area so no real text —
+  // the page-one footer included — can become that initialization run.
+  const primeFonts = () => {
+    document.fillColor('#ffffff').font('NotoSansArabic-Bold').fontSize(1)
+      .text('ا', -10, -10, shaped({ lineBreak: false }));
+    document.font('NotoSansArabic-Regular').fontSize(1)
+      .text('ا', -10, -10, shaped({ lineBreak: false }));
+  };
   const addPage = () => {
     document.addPage();
     pageNumber += 1;
+    if (pageNumber === 1) primeFonts();
     const width = document.page.width - PAGE_MARGIN * 2;
     document.fillColor('#6b7280').font('NotoSansArabic-Regular').fontSize(7);
     drawText(document, `\u0635\u0641\u062d\u0629 ${pageNumber}`, PAGE_MARGIN, document.page.height - PAGE_MARGIN, width, 'center');
   };
 
   addPage();
-  // PDFKit's first shaped run for an embedded Arabic font initializes its
-  // subset. Prime both subsets outside the printable area so no real text
-  // can become that initialization run.
-  document.fillColor('#ffffff').font('NotoSansArabic-Bold').fontSize(1)
-    .text('\u0627', -10, -10, shaped({ lineBreak: false }));
-  document.font('NotoSansArabic-Regular').fontSize(1)
-    .text('\u0627', -10, -10, shaped({ lineBreak: false }));
 
   if (isInvoice) {
     await renderInvoice(document, source, addPage);

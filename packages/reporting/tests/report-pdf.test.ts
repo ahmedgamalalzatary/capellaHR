@@ -27,6 +27,23 @@ const snapshot: ReportSnapshot = {
  * decoding the subset font's ToUnicode map. A correct Arabic sheet paints the
  * last word of a line first, because that word sits furthest left.
  */
+/** Every inflated content stream that paints text, in page order. */
+const pageStreams = (pdf: Buffer): string[] => {
+  const source = pdf.toString('latin1');
+  const pages: string[] = [];
+  for (const match of source.matchAll(/stream\r?\n/gu)) {
+    const start = match.index + match[0].length;
+    try {
+      const text = inflateSync(
+        Buffer.from(source.slice(start, source.indexOf('endstream', start)), 'latin1'),
+        { finishFlush: constants.Z_SYNC_FLUSH },
+      ).toString('latin1');
+      if (text.includes('Tj') || text.includes('TJ')) pages.push(text);
+    } catch { /* font files and other binary streams are not text */ }
+  }
+  return pages;
+};
+
 const paintedOrder = (pdf: Buffer): string[] => {
   const source = pdf.toString('latin1');
   // Both the page content and the ToUnicode maps are deflated in real output.
@@ -81,6 +98,24 @@ describe('Arabic report PDF renderer', () => {
     });
 
     expect(rightToLeft).toBe(true);
+  });
+
+  it('shapes the page-one footer exactly as every later page', async () => {
+    const pdf = await renderReportPdf({
+      ...snapshot,
+      rows: Array.from({ length: 200 }, (_, index) => ({ fullName: `سعيد محمود ${index}` })),
+    });
+    // The footer is the first text on each page: same word, same glyphs, so
+    // page one is never left carrying a degraded font warm-up run.
+    const footers = pageStreams(pdf).map((page) => {
+      // The footer is the only text at size 7; page one also carries the warm-up.
+      const footer = page.slice(page.indexOf('7 Tf'));
+      return [...footer.matchAll(/<([0-9a-fA-F]+)>/gu)].slice(1, 4)
+        .map(([, hex]) => hex).join(' ');
+    });
+
+    expect(footers.length).toBeGreaterThan(1);
+    expect(new Set(footers).size).toBe(1);
   });
 
   it('formats invoice sale timestamps in Cairo across the UTC midnight boundary', () => {

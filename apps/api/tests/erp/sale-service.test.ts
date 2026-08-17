@@ -34,6 +34,7 @@ const invoice = {
   id: 44,
   invoiceNumber: 'INV-2026.08.03-14.35-17',
   status: 'completed' as const,
+  kind: 'sale' as const,
   branchId: 2,
   cashierSessionId: 13,
   client: { id: 5, name: 'منى أحمد', phone: '01012345678' },

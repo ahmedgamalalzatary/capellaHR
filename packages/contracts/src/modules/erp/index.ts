@@ -7,3 +7,4 @@ export * from './expenses/index.js';
 export * from './sales/index.js';
 export * from './stock/index.js';
 export * from './suppliers/index.js';
+export * from './transfers/index.js';
