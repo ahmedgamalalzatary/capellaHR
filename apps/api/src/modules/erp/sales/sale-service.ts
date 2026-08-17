@@ -40,7 +40,11 @@ export type CompleteSaleOperation = {
   actingAccountRole: 'admin' | 'cashier';
   invoiceNumber: string;
   soldAt: Date;
-  assertEmployee?(context: unknown): Promise<AssignableEmployee>;
+  /**
+   * Rechecks attendance for every employee the invoice's service lines name,
+   * in ascending id order so concurrent sales lock them the same way.
+   */
+  assertEmployees?(context: unknown): Promise<AssignableEmployee[]>;
   /**
    * Product lines normally sell at the shelf price, which the request may never
    * override. A branch-to-branch transfer is the one sale priced at cost.
@@ -192,7 +196,9 @@ export const createSaleService = (dependencies: {
 
       const number = await invoiceNumbers.allocate();
       try {
-        const hasService = resolved.lines.some((line) => line.itemType === 'service');
+        const employeeIds = [...new Set(resolved.lines.flatMap((line) => (
+          line.itemType === 'service' ? [line.employeeId] : []
+        )))].sort((left, right) => left - right);
         const invoice = await repository.complete({
           input: resolved,
           actingAccountId: accountId,
@@ -202,11 +208,17 @@ export const createSaleService = (dependencies: {
           ...(options?.pricing ? { pricing: options.pricing } : {}),
           ...(options?.kind ? { kind: options.kind } : {}),
           ...(options?.afterInvoice ? { afterInvoice: options.afterInvoice } : {}),
-          ...(hasService ? {
-            assertEmployee: (context: unknown) => assignment.assertAssignable(actor, {
-              employeeId: resolved.assignedEmployeeId!,
-              branchId: resolved.branchId,
-            }, context),
+          ...(employeeIds.length ? {
+            assertEmployees: async (context: unknown) => {
+              const assignable: AssignableEmployee[] = [];
+              for (const employeeId of employeeIds) {
+                assignable.push(await assignment.assertAssignable(actor, {
+                  employeeId,
+                  branchId: resolved.branchId,
+                }, context));
+              }
+              return assignable;
+            },
           } : {}),
         });
         return invoice;

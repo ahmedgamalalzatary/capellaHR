@@ -62,7 +62,6 @@ export const invoices = mysqlTable('erp_invoices', {
   id: int('id').autoincrement().primaryKey(),
   branchId: int('branch_id').notNull(),
   clientId: int('client_id').notNull(),
-  assignedEmployeeId: int('assigned_employee_id'),
   sellerEmployeeId: int('seller_employee_id'),
   actingAccountId: int('acting_account_id').notNull(),
   cashierSessionId: int('cashier_session_id').notNull(),
@@ -73,8 +72,6 @@ export const invoices = mysqlTable('erp_invoices', {
   // Mirrors the client record: whichever of the two identified them at the till.
   clientNameSnapshot: varchar('client_name_snapshot', { length: 255 }),
   clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }),
-  employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }),
-  employeeCodeSnapshot: int('employee_code_snapshot'),
   sellerNameSnapshot: varchar('seller_name_snapshot', { length: 255 }),
   authorizedBySnapshot: varchar('authorized_by_snapshot', { length: 255 }).notNull(),
   subtotal: decimal('subtotal', { precision: 14, scale: 2 }).notNull(),
@@ -90,7 +87,6 @@ export const invoices = mysqlTable('erp_invoices', {
 }, (table) => [
   foreignKey({ name: 'erp_invoices_branch_fk', columns: [table.branchId], foreignColumns: [branches.id] }),
   foreignKey({ name: 'erp_invoices_client_branch_fk', columns: [table.clientId, table.branchId], foreignColumns: [clients.id, clients.branchId] }),
-  foreignKey({ name: 'erp_invoices_employee_branch_fk', columns: [table.assignedEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   foreignKey({ name: 'erp_invoices_seller_branch_fk', columns: [table.sellerEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   foreignKey({ name: 'erp_invoices_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   foreignKey({ name: 'erp_invoices_session_branch_fk', columns: [table.cashierSessionId, table.branchId], foreignColumns: [cashierSessions.id, cashierSessions.branchId] }),
@@ -105,7 +101,6 @@ export const invoices = mysqlTable('erp_invoices', {
   uniqueIndex('erp_invoices_idempotency_unique').on(table.idempotencyKey),
   index('erp_invoices_branch_sold_idx').on(table.branchId, table.soldAt),
   index('erp_invoices_client_sold_idx').on(table.clientId, table.soldAt),
-  index('erp_invoices_employee_sold_idx').on(table.assignedEmployeeId, table.soldAt),
   index('erp_invoices_seller_sold_idx').on(table.sellerEmployeeId, table.soldAt),
   index('erp_invoices_session_idx').on(table.cashierSessionId),
   check('erp_invoices_subtotal_positive', sql`${table.subtotal} > 0`),
@@ -120,11 +115,6 @@ export const invoices = mysqlTable('erp_invoices', {
   check(
     'erp_invoices_tax_consistent',
     sql`(tax_kind is null and tax_value is null and tax_amount = 0) or (tax_kind is not null and tax_value is not null and tax_value >= 0 and tax_amount >= 0 and (tax_kind <> 'percentage' or tax_value <= 100))`,
-  ),
-  check('erp_invoices_employee_code_positive', sql`${table.employeeCodeSnapshot} > 0`),
-  check(
-    'erp_invoices_employee_assignment_consistent',
-    sql`(${table.assignedEmployeeId} is null and ${table.employeeNameSnapshot} is null and ${table.employeeCodeSnapshot} is null) or (${table.assignedEmployeeId} is not null and ${table.employeeNameSnapshot} is not null and ${table.employeeCodeSnapshot} is not null)`,
   ),
   check(
     'erp_invoices_seller_consistent',
@@ -162,6 +152,13 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   serviceId: int('service_id'),
   productId: int('product_id'),
   itemNameSnapshot: varchar('item_name_snapshot', { length: 255 }).notNull(),
+  /**
+   * The employee who performed this service, so one invoice can pay commission
+   * to several people. A product line names nobody and earns nothing.
+   */
+  employeeId: int('employee_id'),
+  employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }),
+  employeeCodeSnapshot: int('employee_code_snapshot'),
   quantity: int('quantity').notNull(),
   unitPrice: decimal('unit_price', { precision: 12, scale: 2 }).notNull(),
   lineTotal: decimal('line_total', { precision: 14, scale: 2 }).notNull(),
@@ -173,9 +170,17 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   foreignKey({ name: 'erp_invoice_lines_invoice_branch_fk', columns: [table.invoiceId, table.branchId], foreignColumns: [invoices.id, invoices.branchId] }),
   foreignKey({ name: 'erp_invoice_lines_service_branch_fk', columns: [table.serviceId, table.branchId], foreignColumns: [erpServices.id, erpServices.branchId] }),
   foreignKey({ name: 'erp_invoice_lines_product_branch_fk', columns: [table.productId, table.branchId], foreignColumns: [erpProducts.id, erpProducts.branchId] }),
+  foreignKey({ name: 'erp_invoice_lines_employee_branch_fk', columns: [table.employeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   uniqueIndex('erp_invoice_lines_invoice_line_unique').on(table.invoiceId, table.lineNumber),
   index('erp_invoice_lines_service_idx').on(table.serviceId),
   index('erp_invoice_lines_product_idx').on(table.productId),
+  index('erp_invoice_lines_employee_idx').on(table.employeeId),
+  // A product names nobody. A service names one employee with both snapshots,
+  // and may only be employee-free while its invoice is still a draft.
+  check(
+    'erp_invoice_lines_employee_consistent',
+    sql`(item_type = 'product' and employee_id is null and employee_name_snapshot is null and employee_code_snapshot is null) or (item_type = 'service' and ((employee_id is null and employee_name_snapshot is null and employee_code_snapshot is null) or (employee_id is not null and employee_name_snapshot is not null and employee_code_snapshot > 0)))`,
+  ),
   check(
     'erp_invoice_lines_source_consistent',
     sql`(item_type = 'service' and service_id is not null and product_id is null) or (item_type = 'product' and product_id is not null and service_id is null)`,

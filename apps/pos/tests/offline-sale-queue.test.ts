@@ -30,10 +30,9 @@ const owner: OfflineSaleOwner = {
 const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   clientId: 5,
   sellerEmployeeId: 9,
-  assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey,
-  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
   payments: [{ method: 'cash', amount: '185.00' }],
 });
 
@@ -225,7 +224,6 @@ describe('offline sale queue', () => {
       input: {
         clientId: 5,
         sellerEmployeeId: 9,
-        assignedEmployeeId: 8,
         cashierSessionId: 13,
         idempotencyKey,
         lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
@@ -264,7 +262,7 @@ describe('offline sale queue', () => {
     }));
 
     expect(listOfflineSales(owner)[0]?.input.lines).toEqual([
-      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' },
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 },
     ]);
     expect(hasUnrecoverableOfflineSales()).toBe(false);
   });

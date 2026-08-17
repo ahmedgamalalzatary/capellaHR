@@ -47,13 +47,13 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
     branchId: 3,
     cashierSessionId: 14,
     client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
-    assignedEmployee: { id: 18, employeeCode: 1018, name: 'سارة علي' },
     seller: { id: 17, employeeCode: 1017, name: 'أحمد جمال' },
     authorizedBy: { accountId: 8, username: 'cashier.one' },
     lines: [
       {
         id: 81, lineNumber: 1, itemType: 'service', sourceId: 21,
         name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+        employee: { id: 18, employeeCode: 1018, name: 'سارة علي' },
         commissionRule: 'service_default', commissionRate: '10.00',
         commissionAmount: '20.00', productCostBasis: null,
         refundedQuantity: 0, refundableQuantity: 1,
@@ -61,6 +61,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
       {
         id: 82, lineNumber: 2, itemType: 'product', sourceId: 31,
         name: 'شامبو', quantity: 1, unitPrice: '50.00', lineTotal: '50.00',
+        employee: null,
         commissionRule: 'none', commissionRate: '0.00',
         commissionAmount: '0.00', productCostBasis: '25.00',
         refundedQuantity: 0, refundableQuantity: 1,
@@ -252,10 +253,10 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
             status: storedInvoice.status,
             total: storedInvoice.totals.total,
             client: { id: storedInvoice.client.id, name: storedInvoice.client.name },
-            assignedEmployee: {
-              id: storedInvoice.assignedEmployee.id,
-              name: storedInvoice.assignedEmployee.name,
-            },
+            employees: [{
+              id: storedInvoice.lines[0]!.employee!.id,
+              name: storedInvoice.lines[0]!.employee!.name,
+            }],
             soldAt: storedInvoice.soldAt,
           }],
           meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
@@ -344,11 +345,10 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   expect(completedSaleRequests).toBe(1);
   expect(completedSale).toMatchObject({
     clientId: 5,
-    assignedEmployeeId: 18,
     sellerEmployeeId: 17,
     cashierSessionId: 14,
     lines: [
-      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' },
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 18 },
       { itemType: 'product', productId: 31, quantity: 1 },
     ],
     payments: [{ method: 'cash', amount: '250.00' }],

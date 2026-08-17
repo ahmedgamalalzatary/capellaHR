@@ -28,12 +28,11 @@ import {
 const validDraft = {
   branchId: 2,
   clientId: 5,
-  assignedEmployeeId: 8,
   sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
   lines: [
-    { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200' },
+    { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 },
     { itemType: 'product' as const, productId: 34, quantity: 2 },
   ],
   discount: { kind: 'percentage' as const, value: '10' },
@@ -148,22 +147,38 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(false);
   });
 
-  it('requires an employee only when the sale contains a service', () => {
-    const productOnly = {
-      ...validDraft,
-      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
-    };
-    delete (productOnly as Partial<typeof productOnly>).assignedEmployeeId;
-
-    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
-    expect(completeSaleSchema.parse({
-      ...productOnly,
-      assignedEmployeeId: 8,
-    })).not.toHaveProperty('assignedEmployeeId');
+  it('requires an employee on every service line and rejects one on a product line', () => {
     expect(completeSaleSchema.safeParse({
       ...validDraft,
-      assignedEmployeeId: undefined,
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+    }).success).toBe(true);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
     }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'product', productId: 34, quantity: 2, employeeId: 8 }],
+    }).success).toBe(false);
+  });
+
+  it('lets each service line name its own employee', () => {
+    const parsed = completeSaleSchema.parse({
+      ...validDraft,
+      lines: [
+        { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 },
+        { itemType: 'service' as const, serviceId: 22, quantity: 1, unitPrice: '150', employeeId: 11 },
+        { itemType: 'product' as const, productId: 34, quantity: 2 },
+      ],
+    });
+    expect(parsed.lines.map((line) => ('employeeId' in line ? line.employeeId : null)))
+      .toEqual([8, 11, null]);
+    expect(parsed).not.toHaveProperty('assignedEmployeeId');
+  });
+
+  it('no longer accepts an invoice-level assigned employee', () => {
+    expect(completeSaleSchema.safeParse({ ...validDraft, assignedEmployeeId: 8 }).success)
+      .toBe(false);
   });
 
   it('requires the selling cashier on every sale, services and products alike', () => {
@@ -176,35 +191,67 @@ describe('ERP complete-sale contracts', () => {
       sellerEmployeeId,
       lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
     };
-    delete (productOnly as Partial<typeof productOnly>).assignedEmployeeId;
     expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
     expect(completeSaleSchema.safeParse({ ...productOnly, sellerEmployeeId: 0 }).success).toBe(false);
   });
 
-  it('publishes product-only invoices without an assigned employee', () => {
-    const productOnlyInvoice = {
-      ...saleFixtures.completedInvoice,
-      assignedEmployee: null,
-      lines: [{
-        ...saleFixtures.completedInvoice.lines[0],
-        itemType: 'product' as const,
-        sourceId: 34,
-        commissionRule: 'none' as const,
-        commissionRate: '0.00',
-        commissionAmount: '0.00',
-        productCostBasis: '50.00',
-      }],
+  it('carries the performing employee on each service line and none on product lines', () => {
+    const productLine = {
+      ...saleFixtures.completedInvoice.lines[0],
+      itemType: 'product' as const,
+      sourceId: 34,
+      employee: null,
+      commissionRule: 'none' as const,
+      commissionRate: '0.00',
+      commissionAmount: '0.00',
+      productCostBasis: '50.00',
     };
 
-    expect(invoiceSchema.safeParse(productOnlyInvoice).success).toBe(true);
     expect(invoiceSchema.safeParse({
       ...saleFixtures.completedInvoice,
-      assignedEmployee: null,
+      lines: [productLine],
+    }).success).toBe(true);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{ ...saleFixtures.completedInvoice.lines[0], employee: null }],
     }).success).toBe(false);
     expect(invoiceSchema.safeParse({
-      ...productOnlyInvoice,
-      assignedEmployee: saleFixtures.completedInvoice.assignedEmployee,
-    }).success).toBe(true);
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...productLine,
+        employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+      }],
+    }).success).toBe(false);
+  });
+
+  it('publishes one invoice holding two different service employees', () => {
+    const [line] = saleFixtures.completedInvoice.lines;
+    const parsed = invoiceSchema.parse({
+      ...saleFixtures.completedInvoice,
+      lines: [
+        line,
+        {
+          ...line,
+          id: 82,
+          lineNumber: 2,
+          sourceId: 22,
+          employee: { id: 11, employeeCode: 1011, name: 'هدى محمود' },
+        },
+      ],
+      discount: { kind: 'percentage' as const, value: '10.00', amount: '40.00' },
+      totals: {
+        subtotal: '400.00',
+        discountAmount: '40.00',
+        taxAmount: '5.00',
+        total: '365.00',
+        paymentTotal: '365.00',
+      },
+      payments: [{
+        method: 'cash', amount: '365.00', refundedAmount: '0.00', refundableAmount: '365.00',
+      }],
+    });
+    expect(parsed.lines.map((row) => row.employee?.id)).toEqual([8, 11]);
+    expect(parsed).not.toHaveProperty('assignedEmployee');
   });
 
   it('requires and normalizes a positive unit price for every service sale line', () => {
@@ -463,9 +510,17 @@ describe('ERP complete-sale contracts', () => {
       invoiceNumber: 'INV-2026.08.03-14.35-17',
       status: 'completed',
       total: '185.00',
-      assignedEmployee: { id: 8, name: 'سارة علي' },
+      employees: [{ id: 8, name: 'سارة علي' }, { id: 11, name: 'هدى محمود' }],
       soldAt: '2026-08-03T11:35:00.000Z',
     }).success).toBe(true);
+    expect(clientVisitSummarySchema.safeParse({
+      id: 44,
+      invoiceNumber: 'INV-2026.08.03-14.35-17',
+      status: 'completed',
+      total: '185.00',
+      employees: [{ id: 8, name: 'سارة علي' }, { id: 8, name: 'سارة علي' }],
+      soldAt: '2026-08-03T11:35:00.000Z',
+    }).success).toBe(false);
   });
 
   it('publishes branch-scoped paged invoice history and detail parameters', () => {
@@ -483,7 +538,7 @@ describe('ERP complete-sale contracts', () => {
       status: 'completed',
       total: '185.00',
       client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
-      assignedEmployee: { id: 8, name: 'سارة علي' },
+      employees: [{ id: 8, name: 'سارة علي' }, { id: 11, name: 'هدى محمود' }],
       soldAt: '2026-08-03T11:35:00.000Z',
     }).success).toBe(true);
   });
@@ -495,7 +550,7 @@ describe('ERP complete-sale contracts', () => {
       status: 'completed',
       total: '185.00',
       client: { id: 5, name: null, phone: '01012345678' },
-      assignedEmployee: null,
+      employees: [],
       soldAt: '2026-08-03T11:35:00.000Z',
     });
 

@@ -24,7 +24,10 @@ const item = {
   status: 'completed',
   total: saleFixtures.completedInvoice.totals.total,
   client: { id: 5, name: saleFixtures.completedInvoice.client.name },
-  assignedEmployee: { id: 8, name: saleFixtures.completedInvoice.assignedEmployee.name },
+  employees: [
+    { id: 8, name: saleFixtures.completedInvoice.lines[0].employee.name },
+    { id: 11, name: 'هدى محمود' },
+  ],
   soldAt: saleFixtures.completedInvoice.soldAt,
 };
 
@@ -59,14 +62,15 @@ describe('invoice history', () => {
     renderView();
     const link = await screen.findByRole('link', { name: item.invoiceNumber });
     expect(link.getAttribute('href')).toBe('/invoices/44');
-    expect(screen.getByText(new RegExp(item.client.name))).toBeDefined();
+    // Every employee behind the sale is named, not just the first.
+    expect(screen.getByText(new RegExp(`${item.client.name}.*سارة علي.*هدى محمود`))).toBeDefined();
     expect(screen.getByText('مكتملة')).toBeDefined();
     expect(mocks.listInvoices).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
   });
 
   it('labels product-only invoices as having no assigned employee', async () => {
     mocks.listInvoices.mockResolvedValueOnce({
-      items: [{ ...item, assignedEmployee: null }],
+      items: [{ ...item, employees: [] }],
       meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
     });
 

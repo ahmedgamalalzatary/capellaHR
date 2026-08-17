@@ -119,11 +119,11 @@ beforeAll(async () => {
   }))[0].insertId);
   const operation: CompleteSaleOperation = {
     input: {
-      branchId, clientId, assignedEmployeeId: employeeId, sellerEmployeeId: employeeId,
+      branchId, clientId, sellerEmployeeId: employeeId,
       cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
       lines: [
-        { itemType: 'service', serviceId, quantity: 1, unitPrice: '200.00' },
+        { itemType: 'service', serviceId, quantity: 1, unitPrice: '200.00', employeeId },
         { itemType: 'product', productId, quantity: 1 },
       ],
       discount: { kind: 'percentage', value: '10.00' },
@@ -134,9 +134,9 @@ beforeAll(async () => {
     actingAccountRole: 'cashier',
     invoiceNumber: 'INV.2026.08.09.0001',
     soldAt,
-    assertEmployee: async () => ({
+    assertEmployees: async () => [{
       id: employeeId, employeeCode: 1_919_001, fullName: 'موظف التقرير', branchId,
-    }),
+    }],
   };
   const sales = createDrizzleSaleRepository(
     database, createErpAuditCapability(), createErpPayrollCapability(database),
@@ -222,7 +222,9 @@ describe('ERP reports MySQL reader', () => {
 
     // Two customer sales plus the branch transfer, which is a sale too.
     expect(sales).toMatchObject({ kind: 'success', total: 3 });
-    expect(employees).toMatchObject({ kind: 'success', total: 2 });
+    // One row: the service the employee performed. The refund reversed a
+    // product line, which belongs to no employee and so credits none.
+    expect(employees).toMatchObject({ kind: 'success', total: 1 });
     if (employees.kind === 'success') {
       expect(employees.snapshot.rows).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ invoiceNumber: 'INV.2026.07.09.0001' }),

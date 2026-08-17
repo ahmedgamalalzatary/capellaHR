@@ -48,6 +48,11 @@ const renderView = (branchId: number | undefined = 2) => {
   return queryClient;
 };
 
+/** The customer's own copy; employee copies repeat much of the same text. */
+const customerReceipt = () => within(
+  document.querySelector('[data-customer-receipt]') as HTMLElement,
+);
+
 describe('stored invoice receipt', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -110,10 +115,12 @@ describe('stored invoice receipt', () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     renderView();
 
-    expect(await screen.findByText(saleFixtures.completedInvoice.invoiceNumber)).toBeDefined();
+    expect(await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber)).toBeDefined();
     expect(screen.getByText(saleFixtures.completedInvoice.client.name)).toBeDefined();
-    expect(screen.getByText(saleFixtures.completedInvoice.assignedEmployee.name)).toBeDefined();
-    expect(screen.getByText(new RegExp(saleFixtures.completedInvoice.lines[0].name))).toBeDefined();
+    expect(screen.getAllByText(saleFixtures.completedInvoice.lines[0].employee.name).length)
+      .toBeGreaterThan(0);
+    expect(customerReceipt().getByText(new RegExp(saleFixtures.completedInvoice.lines[0].name)))
+      .toBeDefined();
     expect(screen.getByText('الكاشير')).toBeDefined();
     expect(screen.getByText(saleFixtures.completedInvoice.seller.name)).toBeDefined();
 
@@ -130,7 +137,7 @@ describe('stored invoice receipt', () => {
     });
     renderView();
 
-    expect(await screen.findByText(saleFixtures.completedInvoice.invoiceNumber)).toBeDefined();
+    expect(await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber)).toBeDefined();
     expect(screen.getByText('بواسطة')).toBeDefined();
     expect(screen.getByText(saleFixtures.completedInvoice.authorizedBy.username)).toBeDefined();
     expect(screen.queryByText('الكاشير')).toBeNull();
@@ -140,24 +147,24 @@ describe('stored invoice receipt', () => {
     const toString = vi.spyOn(QRCode, 'toString');
     renderView();
 
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     await waitFor(() => expect(toString).toHaveBeenCalledWith(
       saleFixtures.completedInvoice.invoiceNumber,
       expect.objectContaining({ type: 'svg' }),
     ));
     expect(screen.getByTestId('receipt-qr').innerHTML).toContain('svg');
-    expect(screen.getByText('Capella Care')).toBeDefined();
+    expect(customerReceipt().getByText('Capella Care')).toBeDefined();
     expect(screen.getByText('إيصال بيع')).toBeDefined();
-    expect(screen.getByText('رقم الفاتورة')).toBeDefined();
-    expect(screen.getByText('التاريخ')).toBeDefined();
+    expect(customerReceipt().getByText('رقم الفاتورة')).toBeDefined();
+    expect(customerReceipt().getByText('التاريخ')).toBeDefined();
     expect(document.querySelector('[data-receipt]')).not.toBeNull();
   });
 
   it('lays out every sold line in a priced quantity table', async () => {
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    const table = screen.getByRole('table');
+    const table = customerReceipt().getByRole('table');
     expect(within(table).getAllByRole('columnheader').map((header) => header.textContent))
       .toEqual(['الصنف', 'عدد', 'سعر', 'قيمة']);
     const rows = within(table).getAllByRole('row');
@@ -168,25 +175,27 @@ describe('stored invoice receipt', () => {
 
   it('prints the counter contact details and the consumer-protection return policy', async () => {
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(screen.getByText('Capella Care')).toBeDefined();
-    expect(screen.getByText(/01034660596/)).toBeDefined();
-    expect(screen.getByText('www.capellacares.com')).toBeDefined();
-    expect(screen.getByText('سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك')).toBeDefined();
-    expect(screen.getByText(/خلال 14 يوم/)).toBeDefined();
-    expect(screen.getByText(/19588/)).toBeDefined();
+    expect(customerReceipt().getByText('Capella Care')).toBeDefined();
+    expect(customerReceipt().getByText(/01034660596/)).toBeDefined();
+    expect(customerReceipt().getByText('www.capellacares.com')).toBeDefined();
+    expect(customerReceipt()
+      .getByText('سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك')).toBeDefined();
+    expect(customerReceipt().getByText(/خلال 14 يوم/)).toBeDefined();
+    expect(customerReceipt().getByText(/19588/)).toBeDefined();
   });
 
   it('summarizes item counts, discount and tax with an emphasized final total', async () => {
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(screen.getByText('عدد الأصناف').parentElement?.textContent).toContain('1');
     expect(screen.getByText('إجمالي الكميات').parentElement?.textContent).toContain('1');
-    expect(screen.getByText('المجموع الفرعي').parentElement?.textContent).toContain('200.00');
-    expect(screen.getByText('الخصم').parentElement?.textContent).toContain('20.00');
-    expect(screen.getByText('الضريبة').parentElement?.textContent).toContain('5.00');
+    expect(customerReceipt().getByText('المجموع الفرعي').parentElement?.textContent)
+      .toContain('200.00');
+    expect(customerReceipt().getByText('الخصم').parentElement?.textContent).toContain('20.00');
+    expect(customerReceipt().getByText('الضريبة').parentElement?.textContent).toContain('5.00');
     const grandTotal = screen.getByText('الإجمالي النهائي').parentElement;
     expect(grandTotal?.textContent).toContain('185.00');
     expect(grandTotal?.hasAttribute('data-grand-total')).toBe(true);
@@ -199,20 +208,20 @@ describe('stored invoice receipt', () => {
       tax: null,
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(screen.queryByText('الخصم')).toBeNull();
-    expect(screen.queryByText('الضريبة')).toBeNull();
+    expect(customerReceipt().queryByText('الخصم')).toBeNull();
+    expect(customerReceipt().queryByText('الضريبة')).toBeNull();
     expect(screen.getByText('الإجمالي النهائي').parentElement?.textContent).toContain('185.00');
   });
 
   it('lists tenders with a paid total under the reversal-ready payment rows', async () => {
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(screen.getByText('نقدي').parentElement?.textContent).toContain('185.00');
     expect(screen.getByText('المدفوع').parentElement?.textContent).toContain('185.00');
-    expect(screen.getByText('شكرًا لزيارتكم')).toBeDefined();
+    expect(customerReceipt().getByText('شكرًا لزيارتكم')).toBeDefined();
   });
 
   it('leaves refunding to the refunds tab and keeps the receipt page void-only', async () => {
@@ -221,7 +230,7 @@ describe('stored invoice receipt', () => {
       eligibility: { canVoid: true, canRefund: true },
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(screen.queryByRole('button', { name: 'استرداد' })).toBeNull();
     expect(screen.getByRole('button', { name: 'إلغاء الفاتورة' })).toBeDefined();
@@ -230,13 +239,55 @@ describe('stored invoice receipt', () => {
   it('labels a product-only receipt as having no assigned employee', async () => {
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
-      assignedEmployee: null,
-      lines: [{ ...saleFixtures.completedInvoice.lines[0]!, itemType: 'product' }],
+      lines: [{ ...saleFixtures.completedInvoice.lines[0]!, itemType: 'product', employee: null }],
     });
 
     renderView();
 
     expect(await screen.findByText('بدون موظف')).toBeDefined();
+    // Nobody performed anything, so there is no employee copy to print.
+    expect(document.querySelectorAll('[data-employee-receipt]')).toHaveLength(0);
+  });
+
+  it('prints one employee copy per employee beside the customer receipt', async () => {
+    const [line] = saleFixtures.completedInvoice.lines;
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      lines: [
+        line,
+        { ...line, id: 82, lineNumber: 2, name: 'قص شعر' },
+        {
+          ...line,
+          id: 83,
+          lineNumber: 3,
+          name: 'مانيكير',
+          employee: { id: 11, employeeCode: 1011, name: 'هدى محمود' },
+        },
+      ],
+      totals: {
+        subtotal: '600.00', discountAmount: '60.00', taxAmount: '5.00',
+        total: '545.00', paymentTotal: '545.00',
+      },
+      discount: { kind: 'percentage', value: '10.00', amount: '60.00' },
+      payments: [{
+        method: 'cash', amount: '545.00', refundedAmount: '0.00', refundableAmount: '545.00',
+      }],
+    });
+
+    renderView();
+
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+    const copies = [...document.querySelectorAll('[data-employee-receipt]')];
+    expect(copies).toHaveLength(2);
+    // Each copy carries only that employee's own lines and their own share.
+    expect(within(copies[0] as HTMLElement).getByText('سارة علي')).toBeDefined();
+    expect(within(copies[0] as HTMLElement).getByText('قص شعر')).toBeDefined();
+    expect(within(copies[0] as HTMLElement).queryByText('مانيكير')).toBeNull();
+    // 400 of the 600 subtotal: 40 of the discount and 3.33 of the tax, exactly.
+    expect(within(copies[0] as HTMLElement).getByText('363.33 ج.م')).toBeDefined();
+    expect(within(copies[1] as HTMLElement).getByText('هدى محمود')).toBeDefined();
+    expect(within(copies[1] as HTMLElement).getByText('مانيكير')).toBeDefined();
+    expect(within(copies[1] as HTMLElement).getByText('181.67 ج.م')).toBeDefined();
   });
 
   it('keeps the receipt clean of per-tender refund balances and shows immutable reversal details', async () => {
@@ -281,7 +332,7 @@ describe('stored invoice receipt', () => {
       eligibility: { canVoid: true, canRefund: true },
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
     expect((screen.getByRole('button', { name: 'تأكيد الإلغاء' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
@@ -298,7 +349,7 @@ describe('stored invoice receipt', () => {
     });
     voidInvoice.mockRejectedValueOnce(new Error('network timeout'));
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
     fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
 
@@ -317,7 +368,7 @@ describe('stored invoice receipt', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     fireEvent.click(screen.getByRole('button', { name: 'إنشاء PDF A4' }));
     await waitFor(() => expect(reportExports.create).toHaveBeenCalledWith({
@@ -333,7 +384,7 @@ describe('stored invoice receipt', () => {
   it('does not expose invoice PDF exports to a Cashier', async () => {
     reportExports.actor.current = 'cashier';
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(screen.queryByRole('button', { name: 'إنشاء PDF A4' })).toBeNull();
   });
@@ -352,7 +403,7 @@ describe('stored invoice receipt', () => {
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
     expect(reportExports.create).not.toHaveBeenCalled();
@@ -370,7 +421,7 @@ describe('stored invoice receipt', () => {
       meta: { page: 1, pageSize: 100, total: 101, totalPages: 2 },
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
     expect(reportExports.list).toHaveBeenCalledOnce();
@@ -398,7 +449,7 @@ describe('stored invoice receipt', () => {
     });
 
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     await waitFor(() => expect(reportExports.get).toHaveBeenCalledWith(91));
     expect(screen.queryByRole('button', { name: 'تنزيل PDF A4' })).toBeNull();
@@ -413,7 +464,7 @@ describe('stored invoice receipt', () => {
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     const createButton = await screen.findByRole('button', { name: 'إنشاء PDF A4' });
     expect(reportExports.get).not.toHaveBeenCalled();
@@ -434,7 +485,7 @@ describe('stored invoice receipt', () => {
       fileDeletedAt: null, createdAt: '', updatedAt: '',
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     fireEvent.click(await screen.findByRole('button', { name: 'إعادة تحميل حالة PDF' }));
     await waitFor(() => expect(reportExports.get).toHaveBeenCalledTimes(2));
@@ -448,7 +499,7 @@ describe('stored invoice receipt', () => {
     let rejectVoid!: (error: Error) => void;
     voidInvoice.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectVoid = reject; }));
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
     fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
@@ -473,7 +524,7 @@ describe('stored invoice receipt', () => {
     });
     voidInvoice.mockRejectedValueOnce(new Error('network timeout'));
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
     fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
@@ -495,7 +546,7 @@ describe('stored invoice receipt', () => {
       eligibility: { canVoid: true, canRefund: true },
     });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
     fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'إدخال مكرر' } });
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
@@ -508,7 +559,7 @@ describe('stored invoice receipt', () => {
   it('reports an unavailable browser print API without losing the stored receipt', async () => {
     Object.defineProperty(window, 'print', { configurable: true, value: undefined });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
     expect(screen.getByRole('alert').textContent).toContain('الطباعة غير متاحة');
@@ -518,7 +569,7 @@ describe('stored invoice receipt', () => {
   it('reports a browser print failure and keeps reprint available', async () => {
     vi.spyOn(window, 'print').mockImplementation(() => { throw new Error('printer unavailable'); });
     renderView();
-    await screen.findByText(saleFixtures.completedInvoice.invoiceNumber);
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
     expect(screen.getByRole('alert').textContent).toContain('تعذر فتح نافذة الطباعة');
     expect(screen.getByRole('button', { name: 'طباعة الإيصال' })).toBeDefined();
@@ -544,7 +595,7 @@ describe('stored invoice receipt', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('receipt-request-7');
     getInvoice.mockResolvedValueOnce(saleFixtures.completedInvoice);
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
-    await waitFor(() => expect(screen.getByText(saleFixtures.completedInvoice.invoiceNumber)).toBeDefined());
+    await waitFor(() => expect(screen.getAllByText(saleFixtures.completedInvoice.invoiceNumber).length).toBeGreaterThan(0));
   });
 
   it('rejects an invalid branch query before requesting receipt data', () => {

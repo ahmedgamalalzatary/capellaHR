@@ -39,7 +39,7 @@ const historyItem = {
   invoiceNumber,
   status: 'completed',
   client: saleFixtures.completedInvoice.client,
-  assignedEmployee: saleFixtures.completedInvoice.assignedEmployee,
+  employees: [{ id: 8, name: saleFixtures.completedInvoice.lines[0].employee.name }],
   total: '185.00',
   soldAt: saleFixtures.completedInvoice.soldAt,
 };

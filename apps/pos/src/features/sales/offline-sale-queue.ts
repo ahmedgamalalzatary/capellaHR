@@ -82,18 +82,37 @@ const parseFailure = (value: unknown): OfflineSaleQueueItem['failure'] => {
   return { kind: value.kind, code: value.code, message: value.message };
 };
 
+/**
+ * Repairs a request queued by an older build: one that priced services on the
+ * server, or named its employee once for the whole invoice instead of on each
+ * service line. Both facts are recovered from the draft saved beside it.
+ */
 const recoverPrePriceInput = (value: unknown, draft?: StoredSaleDraft) => {
   if (!isRecord(value) || !Array.isArray(value.lines) || !draft) return value;
   const prices = new Map(draft.lines.flatMap((line) => {
     if (line.itemType === 'product' || line.service.price === null) return [];
     return [[line.service.id, line.unitPrice || line.service.price] as const];
   }));
+  const performers = new Map(draft.lines.flatMap((line) => {
+    if (line.itemType === 'product') return [];
+    const employee = line.employee ?? draft.employee;
+    return employee ? [[line.service.id, employee.id] as const] : [];
+  }));
   return {
     ...value,
     lines: value.lines.map((line) => {
-      if (!isRecord(line) || line.itemType !== 'service' || line.unitPrice !== undefined) return line;
-      const unitPrice = prices.get(Number(line.serviceId));
-      return unitPrice ? { ...line, unitPrice } : line;
+      if (!isRecord(line) || line.itemType !== 'service') return line;
+      const unitPrice = line.unitPrice === undefined
+        ? prices.get(Number(line.serviceId))
+        : undefined;
+      const employeeId = line.employeeId === undefined
+        ? performers.get(Number(line.serviceId))
+        : undefined;
+      return {
+        ...line,
+        ...(unitPrice ? { unitPrice } : {}),
+        ...(employeeId ? { employeeId } : {}),
+      };
     }),
   };
 };

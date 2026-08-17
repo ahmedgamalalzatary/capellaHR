@@ -23,6 +23,8 @@ export type SaleDraft = {
     quantity: number;
     unitPrice: string;
     itemType?: 'service' | 'product';
+    /** Who performed this service; older drafts carry it only at the top. */
+    employee?: AssignableEmployee | null;
   }>;
   discountKind: 'percentage' | 'fixed';
   discountValue: string;
@@ -139,7 +141,10 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
       && typeof line.service.id === 'number'
       && typeof line.service.name === 'string'
       && (typeof line.service.price === 'string' || line.service.price === null)
-      && (line.unitPrice === undefined || typeof line.unitPrice === 'string'))
+      && (line.unitPrice === undefined || typeof line.unitPrice === 'string')
+      // Drafts saved before per-line assignment carry no employee on the line.
+      && (line.employee === undefined || line.employee === null
+        || (hasIdentity(line.employee) && typeof line.employee.employeeCode === 'number')))
     && (value.discountKind === 'percentage' || value.discountKind === 'fixed')
     && typeof value.discountValue === 'string'
     && (value.taxKind === 'percentage' || value.taxKind === 'fixed')

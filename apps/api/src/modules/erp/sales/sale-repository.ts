@@ -29,6 +29,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   like,
   lt,
@@ -151,11 +152,6 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       name: invoice.clientNameSnapshot,
       phone: invoice.clientPhoneSnapshot,
     },
-    assignedEmployee: invoice.assignedEmployeeId === null ? null : {
-      id: invoice.assignedEmployeeId,
-      employeeCode: invoice.employeeCodeSnapshot!,
-      name: invoice.employeeNameSnapshot!,
-    },
     seller: invoice.sellerEmployeeId === null || sellerEmployee === null ? null : {
       id: invoice.sellerEmployeeId,
       employeeCode: sellerEmployee.employeeCode,
@@ -174,6 +170,11 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       lineTotal: line.lineTotal,
+      employee: line.employeeId === null ? null : {
+        id: line.employeeId,
+        employeeCode: line.employeeCodeSnapshot!,
+        name: line.employeeNameSnapshot!,
+      },
       commissionRule: line.commissionRuleSnapshot,
       commissionRate: line.commissionRateSnapshot,
       commissionAmount: line.commissionAmountSnapshot,
@@ -262,9 +263,6 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
   const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
-    ...(invoice.assignedEmployeeId === null ? {} : {
-      assignedEmployeeId: invoice.assignedEmployeeId,
-    }),
     ...(invoice.sellerEmployeeId === null ? {} : {
       sellerEmployeeId: invoice.sellerEmployeeId,
     }),
@@ -276,6 +274,9 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
           serviceId: line.serviceId!,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
+          // A legacy line written before per-line assignment carries no
+          // employee; the contract below rejects replaying it, as it should.
+          employeeId: line.employeeId!,
         }
       : { itemType: 'product' as const, productId: line.productId!, quantity: line.quantity }),
     ...(invoice.discountKind ? {
@@ -398,11 +399,14 @@ export const createDrizzleSaleRepository = (
       employeeId,
       payrollMonth: month,
       calculateAmount: async () => {
-        const invoiceIds = (await transaction.select({ id: invoices.id }).from(invoices).where(and(
-          eq(invoices.assignedEmployeeId, employeeId),
-          gte(invoices.soldAt, startOfCairoDate(`${month}-01`)),
-          lt(invoices.soldAt, startOfCairoDate(`${nextMonth(month)}-01`)),
-        ))).map(({ id }) => id);
+        const invoiceIds = [...new Set((await transaction.selectDistinct({ id: invoices.id })
+          .from(invoices)
+          .innerJoin(invoiceLines, eq(invoiceLines.invoiceId, invoices.id))
+          .where(and(
+            eq(invoiceLines.employeeId, employeeId),
+            gte(invoices.soldAt, startOfCairoDate(`${month}-01`)),
+            lt(invoices.soldAt, startOfCairoDate(`${nextMonth(month)}-01`)),
+          ))).map(({ id }) => id))];
         const entries = invoiceIds.length
           ? await transaction.select({ amount: commissionLedgerEntries.amount })
             .from(commissionLedgerEntries).where(and(
@@ -415,6 +419,30 @@ export const createDrizzleSaleRepository = (
       reference: `erp-commission:${month}:${employeeId}`,
     }, transaction);
   };
+  /**
+   * The distinct employees behind each invoice's services, in line order, for
+   * list screens that no longer read a single employee off the invoice.
+   */
+  const listInvoiceEmployees = async (invoiceIds: number[]) => {
+    const byInvoice = new Map<number, Array<{ id: number; name: string }>>();
+    if (!invoiceIds.length) return byInvoice;
+    const rows = await database.select({
+      invoiceId: invoiceLines.invoiceId,
+      employeeId: invoiceLines.employeeId,
+      employeeName: invoiceLines.employeeNameSnapshot,
+    }).from(invoiceLines).where(and(
+      inArray(invoiceLines.invoiceId, invoiceIds),
+      isNotNull(invoiceLines.employeeId),
+    )).orderBy(asc(invoiceLines.invoiceId), asc(invoiceLines.lineNumber));
+    for (const row of rows) {
+      const current = byInvoice.get(row.invoiceId) ?? [];
+      if (current.some((employee) => employee.id === row.employeeId)) continue;
+      current.push({ id: row.employeeId!, name: row.employeeName! });
+      byInvoice.set(row.invoiceId, current);
+    }
+    return byInvoice;
+  };
+
   const findByIdempotencyKey: SaleRepository['findByIdempotencyKey'] = async (key, actor) => {
     const predicate = actor.actingAccountRole === 'cashier'
       ? and(
@@ -537,8 +565,13 @@ export const createDrizzleSaleRepository = (
           const { input } = operation;
           const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
           const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
+          // Every service names the employee who performed it; the invoice as a
+          // whole names none, so one sale can pay several people.
+          const employeeIds = [...new Set(serviceInputs.map((line) => line.employeeId))]
+            .sort((left, right) => left - right);
           if (serviceInputs.length && (
-            input.assignedEmployeeId === undefined || operation.assertEmployee === undefined
+            employeeIds.some((employeeId) => employeeId === undefined)
+            || operation.assertEmployees === undefined
           )) {
             throw new SaleError('SALE_VALIDATION_FAILED');
           }
@@ -558,8 +591,12 @@ export const createDrizzleSaleRepository = (
             && session.openedByAccountId !== operation.actingAccountId)) {
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
-          if (payroll && serviceInputs.length) {
-            await payroll.lockCommissionEmployee(input.assignedEmployeeId!, transaction);
+          if (payroll) {
+            // Ascending order, so two concurrent sales sharing employees queue
+            // behind each other instead of deadlocking.
+            for (const employeeId of employeeIds) {
+              await payroll.lockCommissionEmployee(employeeId, transaction);
+            }
           }
 
           const client = (await transaction.select().from(clients).where(and(
@@ -596,9 +633,10 @@ export const createDrizzleSaleRepository = (
           if (input.sellerEmployeeId !== undefined && !seller) {
             throw new SaleError('SELLER_NOT_ON_ROSTER');
           }
-          const employee = serviceInputs.length
-            ? await operation.assertEmployee!(transaction)
-            : null;
+          const assignedEmployees = serviceInputs.length
+            ? await operation.assertEmployees!(transaction)
+            : [];
+          const employeeById = new Map(assignedEmployees.map((row) => [row.id, row]));
           const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs, true);
           const quotedProducts = await quoteProducts(
             transaction, input.branchId, productInputs, true, operation.pricing,
@@ -608,33 +646,38 @@ export const createDrizzleSaleRepository = (
             id: erpServices.id,
             commissionPercent: erpServices.commissionPercent,
           }).from(erpServices).where(inArray(erpServices.id, serviceIds)) : [];
+          // An override belongs to one employee, so the same service can pay two
+          // different rates on the same invoice.
           const overrides = serviceIds.length ? await transaction.select().from(erpServiceCommissionOverrides)
             .where(and(
               inArray(erpServiceCommissionOverrides.serviceId, serviceIds),
-              eq(erpServiceCommissionOverrides.employeeId, input.assignedEmployeeId!),
+              inArray(erpServiceCommissionOverrides.employeeId, employeeIds),
             )) : [];
-          const rates = new Map<number, {
-            rule: 'service_default' | 'employee_override';
-            rate: string;
-          }>(serviceRows.map((service) => [service.id, {
-            rule: 'service_default' as const,
-            rate: service.commissionPercent,
-          }]));
-          for (const override of overrides) rates.set(override.serviceId, {
-            rule: 'employee_override' as const,
-            rate: override.commissionPercent,
-          });
-          const calculatedServices = quotedLines.map((line) => {
-            const commission = rates.get(line.sourceId)!;
+          const defaultRates = new Map(serviceRows.map((service) => [
+            service.id, service.commissionPercent,
+          ]));
+          const overrideRates = new Map(overrides.map((override) => [
+            `${override.serviceId}:${override.employeeId}`, override.commissionPercent,
+          ]));
+          const calculatedServices = quotedLines.map((line, index) => {
+            const employee = employeeById.get(serviceInputs[index]!.employeeId)!;
+            const override = overrideRates.get(`${line.sourceId}:${employee.id}`);
+            const rule = override === undefined ? 'service_default' as const : 'employee_override' as const;
+            const rate = override ?? defaultRates.get(line.sourceId)!;
             return {
               ...line,
-              commissionRule: commission.rule,
-              commissionRate: commission.rate,
-              commissionAmount: calculateCommission(line.lineTotal, commission.rate),
+              employee,
+              commissionRule: rule,
+              commissionRate: rate,
+              commissionAmount: calculateCommission(line.lineTotal, rate),
             };
           });
           const calculatedProducts = quotedProducts.map((line) => ({
-            ...line, commissionRule: 'none' as const, commissionRate: '0.00', commissionAmount: '0.00',
+            ...line,
+            employee: null,
+            commissionRule: 'none' as const,
+            commissionRate: '0.00',
+            commissionAmount: '0.00',
           }));
           const byKey = keyedQueues([...calculatedServices, ...calculatedProducts]);
           const calculatedLines = input.lines.map((line) => byKey.get(`${line.itemType}:${line.itemType === 'service' ? line.serviceId : line.productId}`)!.shift()!);
@@ -657,7 +700,6 @@ export const createDrizzleSaleRepository = (
           const inserted = await transaction.insert(invoices).values({
             branchId: input.branchId,
             clientId: input.clientId,
-            assignedEmployeeId: employee?.id ?? null,
             sellerEmployeeId: seller?.id ?? null,
             actingAccountId: operation.actingAccountId,
             cashierSessionId: input.cashierSessionId,
@@ -666,8 +708,6 @@ export const createDrizzleSaleRepository = (
             kind: operation.kind ?? 'sale',
             clientNameSnapshot: client.fullName,
             clientPhoneSnapshot: client.phone,
-            employeeNameSnapshot: employee?.fullName ?? null,
-            employeeCodeSnapshot: employee?.employeeCode ?? null,
             sellerNameSnapshot: seller?.fullName ?? null,
             authorizedBySnapshot: account.username,
             subtotal: totals.subtotal,
@@ -691,6 +731,9 @@ export const createDrizzleSaleRepository = (
               serviceId: line.itemType === 'service' ? line.sourceId : null,
               productId: line.itemType === 'product' ? line.sourceId : null,
               itemNameSnapshot: line.name,
+              employeeId: line.employee?.id ?? null,
+              employeeNameSnapshot: line.employee?.fullName ?? null,
+              employeeCodeSnapshot: line.employee?.employeeCode ?? null,
               quantity: line.quantity,
               unitPrice: line.unitPrice,
               lineTotal: line.lineTotal,
@@ -702,7 +745,7 @@ export const createDrizzleSaleRepository = (
             const invoiceLineId = Number(insertedLine[0].insertId);
             if (line.itemType === 'service') {
               await transaction.insert(commissionLedgerEntries).values({
-                invoiceId, invoiceLineId, employeeId: input.assignedEmployeeId!,
+                invoiceId, invoiceLineId, employeeId: line.employee.id,
                 actingAccountId: operation.actingAccountId, entryType: 'earned',
                 commissionRuleSnapshot: line.commissionRule, commissionRateSnapshot: line.commissionRate,
                 baseAmount: line.lineTotal, amount: line.commissionAmount, createdAt: operation.soldAt,
@@ -726,12 +769,8 @@ export const createDrizzleSaleRepository = (
           })));
           await transaction.update(invoices).set({ status: 'completed' })
             .where(eq(invoices.id, invoiceId));
-          if (calculatedLines.some((line) => line.itemType === 'service')) {
-            await projectCommission(
-              transaction,
-              input.assignedEmployeeId!,
-              cairoMonth(operation.soldAt),
-            );
+          for (const employeeId of employeeIds) {
+            await projectCommission(transaction, employeeId, cairoMonth(operation.soldAt));
           }
           const completed = await hydrateInvoice(transaction, invoiceId);
           if (!completed) throw new Error('Completed invoice could not be reloaded');
@@ -744,7 +783,7 @@ export const createDrizzleSaleRepository = (
             relatedIds: {
               branchId: input.branchId,
               clientId: input.clientId,
-              ...(employee === null ? {} : { employeeId: employee.id }),
+              ...(employeeIds.length ? { employeeIds: employeeIds.join(',') } : {}),
               ...(seller ? { sellerEmployeeId: seller.id } : {}),
               cashierSessionId: input.cashierSessionId,
             },
@@ -772,6 +811,16 @@ export const createDrizzleSaleRepository = (
     async reverse(operation: ReverseInvoiceOperation) {
       const existing = await existingReversal(operation);
       if (existing) return existing;
+      // Read outside the transaction: a completed invoice's lines never change,
+      // and a read inside would either freeze this transaction's snapshot before
+      // the payroll lock or add line locks that deadlock concurrent reversals.
+      const invoiceEmployeeIds = [...new Set((await database
+        .select({ employeeId: invoiceLines.employeeId }).from(invoiceLines)
+        .where(and(
+          eq(invoiceLines.invoiceId, operation.invoiceId),
+          eq(invoiceLines.branchId, operation.input.branchId),
+          isNotNull(invoiceLines.employeeId),
+        ))).map(({ employeeId }) => employeeId!))].sort((left, right) => left - right);
       try {
         return await database.transaction(async (transaction) => {
           const original = (await transaction.select().from(invoices).where(and(
@@ -783,8 +832,10 @@ export const createDrizzleSaleRepository = (
           // Reversing internal trade would return the stock to the sending
           // branch while the receiving branch keeps it: stock from nothing.
           if (original.kind !== 'sale') throw new SaleError('TRANSFER_NOT_REVERSIBLE');
-          if (payroll && original.assignedEmployeeId !== null) {
-            await payroll.lockCommissionEmployee(original.assignedEmployeeId, transaction);
+          if (payroll) {
+            for (const employeeId of invoiceEmployeeIds) {
+              await payroll.lockCommissionEmployee(employeeId, transaction);
+            }
           }
           const replay = await existingReversal(operation, transaction);
           if (replay) return replay;
@@ -960,7 +1011,9 @@ export const createDrizzleSaleRepository = (
               eq(invoiceReversals.invoiceId, original.id),
               eq(invoiceReversals.status, 'finalized'),
             ))).map(({ id }) => id));
-          let reversedCommission = 0n;
+          // Reversed commission is owed back per employee: each service line
+          // takes it from whoever earned it.
+          const reversedByEmployee = new Map<number, bigint>();
           for (const line of originalLines.filter((candidate) => (
             candidate.itemType === 'service' && selectedByLine.has(candidate.id)
           ))) {
@@ -976,11 +1029,15 @@ export const createDrizzleSaleRepository = (
             const base = toCents(line.unitPrice) * BigInt(selectedByLine.get(line.id)!);
             const amount = commissionCents(priorBase + base, earned.commissionRateSnapshot)
               - commissionCents(priorBase, earned.commissionRateSnapshot);
-            reversedCommission += amount;
+            const lineEmployeeId = line.employeeId ?? earned.employeeId;
+            reversedByEmployee.set(
+              lineEmployeeId,
+              (reversedByEmployee.get(lineEmployeeId) ?? 0n) + amount,
+            );
             await transaction.insert(commissionLedgerEntries).values({
               invoiceId: original.id,
               invoiceLineId: line.id,
-              employeeId: original.assignedEmployeeId!,
+              employeeId: lineEmployeeId,
               actingAccountId: operation.actingAccountId,
               entryType: 'reversal',
               reversesEntryId: earned.id,
@@ -996,20 +1053,21 @@ export const createDrizzleSaleRepository = (
           await transaction.update(invoiceReversals).set({ status: 'finalized' })
             .where(eq(invoiceReversals.id, reversalId));
 
-          if (reversedCommission > 0n && payroll) {
+          if (payroll) {
             const month = cairoMonth(original.soldAt);
-            const projection = await projectCommission(
-              transaction,
-              original.assignedEmployeeId!,
-              month,
-            );
-            if (projection === 'payroll_finalized') {
-              await payroll.recordPostPayrollDeduction({
-                employeeId: original.assignedEmployeeId!,
-                occurredAt: operation.reversedAt,
-                amount: signedMoney(reversedCommission),
-                reference: `erp-commission-reversal:${reversalId}:${original.assignedEmployeeId!}`,
-              }, transaction);
+            for (const employeeId of [...reversedByEmployee.keys()]
+              .sort((left, right) => left - right)) {
+              const reversedCommission = reversedByEmployee.get(employeeId)!;
+              if (reversedCommission <= 0n) continue;
+              const projection = await projectCommission(transaction, employeeId, month);
+              if (projection === 'payroll_finalized') {
+                await payroll.recordPostPayrollDeduction({
+                  employeeId,
+                  occurredAt: operation.reversedAt,
+                  amount: signedMoney(reversedCommission),
+                  reference: `erp-commission-reversal:${reversalId}:${employeeId}`,
+                }, transaction);
+              }
             }
           }
 
@@ -1053,21 +1111,17 @@ export const createDrizzleSaleRepository = (
         invoiceNumber: invoices.invoiceNumber,
         status: invoices.status,
         total: invoices.total,
-        employeeId: invoices.assignedEmployeeId,
-        employeeName: invoices.employeeNameSnapshot,
         soldAt: invoices.soldAt,
       }).from(invoices).where(where).orderBy(desc(invoices.soldAt), desc(invoices.id))
         .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
+      const employeesByInvoice = await listInvoiceEmployees(rows.map(({ id }) => id));
       return {
         items: rows.map((row) => ({
           id: row.id,
           invoiceNumber: row.invoiceNumber,
           status: row.status as Exclude<typeof row.status, 'draft'>,
           total: row.total,
-          assignedEmployee: row.employeeId === null ? null : {
-            id: row.employeeId,
-            name: row.employeeName!,
-          },
+          employees: employeesByInvoice.get(row.id) ?? [],
           soldAt: asIso(row.soldAt),
         })),
         total,
@@ -1095,11 +1149,10 @@ export const createDrizzleSaleRepository = (
         clientId: invoices.clientId,
         clientName: invoices.clientNameSnapshot,
         clientPhone: invoices.clientPhoneSnapshot,
-        employeeId: invoices.assignedEmployeeId,
-        employeeName: invoices.employeeNameSnapshot,
         soldAt: invoices.soldAt,
       }).from(invoices).where(where).orderBy(desc(invoices.soldAt), desc(invoices.id))
         .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
+      const employeesByInvoice = await listInvoiceEmployees(rows.map(({ id }) => id));
       return {
         items: rows.map((row) => ({
           id: row.id,
@@ -1107,10 +1160,7 @@ export const createDrizzleSaleRepository = (
           status: row.status as Exclude<typeof row.status, 'draft'>,
           total: row.total,
           client: { id: row.clientId, name: row.clientName, phone: row.clientPhone },
-          assignedEmployee: row.employeeId === null ? null : {
-            id: row.employeeId,
-            name: row.employeeName!,
-          },
+          employees: employeesByInvoice.get(row.id) ?? [],
           soldAt: asIso(row.soldAt),
         })),
         total,

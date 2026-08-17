@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   completeSale: vi.fn(),
   synchronizeOfflineSales: vi.fn(),
   listSellableProducts: vi.fn(),
+  listAssignableEmployees: vi.fn(),
   clientPickerProps: vi.fn(),
   servicePickerProps: vi.fn(),
 }));
@@ -72,6 +73,10 @@ vi.mock('../src/features/employee-assignment', () => ({
       اختر الموظف
     </button>
   ),
+  listAssignableEmployees: mocks.listAssignableEmployees,
+  employeeAssignmentQueryKeys: {
+    present: (branchId?: number) => ['erp-assignable-employees', branchId ?? 'own'],
+  },
 }));
 vi.mock('../src/features/sales/api/sales-api', () => ({
   quoteSale: mocks.quoteSale,
@@ -166,6 +171,10 @@ describe('ERP service-sale view', () => {
       }],
       meta: { page: 1, pageSize: 50, total: 1, totalPages: 1 },
     });
+    mocks.listAssignableEmployees.mockReset().mockResolvedValue([
+      { id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 },
+      { id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 },
+    ]);
     mocks.synchronizeOfflineSales.mockReset();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
@@ -191,10 +200,11 @@ describe('ERP service-sale view', () => {
     expect(within(savedCard).getByText(invoice.invoiceNumber)).toBeDefined();
     expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       clientId: 5,
-      assignedEmployeeId: 8,
       sellerEmployeeId: 9,
       cashierSessionId: 13,
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{
+        itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8,
+      }],
       payments: [{ method: 'cash', amount: '185.00' }],
       idempotencyKey: expect.any(String),
     }));
@@ -273,7 +283,7 @@ describe('ERP service-sale view', () => {
       lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
       payments: [{ method: 'cash', amount: '50.00' }],
     }));
-    expect(mocks.completeSale.mock.calls[0]?.[0]).not.toHaveProperty('assignedEmployeeId');
+    expect(mocks.completeSale.mock.calls[0]?.[0].lines[0]).not.toHaveProperty('employeeId');
   });
 
   it('blocks submission until a roster seller is chosen', async () => {
@@ -469,10 +479,9 @@ describe('ERP service-sale view', () => {
       input: {
         clientId: 6,
         sellerEmployeeId: 9,
-        assignedEmployeeId: 8,
         cashierSessionId: 13,
         idempotencyKey: otherIdempotencyKey,
-        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
         payments: [{ method: 'cash', amount: '185.00' }],
       },
     }));
@@ -508,10 +517,9 @@ describe('ERP service-sale view', () => {
       input: {
         clientId: 6,
         sellerEmployeeId: 9,
-        assignedEmployeeId: 8,
         cashierSessionId: 13,
         idempotencyKey: otherIdempotencyKey,
-        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
         payments: [{ method: 'cash', amount: '185.00' }],
       },
     });
@@ -539,10 +547,9 @@ describe('ERP service-sale view', () => {
     const predecessor = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash' as const, amount: '185.00' }],
     };
     const owner = { accountId: 3, role: 'cashier' as const, branchId: 2, cashierSessionId: 13 };
@@ -587,10 +594,9 @@ describe('ERP service-sale view', () => {
     const predecessor = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash' as const, amount: '185.00' }],
     };
     const owner = { accountId: 3, role: 'cashier' as const, branchId: 2, cashierSessionId: 13 };
@@ -619,10 +625,9 @@ describe('ERP service-sale view', () => {
     const predecessor = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash' as const, amount: '185.00' }],
     };
     enqueueOfflineSale({
@@ -660,10 +665,9 @@ describe('ERP service-sale view', () => {
     const input = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash' as const, amount: '185.00' }],
     };
     enqueueOfflineSale({
@@ -801,10 +805,9 @@ describe('ERP service-sale view', () => {
     const pending = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     localStorage.setItem('capella:pending-sale', JSON.stringify({
@@ -820,10 +823,9 @@ describe('ERP service-sale view', () => {
     const first = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     const second = { ...first, idempotencyKey: '22222222-2222-4222-8222-222222222222' };
@@ -845,10 +847,9 @@ describe('ERP service-sale view', () => {
     const matching = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     localStorage.setItem('capella:pending-sale:00000000-0000-4000-8000-000000000000', JSON.stringify({
@@ -870,10 +871,9 @@ describe('ERP service-sale view', () => {
     const pending = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     localStorage.setItem('capella:pending-sale', JSON.stringify({
@@ -892,10 +892,9 @@ describe('ERP service-sale view', () => {
     const first = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: '33333333-3333-4333-8333-333333333333',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     const second = { ...first, idempotencyKey: '44444444-4444-4444-8444-444444444444' };
@@ -914,10 +913,9 @@ describe('ERP service-sale view', () => {
     const pending = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     localStorage.setItem('capella:pending-sale', JSON.stringify({
@@ -941,10 +939,9 @@ describe('ERP service-sale view', () => {
     const pending = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
-        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '185.00' }],
     };
     localStorage.setItem('capella:pending-sale', JSON.stringify({
@@ -973,10 +970,9 @@ describe('ERP service-sale view', () => {
     const oldInput = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
       payments: [{ method: 'cash' as const, amount: '185.00' }],
     };
     enqueueOfflineSale({
@@ -1041,10 +1037,9 @@ describe('ERP service-sale view', () => {
       input: {
         clientId: 5,
         sellerEmployeeId: 9,
-        assignedEmployeeId: 8,
         cashierSessionId: 12,
         idempotencyKey: crypto.randomUUID(),
-        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
         payments: [{ method: 'cash', amount: '185.00' }],
       },
     };
@@ -1148,6 +1143,66 @@ describe('ERP service-sale view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
 
     expect(await screen.findByRole('option', { name: 'Main' })).toBeDefined();
+  });
+
+  it('sends each service line to the employee chosen on that line', async () => {
+    mocks.quoteSale.mockResolvedValue({
+      lines: [
+        { itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' },
+        { itemType: 'service', sourceId: 22, name: 'بروتين الشعر', quantity: 1, unitPrice: '150.00', lineTotal: '150.00' },
+      ],
+      discount: null,
+      tax: null,
+      totals: { subtotal: '350.00', discountAmount: '0.00', taxAmount: '0.00', total: '350.00' },
+    });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    // The default fills the services already waiting and every one added after.
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف خدمة بسعر مفتوح' }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    const openPrice = screen.getByLabelText('سعر بروتين الشعر') as HTMLInputElement;
+    fireEvent.change(openPrice, { target: { value: '150.00' } });
+
+    const lineEmployees = await screen.findAllByLabelText(/^موظف /);
+    expect(lineEmployees).toHaveLength(2);
+    expect((lineEmployees[0] as HTMLSelectElement).value).toBe('8');
+    expect((lineEmployees[1] as HTMLSelectElement).value).toBe('8');
+    // The second service was performed by someone else.
+    fireEvent.change(lineEmployees[1] as HTMLSelectElement, { target: { value: '11' } });
+
+    await screen.findAllByText('350.00 ج.م');
+    const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect(review).toHaveProperty('disabled', false));
+    fireEvent.click(review);
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0].lines).toEqual([
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 },
+      { itemType: 'service', serviceId: 22, quantity: 1, unitPrice: '150.00', employeeId: 11 },
+    ]);
+  });
+
+  it('blocks the sale while any service line names no employee', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    await screen.findByText('185.00 ج.م');
+
+    // Added before any employee was chosen, so the line still names nobody.
+    expect((await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByLabelText('موظف صبغة شعر'), { target: { value: '11' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', false));
   });
 
   it('retries a failed Cashier-session load without reloading the page', async () => {

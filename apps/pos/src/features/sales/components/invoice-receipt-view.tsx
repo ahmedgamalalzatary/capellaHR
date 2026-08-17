@@ -22,7 +22,7 @@ import { getInvoice } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
 import { requestReference, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
-import { Receipt } from './receipt';
+import { ReceiptBundle } from './receipt';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
@@ -163,7 +163,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">تعذر إكمال تصدير PDF. حاول مرة أخرى.</p>
       : null}
     {printError ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{printError}</p> : null}
-    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><Receipt invoice={query.data} /></CardContent></Card>
+    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} /></CardContent></Card>
     <InvoiceReversalControls invoice={query.data} showRefundAction={false} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
       void invalidateErpCaches(queryClient, 'reversal');

@@ -22,10 +22,9 @@ const owner: OfflineSaleOwner = {
 const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   clientId: 5,
   sellerEmployeeId: 9,
-  assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey,
-  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
   payments: [{ method: 'cash', amount: '185.00' }],
 });
 
@@ -37,7 +36,6 @@ const invoice = (input: CompleteSaleInput): PublicInvoiceDto => ({
   branchId: 2,
   cashierSessionId: 13,
   client: { id: 5, name: 'عميل', phone: '01000000000' },
-  assignedEmployee: { id: 8, employeeCode: 1008, name: 'موظف' },
   seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال' },
   authorizedBy: { accountId: 3, username: 'cashier' },
   lines: [],

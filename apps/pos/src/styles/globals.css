@@ -59,6 +59,29 @@
   }
 
   /*
+   * A sale prints the customer's receipt plus one copy per employee. They stack
+   * inside the sheet — each on its own page — instead of being stamped over one
+   * another at the same absolute position.
+   */
+  [data-receipt-sheet] {
+    position: absolute;
+    inset: 0;
+  }
+
+  [data-receipt-sheet] [data-receipt] {
+    position: static;
+    inset: auto;
+    margin: 0 auto;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  [data-receipt-sheet] [data-receipt]:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  /*
    * A report sheet is mounted as a direct child of body, so no scrolling or
    * clipping ancestor in the app shell can swallow it, and it stands in for the
    * app only while a report is being printed — receipts keep the rules above.

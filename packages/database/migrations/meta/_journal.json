@@ -470,6 +470,13 @@
       "when": 1786963030779,
       "tag": "0066_transfer_invoice_final",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "5",
+      "when": 1786983836550,
+      "tag": "0067_line_employee_assignment",
+      "breakpoints": true
     }
   ]
 }

@@ -33,7 +33,7 @@ describe('sales API', () => {
 
   it('posts quote and completion requests to the sales aggregate endpoints', async () => {
     const quote = {
-      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
     };
     await quoteSale(quote);
     expect(mocks.post).toHaveBeenCalledWith('/erp/sales/quote', quote);
@@ -41,7 +41,6 @@ describe('sales API', () => {
     const complete = {
       clientId: 5,
       sellerEmployeeId: 9,
-      assignedEmployeeId: 8,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: quote.lines,

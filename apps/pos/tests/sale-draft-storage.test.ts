@@ -47,6 +47,7 @@ const draft: SaleDraft = {
     },
     quantity: 1,
     unitPrice: '200.00',
+    employee: { id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 },
   }],
   discountKind: 'percentage',
   discountValue: '10.00',
@@ -58,6 +59,27 @@ const draft: SaleDraft = {
 };
 
 describe('sale draft storage', () => {
+  it('keeps the employee each service line was assigned to', () => {
+    writeSaleDraft(owner, draft);
+    expect(readSaleDraft(owner)?.lines[0]?.employee)
+      .toEqual({ id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 });
+  });
+
+  it('refuses a stored line whose employee is not a real employee record', () => {
+    writeSaleDraft(owner, {
+      ...draft,
+      lines: [{ ...draft.lines[0]!, employee: { id: 'eight' } as never }],
+    });
+    expect(readSaleDraft(owner)).toBeNull();
+  });
+
+  it('accepts an older draft whose lines name no employee', () => {
+    const { employee: _performer, ...legacyLine } = draft.lines[0]!;
+    const legacy = { ...draft, lines: [legacyLine] };
+    writeSaleDraft(owner, legacy);
+    expect(readSaleDraft(owner)?.lines[0]?.service.id).toBe(21);
+  });
+
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();

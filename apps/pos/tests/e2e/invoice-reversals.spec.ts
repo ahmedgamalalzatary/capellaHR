@@ -130,7 +130,9 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
             status: invoice.status,
             total: invoice.totals.total,
             client: { id: invoice.client.id, name: invoice.client.name },
-            assignedEmployee: { id: invoice.assignedEmployee.id, name: invoice.assignedEmployee.name },
+            employees: invoice.lines[0]!.employee
+              ? [{ id: invoice.lines[0]!.employee.id, name: invoice.lines[0]!.employee.name }]
+              : [],
             soldAt: invoice.soldAt,
           })),
           meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },

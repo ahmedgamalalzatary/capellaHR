@@ -234,7 +234,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
                   <TD>
                     <span className="text-ink">{invoiceClientLabel(invoice.client)}</span>
                     <span className="block text-[13px] text-muted">
-                      {invoice.assignedEmployee?.name ?? 'بدون موظف'}
+                      {invoice.employees.map(({ name }) => name).join(' - ') || 'بدون موظف'}
                     </span>
                   </TD>
                   <TD>

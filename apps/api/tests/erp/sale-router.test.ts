@@ -94,11 +94,10 @@ describe('ERP sales router', () => {
     const { app, complete } = setup();
     const response = await request(app).post('/erp/sales').send({
       clientId: 5,
-      assignedEmployeeId: 8,
       sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '200' }],
     });
     expect(response.status).toBe(201);
@@ -150,11 +149,10 @@ describe('ERP sales router', () => {
       complete: vi.fn().mockRejectedValue(new SaleError('IDEMPOTENCY_CONFLICT')),
     }).app).post('/erp/sales').send({
       clientId: 5,
-      assignedEmployeeId: 8,
       sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 }],
       payments: [{ method: 'cash', amount: '200' }],
     });
     expect(conflict.status).toBe(409);

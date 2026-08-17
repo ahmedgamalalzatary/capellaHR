@@ -42,6 +42,8 @@ import { ServicePicker, type ServiceListItem } from '@/features/catalog';
 import { ProductPicker, type ProductSaleItem } from '@/features/products';
 import {
   PresentEmployeePicker,
+  employeeAssignmentQueryKeys,
+  listAssignableEmployees,
   type AssignableEmployee,
 } from '@/features/employee-assignment';
 import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
@@ -84,12 +86,63 @@ const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
   { method: 'vodafone_cash', label: 'فودافون كاش' },
 ];
 
+/**
+ * Who performed one service. The default picker fills this for lines added after
+ * it, and the counter overrides it here when two people share an invoice.
+ */
+function LineEmployeeSelect({
+  line,
+  branchId,
+  onSelect,
+}: {
+  line: Line;
+  branchId?: number;
+  onSelect: (employee: AssignableEmployee | null) => void;
+}) {
+  const present = useQuery({
+    queryKey: employeeAssignmentQueryKeys.present(branchId),
+    queryFn: () => listAssignableEmployees(branchId === undefined ? {} : { branchId }),
+  });
+  const options = present.data ?? [];
+  // A selected employee who has since checked out must not silently stay chosen.
+  const selectedPresent = line.employee && options.some(({ id }) => id === line.employee!.id);
+  return (
+    <select
+      aria-label={`موظف ${line.service.name}`}
+      className="h-11 min-w-40 rounded-control border border-line bg-paper px-2 text-sm"
+      value={selectedPresent ? String(line.employee!.id) : ''}
+      onChange={(event) => onSelect(
+        options.find(({ id }) => String(id) === event.target.value) ?? null,
+      )}
+    >
+      <option value="">اختر الموظف</option>
+      {options.map((option) => (
+        <option key={option.id} value={option.id}>{option.fullName}</option>
+      ))}
+    </select>
+  );
+}
+
 type Line = {
   service: ServiceListItem | ProductSaleItem;
   quantity: number;
   unitPrice: string;
   itemType?: 'service' | 'product';
+  /** Who performed this service. A product line names nobody. */
+  employee?: AssignableEmployee | null;
 };
+/**
+ * A draft saved before per-line assignment — or by a counter that picked only the
+ * default — carries the employee once, at the top. Restore it onto the services.
+ */
+const restoredLines = (draft: { employee: AssignableEmployee | null; lines: Line[] }): Line[] => (
+  draft.lines.map((line) => (
+    line.itemType === 'product' || line.employee
+      ? line
+      : { ...line, employee: draft.employee }
+  ))
+);
+
 type AdjustmentKind = 'percentage' | 'fixed';
 /** Admin is a database-enforced singleton and has no public account id. */
 type PendingSaleOwner = SaleDraftOwner;
@@ -601,6 +654,8 @@ function SaleWorkspace({
     return validServiceUnitPrice(line.unitPrice);
   });
   const hasServiceLines = lines.some((line) => line.itemType !== 'product');
+  /** Every service must name the employee who performed it before the sale posts. */
+  const serviceLinesAssigned = lines.every((line) => line.itemType === 'product' || line.employee);
   const adjustmentsStep = hasServiceLines ? 5 : 4;
   const paymentsStep = hasServiceLines ? 6 : 5;
 
@@ -732,13 +787,13 @@ function SaleWorkspace({
   const totalCents = quote.data ? toCents(quote.data.totals.total) : null;
   const remaining = paidCents === null || totalCents === null ? null : totalCents - paidCents;
   const ready = Boolean(
-    client && sellerOnRoster && (!hasServiceLines || employee) && lines.length > 0
+    client && sellerOnRoster && serviceLinesAssigned && lines.length > 0
       && servicePricesValid && quote.data && !quote.isFetching
       && remaining === BigInt(0) && !completion.isPending && !pendingSale,
   );
 
   const makeInput = (): CompleteSaleInput | null => {
-    if (!client || !seller || !sellerOnRoster || (hasServiceLines && !employee)
+    if (!client || !seller || !sellerOnRoster || !serviceLinesAssigned
       || !quote.data || remaining !== BigInt(0)) return null;
     const paymentRows = paymentMethods.flatMap(({ method }) => {
       const amount = payments[method];
@@ -748,10 +803,19 @@ function SaleWorkspace({
       ...(branchId === undefined ? {} : { branchId }),
       clientId: client.id,
       sellerEmployeeId: seller.id,
-      ...(hasServiceLines ? { assignedEmployeeId: employee!.id } : {}),
       cashierSessionId,
       idempotencyKey,
-      lines: quoteInput.lines,
+      lines: lines.map(({ service, quantity, unitPrice, itemType, employee: performer }) => (
+        itemType === 'product'
+          ? { itemType: 'product' as const, productId: service.id, quantity }
+          : {
+              itemType: 'service' as const,
+              serviceId: service.id,
+              quantity,
+              unitPrice,
+              employeeId: performer!.id,
+            }
+      )),
       ...(quoteInput.discount ? { discount: quoteInput.discount } : {}),
       ...(quoteInput.tax ? { tax: quoteInput.tax } : {}),
       payments: paymentRows,
@@ -802,7 +866,7 @@ function SaleWorkspace({
     selectClient(null);
     setEmployee(draft.employee);
     setSeller(draft.seller ?? null);
-    setLines(draft.lines);
+    setLines(restoredLines(draft));
     setDiscountKind(draft.discountKind);
     setDiscountValue(draft.discountValue);
     setTaxKind(draft.taxKind);
@@ -862,7 +926,7 @@ function SaleWorkspace({
     setOfferedDraft(null);
     setEmployee(draft.employee);
     setSeller(draft.seller ?? null);
-    setLines(draft.lines);
+    setLines(restoredLines(draft));
     setDiscountKind(draft.discountKind);
     setDiscountValue(draft.discountValue);
     setTaxKind(draft.taxKind);
@@ -1111,6 +1175,8 @@ function SaleWorkspace({
                           quantity: 1,
                           unitPrice: service.price ?? '',
                           itemType: 'service',
+                          // The chosen default performs whatever is added next.
+                          employee,
                         }];
                   })} />
                   <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
@@ -1124,6 +1190,7 @@ function SaleWorkspace({
                           quantity: 1,
                           unitPrice: product.price,
                           itemType: 'product',
+                          employee: null,
                         }];
                   })} />
                 </div>
@@ -1154,6 +1221,17 @@ function SaleWorkspace({
                             <span className="tabular text-[13px] text-muted">{line.service.price} ج.م</span>
                           )}
                         </span>
+                        {line.itemType !== 'product' ? (
+                          <LineEmployeeSelect
+                            line={line}
+                            {...(branchId === undefined ? {} : { branchId })}
+                            onSelect={(performer) => setLines((current) => current.map((item) => (
+                              item.service.id === line.service.id && item.itemType === line.itemType
+                                ? { ...item, employee: performer }
+                                : item
+                            )))}
+                          />
+                        ) : null}
                         {/* The most-tapped control in the app: kept at a 44px touch target. */}
                         <span className="flex items-center gap-1 rounded-control border border-line bg-paper p-0.5">
                           <Button variant="ghost" className="size-11 px-0" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => current.flatMap((item) => item.service.id !== line.service.id || item.itemType !== line.itemType ? [item] : item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }] : []))}><Minus className="size-4" aria-hidden /></Button>
@@ -1170,11 +1248,25 @@ function SaleWorkspace({
 
             {hasServiceLines ? (
               <Card className="shadow-card">
-              <CardHeader><CardTitle><StepTitle step={4} label="الموظف" /></CardTitle></CardHeader>
+              <CardHeader><CardTitle><StepTitle step={4} label="الموظف الافتراضي" /></CardTitle></CardHeader>
               <CardContent className="p-5">
+                <p className="mb-3 text-[13px] text-muted">
+                  يُسند تلقائيًا للخدمات التي لم يُحدد لها موظف، ويمكن تغيير موظف كل خدمة من قائمتها.
+                </p>
                 <PresentEmployeePicker
                   selected={employee}
-                  onSelect={setEmployee}
+                  onSelect={(next) => {
+                    setEmployee(next);
+                    // Fills the services nobody has been assigned to yet; a line
+                    // the counter set by hand keeps its own employee.
+                    if (next) {
+                      setLines((current) => current.map((line) => (
+                        line.itemType !== 'product' && !line.employee
+                          ? { ...line, employee: next }
+                          : line
+                      )));
+                    }
+                  }}
                   {...(branchId === undefined ? {} : { branchId })}
                 />
               </CardContent>

@@ -57,17 +57,18 @@ describe('ERP sales persistence foundation', () => {
   it('defines immutable invoice facts, ownership, snapshots, totals and idempotency', () => {
     const invoices = table('invoices');
     expect(Object.keys(invoices)).toEqual(expect.arrayContaining([
-      'id', 'branchId', 'clientId', 'assignedEmployeeId', 'actingAccountId',
+      'id', 'branchId', 'clientId', 'actingAccountId',
       'cashierSessionId', 'invoiceNumber', 'idempotencyKey', 'status',
-      'clientNameSnapshot', 'clientPhoneSnapshot', 'employeeNameSnapshot',
-      'employeeCodeSnapshot', 'authorizedBySnapshot', 'subtotal', 'discountKind',
+      'clientNameSnapshot', 'clientPhoneSnapshot',
+      'authorizedBySnapshot', 'subtotal', 'discountKind',
       'discountValue', 'discountAmount', 'taxKind', 'taxValue', 'taxAmount',
       'total', 'soldAt', 'createdAt',
     ]));
     expect(Reflect.get(invoices, 'paymentTotal')).toBeUndefined();
-    expect(salesSchema.invoices.assignedEmployeeId.notNull).toBe(false);
-    expect(salesSchema.invoices.employeeNameSnapshot.notNull).toBe(false);
-    expect(salesSchema.invoices.employeeCodeSnapshot.notNull).toBe(false);
+    // The performing employee now lives on each service line, not on the invoice.
+    expect(Reflect.get(invoices, 'assignedEmployeeId')).toBeUndefined();
+    expect(Reflect.get(invoices, 'employeeNameSnapshot')).toBeUndefined();
+    expect(Reflect.get(invoices, 'employeeCodeSnapshot')).toBeUndefined();
     expect(salesSchema.invoiceStatuses).toEqual([
       'draft', 'completed', 'partially_refunded', 'refunded', 'voided',
     ]);
@@ -78,19 +79,21 @@ describe('ERP sales persistence foundation', () => {
       'erp_invoices_idempotency_unique',
       'erp_invoices_branch_sold_idx',
       'erp_invoices_client_sold_idx',
-      'erp_invoices_employee_sold_idx',
     ]));
+    expect(indexes).not.toContain('erp_invoices_employee_sold_idx');
     expect(config.checks.map((value) => value.name)).toEqual(expect.arrayContaining([
       'erp_invoices_totals_consistent',
       'erp_invoices_discount_consistent',
       'erp_invoices_tax_consistent',
-      'erp_invoices_employee_assignment_consistent',
     ]));
+    expect(config.checks.map((value) => value.name))
+      .not.toContain('erp_invoices_employee_assignment_consistent');
     expect(config.foreignKeys.map((value) => value.getName())).toEqual(expect.arrayContaining([
       'erp_invoices_client_branch_fk',
-      'erp_invoices_employee_branch_fk',
       'erp_invoices_session_branch_fk',
     ]));
+    expect(config.foreignKeys.map((value) => value.getName()))
+      .not.toContain('erp_invoices_employee_branch_fk');
   });
 
   it('defines service and product lines with exclusive source references and snapshots', () => {
@@ -118,6 +121,21 @@ describe('ERP sales persistence foundation', () => {
       'erp_invoice_lines_commission_consistent',
       'erp_invoice_lines_cost_consistent',
     ]));
+  });
+
+  it('assigns each service line its own performing employee and snapshots', () => {
+    const lines = table('invoiceLines');
+    expect(Object.keys(lines)).toEqual(expect.arrayContaining([
+      'employeeId', 'employeeNameSnapshot', 'employeeCodeSnapshot',
+    ]));
+    expect(salesSchema.invoiceLines.employeeId.notNull).toBe(false);
+    const config = getTableConfig(lines);
+    expect(config.foreignKeys.map((value) => value.getName()))
+      .toContain('erp_invoice_lines_employee_branch_fk');
+    expect(config.indexes.map((value) => value.config.name))
+      .toContain('erp_invoice_lines_employee_idx');
+    expect(config.checks.map((value) => value.name))
+      .toContain('erp_invoice_lines_employee_consistent');
   });
 
   it('defines exact payment breakdowns using only the locked methods', () => {

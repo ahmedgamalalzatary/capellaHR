@@ -48,7 +48,7 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
       .innerJoin(invoiceLines, eq(invoiceLines.id, commissionLedgerEntries.invoiceLineId))
       .where(and(
         eq(commissionLedgerEntries.employeeId, employeeId),
-        eq(invoices.assignedEmployeeId, employeeId),
+        eq(invoiceLines.employeeId, employeeId),
         gte(invoices.soldAt, start),
         lt(invoices.soldAt, end),
         ...(branchId === undefined ? [] : [eq(invoices.branchId, branchId)]),
@@ -97,22 +97,28 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
     async list(branchId: number, query: CommissionListQuery) {
       const start = startOfCairoDate(`${query.month}-01`);
       const end = startOfCairoDate(`${nextMonth(query.month)}-01`);
-      const ids = (await database.selectDistinct({ employeeId: invoices.assignedEmployeeId })
+      // Commission follows the service line, so one invoice can list several
+      // employees here.
+      const ids = [...new Set((await database.selectDistinct({ employeeId: invoiceLines.employeeId })
         .from(invoices).innerJoin(
+          invoiceLines,
+          eq(invoiceLines.invoiceId, invoices.id),
+        ).innerJoin(
           commissionLedgerEntries,
           and(
             eq(commissionLedgerEntries.invoiceId, invoices.id),
-            eq(commissionLedgerEntries.employeeId, invoices.assignedEmployeeId),
+            eq(commissionLedgerEntries.invoiceLineId, invoiceLines.id),
+            eq(commissionLedgerEntries.employeeId, invoiceLines.employeeId),
           ),
         ).where(and(
           eq(invoices.branchId, branchId),
-          isNotNull(invoices.assignedEmployeeId),
+          isNotNull(invoiceLines.employeeId),
           gte(invoices.soldAt, start),
           lt(invoices.soldAt, end),
           ...(query.employeeId === undefined
             ? []
-            : [eq(invoices.assignedEmployeeId, query.employeeId)]),
-        ))).map(({ employeeId }) => employeeId).filter((id): id is number => id !== null);
+            : [eq(invoiceLines.employeeId, query.employeeId)]),
+        ))).map(({ employeeId }) => employeeId).filter((id): id is number => id !== null))];
       if (ids.length === 0) return { items: [], total: 0 };
       const ordered = await database.select({ id: employees.id }).from(employees)
         .where(inArray(employees.id, ids)).orderBy(asc(employees.employeeCode));

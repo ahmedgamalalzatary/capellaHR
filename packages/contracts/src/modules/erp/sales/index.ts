@@ -86,18 +86,33 @@ const adjustmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('fixed'), value: exactMoneySchema }).strict(),
 ]);
 
+const serviceSaleLineSchema = z.object({
+  itemType: z.literal('service'),
+  serviceId: positiveMysqlIntSchema,
+  quantity: positiveMysqlIntSchema,
+  unitPrice: serviceUnitPriceSchema,
+});
+
+const productSaleLineSchema = z.object({
+  itemType: z.literal('product'),
+  productId: positiveMysqlIntSchema,
+  quantity: positiveMysqlIntSchema,
+});
+
+/** A quote prices the basket; nobody has been assigned to perform it yet. */
 const saleLineSchema = z.discriminatedUnion('itemType', [
-  z.object({
-    itemType: z.literal('service'),
-    serviceId: positiveMysqlIntSchema,
-    quantity: positiveMysqlIntSchema,
-    unitPrice: serviceUnitPriceSchema,
-  }).strict(),
-  z.object({
-    itemType: z.literal('product'),
-    productId: positiveMysqlIntSchema,
-    quantity: positiveMysqlIntSchema,
-  }).strict(),
+  serviceSaleLineSchema.strict(),
+  productSaleLineSchema.strict(),
+]);
+
+/**
+ * On a posted sale each service names the one employee who performed it, so a
+ * single invoice can pay commission to several people. Products earn none and
+ * therefore name nobody.
+ */
+const completeSaleLineSchema = z.discriminatedUnion('itemType', [
+  serviceSaleLineSchema.extend({ employeeId: positiveMysqlIntSchema }).strict(),
+  productSaleLineSchema.strict(),
 ]);
 
 const paymentSchema = z.object({
@@ -201,23 +216,14 @@ export const paymentBreakdownSchema = z.object({
 export const completeSaleSchema = z.object({
   branchId: positiveMysqlIntSchema.optional(),
   clientId: positiveMysqlIntSchema,
-  assignedEmployeeId: positiveMysqlIntSchema.optional(),
   sellerEmployeeId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
   idempotencyKey: z.string().uuid(),
-  lines: z.array(saleLineSchema).min(1).max(100),
+  lines: z.array(completeSaleLineSchema).min(1).max(100),
   discount: adjustmentSchema.optional(),
   tax: adjustmentSchema.optional(),
   payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
 }).strict().superRefine((value, context) => {
-  const hasService = value.lines.some((line) => line.itemType === 'service');
-  if (hasService && value.assignedEmployeeId === undefined) {
-    context.addIssue({
-      code: 'custom',
-      path: ['assignedEmployeeId'],
-      message: 'يجب اختيار موظف حاضر لفاتورة تحتوي على خدمة',
-    });
-  }
   const seen = new Set<string>();
   value.payments.forEach((payment, index) => {
     if (seen.has(payment.method)) {
@@ -229,12 +235,6 @@ export const completeSaleSchema = z.object({
     }
     seen.add(payment.method);
   });
-}).transform((value) => {
-  if (value.lines.some((line) => line.itemType === 'service')
-    || value.assignedEmployeeId === undefined) return value;
-  const productOnly = { ...value };
-  Reflect.deleteProperty(productOnly, 'assignedEmployeeId');
-  return productOnly;
 });
 
 export const quoteSaleInputSchema = z.object({
@@ -353,6 +353,12 @@ const invoiceLineSchema = z.object({
   quantity: positiveMysqlIntSchema,
   unitPrice: positiveMoneySchema,
   lineTotal: positiveMoneySchema,
+  /** The employee who performed this service; a product line names nobody. */
+  employee: z.object({
+    id: positiveMysqlIntSchema,
+    employeeCode: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255),
+  }).strict().nullable(),
   commissionRule: commissionRuleSchema,
   commissionRate: percentageSchema,
   commissionAmount: exactMoneySchema,
@@ -360,6 +366,12 @@ const invoiceLineSchema = z.object({
   refundedQuantity: z.number().int().min(0),
   refundableQuantity: z.number().int().min(0),
 }).strict().superRefine((value, context) => {
+  if (value.itemType === 'service' && value.employee === null) {
+    context.addIssue({ code: 'custom', path: ['employee'], message: 'الخدمة يجب أن تحمل الموظف المنفّذ' });
+  }
+  if (value.itemType === 'product' && value.employee !== null) {
+    context.addIssue({ code: 'custom', path: ['employee'], message: 'المنتج لا يُسند إلى موظف' });
+  }
   if (value.refundedQuantity + value.refundableQuantity !== value.quantity) {
     context.addIssue({ code: 'custom', path: ['refundableQuantity'], message: 'كميات الاسترداد غير متسقة' });
   }
@@ -446,11 +458,6 @@ export const invoiceSchema = z.object({
       context.addIssue({ code: 'custom', message: 'الفاتورة يجب أن تحمل اسم العميل أو رقم هاتفه' });
     }
   }),
-  assignedEmployee: z.object({
-    id: positiveMysqlIntSchema,
-    employeeCode: positiveMysqlIntSchema,
-    name: z.string().min(1).max(255),
-  }).strict().nullable(),
   seller: z.object({
     id: positiveMysqlIntSchema,
     employeeCode: positiveMysqlIntSchema,
@@ -469,14 +476,6 @@ export const invoiceSchema = z.object({
   eligibility: z.object({ canVoid: z.boolean(), canRefund: z.boolean() }).strict(),
   soldAt: isoDateTimeSchema,
 }).strict().superRefine((value, context) => {
-  const hasService = value.lines.some((line) => line.itemType === 'service');
-  if (hasService && value.assignedEmployee === null) {
-    context.addIssue({
-      code: 'custom',
-      path: ['assignedEmployee'],
-      message: 'ربط الموظف لا يتوافق مع بنود الفاتورة',
-    });
-  }
   const lineSubtotal = value.lines.reduce(
     (sum, line) => sum + toCents(line.lineTotal),
     BigInt(0),
@@ -556,6 +555,23 @@ export const invoiceParamsSchema = z.object({
   invoiceId: coercedMysqlIntSchema,
 }).strict();
 
+/**
+ * The distinct employees who performed the invoice's services, in line order.
+ * Empty on a product-only invoice.
+ */
+const invoiceEmployeesSchema = z.array(z.object({
+  id: positiveMysqlIntSchema,
+  name: z.string().min(1).max(255),
+}).strict()).max(100).superRefine((value, context) => {
+  const seen = new Set<number>();
+  value.forEach((employee, index) => {
+    if (seen.has(employee.id)) {
+      context.addIssue({ code: 'custom', path: [index, 'id'], message: 'لا يمكن تكرار الموظف' });
+    }
+    seen.add(employee.id);
+  });
+});
+
 export const invoiceHistoryItemSchema = z.object({
   id: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
@@ -568,10 +584,7 @@ export const invoiceHistoryItemSchema = z.object({
     name: z.string().min(1).max(255).nullable(),
     phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
   }).strict(),
-  assignedEmployee: z.object({
-    id: positiveMysqlIntSchema,
-    name: z.string().min(1).max(255),
-  }).strict().nullable(),
+  employees: invoiceEmployeesSchema,
   soldAt: isoDateTimeSchema,
 }).strict();
 
@@ -580,10 +593,7 @@ export const clientVisitSummarySchema = z.object({
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   total: positiveMoneySchema,
-  assignedEmployee: z.object({
-    id: positiveMysqlIntSchema,
-    name: z.string().min(1).max(255),
-  }).strict().nullable(),
+  employees: invoiceEmployeesSchema,
   soldAt: isoDateTimeSchema,
 }).strict();
 
@@ -615,11 +625,10 @@ export const saleFixtures = {
   serviceSaleDraft: {
     branchId: 2,
     clientId: 5,
-    assignedEmployeeId: 8,
     sellerEmployeeId: 9,
     cashierSessionId: 13,
     idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-    lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+    lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
     discount: { kind: 'percentage', value: '10.00' },
     tax: { kind: 'fixed', value: '5.00' },
     payments: [
@@ -635,7 +644,6 @@ export const saleFixtures = {
     branchId: 2,
     cashierSessionId: 13,
     client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
-    assignedEmployee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
     seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال' },
     authorizedBy: { accountId: 3, username: 'cashier.one' },
     lines: [{
@@ -647,6 +655,7 @@ export const saleFixtures = {
       quantity: 1,
       unitPrice: '200.00',
       lineTotal: '200.00',
+      employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
       commissionRule: 'employee_override',
       commissionRate: '15.00',
       commissionAmount: '30.00',

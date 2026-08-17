@@ -30,6 +30,62 @@ const optionalEmployeeMigration = optionalEmployeeMigrationName
   ? readFileSync(`${migrationsDirectory}/${optionalEmployeeMigrationName}`, 'utf8')
   : '';
 
+const lineEmployeeMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0067_.*\.sql$/.test(name));
+const lineEmployeeMigration = lineEmployeeMigrationName
+  ? readFileSync(`${migrationsDirectory}/${lineEmployeeMigrationName}`, 'utf8')
+  : '';
+
+describe('ERP per-line employee migration', () => {
+  it('moves the performing employee from the invoice onto each service line', () => {
+    expect(lineEmployeeMigrationName).toBeDefined();
+    expect(lineEmployeeMigration).toContain(
+      'ALTER TABLE `erp_invoice_lines` ADD `employee_id` int',
+    );
+    expect(lineEmployeeMigration).toContain(
+      'ALTER TABLE `erp_invoice_lines` ADD `employee_name_snapshot` varchar(255)',
+    );
+    expect(lineEmployeeMigration).toContain(
+      'ALTER TABLE `erp_invoice_lines` ADD `employee_code_snapshot` int',
+    );
+    expect(lineEmployeeMigration).toContain('erp_invoice_lines_employee_branch_fk');
+    expect(lineEmployeeMigration).toContain('erp_invoice_lines_employee_consistent');
+    expect(lineEmployeeMigration).toContain('erp_invoice_lines_employee_idx');
+  });
+
+  it('backfills existing service lines from the invoice they belong to', () => {
+    expect(lineEmployeeMigration).toContain('UPDATE `erp_invoice_lines`');
+    expect(lineEmployeeMigration).toMatch(/SET[\s\S]*`employee_id`\s*=\s*`invoice`\.`assigned_employee_id`/);
+    // The line-immutability guard must stand aside while history is rewritten.
+    expect(lineEmployeeMigration).toContain('DROP TRIGGER `erp_invoice_lines_validate_update`');
+    expect(lineEmployeeMigration).toContain('CREATE TRIGGER `erp_invoice_lines_validate_update`');
+  });
+
+  it('drops the invoice-level employee columns and their constraints', () => {
+    expect(lineEmployeeMigration).toContain('DROP FOREIGN KEY `erp_invoices_employee_branch_fk`');
+    expect(lineEmployeeMigration).toContain('DROP INDEX `erp_invoices_employee_sold_idx`');
+    expect(lineEmployeeMigration)
+      .toContain('DROP CONSTRAINT `erp_invoices_employee_assignment_consistent`');
+    expect(lineEmployeeMigration).toContain('DROP COLUMN `assigned_employee_id`');
+    expect(lineEmployeeMigration).toContain('DROP COLUMN `employee_name_snapshot`');
+    expect(lineEmployeeMigration).toContain('DROP COLUMN `employee_code_snapshot`');
+  });
+
+  it('re-points the guards that used the invoice-level employee', () => {
+    // Commission must now match the employee named on its own service line.
+    expect(lineEmployeeMigration).toContain('DROP TRIGGER `erp_commission_ledger_validate_insert`');
+    expect(lineEmployeeMigration).toContain('line.employee_id = NEW.employee_id');
+    expect(lineEmployeeMigration).not.toContain('invoice.assigned_employee_id = NEW.employee_id');
+    // Completion still refuses a service nobody performed.
+    expect(lineEmployeeMigration)
+      .toContain('DROP TRIGGER `erp_invoices_validate_employee_assignment`');
+    expect(lineEmployeeMigration).toContain('Every service line requires an employee');
+    // The immutability guard can no longer compare dropped invoice columns.
+    expect(lineEmployeeMigration).toContain('DROP TRIGGER `erp_invoices_validate_lifecycle`');
+    expect(lineEmployeeMigration).not.toContain('NEW.assigned_employee_id <=> OLD.assigned_employee_id');
+  });
+});
+
 describe('ERP sales migration', () => {
   it('allows employee-free product invoices while guarding service assignment', () => {
     expect(optionalEmployeeMigrationName).toBeDefined();

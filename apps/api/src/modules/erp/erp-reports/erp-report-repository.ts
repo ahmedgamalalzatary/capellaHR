@@ -70,6 +70,22 @@ const invoiceLineDiscount = (lineAlias: string, invoiceAlias: string) => {
   ) / NULLIF(${invoice}.subtotal, 0), 2)`;
 };
 
+/**
+ * An invoice no longer names one employee: each service line names its own, so
+ * invoice-level columns list every distinct name (or code) behind the sale.
+ */
+const invoiceEmployeeList = (invoiceAlias: string, column: 'name' | 'code') => {
+  const invoice = sql.raw(invoiceAlias);
+  const field = sql.raw(column === 'name' ? 'employee_name_snapshot' : 'employee_code_snapshot');
+  return sql`(
+    SELECT GROUP_CONCAT(DISTINCT employee_line.${field} ORDER BY employee_line.${field} SEPARATOR ' | ')
+    FROM erp_invoice_lines employee_line
+    WHERE employee_line.invoice_id = ${invoice}.id
+      AND employee_line.branch_id = ${invoice}.branch_id
+      AND employee_line.employee_id IS NOT NULL
+  )`;
+};
+
 const saleLineEvents = (
   filters: ReportFilters,
   itemType: 'service' | 'product',
@@ -94,7 +110,7 @@ const saleLineEvents = (
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
       'line.item_name_snapshot', 'invoice.invoice_number',
-      'invoice.client_name_snapshot', 'invoice.employee_name_snapshot',
+      'invoice.client_name_snapshot', 'line.employee_name_snapshot',
     ]),
   ];
   const reversalConditions = [
@@ -104,7 +120,7 @@ const saleLineEvents = (
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
       'original_line.item_name_snapshot', 'invoice.invoice_number',
-      'invoice.client_name_snapshot', 'invoice.employee_name_snapshot',
+      'invoice.client_name_snapshot', 'original_line.employee_name_snapshot',
     ]),
   ];
   const lineAmount = sql`line.line_total - (${invoiceLineDiscount('line', 'invoice')})`;
@@ -146,7 +162,8 @@ const salesFacts = (filters: ReportFilters) => sql`
   SELECT invoice.id id, invoice.sold_at eventDate, invoice.invoice_number invoiceNumber,
     invoice.sold_at businessDate, branch.name branchName,
     invoice.client_name_snapshot clientName, invoice.client_phone_snapshot clientPhone,
-    invoice.employee_name_snapshot employeeName, invoice.authorized_by_snapshot authorizedBy,
+    ${invoiceEmployeeList('invoice', 'name')} employeeName,
+    invoice.authorized_by_snapshot authorizedBy,
     CASE WHEN invoice.kind = 'branch_transfer' THEN 'تحويل بين الفروع' ELSE 'بيع' END saleKind,
     invoice.subtotal subtotal, invoice.discount_amount discountAmount,
     invoice.tax_amount taxAmount, invoice.total total
@@ -158,7 +175,7 @@ const salesFacts = (filters: ReportFilters) => sql`
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.client_name_snapshot', 'invoice.client_phone_snapshot',
-      'invoice.employee_name_snapshot', 'invoice.authorized_by_snapshot',
+      'invoice.authorized_by_snapshot',
     ]),
   ])}
 `;
@@ -201,7 +218,7 @@ const serviceFacts = (filters: ReportFilters) => saleLineEvents(filters, 'servic
   SELECT ${args.id} id, ${args.eventDate} eventDate, ${sql.raw(args.branch)}.name branchName,
     ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
     ${sql.raw(args.line)}.item_name_snapshot serviceName,
-    ${sql.raw(args.invoice)}.employee_name_snapshot employeeName, ${args.eventType} eventType,
+    ${sql.raw(args.line)}.employee_name_snapshot employeeName, ${args.eventType} eventType,
     ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice, ${args.amount} amount
 `);
 
@@ -213,53 +230,78 @@ const productFacts = (filters: ReportFilters) => saleLineEvents(filters, 'produc
     ${sql.raw(args.line)}.product_cost_basis_snapshot costBasis, ${args.amount} amount
 `);
 
+/**
+ * An employee is credited the services they themselves performed, never the
+ * whole invoice: one sale split between three people produces three rows, each
+ * carrying its own lines plus that share of the invoice's discount and tax.
+ */
 const employeeFacts = (filters: ReportFilters) => sql`
-  SELECT CONCAT('sale-', invoice.id) id, invoice.sold_at eventDate, branch.name branchName,
-    invoice.invoice_number invoiceNumber, invoice.employee_code_snapshot employeeCode,
-    invoice.employee_name_snapshot employeeName, 'sale' eventType, invoice.total amount
-  FROM erp_invoices invoice
+  SELECT CONCAT('sale-', invoice.id, '-', line.employee_id) id, invoice.sold_at eventDate,
+    branch.name branchName, invoice.invoice_number invoiceNumber,
+    line.employee_code_snapshot employeeCode, line.employee_name_snapshot employeeName,
+    'sale' eventType,
+    SUM(line.line_total)
+      - ROUND(invoice.discount_amount * SUM(line.line_total) / NULLIF(invoice.subtotal, 0), 2)
+      + ROUND(invoice.tax_amount * SUM(line.line_total) / NULLIF(invoice.subtotal, 0), 2) amount
+  FROM erp_invoice_lines line
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
-    sql`invoice.status <> 'draft'`, sql`invoice.assigned_employee_id IS NOT NULL`,
+    sql`invoice.status <> 'draft'`, sql`line.employee_id IS NOT NULL`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'invoice.employee_name_snapshot',
-      'CAST(invoice.employee_code_snapshot AS CHAR)',
+      'invoice.invoice_number', 'line.employee_name_snapshot',
+      'CAST(line.employee_code_snapshot AS CHAR)',
     ]),
   ])}
+  GROUP BY invoice.id, branch.name, invoice.invoice_number, invoice.sold_at,
+    invoice.discount_amount, invoice.tax_amount, invoice.subtotal,
+    line.employee_id, line.employee_code_snapshot, line.employee_name_snapshot
   UNION ALL
-  SELECT CONCAT(reversal.type, '-', reversal.id) id, reversal.created_at eventDate,
-    branch.name branchName, invoice.invoice_number invoiceNumber,
-    invoice.employee_code_snapshot employeeCode, invoice.employee_name_snapshot employeeName,
-    reversal.type eventType, -reversal.total amount
-  FROM erp_invoice_reversals reversal
+  SELECT CONCAT(reversal.type, '-', reversal.id, '-', original_line.employee_id) id,
+    reversal.created_at eventDate, branch.name branchName, invoice.invoice_number invoiceNumber,
+    original_line.employee_code_snapshot employeeCode,
+    original_line.employee_name_snapshot employeeName,
+    reversal.type eventType, -SUM(reversal_line.total) amount
+  FROM erp_invoice_reversal_lines reversal_line
+  INNER JOIN erp_invoice_reversals reversal
+    ON reversal.id = reversal_line.reversal_id
+    AND reversal.invoice_id = reversal_line.invoice_id
+    AND reversal.branch_id = reversal_line.branch_id
+  INNER JOIN erp_invoice_lines original_line
+    ON original_line.id = reversal_line.invoice_line_id
+    AND original_line.invoice_id = reversal_line.invoice_id
+    AND original_line.branch_id = reversal_line.branch_id
   INNER JOIN erp_invoices invoice
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
   INNER JOIN branches branch ON branch.id = reversal.branch_id
   ${condition([
-    sql`reversal.status = 'finalized'`, sql`invoice.assigned_employee_id IS NOT NULL`,
+    sql`reversal.status = 'finalized'`, sql`original_line.employee_id IS NOT NULL`,
     ...branchFilter(filters, 'reversal.branch_id'),
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'invoice.employee_name_snapshot',
-      'CAST(invoice.employee_code_snapshot AS CHAR)',
+      'invoice.invoice_number', 'original_line.employee_name_snapshot',
+      'CAST(original_line.employee_code_snapshot AS CHAR)',
     ]),
   ])}
+  GROUP BY reversal.id, reversal.type, reversal.created_at, branch.name, invoice.invoice_number,
+    original_line.employee_id, original_line.employee_code_snapshot,
+    original_line.employee_name_snapshot
 `;
 
 const commissionFacts = (filters: ReportFilters) => sql`
   SELECT ledger.id id, ledger.created_at eventDate, branch.name branchName,
-    invoice.invoice_number invoiceNumber, invoice.employee_name_snapshot employeeName,
+    invoice.invoice_number invoiceNumber, line.employee_name_snapshot employeeName,
     line.item_name_snapshot serviceName, ledger.entry_type eventType,
     ledger.commission_rate_snapshot commissionRate, ledger.base_amount baseAmount,
     ledger.amount amount
   FROM erp_commission_ledger_entries ledger
-  INNER JOIN erp_invoices invoice
-    ON invoice.id = ledger.invoice_id AND invoice.assigned_employee_id = ledger.employee_id
+  INNER JOIN erp_invoices invoice ON invoice.id = ledger.invoice_id
   INNER JOIN erp_invoice_lines line
     ON line.id = ledger.invoice_line_id AND line.invoice_id = ledger.invoice_id
-      AND line.branch_id = invoice.branch_id
+      AND line.branch_id = invoice.branch_id AND line.employee_id = ledger.employee_id
   LEFT JOIN erp_invoice_reversals reversal
     ON reversal.id = ledger.invoice_reversal_id
       AND reversal.invoice_id = ledger.invoice_id
@@ -269,7 +311,7 @@ const commissionFacts = (filters: ReportFilters) => sql`
     sql`(ledger.entry_type <> 'reversal' OR reversal.status = 'finalized')`,
     ...branchFilter(filters, 'invoice.branch_id'), ...timestampFilter(filters, 'ledger.created_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'invoice.employee_name_snapshot', 'line.item_name_snapshot',
+      'invoice.invoice_number', 'line.employee_name_snapshot', 'line.item_name_snapshot',
     ]),
   ])}
 `;
@@ -428,7 +470,7 @@ const clientFacts = (filters: ReportFilters) => sql`
   SELECT CONCAT('sale-', invoice.id) id, invoice.sold_at eventDate, branch.name branchName,
     invoice.invoice_number invoiceNumber, invoice.client_name_snapshot clientName,
     invoice.client_phone_snapshot clientPhone, 'sale' eventType,
-    invoice.employee_name_snapshot employeeName, invoice.total amount
+    ${invoiceEmployeeList('invoice', 'name')} employeeName, invoice.total amount
   FROM erp_invoices invoice
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
@@ -442,7 +484,8 @@ const clientFacts = (filters: ReportFilters) => sql`
   SELECT CONCAT(reversal.type, '-', reversal.id) id, reversal.created_at eventDate,
     branch.name branchName, invoice.invoice_number invoiceNumber,
     invoice.client_name_snapshot clientName, invoice.client_phone_snapshot clientPhone,
-    reversal.type eventType, invoice.employee_name_snapshot employeeName, -reversal.total amount
+    reversal.type eventType, ${invoiceEmployeeList('invoice', 'name')} employeeName,
+    -reversal.total amount
   FROM erp_invoice_reversals reversal
   INNER JOIN erp_invoices invoice
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
@@ -591,7 +634,8 @@ const invoiceSummary = async (
     SELECT invoice.invoice_number invoiceNumber, invoice.sold_at businessDate,
       invoice.sold_at soldAt, branch.name branchName,
       invoice.client_name_snapshot clientName, invoice.client_phone_snapshot clientPhone,
-      invoice.employee_name_snapshot employeeName, invoice.employee_code_snapshot employeeCode,
+      ${invoiceEmployeeList('invoice', 'name')} employeeName,
+      ${invoiceEmployeeList('invoice', 'code')} employeeCode,
       invoice.authorized_by_snapshot authorizedBy, invoice.subtotal subtotal,
       invoice.discount_amount discountAmount, invoice.tax_amount taxAmount, invoice.total total,
       GROUP_CONCAT(CONCAT(payment.method, ': ', payment.amount)

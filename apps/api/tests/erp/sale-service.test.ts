@@ -12,10 +12,9 @@ const actor = { role: 'cashier' as const, accountId: 3, branchId: 2 };
 const input: CompleteSaleInput = {
   clientId: 5,
   sellerEmployeeId: 9,
-  assignedEmployeeId: 8,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
-  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00' }],
+  lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
   discount: { kind: 'percentage', value: '10.00' },
   tax: { kind: 'fixed', value: '5.00' },
   payments: [{ method: 'cash', amount: '185.00' }],
@@ -38,12 +37,12 @@ const invoice = {
   branchId: 2,
   cashierSessionId: 13,
   client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
-  assignedEmployee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
   seller: { id: 9, employeeCode: 1009, name: 'أحمد جمال' },
   authorizedBy: { accountId: 3, username: 'cashier.one' },
   lines: [{
     id: 81, lineNumber: 1, itemType: 'service' as const, sourceId: 21,
     name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+    employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
     commissionRule: 'employee_override' as const, commissionRate: '15.00',
     commissionAmount: '30.00', productCostBasis: null,
     refundedQuantity: 0, refundableQuantity: 1,
@@ -77,12 +76,12 @@ const quote = {
 
 const productInvoice = {
   ...invoice,
-  assignedEmployee: null,
   lines: [{
     ...invoice.lines[0]!,
     itemType: 'product' as const,
     sourceId: 31,
     name: 'شامبو',
+    employee: null,
     commissionRule: 'none' as const,
     commissionRate: '0.00',
     commissionAmount: '0.00',
@@ -107,7 +106,14 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
     findInvoiceById,
     ...overrides,
   };
-  const assertAssignable = vi.fn().mockResolvedValue(invoice.assignedEmployee);
+  const assertAssignable = vi.fn().mockImplementation(
+    async (_actor: unknown, request: { employeeId: number }) => ({
+      id: request.employeeId,
+      employeeCode: 1000 + request.employeeId,
+      fullName: 'سارة علي',
+      branchId: 2,
+    }),
+  );
   const service = createSaleService({
     repository,
     resolveBranchContext: vi.fn().mockResolvedValue({
@@ -246,7 +252,7 @@ describe('ERP sale service', () => {
     await service.complete(actor, input);
     const operation = completeRepository.mock.calls[0]![0];
     const transaction = { id: 'transaction' };
-    await operation.assertEmployee!(transaction);
+    await operation.assertEmployees!(transaction);
     expect(assertAssignable).toHaveBeenCalledWith(
       actor,
       { employeeId: 8, branchId: 2 },
@@ -257,23 +263,50 @@ describe('ERP sale service', () => {
     expect(operation.actingAccountRole).toBe('cashier');
   });
 
+  it('rechecks attendance for every employee named on the invoice, once each', async () => {
+    const { service, completeRepository, assertAssignable } = setup();
+    await service.complete(actor, {
+      ...input,
+      lines: [
+        { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 11 },
+        { itemType: 'service', serviceId: 22, quantity: 1, unitPrice: '150.00', employeeId: 8 },
+        { itemType: 'service', serviceId: 23, quantity: 1, unitPrice: '100.00', employeeId: 11 },
+        { itemType: 'product', productId: 31, quantity: 1 },
+      ],
+    });
+    const operation = completeRepository.mock.calls[0]![0];
+    const transaction = { id: 'transaction' };
+
+    await expect(operation.assertEmployees!(transaction)).resolves.toEqual([
+      expect.objectContaining({ id: 8 }),
+      expect.objectContaining({ id: 11 }),
+    ]);
+    expect(assertAssignable).toHaveBeenCalledTimes(2);
+    expect(assertAssignable).toHaveBeenNthCalledWith(
+      1, actor, { employeeId: 8, branchId: 2 }, transaction,
+    );
+    expect(assertAssignable).toHaveBeenNthCalledWith(
+      2, actor, { employeeId: 11, branchId: 2 }, transaction,
+    );
+  });
+
   it('completes a product-only invoice without employee assignment or attendance checks', async () => {
     const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(productInvoice);
     const { service, assertAssignable } = setup({ complete: completeRepository });
 
     await expect(service.complete(actor, productInput)).resolves.toMatchObject({
-      assignedEmployee: null,
+      lines: [expect.objectContaining({ employee: null })],
     });
 
     const operation = completeRepository.mock.calls[0]![0];
     expect(operation.input).toEqual({ ...productInput, branchId: 2 });
-    expect(Reflect.get(operation, 'assertEmployee')).toBeUndefined();
+    expect(Reflect.get(operation, 'assertEmployees')).toBeUndefined();
     expect(assertAssignable).not.toHaveBeenCalled();
   });
 
   it('maps an attendance race to the stable sale error', async () => {
     const repositoryComplete = vi.fn<SaleRepository['complete']>(async (operation) => {
-      await operation.assertEmployee!({});
+      await operation.assertEmployees!({});
       return invoice;
     });
     const { repository } = setup({ complete: repositoryComplete });
