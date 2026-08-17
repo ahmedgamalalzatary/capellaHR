@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, FileText, RotateCcw, Trash2 } from 'lucide-react';
+import { Download, FileText, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import {
@@ -31,6 +31,7 @@ import {
   type ErpReportExport,
 } from '../api/erp-reports-api';
 import { erpReportQueryKeys } from '../query-keys';
+import { PrintSheet, type PrintableReport } from './print-sheet';
 
 type ErpTabReportType = (typeof erpTabReportTypes)[number];
 
@@ -102,6 +103,18 @@ const statusBadge = (status: ErpReportExport['status']): ExportStatusBadge => (
   exportStatusBadges[status] ?? { label: 'حالة غير معروفة', variant: 'neutral' }
 );
 
+/** Every row behind the export, not just the page the screen happens to show. */
+const collectReportRows = async (record: ErpReportExport) => {
+  const first = await viewErpReport(record.reportType, { ...record.filters, page: 1, pageSize: 100 });
+  const rows = [...first.snapshot.rows];
+  for (let page = 2; page <= first.meta.totalPages; page += 1) {
+    rows.push(...(await viewErpReport(
+      record.reportType, { ...record.filters, page, pageSize: 100 },
+    )).snapshot.rows);
+  }
+  return { snapshot: first.snapshot, rows };
+};
+
 function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
@@ -134,7 +147,23 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     },
   });
-  const actionError = retry.error ?? removeFile.error ?? download.error;
+  const [sheet, setSheet] = useState<PrintableReport>();
+  const print = useMutation({
+    mutationFn: async (record: ErpReportExport) => ({
+      report: await collectReportRows(record), record,
+    }),
+    onSuccess: ({ report, record }) => setSheet({
+      title: tabLabels[record.reportType as ErpTabReportType] ?? report.snapshot.title,
+      subtitle: [
+        record.filters.dateFrom, record.filters.dateTo,
+      ].filter(Boolean).join(' — ') || 'كل الفترات',
+      columns: report.snapshot.columns,
+      rows: report.rows,
+      summary: Object.entries(report.snapshot.summary)
+        .map(([key, value]) => ({ label: summaryLabels[key] ?? key, value })),
+    }),
+  });
+  const actionError = retry.error ?? removeFile.error ?? download.error ?? print.error;
   const items = query.data?.items ?? [];
   const meta = query.data?.meta;
   const deleteTarget = items.find(({ id }) => id === confirmDelete);
@@ -167,6 +196,15 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
                           ) : null}
                           {record.status === 'completed' && !record.fileDeletedAt ? (
                             <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={print.isPending}
+                                onClick={() => print.mutate(record)}
+                              >
+                                <Printer className="size-4" aria-hidden />
+                                طباعة
+                              </Button>
                               <Button size="sm" variant="ghost" disabled={download.isPending} onClick={() => download.mutate(record)}>
                                 <Download className="size-4" aria-hidden />
                                 تنزيل PDF
@@ -193,6 +231,7 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
           />
         ) : null}
       </Card>
+      {sheet ? <PrintSheet report={sheet} onPrinted={() => setSheet(undefined)} /> : null}
       {deleteTarget ? <ConfirmDialog
         title="حذف ملف التصدير"
         description={removeFile.isError

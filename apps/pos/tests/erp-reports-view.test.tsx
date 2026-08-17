@@ -186,4 +186,64 @@ describe('ErpReportsView', () => {
       reportType: 'erp-payment-methods', page: 1,
     })));
   });
+
+  it('prints the report in place, with no new tab and no PDF the browser may download', async () => {
+    mocks.listExports.mockResolvedValue({
+      items: [completedExport], meta: { ...meta, total: 1, totalPages: 1 },
+    });
+    mocks.view.mockResolvedValue({ snapshot, meta: { ...meta, total: 1, totalPages: 1 } });
+    const print = vi.fn();
+    const open = vi.fn();
+    vi.stubGlobal('print', print);
+    vi.stubGlobal('open', open);
+    mount();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'طباعة' }));
+
+    // Printed from the export's own filters, not from whatever the screen shows.
+    await waitFor(() => expect(mocks.view).toHaveBeenCalledWith('erp-sales', {
+      branchId: 2, page: 1, pageSize: 100,
+    }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+    const sheet = document.querySelector('#print-root')!;
+    expect(sheet.textContent).toContain('تقرير المبيعات');
+    expect(sheet.textContent).toContain('INV.2026.08.09.0001');
+    expect(sheet.textContent).toContain('إجمالي المبيعات');
+    // The app is stood down for the duration, so only the sheet reaches paper.
+    expect(document.body.classList.contains('printing-report')).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(mocks.download).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('puts the screen back once the print dialog closes', async () => {
+    mocks.listExports.mockResolvedValue({
+      items: [completedExport], meta: { ...meta, total: 1, totalPages: 1 },
+    });
+    mocks.view.mockResolvedValue({ snapshot, meta: { ...meta, total: 1, totalPages: 1 } });
+    vi.stubGlobal('print', vi.fn());
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'طباعة' }));
+    await waitFor(() => expect(document.querySelector('#print-root')).not.toBeNull());
+
+    window.dispatchEvent(new Event('afterprint'));
+
+    await waitFor(() => expect(document.querySelector('#print-root')).toBeNull());
+    expect(document.body.classList.contains('printing-report')).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('offers printing only for a file that is still on disk', async () => {
+    mocks.listExports.mockResolvedValue({
+      items: [
+        { ...completedExport, fileDeletedAt: '2026-08-09T13:00:00.000Z' },
+        failedExport,
+      ],
+      meta: { ...meta, total: 2, totalPages: 1 },
+    });
+    mount();
+    await screen.findByRole('button', { name: 'إعادة محاولة التصدير' });
+
+    expect(screen.queryByRole('button', { name: 'طباعة' })).toBeNull();
+  });
 });

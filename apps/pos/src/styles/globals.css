@@ -58,8 +58,32 @@
     padding: 0;
   }
 
+  /*
+   * A report sheet is mounted as a direct child of body, so no scrolling or
+   * clipping ancestor in the app shell can swallow it, and it stands in for the
+   * app only while a report is being printed — receipts keep the rules above.
+   */
+  #print-root,
+  #print-root * {
+    visibility: visible;
+  }
+
+  body.printing-report > *:not(#print-root) {
+    display: none !important;
+  }
+
+  body.printing-report #print-root {
+    display: block !important;
+  }
+
   [data-print-controls] {
     display: none !important;
+  }
+}
+
+@layer base {
+  #print-root {
+    display: none;
   }
 }
 

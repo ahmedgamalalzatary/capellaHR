@@ -442,6 +442,13 @@
       "when": 1786914928695,
       "tag": "0062_cashier_control",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "5",
+      "when": 1786953540505,
+      "tag": "0063_cashier_auto_close_window",
+      "breakpoints": true
     }
   ]
 }
