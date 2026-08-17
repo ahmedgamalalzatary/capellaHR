@@ -1,5 +1,6 @@
 import type { ReportSnapshot } from '@capella/contracts';
 import { PassThrough, Readable } from 'node:stream';
+import { constants, inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 import { renderReportPdf, renderReportPdfToStream } from '../src/index.js';
@@ -21,7 +22,67 @@ const snapshot: ReportSnapshot = {
   summary: { totalRecords: 2 },
 };
 
+/**
+ * Reads back the order glyphs are actually painted in, left to right, by
+ * decoding the subset font's ToUnicode map. A correct Arabic sheet paints the
+ * last word of a line first, because that word sits furthest left.
+ */
+const paintedOrder = (pdf: Buffer): string[] => {
+  const source = pdf.toString('latin1');
+  // Both the page content and the ToUnicode maps are deflated in real output.
+  let raw = '';
+  let cmaps = '';
+  for (const match of source.matchAll(/stream\r?\n/gu)) {
+    const start = match.index + match[0].length;
+    const end = source.indexOf('endstream', start);
+    try {
+      const text = inflateSync(
+        Buffer.from(source.slice(start, end), 'latin1'),
+        { finishFlush: constants.Z_SYNC_FLUSH },
+      ).toString('latin1');
+      if (text.includes('Tj') || text.includes('TJ')) raw += text;
+      if (text.includes('beginbfrange') || text.includes('beginbfchar')) cmaps += text;
+    } catch { /* font files and other binary streams are not text */ }
+  }
+  // One subset per font, so decode against each and keep every reading.
+  const maps: Array<Map<number, string>> = [];
+  for (const block of cmaps.matchAll(/beginbfrange([\s\S]*?)endbfrange/gu)) {
+    const glyphs = new Map<number, string>();
+    for (const line of block[1]!.matchAll(/<([0-9a-fA-F]+)>\s*<[0-9a-fA-F]+>\s*\[([^\]]*)\]/gu)) {
+      const first = Number.parseInt(line[1]!, 16);
+      [...line[2]!.matchAll(/<([0-9a-fA-F]*)>/gu)].forEach((entry, offset) => {
+        const hex = entry[1]!;
+        glyphs.set(first + offset, hex ? String.fromCodePoint(Number.parseInt(hex.slice(0, 4), 16)) : '');
+      });
+    }
+    if (glyphs.size) maps.push(glyphs);
+  }
+  const codes = [...raw.matchAll(/<([0-9a-fA-F]+)>/gu)].flatMap(([, hex]) => {
+    const values: number[] = [];
+    for (let index = 0; index < hex!.length; index += 4) {
+      values.push(Number.parseInt(hex!.slice(index, index + 4), 16));
+    }
+    return values;
+  });
+  return maps.map((glyphs) => codes.map((code) => glyphs.get(code) ?? '?').join(''));
+};
+
 describe('Arabic report PDF renderer', () => {
+  it('paints Arabic words right to left instead of in logical order', async () => {
+    const pdf = await renderReportPdf({
+      ...snapshot,
+      rows: [{ employeeCode: 1, fullName: 'سعيد محمود', branchName: 'فرع القاهرة' }],
+    });
+    // "سعيد محمود" must reach paper as محمود first: it is the leftmost word.
+    const rightToLeft = paintedOrder(pdf).some((painted) => {
+      const lastWord = painted.indexOf('دومحم');
+      const firstWord = painted.indexOf('ديعس');
+      return lastWord >= 0 && firstWord > lastWord;
+    });
+
+    expect(rightToLeft).toBe(true);
+  });
+
   it('formats invoice sale timestamps in Cairo across the UTC midnight boundary', () => {
     expect(formatCairoTimestamp('2026-08-08T22:30:00.000Z')).toBe('09/08/2026، 01:30 ص');
   });

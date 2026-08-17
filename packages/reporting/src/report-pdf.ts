@@ -107,8 +107,22 @@ const visualRuns = (value: string): string[] => {
   });
 };
 
+/**
+ * Passing a features list — even an empty one — is what makes PDFKit shape a
+ * string as one run. Without it, it splits on spaces and concatenates the words
+ * in logical order, which paints every Arabic line with its words mirrored.
+ */
+type ShapedTextOptions = PDFKit.Mixins.TextOptions & { features: string[] };
+
+const shaped = (options: PDFKit.Mixins.TextOptions = {}): ShapedTextOptions => (
+  { ...options, features: [] }
+);
+
+const runWidth = (document: PDFKit.PDFDocument, run: string): number =>
+  document.widthOfString(run, shaped());
+
 const textWidth = (document: PDFKit.PDFDocument, value: string): number =>
-  visualRuns(value).reduce((total, run) => total + document.widthOfString(run), 0);
+  visualRuns(value).reduce((total, run) => total + runWidth(document, run), 0);
 
 const drawText = (
   document: PDFKit.PDFDocument,
@@ -118,13 +132,13 @@ const drawText = (
   width: number,
   align: 'left' | 'center' | 'right' = 'right',
 ) => {
-  const runs = visualRuns(value).map((run) => ({ run, width: document.widthOfString(run) }));
+  const runs = visualRuns(value).map((run) => ({ run, width: runWidth(document, run) }));
   const measured = runs.reduce((total, run) => total + run.width, 0);
   let cursor = align === 'right' ? x + width - measured : align === 'center' ? x + (width - measured) / 2 : x;
 
   for (const run of runs) {
     document.save();
-    document.text(run.run, cursor, y, { lineBreak: false });
+    document.text(run.run, cursor, y, shaped({ lineBreak: false }));
     document.restore();
     cursor += run.width;
   }
@@ -520,9 +534,9 @@ export const renderReportPdfToStream = async (
   // subset. Prime both subsets outside the printable area so no real text
   // can become that initialization run.
   document.fillColor('#ffffff').font('NotoSansArabic-Bold').fontSize(1)
-    .text('\u0627', -10, -10, { lineBreak: false });
+    .text('\u0627', -10, -10, shaped({ lineBreak: false }));
   document.font('NotoSansArabic-Regular').fontSize(1)
-    .text('\u0627', -10, -10, { lineBreak: false });
+    .text('\u0627', -10, -10, shaped({ lineBreak: false }));
 
   if (isInvoice) {
     await renderInvoice(document, source, addPage);
