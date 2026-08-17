@@ -26,6 +26,7 @@ import {
   count,
   desc,
   eq,
+  gt,
   gte,
   inArray,
   isNull,
@@ -531,7 +532,8 @@ export const createDrizzleSaleRepository = (
             eq(cashierSessions.id, input.cashierSessionId),
             eq(cashierSessions.branchId, input.branchId),
             isNull(cashierSessions.closedAt),
-            gte(
+            // Strictly after the limit: the sweep spends a shift that reaches it.
+            gt(
               cashierSessions.openedAt,
               new Date(operation.soldAt.getTime() - CASHIER_SESSION_MAX_DURATION_MS),
             ),

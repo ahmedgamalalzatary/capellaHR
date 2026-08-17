@@ -40,9 +40,10 @@ export const cashierSessions = mysqlTable('erp_cashier_sessions', {
   index('erp_cashier_sessions_closed_account_idx').on(table.closedByAccountId, table.closedAt),
   // An open shift has neither fact; a closed one names a closing account or,
   // when the system ended it at the 16-hour limit, carries auto_closed_at instead.
+  // A system close is stamped at the limit itself, never at the sweep that found it.
   check(
     'erp_cashier_sessions_close_state',
-    sql`(${table.closedAt} is null and ${table.closedByAccountId} is null and ${table.autoClosedAt} is null) or (${table.closedAt} is not null and ${table.closedAt} >= ${table.openedAt} and ((${table.closedByAccountId} is not null and ${table.autoClosedAt} is null) or (${table.closedByAccountId} is null and ${table.autoClosedAt} is not null and ${table.autoClosedAt} = ${table.closedAt})))`,
+    sql`(${table.closedAt} is null and ${table.closedByAccountId} is null and ${table.autoClosedAt} is null) or (${table.closedAt} is not null and ${table.closedAt} >= ${table.openedAt} and ((${table.closedByAccountId} is not null and ${table.autoClosedAt} is null) or (${table.closedByAccountId} is null and ${table.autoClosedAt} is not null and ${table.autoClosedAt} = ${table.closedAt} and ${table.autoClosedAt} = ${table.openedAt} + interval 16 hour)))`,
   ),
 ]);
 

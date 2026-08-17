@@ -42,4 +42,16 @@ describe('ERP Cashier-session schema', () => {
       'erp_cashier_sessions_close_state',
     );
   });
+
+  it('pins a system close to the exact sixteen-hour mark of the shift', () => {
+    const sessions = Reflect.get(salesSchema, 'cashierSessions');
+    const closeState = getTableConfig(sessions).checks
+      .find((check) => check.name === 'erp_cashier_sessions_close_state')!;
+
+    const text = closeState.value.queryChunks
+      .flatMap((chunk) => (chunk instanceof Object && 'value' in chunk ? chunk.value : []))
+      .join(' ');
+
+    expect(text).toContain('interval 16 hour');
+  });
 });

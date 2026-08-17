@@ -379,6 +379,26 @@ describe('CashierAccountsView', () => {
       .toBeDefined();
   });
 
+  test('steps back a page when the last account on it is deleted', async () => {
+    mocks.listCashierAccounts.mockResolvedValue(pageOf([activeAccount], { total: 21, totalPages: 2 }));
+    mocks.deleteCashierAccount.mockResolvedValue({ ...activeAccount, active: false });
+    renderView();
+    await screen.findByText('nasr');
+    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    await waitFor(() => {
+      expect(mocks.listCashierAccounts.mock.calls.at(-1)?.[0]).toMatchObject({ page: 2 });
+    });
+
+    const row = (await screen.findByText('nasr')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'حذف' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الحذف' }));
+
+    await waitFor(() => expect(mocks.deleteCashierAccount).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(mocks.listCashierAccounts.mock.calls.at(-1)?.[0]).toMatchObject({ page: 1 });
+    });
+  });
+
   test('paginates with the next button', async () => {
     mocks.listCashierAccounts.mockResolvedValue(pageOf([activeAccount], { total: 30, totalPages: 2 }));
     renderView();

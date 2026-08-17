@@ -28,6 +28,14 @@ const branchCashier = and(
   isNull(accounts.archivedAt),
 );
 
+// Held before every read-then-write on a login so a concurrent upsert cannot
+// rewrite its credentials underneath us. The account row alone: `upsert` takes
+// the branch row first, so locking branches here too would invert the order.
+const lockCashier = async (executor: Executor, accountId: number) => {
+  await executor.select({ id: accounts.id }).from(accounts)
+    .where(and(eq(accounts.id, accountId), branchCashier)).for('update').limit(1);
+};
+
 const selectPublic = async (executor: Executor, accountId: number) => {
   const row = (await executor.select({
     id: accounts.id,
@@ -126,6 +134,7 @@ export const createDrizzleCashierAccountRepository = (
     },
     setCashierActive(input) {
       return database.transaction(async (tx) => {
+        await lockCashier(tx, input.accountId);
         const before = await selectPublic(tx, input.accountId);
         if (!before) return { kind: 'not_found' as const };
         await tx.update(accounts).set({ active: input.active, updatedAt: input.updatedAt })
@@ -149,6 +158,7 @@ export const createDrizzleCashierAccountRepository = (
     },
     archiveCashier(input) {
       return database.transaction(async (tx) => {
+        await lockCashier(tx, input.accountId);
         const before = await selectPublic(tx, input.accountId);
         if (!before) return { kind: 'not_found' as const };
         // Deactivating alongside the archive stamp releases both unique slots:
@@ -178,6 +188,7 @@ export const createDrizzleCashierAccountRepository = (
     },
     updateCashierPassword(input) {
       return database.transaction(async (tx) => {
+        await lockCashier(tx, input.accountId);
         const account = await selectPublic(tx, input.accountId);
         if (!account) return { kind: 'not_found' as const };
         await tx.update(accounts).set({

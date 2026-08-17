@@ -1580,6 +1580,19 @@ describe('ERP sale repository MySQL integration', () => {
       .toHaveLength(0);
   });
 
+  it('rejects a sale at the exact instant a shift reaches its sixteen-hour limit', async () => {
+    const data = await fixture();
+    await database.update(cashierSessions)
+      .set({ openedAt: new Date(data.at.getTime() - 16 * 60 * 60_000) })
+      .where(eq(cashierSessions.id, data.cashierSessionId));
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+
+    await expect(repository.complete(operation(data, crypto.randomUUID())))
+      .rejects.toMatchObject({ code: 'CASHIER_SESSION_NOT_OPEN' });
+    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
+      .toHaveLength(0);
+  });
+
   it('rejects a sale when the seller left the branch roster before the transaction', async () => {
     const data = await fixture();
     await database.delete(branchCashierRoster).where(and(

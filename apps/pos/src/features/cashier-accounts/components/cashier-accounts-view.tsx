@@ -289,6 +289,9 @@ export function CashierAccountsView() {
     queryFn: () => listCashierAccounts({ page }),
   });
 
+  const items = accountsQuery.data?.items ?? [];
+  const meta = accountsQuery.data?.meta;
+
   const setStatus = useMutation({
     mutationFn: ({ accountId, active }: { accountId: number; active: boolean }) =>
       setCashierAccountStatus(accountId, active),
@@ -302,12 +305,11 @@ export function CashierAccountsView() {
     mutationFn: (accountId: number) => deleteCashierAccount(accountId),
     onSuccess: async () => {
       setConfirmDelete(null);
+      // Emptying a later page would otherwise refetch it and read as "no accounts".
+      if (items.length === 1 && page > 1) setPage(page - 1);
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
     },
   });
-
-  const items = accountsQuery.data?.items ?? [];
-  const meta = accountsQuery.data?.meta;
 
   return (
     <section className="space-y-6">

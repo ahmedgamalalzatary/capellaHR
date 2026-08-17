@@ -302,7 +302,9 @@ describe('MySQL-backed authentication', () => {
     // Retiring the login keeps the row, stops the login, and frees the name.
     const workingLogin = await request(app).post('/api/v1/auth/cashier/login')
       .send({ username: 'cashier.one', password: 'new-password' });
+    expect(workingLogin.status).toBe(200);
     const workingCookie = workingLogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+    expect(workingCookie).not.toBe('');
     await request(app).delete(`/api/v1/auth/cashier-accounts/${accountId}`)
       .set('Cookie', adminCookie).expect(200);
 

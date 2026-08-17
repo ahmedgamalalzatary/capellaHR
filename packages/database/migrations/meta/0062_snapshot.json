@@ -5381,7 +5381,7 @@
       "checkConstraint": {
         "erp_cashier_sessions_close_state": {
           "name": "erp_cashier_sessions_close_state",
-          "value": "(`erp_cashier_sessions`.`closed_at` is null and `erp_cashier_sessions`.`closed_by_account_id` is null and `erp_cashier_sessions`.`auto_closed_at` is null) or (`erp_cashier_sessions`.`closed_at` is not null and `erp_cashier_sessions`.`closed_at` >= `erp_cashier_sessions`.`opened_at` and ((`erp_cashier_sessions`.`closed_by_account_id` is not null and `erp_cashier_sessions`.`auto_closed_at` is null) or (`erp_cashier_sessions`.`closed_by_account_id` is null and `erp_cashier_sessions`.`auto_closed_at` is not null and `erp_cashier_sessions`.`auto_closed_at` = `erp_cashier_sessions`.`closed_at`)))"
+          "value": "(`erp_cashier_sessions`.`closed_at` is null and `erp_cashier_sessions`.`closed_by_account_id` is null and `erp_cashier_sessions`.`auto_closed_at` is null) or (`erp_cashier_sessions`.`closed_at` is not null and `erp_cashier_sessions`.`closed_at` >= `erp_cashier_sessions`.`opened_at` and ((`erp_cashier_sessions`.`closed_by_account_id` is not null and `erp_cashier_sessions`.`auto_closed_at` is null) or (`erp_cashier_sessions`.`closed_by_account_id` is null and `erp_cashier_sessions`.`auto_closed_at` is not null and `erp_cashier_sessions`.`auto_closed_at` = `erp_cashier_sessions`.`closed_at` and `erp_cashier_sessions`.`auto_closed_at` = `erp_cashier_sessions`.`opened_at` + interval 16 hour)))"
         }
       }
     },
