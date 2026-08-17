@@ -145,19 +145,14 @@ describe('ERP category service', () => {
     expect(list).toHaveBeenCalledWith(5, expect.objectContaining({ page: 1 }));
   });
 
-  it('rejects a duplicate name inside one type but allows it in the other type', async () => {
-    const existing = vi.fn(async (
-      _branchId: number,
-      type: 'service' | 'expense',
-    ) => (type === 'service' ? category({ id: 42 }) : null));
+  it('rejects a duplicate category name within the branch', async () => {
+    const existing = vi.fn(async () => category({ id: 42 }));
     const repository = categoryRepository({
       findByNormalizedName: existing as unknown as CategoryRepository['findByNormalizedName'],
     });
 
     await expect(categories(repository).create(ADMIN, { name: 'شعر', type: 'service' }))
       .rejects.toMatchObject({ code: 'CATEGORY_NAME_EXISTS', existingId: 42 });
-    await expect(categories(repository).create(ADMIN, { name: 'شعر', type: 'expense' }))
-      .resolves.toMatchObject({ type: 'expense' });
   });
 
   it('translates a lost uniqueness race into the same conflict', async () => {
@@ -287,8 +282,11 @@ describe('ERP service catalog service', () => {
       .rejects.toMatchObject({ code: 'CATEGORY_NOT_FOUND' });
   });
 
-  it('rejects an expense category for a service', async () => {
-    const expense = categoryRepository({ findById: vi.fn(async () => category({ type: 'expense' })) });
+  it('rejects a category stored with any type other than service', async () => {
+    // Only stale data can reach this: the catalog offers no other type.
+    const expense = categoryRepository({
+      findById: vi.fn(async () => category({ type: 'expense' as never })),
+    });
 
     await expect(services(serviceRepository(), { categories: expense })
       .create(ADMIN, { name: 'صبغة', categoryId: 1, price: '150.00', commissionPercent: '0.00' }))

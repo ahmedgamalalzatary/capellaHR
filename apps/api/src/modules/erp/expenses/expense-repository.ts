@@ -1,41 +1,36 @@
 import type { createDatabase } from '@capella/database';
-import { accounts, erpCategories, erpExpenses } from '@capella/database/schema';
-import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { accounts, erpExpenses } from '@capella/database/schema';
+import { and, count, desc, eq, gte, like, lte, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
-import { markCategoryReferenced } from '../catalog/index.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import type { ExpenseRecord, ExpenseRepository } from './expense-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
 const selection = {
-  id: erpExpenses.id, branchId: erpExpenses.branchId, categoryId: erpExpenses.categoryId,
-  categoryName: erpCategories.name, amount: erpExpenses.amount, expenseDate: erpExpenses.expenseDate,
+  id: erpExpenses.id, branchId: erpExpenses.branchId, name: erpExpenses.name,
+  amount: erpExpenses.amount, expenseDate: erpExpenses.expenseDate,
   description: erpExpenses.description, actingAccountId: erpExpenses.actingAccountId,
   actingUsername: accounts.username, kind: erpExpenses.kind, status: erpExpenses.status,
   reversalOfId: erpExpenses.reversalOfId, supersedesId: erpExpenses.supersedesId,
   correctionReason: erpExpenses.correctionReason, createdAt: erpExpenses.createdAt,
 };
 const joined = <T extends Pick<Database, 'select'>>(executor: T) => executor.select(selection).from(erpExpenses)
-  .innerJoin(erpCategories, eq(erpCategories.id, erpExpenses.categoryId))
   .innerJoin(accounts, eq(accounts.id, erpExpenses.actingAccountId));
-const categoryValid = async (tx: Parameters<Parameters<Database['transaction']>[0]>[0], branchId: number, categoryId: number) => (
-  (await tx.select({ id: erpCategories.id }).from(erpCategories).where(and(
-    eq(erpCategories.id, categoryId), eq(erpCategories.branchId, branchId),
-    eq(erpCategories.type, 'expense'), eq(erpCategories.isActive, true),
-  )).for('update').limit(1))[0] !== undefined
-);
+/** An expense is found by its own wording: its name or its notes. */
+const escapeLike = (value: string) => value
+  .replaceAll('\\', '\\\\')
+  .replaceAll('%', '\\%')
+  .replaceAll('_', '\\_');
 
 export const createDrizzleExpenseRepository = (database: Database, audit: ErpAuditCapability, now: () => Date = () => new Date()): ExpenseRepository => ({
   async create(input) {
     return database.transaction(async (tx) => {
-      if (!await categoryValid(tx, input.branchId, input.categoryId)) return 'invalid-category';
       const at = now();
-      const inserted = await tx.insert(erpExpenses).values({ ...input, kind: 'expense', status: 'active', createdAt: at });
+      const inserted = await tx.insert(erpExpenses).values({ ...input, description: input.description ?? '', kind: 'expense', status: 'active', createdAt: at });
       const id = Number(inserted[0].insertId);
-      await markCategoryReferenced(tx, input.categoryId, at);
       const record = (await joined(tx).where(eq(erpExpenses.id, id)).limit(1))[0] as ExpenseRecord;
-      await audit.record(tx, { module: 'erp-expenses', action: 'create', entityType: 'expense', entityId: id, afterState: record, relatedIds: { branchId: input.branchId, categoryId: input.categoryId, actingAccountId: input.actingAccountId }, createdAt: at });
+      await audit.record(tx, { module: 'erp-expenses', action: 'create', entityType: 'expense', entityId: id, afterState: record, relatedIds: { branchId: input.branchId, actingAccountId: input.actingAccountId }, createdAt: at });
       return record;
     });
   },
@@ -44,7 +39,10 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
   },
   async list(branchId, query) {
     const filters = [eq(erpExpenses.branchId, branchId)];
-    if (query.categoryId !== undefined) filters.push(eq(erpExpenses.categoryId, query.categoryId));
+    if (query.search !== undefined) {
+      const pattern = `%${escapeLike(query.search)}%`;
+      filters.push(or(like(erpExpenses.name, pattern), like(erpExpenses.description, pattern))!);
+    }
     if (query.fromDate !== undefined) filters.push(gte(erpExpenses.expenseDate, query.fromDate));
     if (query.toDate !== undefined) filters.push(lte(erpExpenses.expenseDate, query.toDate));
     if (query.status !== undefined) filters.push(eq(erpExpenses.status, query.status));
@@ -59,12 +57,11 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
       if (!target || target.kind !== 'expense') return 'invalid-target';
       if (target.status !== 'active') return 'already-corrected';
       const original = (await joined(tx).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).limit(1))[0] as ExpenseRecord;
-      if (!await categoryValid(tx, input.branchId, input.categoryId)) return 'invalid-category';
       const at = now();
       const correctionOperationId = randomUUID();
       await tx.execute(sql`CALL correct_erp_expense(
-        ${id}, ${input.branchId}, ${input.categoryId}, ${input.amount}, ${input.expenseDate},
-        ${input.description}, ${input.actingAccountId}, ${input.reason}, ${at}, ${correctionOperationId}
+        ${id}, ${input.branchId}, ${input.name}, ${input.amount}, ${input.expenseDate},
+        ${input.description ?? ''}, ${input.actingAccountId}, ${input.reason}, ${at}, ${correctionOperationId}
       )`);
       const correctionRows = await tx.select({
         id: erpExpenses.id,
@@ -76,7 +73,6 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
       if (reversalId === undefined || replacementId === undefined) {
         throw new Error('ERP expense correction procedure did not create complete lineage');
       }
-      await markCategoryReferenced(tx, input.categoryId, at);
       const [reversal, replacement] = await Promise.all([
         joined(tx).where(eq(erpExpenses.id, reversalId)).limit(1).then((rows) => rows[0] as ExpenseRecord),
         joined(tx).where(eq(erpExpenses.id, replacementId)).limit(1).then((rows) => rows[0] as ExpenseRecord),

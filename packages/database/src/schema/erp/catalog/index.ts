@@ -16,13 +16,13 @@ import {
 import { employees } from '../../employees/index.js';
 import { branches } from '../../organization/index.js';
 
-/** The locked category type set: one table serves services and expenses. */
-export const erpCategoryTypes = ['service', 'expense'] as const;
+/** Only services are categorised; an expense carries its own name instead. */
+export const erpCategoryTypes = ['service'] as const;
 
 /**
- * One category table with a type flag, as locked in the ERP plan. Categories
- * are branch-scoped like every other ERP business record, so the "name unique
- * per type" rule is enforced within a branch's own catalog.
+ * The service catalog's categories, branch-scoped like every other ERP business
+ * record, so the "name unique per type" rule is enforced within a branch's own
+ * catalog. The type flag is kept for the existing keys and history.
  *
  * A category is never removed once something references it: `is_active` retires
  * it from new work while `has_ever_been_referenced` permanently blocks deletion,

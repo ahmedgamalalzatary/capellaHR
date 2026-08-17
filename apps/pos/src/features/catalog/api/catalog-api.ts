@@ -8,7 +8,7 @@ export interface Category {
   type: ErpCategoryType;
   name: string;
   isActive: boolean;
-  /** True once a service (or, later, an expense) has used it: deletion is then refused. */
+  /** True once a service has used it: deletion is then refused. */
   hasEverBeenReferenced: boolean;
   createdAt: string;
   updatedAt: string;

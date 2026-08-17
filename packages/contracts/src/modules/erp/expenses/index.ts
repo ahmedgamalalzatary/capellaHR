@@ -17,13 +17,15 @@ const amountSchema = z.string().regex(/^\d{1,10}(?:\.\d{1,2})?$/, 'المبلغ 
   }
   return normalized;
 });
-const descriptionSchema = z.string().trim().min(1, 'الوصف مطلوب').max(1000, 'الوصف طويل جدًا');
+/** An expense is identified by its own name; the notes are free extra detail. */
+const nameSchema = z.string().trim().min(1, 'اسم المصروف مطلوب').max(255, 'اسم المصروف طويل جدًا');
+const descriptionSchema = z.string().trim().max(1000, 'الوصف طويل جدًا');
 const branchScope = { branchId: coercedMysqlIntSchema.optional() };
 const expenseFields = {
-  categoryId: coercedMysqlIntSchema,
+  name: nameSchema,
   amount: amountSchema,
   expenseDate: cairoDateSchema,
-  description: descriptionSchema,
+  description: descriptionSchema.optional(),
   ...branchScope,
 };
 
@@ -35,7 +37,7 @@ export const correctExpenseSchema = z.object({
 export const expenseIdParamsSchema = z.object({ id: coercedMysqlIntSchema }).strict();
 export const expenseBranchQuerySchema = z.object(branchScope).strict();
 export const listExpensesQuerySchema = z.object({
-  categoryId: coercedMysqlIntSchema.optional(),
+  search: z.string().trim().min(1).max(255).optional(),
   fromDate: cairoDateSchema.optional(),
   toDate: cairoDateSchema.optional(),
   status: z.enum(['active', 'corrected']).optional(),

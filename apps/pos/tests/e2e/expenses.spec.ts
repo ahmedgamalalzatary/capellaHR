@@ -11,13 +11,12 @@ test('Admin creates, filters and safely corrects an expense', async ({ page }) =
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/auth/session') return json(route, { actor: { type: 'admin' } });
     if (path === '/branches') return json(route, [{ id: 2, name: 'الرئيسي' }], { page: 1, pageSize: 100, total: 1, totalPages: 1 });
-    if (path === '/erp/categories') return json(route, [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], { page: 1, pageSize: 100, total: 1, totalPages: 1 });
     if (path === '/erp/expenses' && request.method() === 'GET') { filters = Object.fromEntries(new URL(request.url()).searchParams); return json(route, rows, { page: 1, pageSize: 20, total: rows.length, totalPages: rows.length ? 1 : 0 }); }
-    if (path === '/erp/expenses' && request.method() === 'POST') { const body = request.postDataJSON() as Record<string, unknown>; const value = { id: 10, ...body, categoryName: 'تشغيل', actingUsername: 'admin', kind: 'expense', status: 'active', reversalOfId: null, supersedesId: null, correctionReason: null }; rows = [value]; return json(route, value, undefined, 201); }
+    if (path === '/erp/expenses' && request.method() === 'POST') { const body = request.postDataJSON() as Record<string, unknown>; const value = { id: 10, ...body, actingUsername: 'admin', kind: 'expense', status: 'active', reversalOfId: null, supersedesId: null, correctionReason: null }; rows = [value]; return json(route, value, undefined, 201); }
     if (path === '/erp/expenses/10/corrections') { correction = request.postDataJSON() as Record<string, unknown>; rows = [{ ...rows[0], status: 'corrected' }, { ...rows[0], id: 11, kind: 'reversal', reversalOfId: 10, correctionReason: correction.reason }, { ...rows[0], ...correction, id: 12, status: 'active', supersedesId: 10 }]; return json(route, { original: rows[0], reversal: rows[1], replacement: rows[2] }, undefined, 201); }
     return route.fulfill({ status: 404, headers, body: '{}' });
   });
-  await page.goto('/expenses'); await page.getByLabel('الفرع').selectOption('2'); await page.getByLabel('التصنيف', { exact: true }).selectOption('4'); await page.getByLabel('المبلغ').fill('125.50'); await page.getByLabel('تاريخ المصروف').fill('2026-08-05'); await page.getByLabel('الوصف').fill('مستلزمات'); await page.getByRole('button', { name: 'تسجيل المصروف' }).click();
+  await page.goto('/expenses'); await page.getByLabel('الفرع').selectOption('2'); await page.getByLabel('اسم المصروف').fill('كهرباء'); await page.getByLabel('المبلغ').fill('125.50'); await page.getByLabel('تاريخ المصروف').fill('2026-08-05'); await page.getByLabel('الوصف').fill('مستلزمات'); await page.getByRole('button', { name: 'تسجيل المصروف' }).click();
   await expect(page.getByText('مستلزمات')).toBeVisible(); await page.getByLabel('من تاريخ').fill('2026-08-01'); await expect.poll(() => filters).toMatchObject({ branchId: '2', fromDate: '2026-08-01' }); await page.getByRole('button', { name: 'تصحيح' }).click(); await page.getByLabel('المبلغ الصحيح').fill('100'); await page.getByLabel('سبب التصحيح').fill('قيمة خاطئة'); await page.getByRole('button', { name: 'تأكيد التصحيح' }).click();
   await expect.poll(() => correction).toMatchObject({ branchId: 2, amount: '100', reason: 'قيمة خاطئة' }); await expect(page.getByText('قيد عكسي')).toBeVisible();
 });
@@ -29,19 +28,18 @@ test('Cashier records an expense in their own branch and cannot correct one', as
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/auth/session') return json(route, { actor: { type: 'cashier', accountId: 8 } });
     if (path === '/erp/cashier-sessions/current') return json(route, null);
-    if (path === '/erp/categories') return json(route, [{ id: 4, branchId: 2, type: 'expense', name: 'تشغيل', isActive: true }], { page: 1, pageSize: 100, total: 1, totalPages: 1 });
     if (path === '/erp/expenses' && request.method() === 'GET') return json(route, rows, { page: 1, pageSize: 20, total: rows.length, totalPages: rows.length ? 1 : 0 });
-    if (path === '/erp/expenses' && request.method() === 'POST') { created = request.postDataJSON() as Record<string, unknown>; rows = [{ id: 10, branchId: 2, ...created, categoryName: 'تشغيل', actingUsername: 'cashier1', kind: 'expense', status: 'active', reversalOfId: null, supersedesId: null, correctionReason: null }]; return json(route, rows[0], undefined, 201); }
+    if (path === '/erp/expenses' && request.method() === 'POST') { created = request.postDataJSON() as Record<string, unknown>; rows = [{ id: 10, branchId: 2, ...created, actingUsername: 'cashier1', kind: 'expense', status: 'active', reversalOfId: null, supersedesId: null, correctionReason: null }]; return json(route, rows[0], undefined, 201); }
     return route.fulfill({ status: 404, headers, body: '{}' });
   });
   await page.goto('/expenses');
   await expect(page.getByRole('heading', { name: 'المصروفات' })).toBeVisible();
   await expect(page.getByLabel('الفرع')).toHaveCount(0);
-  await page.getByLabel('التصنيف', { exact: true }).selectOption('4');
+  await page.getByLabel('اسم المصروف').fill('مياه');
   await page.getByLabel('المبلغ').fill('40.00'); await page.getByLabel('تاريخ المصروف').fill('2026-08-05'); await page.getByLabel('الوصف').fill('مياه');
   await page.getByRole('button', { name: 'تسجيل المصروف' }).click();
   // The branch is never sent: the server pins the entry to the branch of the cashier account.
-  await expect.poll(() => created).toEqual({ categoryId: 4, amount: '40.00', expenseDate: '2026-08-05', description: 'مياه' });
+  await expect.poll(() => created).toEqual({ name: 'مياه', amount: '40.00', expenseDate: '2026-08-05', description: 'مياه' });
   await expect(page.getByText('مياه')).toBeVisible();
   await expect(page.getByRole('button', { name: 'تصحيح' })).toHaveCount(0);
 });

@@ -3,13 +3,13 @@ import type { CorrectExpenseInput, CreateExpenseInput } from '@capella/contracts
 import { api } from '@/lib/api/client';
 
 export type Expense = {
-  id: number; branchId: number; categoryId: number; categoryName: string; amount: string;
+  id: number; branchId: number; name: string; amount: string;
   expenseDate: string; description: string; actingAccountId: number; actingUsername: string;
   kind: 'expense' | 'reversal'; status: 'active' | 'corrected'; reversalOfId: number | null;
   supersedesId: number | null; correctionReason: string | null; createdAt: string;
 };
 export type ExpenseCorrection = { original: Expense; reversal: Expense; replacement: Expense };
-export type ListExpenseParams = { branchId?: number; categoryId?: number; fromDate?: string; toDate?: string; status?: 'active' | 'corrected'; page?: number; pageSize?: number };
+export type ListExpenseParams = { branchId?: number; search?: string; fromDate?: string; toDate?: string; status?: 'active' | 'corrected'; page?: number; pageSize?: number };
 const query = (params: Record<string, string | number | undefined>) => {
   const value = new URLSearchParams(); for (const [key, entry] of Object.entries(params)) if (entry !== undefined && entry !== '') value.set(key, String(entry));
   const serialized = value.toString(); return serialized ? `?${serialized}` : '';

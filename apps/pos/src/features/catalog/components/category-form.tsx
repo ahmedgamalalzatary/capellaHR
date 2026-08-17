@@ -16,8 +16,8 @@ import { categoryFormSchema, type CategoryFormValues } from '../schemas/catalog-
 import { serverErrorMessage } from './catalog-messages';
 
 /**
- * The type is only offered while creating: services already point at a category,
- * so re-typing it would silently move them into the expense catalog.
+ * Categories serve the service catalog only, so the type is shown for clarity
+ * and never editable after creation.
  */
 export function CategoryForm({
   category,
@@ -93,7 +93,6 @@ export function CategoryForm({
                 {...register('type')}
               >
                 <option value="service">خدمات</option>
-                <option value="expense">مصروفات</option>
               </Select>
             </Field>
           </div>

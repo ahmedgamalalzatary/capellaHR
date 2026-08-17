@@ -477,6 +477,20 @@
       "when": 1786983836550,
       "tag": "0067_line_employee_assignment",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "5",
+      "when": 1786987127722,
+      "tag": "0068_expense_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "5",
+      "when": 1786987137813,
+      "tag": "0069_expense_category_removal",
+      "breakpoints": true
     }
   ]
 }

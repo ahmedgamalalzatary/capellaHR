@@ -128,7 +128,7 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     title: 'تقرير المصروفات',
     columns: [
       ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['categoryName', 'التصنيف'], ['description', 'الوصف'], ['eventType', 'نوع الحركة'],
+      ['expenseName', 'المصروف'], ['description', 'الوصف'], ['eventType', 'نوع الحركة'],
       ['authorizedBy', 'المنفذ'], ['amount', 'المبلغ'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },

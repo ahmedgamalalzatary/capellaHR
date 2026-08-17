@@ -9,11 +9,11 @@ beforeEach(() => vi.clearAllMocks());
 describe('expenses API', () => {
   it('serializes pagination and filters', async () => {
     mocks.getPage.mockResolvedValue({ items: [], meta: {} });
-    await listExpenses({ branchId: 2, categoryId: 4, fromDate: '2026-08-01', toDate: '2026-08-31', status: 'active', page: 2, pageSize: 20 });
-    expect(mocks.getPage).toHaveBeenCalledWith('/erp/expenses?branchId=2&categoryId=4&fromDate=2026-08-01&toDate=2026-08-31&status=active&page=2&pageSize=20');
+    await listExpenses({ branchId: 2, search: 'كهرباء', fromDate: '2026-08-01', toDate: '2026-08-31', status: 'active', page: 2, pageSize: 20 });
+    expect(mocks.getPage).toHaveBeenCalledWith(`/erp/expenses?branchId=2&search=${encodeURIComponent('كهرباء')}&fromDate=2026-08-01&toDate=2026-08-31&status=active&page=2&pageSize=20`);
   });
   it('uses explicit create, read and correction endpoints', async () => {
-    const input = { branchId: 2, categoryId: 4, amount: '10', expenseDate: '2026-08-05', description: 'x' };
+    const input = { branchId: 2, name: 'كهرباء', amount: '10', expenseDate: '2026-08-05', description: 'x' };
     await createExpense(input); await getExpense(8, 2); await correctExpense(8, { ...input, reason: 'x' });
     expect(mocks.post).toHaveBeenNthCalledWith(1, '/erp/expenses', input);
     expect(mocks.get).toHaveBeenCalledWith('/erp/expenses/8?branchId=2');

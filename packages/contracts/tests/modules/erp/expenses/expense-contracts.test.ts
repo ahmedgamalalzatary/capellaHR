@@ -8,10 +8,10 @@ import {
 
 const valid = {
   branchId: 2,
-  categoryId: 4,
+  name: 'مستلزمات نظافة',
   amount: '125.50',
   expenseDate: '2026-08-05',
-  description: 'مستلزمات نظافة',
+  description: 'صابون ومناديل لفرع المعادي',
 };
 
 describe('expense contracts', () => {
@@ -28,8 +28,19 @@ describe('expense contracts', () => {
     expect(createExpenseSchema.safeParse({ ...valid, expenseDate }).success).toBe(false);
   });
 
-  it('requires a meaningful description', () => {
-    expect(createExpenseSchema.safeParse({ ...valid, description: '   ' }).success).toBe(false);
+  it('identifies an expense by a required name and optional notes', () => {
+    expect(createExpenseSchema.safeParse({ ...valid, name: '   ' }).success).toBe(false);
+    const withoutNotes = { ...valid };
+    Reflect.deleteProperty(withoutNotes, 'description');
+    expect(createExpenseSchema.parse(withoutNotes)).not.toHaveProperty('description');
+    expect(createExpenseSchema.parse({ ...valid, name: '  كهرباء  ' }).name).toBe('كهرباء');
+    // Blank notes are the same as none at all.
+    expect(createExpenseSchema.parse({ ...valid, description: '   ' }).description).toBe('');
+  });
+
+  it('no longer accepts a category on an expense', () => {
+    expect(createExpenseSchema.safeParse({ ...valid, categoryId: 4 }).success).toBe(false);
+    expect(listExpensesQuerySchema.safeParse({ branchId: '2', categoryId: '4' }).success).toBe(false);
   });
 
   it('validates correction input independently from the replacement expense', () => {
@@ -37,7 +48,7 @@ describe('expense contracts', () => {
     expect(correctExpenseSchema.safeParse({ ...valid, reason: '' }).success).toBe(false);
   });
 
-  it('parses branch, category, date, status and pagination filters', () => {
-    expect(listExpensesQuerySchema.parse({ branchId: '2', categoryId: '4', fromDate: '2026-08-01', toDate: '2026-08-31', status: 'active' })).toMatchObject({ branchId: 2, categoryId: 4, page: 1, pageSize: 20 });
+  it('parses branch, search, date, status and pagination filters', () => {
+    expect(listExpensesQuerySchema.parse({ branchId: '2', search: '  كهرباء  ', fromDate: '2026-08-01', toDate: '2026-08-31', status: 'active' })).toMatchObject({ branchId: 2, search: 'كهرباء', page: 1, pageSize: 20 });
   });
 });

@@ -34,7 +34,7 @@ describe('ERP expenses mounting', () => {
   it('accepts a correction from a cashier for their own branch', async () => {
     const response = await request(appAs(cashier))
       .post('/api/v1/erp/expenses/10/corrections')
-      .send({ categoryId: 4, amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' });
+      .send({ name: 'كهرباء', amount: '1.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' });
 
     // The stub repository holds no expense, so reaching "not found" proves the
     // cashier passed authorization instead of being refused the action.

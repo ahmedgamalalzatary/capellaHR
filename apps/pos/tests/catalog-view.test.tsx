@@ -202,20 +202,17 @@ describe('CatalogView categories', () => {
     mocks.createCategory.mockResolvedValue({ ...hairCategory, id: 2, name: 'أظافر' });
     const queryClient = renderView();
     queryClient.setQueryData(['erp-reports', 'existing'], {});
-    queryClient.setQueryData(['expense-categories', 3, 'active'], []);
     await pickBranch();
     fireEvent.click(await screen.findByRole('button', { name: 'إضافة تصنيف' }));
 
     fireEvent.change(screen.getByLabelText(/^اسم التصنيف/), { target: { value: 'أظافر' } });
-    fireEvent.change(screen.getByLabelText(/^النوع/), { target: { value: 'expense' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ التصنيف' }));
 
     await waitFor(() => expect(mocks.createCategory).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('status', { name: 'تم حفظ التصنيف.' })).toBeDefined();
     expect(mocks.createCategory.mock.calls[0]?.[0])
-      .toEqual({ name: 'أظافر', type: 'expense', branchId: 3 });
+      .toEqual({ name: 'أظافر', type: 'service', branchId: 3 });
     expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(['expense-categories', 3, 'active'])?.isInvalidated).toBe(true);
   });
 
   test('keeps the category editor open while saving', async () => {

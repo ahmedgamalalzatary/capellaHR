@@ -281,8 +281,10 @@ describe('ERP services HTTP API', () => {
     expect(response.body.error.fieldErrors.price).toBeDefined();
   });
 
-  it('rejects attaching a service to an expense category', async () => {
-    const categories = categoryRepository({ findById: vi.fn(async () => category({ type: 'expense' })) });
+  it('rejects attaching a service to a category stored with another type', async () => {
+    const categories = categoryRepository({
+      findById: vi.fn(async () => category({ type: 'expense' as never })),
+    });
     const response = await request(makeApp(ADMIN, { categories })).post('/api/v1/erp/services')
       .send({ name: 'صبغة', categoryId: 1, price: '150', branchId: 1 });
 

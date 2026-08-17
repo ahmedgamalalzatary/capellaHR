@@ -11,8 +11,8 @@ describe('erp categories schema', () => {
     expect(erpCategories.name).toBeDefined();
   });
 
-  it('offers exactly the locked service and expense type values', () => {
-    expect(erpCategories.type.enumValues).toEqual(['service', 'expense']);
+  it('offers the service type only, expenses having left the catalog', () => {
+    expect(erpCategories.type.enumValues).toEqual(['service']);
   });
 
   it('makes the category name unique within one type of one branch', () => {

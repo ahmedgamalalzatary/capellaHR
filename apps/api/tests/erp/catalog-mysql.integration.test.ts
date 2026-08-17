@@ -82,7 +82,7 @@ const seedEmployee = async (branchId: number) => {
 
 const page = { page: 1 as const, pageSize: 20 as const };
 
-const createCategory = (branchId: number, name = 'شعر', type: 'service' | 'expense' = 'service') =>
+const createCategory = (branchId: number, name = 'شعر', type: 'service' = 'service') =>
   module.categories.create(ADMIN, { name, type, branchId });
 
 const createService = (branchId: number, categoryId: number, overrides: {
@@ -144,14 +144,13 @@ describe('MySQL-backed ERP categories', () => {
     expect((await module.categories.list(ADMIN, { ...page, branchId, search: '%' })).total).toBe(0);
   });
 
-  it('makes the name unique within a type but free across types and branches', async () => {
+  it('makes the name unique within a branch but free across branches', async () => {
     const first = await seedBranch();
     const second = await seedBranch();
     const created = await createCategory(first, 'شعر', 'service');
 
     await expect(createCategory(first, 'شعر', 'service'))
       .rejects.toMatchObject({ code: 'CATEGORY_NAME_EXISTS', existingId: created.id });
-    await expect(createCategory(first, 'شعر', 'expense')).resolves.toMatchObject({ type: 'expense' });
     await expect(createCategory(second, 'شعر', 'service')).resolves.toMatchObject({ branchId: second });
   });
 
@@ -172,10 +171,10 @@ describe('MySQL-backed ERP categories', () => {
   it('filters by type and by active state', async () => {
     const branchId = await seedBranch();
     const retired = await createCategory(branchId, 'مكياج', 'service');
-    await createCategory(branchId, 'إيجار', 'expense');
+    await createCategory(branchId, 'حلاقة', 'service');
     await module.categories.update(ADMIN, retired.id, { isActive: false, branchId });
 
-    expect((await module.categories.list(ADMIN, { ...page, branchId, type: 'expense' })).total).toBe(1);
+    expect((await module.categories.list(ADMIN, { ...page, branchId, type: 'service' })).total).toBe(2);
     expect((await module.categories.list(ADMIN, { ...page, branchId, isActive: true })).total).toBe(1);
     expect((await module.categories.list(ADMIN, { ...page, branchId, isActive: false })).total).toBe(1);
   });

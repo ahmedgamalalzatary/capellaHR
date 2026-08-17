@@ -371,17 +371,15 @@ const reversalFacts = (filters: ReportFilters, type: 'refund' | 'void') => sql`
 
 const expenseFacts = (filters: ReportFilters) => sql`
   SELECT expense.id id, expense.expense_date eventDate, branch.name branchName,
-    category.name categoryName, expense.description description, expense.kind eventType,
+    expense.name expenseName, expense.description description, expense.kind eventType,
     account.username authorizedBy,
     CASE WHEN expense.kind = 'reversal' THEN -expense.amount ELSE expense.amount END amount
   FROM erp_expenses expense
-  INNER JOIN erp_categories category
-    ON category.id = expense.category_id AND category.branch_id = expense.branch_id
   INNER JOIN branches branch ON branch.id = expense.branch_id
   INNER JOIN accounts account ON account.id = expense.acting_account_id
   ${condition([
     ...branchFilter(filters, 'expense.branch_id'), ...dateFilter(filters, 'expense.expense_date'),
-    ...searchFilter(filters, ['category.name', 'expense.description', 'account.username']),
+    ...searchFilter(filters, ['expense.name', 'expense.description', 'account.username']),
   ])}
 `;
 

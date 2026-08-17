@@ -4,7 +4,7 @@ import type { ErpBranchContextResolver } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 
 export type ExpenseRecord = {
-  id: number; branchId: number; categoryId: number; categoryName: string; amount: string;
+  id: number; branchId: number; name: string; amount: string;
   expenseDate: string; description: string; actingAccountId: number; actingUsername: string;
   kind: 'expense' | 'reversal'; status: 'active' | 'corrected'; reversalOfId: number | null;
   supersedesId: number | null; correctionReason: string | null; createdAt: Date;
@@ -12,8 +12,8 @@ export type ExpenseRecord = {
 export type ExpenseWrite = Omit<CreateExpenseInput, 'branchId'> & { branchId: number; actingAccountId: number };
 export type ExpenseCorrectionWrite = Omit<CorrectExpenseInput, 'branchId' | 'reason'> & { branchId: number; actingAccountId: number; reason: string };
 export type CorrectionResult = { original: ExpenseRecord; reversal: ExpenseRecord; replacement: ExpenseRecord };
-export type ExpenseWriteOutcome = ExpenseRecord | 'invalid-category';
-export type ExpenseCorrectionOutcome = CorrectionResult | 'invalid-category' | 'invalid-target' | 'already-corrected';
+export type ExpenseWriteOutcome = ExpenseRecord;
+export type ExpenseCorrectionOutcome = CorrectionResult | 'invalid-target' | 'already-corrected';
 
 export interface ExpenseRepository {
   create(input: ExpenseWrite): Promise<ExpenseWriteOutcome>;
@@ -22,10 +22,9 @@ export interface ExpenseRepository {
   correct(id: number, input: ExpenseCorrectionWrite): Promise<ExpenseCorrectionOutcome>;
 }
 
-export type ExpenseErrorCode = 'EXPENSE_NOT_FOUND' | 'EXPENSE_CATEGORY_INVALID' | 'EXPENSE_ALREADY_CORRECTED' | 'EXPENSE_CORRECTION_TARGET_INVALID';
+export type ExpenseErrorCode = 'EXPENSE_NOT_FOUND' | 'EXPENSE_ALREADY_CORRECTED' | 'EXPENSE_CORRECTION_TARGET_INVALID';
 const messages: Record<ExpenseErrorCode, string> = {
   EXPENSE_NOT_FOUND: 'المصروف غير موجود',
-  EXPENSE_CATEGORY_INVALID: 'يجب اختيار تصنيف مصروفات نشط من نفس الفرع',
   EXPENSE_ALREADY_CORRECTED: 'تم تصحيح هذا المصروف من قبل',
   EXPENSE_CORRECTION_TARGET_INVALID: 'لا يمكن تصحيح قيد عكسي',
 };
@@ -45,9 +44,7 @@ export const createExpenseService = ({ repository, resolveBranchContext }: {
   return {
     async create(actor: ErpAccountIdentity, input: CreateExpenseInput): Promise<ExpenseRecord> {
       const scope = await context(actor, input.branchId);
-      const result = await repository.create({ ...input, branchId: scope.branchId, actingAccountId: scope.accountId });
-      if (result === 'invalid-category') return fail('EXPENSE_CATEGORY_INVALID');
-      return result;
+      return repository.create({ ...input, branchId: scope.branchId, actingAccountId: scope.accountId });
     },
     async get(actor: ErpAccountIdentity, id: number, branchId?: number): Promise<ExpenseRecord> {
       const scope = await context(actor, branchId);
@@ -64,7 +61,6 @@ export const createExpenseService = ({ repository, resolveBranchContext }: {
       const current = await repository.findById(id);
       if (!current || current.branchId !== scope.branchId) return fail('EXPENSE_NOT_FOUND');
       const result = await repository.correct(id, { ...input, branchId: scope.branchId, actingAccountId: scope.accountId, reason: input.reason });
-      if (result === 'invalid-category') return fail('EXPENSE_CATEGORY_INVALID');
       if (result === 'already-corrected') return fail('EXPENSE_ALREADY_CORRECTED');
       if (result === 'invalid-target') return fail('EXPENSE_CORRECTION_TARGET_INVALID');
       return result;

@@ -60,7 +60,8 @@ const queryBoolean = z.preprocess(
   z.boolean(),
 );
 
-export const erpCategoryTypeSchema = z.enum(['service', 'expense']);
+/** Only services are categorised; an expense carries its own name instead. */
+export const erpCategoryTypeSchema = z.enum(['service']);
 
 /**
  * `branchId` is optional on every operation and is never trusted as the branch
@@ -85,10 +86,7 @@ export const createCategorySchema = z.object({
   ...branchScope,
 }).strict();
 
-/**
- * The type is deliberately absent: services already point at a category, so
- * re-typing it would silently move them into the expense catalog.
- */
+/** The type is deliberately absent: a category's type is fixed at creation. */
 export const updateCategorySchema = z.object({
   name: categoryName.optional(),
   isActive: z.boolean().optional(),

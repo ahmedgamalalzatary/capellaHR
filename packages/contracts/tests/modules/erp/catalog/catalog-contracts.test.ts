@@ -17,13 +17,14 @@ const category = { name: '  شعر  ', type: 'service' as const };
 const service = { name: '  صبغة  ', categoryId: 3, price: '150' };
 
 describe('erp category contracts', () => {
-  it('trims the name and accepts both locked type values', () => {
+  it('trims the name and accepts the one locked type value', () => {
     expect(createCategorySchema.parse(category)).toEqual({ name: 'شعر', type: 'service' });
-    expect(createCategorySchema.parse({ ...category, type: 'expense' }).type).toBe('expense');
   });
 
-  it('rejects any category type outside the locked pair', () => {
+  it('rejects any category type other than service, expenses included', () => {
     expect(createCategorySchema.safeParse({ ...category, type: 'product' }).success).toBe(false);
+    // Expenses are identified by their own name now and use no category.
+    expect(createCategorySchema.safeParse({ ...category, type: 'expense' }).success).toBe(false);
   });
 
   it('rejects unknown fields so a client cannot smuggle server-owned columns', () => {
@@ -38,9 +39,8 @@ describe('erp category contracts', () => {
   });
 
   it('keeps the category type immutable once created', () => {
-    // Services already point at this category; re-typing it would silently
-    // move them into the expense catalog.
-    expect(updateCategorySchema.safeParse({ type: 'expense' }).success).toBe(false);
+    // Services already point at this category, so the type is never editable.
+    expect(updateCategorySchema.safeParse({ type: 'service' }).success).toBe(false);
   });
 
   it('requires at least one editable field on update and ignores a bare branch scope', () => {

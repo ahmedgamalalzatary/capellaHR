@@ -18,14 +18,14 @@ const app = () => {
 
 describe('expense router', () => {
   it('creates, reads and paginates expenses', async () => {
-    await request(app()).post('/expenses').send({ branchId: 2, categoryId: 4, amount: '10', expenseDate: '2026-08-05', description: 'x' }).expect(201);
+    await request(app()).post('/expenses').send({ branchId: 2, name: 'كهرباء', amount: '10', expenseDate: '2026-08-05', description: 'x' }).expect(201);
     await request(app()).get('/expenses/1?branchId=2').expect(200);
     const response = await request(app()).get('/expenses?branchId=2&page=2&pageSize=20').expect(200);
     expect(response.body.meta).toMatchObject({ page: 2, total: 21, totalPages: 2 });
   });
 
   it('exposes correction as an explicit mutation', async () => {
-    const response = await request(app()).post('/expenses/1/corrections').send({ branchId: 2, categoryId: 4, amount: '9', expenseDate: '2026-08-05', description: 'x', reason: 'wrong' }).expect(201);
+    const response = await request(app()).post('/expenses/1/corrections').send({ branchId: 2, name: 'كهرباء', amount: '9', expenseDate: '2026-08-05', description: 'x', reason: 'wrong' }).expect(201);
     expect(response.body.data.reversal.id).toBe(2);
   });
 

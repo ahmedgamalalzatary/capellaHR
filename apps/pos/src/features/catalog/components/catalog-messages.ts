@@ -6,4 +6,4 @@ export const serverErrorMessage = (error: unknown): string | null => {
   return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
-export const CATEGORY_TYPE_LABELS = { service: 'خدمات', expense: 'مصروفات' } as const;
+export const CATEGORY_TYPE_LABELS = { service: 'خدمات' } as const;

@@ -14,14 +14,14 @@ import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
-import { listCatalogBranches, listCategories } from '@/features/catalog';
+import { listCatalogBranches } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
 
 import { correctExpense, createExpense, listExpenses, type Expense } from '../api/expenses-api';
-import { expenseCategoryQueryKeys, expenseQueryKeys } from '../query-keys';
+import { expenseQueryKeys } from '../query-keys';
 
 const errorText = (error: unknown) => error instanceof ApiError ? error.message : 'تعذر تنفيذ العملية. حاول مرة أخرى.';
 const todayInCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
@@ -41,41 +41,31 @@ export function ExpensesView() {
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
   const [branchId, setBranchId] = useState<number>();
-  const [categoryId, setCategoryId] = useState<number>();
+  const [name, setName] = useState('');
   const [amount, setAmount] = useState(''); const [expenseDate, setExpenseDate] = useState(todayInCairo()); const [description, setDescription] = useState('');
-  const [filterCategoryId, setFilterCategoryId] = useState<number>(); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState(''); const [status, setStatus] = useState<'' | 'active' | 'corrected'>(''); const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(''); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState(''); const [status, setStatus] = useState<'' | 'active' | 'corrected'>(''); const [page, setPage] = useState(1);
   const [correcting, setCorrecting] = useState<Expense | null>(null); const [reason, setReason] = useState('');
   const [successMessage, setSuccessMessage] = useState<string>();
   const branches = useQuery({ queryKey: ['expense-branches'], queryFn: () => fetchAllPages((branchesPage) => listCatalogBranches(branchesPage)), enabled: isAdmin });
   /** An admin works one chosen branch at a time; a cashier waits only for the session to resolve. */
   const scopeReady = isAdmin ? branchId !== undefined : Boolean(actor);
   const branchScope = branchId === undefined ? {} : { branchId };
-  const activeCategories = useQuery({
-    queryKey: expenseCategoryQueryKeys.active(branchId),
-    queryFn: () => fetchAllPages((categoriesPage) => listCategories({ ...branchScope, type: 'expense', isActive: true, page: categoriesPage, pageSize: 100 })),
-    enabled: scopeReady,
-  });
-  const allCategories = useQuery({
-    queryKey: expenseCategoryQueryKeys.forBranch(branchId),
-    queryFn: () => fetchAllPages((categoriesPage) => listCategories({ ...branchScope, type: 'expense', page: categoriesPage, pageSize: 100 })),
-    enabled: scopeReady,
-  });
-  const params = { ...branchScope, ...(filterCategoryId ? { categoryId: filterCategoryId } : {}), ...(fromDate ? { fromDate } : {}), ...(toDate ? { toDate } : {}), ...(status ? { status } : {}), page, pageSize: 20 };
+  const params = { ...branchScope, ...(search.trim() ? { search: search.trim() } : {}), ...(fromDate ? { fromDate } : {}), ...(toDate ? { toDate } : {}), ...(status ? { status } : {}), page, pageSize: 20 };
   const expenses = useQuery({ queryKey: expenseQueryKeys.list(params), queryFn: () => listExpenses(params), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(client, 'expense');
-  const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, categoryId: categoryId!, amount, expenseDate, description }), onSuccess: async () => { setAmount(''); setDescription(''); setSuccessMessage('تم تسجيل المصروف.'); await refresh(); } });
-  const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, categoryId: categoryId!, amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); await refresh(); } });
-  const clearDraft = () => { setCorrecting(null); setCategoryId(undefined); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
-  const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setCategoryId(activeCategories.data?.some((category) => category.id === expense.categoryId) ? expense.categoryId : undefined); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
+  const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, name: name.trim(), amount, expenseDate, description }), onSuccess: async () => { setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تسجيل المصروف.'); await refresh(); } });
+  const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, name: name.trim(), amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); await refresh(); } });
+  const clearDraft = () => { setCorrecting(null); setName(''); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
+  const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setName(expense.name); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
   /** Only a new expense is remembered; a correction is started from a stored row. */
   const draft = useFormDraft(
     correcting === null ? `expense:${branchId ?? 'own'}` : null,
-    { categoryId, amount, expenseDate, description },
-    // Only typed money or wording counts as work: a lone category is not a draft,
-    // and clearing both on save is what retires the stored copy.
-    amount !== '' || description !== '',
+    { name, amount, expenseDate, description },
+    // Only typed wording or money counts as work; clearing them on save is what
+    // retires the stored copy.
+    name !== '' || amount !== '' || description !== '',
   );
-  const canSubmit = scopeReady && categoryId && amount && expenseDate && description.trim();
+  const canSubmit = scopeReady && name.trim() && amount && expenseDate;
   const commandPending = create.isPending || correction.isPending;
   const amountLabel = correcting ? 'المبلغ الصحيح' : 'المبلغ';
 
@@ -108,7 +98,7 @@ export function ExpensesView() {
                     if (commandPending) return;
                     setBranchId(event.target.value ? Number(event.target.value) : undefined);
                     clearDraft();
-                    setFilterCategoryId(undefined);
+                    setSearch('');
                     setPage(1);
                   }}
                 >
@@ -135,14 +125,14 @@ export function ExpensesView() {
                 title={correcting ? `تصحيح مصروف #${correcting.id}` : 'تسجيل مصروف جديد'}
                 description={correcting
                   ? 'يُسجَّل التصحيح كقيد جديد؛ القيد الأصلي يبقى في السجل.'
-                  : 'المبلغ والتاريخ والوصف مطلوبة لكل مصروف.'}
+                  : 'الاسم والمبلغ والتاريخ مطلوبة لكل مصروف؛ الوصف اختياري.'}
               />
               {draft.pending ? (
                 <DraftNotice
                   onRestore={() => {
                     const stored = draft.restore();
                     if (!stored) return;
-                    setCategoryId(stored.categoryId);
+                    setName(stored.name);
                     setAmount(stored.amount);
                     setExpenseDate(stored.expenseDate);
                     setDescription(stored.description);
@@ -152,17 +142,8 @@ export function ExpensesView() {
               ) : null}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="expense-category">التصنيف</Label>
-                  <Select
-                    id="expense-category"
-                    aria-label="التصنيف"
-                    value={categoryId ?? ''}
-                    onChange={(event) => setCategoryId(event.target.value ? Number(event.target.value) : undefined)}
-                    disabled={commandPending || activeCategories.isPending || activeCategories.isError}
-                  >
-                    <option value="">اختر التصنيف</option>
-                    {activeCategories.data?.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                  </Select>
+                  <Label htmlFor="expense-name">اسم المصروف</Label>
+                  <Input id="expense-name" aria-label="اسم المصروف" disabled={commandPending} value={name} onChange={(event) => setName(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="expense-amount">{amountLabel}</Label>
@@ -198,13 +179,6 @@ export function ExpensesView() {
               {(correcting ? correction.isError : create.isError) ? (
                 <FieldError>{errorText(correcting ? correction.error : create.error)}</FieldError>
               ) : null}
-              {activeCategories.isError ? (
-                <EmptyState
-                  title="تعذر تحميل تصنيفات المصروفات"
-                  className="py-8"
-                  action={<Button onClick={() => void activeCategories.refetch()}>إعادة المحاولة</Button>}
-                />
-              ) : null}
             </CardContent>
           </Card>
 
@@ -213,16 +187,8 @@ export function ExpensesView() {
               <SectionHeading title="تصفية السجل" />
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="expense-filter-category">تصفية حسب التصنيف</Label>
-                  <Select
-                    id="expense-filter-category"
-                    value={filterCategoryId ?? ''}
-                    onChange={(event) => { setFilterCategoryId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}
-                    disabled={allCategories.isPending || allCategories.isError}
-                  >
-                    <option value="">كل التصنيفات</option>
-                    {allCategories.data?.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                  </Select>
+                  <Label htmlFor="expense-search">بحث بالاسم أو الوصف</Label>
+                  <Input id="expense-search" aria-label="بحث بالاسم أو الوصف" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="expense-from">من تاريخ</Label>
@@ -241,13 +207,6 @@ export function ExpensesView() {
                   </Select>
                 </div>
               </div>
-              {allCategories.isError ? (
-                <EmptyState
-                  title="تعذر تحميل تصنيفات التصفية"
-                  className="py-8"
-                  action={<Button onClick={() => void allCategories.refetch()}>إعادة المحاولة</Button>}
-                />
-              ) : null}
             </CardContent>
           </Card>
 
@@ -260,7 +219,7 @@ export function ExpensesView() {
                       <DataTable>
                         <THead>
                           <TH>التاريخ</TH>
-                          <TH>التصنيف</TH>
+                          <TH>المصروف</TH>
                           <TH>الوصف</TH>
                           <TH numeric>المبلغ</TH>
                           <TH>الحالة والمنفذ</TH>
@@ -270,7 +229,7 @@ export function ExpensesView() {
                           {expenses.data.items.map((expense) => (
                             <TR key={expense.id}>
                               <TD className="tabular whitespace-nowrap text-muted">{expense.expenseDate}</TD>
-                              <TD>{expense.categoryName}</TD>
+                              <TD className="font-medium">{expense.name}</TD>
                               <TD>
                                 {expense.description}
                                 {expense.correctionReason ? <span className="block text-xs text-muted">السبب: {expense.correctionReason}</span> : null}
