@@ -1186,6 +1186,38 @@ describe('ERP service-sale view', () => {
     ]);
   });
 
+  it('drops an employee who left the branch instead of submitting their hidden id', async () => {
+    // The present list no longer carries employee 8: they checked out after the
+    // default picker put them on the line.
+    mocks.listAssignableEmployees.mockResolvedValue([
+      { id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 },
+    ]);
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    await screen.findByText('185.00 ج.م');
+
+    const lineEmployee = await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement;
+    await waitFor(() => expect(lineEmployee.value).toBe(''));
+    // Nothing is chosen on screen, so nothing may be sent as chosen either.
+    expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', true);
+
+    fireEvent.change(lineEmployee, { target: { value: '11' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', false));
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0].lines).toEqual([
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 11 },
+    ]);
+  });
+
   it('blocks the sale while any service line names no employee', async () => {
     renderView();
 

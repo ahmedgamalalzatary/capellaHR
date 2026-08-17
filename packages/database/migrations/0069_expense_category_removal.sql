@@ -2,6 +2,8 @@ ALTER TABLE `erp_expenses` DROP FOREIGN KEY `erp_expenses_category_branch_fk`;
 --> statement-breakpoint
 DROP INDEX `erp_expenses_branch_category_date_idx` ON `erp_expenses`;--> statement-breakpoint
 ALTER TABLE `erp_expenses` DROP COLUMN `category_id`;--> statement-breakpoint
+DROP TRIGGER `erp_expenses_guard_update`;
+--> statement-breakpoint
 CREATE TRIGGER `erp_expenses_guard_update`
 BEFORE UPDATE ON `erp_expenses`
 FOR EACH ROW

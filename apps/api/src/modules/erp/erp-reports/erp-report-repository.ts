@@ -52,16 +52,23 @@ const searchFilter = (filters: ReportFilters, expressions: string[]): SQL[] => {
   )), sql` OR `)})`];
 };
 
-const invoiceLineDiscount = (lineAlias: string, invoiceAlias: string) => {
+/**
+ * One line's share of an invoice-level amount, allocated by cumulative rounding
+ * in line order: the running total up to this line minus the running total
+ * before it. Every line's share is exact to the cent and the shares of all the
+ * lines add back up to the invoice amount, with none lost or invented.
+ */
+const invoiceLineShare = (lineAlias: string, invoiceAlias: string, amountColumn: string) => {
   const line = sql.raw(lineAlias);
+  const amount = sql.raw(`${invoiceAlias}.${amountColumn}`);
   const invoice = sql.raw(invoiceAlias);
-  return sql`ROUND(${invoice}.discount_amount * (
+  return sql`ROUND(${amount} * (
     SELECT COALESCE(SUM(prefix.line_total), 0)
     FROM erp_invoice_lines prefix
     WHERE prefix.invoice_id = ${line}.invoice_id
       AND prefix.branch_id = ${line}.branch_id
       AND prefix.line_number <= ${line}.line_number
-  ) / NULLIF(${invoice}.subtotal, 0), 2) - ROUND(${invoice}.discount_amount * (
+  ) / NULLIF(${invoice}.subtotal, 0), 2) - ROUND(${amount} * (
     SELECT COALESCE(SUM(prefix.line_total), 0)
     FROM erp_invoice_lines prefix
     WHERE prefix.invoice_id = ${line}.invoice_id
@@ -69,6 +76,10 @@ const invoiceLineDiscount = (lineAlias: string, invoiceAlias: string) => {
       AND prefix.line_number < ${line}.line_number
   ) / NULLIF(${invoice}.subtotal, 0), 2)`;
 };
+
+const invoiceLineDiscount = (lineAlias: string, invoiceAlias: string) => (
+  invoiceLineShare(lineAlias, invoiceAlias, 'discount_amount')
+);
 
 /**
  * An invoice no longer names one employee: each service line names its own, so
@@ -240,9 +251,11 @@ const employeeFacts = (filters: ReportFilters) => sql`
     branch.name branchName, invoice.invoice_number invoiceNumber,
     line.employee_code_snapshot employeeCode, line.employee_name_snapshot employeeName,
     'sale' eventType,
-    SUM(line.line_total)
-      - ROUND(invoice.discount_amount * SUM(line.line_total) / NULLIF(invoice.subtotal, 0), 2)
-      + ROUND(invoice.tax_amount * SUM(line.line_total) / NULLIF(invoice.subtotal, 0), 2) amount
+    SUM(
+      line.line_total
+        - (${invoiceLineShare('line', 'invoice', 'discount_amount')})
+        + (${invoiceLineShare('line', 'invoice', 'tax_amount')})
+    ) amount
   FROM erp_invoice_lines line
   INNER JOIN erp_invoices invoice
     ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id

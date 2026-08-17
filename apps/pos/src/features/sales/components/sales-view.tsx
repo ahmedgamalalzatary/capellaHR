@@ -104,7 +104,18 @@ function LineEmployeeSelect({
     queryFn: () => listAssignableEmployees(branchId === undefined ? {} : { branchId }),
   });
   const options = present.data ?? [];
-  // A selected employee who has since checked out must not silently stay chosen.
+  /**
+   * An employee who has since checked out is dropped from the line, not merely
+   * hidden in the select: leaving them assigned would submit the id of someone
+   * the screen shows as unchosen. Only a successful read can retire a choice, so
+   * a valid assignment survives loading and failures untouched.
+   */
+  const staleSelection = present.isSuccess && line.employee !== null
+    && line.employee !== undefined
+    && !options.some(({ id }) => id === line.employee!.id);
+  useEffect(() => {
+    if (staleSelection) onSelect(null);
+  }, [onSelect, staleSelection]);
   const selectedPresent = line.employee && options.some(({ id }) => id === line.employee!.id);
   return (
     <select

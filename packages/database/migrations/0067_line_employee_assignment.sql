@@ -141,6 +141,8 @@ BEGIN
       OR NOT (NEW.idempotency_key <=> OLD.idempotency_key)
       OR NOT (NEW.client_name_snapshot <=> OLD.client_name_snapshot)
       OR NOT (NEW.client_phone_snapshot <=> OLD.client_phone_snapshot)
+      OR NOT (NEW.seller_employee_id <=> OLD.seller_employee_id)
+      OR NOT (NEW.seller_name_snapshot <=> OLD.seller_name_snapshot)
       OR NOT (NEW.authorized_by_snapshot <=> OLD.authorized_by_snapshot)
       OR NOT (NEW.subtotal <=> OLD.subtotal)
       OR NOT (NEW.discount_kind <=> OLD.discount_kind)

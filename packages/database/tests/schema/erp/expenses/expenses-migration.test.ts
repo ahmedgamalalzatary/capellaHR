@@ -29,8 +29,15 @@ describe('ERP expense category removal migration', () => {
     expect(nameMigration).toMatch(/UPDATE `erp_expenses`[\s\S]*SET `name` =/);
     expect(nameMigration).toContain('MODIFY COLUMN `name` varchar(255) NOT NULL');
     expect(nameMigration).toContain('erp_expenses_name_present');
-    // The immutability guard stands aside while history is renamed.
+    // The immutability guard stands aside while history is renamed, then goes
+    // straight back: a run that stops between the two migrations must not leave
+    // the ledger editable.
     expect(nameMigration).toContain('DROP TRIGGER `erp_expenses_guard_update`');
+    expect(nameMigration).toContain('CREATE TRIGGER `erp_expenses_guard_update`');
+    expect(nameMigration).toContain('OLD.`category_id` <=> NEW.`category_id`');
+    expect(nameMigration).toContain('OLD.`name` <=> NEW.`name`');
+    // The one 0069 installs replaces it, so it must drop that guard first.
+    expect(categoryDropMigration).toContain('DROP TRIGGER `erp_expenses_guard_update`');
     expect(categoryDropMigration)
       .toContain('DROP FOREIGN KEY `erp_expenses_category_branch_fk`');
     expect(categoryDropMigration).toContain('DROP INDEX `erp_expenses_branch_category_date_idx`');

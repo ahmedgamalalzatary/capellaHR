@@ -83,6 +83,10 @@ describe('ERP per-line employee migration', () => {
     // The immutability guard can no longer compare dropped invoice columns.
     expect(lineEmployeeMigration).toContain('DROP TRIGGER `erp_invoices_validate_lifecycle`');
     expect(lineEmployeeMigration).not.toContain('NEW.assigned_employee_id <=> OLD.assigned_employee_id');
+    // A completed invoice's seller is a fact like any other: an invoice that was
+    // completed without one must not gain one afterwards.
+    expect(lineEmployeeMigration).toContain('NEW.seller_employee_id <=> OLD.seller_employee_id');
+    expect(lineEmployeeMigration).toContain('NEW.seller_name_snapshot <=> OLD.seller_name_snapshot');
   });
 });
 

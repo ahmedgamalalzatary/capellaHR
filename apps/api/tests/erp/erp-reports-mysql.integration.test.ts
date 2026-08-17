@@ -229,6 +229,12 @@ describe('ERP reports MySQL reader', () => {
       expect(employees.snapshot.rows).not.toEqual(expect.arrayContaining([
         expect.objectContaining({ invoiceNumber: 'INV.2026.07.09.0001' }),
       ]));
+      // The employee is credited their own service line, 200.00, carrying that
+      // line's own share of the invoice discount (20.00) and tax (4.00) — the
+      // shares allocated per line, not recomputed over the employee's group.
+      expect(employees.snapshot.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ amount: '184.00' }),
+      ]));
     }
     expect(productOnlyInvoiceId).toBeGreaterThan(0);
   });
