@@ -19,13 +19,14 @@ const session = {
   closedAt: null,
   closedByAccountId: null,
   closedByUsername: null,
+  autoClosedAt: null,
 };
 
 const setup = () => {
   const service = {
+    closeExpired: vi.fn(async () => []),
     open: vi.fn(async () => session),
     current: vi.fn(async () => session),
-    requireOpenForCashier: vi.fn(async () => session),
     close: vi.fn(async () => ({
       ...session,
       closedAt: now,

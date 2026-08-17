@@ -116,6 +116,15 @@ export const createAuthRouter = (
         response.json({ data: await options.cashierAccounts!.setActive(accountId, input.active) });
       },
     );
+    router.delete(
+      '/cashier-accounts/:accountId',
+      middleware.authenticate,
+      middleware.requireAdmin,
+      async (request, response) => {
+        const accountId = positiveMysqlIntSchema.parse(Number(request.params.accountId));
+        response.json({ data: await options.cashierAccounts!.archive(accountId) });
+      },
+    );
     router.patch(
       '/cashier-accounts/:accountId/password',
       middleware.authenticate,

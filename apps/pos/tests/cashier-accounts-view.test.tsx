@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   listCashierAccounts: vi.fn(),
   upsertBranchCashier: vi.fn(),
   setCashierAccountStatus: vi.fn(),
-  resetCashierPassword: vi.fn(),
+  deleteCashierAccount: vi.fn(),
   listActiveEmployeeOptions: vi.fn(),
   listBranchCashierRoster: vi.fn(),
   replaceBranchCashierRoster: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('../src/features/cashier-accounts/api/cashier-accounts-api', async (impo
   listCashierAccounts: mocks.listCashierAccounts,
   upsertBranchCashier: mocks.upsertBranchCashier,
   setCashierAccountStatus: mocks.setCashierAccountStatus,
-  resetCashierPassword: mocks.resetCashierPassword,
+  deleteCashierAccount: mocks.deleteCashierAccount,
 }));
 
 vi.mock('../src/features/cashier-accounts/api/employee-options-api', () => ({
@@ -222,17 +222,78 @@ describe('CashierAccountsView', () => {
     expect(mocks.setCashierAccountStatus.mock.calls[0]).toEqual([2, true]);
   });
 
-  test('resets a branch login password through the dialog', async () => {
-    mocks.resetCashierPassword.mockResolvedValue(activeAccount);
+  test('edits the username and password of a branch login through the dialog', async () => {
     renderView();
     const row = (await screen.findByText('nasr')).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'إعادة تعيين كلمة المرور' }));
-    fireEvent.change(await screen.findByLabelText(/^كلمة المرور الجديدة/), {
-      target: { value: 'anotherSecret1' },
+
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل بيانات الدخول' }));
+
+    const dialog = await screen.findByRole('dialog', { name: /تعديل بيانات دخول nasr/ });
+    const username = within(dialog).getByLabelText(/^اسم المستخدم/) as HTMLInputElement;
+    const password = within(dialog).getByLabelText(/^كلمة المرور/) as HTMLInputElement;
+    // The current name is offered for editing; the password is never known here.
+    expect(username.value).toBe('nasr');
+    expect(password.value).toBe('');
+
+    fireEvent.change(username, { target: { value: 'Nasr.New' } });
+    fireEvent.change(password, { target: { value: 'secret123' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
+
+    await waitFor(() => expect(mocks.upsertBranchCashier).toHaveBeenCalledTimes(1));
+    expect(mocks.upsertBranchCashier.mock.calls[0]?.[0]).toEqual({
+      branchId: 3,
+      username: 'nasr.new',
+      password: 'secret123',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
-    await waitFor(() => expect(mocks.resetCashierPassword).toHaveBeenCalledTimes(1));
-    expect(mocks.resetCashierPassword.mock.calls[0]).toEqual([1, 'anotherSecret1']);
+  });
+
+  test('keeps the credentials dialog open and shows why the edit failed', async () => {
+    mocks.upsertBranchCashier.mockRejectedValue(
+      new ApiError(409, { code: 'USERNAME_TAKEN', message: 'اسم المستخدم مستخدم بالفعل' }),
+    );
+    renderView();
+    const row = (await screen.findByText('nasr')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل بيانات الدخول' }));
+
+    const dialog = await screen.findByRole('dialog', { name: /تعديل بيانات دخول nasr/ });
+    fireEvent.change(within(dialog).getByLabelText(/^كلمة المرور/), {
+      target: { value: 'secret123' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
+
+    expect(await screen.findByText('اسم المستخدم مستخدم بالفعل')).toBeDefined();
+    expect(screen.getByRole('dialog', { name: /تعديل بيانات دخول nasr/ })).toBeDefined();
+  });
+
+  test('deletes a branch login only after confirmation and refreshes the list', async () => {
+    mocks.deleteCashierAccount.mockResolvedValue({ ...activeAccount, active: false });
+    renderView();
+    const row = (await screen.findByText('nasr')).closest('tr')!;
+
+    fireEvent.click(within(row).getByRole('button', { name: 'حذف' }));
+    expect(mocks.deleteCashierAccount).not.toHaveBeenCalled();
+
+    const dialog = screen.getByRole('dialog', { name: 'حذف حساب الكاشير' });
+    // The admin is told the sales history survives before they confirm.
+    expect(dialog.textContent).toContain('الفواتير');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الحذف' }));
+
+    await waitFor(() => expect(mocks.deleteCashierAccount).toHaveBeenCalledTimes(1));
+    expect(mocks.deleteCashierAccount.mock.calls[0]).toEqual([1]);
+    await waitFor(() => expect(mocks.listCashierAccounts.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  test('keeps the delete dialog open and shows why the deletion failed', async () => {
+    mocks.deleteCashierAccount.mockRejectedValue(
+      new ApiError(404, { code: 'ACCOUNT_NOT_FOUND', message: 'حساب الكاشير غير موجود' }),
+    );
+    renderView();
+    const row = (await screen.findByText('nasr')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'حذف' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الحذف' }));
+
+    expect(await screen.findByText('حساب الكاشير غير موجود')).toBeDefined();
+    expect(screen.getByRole('dialog', { name: 'حذف حساب الكاشير' })).toBeDefined();
   });
 
   test('loads the branch roster and saves the edited members', async () => {

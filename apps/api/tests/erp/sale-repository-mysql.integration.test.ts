@@ -605,6 +605,9 @@ describe('ERP sale repository MySQL integration', () => {
     const sale = operation(data, crypto.randomUUID());
     sale.soldAt = now;
     sale.invoiceNumber = `INV-${businessDate.replaceAll('-', '.')}-14.35-${data.branchId}`;
+    // The sale happens now, so its shift must have been opened within the limit.
+    await database.update(cashierSessions).set({ openedAt: now })
+      .where(eq(cashierSessions.id, data.cashierSessionId));
     const completed = await repository.complete(sale);
 
     const voided = await repository.reverse({
@@ -1556,6 +1559,19 @@ describe('ERP sale repository MySQL integration', () => {
   it('rejects a sale when the acting Cashier account was disabled before the transaction', async () => {
     const data = await fixture();
     await database.update(accounts).set({ active: false }).where(eq(accounts.id, data.accountId));
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+
+    await expect(repository.complete(operation(data, crypto.randomUUID())))
+      .rejects.toMatchObject({ code: 'CASHIER_SESSION_NOT_OPEN' });
+    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
+      .toHaveLength(0);
+  });
+
+  it('rejects a sale under a shift that has run past its sixteen-hour limit', async () => {
+    const data = await fixture();
+    await database.update(cashierSessions)
+      .set({ openedAt: new Date(data.at.getTime() - 17 * 60 * 60_000) })
+      .where(eq(cashierSessions.id, data.cashierSessionId));
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
 
     await expect(repository.complete(operation(data, crypto.randomUUID())))

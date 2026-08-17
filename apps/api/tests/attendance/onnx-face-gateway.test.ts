@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -38,8 +39,18 @@ describe('ONNX face gateway helpers', () => {
   });
 });
 
-describe('ONNX face gateway runtime', () => {
-  const fixtureRoot = path.join(tmpdir(), 'capella-face-test-fixtures');
+/**
+ * Real faces are never committed, so this runtime check only runs on a machine
+ * where the three photos were dropped into the fixture folder by hand. Without
+ * them the suite must stay green: a missing private fixture is not a regression.
+ */
+const fixtureRoot = path.join(tmpdir(), 'capella-face-test-fixtures');
+const fixtureNames = ['person-a-1.jpg', 'person-a-2.jpg', 'person-b-1.jpg'] as const;
+const fixturesPresent = fixtureNames.every(
+  (name) => existsSync(path.join(fixtureRoot, name)),
+);
+
+describe.skipIf(!fixturesPresent)('ONNX face gateway runtime', () => {
   const fixture = (name: string) => readFile(path.join(fixtureRoot, name));
   afterAll(() => rm(fixtureRoot, { recursive: true, force: true }));
 

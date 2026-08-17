@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound } from 'lucide-react';
+import { PencilLine, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
@@ -19,8 +19,8 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { listActiveEmployeeOptions } from '../api/employee-options-api';
 import {
+  deleteCashierAccount,
   listCashierAccounts,
-  resetCashierPassword,
   setCashierAccountStatus,
   upsertBranchCashier,
   type CashierAccount,
@@ -31,7 +31,7 @@ import {
 } from '../api/branch-roster-api';
 import { cashierAccountQueryKeys } from '../query-keys';
 import { branchCashierCredentialsFormSchema } from '../schemas/cashier-account-schemas';
-import { ResetPasswordDialog } from './reset-password-dialog';
+import { EditCredentialsDialog } from './edit-credentials-dialog';
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -281,7 +281,8 @@ export function CashierAccountsView() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [confirmDisable, setConfirmDisable] = useState<CashierAccount | null>(null);
-  const [resetPasswordTarget, setResetPasswordTarget] = useState<CashierAccount | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<CashierAccount | null>(null);
+  const [editingCredentials, setEditingCredentials] = useState<CashierAccount | null>(null);
 
   const accountsQuery = useQuery({
     queryKey: cashierAccountQueryKeys.list({ page }),
@@ -293,6 +294,14 @@ export function CashierAccountsView() {
       setCashierAccountStatus(accountId, active),
     onSuccess: async () => {
       setConfirmDisable(null);
+      await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (accountId: number) => deleteCashierAccount(accountId),
+    onSuccess: async () => {
+      setConfirmDelete(null);
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
     },
   });
@@ -368,10 +377,18 @@ export function CashierAccountsView() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setResetPasswordTarget(account)}
+                        onClick={() => setEditingCredentials(account)}
                       >
-                        <KeyRound className="size-4" aria-hidden />
-                        إعادة تعيين كلمة المرور
+                        <PencilLine className="size-4" aria-hidden />
+                        تعديل بيانات الدخول
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { remove.reset(); setConfirmDelete(account); }}
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                        حذف
                       </Button>
                     </RowActions>
                   </TD>
@@ -398,11 +415,25 @@ export function CashierAccountsView() {
         ) : null}
       </Card>
 
-      {resetPasswordTarget ? (
-        <ResetPasswordDialog
-          accountId={resetPasswordTarget.id}
-          username={resetPasswordTarget.username}
-          onClose={() => setResetPasswordTarget(null)}
+      {editingCredentials ? (
+        <EditCredentialsDialog
+          branchId={editingCredentials.branchId}
+          username={editingCredentials.username}
+          onClose={() => setEditingCredentials(null)}
+        />
+      ) : null}
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="حذف حساب الكاشير"
+          description={remove.isError
+            ? serverErrorMessage(remove.error)
+            : `سيتوقف دخول ${confirmDelete.username} نهائيًا وتُلغى جلساته، ويصبح اسم المستخدم متاحًا من جديد. تبقى الفواتير والورديات المسجلة باسمه كما هي.`}
+          confirmLabel="تأكيد الحذف"
+          tone="danger"
+          pending={remove.isPending}
+          onConfirm={() => remove.mutate(confirmDelete.id)}
+          onCancel={() => { remove.reset(); setConfirmDelete(null); }}
         />
       ) : null}
 

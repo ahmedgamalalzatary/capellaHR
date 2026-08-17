@@ -14,6 +14,7 @@ const session = {
   closedAt: null,
   closedByAccountId: null,
   closedByUsername: null,
+  autoClosedAt: null,
 };
 
 const setup = () => {
@@ -41,6 +42,7 @@ const setup = () => {
         closedByUsername: 'admin@capella.test',
       },
     })),
+    autoCloseExpired: vi.fn<CashierSessionRepository['autoCloseExpired']>(async () => []),
   };
   const resolveBranchContext = vi.fn(async (actor: { role: 'admin' | 'cashier'; accountId: number }, branchId?: number) => ({
     accountId: actor.accountId,
@@ -96,29 +98,6 @@ describe('ERP Cashier-session service', () => {
     expect(resolveBranchContext).toHaveBeenNthCalledWith(2, admin, 4);
     expect(repository.findOpenByBranch).toHaveBeenNthCalledWith(1, 3);
     expect(repository.findOpenByBranch).toHaveBeenNthCalledWith(2, 4);
-  });
-
-  it('guards future counter-sale mutations with the acting Cashier open session', async () => {
-    const active = setup();
-    const cashier = { role: 'cashier' as const, accountId: 8, branchId: 3 };
-
-    await expect(active.service.requireOpenForCashier(cashier)).resolves.toEqual(session);
-    expect(active.resolveBranchContext).toHaveBeenCalledWith(cashier, undefined);
-    expect(active.repository.findOpenByBranch).toHaveBeenCalledWith(3);
-
-    const absent = setup();
-    absent.repository.findOpenByBranch.mockResolvedValueOnce(null);
-    await expect(absent.service.requireOpenForCashier(cashier)).rejects.toMatchObject({
-      code: 'ERP_CASHIER_SESSION_NOT_OPEN',
-    });
-
-    const ownedByAnotherCashier = setup();
-    ownedByAnotherCashier.repository.findOpenByBranch.mockResolvedValueOnce({
-      ...session,
-      openedByAccountId: 9,
-    });
-    await expect(ownedByAnotherCashier.service.requireOpenForCashier(cashier))
-      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_OWNER' });
   });
 
   it('maps a concurrent second open to a stable conflict', async () => {

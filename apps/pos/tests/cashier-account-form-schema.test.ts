@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 
 import {
   branchCashierCredentialsFormSchema,
-  resetCashierPasswordFormSchema,
 } from '../src/features/cashier-accounts/schemas/cashier-account-schemas';
 
 describe('branchCashierCredentialsFormSchema', () => {
@@ -57,12 +56,5 @@ describe('branchCashierCredentialsFormSchema', () => {
     if (!result.success) {
       expect(result.error.flatten().fieldErrors.password?.[0]).toBe('كلمة المرور طويلة جدًا');
     }
-  });
-});
-
-describe('resetCashierPasswordFormSchema', () => {
-  test('accepts a fresh password within the contract cap', () => {
-    expect(resetCashierPasswordFormSchema.safeParse({ password: 'next-secret' }).success).toBe(true);
-    expect(resetCashierPasswordFormSchema.safeParse({ password: 'x'.repeat(1025) }).success).toBe(false);
   });
 });

@@ -33,6 +33,8 @@ export const cashierSessionSchema = z.object({
   closedAt: isoDateTimeSchema.nullable(),
   closedByAccountId: positiveMysqlIntSchema.nullable(),
   closedByUsername: z.string().min(1).max(255).nullable(),
+  /** Set when the system ended the shift at its sixteen-hour limit. */
+  autoClosedAt: isoDateTimeSchema.nullable(),
 }).strict();
 
 export type CashierSessionCurrentQuery = z.infer<typeof cashierSessionCurrentQuerySchema>;

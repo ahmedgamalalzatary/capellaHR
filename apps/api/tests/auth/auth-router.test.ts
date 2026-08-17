@@ -70,6 +70,12 @@ const makeApp = () => {
         branchId: 3, branchName: 'فرع مدينة نصر', active: true,
       };
     },
+    async archive(accountId: number) {
+      return {
+        id: accountId, username: 'cashier.one', role: 'cashier' as const,
+        branchId: 3, branchName: 'فرع مدينة نصر', active: false,
+      };
+    },
   };
   app.use('/api/v1/auth', createAuthRouter(service, {
     secureCookies: true,
@@ -233,6 +239,7 @@ describe('authentication HTTP API', () => {
         async list() { return { items: [], total: 0 }; },
         async setActive() { throw new Error('unused'); },
         async resetPassword() { throw new Error('unused'); },
+        async archive() { throw new Error('unused'); },
       },
     }));
 
@@ -271,6 +278,7 @@ describe('authentication HTTP API', () => {
         async list() { return { items: [], total: 0 }; },
         async setActive() { throw new Error('unused'); },
         async resetPassword() { throw new Error('unused'); },
+        async archive() { throw new Error('unused'); },
       },
     }));
 

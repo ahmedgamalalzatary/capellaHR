@@ -20,7 +20,13 @@ const errorCode = (error: unknown): string | undefined => {
 };
 
 // Branch logins only; legacy employee-linked cashier rows stay hidden history.
-const branchCashier = and(eq(accounts.role, 'cashier'), isNull(accounts.employeeId));
+// A retired login is history too: it keeps its row for the invoices and shifts
+// that reference it, but never appears among the branch logins again.
+const branchCashier = and(
+  eq(accounts.role, 'cashier'),
+  isNull(accounts.employeeId),
+  isNull(accounts.archivedAt),
+);
 
 const selectPublic = async (executor: Executor, accountId: number) => {
   const row = (await executor.select({
@@ -53,8 +59,10 @@ export const createDrizzleCashierAccountRepository = (
       }).from(accounts).where(and(branchCashier, eq(accounts.branchId, input.branchId)))
         .for('update').limit(1))[0];
 
+      // A retired login still stores the name it used, but no longer owns it.
       const usernameOwner = (await tx.select({ id: accounts.id }).from(accounts).where(and(
         eq(accounts.username, input.username),
+        isNull(accounts.archivedAt),
         ...(current ? [ne(accounts.id, current.id)] : []),
       )).limit(1))[0];
       if (usernameOwner) return { kind: 'username_taken' as const };
@@ -137,6 +145,35 @@ export const createDrizzleCashierAccountRepository = (
           createdAt: input.updatedAt,
         });
         return { kind: 'updated' as const, account };
+      });
+    },
+    archiveCashier(input) {
+      return database.transaction(async (tx) => {
+        const before = await selectPublic(tx, input.accountId);
+        if (!before) return { kind: 'not_found' as const };
+        // Deactivating alongside the archive stamp releases both unique slots:
+        // the branch may take a new login, and the username can be reused.
+        await tx.update(accounts).set({
+          archivedAt: input.archivedAt,
+          active: false,
+          updatedAt: input.archivedAt,
+        }).where(eq(accounts.id, input.accountId));
+        await tx.update(authSessions).set({ revokedAt: input.archivedAt }).where(and(
+          eq(authSessions.accountId, input.accountId),
+          isNull(authSessions.revokedAt),
+        ));
+        const account = { ...before, active: false };
+        await writeAudit(tx, {
+          module: 'auth',
+          action: 'branch_cashier_archive',
+          entityType: 'account',
+          entityId: input.accountId,
+          beforeState: before,
+          afterState: { ...account, archivedAt: input.archivedAt },
+          relatedIds: { accountId: input.accountId, branchId: before.branchId },
+          createdAt: input.archivedAt,
+        });
+        return { kind: 'archived' as const, account };
       });
     },
     updateCashierPassword(input) {

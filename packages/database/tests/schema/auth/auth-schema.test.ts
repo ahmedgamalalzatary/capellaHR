@@ -45,6 +45,19 @@ describe('authentication database schema', () => {
     expect(config.checks.map((item) => item.name)).toContain('accounts_role_scope_consistency');
   });
 
+  it('frees the username of an archived account while keeping the row readable', () => {
+    const accounts = Reflect.get(authSchema, 'accounts');
+
+    expect(accounts.archivedAt).toBeDefined();
+    expect(accounts.archivedAt.notNull).toBe(false);
+    expect(accounts.activeUsername).toBeDefined();
+    const config = getTableConfig(accounts);
+    const indexNames = config.indexes.map((item) => item.config.name);
+    expect(indexNames).toContain('accounts_active_username_unique');
+    // The archived row keeps its username as history, so the plain column can repeat.
+    expect(indexNames).not.toContain('accounts_username_unique');
+  });
+
   it('links account sessions to accounts without storing a duplicate employee identity', () => {
     const sessions = Reflect.get(authSchema, 'authSessions');
 

@@ -1,4 +1,9 @@
 import { createAttendanceJobsRuntime } from '@capella/api/attendance-runtime';
+import { createErpAuditCapability } from '@capella/api/audit-runtime';
+import {
+  createCashierSessionSweeper,
+  createDrizzleCashierSessionRepository,
+} from '@capella/api/cashier-sessions-runtime';
 import { createErpReportsModule } from '@capella/api/erp-reports-runtime';
 import { assertEditionProfile, resolveEdition } from '@capella/config/edition';
 import { workerEnv as env } from '@capella/config/worker';
@@ -31,6 +36,11 @@ const attendance = createAttendanceJobsRuntime(database, {
   payrollEnabled: plan.payroll,
 });
 const erpReports = plan.erpReports ? createErpReportsModule(database) : undefined;
+const sweepCashierSessions = plan.erpSales
+  ? createCashierSessionSweeper({
+    repository: createDrizzleCashierSessionRepository(database, createErpAuditCapability()),
+  })
+  : undefined;
 const { reports, reportProcessor } = createWorkerReportRuntime({
   database,
   filesRoot: env.REPORT_FILES_ROOT ?? defaultFilesRoot,
@@ -77,6 +87,12 @@ try {
     await attendance.repository.reconcileFailed();
     await attendance.repository.recoverStale(staleBefore);
   };
+  // A till nobody returns to still has its shift ended at the sixteen-hour mark.
+  const maintainCashierSessions = async () => {
+    if (!sweepCashierSessions) return;
+    const closed = await sweepCashierSessions();
+    if (closed > 0) logger.info({ closed }, 'Closed cashier shifts past their limit');
+  };
   const maintainReports = async () => {
     const recoveredAt = new Date();
     const staleBefore = new Date(recoveredAt.valueOf() - staleAfterMilliseconds);
@@ -86,12 +102,15 @@ try {
     );
     await reports.service.reconcileFiles(staleBefore);
   };
-  await Promise.all([maintainAttendance(), maintainReports()]);
+  await Promise.all([maintainAttendance(), maintainReports(), maintainCashierSessions()]);
   await runIndependentWorkers(attendance.processor, reportProcessor, {
     signal: controller.signal,
     idleDelayMs: env.REPORT_WORKER_POLL_MS,
     maintenanceIntervalMs: maintenanceIntervalMilliseconds,
-    maintain: maintainAttendance,
+    maintain: async () => {
+      await maintainAttendance();
+      await maintainCashierSessions();
+    },
     reportMaintain: maintainReports,
     onIterationError: (error) => logger.error({ err: error }, 'Background worker iteration failed'),
   });

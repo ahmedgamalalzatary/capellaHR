@@ -24,6 +24,13 @@ describe('ERP Cashier-session schema', () => {
     expect(sessions.closedByAccountId.notNull).toBe(false);
   });
 
+  it('records a system close with no closing account', () => {
+    const sessions = Reflect.get(salesSchema, 'cashierSessions');
+
+    expect(Object.keys(sessions)).toContain('autoClosedAt');
+    expect(sessions.autoClosedAt.notNull).toBe(false);
+  });
+
   it('enforces one open session per branch and consistent close ownership', () => {
     const sessions = Reflect.get(salesSchema, 'cashierSessions');
     const config = getTableConfig(sessions);

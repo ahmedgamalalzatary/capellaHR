@@ -19,10 +19,12 @@ const setup = (
   const upserts: unknown[] = [];
   const statusChanges: unknown[] = [];
   const passwordChanges: unknown[] = [];
+  const archives: unknown[] = [];
   return {
     upserts,
     statusChanges,
     passwordChanges,
+    archives,
     service: createCashierAccountsService({
       accounts: {
         upsert: async (input) => {
@@ -43,6 +45,12 @@ const setup = (
           return statusResult === 'not_found'
             ? { kind: 'not_found' as const }
             : { kind: 'updated' as const, account: account({ active: input.active }) };
+        },
+        archiveCashier: async (input) => {
+          archives.push(input);
+          return statusResult === 'not_found'
+            ? { kind: 'not_found' as const }
+            : { kind: 'archived' as const, account: account({ active: false }) };
         },
         updateCashierPassword: async (input) => {
           passwordChanges.push(input);
@@ -115,5 +123,19 @@ describe('branch cashier accounts', () => {
 
     await expect(service.setActive(11, true)).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
     await expect(service.resetPassword(11, 'next')).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
+  });
+
+  it('retires a branch login instead of erasing the history that points at it', async () => {
+    const { service, archives } = setup();
+
+    await expect(service.archive(11)).resolves.toMatchObject({ id: 11, active: false });
+
+    expect(archives).toEqual([{ accountId: 11, archivedAt: expect.any(Date) }]);
+  });
+
+  it('rejects retiring an account that is not there', async () => {
+    const { service } = setup('created', 'not_found');
+
+    await expect(service.archive(11)).rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
   });
 });

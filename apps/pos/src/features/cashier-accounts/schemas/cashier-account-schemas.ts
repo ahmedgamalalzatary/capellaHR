@@ -1,4 +1,4 @@
-import { resetCashierPasswordSchema, upsertBranchCashierSchema } from '@capella/contracts';
+import { upsertBranchCashierSchema } from '@capella/contracts';
 import { z } from 'zod';
 
 const codePoints = (value: string) => [...value].length;
@@ -33,8 +33,3 @@ export const branchCashierCredentialsFormSchema = upsertBranchCashierSchema.exte
 
 export type BranchCashierCredentialsFormValues = z.infer<typeof branchCashierCredentialsFormSchema>;
 
-export const resetCashierPasswordFormSchema = resetCashierPasswordSchema.extend({
-  password: passwordFormSchema,
-});
-
-export type ResetCashierPasswordFormValues = z.infer<typeof resetCashierPasswordFormSchema>;

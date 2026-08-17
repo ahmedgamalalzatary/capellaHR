@@ -37,6 +37,7 @@ import {
 import { isDeepStrictEqual } from 'node:util';
 import type { ErpAuditCapability, ErpPayrollCapability } from '../hr-capabilities.js';
 import { cairoMonth, nextMonth, startOfCairoDate } from '../cairo-calendar.js';
+import { CASHIER_SESSION_MAX_DURATION_MS } from './cashier-sessions-service.js';
 import { SaleError, type CompleteSaleOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
 import {
   allocateReversalAmounts,
@@ -524,10 +525,16 @@ export const createDrizzleSaleRepository = (
           )) {
             throw new SaleError('SALE_VALIDATION_FAILED');
           }
+          // A shift is spent once it passes its sixteen hours, whether or not the
+          // sweep has written the close yet, so no sale can slip in behind it.
           const session = (await transaction.select().from(cashierSessions).where(and(
             eq(cashierSessions.id, input.cashierSessionId),
             eq(cashierSessions.branchId, input.branchId),
             isNull(cashierSessions.closedAt),
+            gte(
+              cashierSessions.openedAt,
+              new Date(operation.soldAt.getTime() - CASHIER_SESSION_MAX_DURATION_MS),
+            ),
           )).for('update').limit(1))[0];
           if (!session || (operation.actingAccountRole === 'cashier'
             && session.openedByAccountId !== operation.actingAccountId)) {

@@ -1,12 +1,13 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, branches, cashierSessions } from '@capella/database/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { accounts, authSessions, branches, cashierSessions } from '@capella/database/schema';
+import { and, eq, isNull, lte } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/mysql-core';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
-import type {
-  CashierSessionRecord,
-  CashierSessionRepository,
+import {
+  CASHIER_SESSION_MAX_DURATION_MS,
+  type CashierSessionRecord,
+  type CashierSessionRepository,
 } from './cashier-sessions-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
@@ -26,6 +27,7 @@ const sessionFields = {
   closedAt: cashierSessions.closedAt,
   closedByAccountId: cashierSessions.closedByAccountId,
   closedByUsername: closedAccounts.username,
+  autoClosedAt: cashierSessions.autoClosedAt,
 };
 
 const findById = async (executor: Executor, id: number): Promise<CashierSessionRecord | null> => (
@@ -127,6 +129,59 @@ export const createDrizzleCashierSessionRepository = (
         createdAt: input.closedAt,
       });
       return { kind: 'success' as const, session };
+    });
+  },
+
+  autoCloseExpired(input) {
+    return database.transaction(async (transaction) => {
+      const expired = await transaction.select({
+        id: cashierSessions.id,
+        branchId: cashierSessions.branchId,
+        openedByAccountId: cashierSessions.openedByAccountId,
+        openedAt: cashierSessions.openedAt,
+      }).from(cashierSessions).where(and(
+        isNull(cashierSessions.closedAt),
+        lte(cashierSessions.openedAt, input.openedBefore),
+      )).for('update');
+
+      const closed: CashierSessionRecord[] = [];
+      for (const current of expired) {
+        const before = (await findById(transaction, current.id))!;
+        // Stamped at the instant this shift ran out, not at the sweep, so the
+        // record reads the same whenever the sweep happens to run.
+        const closedAt = new Date(
+          current.openedAt.getTime() + CASHIER_SESSION_MAX_DURATION_MS,
+        );
+        await transaction.update(cashierSessions).set({
+          closedAt,
+          autoClosedAt: closedAt,
+          closedByAccountId: null,
+        }).where(and(
+          eq(cashierSessions.id, current.id),
+          isNull(cashierSessions.closedAt),
+        ));
+        // The till is signed out with the shift; whoever comes next logs in again.
+        await transaction.update(authSessions).set({ revokedAt: closedAt }).where(and(
+          eq(authSessions.accountId, current.openedByAccountId),
+          isNull(authSessions.revokedAt),
+        ));
+        const session = (await findById(transaction, current.id))!;
+        await audit.record(transaction, {
+          module: 'erp_cashier_sessions',
+          action: 'automatic_close',
+          entityType: 'cashier_session',
+          entityId: current.id,
+          beforeState: before,
+          afterState: session,
+          relatedIds: {
+            branchId: current.branchId,
+            openedByAccountId: current.openedByAccountId,
+          },
+          createdAt: closedAt,
+        });
+        closed.push(session);
+      }
+      return closed;
     });
   },
 

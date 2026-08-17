@@ -48,6 +48,15 @@ export interface CashierAccountRepository {
     | { kind: 'updated'; account: PublicCashierAccount }
     | { kind: 'not_found' }
   >;
+  /**
+   * Retires a branch login for good. The row survives because invoices, shifts
+   * and audit events point at it, but the login stops working, its sessions end
+   * and the username it held becomes available again.
+   */
+  archiveCashier(input: { accountId: number; archivedAt: Date }): Promise<
+    | { kind: 'archived'; account: PublicCashierAccount }
+    | { kind: 'not_found' }
+  >;
 }
 
 export const createCashierAccountsService = (dependencies: {
@@ -57,7 +66,7 @@ export const createCashierAccountsService = (dependencies: {
 }) => {
   const unwrap = (
     result:
-      | { kind: 'updated'; account: PublicCashierAccount }
+      | { kind: 'updated' | 'archived'; account: PublicCashierAccount }
       | { kind: 'not_found' },
   ) => {
     if (result.kind === 'not_found') {
@@ -94,6 +103,12 @@ export const createCashierAccountsService = (dependencies: {
         accountId,
         active,
         updatedAt: (dependencies.now ?? (() => new Date()))(),
+      }));
+    },
+    async archive(accountId: number) {
+      return unwrap(await dependencies.accounts.archiveCashier({
+        accountId,
+        archivedAt: (dependencies.now ?? (() => new Date()))(),
       }));
     },
     async resetPassword(accountId: number, password: string) {

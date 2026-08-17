@@ -435,6 +435,13 @@
       "when": 1786901323563,
       "tag": "0061_purple_professor_monster",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "5",
+      "when": 1786914928695,
+      "tag": "0062_cashier_control",
+      "breakpoints": true
     }
   ]
 }

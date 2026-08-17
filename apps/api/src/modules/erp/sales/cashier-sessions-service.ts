@@ -1,6 +1,13 @@
 import type { ErpBranchContext } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 
+/**
+ * A till is never left open overnight and forgotten: sixteen hours after it was
+ * opened the system ends the shift itself, matching the automatic timeout the HR
+ * attendance module already applies to a working day.
+ */
+export const CASHIER_SESSION_MAX_DURATION_MS = 16 * 60 * 60_000;
+
 export type CashierSessionRecord = {
   id: number;
   branchId: number;
@@ -11,6 +18,8 @@ export type CashierSessionRecord = {
   closedAt: Date | null;
   closedByAccountId: number | null;
   closedByUsername: string | null;
+  /** Set when the system, not a person, ended the shift at the limit. */
+  autoClosedAt: Date | null;
 };
 
 export interface CashierSessionRepository {
@@ -42,6 +51,11 @@ export interface CashierSessionRepository {
     | { kind: 'not_found' }
     | { kind: 'already_closed'; session: CashierSessionRecord }
   >;
+  /**
+   * Ends every shift opened before the given instant, stamping each one at the
+   * moment its own sixteen hours ran out, and signs the till out.
+   */
+  autoCloseExpired(input: { openedBefore: Date }): Promise<CashierSessionRecord[]>;
 }
 
 export type CashierSessionErrorCode =
@@ -86,10 +100,21 @@ export const createCashierSessionService = (dependencies: {
 }) => {
   const now = dependencies.now ?? (() => new Date());
 
+  /**
+   * Runs before every read and write of a shift so the answer never depends on
+   * the background worker having got there first.
+   */
+  const closeExpired = () => dependencies.repository.autoCloseExpired({
+    openedBefore: new Date(now().getTime() - CASHIER_SESSION_MAX_DURATION_MS),
+  });
+
   return {
+    closeExpired,
+
     async open(actor: ErpAccountIdentity) {
       const cashier = requireCashier(actor);
       const context = await dependencies.resolveBranchContext(cashier, undefined);
+      await closeExpired();
       const result = await dependencies.repository.open({
         branchId: context.branchId,
         openedByAccountId: context.accountId,
@@ -106,31 +131,14 @@ export const createCashierSessionService = (dependencies: {
 
     async current(actor: ErpAccountIdentity, requestedBranchId?: number) {
       const context = await dependencies.resolveBranchContext(actor, requestedBranchId);
+      await closeExpired();
       return dependencies.repository.findOpenByBranch(context.branchId);
-    },
-
-    async requireOpenForCashier(actor: ErpAccountIdentity) {
-      const cashier = requireCashier(actor);
-      const context = await dependencies.resolveBranchContext(cashier, undefined);
-      const session = await dependencies.repository.findOpenByBranch(context.branchId);
-      if (!session) {
-        throw new CashierSessionError(
-          'ERP_CASHIER_SESSION_NOT_OPEN',
-          'يجب فتح وردية الكاشير قبل تنفيذ عمليات البيع',
-        );
-      }
-      if (session.openedByAccountId !== context.accountId) {
-        throw new CashierSessionError(
-          'ERP_CASHIER_SESSION_NOT_OWNER',
-          'وردية هذا الفرع مفتوحة بواسطة حساب كاشير آخر',
-        );
-      }
-      return session;
     },
 
     async close(actor: ErpAccountIdentity) {
       const cashier = requireCashier(actor);
       const context = await dependencies.resolveBranchContext(cashier, undefined);
+      await closeExpired();
       const result = await dependencies.repository.close({
         branchId: context.branchId,
         closedByAccountId: context.accountId,

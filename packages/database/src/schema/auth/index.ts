@@ -27,11 +27,19 @@ export const accounts = mysqlTable('accounts', {
     .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'admin' then 1 else null end`, { mode: 'stored' }),
   activeCashierBranch: int('active_cashier_branch')
     .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'cashier' and ${sql.raw('employee_id')} is null and active then branch_id else null end`, { mode: 'stored' }),
+  /**
+   * An archived login is retired without deleting it: invoices, shifts and the
+   * audit trail keep pointing at a readable row, while the name it used goes
+   * back into circulation.
+   */
+  archivedAt: timestamp('archived_at', { mode: 'date', fsp: 3 }),
+  activeUsername: varchar('active_username', { length: 255 })
+    .generatedAlwaysAs(sql`case when ${sql.raw('archived_at')} is null then ${sql.raw('username')} else null end`, { mode: 'stored' }),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
-  uniqueIndex('accounts_username_unique').on(table.username),
+  uniqueIndex('accounts_active_username_unique').on(table.activeUsername),
   uniqueIndex('accounts_employee_unique').on(table.employeeId),
   uniqueIndex('accounts_admin_singleton_unique').on(table.adminSingleton),
   uniqueIndex('accounts_active_cashier_branch_unique').on(table.activeCashierBranch),

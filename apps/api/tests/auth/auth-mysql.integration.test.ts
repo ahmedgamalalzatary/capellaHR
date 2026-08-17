@@ -295,6 +295,46 @@ describe('MySQL-backed authentication', () => {
       .send({ username: 'cashier.one', password: 'old-password' }).expect(401);
     await request(app).post('/api/v1/auth/cashier/login')
       .send({ username: 'cashier.one', password: 'new-password' }).expect(200);
+
+    // The checks above spend login attempts; the retirement checks need their own.
+    await database.delete(authLoginLimits);
+
+    // Retiring the login keeps the row, stops the login, and frees the name.
+    const workingLogin = await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'new-password' });
+    const workingCookie = workingLogin.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+    await request(app).delete(`/api/v1/auth/cashier-accounts/${accountId}`)
+      .set('Cookie', adminCookie).expect(200);
+
+    await request(app).get('/api/v1/auth/session').set('Cookie', workingCookie).expect(401);
+    await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'new-password' }).expect(401);
+    const retired = (await database.select({
+      active: accounts.active,
+      archivedAt: accounts.archivedAt,
+      username: accounts.username,
+    }).from(accounts).where(eq(accounts.id, accountId)).limit(1))[0];
+    expect(retired).toMatchObject({ active: false, username: 'cashier.one' });
+    expect(retired?.archivedAt).not.toBeNull();
+
+    await database.delete(authLoginLimits);
+
+    const listed = await request(app).get('/api/v1/auth/cashier-accounts')
+      .set('Cookie', adminCookie).expect(200);
+    const listedAccounts = (listed.body as { data: { id: number }[] }).data;
+    expect(listedAccounts.some((row) => row.id === accountId)).toBe(false);
+
+    // The freed username is available for the branch's replacement login.
+    const replacement = await request(app).post('/api/v1/auth/cashier-accounts')
+      .set('Cookie', adminCookie)
+      .send({ branchId: Number(branch[0].insertId), username: 'cashier.one', password: 'fresh-password' });
+    expect(replacement.status).toBe(201);
+    expect(replacement.body.data.id).not.toBe(accountId);
+    await request(app).post('/api/v1/auth/cashier/login')
+      .send({ username: 'cashier.one', password: 'fresh-password' }).expect(200);
+
+    await request(app).delete('/api/v1/auth/cashier-accounts/99999999')
+      .set('Cookie', adminCookie).expect(404);
   });
 
   it('keeps an admin session valid across independent app instances', async () => {

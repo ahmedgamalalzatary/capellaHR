@@ -43,9 +43,16 @@ describe('ERP Cashier-session contracts', () => {
       closedAt: null,
       closedByAccountId: null,
       closedByUsername: null,
+      autoClosedAt: null,
     };
 
     expect(contracts.cashierSessionSchema.parse(session)).toEqual(session);
+    // A shift the system ended names no closing account, only the instant.
+    expect(contracts.cashierSessionSchema.parse({
+      ...session,
+      closedAt: '2026-08-02T01:00:00.000Z',
+      autoClosedAt: '2026-08-02T01:00:00.000Z',
+    })).toMatchObject({ closedByAccountId: null, autoClosedAt: '2026-08-02T01:00:00.000Z' });
     expect(contracts.cashierSessionSchema.safeParse({
       ...session,
       recoveryReason: 'must only live in the audit event',

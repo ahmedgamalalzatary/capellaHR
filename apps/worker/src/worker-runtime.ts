@@ -13,6 +13,7 @@ export const createWorkerEditionPlan = (edition: ResolvedEdition) => ({
   payroll: hasModule(edition, 'payroll'),
   reports: hasModule(edition, 'reports'),
   erpReports: hasModule(edition, 'erp-reports'),
+  erpSales: hasModule(edition, 'erp-sales'),
 });
 
 export const createWorkerReportRuntime = (options: {

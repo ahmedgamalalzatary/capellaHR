@@ -26,6 +26,11 @@ export function setCashierAccountStatus(accountId: number, active: boolean) {
   return api.patch<CashierAccount>(`/auth/cashier-accounts/${accountId}/status`, { active });
 }
 
-export function resetCashierPassword(accountId: number, password: string) {
-  return api.patch<CashierAccount>(`/auth/cashier-accounts/${accountId}/password`, { password });
+/**
+ * Retires the branch login for good. The invoices and shifts it acted on keep
+ * pointing at it, so the account is withdrawn rather than erased.
+ */
+export function deleteCashierAccount(accountId: number) {
+  return api.delete<CashierAccount>(`/auth/cashier-accounts/${accountId}`);
 }
+

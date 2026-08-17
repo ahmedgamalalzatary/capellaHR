@@ -165,6 +165,50 @@ describe('ERP Cashier-session repository', () => {
     expect(audit[0]).toMatchObject({ action: 'open', actorType: 'system' });
   });
 
+  it('ends an expired shift at its own limit, signs the till out, and leaves fresh ones open', async () => {
+    const data = await fixture();
+    const repo = repository();
+    const expiredOpenedAt = new Date(now.getTime() - 17 * 60 * 60_000);
+    await repo.open({
+      branchId: data.branchId,
+      openedByAccountId: data.first.accountId,
+      openedAt: expiredOpenedAt,
+    });
+    await repo.open({
+      branchId: data.second.branchId,
+      openedByAccountId: data.second.accountId,
+      openedAt: now,
+    });
+    const cookie = await sessionCookie(data.first.accountId);
+    const tokenHash = cookie.slice('capella_session='.length);
+
+    const closed = await repo.autoCloseExpired({
+      openedBefore: new Date(now.getTime() - 16 * 60 * 60_000),
+    });
+
+    const expiresAt = new Date(expiredOpenedAt.getTime() + 16 * 60 * 60_000);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatchObject({
+      branchId: data.branchId,
+      closedAt: expiresAt,
+      autoClosedAt: expiresAt,
+      closedByAccountId: null,
+    });
+    await expect(repo.findOpenByBranch(data.branchId)).resolves.toBeNull();
+    // A shift inside its sixteen hours is untouched.
+    await expect(repo.findOpenByBranch(data.second.branchId))
+      .resolves.toMatchObject({ openedByAccountId: data.second.accountId });
+    const [live] = await database.select({ revokedAt: authSessions.revokedAt })
+      .from(authSessions).where(eq(authSessions.accountId, data.first.accountId));
+    expect(live?.revokedAt).not.toBeNull();
+    expect(tokenHash).toBeTruthy();
+    const audit = await database.select().from(auditEvents).where(and(
+      eq(auditEvents.module, 'erp_cashier_sessions'),
+      eq(auditEvents.action, 'automatic_close'),
+    ));
+    expect(audit.length).toBeGreaterThanOrEqual(1);
+  });
+
   it('turns concurrent branch opens into one stored session and stable conflicts', async () => {
     const data = await fixture();
     const repo = repository();

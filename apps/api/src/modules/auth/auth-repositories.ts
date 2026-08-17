@@ -46,6 +46,7 @@ export const createDrizzleAuthRepositories = (
       }).from(accounts).where(and(
         eq(accounts.username, username),
         eq(accounts.role, 'admin'),
+        isNull(accounts.archivedAt),
       )).limit(1))[0];
       return row?.role === 'admin' && row.employeeId === null
         ? { ...row, role: 'admin' as const, employeeId: null }
@@ -58,9 +59,11 @@ export const createDrizzleAuthRepositories = (
         passwordHash: accounts.passwordHash,
         role: accounts.role,
         active: accounts.active,
+      // A username can be reused after retirement, so only the live row can log in.
       }).from(accounts).where(and(
         eq(accounts.username, username),
         eq(accounts.role, 'cashier'),
+        isNull(accounts.archivedAt),
       )).limit(1))[0];
       return row?.role === 'cashier'
         ? { ...row, role: 'cashier' as const }

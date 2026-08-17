@@ -12,24 +12,28 @@ describe('ERP report worker runtime', () => {
       payroll: true,
       reports: true,
       erpReports: false,
+      erpSales: false,
     });
     expect(createWorkerEditionPlan(resolveEdition('erp'))).toEqual({
       attendance: true,
       payroll: false,
       reports: true,
       erpReports: true,
+      erpSales: true,
     });
     expect(createWorkerEditionPlan(resolveEdition('full'))).toEqual({
       attendance: true,
       payroll: true,
       reports: true,
       erpReports: true,
+      erpSales: true,
     });
     expect(createWorkerEditionPlan(resolveEdition(undefined))).toEqual({
       attendance: false,
       payroll: false,
       reports: false,
       erpReports: false,
+      erpSales: false,
     });
   });
 
