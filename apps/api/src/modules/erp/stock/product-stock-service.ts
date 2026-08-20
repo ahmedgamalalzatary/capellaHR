@@ -67,11 +67,6 @@ const error = (code: ProductStockErrorCode, existingId?: number) => new ProductS
 const isDuplicate = (value: unknown) => typeof value === 'object' && value !== null && (
   Reflect.get(value, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(value, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY'
 );
-/** Two unique indexes can raise ER_DUP_ENTRY; MySQL names the offending one. */
-const duplicateIsBarcode = (value: unknown) => (
-  typeof value === 'object' && value !== null
-  && String(Reflect.get(value, 'message') ?? '').includes('barcode')
-);
 
 export const createProductStockService = (dependencies: {
   repository: ProductStockRepository;
@@ -110,12 +105,13 @@ export const createProductStockService = (dependencies: {
         }, context.accountId);
       } catch (cause) {
         if (!isDuplicate(cause)) throw cause;
-        if (input.barcode && duplicateIsBarcode(cause)) {
-          const clash = await repository.findByBarcode(context.branchId, input.barcode);
-          throw error('PRODUCT_BARCODE_EXISTS', clash?.id);
+        // Check which index actually collided by running both lookups
+        if (input.barcode) {
+          const barcodeClash = await repository.findByBarcode(context.branchId, input.barcode);
+          if (barcodeClash) throw error('PRODUCT_BARCODE_EXISTS', barcodeClash.id);
         }
-        const existing = await repository.findByNormalizedName(context.branchId, nameNormalized);
-        throw error('PRODUCT_NAME_EXISTS', existing?.id);
+        const nameClash = await repository.findByNormalizedName(context.branchId, nameNormalized);
+        throw error('PRODUCT_NAME_EXISTS', nameClash?.id);
       }
     },
     async get(actor: ErpAccountIdentity, id: number, requestedBranchId?: number) {
@@ -150,12 +146,16 @@ export const createProductStockService = (dependencies: {
         return result;
       } catch (cause) {
         if (!isDuplicate(cause)) throw cause;
-        if (changes.barcode && duplicateIsBarcode(cause)) {
-          const clash = await repository.findByBarcode(context.branchId, changes.barcode);
-          throw error('PRODUCT_BARCODE_EXISTS', clash?.id);
+        // Check which index actually collided by running both lookups
+        if (changes.barcode) {
+          const barcodeClash = await repository.findByBarcode(context.branchId, changes.barcode);
+          if (barcodeClash && barcodeClash.id !== id) throw error('PRODUCT_BARCODE_EXISTS', barcodeClash.id);
         }
-        const existing = await repository.findByNormalizedName(context.branchId, changes.nameNormalized ?? '');
-        throw error('PRODUCT_NAME_EXISTS', existing?.id);
+        if (changes.nameNormalized) {
+          const nameClash = await repository.findByNormalizedName(context.branchId, changes.nameNormalized);
+          if (nameClash && nameClash.id !== id) throw error('PRODUCT_NAME_EXISTS', nameClash.id);
+        }
+        throw cause;
       }
     },
     /**

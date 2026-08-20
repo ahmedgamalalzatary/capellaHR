@@ -21,6 +21,13 @@ describe('ProductLabelSheet', () => {
     expect(window.print).toHaveBeenCalled();
   });
 
+  it('prints a scannable sticker for a supplier code that is not an EAN-13', () => {
+    window.print = vi.fn();
+    render(<ProductLabelSheet products={[product({ barcode: 'ABC-1234' })]} onPrinted={vi.fn()} />);
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+    expect(screen.getByText('ABC-1234')).toBeTruthy();
+  });
+
   it('skips a product that has no code to print', () => {
     window.print = vi.fn();
     render(<ProductLabelSheet products={[product({ barcode: null })]} onPrinted={vi.fn()} />);

@@ -155,13 +155,17 @@ export const createEmployeeFinancialLifecycle = (
       )) throw previewChanged();
 
       const projectedCents = cents(projected);
+      // Only the installments this deactivation pulled forward. The current month's own
+      // installment was already deducted by ordinary payroll, so counting it here would
+      // overstate both the salary and the recovery by that amount.
+      const advancesAccelerated = cents(impact.unpaidAdvanceAmount)
+        - cents(impact.currentMonthAdvanceAmount);
+      const netBeforeSettlement = projectedCents + advancesAccelerated;
       const figures = {
-        // Acceleration has already pulled the whole advance debt onto this month, so the salary
-        // the employee had actually earned is recovered by adding back only what it pulled in.
-        netSalaryBeforeSettlement: formatCents(
-          projectedCents + (cents(impact.unpaidAdvanceAmount) - cents(impact.currentMonthAdvanceAmount)),
-        ),
-        advancesRecovered: impact.unpaidAdvanceAmount,
+        // The salary as it stood before the deactivation touched it, so the statement reconciles:
+        // netBefore - advancesRecovered + writeOff - forfeited + cashCollected = finalNetSalary.
+        netSalaryBeforeSettlement: formatCents(netBeforeSettlement),
+        advancesRecovered: formatCents(advancesAccelerated),
         writeOffAmount: '0.00',
         forfeitedSalaryAmount: '0.00',
         cashCollectedAmount: '0.00',
@@ -175,11 +179,9 @@ export const createEmployeeFinancialLifecycle = (
         );
         figures.writeOffAmount = impact.unpaidAdvanceAmount;
       } else if (input.advanceDecision === 'zero_salary') {
-        // Acceleration has already moved the debt onto this month, so the pre-decision salary is
-        // recovered by adding back what it pulled in rather than re-querying payroll.
-        const beforeAcceleration = projectedCents
-          + (cents(impact.unpaidAdvanceAmount) - cents(impact.currentMonthAdvanceAmount));
-        if (!canZeroSalary(formatCents(beforeAcceleration), impact.unpaidAdvanceAmount)) {
+        // Same salary figure the preview screen judged this on, so the server never refuses an
+        // option the admin was just offered.
+        if (!canZeroSalary(formatCents(netBeforeSettlement), impact.unpaidAdvanceAmount)) {
           throw zeroSalaryNotAllowed();
         }
         if (projectedCents < 0n) {

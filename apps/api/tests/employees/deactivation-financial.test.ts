@@ -5,6 +5,7 @@ import {
   projectDeactivationBalance,
 } from '../../src/modules/employees/deactivation-financial.js';
 import { PayrollError } from '../../src/modules/payroll/index.js';
+import type { EmployeeSettlementFigures } from '../../src/modules/employees/employees-service.js';
 
 const at = new Date('2026-07-16T10:00:00.000Z');
 const context = { tx: true };
@@ -22,9 +23,10 @@ const money = (value: number) => {
 };
 
 /**
- * Ahmed's scenario by default: 2000 salary, 3000 outstanding, so summing the advances leaves
- * him 1000 short. Recorded adjustments feed back into later previews the way the real payroll
- * does, which is what makes the settle-to-zero assertions meaningful.
+ * Ahmed's scenario by default: 2000 salary with this month's 500 installment already deducted,
+ * 3000 still outstanding. Accelerating the remaining 2500 leaves him 500 short. Recorded
+ * adjustments feed back into later previews the way the real payroll does, which is what makes
+ * the settle-to-zero assertions meaningful.
  */
 const lifecycleWith = (options: {
   netAfterAcceleration?: string;
@@ -37,7 +39,7 @@ const lifecycleWith = (options: {
   const adjustments: { reason: string; amount: string }[] = [];
   const debts: { amount: string }[] = [];
   const accelerate = vi.fn(async () => undefined);
-  const baseline = cents(options.netAfterAcceleration ?? '-1000.00');
+  const baseline = cents(options.netAfterAcceleration ?? '-500.00');
   const settled = () => baseline + adjustments.reduce((total, row) => total + cents(row.amount), 0);
   return {
     adjustments,
@@ -79,8 +81,8 @@ const decide = (overrides: Record<string, unknown> = {}) => ({
   advanceDecision: 'sum_all',
   expectedUnpaidInstallmentCount: 3,
   expectedUnpaidAdvanceAmount: '3000.00',
-  expectedProjectedNetSalary: '-1000.00',
-  expectedAmountOwed: '1000.00',
+  expectedProjectedNetSalary: '-500.00',
+  expectedAmountOwed: '500.00',
   ...overrides,
 } as never);
 
@@ -176,7 +178,7 @@ describe('deactivation decision tree', () => {
       negativeBalanceDecision: 'collect_cash',
     }), context);
 
-    expect(adjustments).toEqual([{ reason: 'cash_payment', amount: '1000.00' }]);
+    expect(adjustments).toEqual([{ reason: 'cash_payment', amount: '500.00' }]);
     expect(debts).toEqual([]);
   });
 
@@ -189,7 +191,7 @@ describe('deactivation decision tree', () => {
 
     // The negative net is the accounting record; the debt row is what outlives employment.
     expect(adjustments).toEqual([]);
-    expect(debts).toEqual([{ amount: '1000.00' }]);
+    expect(debts).toEqual([{ amount: '500.00' }]);
   });
 
   it('refuses to sum advances into a shortfall without a decision on it', async () => {
@@ -206,7 +208,7 @@ describe('deactivation decision tree', () => {
       advanceDecision: 'zero_salary',
     }), context);
 
-    expect(adjustments).toEqual([{ reason: 'write_off', amount: '1000.00' }]);
+    expect(adjustments).toEqual([{ reason: 'write_off', amount: '500.00' }]);
     expect(debts).toEqual([]);
   });
 
@@ -258,18 +260,17 @@ describe('deactivation decision tree', () => {
 
 describe('deactivation settlement figures', () => {
   it('reports what the settlement did when the shortfall becomes a debt', async () => {
-    // 1500 earned, 3000 of advances pulled onto the month, leaving 1000 short after the 500
-    // already charged this month, and that shortfall is recorded as a debt.
+    // 2000 earned before deactivation decision, 2500 of advances accelerated, leaving 500 short.
     await expect(lifecycle().prepareEmployeeDeactivation(1, at, decide({
       negativeBalanceDecision: 'record_debt',
     }), context)).resolves.toEqual({
-      netSalaryBeforeSettlement: '1500.00',
-      advancesRecovered: '3000.00',
+      netSalaryBeforeSettlement: '2000.00',
+      advancesRecovered: '2500.00',
       writeOffAmount: '0.00',
       forfeitedSalaryAmount: '0.00',
       cashCollectedAmount: '0.00',
-      debtRecordedAmount: '1000.00',
-      finalNetSalary: '-1000.00',
+      debtRecordedAmount: '500.00',
+      finalNetSalary: '-500.00',
     });
   });
 
@@ -277,9 +278,12 @@ describe('deactivation settlement figures', () => {
     await expect(lifecycle().prepareEmployeeDeactivation(1, at, decide({
       advanceDecision: 'ignore_debt',
     }), context)).resolves.toMatchObject({
+      netSalaryBeforeSettlement: '2000.00',
+      advancesRecovered: '2500.00',
       writeOffAmount: '3000.00',
       debtRecordedAmount: '0.00',
-      finalNetSalary: '2000.00',
+      // Forgiving all 3000 hands back this month's own installment too, so he clears 2500.
+      finalNetSalary: '2500.00',
     });
   });
 
@@ -287,9 +291,44 @@ describe('deactivation settlement figures', () => {
     await expect(lifecycle().prepareEmployeeDeactivation(1, at, decide({
       negativeBalanceDecision: 'collect_cash',
     }), context)).resolves.toMatchObject({
-      cashCollectedAmount: '1000.00',
-      debtRecordedAmount: '0.00',
+      cashCollectedAmount: '500.00',
       finalNetSalary: '0.00',
     });
+  });
+
+  it('settlement statement arithmetic reconciles across all decision branches', async () => {
+    // Every line the printed statement shows must add up to the salary it settled at:
+    //   netBefore - advancesRecovered + writeOff - forfeited + cashCollected === finalNetSalary
+    // debtRecorded is not in the identity: it is a separate row that outlives employment, not a
+    // payroll adjustment, so the month keeps its negative net as the record of the shortfall.
+    const check = (statement: EmployeeSettlementFigures, label: string) => {
+      const value = (amount: string) => Math.round(parseFloat(amount) * 100);
+      const computed = value(statement.netSalaryBeforeSettlement)
+        - value(statement.advancesRecovered)
+        + value(statement.writeOffAmount)
+        - value(statement.forfeitedSalaryAmount)
+        + value(statement.cashCollectedAmount);
+      expect({ label, computed }).toEqual({ label, computed: value(statement.finalNetSalary) });
+      if (value(statement.debtRecordedAmount) > 0) {
+        expect({ label, debt: value(statement.debtRecordedAmount) })
+          .toEqual({ label, debt: -value(statement.finalNetSalary) });
+      }
+    };
+
+    check(await lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      negativeBalanceDecision: 'record_debt',
+    }), context), 'record_debt');
+
+    check(await lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      advanceDecision: 'ignore_debt',
+    }), context), 'ignore_debt');
+
+    check(await lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      negativeBalanceDecision: 'collect_cash',
+    }), context), 'collect_cash');
+
+    check(await lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      advanceDecision: 'zero_salary',
+    }), context), 'zero_salary');
   });
 });

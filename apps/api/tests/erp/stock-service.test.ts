@@ -112,4 +112,26 @@ describe('ERP product stock service', () => {
       .resolves.toMatchObject({ barcode: '6221031492108' });
     expect(vi.mocked(Reflect.get(repo, 'update'))).not.toHaveBeenCalled();
   });
+
+  it('distinguishes a duplicate name from a duplicate barcode', async () => {
+    const repo = repository();
+    // Pre-check passes (race: the duplicate was inserted after we checked)
+    vi.mocked(Reflect.get(repo, 'findByNormalizedName')).mockResolvedValueOnce(null);
+    vi.mocked(Reflect.get(repo, 'findByBarcode')).mockResolvedValueOnce(null);
+    // Insert fails with ER_DUP_ENTRY on the name unique index
+    const dupError = Object.assign(
+      new Error('Failed query: INSERT INTO erp_products (name, barcode, ...) VALUES ...'),
+      { code: 'ER_DUP_ENTRY' }
+    );
+    vi.mocked(Reflect.get(repo, 'create')).mockRejectedValueOnce(dupError);
+    // Post-failure lookups find the winner
+    const existing = { ...product, id: 99, name: 'SHAMPOO' };
+    vi.mocked(Reflect.get(repo, 'findByNormalizedName')).mockResolvedValueOnce(existing);
+    vi.mocked(Reflect.get(repo, 'findByBarcode')).mockResolvedValueOnce(null);
+    
+    await expect(service(repo).create(admin, {
+      branchId: 2, name: 'SHAMPOO', sellingPrice: '1', lastPurchaseCost: '0',
+      lowStockThreshold: 0, description: null, barcode: '1234567890123',
+    })).rejects.toMatchObject({ code: 'PRODUCT_NAME_EXISTS', existingId: 99 });
+  });
 });

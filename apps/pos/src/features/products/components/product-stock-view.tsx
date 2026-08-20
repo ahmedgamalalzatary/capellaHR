@@ -376,7 +376,6 @@ export function ProductStockView() {
                     <DataTable>
                       <THead>
                         <TH>المنتج</TH>
-                        <TH>الباركود</TH>
                         <TH>السبب</TH>
                         <TH numeric>التغيير/الرصيد</TH>
                         <TH>المصدر</TH>

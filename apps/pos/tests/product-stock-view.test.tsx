@@ -46,6 +46,31 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('lines every movement cell up under its own header', async () => {
+    mocks.movements.mockResolvedValue({
+      items: [{
+        id: 9, productId: 4, branchId: 2, reason: 'sale', sourceType: 'invoice', sourceId: 77,
+        quantityDelta: -1, balanceAfter: 4, actingAccountId: 1, note: null,
+        createdAt: '2026-08-02T09:00:00Z', productName: 'شامبو', productBarcode: '2000000000041',
+        actingUsername: 'admin',
+      }],
+      totalPages: 1,
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    await screen.findByText('بيع');
+    const table = screen.getAllByRole('table')
+      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'الوقت' }))!;
+    const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent);
+    const cells = within(within(table).getAllByRole('row')[1]!).getAllByRole('cell').map((cell) => cell.textContent);
+    expect(cells).toHaveLength(headers.length);
+    // The reason belongs under السبب, and the timestamp under الوقت — not shifted.
+    expect(cells[headers.indexOf('السبب')]).toContain('بيع');
+    expect(cells[headers.indexOf('الوقت')]).toContain('٢٠٢٦');
+  });
+
   it('announces product and movement loading states', async () => {
     mocks.listProducts.mockReturnValue(new Promise(() => undefined));
     mocks.movements.mockReturnValue(new Promise(() => undefined));
