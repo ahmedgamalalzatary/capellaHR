@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
 import { invoiceClientLabel } from '@/lib/client-label';
+import { Barcode } from '@/lib/barcode/render-barcode';
 
 import { formatCairoDateTime, paymentLabels } from './invoice-format';
 
@@ -218,6 +219,14 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         </div>
         <ReceiptQr value={invoice.invoiceNumber} />
       </header>
+      {/*
+        * The QR carries the same invoice number but the QW2100 is a 1D scanner
+        * and cannot read it, so the slip also carries a Code 128 the counter can
+        * scan to pull the invoice up for a refund.
+        */}
+      <div className="flex justify-center border-b border-dashed border-ink py-2">
+        <Barcode value={invoice.invoiceNumber} symbology="code128" heightMm={8} className="w-full [&_svg]:h-auto [&_svg]:w-full" />
+      </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 border-b border-dashed border-ink py-3">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt><dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>

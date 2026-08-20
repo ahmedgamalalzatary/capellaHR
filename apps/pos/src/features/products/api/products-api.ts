@@ -4,9 +4,10 @@ import { api } from '@/lib/api/client';
 export interface Product {
   id: number; branchId: number; name: string; description: string | null;
   sellingPrice: string; lastPurchaseCost: string; lowStockThreshold: number;
+  barcode: string | null;
   isActive: boolean; quantity: number; createdAt: string; updatedAt: string;
 }
-export type SellableProduct = Pick<Product, 'id' | 'branchId' | 'name' | 'description' | 'sellingPrice' | 'isActive' | 'quantity'>;
+export type SellableProduct = Pick<Product, 'id' | 'branchId' | 'name' | 'description' | 'sellingPrice' | 'barcode' | 'isActive' | 'quantity'>;
 export interface ProductSaleItem extends SellableProduct { price: string; quantityAvailable: number }
 export interface StockMovement {
   id: number; productId: number; branchId: number; reason: string; sourceType: string;
@@ -34,6 +35,14 @@ export const listSellableProducts = (params: { branchId?: number; search?: strin
 export const createProduct = (input: CreateProductInput) => api.post<Product>('/erp/products', input);
 export const updateProduct = (id: number, input: UpdateProductInput) => api.patch<Product>(`/erp/products/${id}`, input);
 export const adjustProductStock = (id: number, input: { branchId?: number; quantityDelta: number; reason: StockAdjustmentReason; note?: string }) => api.post<{ product: Product; movementId: number }>(`/erp/products/${id}/adjustments`, input);
+/** The till scanned a code; the server does not care whose code it is. */
+export const lookupProductByBarcode = (code: string, params: { branchId?: number } = {}) => (
+  api.get<Product>(`/erp/products/by-barcode${query({ ...params, code })}`)
+);
+/** Gives a product that arrived without a code one of ours to print. */
+export const generateProductBarcode = (id: number, params: { branchId?: number } = {}) => (
+  api.post<Product>(`/erp/products/${id}/barcode`, params)
+);
 export const listStockMovements = async (params: { branchId?: number; productId?: number; page?: number; pageSize?: number } = {}) => {
   const result = await api.getPage<StockMovement>(`/erp/products/movements${query(params)}`);
   return { ...result, totalPages: result.meta.totalPages };

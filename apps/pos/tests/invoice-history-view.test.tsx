@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   listBranches: vi.fn(),
 }));
 
+const push = vi.hoisted(() => vi.fn());
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 vi.mock('../src/features/auth', () => ({ useSession: () => ({ data: { actor: mocks.actor.current } }) }));
 vi.mock('../src/features/cashier-sessions', () => ({ listCashierSessionBranches: mocks.listBranches }));
 vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
@@ -17,6 +19,17 @@ vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
 }));
 
 import { InvoiceHistoryView } from '../src/features/sales/components/invoice-history-view';
+
+/** The QW2100 types a whole code in tens of milliseconds and presses Enter. */
+const scanCode = (code: string) => {
+  for (const character of code) {
+    vi.advanceTimersByTime(10);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: character, bubbles: true }));
+  }
+  vi.advanceTimersByTime(10);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+};
+
 
 const item = {
   id: 44,
@@ -133,5 +146,20 @@ describe('invoice history', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     expect(await screen.findByRole('option', { name: 'الفرع الرئيسي' })).toBeDefined();
+  });
+
+  it('opens the invoice whose receipt was scanned', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      push.mockClear();
+      renderView(2);
+      await screen.findByText(item.invoiceNumber);
+
+      scanCode(item.invoiceNumber);
+
+      await waitFor(() => expect(push).toHaveBeenCalledWith('/invoices/44?branchId=2'));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

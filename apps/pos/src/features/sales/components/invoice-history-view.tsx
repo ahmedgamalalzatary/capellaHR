@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
@@ -14,6 +15,7 @@ import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { useBarcodeScanner } from '@/lib/barcode/use-barcode-scanner';
 import { invoiceClientLabel } from '@/lib/client-label';
 
 import { listInvoices } from '../api/sales-api';
@@ -44,6 +46,20 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState<string | undefined>();
+  /**
+   * The number read off a scanned receipt, held until the matching invoice comes
+   * back so the slip the customer handed over opens itself.
+   */
+  const [scannedNumber, setScannedNumber] = useState<string | null>(null);
+  useBarcodeScanner({
+    onScan: (code) => {
+      setSearchDraft(code);
+      setSearch(code);
+      setPage(1);
+      setScannedNumber(code);
+    },
+  });
+  const router = useRouter();
   const branches = useQuery({
     queryKey: ['erp-sales', 'invoice-branches'],
     queryFn: () => listCashierSessionBranches(1),
@@ -64,6 +80,14 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
     }),
     enabled: Boolean(actor) && (!isAdmin || branchId !== undefined),
   });
+  const scanned = scannedNumber === null
+    ? undefined
+    : invoices.data?.items.find((invoice) => invoice.invoiceNumber === scannedNumber);
+  useEffect(() => {
+    if (!scanned) return;
+    setScannedNumber(null);
+    router.push(`/invoices/${scanned.id}${branchId ? `?branchId=${branchId}` : ''}`);
+  }, [branchId, router, scanned]);
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6">

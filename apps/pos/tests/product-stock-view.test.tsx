@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   update: vi.fn(), adjust: vi.fn(), create: vi.fn(), listProducts: vi.fn(), movements: vi.fn(),
+  generateBarcode: vi.fn(),
 }));
 const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
 vi.mock('../src/features/auth', () => ({
@@ -14,7 +15,7 @@ vi.mock('../src/features/auth', () => ({
 }));
 const product = {
   id: 4, branchId: 2, name: 'شامبو', description: 'للشعر', sellingPrice: '100.00',
-  lastPurchaseCost: '60.00', lowStockThreshold: 2, isActive: true, quantity: 5,
+  lastPurchaseCost: '60.00', lowStockThreshold: 2, isActive: true, quantity: 5, barcode: null as string | null,
   createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
 };
 vi.mock('../src/features/catalog', () => ({
@@ -26,6 +27,7 @@ vi.mock('../src/features/products/api/products-api', () => ({
   createProduct: mocks.create,
   updateProduct: mocks.update,
   adjustProductStock: mocks.adjust,
+  generateProductBarcode: mocks.generateBarcode,
 }));
 
 import { ProductStockView } from '../src/features/products';
@@ -179,5 +181,45 @@ describe('ProductStockView', () => {
     expect(screen.queryByRole('button', { name: 'حفظ التعديل' })).toBeNull();
     expect(screen.queryByLabelText('تغيير الكمية')).toBeNull();
     expect((screen.getByLabelText('تصفية الحركات حسب المنتج') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('saves the supplier code the admin scanned into the barcode field', async () => {
+    mocks.create.mockResolvedValue(product);
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByLabelText('اسم المنتج');
+
+    fireEvent.change(screen.getByLabelText('اسم المنتج'), { target: { value: 'بلسم' } });
+    fireEvent.change(screen.getByLabelText('سعر البيع'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('الباركود'), { target: { value: '6221031492108' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة منتج' }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ barcode: '6221031492108' }),
+    ));
+  });
+
+  it('generates a code for a product that arrived without one', async () => {
+    mocks.generateBarcode.mockResolvedValue({ ...product, barcode: '2000000000041' });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'توليد باركود' }));
+    await waitFor(() => expect(mocks.generateBarcode).toHaveBeenCalledWith(4, { branchId: 2 }));
+  });
+
+  it('offers a sticker only once the product has a code', async () => {
+    mocks.listProducts.mockResolvedValue({
+      items: [{ ...product, barcode: '2000000000041' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(await screen.findByRole('button', { name: 'طباعة ملصق' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'توليد باركود' })).toBeNull();
   });
 });

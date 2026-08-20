@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { useBarcodeScanner } from '@/lib/barcode/use-barcode-scanner';
+
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
@@ -111,6 +113,21 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState<string | undefined>();
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | undefined>();
+  /**
+   * The number read off a scanned receipt, held until the matching invoice comes
+   * back so the refund opens on its own — the counter scans the slip the customer
+   * handed over and the invoice is simply there.
+   */
+  const [scannedNumber, setScannedNumber] = useState<string | null>(null);
+  useBarcodeScanner({
+    onScan: (code) => {
+      setSearchDraft(code);
+      setSearch(code);
+      setPage(1);
+      setSelectedInvoiceId(undefined);
+      setScannedNumber(code);
+    },
+  });
   const branches = useQuery({
     queryKey: ['erp-sales', 'invoice-branches'],
     queryFn: () => listCashierSessionBranches(1),
@@ -131,6 +148,14 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
     }),
     enabled: Boolean(actor) && (!isAdmin || branchId !== undefined),
   });
+  const scanned = scannedNumber === null
+    ? undefined
+    : invoices.data?.items.find((invoice) => invoice.invoiceNumber === scannedNumber);
+  useEffect(() => {
+    if (!scanned) return;
+    setSelectedInvoiceId(scanned.id);
+    setScannedNumber(null);
+  }, [scanned]);
   const selectedInvoice = invoices.data?.items.find((invoice) => invoice.id === selectedInvoiceId);
 
   return (

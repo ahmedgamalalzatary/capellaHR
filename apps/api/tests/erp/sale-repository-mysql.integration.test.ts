@@ -1645,7 +1645,7 @@ describe('ERP sale repository MySQL integration', () => {
     const product = await repository.create({
       branchId: data.branchId, name: `Stock ${data.marker}`, nameNormalized: `stock-${data.marker}`,
       description: null, sellingPrice: '100.00', lastPurchaseCost: '60.00',
-      lowStockThreshold: 2, isActive: true, openingQuantity: 0,
+      lowStockThreshold: 2, barcode: null, isActive: true, openingQuantity: 0,
     }, data.adminAccountId);
     const adjusted = await repository.adjust(product.id, data.branchId, {
       branchId: data.branchId, quantityDelta: 5, reason: 'count_correction', note: 'opening count',
@@ -2189,5 +2189,39 @@ describe('ERP sale repository MySQL integration', () => {
     } finally {
       await database.execute(sql.raw('DROP TRIGGER IF EXISTS `erp13_fail_movement`'));
     }
+  });
+
+  it('lets a branch hold one product per barcode and many with none, and finds them by code', async () => {
+    const data = await fixture();
+    const repository = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => data.at);
+    const write = (suffix: string, barcode: string | null) => ({
+      branchId: data.branchId, name: `Coded ${suffix} ${data.marker}`,
+      nameNormalized: `coded-${suffix}-${data.marker}`, description: null,
+      sellingPrice: '10.00', lastPurchaseCost: '0.00', lowStockThreshold: 0,
+      barcode, isActive: true, openingQuantity: 0,
+    });
+
+    // Thirteen digits, unique to this run, so a rerun cannot clash with itself.
+    const code = `2${String(process.pid).padStart(6, '0')}${String(Date.now()).slice(-6)}`;
+    const coded = await repository.create(write('a', code), data.adminAccountId);
+    expect(await repository.findByBarcode(data.branchId, coded.barcode!))
+      .toMatchObject({ id: coded.id });
+
+    // A duplicate code in the same branch is refused by the index itself.
+    await expect(repository.create(write('b', coded.barcode), data.adminAccountId)).rejects.toBeDefined();
+
+    // "No barcode yet" is the normal state and must never be a uniqueness clash.
+    await repository.create(write('c', null), data.adminAccountId);
+    await expect(repository.create(write('d', null), data.adminAccountId)).resolves.toBeDefined();
+  });
+
+  it('refuses a code the scanner could never have read', async () => {
+    const data = await fixture();
+    const repository = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => data.at);
+    await expect(repository.create({
+      branchId: data.branchId, name: `Bad ${data.marker}`, nameNormalized: `bad-${data.marker}`,
+      description: null, sellingPrice: '10.00', lastPurchaseCost: '0.00', lowStockThreshold: 0,
+      barcode: 'ab', isActive: true, openingQuantity: 0,
+    }, data.adminAccountId)).rejects.toBeDefined();
   });
 });

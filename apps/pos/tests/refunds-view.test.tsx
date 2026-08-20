@@ -32,6 +32,17 @@ vi.mock('../src/features/cashier-sessions', () => ({
 
 import { RefundsView } from '../src/features/sales/components/refunds-view';
 
+/** The QW2100 types a whole code in tens of milliseconds and presses Enter. */
+const scanCode = (code: string) => {
+  for (const character of code) {
+    vi.advanceTimersByTime(10);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: character, bubbles: true }));
+  }
+  vi.advanceTimersByTime(10);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+};
+
+
 const invoiceNumber = saleFixtures.completedInvoice.invoiceNumber;
 
 const historyItem = {
@@ -555,5 +566,22 @@ describe('refunds tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
     await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(2));
     expect(refundInvoice.mock.calls[1]![1].idempotencyKey).toBe(originalKey);
+  });
+
+  it('opens the invoice whose receipt was scanned at the counter', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderView();
+      await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` });
+
+      scanCode(invoiceNumber);
+
+      await waitFor(() => expect(listInvoices).toHaveBeenCalledWith(
+        expect.objectContaining({ search: invoiceNumber }),
+      ));
+      await screen.findByText(`مرتجع الفاتورة ${invoiceNumber}`);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

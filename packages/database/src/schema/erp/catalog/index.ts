@@ -119,6 +119,13 @@ export const erpProducts = mysqlTable('erp_products', {
   sellingPrice: decimal('selling_price', { precision: 12, scale: 2 }).notNull(),
   lastPurchaseCost: decimal('last_purchase_cost', { precision: 12, scale: 2 }).notNull().default('0.00'),
   lowStockThreshold: int('low_stock_threshold').notNull().default(0),
+  /**
+   * Either the supplier's own code, kept exactly as the scanner read it off the
+   * box, or an in-store EAN-13 we generated and printed a sticker for. The
+   * lookup at the till is by code and does not care which it is. Null means the
+   * product has no code yet.
+   */
+  barcode: varchar('barcode', { length: 32 }),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -130,8 +137,15 @@ export const erpProducts = mysqlTable('erp_products', {
   }),
   uniqueIndex('erp_products_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('erp_products_branch_name_unique').on(table.branchId, table.nameNormalized),
+  // MySQL lets a unique index hold many nulls, so "no barcode" stays unlimited
+  // while a code that does exist can only point at one product in the branch.
+  uniqueIndex('erp_products_branch_barcode_unique').on(table.branchId, table.barcode),
   index('erp_products_branch_active_idx').on(table.branchId, table.isActive),
   check('erp_products_selling_price_positive', sql`${table.sellingPrice} > 0`),
   check('erp_products_purchase_cost_nonnegative', sql`${table.lastPurchaseCost} >= 0`),
   check('erp_products_low_stock_nonnegative', sql`${table.lowStockThreshold} >= 0`),
+  check(
+    'erp_products_barcode_scannable',
+    sql`${table.barcode} is null or (char_length(${table.barcode}) between 4 and 32 and ${table.barcode} regexp '^[A-Za-z0-9._/+-]+$')`,
+  ),
 ]);

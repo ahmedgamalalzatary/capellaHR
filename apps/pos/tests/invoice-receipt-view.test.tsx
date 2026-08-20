@@ -603,4 +603,13 @@ describe('stored invoice receipt', () => {
     expect(screen.getByText('رابط الفاتورة غير صالح')).toBeDefined();
     expect(getInvoice).not.toHaveBeenCalled();
   });
+
+  it('prints a scannable invoice barcode beside the QR, so the counter can scan the slip back', async () => {
+    renderView();
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    // The QW2100 is a 1D scanner and cannot read the QR code at all.
+    const barcode = screen.getByRole('img', { name: saleFixtures.completedInvoice.invoiceNumber });
+    expect(barcode.innerHTML).toContain('svg');
+  });
 });

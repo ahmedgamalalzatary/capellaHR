@@ -1,6 +1,6 @@
 # Beauty Center ERP — Next Features Plan
 
-Status: **Steps 1-3 built; Steps 4-9 still plan only.** Written 2026-08-19 after reading the
+Status: **Steps 1-4 built; Steps 5-9 still plan only.** Written 2026-08-19 after reading the
 current codebase. Covers the nine changes requested on 2026-08-19.
 
 This document is written to be read by a person who is not going to open the code. Every
@@ -121,7 +121,7 @@ Quick wins first, as decided. Two ordering notes that matter:
 | 1 | Refund payment split chosen by the cashier — **built** | Small | no — extends `erp-sales` |
 | 2 | Employee termination: close the settlement gaps — **built** | Small | no — extends `employees` / `payroll` |
 | 3 | Till shift history + live shift totals — **built** | Medium | no — extends `erp-sales` |
-| 4 | Barcodes: print, scan, sell | Medium | no — extends `erp-catalog` + POS |
+| 4 | Barcodes: print, scan, sell — **built** | Medium | no — extends `erp-catalog` + POS |
 | 5 | Reassign the employee on a sold service | Medium | no — extends `erp-sales` + `erp-commissions` |
 | 6 | Partial payment on product-only invoices | Large | no — extends `erp-sales` |
 | 7 | Sales screen restyle to one full page | Large | POS only |
@@ -549,6 +549,47 @@ and a sound-free visual warning; the existing stock rules are untouched.
 **Hardware note for the shop:** the QW2100 must be left in its default USB-keyboard mode with
 a carriage return suffix — its factory default. The stand-mode barcode on the scanner's own
 label is for hands-free scanning and does not affect this.
+
+---
+
+### Built — what the plan missed
+
+Step 4 is implemented. What the plan did not anticipate:
+
+- **A supplier's code can contain a slash, so the lookup is a query, not a path.**
+  The plan specified `GET /erp/products/by-barcode/:code`, but a slash inside a
+  code cannot survive a path segment. The route is
+  `GET /erp/products/by-barcode?code=…`, declared ahead of `/:id` so a scan is
+  never mistaken for a product id.
+- **The in-store code is derived from the product id, not allocated.** `200` plus
+  the nine-digit id plus the check digit fills an EAN-13 exactly, so there is no
+  allocation table and no race: asking twice returns the same sticker, which
+  makes reprinting safe. A product that already has a code — the supplier's or
+  ours — keeps it.
+- **Two unique indexes can both raise `ER_DUP_ENTRY`, and they mean different
+  things.** The name index and the new barcode index are told apart by the index
+  name MySQL puts in the message, so a duplicated code reports
+  `PRODUCT_BARCODE_EXISTS` rather than claiming the name is taken.
+- **"No barcode" had to stay unlimited.** MySQL lets a unique index hold many
+  nulls, which is exactly what a catalog full of uncoded products needs, so the
+  uniqueness is `(branch_id, barcode)` with null meaning "not coded yet". A
+  database-level check also rejects a code no scanner could have produced.
+- **Scanning lives in `ProductPicker`, not in `SalesView`.** The picker already
+  owns product lookup and `onSelect`, so putting the scanner there gives the sales
+  screen scanning for free, applies the same stock rules a clicked row applies,
+  and leaves one code path instead of two.
+- **The label `@page` rule is injected with the sheet, not written into
+  `globals.css`.** `@page` is global and cannot be scoped by class, so the report
+  sheet's A4-shaped rule would fight the label roll. The sheet renders the rule
+  from `LABEL_SIZE_MM` while it is mounted, which is also what makes the size a
+  genuine one-line change.
+- **The search box doubles as a scan target.** The products list matches a typed
+  name or an exact code, so the admin never has to switch mode to find a product
+  by its sticker.
+- **Scanning a receipt fills the search and opens the match.** On the refunds
+  screen the refund dialog opens itself; on the invoices screen the browser
+  navigates to the invoice. Both wait for the matching row rather than guessing
+  an id from the code.
 
 ---
 

@@ -1,0 +1,3 @@
+ALTER TABLE `erp_products` ADD `barcode` varchar(32);--> statement-breakpoint
+ALTER TABLE `erp_products` ADD CONSTRAINT `erp_products_branch_barcode_unique` UNIQUE(`branch_id`,`barcode`);--> statement-breakpoint
+ALTER TABLE `erp_products` ADD CONSTRAINT `erp_products_barcode_scannable` CHECK (`erp_products`.`barcode` is null or (char_length(`erp_products`.`barcode`) between 4 and 32 and `erp_products`.`barcode` regexp '^[A-Za-z0-9._/+-]+$'));

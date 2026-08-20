@@ -24,12 +24,14 @@ import { useFormDraft } from '@/lib/form-draft';
 import {
   adjustProductStock,
   createProduct,
+  generateProductBarcode,
   listAllProducts,
   listStockMovements,
   updateProduct,
   type Product,
 } from '../api/products-api';
 import { productQueryKeys } from '../query-keys';
+import { ProductLabelSheet } from './product-label-sheet';
 
 const reasonLabels: Record<string, string> = {
   opening_stock: 'رصيد افتتاحي', count_correction: 'تصحيح جرد', wastage: 'هالك',
@@ -69,6 +71,8 @@ export function ProductStockView() {
   const [price, setPrice] = useState('');
   const [cost, setCost] = useState('0');
   const [threshold, setThreshold] = useState('0');
+  const [barcode, setBarcode] = useState('');
+  const [labelling, setLabelling] = useState<Product | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [delta, setDelta] = useState('');
   const [reason, setReason] = useState<'count_correction' | 'wastage' | 'damage'>('count_correction');
@@ -90,20 +94,20 @@ export function ProductStockView() {
   const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listAllProducts(productParams), enabled: scopeReady });
   const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(queryClient, 'product');
-  const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setThreshold('0'); };
-  const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setThreshold(String(product.lowStockThreshold)); };
+  const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setThreshold('0'); setBarcode(''); };
+  const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setThreshold(String(product.lowStockThreshold)); setBarcode(product.barcode ?? ''); };
 
   /** A new product only: editing starts from a stored row. */
   const draft = useFormDraft(
     editing === null ? `product:${branchId ?? 'own'}` : null,
-    { name, description, price, cost, threshold },
+    { name, description, price, cost, threshold, barcode },
     name.trim() !== '' || description.trim() !== '' || price.trim() !== '',
   );
 
   const save = useMutation({
     mutationFn: () => editing
-      ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold) })
-      : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold) }),
+      ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold), barcode })
+      : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold), barcode }),
     onSuccess: async () => { clearProductForm(); setSuccessMessage('تم حفظ المنتج.'); await refresh(); },
   });
   const toggle = useMutation({
@@ -117,7 +121,16 @@ export function ProductStockView() {
     mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta: Number(delta), reason, ...(note.trim() ? { note: note.trim() } : {}) }),
     onSuccess: async () => { setAdjusting(null); setDelta(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); await refresh(); },
   });
-  const commandPending = save.isPending || toggle.isPending || adjust.isPending;
+  /**
+   * A product whose box already carries a supplier code keeps it and gets no
+   * sticker. Only a product with no code of its own is given one of ours, which
+   * is less printing and less sticking for the same scan at the till.
+   */
+  const generate = useMutation({
+    mutationFn: (product: Product) => generateProductBarcode(product.id, branchId === undefined ? {} : { branchId }),
+    onSuccess: async () => { setSuccessMessage('تم توليد الباركود.'); await refresh(); },
+  });
+  const commandPending = save.isPending || toggle.isPending || adjust.isPending || generate.isPending;
 
   return (
     <section className="space-y-6">
@@ -184,6 +197,7 @@ export function ProductStockView() {
                     setPrice(stored.price);
                     setCost(stored.cost);
                     setThreshold(stored.threshold);
+                    setBarcode(stored.barcode ?? '');
                   }}
                   onDiscard={draft.discard}
                 />
@@ -204,6 +218,10 @@ export function ProductStockView() {
                 <div className="space-y-1.5">
                   <Label htmlFor="product-cost">آخر تكلفة شراء</Label>
                   <Input id="product-cost" aria-label="آخر تكلفة شراء" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="product-barcode">الباركود</Label>
+                  <Input id="product-barcode" aria-label="الباركود" className="text-start" placeholder="امسح باركود العلبة أو اتركه فارغًا" disabled={commandPending} value={barcode} onChange={(event) => setBarcode(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="product-threshold">حد المخزون المنخفض</Label>
@@ -243,6 +261,7 @@ export function ProductStockView() {
                     <DataTable>
                       <THead>
                         <TH>المنتج</TH>
+                        <TH>الباركود</TH>
                         <TH numeric>السعر</TH>
                         <TH numeric>التكلفة</TH>
                         <TH numeric>الرصيد</TH>
@@ -259,12 +278,16 @@ export function ProductStockView() {
                                 ) : null}
                               </span>
                             </TD>
+                            <TD className="tabular text-muted">{product.barcode ?? '—'}</TD>
                             <TD numeric>{product.sellingPrice}</TD>
                             <TD numeric className="text-muted">{product.lastPurchaseCost}</TD>
                             <TD numeric className="font-medium">{product.quantity}</TD>
                             <TD>
                               <RowActions>
                                 <Button size="sm" disabled={commandPending} onClick={() => setAdjusting(product)}>تسوية</Button>
+                                {product.barcode
+                                  ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => setLabelling(product)}>طباعة ملصق</Button>
+                                  : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => beginEdit(product)}>تعديل</Button>
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => product.isActive ? setConfirmingToggle(product) : toggle.mutate(product)}>
                                   {product.isActive ? 'إيقاف' : 'تفعيل'}
@@ -279,6 +302,11 @@ export function ProductStockView() {
           </Card>
 
           {toggle.isError ? <FieldError>{errorText(toggle.error)}</FieldError> : null}
+          {generate.isError ? <FieldError>{errorText(generate.error)}</FieldError> : null}
+
+          {labelling ? (
+            <ProductLabelSheet products={[labelling]} onPrinted={() => setLabelling(null)} />
+          ) : null}
 
           {confirmingToggle ? <ConfirmDialog
             title="إيقاف المنتج"
@@ -348,6 +376,7 @@ export function ProductStockView() {
                     <DataTable>
                       <THead>
                         <TH>المنتج</TH>
+                        <TH>الباركود</TH>
                         <TH>السبب</TH>
                         <TH numeric>التغيير/الرصيد</TH>
                         <TH>المصدر</TH>

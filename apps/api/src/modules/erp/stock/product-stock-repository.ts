@@ -10,7 +10,7 @@ const productSelection = {
   id: erpProducts.id, branchId: erpProducts.branchId, name: erpProducts.name,
   description: erpProducts.description, sellingPrice: erpProducts.sellingPrice,
   lastPurchaseCost: erpProducts.lastPurchaseCost, lowStockThreshold: erpProducts.lowStockThreshold,
-  isActive: erpProducts.isActive, quantity: erpProductStocks.quantity,
+  barcode: erpProducts.barcode, isActive: erpProducts.isActive, quantity: erpProductStocks.quantity,
   createdAt: erpProducts.createdAt, updatedAt: erpProducts.updatedAt,
 };
 const scope = (id: number, branchId: number) => and(eq(erpProducts.id, id), eq(erpProducts.branchId, branchId));
@@ -44,10 +44,19 @@ export const createDrizzleProductStockRepository = (
       erpProductStocks, and(eq(erpProductStocks.productId, erpProducts.id), eq(erpProductStocks.branchId, erpProducts.branchId)),
     ).where(and(eq(erpProducts.branchId, branchId), eq(erpProducts.nameNormalized, nameNormalized))).limit(1))[0] as ProductStockRecord | undefined ?? null;
   },
+  async findByBarcode(branchId, barcode) {
+    return (await database.select(productSelection).from(erpProducts).innerJoin(
+      erpProductStocks, and(eq(erpProductStocks.productId, erpProducts.id), eq(erpProductStocks.branchId, erpProducts.branchId)),
+    ).where(and(eq(erpProducts.branchId, branchId), eq(erpProducts.barcode, barcode))).limit(1))[0] as ProductStockRecord | undefined ?? null;
+  },
   async list(branchId, query) {
     const filters = [eq(erpProducts.branchId, branchId)];
     if (query.isActive !== undefined) filters.push(eq(erpProducts.isActive, query.isActive));
-    if (query.search) filters.push(sql`locate(${query.search}, ${erpProducts.name}) > 0`);
+    // A search box that a scanner can also be fired into: the typed name or the
+    // exact code both find the product, so the admin never has to switch mode.
+    if (query.search) {
+      filters.push(sql`(locate(${query.search}, ${erpProducts.name}) > 0 or ${erpProducts.barcode} = ${query.search})`);
+    }
     if (query.lowStock) filters.push(sql`${erpProductStocks.quantity} <= ${erpProducts.lowStockThreshold}`);
     const where = and(...filters);
     const from = database.select(productSelection).from(erpProducts).innerJoin(
