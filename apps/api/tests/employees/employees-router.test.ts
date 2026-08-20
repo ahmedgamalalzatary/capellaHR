@@ -156,6 +156,8 @@ describe('employee router', () => {
     expect((await request(app).get('/api/v1/employees/1/deactivation-preview')).body.data)
       .toMatchObject({ unpaidInstallmentCount: 3, amountOwed: '1000.00', canZeroSalary: true });
     expect((await request(app).post('/api/v1/employees/1/deactivate').send({
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all',
       negativeBalanceDecision: 'record_debt',
       expectedUnpaidInstallmentCount: 3,
@@ -179,6 +181,8 @@ describe('employee router', () => {
     });
 
     const response = await request(app).post('/api/v1/employees/1/deactivate').send({
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'ignore_debt',
       expectedUnpaidInstallmentCount: 0,
       expectedUnpaidAdvanceAmount: '0.00',
@@ -201,6 +205,8 @@ describe('employee router', () => {
     });
 
     const response = await request(app).post('/api/v1/employees/1/deactivate').send({
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all',
       expectedUnpaidInstallmentCount: 3,
       expectedUnpaidAdvanceAmount: '3000.00',
@@ -210,5 +216,58 @@ describe('employee router', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('EMPLOYEE_NEGATIVE_BALANCE_DECISION_REQUIRED');
+  });
+
+  it('lists an employee outstanding debts', async () => {
+    const listDebts = vi.fn(async () => [
+      { id: 7, payrollMonth: '2026-08-01', amount: '450.00', createdAt: new Date('2026-08-19T12:00:00.000Z'), settledAt: null },
+    ]);
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: { listDebts } as unknown as EmployeeService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).get('/api/v1/employees/3/debts');
+
+    expect(response.status).toBe(200);
+    expect(listDebts).toHaveBeenCalledWith(3);
+    expect(response.body.data).toEqual([
+      { id: 7, payrollMonth: '2026-08-01', amount: '450.00', createdAt: '2026-08-19T12:00:00.000Z', settledAt: null },
+    ]);
+  });
+
+  it('marks an outstanding debt as paid', async () => {
+    const settleDebt = vi.fn(async () => ({ id: 7, payrollMonth: '2026-08-01', amount: '450.00', createdAt: new Date('2026-08-19T12:00:00.000Z'), settledAt: new Date('2026-08-20T09:00:00.000Z') }));
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: { settleDebt } as unknown as EmployeeService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).post('/api/v1/employees/3/debts/7/settle');
+
+    expect(response.status).toBe(200);
+    expect(settleDebt).toHaveBeenCalledWith(3, 7);
+    expect(response.body.data.settledAt).toBe('2026-08-20T09:00:00.000Z');
+  });
+
+  it('reports an already-settled debt as a conflict', async () => {
+    const settleDebt = vi.fn(() => { throw new EmployeeError('EMPLOYEE_DEBT_ALREADY_SETTLED', 'تم سداد هذه المديونية بالفعل'); });
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: { settleDebt } as unknown as EmployeeService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).post('/api/v1/employees/3/debts/7/settle');
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('EMPLOYEE_DEBT_ALREADY_SETTLED');
+  });
+
+  it('reports a missing debt as not found', async () => {
+    const settleDebt = vi.fn(() => { throw new EmployeeError('EMPLOYEE_DEBT_NOT_FOUND', 'المديونية غير موجودة'); });
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: { settleDebt } as unknown as EmployeeService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).post('/api/v1/employees/3/debts/7/settle');
+
+    expect(response.status).toBe(404);
   });
 });

@@ -255,3 +255,41 @@ describe('deactivation decision tree', () => {
     expect(debts).toEqual([]);
   });
 });
+
+describe('deactivation settlement figures', () => {
+  it('reports what the settlement did when the shortfall becomes a debt', async () => {
+    // 1500 earned, 3000 of advances pulled onto the month, leaving 1000 short after the 500
+    // already charged this month, and that shortfall is recorded as a debt.
+    await expect(lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      negativeBalanceDecision: 'record_debt',
+    }), context)).resolves.toEqual({
+      netSalaryBeforeSettlement: '1500.00',
+      advancesRecovered: '3000.00',
+      writeOffAmount: '0.00',
+      forfeitedSalaryAmount: '0.00',
+      cashCollectedAmount: '0.00',
+      debtRecordedAmount: '1000.00',
+      finalNetSalary: '-1000.00',
+    });
+  });
+
+  it('reports the write-off when the advance debt is forgiven', async () => {
+    await expect(lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      advanceDecision: 'ignore_debt',
+    }), context)).resolves.toMatchObject({
+      writeOffAmount: '3000.00',
+      debtRecordedAmount: '0.00',
+      finalNetSalary: '2000.00',
+    });
+  });
+
+  it('reports the cash collected when the shortfall is paid at the counter', async () => {
+    await expect(lifecycle().prepareEmployeeDeactivation(1, at, decide({
+      negativeBalanceDecision: 'collect_cash',
+    }), context)).resolves.toMatchObject({
+      cashCollectedAmount: '1000.00',
+      debtRecordedAmount: '0.00',
+      finalNetSalary: '0.00',
+    });
+  });
+});

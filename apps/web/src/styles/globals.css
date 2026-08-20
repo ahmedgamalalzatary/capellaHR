@@ -56,3 +56,27 @@
     }
   }
 }
+
+/*
+ * Printing the settlement statement. The whole admin shell is hidden rather than the statement
+ * being opened in a new window, so what prints is exactly the figures on screen and nothing can
+ * drift between the two.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .print-statement,
+  .print-statement * {
+    visibility: visible;
+  }
+
+  .print-statement {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    width: 100%;
+    padding: 16mm;
+  }
+}

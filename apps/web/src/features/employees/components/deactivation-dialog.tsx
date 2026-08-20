@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Modal } from '@capella/ui';
+import { Button, Field, Input, Modal } from '@capella/ui';
 import { useState } from 'react';
 
 import type {
@@ -25,8 +25,12 @@ export interface DeactivationDialogProps {
   onConfirm: (
     advanceDecision: AdvanceDecision,
     negativeBalanceDecision: NegativeBalanceDecision | undefined,
+    departure: EmployeeDeparture,
   ) => void;
 }
+
+/** Why the employee left and when, collected before any money question is asked. */
+export interface EmployeeDeparture { reason: string; lastWorkingDay: string }
 
 const owesMoney = (preview: EmployeeDeactivationPreview) => Number(preview.amountOwed) > 0;
 
@@ -38,13 +42,23 @@ export function DeactivationDialog({
   onConfirm,
 }: DeactivationDialogProps) {
   const [stage, setStage] = useState<Stage>('confirm');
+  const [reason, setReason] = useState('');
+  const [lastWorkingDay, setLastWorkingDay] = useState('');
   const hasAdvances = preview.unpaidInstallmentCount > 0;
+  const departure = { reason: reason.trim(), lastWorkingDay };
+  // Gathered on the first stage so the admin cannot reach the money decisions, act on them, and
+  // only then be stopped by a missing reason.
+  const departureGiven = departure.reason.length > 0 && lastWorkingDay.length > 0;
+  const confirm = (
+    advanceDecision: AdvanceDecision,
+    negativeBalanceDecision: NegativeBalanceDecision | undefined,
+  ) => onConfirm(advanceDecision, negativeBalanceDecision, departure);
 
   // Summing advances is the only decision that can leave a shortfall, so it is also the decision
   // implied when there are no advances at all and the salary is negative for other reasons.
   const afterSumAll = () => {
     if (owesMoney(preview)) setStage('shortfall');
-    else onConfirm('sum_all', undefined);
+    else confirm('sum_all', undefined);
   };
 
   const title = stage === 'confirm'
@@ -64,10 +78,28 @@ export function DeactivationDialog({
           <p className="text-[13px] text-muted">
             صافي راتب الشهر الحالي: <span className="tabular">{preview.currentNetSalary}</span> ج
           </p>
+          <Field label="سبب ترك العمل" htmlFor="deactivation-reason" required>
+            <Input
+              id="deactivation-reason"
+              value={reason}
+              maxLength={500}
+              disabled={pending}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </Field>
+          <Field label="آخر يوم عمل" htmlFor="deactivation-last-working-day" required>
+            <Input
+              id="deactivation-last-working-day"
+              type="date"
+              value={lastWorkingDay}
+              disabled={pending}
+              onChange={(event) => setLastWorkingDay(event.target.value)}
+            />
+          </Field>
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
-              disabled={pending}
+              disabled={pending || !departureGiven}
               onClick={() => {
                 if (hasAdvances) setStage('advance');
                 else afterSumAll();
@@ -99,7 +131,7 @@ export function DeactivationDialog({
                 variant="secondary"
                 size="sm"
                 disabled={pending}
-                onClick={() => onConfirm('zero_salary', undefined)}
+                onClick={() => confirm('zero_salary', undefined)}
               >
                 تصفية الراتب مقابل المديونية
               </Button>
@@ -108,7 +140,7 @@ export function DeactivationDialog({
               variant="secondary"
               size="sm"
               disabled={pending}
-              onClick={() => onConfirm('ignore_debt', undefined)}
+              onClick={() => confirm('ignore_debt', undefined)}
             >
               إلغاء المديونية وصرف الراتب كاملًا
             </Button>
@@ -129,7 +161,7 @@ export function DeactivationDialog({
             <Button
               size="sm"
               disabled={pending}
-              onClick={() => onConfirm('sum_all', 'collect_cash')}
+              onClick={() => confirm('sum_all', 'collect_cash')}
             >
               تم استلام المبلغ نقدًا
             </Button>
@@ -137,7 +169,7 @@ export function DeactivationDialog({
               variant="secondary"
               size="sm"
               disabled={pending}
-              onClick={() => onConfirm('sum_all', 'record_debt')}
+              onClick={() => confirm('sum_all', 'record_debt')}
             >
               تسجيل المبلغ كمديونية على الموظف
             </Button>

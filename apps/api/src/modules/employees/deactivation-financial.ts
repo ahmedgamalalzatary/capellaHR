@@ -6,7 +6,7 @@ import {
   type PayrollService,
 } from '../payroll/index.js';
 import type { DeactivationAdjustmentReason } from '../advances/advances-service.js';
-import { EmployeeError, type EmployeeDeactivationDecisions } from './employees-service.js';
+import { EmployeeError, type EmployeeDeactivationDecisions, type EmployeeSettlementFigures } from './employees-service.js';
 
 const cents = (amount: string) => {
   const negative = amount.startsWith('-');
@@ -155,12 +155,25 @@ export const createEmployeeFinancialLifecycle = (
       )) throw previewChanged();
 
       const projectedCents = cents(projected);
+      const figures = {
+        // Acceleration has already pulled the whole advance debt onto this month, so the salary
+        // the employee had actually earned is recovered by adding back only what it pulled in.
+        netSalaryBeforeSettlement: formatCents(
+          projectedCents + (cents(impact.unpaidAdvanceAmount) - cents(impact.currentMonthAdvanceAmount)),
+        ),
+        advancesRecovered: impact.unpaidAdvanceAmount,
+        writeOffAmount: '0.00',
+        forfeitedSalaryAmount: '0.00',
+        cashCollectedAmount: '0.00',
+        debtRecordedAmount: '0.00',
+      };
       if (input.advanceDecision === 'ignore_debt') {
         // The accelerated installments stay charged; an equal write-off restores the salary, so
         // the books still show what was owed and what the company absorbed.
         await settlements.recordAdjustment(
           employeeId, at, 'write_off', impact.unpaidAdvanceAmount, context,
         );
+        figures.writeOffAmount = impact.unpaidAdvanceAmount;
       } else if (input.advanceDecision === 'zero_salary') {
         // Acceleration has already moved the debt onto this month, so the pre-decision salary is
         // recovered by adding back what it pulled in rather than re-querying payroll.
@@ -173,10 +186,12 @@ export const createEmployeeFinancialLifecycle = (
           await settlements.recordAdjustment(
             employeeId, at, 'write_off', formatCents(-projectedCents), context,
           );
+          figures.writeOffAmount = formatCents(-projectedCents);
         } else if (projectedCents > 0n) {
           await settlements.recordAdjustment(
             employeeId, at, 'forfeited_salary', formatCents(-projectedCents), context,
           );
+          figures.forfeitedSalaryAmount = formatCents(projectedCents);
         }
       } else if (projectedCents < 0n) {
         if (input.negativeBalanceDecision === undefined) throw negativeBalanceDecisionRequired();
@@ -184,12 +199,14 @@ export const createEmployeeFinancialLifecycle = (
           await settlements.recordAdjustment(
             employeeId, at, 'cash_payment', formatCents(-projectedCents), context,
           );
+          figures.cashCollectedAmount = formatCents(-projectedCents);
         } else {
           // Deliberately not an adjustment: the month keeps its negative net as the record of
           // the shortfall, and the debt row is what survives the employee leaving.
           await settlements.recordOutstandingDebt(
             employeeId, at, formatCents(-projectedCents), context,
           );
+          figures.debtRecordedAmount = formatCents(-projectedCents);
         }
       }
 
@@ -197,13 +214,14 @@ export const createEmployeeFinancialLifecycle = (
         || (input.advanceDecision === 'sum_all' && input.negativeBalanceDecision === 'collect_cash' && projectedCents < 0n)
         ? '0.00'
         : null;
-      if (expectedFinal !== null) {
-        const settled = await payroll.previewInContext(employeeId, month, attendance, context);
-        if (settled.kind !== 'success') throw payrollBlocked();
-        if (settled.payroll.netSalary !== expectedFinal) {
-          throw new Error(`Deactivation settlement left ${settled.payroll.netSalary} instead of ${expectedFinal}`);
-        }
+      // Read unconditionally now, because the frozen statement must carry the figure payroll
+      // actually settled at rather than one re-derived from whichever branch was taken.
+      const settled = await payroll.previewInContext(employeeId, month, attendance, context);
+      if (settled.kind !== 'success') throw payrollBlocked();
+      if (expectedFinal !== null && settled.payroll.netSalary !== expectedFinal) {
+        throw new Error(`Deactivation settlement left ${settled.payroll.netSalary} instead of ${expectedFinal}`);
       }
+      return { ...figures, finalNetSalary: settled.payroll.netSalary } satisfies EmployeeSettlementFigures;
     },
   };
 };

@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Power, PowerOff, Search, Trash2, UserRound } from 'lucide-react';
+import { Pencil, Plus, Power, PowerOff, Search, Trash2, UserRound, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { useForm, type FieldError } from 'react-hook-form';
 
@@ -11,7 +11,8 @@ import { Button, Card, CardContent, ConfirmDialog, EmptyState, Field, Input } fr
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
-import { DeactivationDialog } from './deactivation-dialog';
+import { DeactivationDialog, type EmployeeDeparture } from './deactivation-dialog';
+import { EmployeeSettlementPanel } from './employee-settlement-panel';
 import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
 import {
@@ -340,6 +341,7 @@ export function EmployeesView() {
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [creating, setCreating] = useState(false);
+  const [settling, setSettling] = useState<Employee | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const employeesQuery = useQuery({
@@ -389,12 +391,13 @@ export function EmployeesView() {
   });
 
   const deactivation = useMutation({
-    mutationFn: ({ employee, preview, advanceDecision, negativeBalanceDecision }: {
+    mutationFn: ({ employee, preview, advanceDecision, negativeBalanceDecision, departure }: {
       employee: Employee;
       preview: EmployeeDeactivationPreview;
       advanceDecision: AdvanceDecision;
       negativeBalanceDecision: NegativeBalanceDecision | undefined;
-    }) => deactivateEmployee(employee.id, advanceDecision, negativeBalanceDecision, preview),
+      departure: EmployeeDeparture;
+    }) => deactivateEmployee(employee.id, advanceDecision, negativeBalanceDecision, preview, departure),
     onSuccess: async () => {
       setDeactivating(null);
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
@@ -516,12 +519,17 @@ export function EmployeesView() {
           preview={deactivating.preview}
           pending={deactivation.isPending}
           onCancel={() => setDeactivating(null)}
-          onConfirm={(advanceDecision, negativeBalanceDecision) => deactivation.mutate({
+          onConfirm={(advanceDecision, negativeBalanceDecision, departure) => deactivation.mutate({
             ...deactivating,
             advanceDecision,
             negativeBalanceDecision,
+            departure,
           })}
         />
+      ) : null}
+
+      {settling ? (
+        <EmployeeSettlementPanel employee={settling} onClose={() => setSettling(null)} />
       ) : null}
 
       <Card>
@@ -604,6 +612,14 @@ export function EmployeesView() {
                             ? <PowerOff className="size-4" aria-hidden />
                             : <Power className="size-4" aria-hidden />}
                           {employee.employmentStatus === 'active' ? 'تعطيل' : 'تفعيل'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSettling(employee)}
+                        >
+                          <Wallet className="size-4" aria-hidden />
+                          التسوية
                         </Button>
                         <Button
                           variant="ghost"

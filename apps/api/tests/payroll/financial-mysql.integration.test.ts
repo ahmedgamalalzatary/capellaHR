@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { employeeDeactivationAdjustments, employeeEmploymentPeriods, employeeOutstandingDebts, employeePendingDeactivations } from '@capella/database/schema';
+import { employeeDeactivationAdjustments, employeeEmploymentPeriods, employeeOutstandingDebts, employeePendingDeactivations, employeeTerminations } from '@capella/database/schema';
 import {
   advanceInstallments,
   advances,
@@ -57,6 +57,7 @@ const clear = async () => {
   await database.delete(employeeDeactivationAdjustments);
   await database.delete(employeeOutstandingDebts);
   await database.delete(employeePendingDeactivations);
+  await database.delete(employeeTerminations);
   await database.delete(attendanceDailyRecords);
   await database.delete(deviceHistory);
   await database.delete(devices);

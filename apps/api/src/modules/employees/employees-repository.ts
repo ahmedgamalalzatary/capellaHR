@@ -1,8 +1,8 @@
 import { type createDatabase } from '@capella/database';
-import { authSessions, branchCashierRoster, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePendingDeactivations, employeePhoneReservations, employees } from '@capella/database/schema';
-import { and, asc, count, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
-import { writeAudit } from '../audit/index.js';
-import type { EmployeeDeactivationDecisions, EmployeeImages, EmployeeRecord, EmployeeRepository, ImageKind } from './employees-service.js';
+import { authSessions, branchCashierRoster, branches, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeeOutstandingDebts, employeePendingDeactivations, employeePhoneReservations, employeeTerminations, employees } from '@capella/database/schema';
+import { and, asc, count, desc, eq, isNull, max, ne, or, sql } from 'drizzle-orm';
+import { currentAuditActor, writeAudit } from '../audit/index.js';
+import type { EmployeeDeactivationDecisions, EmployeeImages, EmployeeRecord, EmployeeRepository, EmployeeSettlementFigures, ImageKind } from './employees-service.js';
 type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 export type EmployeeBeforeDurationChange = (
@@ -26,11 +26,29 @@ const commitDeactivation = async (
   decisions: EmployeeDeactivationDecisions,
   prepareFinancials?: (
     id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: Transaction,
-  ) => Promise<void>,
+  ) => Promise<EmployeeSettlementFigures>,
 ) => {
   const id = current.id;
   const before = await hydrate(tx, current);
-  if (prepareFinancials) await prepareFinancials(id, at, decisions, tx);
+  const figures = prepareFinancials ? await prepareFinancials(id, at, decisions, tx) : null;
+  // Written even without a financial lifecycle: why someone left is a fact about employment, not
+  // about payroll, and the HR-only edition must not lose it. Zeroes then say "nothing settled".
+  const actor = currentAuditActor();
+  await tx.insert(employeeTerminations).values({
+    employeeId: id,
+    reason: decisions.reason,
+    lastWorkingDay: decisions.lastWorkingDay,
+    terminatedByType: actor.type,
+    terminatedByIdentifier: actor.identifier,
+    netSalaryBeforeSettlement: figures?.netSalaryBeforeSettlement ?? '0.00',
+    advancesRecovered: figures?.advancesRecovered ?? '0.00',
+    writeOffAmount: figures?.writeOffAmount ?? '0.00',
+    forfeitedSalaryAmount: figures?.forfeitedSalaryAmount ?? '0.00',
+    cashCollectedAmount: figures?.cashCollectedAmount ?? '0.00',
+    debtRecordedAmount: figures?.debtRecordedAmount ?? '0.00',
+    finalNetSalary: figures?.finalNetSalary ?? '0.00',
+    createdAt: at,
+  });
   await tx.update(employeeEmploymentPeriods).set({ activeTo: at })
     .where(and(eq(employeeEmploymentPeriods.employeeId, id), isNull(employeeEmploymentPeriods.activeTo)));
   // Inactive employees are only filtered out of session lookups, so without bumping the
@@ -54,6 +72,8 @@ const commitDeactivation = async (
       ...record,
       advanceDecision: decisions.advanceDecision,
       negativeBalanceDecision: decisions.negativeBalanceDecision ?? null,
+      reason: decisions.reason,
+      lastWorkingDay: decisions.lastWorkingDay,
     },
     relatedIds: { branchId: current.branchId }, createdAt: at,
   });
@@ -248,12 +268,16 @@ export const createDrizzleEmployeeRepository = (
           employeeId: id,
           advanceDecision: input.advanceDecision,
           negativeBalanceDecision: input.negativeBalanceDecision ?? null,
+          reason: input.reason,
+          lastWorkingDay: input.lastWorkingDay,
           requestedAt: at,
           createdAt: at,
         }).onDuplicateKeyUpdate({
           set: {
             advanceDecision: input.advanceDecision,
             negativeBalanceDecision: input.negativeBalanceDecision ?? null,
+            reason: input.reason,
+            lastWorkingDay: input.lastWorkingDay,
             requestedAt: at,
           },
         });
@@ -262,6 +286,8 @@ export const createDrizzleEmployeeRepository = (
           afterState: {
             advanceDecision: input.advanceDecision,
             negativeBalanceDecision: input.negativeBalanceDecision ?? null,
+            reason: input.reason,
+            lastWorkingDay: input.lastWorkingDay,
           },
           relatedIds: { branchId: current.branchId }, createdAt: at,
         });
@@ -284,6 +310,8 @@ export const createDrizzleEmployeeRepository = (
     }
     const decisions: EmployeeDeactivationDecisions = {
       advanceDecision: pending.advanceDecision,
+      reason: pending.reason,
+      lastWorkingDay: pending.lastWorkingDay,
       ...(pending.negativeBalanceDecision === null
         ? {}
         : { negativeBalanceDecision: pending.negativeBalanceDecision }),
@@ -311,6 +339,60 @@ export const createDrizzleEmployeeRepository = (
     await tx.delete(employeePendingDeactivations)
       .where(eq(employeePendingDeactivations.employeeId, id));
     return true;
+  },
+  async listDebts(employeeId) {
+    return database.select({
+      id: employeeOutstandingDebts.id,
+      payrollMonth: employeeOutstandingDebts.payrollMonth,
+      amount: employeeOutstandingDebts.amount,
+      createdAt: employeeOutstandingDebts.createdAt,
+      settledAt: employeeOutstandingDebts.settledAt,
+    }).from(employeeOutstandingDebts)
+      .where(eq(employeeOutstandingDebts.employeeId, employeeId))
+      .orderBy(desc(employeeOutstandingDebts.payrollMonth));
+  },
+  settleDebt(employeeId, debtId) {
+    return database.transaction(async (tx) => {
+      // Locked and re-read inside the transaction so two admins pressing "paid" at once cannot
+      // both stamp the row and record two settlements of the same money.
+      const current = (await tx.select().from(employeeOutstandingDebts)
+        .where(and(
+          eq(employeeOutstandingDebts.id, debtId),
+          eq(employeeOutstandingDebts.employeeId, employeeId),
+        )).for('update').limit(1))[0];
+      if (!current) return { kind: 'not_found' as const };
+      if (current.settledAt !== null) return { kind: 'already_settled' as const };
+      const settledAt = now();
+      await tx.update(employeeOutstandingDebts).set({ settledAt })
+        .where(eq(employeeOutstandingDebts.id, debtId));
+      await writeAudit(tx, {
+        module: 'employees', action: 'debt_settle',
+        entityType: 'employee_outstanding_debt', entityId: debtId,
+        beforeState: { settledAt: null, amount: current.amount },
+        afterState: { settledAt, amount: current.amount },
+        relatedIds: { employeeId }, createdAt: settledAt,
+      });
+      return {
+        kind: 'success' as const,
+        debt: {
+          id: current.id,
+          payrollMonth: current.payrollMonth,
+          amount: current.amount,
+          createdAt: current.createdAt,
+          settledAt,
+        },
+      };
+    });
+  },
+  async findLatestTermination(employeeId) {
+    const row = (await database.select().from(employeeTerminations)
+      .where(eq(employeeTerminations.employeeId, employeeId))
+      .orderBy(desc(employeeTerminations.createdAt), desc(employeeTerminations.id))
+      .limit(1))[0];
+    if (!row) return null;
+    const { id, employeeId: _employeeId, terminatedByType, terminatedByIdentifier, createdAt, ...figures } = row;
+    void id; void _employeeId; void terminatedByType; void terminatedByIdentifier;
+    return { ...figures, terminatedAt: createdAt };
   },
   activate(id) {
     return database.transaction(async (tx) => {

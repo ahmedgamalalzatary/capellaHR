@@ -63,6 +63,8 @@ describe('employee contracts', () => {
 
   it('carries the advance decision and the negative-balance decision for deactivation', () => {
     const decisions = {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all',
       negativeBalanceDecision: 'record_debt',
       expectedUnpaidInstallmentCount: 3,
@@ -78,6 +80,8 @@ describe('employee contracts', () => {
     // Both terminate the flow at modal 2: the balance is settled by the decision itself, so
     // there is no shortfall left for modal 3 to resolve.
     expect(employeeDeactivationSchema.parse({
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision,
       expectedUnpaidInstallmentCount: 3,
       expectedUnpaidAdvanceAmount: '3000.00',
@@ -88,6 +92,8 @@ describe('employee contracts', () => {
 
   it('rejects decisions that are no longer part of the deactivation flow', () => {
     const base = {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       expectedUnpaidInstallmentCount: 0,
       expectedUnpaidAdvanceAmount: '0.00',
       expectedProjectedNetSalary: '0.00',
@@ -100,6 +106,23 @@ describe('employee contracts', () => {
     expect(employeeDeactivationSchema.safeParse({
       ...base, advanceDecision: 'sum_all', negativeBalanceDecision: 'paid',
     }).success).toBe(false);
+  });
+
+  it('requires a reason and a real last working day for a deactivation', () => {
+    const base = {
+      advanceDecision: 'zero_salary' as const,
+      expectedUnpaidInstallmentCount: 0,
+      expectedUnpaidAdvanceAmount: '0.00',
+      expectedProjectedNetSalary: '0.00',
+      expectedAmountOwed: '0.00',
+    };
+    expect(employeeDeactivationSchema.safeParse({ ...base, lastWorkingDay: '2026-08-19' }).success).toBe(false);
+    expect(employeeDeactivationSchema.safeParse({ ...base, reason: '   ', lastWorkingDay: '2026-08-19' }).success).toBe(false);
+    expect(employeeDeactivationSchema.safeParse({ ...base, reason: 'استقالة' }).success).toBe(false);
+    // A date the calendar does not have must not slip through the shape check.
+    expect(employeeDeactivationSchema.safeParse({ ...base, reason: 'استقالة', lastWorkingDay: '2026-02-31' }).success).toBe(false);
+    expect(employeeDeactivationSchema.safeParse({ ...base, reason: '  استقالة  ', lastWorkingDay: '2026-08-19' }))
+      .toMatchObject({ success: true, data: { reason: 'استقالة' } });
   });
 
   it('rejects filters outside safe MySQL and pagination ranges', () => {

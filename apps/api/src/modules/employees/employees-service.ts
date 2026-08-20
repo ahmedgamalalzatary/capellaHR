@@ -6,6 +6,13 @@ export type EmployeeImages = Partial<Record<ImageKind, ImageMetadata>>;
 export type EmployeeRecord = Omit<CreateEmployeeFields, 'pin'> & { id: number; employeeCode: number; pinHash: string; credentialVersion: number; employmentStatus: 'active' | 'inactive'; images: EmployeeImages; deletedAt: Date | null; createdAt: Date; updatedAt: Date };
 export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion'>;
 export type EmployeeTransactionContext = unknown;
+/**
+ * Money the employee still owed when they left. `settledAt` is stamped when an admin records
+ * that they came back and paid; the row is never deleted, so the history of what was owed
+ * survives the payment.
+ */
+export type EmployeeOutstandingDebt = { id: number; payrollMonth: string; amount: string; createdAt: Date; settledAt: Date | null };
+type EmployeeDebtSettleResult = { kind: 'success'; debt: EmployeeOutstandingDebt } | { kind: 'not_found' } | { kind: 'already_settled' };
 type EmployeeDeleteResult = 'deleted' | 'not_found' | 'checked_in';
 type EmployeeUpdateResult = { record: EmployeeRecord; replacedImages: Partial<EmployeeImages> } | 'branch_not_found' | 'checked_in';
 export type EmployeeDeactivationPreview = { unpaidInstallmentCount: number; unpaidAdvanceAmount: string; currentNetSalary: string; projectedNetSalary: string; amountOwed: string; canZeroSalary: boolean };
@@ -16,6 +23,8 @@ export type EmployeeDeactivationPreview = { unpaidInstallmentCount: number; unpa
  */
 export type EmployeeDeactivationDecisions = {
   advanceDecision: EmployeeDeactivationInput['advanceDecision'];
+  reason: string;
+  lastWorkingDay: string;
   negativeBalanceDecision?: EmployeeDeactivationInput['negativeBalanceDecision'];
   expected?: {
     unpaidInstallmentCount: number;
@@ -26,6 +35,8 @@ export type EmployeeDeactivationDecisions = {
 };
 export const toDeactivationDecisions = (input: EmployeeDeactivationInput): EmployeeDeactivationDecisions => ({
   advanceDecision: input.advanceDecision,
+  reason: input.reason,
+  lastWorkingDay: input.lastWorkingDay,
   ...(input.negativeBalanceDecision === undefined ? {} : { negativeBalanceDecision: input.negativeBalanceDecision }),
   expected: {
     unpaidInstallmentCount: input.expectedUnpaidInstallmentCount,
@@ -34,10 +45,37 @@ export const toDeactivationDecisions = (input: EmployeeDeactivationInput): Emplo
     amountOwed: input.expectedAmountOwed,
   },
 });
+/**
+ * What the settlement actually did, frozen onto the termination record so the statement handed
+ * to the employee reprints the same numbers forever, after live payroll has moved on.
+ */
+export type EmployeeSettlementFigures = {
+  netSalaryBeforeSettlement: string;
+  advancesRecovered: string;
+  writeOffAmount: string;
+  forfeitedSalaryAmount: string;
+  cashCollectedAmount: string;
+  debtRecordedAmount: string;
+  finalNetSalary: string;
+};
+/** The frozen termination record, as stored. */
+export type EmployeeTerminationRecord = EmployeeSettlementFigures & {
+  reason: string;
+  lastWorkingDay: string;
+  terminatedAt: Date;
+};
+/**
+ * Work still pointing at the employee that a departure would strand. Optional on purpose: the
+ * modules that can answer it (bookings, the service queue) exist only in the ERP editions, so
+ * where they are absent there is by definition nothing to strand.
+ */
+export type EmployeeOpenWorkCapability = {
+  countOpenWork(employeeId: number): Promise<{ futureBookings: number; openQueueTickets: number }>;
+};
 export type EmployeeFinancialLifecycle = {
   prepareEmployeeDeletion(id: number, deletedAt: Date, context?: EmployeeTransactionContext): Promise<void>;
   previewEmployeeDeactivation?(id: number): Promise<EmployeeDeactivationPreview>;
-  prepareEmployeeDeactivation?(id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext): Promise<void>;
+  prepareEmployeeDeactivation?(id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext): Promise<EmployeeSettlementFigures>;
 };
 export interface EmployeeRepository {
   create(input: Omit<CreateEmployeeFields, 'pin'> & { pinHash: string; images: EmployeeImages }): Promise<EmployeeRecord | 'branch_not_found'>;
@@ -49,15 +87,19 @@ export interface EmployeeRepository {
   update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<EmployeeUpdateResult | null>;
   softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, cleanupDevices?: (id: number, context: EmployeeTransactionContext) => Promise<void>, prepareFinancials?: (id: number, deletedAt: Date, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeDeleteResult>;
   previewDeactivation(id: number): Promise<{ kind: 'success' } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
-  deactivate(id: number, decisions: EmployeeDeactivationDecisions, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<void>, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<{ kind: 'success' | 'pending'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
+  deactivate(id: number, decisions: EmployeeDeactivationDecisions, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<EmployeeSettlementFigures>, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<{ kind: 'success' | 'pending'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
   /** Runs the deactivation a checked-in employee deferred, once their session closes. */
-  applyPendingDeactivation(id: number, at: Date, context: EmployeeTransactionContext, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<void>): Promise<boolean>;
+  applyPendingDeactivation(id: number, at: Date, context: EmployeeTransactionContext, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<EmployeeSettlementFigures>): Promise<boolean>;
   activate(id: number): Promise<{ kind: 'success'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_active' }>;
+  listDebts(employeeId: number): Promise<EmployeeOutstandingDebt[]>;
+  settleDebt(employeeId: number, debtId: number): Promise<EmployeeDebtSettleResult>;
+  /** The most recent departure, since a rehired employee can leave more than once. */
+  findLatestTermination(employeeId: number): Promise<EmployeeTerminationRecord | null>;
 }
-export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' | 'EMPLOYEE_FINANCIALS_UNAVAILABLE' | 'EMPLOYEE_ALREADY_ACTIVE' | 'EMPLOYEE_ALREADY_INACTIVE' | 'EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED' | 'EMPLOYEE_PAYROLL_FINALIZED' | 'EMPLOYEE_PAYROLL_BLOCKED' | 'EMPLOYEE_NEGATIVE_BALANCE_DECISION_REQUIRED' | 'EMPLOYEE_ZERO_SALARY_NOT_ALLOWED', message: string) { super(message); } }
+export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' | 'EMPLOYEE_FINANCIALS_UNAVAILABLE' | 'EMPLOYEE_ALREADY_ACTIVE' | 'EMPLOYEE_ALREADY_INACTIVE' | 'EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED' | 'EMPLOYEE_PAYROLL_FINALIZED' | 'EMPLOYEE_PAYROLL_BLOCKED' | 'EMPLOYEE_NEGATIVE_BALANCE_DECISION_REQUIRED' | 'EMPLOYEE_ZERO_SALARY_NOT_ALLOWED' | 'EMPLOYEE_DEBT_NOT_FOUND' | 'EMPLOYEE_DEBT_ALREADY_SETTLED' | 'EMPLOYEE_NOT_TERMINATED' | 'EMPLOYEE_HAS_OPEN_WORK', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: EmployeeFinancialLifecycle) => ({
+export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: EmployeeFinancialLifecycle, openWork?: EmployeeOpenWorkCapability) => ({
   async create(input: CreateEmployeeFields & { images: EmployeeImages }) {
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
@@ -130,6 +172,17 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
     // Fail closed like `remove`: without attendance a checked-in employee would be deactivated
     // mid-shift instead of being deferred to check-out.
     if (!attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
+    // Checked before anything is written, so the admin is told to reassign the work first rather
+    // than discovering it after the employee's credentials have already been revoked.
+    if (openWork) {
+      const { futureBookings, openQueueTickets } = await openWork.countOpenWork(id);
+      if (futureBookings > 0 || openQueueTickets > 0) {
+        throw new EmployeeError(
+          'EMPLOYEE_HAS_OPEN_WORK',
+          `لا يمكن تعطيل الموظف قبل نقل ${futureBookings} حجز و ${openQueueTickets} دور مفتوح إلى موظف آخر`,
+        );
+      }
+    }
     const prepareFinancials = financialLifecycle?.prepareEmployeeDeactivation
       ? (employeeId: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => financialLifecycle.prepareEmployeeDeactivation!(employeeId, at, decisions, context)
       : undefined;
@@ -148,6 +201,26 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
       ? (employeeId: number, instant: Date, decisions: EmployeeDeactivationDecisions, transaction: EmployeeTransactionContext) => financialLifecycle.prepareEmployeeDeactivation!(employeeId, instant, decisions, transaction)
       : undefined;
     return repository.applyPendingDeactivation(id, at, context, prepareFinancials);
+  },
+  async listDebts(id: number) {
+    // Deliberately reuses `get`, so a debt list is never returned for an employee who is gone.
+    await this.get(id);
+    return repository.listDebts(id);
+  },
+  async settleDebt(id: number, debtId: number) {
+    const result = await repository.settleDebt(id, debtId);
+    if (result.kind === 'not_found') throw new EmployeeError('EMPLOYEE_DEBT_NOT_FOUND', 'المديونية غير موجودة');
+    if (result.kind === 'already_settled') throw new EmployeeError('EMPLOYEE_DEBT_ALREADY_SETTLED', 'تم سداد هذه المديونية بالفعل');
+    return result.debt;
+  },
+  async getSettlementStatement(id: number) {
+    const employee = await this.get(id);
+    const termination = await repository.findLatestTermination(id);
+    if (!termination) throw new EmployeeError('EMPLOYEE_NOT_TERMINATED', 'لا توجد تسوية نهاية خدمة لهذا الموظف');
+    return {
+      employee: { id: employee.id, employeeCode: employee.employeeCode, fullName: employee.fullName },
+      ...termination,
+    };
   },
   async activate(id: number) {
     const result = await repository.activate(id);

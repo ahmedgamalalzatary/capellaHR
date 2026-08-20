@@ -316,8 +316,13 @@ describe('EmployeesView', () => {
     mocks.deactivateEmployee.mockResolvedValue({ ...employee, employmentStatus: 'inactive' });
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'تعطيل' }));
-    return screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
+    // The confirm stage will not release "متابعة" until why and when are recorded.
+    fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: 'استقالة' } });
+    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
+    return dialog;
   };
+  const departure = { reason: 'استقالة', lastWorkingDay: '2026-08-19' };
 
   test('walks confirm, advance decision, and shortfall decision before deactivating', async () => {
     await openDeactivation();
@@ -328,7 +333,7 @@ describe('EmployeesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: /تسجيل المبلغ كمديونية/ }));
 
     await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
-      1, 'sum_all', 'record_debt', previewOf(),
+      1, 'sum_all', 'record_debt', previewOf(), departure,
     ));
   });
 
@@ -340,7 +345,7 @@ describe('EmployeesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: /استلام المبلغ نقدًا/ }));
 
     await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
-      1, 'sum_all', 'collect_cash', previewOf(),
+      1, 'sum_all', 'collect_cash', previewOf(), departure,
     ));
   });
 
@@ -355,7 +360,7 @@ describe('EmployeesView', () => {
 
     // Both settle the balance themselves, so no shortfall decision is ever requested.
     await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
-      1, decision, undefined, previewOf(),
+      1, decision, undefined, previewOf(), departure,
     ));
   });
 
@@ -384,7 +389,7 @@ describe('EmployeesView', () => {
     expect(screen.queryByRole('button', { name: /تجميع الأقساط/ })).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: /تسجيل المبلغ كمديونية/ }));
     await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
-      1, 'sum_all', 'record_debt', expect.objectContaining({ amountOwed: '200.00' }),
+      1, 'sum_all', 'record_debt', expect.objectContaining({ amountOwed: '200.00' }), departure,
     ));
   });
 
@@ -398,7 +403,7 @@ describe('EmployeesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
 
     await waitFor(() => expect(mocks.deactivateEmployee).toHaveBeenCalledWith(
-      1, 'sum_all', undefined, expect.objectContaining({ amountOwed: '0.00' }),
+      1, 'sum_all', undefined, expect.objectContaining({ amountOwed: '0.00' }), departure,
     ));
   });
 
@@ -435,6 +440,8 @@ describe('EmployeesView', () => {
     renderView();
 
     fireEvent.click(await screen.findByRole('button', { name: 'تعطيل' }));
+    fireEvent.change(await screen.findByLabelText(/سبب ترك العمل/), { target: { value: 'استقالة' } });
+    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
     fireEvent.click(await screen.findByRole('button', { name: 'متابعة' }));
 
     expect(await screen.findByRole('alert')).toHaveProperty(

@@ -65,6 +65,19 @@ export const setAuditActor = (actor: { type: AuditActorType; identifier: string 
   context.actorIdentifier = actor.identifier.slice(0, 128);
 };
 
+/**
+ * The actor the current request is acting as, for records that must name who did something in
+ * their own row rather than only in the audit log. Falls back to `system`, which is what a job
+ * or a deferred replay genuinely is.
+ */
+export const currentAuditActor = (): { type: AuditActorType; identifier: string } => {
+  const context = storage.getStore();
+  return {
+    type: context?.actorType ?? 'system',
+    identifier: (context?.actorIdentifier ?? 'system').slice(0, 128),
+  };
+};
+
 export const currentAuditRequestId = () => storage.getStore()?.requestId ?? null;
 
 const relatedIds = (value: AuditEventInput['relatedIds']) => {

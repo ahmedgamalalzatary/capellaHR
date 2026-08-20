@@ -102,8 +102,11 @@ export function deactivateEmployee(
   advanceDecision: AdvanceDecision,
   negativeBalanceDecision: NegativeBalanceDecision | undefined,
   preview: EmployeeDeactivationPreview,
+  departure: { reason: string; lastWorkingDay: string },
 ) {
   return api.post<Employee>(`/employees/${id}/deactivate`, {
+    reason: departure.reason,
+    lastWorkingDay: departure.lastWorkingDay,
     advanceDecision,
     ...(negativeBalanceDecision === undefined ? {} : { negativeBalanceDecision }),
     expectedUnpaidInstallmentCount: preview.unpaidInstallmentCount,
@@ -111,6 +114,45 @@ export function deactivateEmployee(
     expectedProjectedNetSalary: preview.projectedNetSalary,
     expectedAmountOwed: preview.amountOwed,
   });
+}
+
+/** Money the employee still owes after leaving. `settledAt` is set once they have paid. */
+export interface EmployeeDebt {
+  id: number;
+  payrollMonth: string;
+  amount: string;
+  createdAt: string;
+  settledAt: string | null;
+}
+
+export function listEmployeeDebts(id: number) {
+  return api.get<EmployeeDebt[]>(`/employees/${id}/debts`);
+}
+
+export function settleEmployeeDebt(id: number, debtId: number) {
+  return api.post<EmployeeDebt>(`/employees/${id}/debts/${debtId}/settle`, {});
+}
+
+/**
+ * The end-of-service statement, frozen at the moment of termination. Reprints identically
+ * however long afterwards, because none of it is recomputed from live payroll.
+ */
+export interface EmployeeSettlementStatement {
+  employee: { id: number; employeeCode: number; fullName: string };
+  reason: string;
+  lastWorkingDay: string;
+  terminatedAt: string;
+  netSalaryBeforeSettlement: string;
+  advancesRecovered: string;
+  writeOffAmount: string;
+  forfeitedSalaryAmount: string;
+  cashCollectedAmount: string;
+  debtRecordedAmount: string;
+  finalNetSalary: string;
+}
+
+export function getEmployeeSettlement(id: number) {
+  return api.get<EmployeeSettlementStatement>(`/employees/${id}/settlement`);
 }
 
 export function activateEmployee(id: number) {

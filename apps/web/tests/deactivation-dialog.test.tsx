@@ -47,6 +47,8 @@ describe('DeactivationDialog', () => {
         onConfirm={vi.fn()}
       />,
     );
+    fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: 'استقالة' } });
+    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
     fireEvent.click(screen.getByRole('button', { name: 'متابعة' }));
     fireEvent.click(screen.getByRole('button', { name: 'تجميع الأقساط وخصمها من الراتب' }));
     expect(screen.getByRole('button', { name: 'تم استلام المبلغ نقدًا' })).toBeTruthy();
@@ -64,5 +66,51 @@ describe('DeactivationDialog', () => {
     const decisionStageCancels = enabledCancels();
     expect(decisionStageCancels.length).toBeGreaterThan(0);
     expect(decisionStageCancels.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  test('will not move past the first stage until the reason and last working day are given', () => {
+    render(
+      <DeactivationDialog
+        employee={employee}
+        preview={preview}
+        pending={false}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect((screen.getByRole('button', { name: 'متابعة' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: 'استقالة' } });
+    expect((screen.getByRole('button', { name: 'متابعة' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
+    expect((screen.getByRole('button', { name: 'متابعة' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('hands the reason and last working day back with the money decisions', () => {
+    const onConfirm = vi.fn();
+    render(
+      <DeactivationDialog
+        employee={employee}
+        preview={preview}
+        pending={false}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: '  استقالة  ' } });
+    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
+    fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: 'استقالة' } });
+    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
+    fireEvent.click(screen.getByRole('button', { name: 'متابعة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تجميع الأقساط وخصمها من الراتب' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل المبلغ كمديونية على الموظف' }));
+
+    expect(onConfirm).toHaveBeenCalledWith('sum_all', 'record_debt', {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
+    });
   });
 });

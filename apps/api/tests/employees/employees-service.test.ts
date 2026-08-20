@@ -19,9 +19,16 @@ const repository = (): EmployeeRepository => ({
   findActiveById: vi.fn(), findIdentityByCode: vi.fn(), list: vi.fn(), update: vi.fn(), softDeleteIfAttendanceClosed: vi.fn(),
   previewDeactivation: vi.fn(), deactivate: vi.fn(), applyPendingDeactivation: vi.fn(), activate: vi.fn(),
   findPhoneOwner: vi.fn(), branchExists: vi.fn(async () => true),
+  listDebts: vi.fn(), settleDebt: vi.fn(), findLatestTermination: vi.fn(),
 });
 
 /** Deactivation now requires attendance, so tests about anything else stub it as idle. */
+const settlementFigures = {
+  netSalaryBeforeSettlement: '0.00', advancesRecovered: '0.00', writeOffAmount: '0.00',
+  forfeitedSalaryAmount: '0.00', cashCollectedAmount: '0.00', debtRecordedAmount: '0.00',
+  finalNetSalary: '0.00',
+};
+
 const closedAttendance = () => ({
   hasOpenSession: vi.fn(async () => false),
   hasAnyOpenSession: vi.fn(async () => false),
@@ -129,6 +136,8 @@ describe('employee service', () => {
 
     await expect(service.previewDeactivation(1)).rejects.toMatchObject({ code: 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' });
     await expect(service.deactivate(1, {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all',
       expectedUnpaidInstallmentCount: 0,
       expectedUnpaidAdvanceAmount: '0.00',
@@ -254,6 +263,8 @@ describe('employee service', () => {
     });
 
     const employee = await createEmployeeService(repo, closedAttendance()).deactivate(1, {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all' as const,
       negativeBalanceDecision: 'record_debt',
       expectedUnpaidInstallmentCount: 3,
@@ -263,6 +274,8 @@ describe('employee service', () => {
     });
 
     expect(repo.deactivate).toHaveBeenCalledWith(1, {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all',
       negativeBalanceDecision: 'record_debt',
       expected: {
@@ -278,7 +291,7 @@ describe('employee service', () => {
 
   it('passes the selected negative-balance decision into the atomic financial lifecycle', async () => {
     const repo = repository();
-    const prepareEmployeeDeactivation = vi.fn(async () => undefined);
+    const prepareEmployeeDeactivation = vi.fn(async () => settlementFigures);
     vi.mocked(repo.deactivate).mockImplementation(async (id, input, prepare) => {
       await prepare?.(id, new Date('2026-07-16T10:00:00.000Z'), input, { tx: true });
       return { kind: 'success', record: { id, employmentStatus: 'inactive' } as never };
@@ -289,6 +302,8 @@ describe('employee service', () => {
     };
 
     const input = {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all' as const,
       negativeBalanceDecision: 'collect_cash' as const,
       expectedUnpaidInstallmentCount: 3,
@@ -302,6 +317,8 @@ describe('employee service', () => {
       1,
       new Date('2026-07-16T10:00:00.000Z'),
       {
+        reason: 'استقالة',
+        lastWorkingDay: '2026-08-19',
         advanceDecision: 'sum_all',
         negativeBalanceDecision: 'collect_cash',
         expected: {
@@ -327,6 +344,8 @@ describe('employee service', () => {
     });
 
     const result = await createEmployeeService(repo, attendance).deactivate(1, {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
       advanceDecision: 'sum_all' as const,
       negativeBalanceDecision: 'record_debt' as const,
       expectedUnpaidInstallmentCount: 0,
@@ -374,6 +393,133 @@ describe('employee service', () => {
       branchId: existingRecord.branchId,
       shiftDurationMinutes: existingRecord.shiftDurationMinutes,
       images: existingRecord.images,
+    });
+  });
+
+  describe('outstanding debts', () => {
+    const debt = {
+      id: 7,
+      payrollMonth: '2026-08-01',
+      amount: '450.00',
+      createdAt: new Date('2026-08-01T08:00:00.000Z'),
+      settledAt: null,
+    };
+
+    it('lists the debts recorded against an employee', async () => {
+      const repo = repository();
+      vi.mocked(repo.findActiveById).mockResolvedValue({ id: 1 } as never);
+      vi.mocked(repo.listDebts).mockResolvedValue([debt]);
+
+      await expect(createEmployeeService(repo).listDebts(1)).resolves.toEqual([debt]);
+      expect(repo.listDebts).toHaveBeenCalledWith(1);
+    });
+
+    it('refuses to list the debts of an employee who does not exist', async () => {
+      const repo = repository();
+      vi.mocked(repo.findActiveById).mockResolvedValue(null);
+
+      await expect(createEmployeeService(repo).listDebts(1))
+        .rejects.toMatchObject({ code: 'EMPLOYEE_NOT_FOUND' });
+      expect(repo.listDebts).not.toHaveBeenCalled();
+    });
+
+    it('marks a debt as paid', async () => {
+      const repo = repository();
+      const settled = { ...debt, settledAt: new Date('2026-08-20T09:00:00.000Z') };
+      vi.mocked(repo.settleDebt).mockResolvedValue({ kind: 'success', debt: settled });
+
+      await expect(createEmployeeService(repo).settleDebt(1, 7)).resolves.toEqual(settled);
+      expect(repo.settleDebt).toHaveBeenCalledWith(1, 7);
+    });
+
+    it('reports a debt that is not there', async () => {
+      const repo = repository();
+      vi.mocked(repo.settleDebt).mockResolvedValue({ kind: 'not_found' });
+
+      await expect(createEmployeeService(repo).settleDebt(1, 7))
+        .rejects.toMatchObject({ code: 'EMPLOYEE_DEBT_NOT_FOUND' });
+    });
+
+    it('refuses to settle the same debt twice', async () => {
+      const repo = repository();
+      vi.mocked(repo.settleDebt).mockResolvedValue({ kind: 'already_settled' });
+
+      await expect(createEmployeeService(repo).settleDebt(1, 7))
+        .rejects.toMatchObject({ code: 'EMPLOYEE_DEBT_ALREADY_SETTLED' });
+    });
+  });
+
+  describe('settlement statement', () => {
+    const termination = {
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
+      terminatedAt: new Date('2026-08-19T18:00:00.000Z'),
+      netSalaryBeforeSettlement: '1500.00',
+      advancesRecovered: '3000.00',
+      writeOffAmount: '0.00',
+      forfeitedSalaryAmount: '0.00',
+      cashCollectedAmount: '0.00',
+      debtRecordedAmount: '1000.00',
+      finalNetSalary: '-1000.00',
+    };
+
+    it('returns the frozen figures alongside who they belong to', async () => {
+      const repo = repository();
+      vi.mocked(repo.findActiveById).mockResolvedValue({ id: 4, employeeCode: 12, fullName: 'أحمد' } as never);
+      vi.mocked(repo.findLatestTermination).mockResolvedValue(termination);
+
+      await expect(createEmployeeService(repo).getSettlementStatement(4)).resolves.toEqual({
+        employee: { id: 4, employeeCode: 12, fullName: 'أحمد' },
+        ...termination,
+      });
+    });
+
+    it('refuses a statement for an employee who never left', async () => {
+      const repo = repository();
+      vi.mocked(repo.findActiveById).mockResolvedValue({ id: 4, employeeCode: 12, fullName: 'أحمد' } as never);
+      vi.mocked(repo.findLatestTermination).mockResolvedValue(null);
+
+      await expect(createEmployeeService(repo).getSettlementStatement(4))
+        .rejects.toMatchObject({ code: 'EMPLOYEE_NOT_TERMINATED' });
+    });
+  });
+
+  describe('open work blocking deactivation', () => {
+    const leaving = {
+      reason: 'استقالة', lastWorkingDay: '2026-08-19', advanceDecision: 'sum_all' as const,
+      negativeBalanceDecision: 'record_debt' as const,
+      expectedUnpaidInstallmentCount: 0, expectedUnpaidAdvanceAmount: '0.00',
+      expectedProjectedNetSalary: '0.00', expectedAmountOwed: '0.00',
+    };
+
+    it('refuses to deactivate an employee who still has work assigned to them', async () => {
+      const repo = repository();
+      const openWork = { countOpenWork: vi.fn(async () => ({ futureBookings: 2, openQueueTickets: 1 })) };
+
+      await expect(createEmployeeService(repo, closedAttendance(), undefined, undefined, openWork)
+        .deactivate(1, leaving))
+        .rejects.toMatchObject({ code: 'EMPLOYEE_HAS_OPEN_WORK' });
+      expect(openWork.countOpenWork).toHaveBeenCalledWith(1);
+      expect(repo.deactivate).not.toHaveBeenCalled();
+    });
+
+    it('proceeds once nothing is assigned to them any more', async () => {
+      const repo = repository();
+      vi.mocked(repo.deactivate).mockResolvedValue({ kind: 'success', record: { id: 1, employmentStatus: 'inactive' } as never });
+      const openWork = { countOpenWork: vi.fn(async () => ({ futureBookings: 0, openQueueTickets: 0 })) };
+
+      await createEmployeeService(repo, closedAttendance(), undefined, undefined, openWork).deactivate(1, leaving);
+
+      expect(repo.deactivate).toHaveBeenCalled();
+    });
+
+    it('deactivates normally in an edition that has no bookings or queue at all', async () => {
+      const repo = repository();
+      vi.mocked(repo.deactivate).mockResolvedValue({ kind: 'success', record: { id: 1, employmentStatus: 'inactive' } as never });
+
+      await createEmployeeService(repo, closedAttendance()).deactivate(1, leaving);
+
+      expect(repo.deactivate).toHaveBeenCalled();
     });
   });
 });

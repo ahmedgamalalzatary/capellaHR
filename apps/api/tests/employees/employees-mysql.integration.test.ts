@@ -1,5 +1,5 @@
 import { createDatabase } from '@capella/database';
-import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branchCashierRoster, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeePhoneReservations, employees } from '@capella/database/schema';
+import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branchCashierRoster, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeeOutstandingDebts, employeePendingDeactivations, employeeTerminations, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
@@ -14,9 +14,9 @@ const image = (name: string) => ({ storagePath: `employees/${name}.jpg`, origina
 const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', personalPhone: phone, whatsappPhone: phone, pin: '1234', age: 30, address: 'القاهرة', branchId, shiftDurationMinutes: 600, monthlyBaseSalary: '5000.00', images: { personal: image(`${phone}-p`), idFront: image(`${phone}-f`), idBack: image(`${phone}-b`) } });
 // This module is wired without a financial lifecycle, so the repository ignores the decision
 // fields and only the deactivation itself is under test.
-const deactivation = { advanceDecision: 'sum_all', negativeBalanceDecision: 'record_debt', expectedUnpaidInstallmentCount: 0, expectedUnpaidAdvanceAmount: '0.00', expectedProjectedNetSalary: '0.00', expectedAmountOwed: '0.00' } as const;
+const deactivation = { reason: 'استقالة', lastWorkingDay: '2026-08-19', advanceDecision: 'sum_all', negativeBalanceDecision: 'record_debt', expectedUnpaidInstallmentCount: 0, expectedUnpaidAdvanceAmount: '0.00', expectedProjectedNetSalary: '0.00', expectedAmountOwed: '0.00' } as const;
 
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(branchCashierRoster); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(branchCashierRoster); await database.delete(employeeTerminations); await database.delete(employeePendingDeactivations); await database.delete(employeeOutstandingDebts); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
   it('atomically reassigns a checked-out employee and preserves branch history', async () => {
     const oldBranch = await branchModule.service.create({ name: 'Old branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
@@ -208,5 +208,99 @@ describe('MySQL-backed employees', () => {
     });
     expect((await database.select({ duration: employees.shiftDurationMinutes })
       .from(employees).where(eq(employees.id, created.id)))[0]?.duration).toBe(480);
+  });
+
+  it('lists outstanding debts newest first and settles one exactly once', async () => {
+    const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const created = await employeeModule.service.create(employee(branch.id, '01012345678'));
+    await database.insert(employeeOutstandingDebts).values([
+      { employeeId: created.id, payrollMonth: '2026-07-01', amount: '300.00', createdAt: new Date('2026-07-31T12:00:00.000Z') },
+      { employeeId: created.id, payrollMonth: '2026-08-01', amount: '450.00', createdAt: new Date('2026-08-19T12:00:00.000Z') },
+    ]);
+
+    const debts = await employeeModule.service.listDebts(created.id);
+
+    expect(debts.map((debt) => debt.payrollMonth)).toEqual(['2026-08-01', '2026-07-01']);
+    expect(debts.every((debt) => debt.settledAt === null)).toBe(true);
+
+    const settled = await employeeModule.service.settleDebt(created.id, debts[0]!.id);
+
+    expect(settled.settledAt).toBeInstanceOf(Date);
+    await expect(employeeModule.service.settleDebt(created.id, debts[0]!.id))
+      .rejects.toMatchObject({ code: 'EMPLOYEE_DEBT_ALREADY_SETTLED' });
+    const audit = (await database.select().from(auditEvents)
+      .where(eq(auditEvents.action, 'debt_settle')).limit(1))[0];
+    expect(audit).toMatchObject({ module: 'employees', entityType: 'employee_outstanding_debt', entityId: String(debts[0]!.id) });
+  });
+
+  it('refuses to settle a debt that belongs to another employee', async () => {
+    const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const owner = await employeeModule.service.create(employee(branch.id, '01012345678'));
+    const other = await employeeModule.service.create(employee(branch.id, '01112345678'));
+    await database.insert(employeeOutstandingDebts).values({ employeeId: owner.id, payrollMonth: '2026-08-01', amount: '450.00', createdAt: new Date() });
+    const debt = (await employeeModule.service.listDebts(owner.id))[0]!;
+
+    await expect(employeeModule.service.settleDebt(other.id, debt.id))
+      .rejects.toMatchObject({ code: 'EMPLOYEE_DEBT_NOT_FOUND' });
+  });
+
+  const figures = {
+    netSalaryBeforeSettlement: '1500.00',
+    advancesRecovered: '3000.00',
+    writeOffAmount: '0.00',
+    forfeitedSalaryAmount: '0.00',
+    cashCollectedAmount: '0.00',
+    debtRecordedAmount: '1000.00',
+    finalNetSalary: '-1000.00',
+  };
+  const settling = (openSession = false) => createEmployeesModule(
+    database,
+    16_777_216,
+    { hasOpenSession: async () => openSession, hasAnyOpenSession: async () => openSession },
+    undefined,
+    undefined,
+    {
+      prepareEmployeeDeletion: async () => undefined,
+      prepareEmployeeDeactivation: async () => figures,
+    },
+  );
+  const leaving = { ...deactivation, reason: 'استقالة', lastWorkingDay: '2026-08-19' } as const;
+
+  it('freezes the settlement figures onto a termination record', async () => {
+    const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const created = await settling().service.create(employee(branch.id, '01012345678'));
+
+    await settling().service.deactivate(created.id, leaving);
+
+    const rows = await database.select().from(employeeTerminations)
+      .where(eq(employeeTerminations.employeeId, created.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      reason: 'استقالة',
+      lastWorkingDay: '2026-08-19',
+      terminatedByType: 'system',
+      ...figures,
+    });
+  });
+
+  it('carries the reason through a deactivation deferred to check-out', async () => {
+    const branch = await branchModule.service.create({ name: 'فرع', location: 'القاهرة', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const created = await settling(true).service.create(employee(branch.id, '01012345678'));
+
+    const deferred = await settling(true).service.deactivate(created.id, leaving);
+
+    expect(deferred.pendingUntilCheckOut).toBe(true);
+    expect(await database.select().from(employeeTerminations)
+      .where(eq(employeeTerminations.employeeId, created.id))).toHaveLength(0);
+    expect((await database.select().from(employeePendingDeactivations)
+      .where(eq(employeePendingDeactivations.employeeId, created.id)))[0])
+      .toMatchObject({ reason: 'استقالة', lastWorkingDay: '2026-08-19' });
+
+    await database.transaction((transaction) => settling(true).service
+      .applyPendingDeactivation(created.id, new Date(), transaction));
+
+    expect((await database.select().from(employeeTerminations)
+      .where(eq(employeeTerminations.employeeId, created.id)))[0])
+      .toMatchObject({ reason: 'استقالة', lastWorkingDay: '2026-08-19', ...figures });
   });
 });

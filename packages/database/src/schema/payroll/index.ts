@@ -136,8 +136,44 @@ export const employeeOutstandingDebts = mysqlTable('employee_outstanding_debts',
 }, (table) => [
   uniqueIndex('employee_outstanding_debts_employee_month_unique')
     .on(table.employeeId, table.payrollMonth),
+  index('employee_outstanding_debts_settled_idx').on(table.employeeId, table.settledAt),
   check('employee_outstanding_debts_amount_positive', sql`${table.amount} > 0`),
   check('employee_outstanding_debts_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
+]);
+
+/**
+ * Why an employee left and what their settlement came to, captured at the moment of
+ * deactivation. The figures are frozen deliberately: the statement handed to the employee must
+ * reprint identically months later, when live payroll no longer reflects that month.
+ *
+ * Who terminated is stored as the audit actor rather than an account id, because the root admin
+ * has no account row and a deactivation deferred to check-out is replayed by the system.
+ *
+ * Not unique per employee: a reactivated employee can be terminated again, and each departure
+ * keeps its own record.
+ */
+export const employeeTerminations = mysqlTable('employee_terminations', {
+  id: int('id').autoincrement().primaryKey(),
+  employeeId: int('employee_id').notNull().references(() => employees.id),
+  reason: varchar('reason', { length: 500 }).notNull(),
+  lastWorkingDay: date('last_working_day', { mode: 'string' }).notNull(),
+  terminatedByType: mysqlEnum('terminated_by_type', ['admin', 'employee', 'account', 'system']).notNull(),
+  terminatedByIdentifier: varchar('terminated_by_identifier', { length: 128 }).notNull(),
+  netSalaryBeforeSettlement: decimal('net_salary_before_settlement', { precision: 14, scale: 2 }).notNull(),
+  advancesRecovered: decimal('advances_recovered', { precision: 14, scale: 2 }).notNull(),
+  writeOffAmount: decimal('write_off_amount', { precision: 14, scale: 2 }).notNull(),
+  forfeitedSalaryAmount: decimal('forfeited_salary_amount', { precision: 14, scale: 2 }).notNull(),
+  cashCollectedAmount: decimal('cash_collected_amount', { precision: 14, scale: 2 }).notNull(),
+  debtRecordedAmount: decimal('debt_recorded_amount', { precision: 14, scale: 2 }).notNull(),
+  finalNetSalary: decimal('final_net_salary', { precision: 14, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  index('employee_terminations_employee_idx').on(table.employeeId, table.createdAt),
+  check('employee_terminations_write_off_nonnegative', sql`${table.writeOffAmount} >= 0`),
+  check('employee_terminations_advances_nonnegative', sql`${table.advancesRecovered} >= 0`),
+  check('employee_terminations_forfeited_nonnegative', sql`${table.forfeitedSalaryAmount} >= 0`),
+  check('employee_terminations_cash_nonnegative', sql`${table.cashCollectedAmount} >= 0`),
+  check('employee_terminations_debt_nonnegative', sql`${table.debtRecordedAmount} >= 0`),
 ]);
 
 export const pendingDeactivationAdvanceDecisions = [
@@ -157,6 +193,9 @@ export const employeePendingDeactivations = mysqlTable('employee_pending_deactiv
   employeeId: int('employee_id').notNull().references(() => employees.id),
   advanceDecision: mysqlEnum('advance_decision', pendingDeactivationAdvanceDecisions).notNull(),
   negativeBalanceDecision: mysqlEnum('negative_balance_decision', pendingDeactivationNegativeDecisions),
+  // Carried through to the replay so a deferred deactivation still produces a termination record.
+  reason: varchar('reason', { length: 500 }).notNull(),
+  lastWorkingDay: date('last_working_day', { mode: 'string' }).notNull(),
   requestedAt: timestamp('requested_at', { mode: 'date', fsp: 3 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [

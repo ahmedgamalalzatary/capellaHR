@@ -26,6 +26,7 @@ export const createEmployeeFieldsSchema = z.object({
 }).strict();
 export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ monthlyBaseSalary: true }).partial().strict().refine((value) => Object.keys(value).length > 0);
 export const employeeIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
+export const employeeDebtParamsSchema = employeeIdParamsSchema.extend({ debtId: coercedMysqlIntSchema });
 export const employeeImageParamsSchema = employeeIdParamsSchema.extend({ kind: z.enum(['personal', 'idFront', 'idBack']) });
 export const listEmployeesQuerySchema = z.object({ search: z.string().trim().min(1).max(255).optional(), branchId: coercedMysqlIntSchema.optional(), status: z.enum(['active', 'inactive', 'all']).optional(), page: paginationPageSchema.default(1), pageSize: paginationPageSizeSchema.default(20) });
 /**
@@ -39,7 +40,18 @@ export const employeeAdvanceDecisions = ['sum_all', 'zero_salary', 'ignore_debt'
 /** How to resolve a shortfall that remains after `sum_all`. */
 export const employeeNegativeBalanceDecisions = ['collect_cash', 'record_debt'] as const;
 
+/** Rejects the impossible dates a bare regex lets through, such as 2026-02-31. */
+const calendarDateSchema = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/)
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+  }, 'التاريخ غير صالح');
+
 export const employeeDeactivationSchema = z.object({
+  // Why they left and the day they last worked: the two facts the settlement statement needs
+  // that nothing in payroll can infer.
+  reason: z.string().trim().min(1).max(500),
+  lastWorkingDay: calendarDateSchema,
   advanceDecision: z.enum(employeeAdvanceDecisions),
   // Only `sum_all` can leave a shortfall; the other decisions settle the balance themselves.
   negativeBalanceDecision: z.enum(employeeNegativeBalanceDecisions).optional(),
@@ -52,6 +64,7 @@ export type CreateEmployeeFields = z.infer<typeof createEmployeeFieldsSchema>;
 export type UpdateEmployeeFields = z.infer<typeof updateEmployeeFieldsSchema>;
 export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;
 export type EmployeeDeactivationInput = z.infer<typeof employeeDeactivationSchema>;
+export type EmployeeDebtParams = z.infer<typeof employeeDebtParamsSchema>;
 export type EmployeeAdvanceDecision = (typeof employeeAdvanceDecisions)[number];
 export type EmployeeNegativeBalanceDecision = (typeof employeeNegativeBalanceDecisions)[number];
 

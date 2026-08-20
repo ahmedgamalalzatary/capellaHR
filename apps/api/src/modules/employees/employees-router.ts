@@ -1,4 +1,4 @@
-import { createEmployeeFieldsSchema, employeeDeactivationSchema, employeeIdParamsSchema, employeeImageParamsSchema, listEmployeesQuerySchema, updateEmployeeFieldsSchema } from '@capella/contracts';
+import { createEmployeeFieldsSchema, employeeDeactivationSchema, employeeDebtParamsSchema, employeeIdParamsSchema, employeeImageParamsSchema, listEmployeesQuerySchema, updateEmployeeFieldsSchema } from '@capella/contracts';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { ZodError } from 'zod';
@@ -23,7 +23,7 @@ const handle = (error: unknown, res: Response) => {
       : fail(res, 400, 'INVALID_IMAGE', 'ملف الصورة غير صالح');
   }
   if (error instanceof EmployeeUploadError) return fail(res, 400, error.code, error.message);
-  if (error instanceof EmployeeError) return fail(res, error.code === 'EMPLOYEE_NOT_FOUND' || error.code === 'EMPLOYEE_BRANCH_NOT_FOUND' ? 404 : error.code === 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' || error.code === 'EMPLOYEE_FINANCIALS_UNAVAILABLE' ? 503 : 409, error.code, error.message);
+  if (error instanceof EmployeeError) return fail(res, error.code === 'EMPLOYEE_NOT_FOUND' || error.code === 'EMPLOYEE_BRANCH_NOT_FOUND' || error.code === 'EMPLOYEE_DEBT_NOT_FOUND' ? 404 : error.code === 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' || error.code === 'EMPLOYEE_FINANCIALS_UNAVAILABLE' ? 503 : 409, error.code, error.message);
   throw error;
 };
 // Multipart field names are part of the public employee-image API contract.
@@ -43,6 +43,9 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
   // `pendingUntilCheckOut` tells the admin the employee is still working and the deactivation
   // will run when their open session closes.
   router.post('/:id/deactivate', async (req, res) => { try { const result = await service.deactivate(employeeIdParamsSchema.parse(req.params).id, employeeDeactivationSchema.parse(req.body)); res.json({ data: result.employee, meta: { pendingUntilCheckOut: result.pendingUntilCheckOut } }); } catch (e) { handle(e, res); } });
+  router.get('/:id/debts', async (req, res) => { try { res.json({ data: await service.listDebts(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
+  router.post('/:id/debts/:debtId/settle', async (req, res) => { try { const params = employeeDebtParamsSchema.parse(req.params); res.json({ data: await service.settleDebt(params.id, params.debtId) }); } catch (e) { handle(e, res); } });
+  router.get('/:id/settlement', async (req, res) => { try { res.json({ data: await service.getSettlementStatement(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
   router.post('/:id/activate', async (req, res) => { try { res.json({ data: await service.activate(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
   router.get('/:id', async (req, res) => { try { res.json({ data: await service.get(employeeIdParamsSchema.parse(req.params).id) }); } catch (e) { handle(e, res); } });
   router.post('/', acceptUploads, async (req, res) => {

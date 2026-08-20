@@ -6,6 +6,7 @@ import {
   cashierSessions,
   employees,
   branches,
+  employeeTerminations,
 } from '@capella/database/schema';
 import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -55,6 +56,7 @@ afterEach(async () => {
     await database.delete(accounts).where(inArray(accounts.id, created.accountIds));
   }
   if (created.employeeIds.length > 0) {
+    await database.delete(employeeTerminations).where(inArray(employeeTerminations.employeeId, created.employeeIds));
     await database.delete(employees).where(inArray(employees.id, created.employeeIds));
   }
   if (created.branchIds.length > 0) {

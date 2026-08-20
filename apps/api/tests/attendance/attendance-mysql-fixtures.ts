@@ -19,6 +19,7 @@ import {
   employeeSalaryPeriods,
   employees,
   payrollMonths,
+  employeeTerminations,
 } from '@capella/database/schema';
 
 import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/attendance-repository.js';
@@ -90,6 +91,7 @@ export const cleanDatabase = async () => {
   await database.delete(employeePhoneReservations);
   await database.delete(employeeBranchAssignments);
   await database.delete(employeeEmploymentPeriods);
+  await database.delete(employeeTerminations);
   await database.delete(employees);
   await database.delete(employeeCodeSequence);
   await database.delete(branches);

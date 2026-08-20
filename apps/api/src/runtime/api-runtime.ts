@@ -179,6 +179,9 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     deviceModule?.lifecycle,
     employeeFinancialLifecycle,
     employeeUploadStore,
+    // Left unwired deliberately: nothing can hold open work against an employee until the
+    // bookings and service-queue modules exist. Wire them here when they land.
+    undefined,
   );
   applyPendingDeactivation = async (employeeId, at, context) => {
     await employeeModule.service.applyPendingDeactivation(employeeId, at, context);
