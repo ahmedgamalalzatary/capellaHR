@@ -96,8 +96,30 @@ describe('ERP complete-sale contracts', () => {
       totals: {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       },
-      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+      payments: [{ method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' }],
     }).success).toBe(true);
+  });
+
+  it('offers every payment method on a refund quote, including ones the sale never used', () => {
+    const quote = {
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '200.00',
+        discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: {
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      },
+      payments: [
+        { method: 'cash' as const, paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'visa' as const, paidAmount: '185.00', refundableAmount: '185.00' },
+      ],
+    };
+    expect(refundQuoteSchema.parse(quote).payments).toEqual(quote.payments);
+    // The paid amount is what the till took, so it can never exceed itself.
+    expect(refundQuoteSchema.safeParse({
+      ...quote,
+      payments: [{ method: 'cash', paidAmount: '10.00', refundableAmount: '20.00' }],
+    }).success).toBe(false);
   });
 
   it('keeps validation messages as correctly decoded Arabic', () => {

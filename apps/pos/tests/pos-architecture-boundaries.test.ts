@@ -18,7 +18,9 @@ const restrictedMessages = async (eslint: ESLint, root: string, source: string, 
 };
 
 describe('POS feature and app boundaries', () => {
-  it('prevents a feature from importing another feature internals', { timeout: 15_000 }, async () => {
+  // This first case pays ESLint's cold start for the whole file, which needs
+  // room when the monorepo runs every package's suite at once.
+  it('prevents a feature from importing another feature internals', { timeout: 60_000 }, async () => {
     const messages = await restrictedMessages(
       posEslint,
       posRoot,

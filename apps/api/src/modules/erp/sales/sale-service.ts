@@ -11,6 +11,7 @@ import type {
   SaleQuote,
   VoidInvoiceInput,
 } from '@capella/contracts';
+import { paymentMethodSchema } from '@capella/contracts';
 import type { createDatabase } from '@capella/database';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -111,8 +112,7 @@ type SaleErrorCode =
   | 'TRANSFER_NOT_REVERSIBLE'
   | 'VOID_DATE_EXPIRED'
   | 'REFUND_QUANTITY_EXCEEDED'
-  | 'REFUND_PAYMENT_MISMATCH'
-  | 'REFUND_PAYMENT_EXCEEDED';
+  | 'REFUND_PAYMENT_MISMATCH';
 
 const messages: Record<SaleErrorCode, string> = {
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
@@ -132,7 +132,6 @@ const messages: Record<SaleErrorCode, string> = {
   VOID_DATE_EXPIRED: 'الإلغاء الكامل متاح في يوم البيع فقط',
   REFUND_QUANTITY_EXCEEDED: 'الكمية المستردة تتجاوز الكمية المتبقية',
   REFUND_PAYMENT_MISMATCH: 'توزيع مبلغ الاسترداد غير صحيح',
-  REFUND_PAYMENT_EXCEEDED: 'مبلغ الاسترداد يتجاوز المتبقي لوسيلة الدفع',
 };
 
 export class SaleError extends Error {
@@ -264,12 +263,20 @@ export const createSaleService = (dependencies: {
             taxAmount: allocation.taxAmount,
             total: allocation.total,
           },
-          payments: allocation.total === '0.00' ? [] : invoice.payments
-            .filter((payment) => payment.refundableAmount !== '0.00')
-            .map((payment) => ({
-              method: payment.method,
-              refundableAmount: payment.refundableAmount,
-            })),
+          // Every method is offered, in a stable order, so the cashier can hand the
+          // money back another way than it came in. A method the sale never used
+          // simply shows zero on both amounts.
+          payments: allocation.total === '0.00' ? [] : paymentMethodSchema.options
+            .map((method) => {
+              const payment = invoice.payments.find(
+                (candidate) => candidate.method === method,
+              );
+              return {
+                method,
+                paidAmount: payment?.amount ?? '0.00',
+                refundableAmount: payment?.refundableAmount ?? '0.00',
+              };
+            }),
         };
       } catch (error) {
         if (error instanceof MoneyCalculationError) {

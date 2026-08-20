@@ -239,7 +239,9 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
         });
         return;
       }
-      await json(route, { id: 44, invoiceNumber: 'INV-2026.08.04-12.35-17', totals: { total: '250.00' } });
+      // The API answers a completed sale with the whole invoice, and the success
+      // screen prints a receipt from it, so the stub must carry its lines.
+      await json(route, storedInvoice);
       return;
     }
     if (path === '/erp/sales' && request.method() === 'GET') {
@@ -318,8 +320,11 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   });
 
   await expect(page.getByRole('heading', { name: 'تم حفظ الفاتورة' })).toBeVisible();
-  await expect(page.getByText('INV-2026.08.04-12.35-17')).toBeVisible();
-  await page.getByRole('link', { name: 'عرض وطباعة الإيصال' }).click();
+  // Shown twice now: once in the confirmation and once on the printable receipt.
+  await expect(page.getByText('INV-2026.08.04-12.35-17').first()).toBeVisible();
+  // The sale offers to print straight away; declining leaves the confirmation card.
+  await page.getByRole('button', { name: 'لا، شكراً' }).click();
+  await page.getByRole('link', { name: 'عرض الإيصال' }).click();
   await expect(page.getByRole('button', { name: 'طباعة الإيصال' })).toBeVisible();
   expect(await page.evaluate(() => Array.from(document.styleSheets).some((sheet) => {
     try {

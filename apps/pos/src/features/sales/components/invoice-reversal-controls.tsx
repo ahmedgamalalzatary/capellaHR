@@ -1,6 +1,6 @@
 'use client';
 
-import type { PublicInvoiceDto, RefundQuote } from '@capella/contracts';
+import type { PaymentMethod, PublicInvoiceDto, RefundQuote } from '@capella/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -25,23 +25,24 @@ const cents = (value: string) => {
 const money = (value: bigint) => `${value / BigInt(100)}.${String(value % BigInt(100)).padStart(2, '0')}`;
 
 /**
- * Handing the cash back is a counter gesture, not a decision: the refund always goes
- * back on the methods the client paid with. The tender split is therefore derived from
- * the quote instead of typed, and the API still checks the totals it receives.
+ * How the money physically goes back is the cashier's decision, not a derived fact:
+ * a client who paid by card may want cash in hand. The split is therefore typed, and
+ * this only proposes the ordinary answer — return it the way it came in — so the
+ * common case stays one tap. Whatever the paid methods cannot cover is left for the
+ * cashier to place.
  */
-const allocateTenders = (quote: RefundQuote) => {
-  let remaining = cents(quote.totals.total);
-  if (remaining === null) return null;
-  const tenders: Array<{ method: RefundQuote['payments'][number]['method']; amount: string }> = [];
+const proposeTenders = (quote: RefundQuote) => {
+  let remaining = cents(quote.totals.total) ?? BigInt(0);
+  const proposal: Partial<Record<PaymentMethod, string>> = {};
   for (const payment of quote.payments) {
     if (remaining === BigInt(0)) break;
     const refundable = cents(payment.refundableAmount);
-    if (refundable === null) return null;
+    if (refundable === null || refundable === BigInt(0)) continue;
     const taken = refundable < remaining ? refundable : remaining;
-    if (taken > BigInt(0)) tenders.push({ method: payment.method, amount: money(taken) });
+    proposal[payment.method] = money(taken);
     remaining -= taken;
   }
-  return remaining === BigInt(0) ? tenders : null;
+  return proposal;
 };
 
 export function InvoiceReversalControls({
@@ -60,6 +61,7 @@ export function InvoiceReversalControls({
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<number, string>>({});
   const [quoted, setQuoted] = useState<RefundQuote | null>(null);
+  const [tenderAmounts, setTenderAmounts] = useState<Partial<Record<PaymentMethod, string>>>({});
   /**
    * Asked once per stored refund: the money has already gone back, the slip the client
    * takes with them is optional.
@@ -88,7 +90,27 @@ export function InvoiceReversalControls({
     return quantity !== 0 && (!Number.isInteger(quantity)
       || quantity < 0 || quantity > line.refundableQuantity);
   });
-  const tenders = quoted === null ? null : allocateTenders(quoted);
+  const tenderMethods = quoted?.payments.map((payment) => payment.method) ?? [];
+  const typedTenders = tenderMethods.flatMap((method) => {
+    const raw = (tenderAmounts[method] ?? '').trim();
+    if (raw === '') return [];
+    const amount = cents(raw);
+    return [{ method, amount }];
+  });
+  const hasInvalidTender = typedTenders.some(({ amount }) => amount === null);
+  const tenders = hasInvalidTender ? null : typedTenders
+    .flatMap(({ method, amount }) => (
+      amount === null || amount === BigInt(0) ? [] : [{ method, amount: money(amount) }]
+    ));
+  const tenderTotal = typedTenders.reduce(
+    (sum, { amount }) => sum + (amount ?? BigInt(0)),
+    BigInt(0),
+  );
+  // A total we cannot read is not a total of zero: treating it as one would let an
+  // empty split "balance" and post a refund of nothing.
+  const quotedTotal = quoted === null ? null : cents(quoted.totals.total);
+  const tenderDifference = quotedTotal === null ? null : tenderTotal - quotedTotal;
+  const tendersBalance = !hasInvalidTender && tenderDifference === BigInt(0);
   /**
    * A reversal is typed against one invoice, so the memory is keyed by that
    * invoice: the quantities and the reason survive a trip to another tab.
@@ -104,7 +126,10 @@ export function InvoiceReversalControls({
     mutationFn: () => quoteRefund(invoice.id, {
       ...(branchId === undefined ? {} : { branchId }), lines: selectedLines,
     }),
-    onSuccess: (value) => setQuoted(value),
+    onSuccess: (value) => {
+      setQuoted(value);
+      setTenderAmounts(proposeTenders(value));
+    },
   });
   const refund = useMutation({
     mutationFn: () => {
@@ -116,7 +141,13 @@ export function InvoiceReversalControls({
       };
       return refundInvoice(invoice.id, {
         ...payload,
-        idempotencyKey: idempotencyKeyFor(payload),
+        // What is being refunded identifies the command; how the money is handed
+        // back does not. If the answer is lost after the till already paid out,
+        // the cashier may well retry with the split moved to another method, and
+        // that retry has to replay the stored refund instead of posting a second.
+        idempotencyKey: idempotencyKeyFor({
+          branchId, reason: payload.reason, lines: payload.lines,
+        }),
       });
     },
     onSuccess: (value) => {
@@ -155,6 +186,7 @@ export function InvoiceReversalControls({
     }
     setMode(null);
     setQuoted(null);
+    setTenderAmounts({});
     commandIdentity.current = null;
     quote.reset();
     refund.reset();
@@ -182,9 +214,15 @@ export function InvoiceReversalControls({
     }
   };
   const printableReversal = refunded?.reversals.at(-1);
-  const tenderMessage = quoted !== null && tenders === null
-    ? 'تعذر توزيع المبلغ المسترد على طرق الدفع المسجلة للفاتورة.'
-    : null;
+  const tenderMessage = quoted === null || tendersBalance
+    ? null
+    : hasInvalidTender
+      ? 'اكتب مبلغًا صحيحًا لكل طريقة دفع.'
+      : tenderDifference === null
+        ? 'تعذر قراءة إجمالي الاسترداد. أعد الحساب.'
+        : tenderDifference < BigInt(0)
+          ? `متبقٍ للتوزيع ${money(-tenderDifference)} ج.م`
+          : `زائد ${money(tenderDifference)} ج.م`;
   const errorMessage = quote.error
     ? responseMessage(quote.error, 'تعذر حساب مبلغ الاسترداد.')
     : refund.error
@@ -296,6 +334,7 @@ export function InvoiceReversalControls({
                   onChange={(event) => {
                     setQuantities((current) => ({ ...current, [line.id]: event.target.value }));
                     setQuoted(null);
+                    setTenderAmounts({});
                   }}
                 />
               </label>
@@ -316,15 +355,29 @@ export function InvoiceReversalControls({
                 <span>الإجمالي المسترد</span>
                 <span className="tabular text-lg">{quoted.totals.total} ج.م</span>
               </p>
-              {/* The split is shown, not asked for: the money returns the way it came in. */}
-              <ul className="space-y-1 text-[13px] text-muted">
-                {(tenders ?? []).map((tender) => (
-                  <li key={tender.method} className="flex items-baseline justify-between">
-                    <span>يُرد عبر {paymentLabels[tender.method]}</span>
-                    <span className="tabular">{tender.amount} ج.م</span>
-                  </li>
+              {/*
+                Prefilled with the way the money came in, but the cashier decides where
+                it actually goes back — a card sale may be refunded in cash.
+              */}
+              <div className="space-y-2">
+                {tenderMethods.map((method) => (
+                  <label
+                    key={method}
+                    className="grid items-center gap-2 sm:grid-cols-[1fr_8rem]"
+                  >
+                    <span className="text-[13px]">يُرد عبر {paymentLabels[method]}</span>
+                    <Input
+                      aria-label={`مبلغ الاسترداد ${paymentLabels[method]}`}
+                      inputMode="decimal"
+                      className="text-start"
+                      value={tenderAmounts[method] ?? ''}
+                      onChange={(event) => setTenderAmounts((current) => ({
+                        ...current, [method]: event.target.value,
+                      }))}
+                    />
+                  </label>
                 ))}
-              </ul>
+              </div>
               {tenderMessage ? <p role="alert" className="text-[13px] text-danger">{tenderMessage}</p> : null}
               <label className="grid gap-1.5">
                 <span className="text-sm font-medium text-ink">سبب الاسترداد</span>
@@ -347,7 +400,7 @@ export function InvoiceReversalControls({
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button>
             <Button
-              disabled={!reason.trim() || tenders === null || refund.isPending}
+              disabled={!reason.trim() || !tendersBalance || refund.isPending}
               onClick={() => refund.mutate()}
             >
               {refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}

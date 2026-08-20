@@ -211,9 +211,8 @@ const paymentFacts = (filters: ReportFilters) => sql`
     reversal_payment.method_snapshot paymentMethod, -reversal_payment.amount amount
   FROM erp_invoice_reversal_payments reversal_payment
   INNER JOIN erp_invoice_reversals reversal ON reversal.id = reversal_payment.reversal_id
-  INNER JOIN erp_invoice_payments original_payment
-    ON original_payment.id = reversal_payment.invoice_payment_id
-    AND original_payment.invoice_id = reversal.invoice_id
+  -- Never joined back to the original payment: money handed back on a method the
+  -- sale never used has none, and it still left the till.
   INNER JOIN erp_invoices invoice
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
   INNER JOIN branches branch ON branch.id = reversal.branch_id

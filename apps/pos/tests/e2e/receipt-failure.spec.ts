@@ -56,7 +56,8 @@ test('receipt loading exposes a safe request reference and recovers without a sa
   await page.goto('/invoices/44');
   await expect(page.getByRole('alert').filter({ hasText: 'receipt-browser-7' })).toBeVisible();
   await page.getByRole('button', { name: 'إعادة المحاولة' }).click();
-  await expect(page.getByText(saleFixtures.completedInvoice.invoiceNumber)).toBeVisible();
+  // The number shows on the page and again on the printable receipt.
+  await expect(page.getByText(saleFixtures.completedInvoice.invoiceNumber).first()).toBeVisible();
   expect(detailReads).toBe(2);
   expect(saleWrites).toBe(0);
 });

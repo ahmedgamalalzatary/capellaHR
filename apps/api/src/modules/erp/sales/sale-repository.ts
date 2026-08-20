@@ -132,8 +132,11 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
   for (const line of reversalLines) {
     refundedByLine.set(line.invoiceLineId, (refundedByLine.get(line.invoiceLineId) ?? 0) + line.quantity);
   }
+  // A refund handed back on another method reverses no particular payment, so it
+  // counts towards the invoice total without touching any payment's refundable rest.
   const refundedByPayment = new Map<number, bigint>();
   for (const payment of reversalPayments) {
+    if (payment.invoicePaymentId === null) continue;
     refundedByPayment.set(
       payment.invoicePaymentId,
       (refundedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.amount),
@@ -914,6 +917,7 @@ export const createDrizzleSaleRepository = (
           ));
           const reversedByPayment = new Map<number, bigint>();
           for (const payment of priorPayments) {
+            if (payment.invoicePaymentId === null) continue;
             reversedByPayment.set(
               payment.invoicePaymentId,
               (reversedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.amount),
@@ -922,14 +926,21 @@ export const createDrizzleSaleRepository = (
           const requestedPayments = operation.type === 'void'
             ? originalPayments.map(({ method, amount }) => ({ method, amount }))
             : operation.input.payments;
+          // How the money physically goes back is the cashier's call, so any method
+          // is accepted and only the total is checked. A refund is still linked to
+          // the payment it reverses whenever it matches one and fits inside what is
+          // left on it, which keeps the per-payment refundable accounting exact.
           const paymentRows = requestedPayments.map((requested) => {
             const payment = originalPayments.find((candidate) => candidate.method === requested.method);
-            if (!payment) throw new SaleError('REFUND_PAYMENT_EXCEEDED');
-            const remaining = toCents(payment.amount) - (reversedByPayment.get(payment.id) ?? 0n);
-            if (toCents(requested.amount) > remaining) {
-              throw new SaleError('REFUND_PAYMENT_EXCEEDED');
-            }
-            return { invoicePaymentId: payment.id, method: requested.method, amount: requested.amount };
+            const remaining = payment === undefined
+              ? 0n
+              : toCents(payment.amount) - (reversedByPayment.get(payment.id) ?? 0n);
+            const linked = payment !== undefined && toCents(requested.amount) <= remaining;
+            return {
+              invoicePaymentId: linked ? payment.id : null,
+              method: requested.method,
+              amount: requested.amount,
+            };
           });
           if (sumMoney(paymentRows.map(({ amount }) => amount)) !== allocation.total) {
             throw new SaleError('REFUND_PAYMENT_MISMATCH');

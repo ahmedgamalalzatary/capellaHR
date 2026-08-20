@@ -105,7 +105,7 @@ const service = () => {
     repository: createDrizzleSaleRepository(database, audit),
     resolveBranchContext: createErpBranchContextResolver({ branches: branchCapability }),
     assignment: { assertAssignable: async () => { throw new Error('not used'); } },
-    invoiceNumbers: createInvoiceNumberAllocator(createDrizzleInvoiceSequenceStore(database)),
+    invoiceNumbers: createInvoiceNumberAllocator(createDrizzleInvoiceSequenceStore(database), () => at),
   });
   return createStockTransferService({
     repository: createDrizzleStockTransferRepository(database, audit),

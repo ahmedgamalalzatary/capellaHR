@@ -52,8 +52,10 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
     lines: refundInvoice.lines.map((line) => ({
       ...line, refundedQuantity: 1, refundableQuantity: 1,
     })),
+    // The money went back on the card, not on the cash the client paid, so the
+    // original payment keeps its full refundable rest.
     payments: refundInvoice.payments.map((payment) => ({
-      ...payment, refundedAmount: '92.50', refundableAmount: '92.50',
+      ...payment, refundedAmount: '0.00', refundableAmount: payment.amount,
     })),
     reversals: [{
       id: 71,
@@ -72,7 +74,7 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
         quantity: 1,
         grossAmount: '100.00', discountAmount: '10.00', taxAmount: '2.50', total: '92.50',
       }],
-      payments: [{ method: 'cash', amount: '92.50' }],
+      payments: [{ method: 'visa', amount: '92.50' }],
       createdAt: '2026-08-04T09:00:00.000Z',
     }],
   });
@@ -161,7 +163,12 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
         totals: {
           grossAmount: '100.00', discountAmount: '10.00', taxAmount: '2.50', total: '92.50',
         },
-        payments: [{ method: 'cash', refundableAmount: '185.00' }],
+        payments: [
+          { method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' },
+          { method: 'visa', paidAmount: '0.00', refundableAmount: '0.00' },
+          { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
+          { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
+        ],
       });
       return;
     }
@@ -190,14 +197,20 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
   await page.getByLabel(`كمية استرداد ${refundInvoice.lines[0]!.name}`).fill('1');
   await page.getByRole('button', { name: 'احسب الاسترداد' }).click();
   await page.getByLabel('سبب الاسترداد').fill('عدم رضا العميل');
+  // The sale was paid in cash but the client wants it back on the card, so the
+  // prefilled split is moved across before confirming.
+  await page.getByLabel('مبلغ الاسترداد نقدي').fill('0');
+  await expect(page.getByText('متبقٍ للتوزيع 92.50 ج.م')).toBeVisible();
+  await page.getByLabel('مبلغ الاسترداد فيزا').fill('92.50');
   await page.getByRole('button', { name: 'تأكيد الاسترداد' }).click();
   await expect(page.getByRole('heading', { name: 'سجل الإلغاء والاسترداد' })).toBeVisible();
-  await expect(page.getByText('عدم رضا العميل')).toBeVisible();
+  // Scoped to the history: the reason also appears on the print-only refund note.
+  await expect(page.locator('details').getByText('عدم رضا العميل')).toBeVisible();
   await expect(page.getByText(`${refundInvoice.lines[0]!.name} × 1 · 92.50 ج.م`)).toBeVisible();
   expect(refundRequest).toMatchObject({
     reason: 'عدم رضا العميل',
     lines: [{ invoiceLineId: refundInvoice.lines[0]!.id, quantity: 1 }],
-    payments: [{ method: 'cash', amount: '92.50' }],
+    payments: [{ method: 'visa', amount: '92.50' }],
     idempotencyKey: expect.any(String),
   });
 

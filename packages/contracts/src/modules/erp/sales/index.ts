@@ -186,10 +186,23 @@ export const refundQuoteSchema = z.object({
     taxAmount: exactMoneySchema,
     total: exactMoneySchema,
   }).strict(),
+  /**
+   * Every method is offered, not only the ones the sale used: the cashier decides
+   * how the money physically goes back. `paidAmount` is what the till originally
+   * took on that method and `refundableAmount` what is still left on it, so the
+   * screen can prefill the ordinary same-method split and still allow another.
+   */
   payments: z.array(z.object({
     method: paymentMethodSchema,
+    paidAmount: exactMoneySchema,
     refundableAmount: exactMoneySchema,
-  }).strict()),
+  }).strict().superRefine((value, context) => {
+    if (toCents(value.refundableAmount) > toCents(value.paidAmount)) {
+      context.addIssue({
+        code: 'custom', path: ['refundableAmount'], message: 'مبالغ الاسترداد غير متسقة',
+      });
+    }
+  })),
 }).strict();
 
 export const paymentBreakdownSchema = z.object({
@@ -397,6 +410,14 @@ const invoiceLineSchema = z.object({
   }
 });
 
+/**
+ * `refundedAmount` and `refundableAmount` describe **this payment row**, not the
+ * invoice. A refund may be handed back on a method the client never used, or for
+ * more than what is left on the matching payment; either way it reverses no
+ * particular payment and leaves these two untouched. So a fully refunded invoice
+ * can still show a payment with money left "refundable" here. What the invoice
+ * still owes back is governed by the line quantities and by `eligibility`.
+ */
 const storedInvoicePaymentSchema = paymentSchema.extend({
   refundedAmount: exactMoneySchema,
   refundableAmount: exactMoneySchema,
@@ -615,7 +636,6 @@ export const saleErrorSchema = z.object({
     'VOID_DATE_EXPIRED',
     'REFUND_QUANTITY_EXCEEDED',
     'REFUND_PAYMENT_MISMATCH',
-    'REFUND_PAYMENT_EXCEEDED',
   ]),
   message: z.string().min(1),
   field: z.string().min(1).optional(),

@@ -260,7 +260,12 @@ export const invoiceReversalLines = mysqlTable('erp_invoice_reversal_lines', {
 export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments', {
   id: int('id').autoincrement().primaryKey(),
   reversalId: int('reversal_id').notNull(),
-  invoicePaymentId: int('invoice_payment_id').notNull(),
+  /**
+   * The original payment this refund reverses, when there is one. A refund may be
+   * handed back on a method the sale never used, or for more than what is left on
+   * the matching payment; either way it stands on its own and this stays null.
+   */
+  invoicePaymentId: int('invoice_payment_id'),
   methodSnapshot: mysqlEnum('method_snapshot', erpPaymentMethods).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
 }, (table) => [

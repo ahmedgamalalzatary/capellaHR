@@ -152,8 +152,38 @@ describe('ERP sale service', () => {
       totals: {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       },
-      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+      payments: [
+        { method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' },
+        { method: 'visa', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
+      ],
     });
+  });
+
+  it('offers a method the sale never used so the money can go back another way', async () => {
+    const { service } = setup({
+      findInvoiceById: vi.fn().mockResolvedValue({
+        ...invoice,
+        payments: [{
+          method: 'visa' as const, amount: '185.00',
+          refundedAmount: '85.00', refundableAmount: '100.00',
+        }],
+      }),
+    });
+
+    const quoted = await (service as unknown as {
+      quoteRefund(actorValue: typeof actor, invoiceId: number, input: {
+        lines: Array<{ invoiceLineId: number; quantity: number }>;
+      }): Promise<{ payments: unknown }>;
+    }).quoteRefund(actor, 44, { lines: [{ invoiceLineId: 81, quantity: 1 }] });
+
+    expect(quoted.payments).toEqual([
+      { method: 'cash', paidAmount: '0.00', refundableAmount: '0.00' },
+      { method: 'visa', paidAmount: '185.00', refundableAmount: '100.00' },
+      { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
+      { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
+    ]);
   });
 
   it('submits branch-scoped partial refunds and voids through the atomic repository', async () => {

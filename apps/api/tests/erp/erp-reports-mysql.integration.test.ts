@@ -12,6 +12,7 @@ import {
   erpProductStocks,
   erpServiceCommissionOverrides,
   erpServices,
+  invoiceLines,
   invoiceReversals,
 } from '@capella/database/schema';
 import { erpTabReportTypes } from '@capella/contracts';
@@ -391,5 +392,44 @@ describe('ERP reports MySQL reader', () => {
       'erp-invoice', { branchId: otherBranchId }, { mode: 'selected', ids: [invoiceId] },
       { page: 1, pageSize: 20 }, reversedAt,
     )).resolves.toMatchObject({ kind: 'success', total: 0 });
+  });
+
+  // Deliberately last: it refunds a line the earlier tests read as unreversed. The
+  // product-only sale is used because products earn no commission, so the refund
+  // stays clear of the payroll state an earlier test deliberately left pending.
+  it('reports money handed back on a method the sale never used', async () => {
+    const sales = createDrizzleSaleRepository(
+      database, createErpAuditCapability(), createErpPayrollCapability(database),
+    );
+    const [productOnlyLine] = await database.select().from(invoiceLines)
+      .where(eq(invoiceLines.invoiceId, productOnlyInvoiceId));
+    const handedBackAt = new Date('2026-09-02T09:00:00.000Z');
+    await sales.reverse({
+      type: 'refund', invoiceId: productOnlyInvoiceId,
+      input: {
+        branchId, idempotencyKey: crypto.randomUUID(), reason: 'رد على الفيزا',
+        lines: [{ invoiceLineId: productOnlyLine!.id, quantity: 1 }],
+        payments: [{ method: 'visa', amount: '50.00' }],
+      },
+      actingAccountId: adminId, actingAccountRole: 'admin', reversedAt: handedBackAt,
+    });
+
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-payment-methods',
+      { branchId, dateFrom: '2026-09-02', dateTo: '2026-09-02' },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, handedBackAt,
+    );
+
+    // The till really paid out 50.00 on the card, so the report must show it even
+    // though no card payment was ever taken on this invoice.
+    expect(result).toMatchObject({
+      kind: 'success',
+      total: 1,
+      snapshot: {
+        rows: [expect.objectContaining({
+          invoiceNumber: 'INV.2026.07.09.0001', paymentMethod: 'فيزا', amount: '-50.00',
+        })],
+      },
+    });
   });
 });

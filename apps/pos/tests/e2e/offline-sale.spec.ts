@@ -1,4 +1,6 @@
 import { expect, test, type Route } from '@playwright/test';
+
+import { saleFixtures } from '@capella/contracts';
 import { e2eBaseUrl } from '../../playwright-port';
 
 const posOrigin = e2eBaseUrl;
@@ -193,10 +195,12 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
         });
         return;
       }
+      // The API answers with the whole invoice, and the success screen prints a
+      // receipt from it, so the stub must carry its lines.
       await json(route, {
+        ...saleFixtures.completedInvoice,
         id: 44,
         invoiceNumber: 'INV-OFFLINE-44',
-        totals: { total: '185.00' },
       });
       return;
     }

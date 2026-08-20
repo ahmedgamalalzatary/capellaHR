@@ -76,7 +76,9 @@ describe('RequireAdmin', () => {
     await waitFor(() => expect(screen.getByText('لوحة التحكم')).toBeDefined());
   });
 
-  test('recovers automatically from one transient session-check failure', async () => {
+  // The retry it waits on can use the full 5s budget, so the test needs more than
+  // vitest's 5s default or it races itself when the whole monorepo runs at once.
+  test('recovers automatically from one transient session-check failure', { timeout: 20_000 }, async () => {
     getSessionMock
       .mockRejectedValueOnce(new ApiError(0, {
         code: 'NETWORK_ERROR',

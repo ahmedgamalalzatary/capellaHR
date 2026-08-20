@@ -491,6 +491,13 @@
       "when": 1786987137813,
       "tag": "0069_expense_category_removal",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "5",
+      "when": 1787127741251,
+      "tag": "0070_refund_free_payment_methods",
+      "breakpoints": true
     }
   ]
 }

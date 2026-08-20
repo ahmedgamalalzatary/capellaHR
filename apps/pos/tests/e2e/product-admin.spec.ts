@@ -98,7 +98,7 @@ test('Admin creates, edits, and adjusts a branch product', async ({ page }) => {
   await expect(page.getByRole('cell', { name: '3', exact: true })).toBeVisible();
 });
 
-test('Cashier cannot open product or supplier administration directly', async ({ page }) => {
+test('Cashier runs product and supplier administration for their own branch', async ({ page }) => {
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
@@ -117,9 +117,11 @@ test('Cashier cannot open product or supplier administration directly', async ({
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
   });
 
+  // A cashier runs their own branch like an admin; only oversight screens
+  // (commissions, reports, cashier accounts, shift history) stay admin-only.
   for (const path of ['/products', '/suppliers']) {
     await page.goto(path);
-    await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /المنتجات|الموردون/ })).toHaveCount(0);
+    await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /المنتجات|الموردون/ }).first()).toBeVisible();
   }
 });

@@ -100,7 +100,12 @@ describe('refunds tab', () => {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       }],
       totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
-      payments: [{ method: 'cash', refundableAmount: '185.00' }],
+      payments: [
+        { method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' },
+        { method: 'visa', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
+      ],
     });
     refundInvoice.mockReset().mockResolvedValue({
       ...saleFixtures.completedInvoice,
@@ -252,8 +257,10 @@ describe('refunds tab', () => {
       }],
       totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
       payments: [
-        { method: 'cash', refundableAmount: '85.00' },
-        { method: 'visa', refundableAmount: '150.00' },
+        { method: 'cash', paidAmount: '85.00', refundableAmount: '85.00' },
+        { method: 'visa', paidAmount: '150.00', refundableAmount: '150.00' },
+        { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
       ],
     });
     renderView();
@@ -275,7 +282,62 @@ describe('refunds tab', () => {
     })));
   });
 
-  it('blocks the refund when the paid amounts cannot cover the quoted total', async () => {
+  it('hands the money back on a method the sale never used', async () => {
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    // The prefilled cash is moved onto the card the client asked to be credited.
+    fireEvent.change(await screen.findByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد فيزا'), { target: { value: '185.00' } });
+    fireEvent.change(screen.getByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledWith(44, expect.objectContaining({
+      payments: [{ method: 'visa', amount: '185.00' }],
+    })));
+  });
+
+  it('holds the refund until the typed split adds up to the quoted total', async () => {
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '100.00' } });
+
+    expect(screen.getByText('متبقٍ للتوزيع 85.00 ج.م')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
+      .toBe(true);
+
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد إنستا باي'), { target: { value: '90.00' } });
+
+    expect(screen.getByText('زائد 5.00 ج.م')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
+      .toBe(true);
+
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد إنستا باي'), { target: { value: '85.00' } });
+
+    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
+      .toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledWith(44, expect.objectContaining({
+      payments: [
+        { method: 'cash', amount: '100.00' },
+        { method: 'instapay', amount: '85.00' },
+      ],
+    })));
+  });
+
+  it('lets the cashier finish a split the paid methods cannot cover on their own', async () => {
     quoteRefund.mockResolvedValueOnce({
       lines: [{
         invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
@@ -283,7 +345,12 @@ describe('refunds tab', () => {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       }],
       totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
-      payments: [{ method: 'cash', refundableAmount: '85.00' }],
+      payments: [
+        { method: 'cash', paidAmount: '85.00', refundableAmount: '85.00' },
+        { method: 'visa', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
+        { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
+      ],
     });
     renderView();
     await openInvoice();
@@ -295,7 +362,88 @@ describe('refunds tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
     fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
 
-    expect(screen.getByText('تعذر توزيع المبلغ المسترد على طرق الدفع المسجلة للفاتورة.')).toBeDefined();
+    // Only 85 could be prefilled from what the client paid; the rest is the cashier's call.
+    expect(screen.getByText('متبقٍ للتوزيع 100.00 ج.م')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد فودافون كاش'), { target: { value: '100.00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledWith(44, expect.objectContaining({
+      payments: [
+        { method: 'cash', amount: '85.00' },
+        { method: 'vodafone_cash', amount: '100.00' },
+      ],
+    })));
+  });
+
+  it('refuses to refund against a quote total it cannot read', async () => {
+    // A total the screen cannot parse must never leave the confirm button live
+    // with nothing typed: that would post a refund of no money at all.
+    quoteRefund.mockResolvedValueOnce({
+      lines: [{
+        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+        quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: 'x' },
+      payments: [{ method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' }],
+    });
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+
+    expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    expect(refundInvoice).not.toHaveBeenCalled();
+  });
+
+  it('keeps one idempotency key when only the tender split is edited', async () => {
+    // The money may already be out of the till when the answer is lost. Retrying
+    // with the split moved elsewhere must replay the same command, never post a
+    // second refund.
+    refundInvoice.mockRejectedValueOnce(new Error('network lost'));
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد فيزا'), { target: { value: '185.00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(2));
+
+    const [, first] = refundInvoice.mock.calls[0] as [number, { idempotencyKey: string }];
+    const [, second] = refundInvoice.mock.calls[1] as [number, {
+      idempotencyKey: string; payments: unknown;
+    }];
+    expect(second.idempotencyKey).toBe(first.idempotencyKey);
+    expect(second.payments).toEqual([{ method: 'visa', amount: '185.00' }]);
+  });
+
+  it('refuses an amount that is not money', async () => {
+    renderView();
+    await openInvoice();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    fireEvent.change(screen.getByLabelText('مبلغ الاسترداد نقدي'), { target: { value: '18.5.0' } });
+
     expect((screen.getByRole('button', { name: 'تأكيد الاسترداد' }) as HTMLButtonElement).disabled)
       .toBe(true);
   });

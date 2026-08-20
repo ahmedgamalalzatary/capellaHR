@@ -691,6 +691,197 @@ describe('ERP sale repository MySQL integration', () => {
     });
   });
 
+  it('hands the money back on a method the sale never used', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+
+    const refunded = await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Client asked for the money on the card',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'visa', amount: '185.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    expect(refunded.reversals[0]!.payments).toEqual([{ method: 'visa', amount: '185.00' }]);
+    // Nothing came off the cash the client actually paid, so that row stands untouched.
+    expect(refunded.payments).toEqual([{
+      method: 'cash', amount: '185.00',
+      refundedAmount: '0.00', refundableAmount: '185.00',
+    }]);
+    const stored = await database.select().from(invoiceReversalPayments)
+      .where(eq(invoiceReversalPayments.reversalId, refunded.reversals[0]!.id));
+    expect(stored).toEqual([expect.objectContaining({
+      invoicePaymentId: null, methodSnapshot: 'visa', amount: '185.00',
+    })]);
+  });
+
+  it('still links a refund to the payment it reverses when the method matches', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+    const [cashPayment] = await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id));
+
+    const refunded = await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Cash back over the counter',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '185.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    expect(await database.select().from(invoiceReversalPayments)
+      .where(eq(invoiceReversalPayments.reversalId, refunded.reversals[0]!.id)))
+      .toEqual([expect.objectContaining({ invoicePaymentId: cashPayment!.id })]);
+    expect(refunded.payments[0]).toMatchObject({
+      refundedAmount: '185.00', refundableAmount: '0.00',
+    });
+  });
+
+  it('leaves a same-method refund unlinked when it no longer fits the original payment', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [
+      { method: 'cash', amount: '30.00' },
+      { method: 'visa', amount: '70.00' },
+    ];
+    const completed = await repository.complete(sale);
+
+    const refunded = await repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'All of it back in cash',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '50.00' }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    // 50 cash does not fit inside the 30 the client paid in cash, so the refund
+    // stands on its own rather than pretending to reverse that payment.
+    expect(await database.select().from(invoiceReversalPayments)
+      .where(eq(invoiceReversalPayments.reversalId, refunded.reversals[0]!.id)))
+      .toEqual([expect.objectContaining({ invoicePaymentId: null, amount: '50.00' })]);
+    expect(refunded.payments).toEqual([
+      { method: 'cash', amount: '30.00', refundedAmount: '0.00', refundableAmount: '30.00' },
+      { method: 'visa', amount: '70.00', refundedAmount: '0.00', refundableAmount: '70.00' },
+    ]);
+  });
+
+  it('still refuses a refund payment linked to the wrong payment row', async () => {
+    // The link is optional now, but a link that IS given must still be honest.
+    // These are the two checks the rewritten insert guard has to keep making.
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const completed = await repository.complete(operation(data, crypto.randomUUID()));
+    // A second fixture, because one fixture mints a single invoice number.
+    const otherData = await fixture();
+    const other = await repository.complete(operation(otherData, crypto.randomUUID()));
+    const [otherPayment] = await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, other.id));
+    const [ownPayment] = await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id));
+    const pendingId = Number((await database.insert(invoiceReversals).values({
+      invoiceId: completed.id, branchId: data.branchId, type: 'refund',
+      idempotencyKey: crypto.randomUUID(), reason: 'Wrong payment link',
+      actingAccountId: data.accountId, approvingAccountId: null,
+      grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      businessDate: '2026-08-04', createdAt: new Date('2026-08-04T09:00:00.000Z'),
+    }))[0].insertId);
+
+    // Drizzle wraps the trigger's SIGNAL, so the guard is read off the cause.
+    const guardMessage = async (invoicePaymentId: number, methodSnapshot: 'cash' | 'visa') => {
+      try {
+        await database.insert(invoiceReversalPayments).values({
+          reversalId: pendingId, invoicePaymentId, methodSnapshot, amount: '185.00',
+        });
+        return 'accepted';
+      } catch (error) {
+        return String((error as { cause?: { message?: string } }).cause?.message ?? error);
+      }
+    };
+
+    // A payment belonging to another invoice, then a link whose method disagrees
+    // with the snapshot it is stored under.
+    expect(await guardMessage(otherPayment!.id, 'cash'))
+      .toMatch(/Invoice reversal payment ownership is invalid/);
+    expect(await guardMessage(ownPayment!.id, 'visa'))
+      .toMatch(/Invoice reversal payment ownership is invalid/);
+
+    // The honest link is still accepted.
+    await database.insert(invoiceReversalPayments).values({
+      reversalId: pendingId, invoicePaymentId: ownPayment!.id,
+      methodSnapshot: 'cash', amount: '185.00',
+    });
+    expect(await database.select().from(invoiceReversalPayments)
+      .where(eq(invoiceReversalPayments.reversalId, pendingId))).toHaveLength(1);
+  });
+
+  it('keeps counting an unlinked refund against the invoice, not against a payment', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [
+      { method: 'cash', amount: '30.00' },
+      { method: 'visa', amount: '70.00' },
+    ];
+    const completed = await repository.complete(sale);
+    const refund = (key: string, method: 'cash' | 'visa', amount: string) => repository.reverse({
+      type: 'refund',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId, idempotencyKey: key, reason: 'Sequential return',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method, amount }],
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier' as const,
+      reversedAt: new Date('2026-08-04T09:00:00.000Z'),
+    });
+
+    await refund(crypto.randomUUID(), 'cash', '50.00');
+    const after = await refund(crypto.randomUUID(), 'visa', '50.00');
+
+    // Both units are back, so nothing more can be refunded, even though the cash
+    // payment still reads as untouched: `refundableAmount` describes that payment
+    // row, not what the invoice still owes.
+    expect(after.status).toBe('refunded');
+    expect(after.eligibility.canRefund).toBe(false);
+    expect(after.lines[0]).toMatchObject({ refundedQuantity: 2, refundableQuantity: 0 });
+    expect(after.payments).toEqual([
+      { method: 'cash', amount: '30.00', refundedAmount: '0.00', refundableAmount: '30.00' },
+      { method: 'visa', amount: '70.00', refundedAmount: '50.00', refundableAmount: '20.00' },
+    ]);
+  });
+
   it('rejects a refund whose payment allocation does not equal its calculated total', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -814,8 +1005,9 @@ describe('ERP sale repository MySQL integration', () => {
     await reverse(1, '50.00');
     await expect(reverse(2, '100.00'))
       .rejects.toMatchObject({ code: 'REFUND_QUANTITY_EXCEEDED' });
+    // The method is free to choose, so the only cap left is the quoted total.
     await expect(reverse(1, '51.00'))
-      .rejects.toMatchObject({ code: 'REFUND_PAYMENT_EXCEEDED' });
+      .rejects.toMatchObject({ code: 'REFUND_PAYMENT_MISMATCH' });
     expect((await database.select().from(erpProductStocks)
       .where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(1);
     expect(await database.select().from(invoiceReversals)
