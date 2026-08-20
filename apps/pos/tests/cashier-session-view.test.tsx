@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   closeCashierSession: vi.fn(),
   recoveryCloseCashierSession: vi.fn(),
   listCashierSessionBranches: vi.fn(),
+  getCashierSessionSummary: vi.fn(),
+  listCashierSessions: vi.fn(),
 }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
@@ -25,6 +27,8 @@ vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', async (impo
   closeCashierSession: mocks.closeCashierSession,
   recoveryCloseCashierSession: mocks.recoveryCloseCashierSession,
   listCashierSessionBranches: mocks.listCashierSessionBranches,
+  getCashierSessionSummary: mocks.getCashierSessionSummary,
+  listCashierSessions: mocks.listCashierSessions,
 }));
 
 import { CashierSessionView } from '../src/features/cashier-sessions';
@@ -39,6 +43,18 @@ const session = {
   closedAt: null,
   closedByAccountId: null,
   closedByUsername: null,
+};
+
+const summary = {
+  ...session,
+  autoClosedAt: null,
+  durationMinutes: 90,
+  saleCount: 2,
+  taken: { cash: '400.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00' },
+  refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+  takenTotal: '500.00',
+  refundedTotal: '50.00',
+  net: '450.00',
 };
 
 const pageOf = (items: unknown[]) => ({
@@ -75,6 +91,11 @@ beforeEach(() => {
     closedAt: '2026-08-01T10:00:00.000Z',
     closedByAccountId: 1,
     closedByUsername: 'admin@capella.test',
+  });
+  mocks.getCashierSessionSummary.mockResolvedValue(summary);
+  mocks.listCashierSessions.mockResolvedValue({
+    items: [],
+    meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
   });
   mocks.listCashierSessionBranches.mockResolvedValue(pageOf([
     { id: 3, name: 'الفرع الرئيسي' },
@@ -326,5 +347,27 @@ describe('CashierSessionView', () => {
     dialog.focus();
     expect(fireEvent.keyDown(dialog, { key: 'Tab' })).toBe(false);
     expect(document.activeElement).toBe(dialog);
+  });
+
+  test('shows the open shift its running money, split by method', async () => {
+    mocks.getCurrentCashierSession.mockResolvedValue(session);
+    renderView();
+
+    const totals = await screen.findByRole('region', { name: 'حركة الوردية' });
+    expect(within(totals).getByText('450.00 ج.م')).toBeDefined();
+    expect(within(totals).getByText('2')).toBeDefined();
+    // Both directions are visible per method, because a till can hand back money
+    // on a method it never took in.
+    expect(within(totals).getByText('400.00 ج.م')).toBeDefined();
+    expect(within(totals).getAllByText('50.00 ج.م')).toHaveLength(2);
+    expect(mocks.getCashierSessionSummary).toHaveBeenCalledWith(14);
+  });
+
+  test('leaves the money out until there is an open shift to count', async () => {
+    renderView();
+
+    expect(await screen.findByRole('button', { name: 'فتح الوردية' })).toBeDefined();
+    expect(screen.queryByRole('region', { name: 'حركة الوردية' })).toBeNull();
+    expect(mocks.getCashierSessionSummary).not.toHaveBeenCalled();
   });
 });

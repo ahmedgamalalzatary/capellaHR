@@ -42,7 +42,7 @@ export const adminNavigation: NavGroup[] = [
   {
     label: 'الإدارة',
     items: [
-      { href: '/cashier-sessions', label: 'ورديات الكاشير', icon: Clock3 },
+      { href: '/cashier-sessions', label: 'ورديات الكاشير والسجل', icon: Clock3 },
       { href: '/catalog', label: 'الكتالوج', icon: LayoutList },
       { href: '/products', label: 'المنتجات والمخزون', icon: Package },
       { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },

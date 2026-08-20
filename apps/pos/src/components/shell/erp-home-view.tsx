@@ -56,10 +56,10 @@ const adminGroups: ReadonlyArray<{
   },
   {
     title: 'التشغيل والصلاحيات',
-    description: 'متابعة ورديات الكاشير وإدارة حسابات التشغيل.',
+    description: 'متابعة ورديات الكاشير وحركة أموالها وإدارة حسابات التشغيل.',
     icon: UserCog,
     links: [
-      { href: '/cashier-sessions', label: 'ورديات الكاشير' },
+      { href: '/cashier-sessions', label: 'ورديات الكاشير والسجل' },
       { href: '/cashier-accounts', label: 'حسابات الكاشير' },
     ],
   },

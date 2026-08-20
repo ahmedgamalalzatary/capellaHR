@@ -17,6 +17,17 @@ const session = {
   autoClosedAt: null,
 };
 
+const noMoney = { cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' };
+const money = {
+  ...session,
+  saleCount: 2,
+  taken: { ...noMoney, cash: '400.00' },
+  refunded: { ...noMoney, cash: '50.00' },
+  takenTotal: '400.00',
+  refundedTotal: '50.00',
+  net: '350.00',
+};
+
 const setup = () => {
   const repository = {
     open: vi.fn<CashierSessionRepository['open']>(async () => ({
@@ -43,6 +54,9 @@ const setup = () => {
       },
     })),
     autoCloseExpired: vi.fn<CashierSessionRepository['autoCloseExpired']>(async () => []),
+    list: vi.fn<CashierSessionRepository['list']>(async () => ({ items: [money], total: 1 })),
+    findMoneyById: vi.fn<CashierSessionRepository['findMoneyById']>(async () => money),
+    listInvoices: vi.fn<CashierSessionRepository['listInvoices']>(async () => []),
   };
   const resolveBranchContext = vi.fn(async (actor: { role: 'admin' | 'cashier'; accountId: number }, branchId?: number) => ({
     accountId: actor.accountId,
@@ -180,5 +194,88 @@ describe('ERP Cashier-session service', () => {
     await expect(closed.service.recoveryClose(
       { role: 'admin', accountId: 1 }, 14, 'سبب',
     )).rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_ALREADY_CLOSED' });
+  });
+
+  it('measures an open shift up to now and a closed one up to its close', async () => {
+    const { repository, service } = setup();
+    repository.findMoneyById.mockResolvedValue({
+      ...money,
+      openedAt: new Date('2026-08-01T08:00:00.000Z'),
+    });
+
+    // Open at 08:00, read at 09:30: an hour and a half so far.
+    await expect(service.summary({ role: 'admin', accountId: 1 }, 14))
+      .resolves.toMatchObject({ durationMinutes: 90, net: '350.00' });
+
+    repository.findMoneyById.mockResolvedValue({
+      ...money,
+      openedAt: new Date('2026-08-01T08:00:00.000Z'),
+      closedAt: new Date('2026-08-01T09:00:00.000Z'),
+    });
+    await expect(service.summary({ role: 'admin', accountId: 1 }, 14))
+      .resolves.toMatchObject({ durationMinutes: 60 });
+  });
+
+  it('ends a stale shift before reporting on it', async () => {
+    const { repository, service } = setup();
+
+    await service.list({ role: 'admin', accountId: 1 }, { page: 1, pageSize: 20 });
+
+    expect(repository.autoCloseExpired).toHaveBeenCalled();
+  });
+
+  it('lets an Admin read any branch and a Cashier only their own shifts', async () => {
+    const { repository, service } = setup();
+
+    await service.list({ role: 'admin', accountId: 1 }, { page: 1, pageSize: 20, branchId: 9 });
+    expect(repository.list).toHaveBeenCalledWith(expect.objectContaining({
+      branchId: 9, openedByAccountId: undefined,
+    }));
+
+    await service.list({ role: 'cashier', accountId: 8, branchId: 3 }, { page: 1, pageSize: 20 });
+    expect(repository.list).toHaveBeenLastCalledWith(expect.objectContaining({
+      branchId: 3, openedByAccountId: 8,
+    }));
+  });
+
+  it('refuses a Cashier the shift of another till and the shift of another branch', async () => {
+    const { repository, service } = setup();
+    repository.findMoneyById.mockResolvedValue({ ...money, openedByAccountId: 99 });
+
+    await expect(service.detail({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
+      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_OWNER' });
+
+    repository.findMoneyById.mockResolvedValue({ ...money, branchId: 4 });
+    await expect(service.detail({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
+      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_FOUND' });
+  });
+
+  it('reports a shift that does not exist as missing', async () => {
+    const { repository, service } = setup();
+    repository.findMoneyById.mockResolvedValue(null);
+
+    await expect(service.detail({ role: 'admin', accountId: 1 }, 14))
+      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_FOUND' });
+  });
+
+  it('hands the detail its shift summary and the sales behind it', async () => {
+    const { repository, service } = setup();
+    const invoice = {
+      id: 41,
+      invoiceNumber: 'INV-2026.08.01-12.00-3',
+      status: 'completed' as const,
+      client: { id: 5, name: 'عميل', phone: null },
+      total: '185.00',
+      takenInShift: '185.00',
+      refundedInShift: '0.00',
+      soldAt: now,
+    };
+    repository.listInvoices.mockResolvedValue([invoice]);
+
+    await expect(service.detail({ role: 'admin', accountId: 1 }, 14)).resolves.toEqual({
+      summary: expect.objectContaining({ id: 14, net: '350.00' }),
+      invoices: [invoice],
+    });
+    expect(repository.listInvoices).toHaveBeenCalledWith(14);
   });
 });

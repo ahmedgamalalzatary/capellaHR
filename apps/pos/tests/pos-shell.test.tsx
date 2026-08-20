@@ -95,7 +95,7 @@ describe('PosShell', () => {
     renderShell();
 
     expect((await screen.findByRole('link', { name: 'لوحة الإدارة' })).getAttribute('href')).toBe('/');
-    expect(screen.getByRole('link', { name: 'ورديات الكاشير' })).toHaveProperty(
+    expect(screen.getByRole('link', { name: 'ورديات الكاشير والسجل' })).toHaveProperty(
       'href',
       expect.stringContaining('/cashier-sessions'),
     );
@@ -143,12 +143,12 @@ describe('PosShell', () => {
   test('hides the cashier-sessions oversight link from a cashier', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell();
-    expect(await screen.findByRole('link', { name: 'ورديات الكاشير' })).toBeDefined();
+    expect(await screen.findByRole('link', { name: 'ورديات الكاشير والسجل' })).toBeDefined();
 
     cleanup();
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'ورديات الكاشير' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ورديات الكاشير والسجل' })).toBeNull());
   });
 
   test('shows the service-sale workflow link to every ERP account', async () => {

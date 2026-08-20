@@ -27,6 +27,7 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import {
   closeCashierSession,
+  getCashierSessionSummary,
   getCurrentCashierSession,
   listCashierSessionBranches,
   openCashierSession,
@@ -34,6 +35,8 @@ import {
 } from '../api/cashier-sessions-api';
 import { cashierSessionQueryKeys } from '../query-keys';
 import { RecoveryCloseDialog } from './recovery-close-dialog';
+import { ShiftHistoryView } from './shift-history-view';
+import { ShiftMoney } from './shift-money';
 
 const formatCairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'Africa/Cairo',
@@ -87,6 +90,15 @@ export function CashierSessionView() {
     queryKey: currentKey,
     queryFn: () => getCurrentCashierSession(isAdmin ? selectedBranchId : undefined),
     enabled: isCashier || (isAdmin && selectedBranchId !== undefined),
+  });
+
+  // The same read the history uses, polled while the page is open so the till
+  // sees its own money move. There is no second code path for "live".
+  const summaryQuery = useQuery({
+    queryKey: cashierSessionQueryKeys.summary(currentQuery.data?.id ?? 0),
+    queryFn: () => getCashierSessionSummary(currentQuery.data!.id),
+    enabled: currentQuery.data != null,
+    refetchInterval: 30_000,
   });
 
   const openMutation = useMutation({
@@ -220,6 +232,8 @@ export function CashierSessionView() {
               </SessionFact>
             </dl>
 
+            {summaryQuery.data ? <ShiftMoney summary={summaryQuery.data} /> : null}
+
             {isCashier && !ownsSession ? (
               <Notice tone="warning">الوردية مفتوحة بواسطة كاشير آخر</Notice>
             ) : null}
@@ -262,6 +276,12 @@ export function CashierSessionView() {
             <FieldError className="px-5 pb-4 text-center">{actionError}</FieldError>
           ) : null}
         </Card>
+      )}
+
+      {isAdmin && selectedBranchId === undefined ? null : (
+        <ShiftHistoryView
+          {...(isAdmin && selectedBranchId !== undefined ? { branchId: selectedBranchId } : {})}
+        />
       )}
 
       {confirmClose ? (

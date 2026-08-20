@@ -1,6 +1,6 @@
 # Beauty Center ERP — Next Features Plan
 
-Status: **Steps 1-2 built; Steps 3-9 still plan only.** Written 2026-08-19 after reading the
+Status: **Steps 1-3 built; Steps 4-9 still plan only.** Written 2026-08-19 after reading the
 current codebase. Covers the nine changes requested on 2026-08-19.
 
 This document is written to be read by a person who is not going to open the code. Every
@@ -120,7 +120,7 @@ Quick wins first, as decided. Two ordering notes that matter:
 |---|---|---|---|
 | 1 | Refund payment split chosen by the cashier — **built** | Small | no — extends `erp-sales` |
 | 2 | Employee termination: close the settlement gaps — **built** | Small | no — extends `employees` / `payroll` |
-| 3 | Till shift history + live shift totals | Medium | no — extends `erp-sales` |
+| 3 | Till shift history + live shift totals — **built** | Medium | no — extends `erp-sales` |
 | 4 | Barcodes: print, scan, sell | Medium | no — extends `erp-catalog` + POS |
 | 5 | Reassign the employee on a sold service | Medium | no — extends `erp-sales` + `erp-commissions` |
 | 6 | Partial payment on product-only invoices | Large | no — extends `erp-sales` |
@@ -409,6 +409,52 @@ shift cannot appear as live.
 **Optional but recommended:** add `erp-shifts` to the ERP report list in
 `packages/contracts/src/modules/reports/index.ts` so a shift summary can be exported as PDF
 through the existing worker pipeline.
+
+---
+
+### Built — what the plan missed
+
+Step 3 is implemented. What the plan did not anticipate:
+
+- **A shift can hand back more money than it took, so its net carries a sign.**
+  Every money field in the sales contracts is unsigned by construction. A till that
+  refunds a sale rung up in an earlier shift ends the day at, say, `-185.00`, which
+  is a real and important number to show. `cashierSessionSummarySchema.net` uses a
+  new signed money schema; every other field stays unsigned.
+- **A reversal's shift is nullable, and deliberately so.** An Admin may refund with
+  no till open at all, and a shift past its sixteen hours is spent whether or not
+  the sweep has written its close. Both leave `erp_invoice_reversals.cashier_session_id`
+  null rather than attributing the money to a stale shift. The refund is then
+  visible on the invoice and in the payment-methods report, but belongs to no
+  shift — which is the honest answer.
+- **`db:generate` again emitted `ADD ... NOT NULL` with no default.** Migration
+  `0072` was rewritten by hand as nullable → backfill from the parent invoice →
+  `MODIFY ... NOT NULL`, the same shape `0071` needed, so existing payment rows
+  survive.
+- **Sales are counted where they were rung up; money is counted where it moved.**
+  `saleCount` reads `erp_invoices.cashier_session_id` while every amount reads the
+  payment and reversal rows. They answer two different questions ("how busy was
+  this shift" versus "whose money was it"), and Step 6 will pull them apart
+  further rather than reconcile them.
+- **An invoice belongs to a shift's list three different ways.** It was rung up in
+  it, the shift took money on it, or the shift handed money back on it. The detail
+  list unions all three and reports `takenInShift` / `refundedInShift` per invoice,
+  so the row never pretends the invoice total was this shift's money.
+- **Voids count against the till exactly as refunds do.** Both are reversal rows
+  with finalized status, and both hand cash back over the counter.
+- **The route stays Admin-only, so the history was composed into the shift screen
+  instead.** `/cashier-sessions` is wrapped in `RequireErpAccount role="admin"`, and
+  a Cashier reaches their own shift through `ErpHomeView`. Rather than change that
+  access rule, `ShiftHistoryView` is rendered inside `CashierSessionView`, so a
+  Cashier sees their own past shifts on the home screen and an Admin sees the
+  branch's on `/cashier-sessions`. `ShiftHistoryView` takes an optional `branchId`
+  so the Admin is never asked which branch twice.
+- **The live figures are the same read, polled.** `GET /erp/cashier-sessions/:id`
+  refetches every thirty seconds while the shift screen is open. There is no
+  separate "live" endpoint or code path.
+
+Deliberately not done: the optional `erp-shifts` PDF report. Nothing else depends
+on it, and the shift screen answers the question on-screen today.
 
 ---
 

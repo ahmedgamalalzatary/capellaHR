@@ -22,7 +22,56 @@ export type CashierSessionRecord = {
   autoClosedAt: Date | null;
 };
 
+/** One drawer per payment method, always all four, in exact-cent strings. */
+export type CashierSessionMoneyByMethod = {
+  cash: string;
+  visa: string;
+  instapay: string;
+  vodafone_cash: string;
+};
+
+/** A shift with the money it moved, counted from the payment rows keyed to it. */
+export type CashierSessionMoneyRecord = CashierSessionRecord & {
+  saleCount: number;
+  taken: CashierSessionMoneyByMethod;
+  refunded: CashierSessionMoneyByMethod;
+  takenTotal: string;
+  refundedTotal: string;
+  net: string;
+};
+
+export type CashierSessionSummaryRecord = CashierSessionMoneyRecord & {
+  /** Elapsed so far while the shift is open, total once it has closed. */
+  durationMinutes: number;
+};
+
+export type CashierSessionInvoiceRecord = {
+  id: number;
+  invoiceNumber: string;
+  status: 'completed' | 'partially_refunded' | 'refunded' | 'voided';
+  client: { id: number; name: string | null; phone: string | null };
+  total: string;
+  takenInShift: string;
+  refundedInShift: string;
+  soldAt: Date;
+};
+
+export interface CashierSessionListQueryInput {
+  page: number;
+  pageSize: number;
+  branchId?: number | undefined;
+}
+
 export interface CashierSessionRepository {
+  list(input: {
+    branchId: number;
+    /** Set for a Cashier, who may only read the shifts they opened themselves. */
+    openedByAccountId: number | undefined;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: CashierSessionMoneyRecord[]; total: number }>;
+  findMoneyById(sessionId: number): Promise<CashierSessionMoneyRecord | null>;
+  listInvoices(sessionId: number): Promise<CashierSessionInvoiceRecord[]>;
   open(input: {
     branchId: number;
     openedByAccountId: number;
@@ -108,8 +157,60 @@ export const createCashierSessionService = (dependencies: {
     openedBefore: new Date(now().getTime() - CASHIER_SESSION_MAX_DURATION_MS),
   });
 
+  const withDuration = (record: CashierSessionMoneyRecord): CashierSessionSummaryRecord => ({
+    ...record,
+    durationMinutes: Math.max(0, Math.floor(
+      ((record.closedAt ?? now()).getTime() - record.openedAt.getTime()) / 60_000,
+    )),
+  });
+
+  /**
+   * A Cashier sees only the shifts they opened, and only in their own branch; an
+   * Admin sees whatever branch they asked for.
+   */
+  const readable = async (actor: ErpAccountIdentity, sessionId: number) => {
+    await closeExpired();
+    const record = await dependencies.repository.findMoneyById(sessionId);
+    if (!record) {
+      throw new CashierSessionError('ERP_CASHIER_SESSION_NOT_FOUND', 'وردية الكاشير غير موجودة');
+    }
+    if (actor.role === 'cashier') {
+      if (record.branchId !== actor.branchId) {
+        throw new CashierSessionError('ERP_CASHIER_SESSION_NOT_FOUND', 'وردية الكاشير غير موجودة');
+      }
+      if (record.openedByAccountId !== actor.accountId) {
+        throw new CashierSessionError(
+          'ERP_CASHIER_SESSION_NOT_OWNER',
+          'لا يمكن عرض وردية فتحها حساب كاشير آخر',
+        );
+      }
+    }
+    return withDuration(record);
+  };
+
   return {
     closeExpired,
+
+    async list(actor: ErpAccountIdentity, query: CashierSessionListQueryInput) {
+      const context = await dependencies.resolveBranchContext(actor, query.branchId);
+      await closeExpired();
+      const { items, total } = await dependencies.repository.list({
+        branchId: context.branchId,
+        openedByAccountId: actor.role === 'cashier' ? actor.accountId : undefined,
+        page: query.page,
+        pageSize: query.pageSize,
+      });
+      return { items: items.map(withDuration), total, page: query.page, pageSize: query.pageSize };
+    },
+
+    summary(actor: ErpAccountIdentity, sessionId: number) {
+      return readable(actor, sessionId);
+    },
+
+    async detail(actor: ErpAccountIdentity, sessionId: number) {
+      const summary = await readable(actor, sessionId);
+      return { summary, invoices: await dependencies.repository.listInvoices(sessionId) };
+    },
 
     async open(actor: ErpAccountIdentity) {
       const cashier = requireCashier(actor);

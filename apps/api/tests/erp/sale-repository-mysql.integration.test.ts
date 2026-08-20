@@ -34,6 +34,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { ErpAssignmentError } from '../../src/modules/erp/assignment/index.js';
 import { createDrizzleCommissionRepository } from '../../src/modules/erp/commissions/index.js';
+import { createDrizzleCashierSessionRepository } from '../../src/modules/erp/sales/cashier-sessions-repository.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
 import { createDrizzleBranchCashierRosterRepository } from '../../src/modules/erp/sales/branch-cashier-roster-repository.js';
 import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock/index.js';
@@ -230,6 +231,100 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('counts each shift by the money keyed to it, not by the invoices raised in it', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const shifts = createDrizzleCashierSessionRepository(database, createErpAuditCapability());
+    const first = await repository.complete(operation(data, crypto.randomUUID()));
+    await repository.complete({
+      ...operation(data, crypto.randomUUID()),
+      invoiceNumber: `INV-2026.08.03-14.40-${data.branchId}`,
+    });
+
+    // The till that sold the invoice closes, and the next one opens.
+    const closedAt = new Date('2026-08-03T18:00:00.000Z');
+    await database.update(cashierSessions)
+      .set({ closedAt, closedByAccountId: data.accountId })
+      .where(eq(cashierSessions.id, data.cashierSessionId));
+    const nextSessionId = Number((await database.insert(cashierSessions).values({
+      branchId: data.branchId,
+      openedByAccountId: data.accountId,
+      openedAt: closedAt,
+    }))[0].insertId);
+
+    // The money goes back out of the new till, an hour into the new shift.
+    await repository.reverse({
+      type: 'refund',
+      invoiceId: first.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Approved customer refund',
+        lines: [{ invoiceLineId: first.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'visa', amount: '185.00' }],
+      },
+      actingAccountId: data.adminAccountId,
+      actingAccountRole: 'admin',
+      reversedAt: new Date('2026-08-03T19:00:00.000Z'),
+    });
+
+    const sold = (await shifts.findMoneyById(data.cashierSessionId))!;
+    expect(sold).toMatchObject({
+      saleCount: 2,
+      taken: { cash: '370.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+      refunded: { cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+      takenTotal: '370.00',
+      refundedTotal: '0.00',
+      net: '370.00',
+    });
+
+    // The refunding shift sold nothing and is out of pocket for the whole refund.
+    const refunding = (await shifts.findMoneyById(nextSessionId))!;
+    expect(refunding).toMatchObject({
+      saleCount: 0,
+      refunded: { cash: '0.00', visa: '185.00', instapay: '0.00', vodafone_cash: '0.00' },
+      takenTotal: '0.00',
+      refundedTotal: '185.00',
+      net: '-185.00',
+    });
+
+    expect(await shifts.listInvoices(data.cashierSessionId)).toHaveLength(2);
+    expect(await shifts.listInvoices(nextSessionId)).toEqual([expect.objectContaining({
+      id: first.id,
+      status: 'refunded',
+      takenInShift: '0.00',
+      refundedInShift: '185.00',
+    })]);
+
+    const listed = await shifts.list({
+      branchId: data.branchId, openedByAccountId: undefined, page: 1, pageSize: 20,
+    });
+    // Newest first, so the till a Cashier just closed is the one they see.
+    expect(listed.total).toBe(2);
+    expect(listed.items.map(({ id }) => id)).toEqual([nextSessionId, data.cashierSessionId]);
+
+    const mine = await shifts.list({
+      branchId: data.branchId, openedByAccountId: data.adminAccountId, page: 1, pageSize: 20,
+    });
+    expect(mine).toEqual({ items: [], total: 0 });
+  });
+
+  it('attributes every payment row to the shift, the account, and the instant that took it', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const result = await repository.complete(operation(data, crypto.randomUUID()));
+
+    const [payment] = await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, result.id));
+    expect(payment).toMatchObject({
+      cashierSessionId: data.cashierSessionId,
+      actingAccountId: data.accountId,
+    });
+    // Step 6 will let a second instalment be paid in a later shift, so the money
+    // is keyed to when it was handed over, not to when the invoice was raised.
+    expect(payment!.paidAt).toEqual(data.at);
+  });
+
   it('audits inactive roster rows before replacing the full branch roster', async () => {
     const data = await fixture();
     await database.update(employees).set({ employmentStatus: 'inactive' })
@@ -689,6 +784,40 @@ describe('ERP sale repository MySQL integration', () => {
       actingAccount: { id: data.adminAccountId },
       approvingAccount: null,
     });
+  });
+
+  it('attributes a refund to the shift that handed the money back, or to none', async () => {
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const refundOwnInvoice = async (reversedAt: Date) => {
+      const data = await fixture();
+      const completed = await repository.complete(operation(data, crypto.randomUUID()));
+      const refunded = await repository.reverse({
+        type: 'refund',
+        invoiceId: completed.id,
+        input: {
+          branchId: data.branchId,
+          idempotencyKey: crypto.randomUUID(),
+          reason: 'Approved customer refund',
+          lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+          payments: [{ method: 'cash', amount: '185.00' }],
+        },
+        actingAccountId: data.adminAccountId,
+        actingAccountRole: 'admin' as const,
+        reversedAt,
+      });
+      const [stored] = await database.select().from(invoiceReversals)
+        .where(eq(invoiceReversals.id, refunded.reversals[0]!.id));
+      return { data, stored: stored! };
+    };
+
+    // Handed back while the till that sold it is still open: the same shift.
+    const inside = await refundOwnInvoice(new Date('2026-08-03T11:36:00.000Z'));
+    expect(inside.stored.cashierSessionId).toBe(inside.data.cashierSessionId);
+
+    // A day later that shift has run past its sixteen hours and no till is open,
+    // so the refund belongs to no shift rather than to a stale one.
+    const outside = await refundOwnInvoice(new Date('2026-08-05T09:00:00.000Z'));
+    expect(outside.stored.cashierSessionId).toBeNull();
   });
 
   it('hands the money back on a method the sale never used', async () => {

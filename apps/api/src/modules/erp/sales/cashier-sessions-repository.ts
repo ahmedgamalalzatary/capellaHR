@@ -1,11 +1,23 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, authSessions, branches, cashierSessions } from '@capella/database/schema';
-import { and, eq, isNull, lte } from 'drizzle-orm';
+import {
+  accounts,
+  authSessions,
+  branches,
+  cashierSessions,
+  invoicePayments,
+  invoiceReversalPayments,
+  invoiceReversals,
+  invoices,
+} from '@capella/database/schema';
+import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/mysql-core';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import {
   CASHIER_SESSION_MAX_DURATION_MS,
+  type CashierSessionInvoiceRecord,
+  type CashierSessionMoneyByMethod,
+  type CashierSessionMoneyRecord,
   type CashierSessionRecord,
   type CashierSessionRepository,
 } from './cashier-sessions-service.js';
@@ -52,6 +64,100 @@ const findOpenByBranch = async (
     )).limit(1))[0] ?? null
 );
 
+
+const paymentMethods = ['cash', 'visa', 'instapay', 'vodafone_cash'] as const;
+const noMoney = (): CashierSessionMoneyByMethod => ({
+  cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00',
+});
+
+const toCents = (value: string) => {
+  const negative = value.startsWith('-');
+  const [whole = '0', fraction = '00'] = (negative ? value.slice(1) : value).split('.');
+  const cents = BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, '0').slice(0, 2));
+  return negative ? -cents : cents;
+};
+
+const fromCents = (value: bigint) => {
+  const negative = value < BigInt(0);
+  const absolute = negative ? -value : value;
+  return `${negative ? '-' : ''}${absolute / BigInt(100)}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`;
+};
+
+const sumMethods = (money: CashierSessionMoneyByMethod) => paymentMethods
+  .reduce((total, method) => total + toCents(money[method]), BigInt(0));
+
+/**
+ * Money is counted from the payment rows keyed to the shift, never from the
+ * invoices raised in it: an invoice paid in instalments spends its money across
+ * however many shifts took the instalments.
+ */
+const moneyBySession = async (executor: Executor, sessionIds: number[]) => {
+  const taken = new Map<number, CashierSessionMoneyByMethod>();
+  const refunded = new Map<number, CashierSessionMoneyByMethod>();
+  const saleCounts = new Map<number, number>();
+  if (sessionIds.length === 0) return { taken, refunded, saleCounts };
+
+  for (const id of sessionIds) {
+    taken.set(id, noMoney());
+    refunded.set(id, noMoney());
+    saleCounts.set(id, 0);
+  }
+
+  const takenRows = await executor.select({
+    sessionId: invoicePayments.cashierSessionId,
+    method: invoicePayments.method,
+    amount: sql<string>`sum(${invoicePayments.amount})`,
+  }).from(invoicePayments)
+    .where(inArray(invoicePayments.cashierSessionId, sessionIds))
+    .groupBy(invoicePayments.cashierSessionId, invoicePayments.method);
+  for (const row of takenRows) taken.get(row.sessionId)![row.method] = row.amount;
+
+  // Voids hand money back exactly as refunds do, so both count against the till.
+  const refundedRows = await executor.select({
+    sessionId: invoiceReversals.cashierSessionId,
+    method: invoiceReversalPayments.methodSnapshot,
+    amount: sql<string>`sum(${invoiceReversalPayments.amount})`,
+  }).from(invoiceReversalPayments)
+    .innerJoin(invoiceReversals, eq(invoiceReversals.id, invoiceReversalPayments.reversalId))
+    .where(and(
+      inArray(invoiceReversals.cashierSessionId, sessionIds),
+      eq(invoiceReversals.status, 'finalized'),
+    ))
+    .groupBy(invoiceReversals.cashierSessionId, invoiceReversalPayments.methodSnapshot);
+  for (const row of refundedRows) refunded.get(row.sessionId!)![row.method] = row.amount;
+
+  // Sales are counted where they were rung up, which answers "how busy was this
+  // shift" rather than "whose money was it".
+  const saleRows = await executor.select({
+    sessionId: invoices.cashierSessionId,
+    count: sql<number>`count(*)`,
+  }).from(invoices)
+    .where(inArray(invoices.cashierSessionId, sessionIds))
+    .groupBy(invoices.cashierSessionId);
+  for (const row of saleRows) saleCounts.set(row.sessionId, Number(row.count));
+
+  return { taken, refunded, saleCounts };
+};
+
+const withMoney = (
+  sessions: CashierSessionRecord[],
+  money: Awaited<ReturnType<typeof moneyBySession>>,
+): CashierSessionMoneyRecord[] => sessions.map((session) => {
+  const taken = money.taken.get(session.id) ?? noMoney();
+  const refunded = money.refunded.get(session.id) ?? noMoney();
+  const takenTotal = sumMethods(taken);
+  const refundedTotal = sumMethods(refunded);
+  return {
+    ...session,
+    saleCount: money.saleCounts.get(session.id) ?? 0,
+    taken,
+    refunded,
+    takenTotal: fromCents(takenTotal),
+    refundedTotal: fromCents(refundedTotal),
+    net: fromCents(takenTotal - refundedTotal),
+  };
+});
+
 const isDuplicateOpenError = (error: unknown) => {
   if (typeof error !== 'object' || error === null) return false;
   const duplicate = (value: object) => 'code' in value && value.code === 'ER_DUP_ENTRY';
@@ -64,6 +170,86 @@ export const createDrizzleCashierSessionRepository = (
   database: Database,
   audit: ErpAuditCapability,
 ): CashierSessionRepository => ({
+  async list(input) {
+    const scope = and(
+      eq(cashierSessions.branchId, input.branchId),
+      ...(input.openedByAccountId === undefined
+        ? []
+        : [eq(cashierSessions.openedByAccountId, input.openedByAccountId)]),
+    );
+    const rows = await database.select(sessionFields).from(cashierSessions)
+      .innerJoin(branches, eq(branches.id, cashierSessions.branchId))
+      .innerJoin(openedAccounts, eq(openedAccounts.id, cashierSessions.openedByAccountId))
+      .leftJoin(closedAccounts, eq(closedAccounts.id, cashierSessions.closedByAccountId))
+      .where(scope)
+      // Newest first: the shift a Cashier just closed is the one they look for.
+      .orderBy(desc(cashierSessions.openedAt), desc(cashierSessions.id))
+      .limit(input.pageSize).offset((input.page - 1) * input.pageSize);
+    const [counted] = await database.select({ total: sql<number>`count(*)` })
+      .from(cashierSessions).where(scope);
+    const money = await moneyBySession(database, rows.map(({ id }) => id));
+    return { items: withMoney(rows, money), total: Number(counted?.total ?? 0) };
+  },
+
+  async findMoneyById(sessionId) {
+    const session = await findById(database, sessionId);
+    if (!session) return null;
+    return withMoney([session], await moneyBySession(database, [sessionId]))[0]!;
+  },
+
+  async listInvoices(sessionId) {
+    // An invoice belongs to a shift's list when the shift rang it up, took money
+    // on it, or handed money back on it -- three different things once an
+    // invoice can be paid across shifts.
+    // Written out rather than interpolated: drizzle drops the table qualifier
+    // from a column used inside a selected expression, which reads as ambiguous.
+    const invoiceId = sql`\`erp_invoices\`.\`id\``;
+    const takenInShift = sql<string | null>`(
+      select sum(p.amount) from erp_invoice_payments p
+      where p.invoice_id = ${invoiceId} and p.cashier_session_id = ${sessionId}
+    )`;
+    const refundedInShift = sql<string | null>`(
+      select sum(rp.amount) from erp_invoice_reversal_payments rp
+      join erp_invoice_reversals r on r.id = rp.reversal_id
+      where r.invoice_id = ${invoiceId} and r.status = 'finalized'
+        and r.cashier_session_id = ${sessionId}
+    )`;
+    const rows = await database.select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      status: invoices.status,
+      clientId: invoices.clientId,
+      clientName: invoices.clientNameSnapshot,
+      clientPhone: invoices.clientPhoneSnapshot,
+      total: invoices.total,
+      soldAt: invoices.soldAt,
+      takenInShift,
+      refundedInShift,
+    }).from(invoices).where(sql`(
+      ${invoices.cashierSessionId} = ${sessionId}
+      or exists (
+        select 1 from erp_invoice_payments p
+        where p.invoice_id = ${invoices.id} and p.cashier_session_id = ${sessionId}
+      )
+      or exists (
+        select 1 from erp_invoice_reversals r
+        where r.invoice_id = ${invoices.id} and r.status = 'finalized'
+          and r.cashier_session_id = ${sessionId}
+      )
+    )`).orderBy(desc(invoices.soldAt), desc(invoices.id));
+
+    return rows.map((row): CashierSessionInvoiceRecord => ({
+      id: row.id,
+      invoiceNumber: row.invoiceNumber,
+      status: row.status as CashierSessionInvoiceRecord['status'],
+      client: { id: row.clientId, name: row.clientName, phone: row.clientPhone },
+      total: row.total,
+      takenInShift: row.takenInShift ?? '0.00',
+      refundedInShift: row.refundedInShift ?? '0.00',
+      soldAt: row.soldAt,
+    }));
+  },
+
   async open(input) {
     try {
       return await database.transaction(async (transaction) => {

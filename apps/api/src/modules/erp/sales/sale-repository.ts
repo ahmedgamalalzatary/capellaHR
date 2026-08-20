@@ -768,6 +768,11 @@ export const createDrizzleSaleRepository = (
             invoiceId,
             method: payment.method,
             amount: payment.amount,
+            // Money is attributed to the shift and the account that took it, so a
+            // later instalment can belong to a later shift than the invoice.
+            cashierSessionId: input.cashierSessionId,
+            actingAccountId: operation.actingAccountId,
+            paidAt: operation.soldAt,
             createdAt: operation.soldAt,
           })));
           await transaction.update(invoices).set({ status: 'completed' })
@@ -947,9 +952,24 @@ export const createDrizzleSaleRepository = (
           }
 
           const beforeState = await hydrateInvoice(transaction, original.id);
+          // The money goes back out of whichever till is open now, which is not the
+          // till that sold the invoice. An admin may refund with no till open at
+          // all, and a shift past its sixteen hours is spent whether or not the
+          // sweep has written its close, so both cases leave this null.
+          const payingSession = (await transaction.select({ id: cashierSessions.id })
+            .from(cashierSessions).where(and(
+              eq(cashierSessions.branchId, original.branchId),
+              isNull(cashierSessions.closedAt),
+              gt(
+                cashierSessions.openedAt,
+                new Date(operation.reversedAt.getTime() - CASHIER_SESSION_MAX_DURATION_MS),
+              ),
+            )).limit(1))[0];
+
           const inserted = await transaction.insert(invoiceReversals).values({
             invoiceId: original.id,
             branchId: original.branchId,
+            cashierSessionId: payingSession?.id ?? null,
             type: operation.type,
             idempotencyKey: operation.input.idempotencyKey,
             reason: operation.input.reason,

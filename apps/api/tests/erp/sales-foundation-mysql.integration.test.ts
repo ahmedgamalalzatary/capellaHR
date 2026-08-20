@@ -209,6 +209,9 @@ describe('ERP sales foundation MySQL integration', () => {
         invoiceId: emptyInvoiceId,
         method: 'cash',
         amount: '0.04',
+        cashierSessionId,
+        actingAccountId: accountId,
+        paidAt: now,
         createdAt: now,
       });
       let emptyCompletionRejected = false;
@@ -230,6 +233,9 @@ describe('ERP sales foundation MySQL integration', () => {
         invoiceId,
         method: 'cash',
         amount: '0.04',
+        cashierSessionId,
+        actingAccountId: accountId,
+        paidAt: now,
         createdAt: now,
       });
 
@@ -281,6 +287,9 @@ describe('ERP sales foundation MySQL integration', () => {
           invoiceId,
           method: 'visa',
           amount: '1.00',
+          cashierSessionId,
+          actingAccountId: accountId,
+          paidAt: now,
           createdAt: now,
         });
       } catch {

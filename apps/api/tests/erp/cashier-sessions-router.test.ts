@@ -22,6 +22,17 @@ const session = {
   autoClosedAt: null,
 };
 
+const summary = {
+  ...session,
+  durationMinutes: 90,
+  saleCount: 2,
+  taken: { cash: '400.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+  refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+  takenTotal: '400.00',
+  refundedTotal: '50.00',
+  net: '350.00',
+};
+
 const setup = () => {
   const service = {
     closeExpired: vi.fn(async () => []),
@@ -33,6 +44,9 @@ const setup = () => {
       closedByAccountId: 8,
       closedByUsername: 'cashier.one',
     })),
+    list: vi.fn(async () => ({ items: [summary], total: 1, page: 1, pageSize: 20 })),
+    summary: vi.fn(async () => summary),
+    detail: vi.fn(async () => ({ summary, invoices: [] })),
     recoveryClose: vi.fn(async () => ({
       ...session,
       closedAt: now,
@@ -205,5 +219,63 @@ describe('ERP Cashier-session routes', () => {
     await handler({} as never, response as never, next);
 
     expect(next).toHaveBeenCalledWith(unexpected);
+  });
+
+  it('pages the shift history and reports the money each shift moved', async () => {
+    const { app, service } = setup();
+    const response = await request(app)
+      .get('/api/v1/erp/cashier-sessions?page=2&pageSize=5')
+      .set('Cookie', 'capella_session=cashier');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0]).toMatchObject({ id: 14, net: '350.00', durationMinutes: 90 });
+    expect(response.body.meta).toMatchObject({ page: 2, pageSize: 5, total: 1 });
+    expect(service.list).toHaveBeenCalledWith(
+      { role: 'cashier', accountId: 8, branchId: 3 },
+      { page: 2, pageSize: 5 },
+    );
+  });
+
+  it('reads one shift and the sales behind it', async () => {
+    const { app, service } = setup();
+
+    const one = await request(app)
+      .get('/api/v1/erp/cashier-sessions/14')
+      .set('Cookie', 'capella_session=admin');
+    expect(one.status).toBe(200);
+    expect(one.body.data).toMatchObject({ id: 14, saleCount: 2 });
+    expect(service.summary).toHaveBeenCalledWith({ role: 'admin', accountId: 1 }, 14);
+
+    const detail = await request(app)
+      .get('/api/v1/erp/cashier-sessions/14/invoices')
+      .set('Cookie', 'capella_session=admin');
+    expect(detail.status).toBe(200);
+    expect(detail.body.data).toMatchObject({ summary: { id: 14 }, invoices: [] });
+  });
+
+  it('answers a shift the actor may not read with the service refusal', async () => {
+    const { app, service } = setup();
+    service.summary.mockRejectedValue(new CashierSessionError(
+      'ERP_CASHIER_SESSION_NOT_OWNER',
+      'لا يمكن عرض وردية فتحها حساب كاشير آخر',
+    ));
+
+    const response = await request(app)
+      .get('/api/v1/erp/cashier-sessions/14')
+      .set('Cookie', 'capella_session=cashier');
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('ERP_CASHIER_SESSION_NOT_OWNER');
+  });
+
+  it('rejects an unreadable shift identifier before reaching the service', async () => {
+    const { app, service } = setup();
+
+    const response = await request(app)
+      .get('/api/v1/erp/cashier-sessions/abc')
+      .set('Cookie', 'capella_session=admin');
+
+    expect(response.status).toBe(400);
+    expect(service.summary).not.toHaveBeenCalled();
   });
 });

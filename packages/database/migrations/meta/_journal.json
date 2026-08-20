@@ -505,6 +505,13 @@
       "when": 1787219530743,
       "tag": "0071_employee_termination",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "5",
+      "when": 1787222337770,
+      "tag": "0072_shift_money_attribution",
+      "breakpoints": true
     }
   ]
 }

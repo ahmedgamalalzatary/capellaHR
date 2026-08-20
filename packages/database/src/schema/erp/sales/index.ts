@@ -204,10 +204,22 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   invoiceId: int('invoice_id').notNull(),
   method: mysqlEnum('method', erpPaymentMethods).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  /**
+   * The shift that actually took this money, the account that took it, and when.
+   * Today they always match the invoice, but once an invoice can be paid in
+   * instalments a later payment belongs to a later shift, so the till summary is
+   * counted from these columns rather than from the invoice.
+   */
+  cashierSessionId: int('cashier_session_id').notNull(),
+  actingAccountId: int('acting_account_id').notNull(),
+  paidAt: timestamp('paid_at', { mode: 'date', fsp: 3 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   foreignKey({ name: 'erp_invoice_payments_invoice_fk', columns: [table.invoiceId], foreignColumns: [invoices.id] }),
+  foreignKey({ name: 'erp_invoice_payments_session_fk', columns: [table.cashierSessionId], foreignColumns: [cashierSessions.id] }),
+  foreignKey({ name: 'erp_invoice_payments_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   uniqueIndex('erp_invoice_payments_invoice_method_unique').on(table.invoiceId, table.method),
+  index('erp_invoice_payments_session_paid_idx').on(table.cashierSessionId, table.paidAt),
   check('erp_invoice_payments_amount_positive', sql`${table.amount} > 0`),
 ]);
 
@@ -226,8 +238,15 @@ export const invoiceReversals = mysqlTable('erp_invoice_reversals', {
   taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull(),
   total: decimal('total', { precision: 14, scale: 2 }).notNull(),
   businessDate: date('business_date', { mode: 'string' }).notNull(),
+  /**
+   * The shift the money was handed back in, which is not the shift that sold the
+   * invoice. Null when no till was open — an admin may refund outside a shift.
+   */
+  cashierSessionId: int('cashier_session_id'),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
+  foreignKey({ name: 'erp_invoice_reversals_session_fk', columns: [table.cashierSessionId], foreignColumns: [cashierSessions.id] }),
+  index('erp_invoice_reversals_session_created_idx').on(table.cashierSessionId, table.createdAt),
   foreignKey({ name: 'erp_invoice_reversals_invoice_branch_fk', columns: [table.invoiceId, table.branchId], foreignColumns: [invoices.id, invoices.branchId] }),
   foreignKey({ name: 'erp_invoice_reversals_acting_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   foreignKey({ name: 'erp_invoice_reversals_approving_account_fk', columns: [table.approvingAccountId], foreignColumns: [accounts.id] }),

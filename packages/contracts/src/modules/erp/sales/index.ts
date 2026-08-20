@@ -728,4 +728,83 @@ export type SaleError = z.infer<typeof saleErrorSchema>;
 export type ClientVisitHistoryQuery = z.infer<typeof clientVisitHistoryQuerySchema>;
 export type ClientVisitSummary = z.infer<typeof clientVisitSummarySchema>;
 export type InvoiceHistoryQuery = z.infer<typeof invoiceHistoryQuerySchema>;
+export const cashierSessionListQuerySchema = z.object({
+  page: paginationPageSchema.default(1),
+  pageSize: paginationPageSizeSchema.default(20),
+  branchId: coercedMysqlIntSchema.optional(),
+}).strict();
+
+/** Every method is always present, so a till reads as a full set of drawers. */
+const shiftMoneyByMethodSchema = z.object({
+  cash: exactMoneySchema,
+  visa: exactMoneySchema,
+  instapay: exactMoneySchema,
+  vodafone_cash: exactMoneySchema,
+}).strict();
+
+/** A shift can hand back more than it took, so its net carries a sign. */
+const signedMoneySchema = z.string()
+  .regex(/^-?\d{1,12}(?:\.\d{1,2})?$/, 'يجب إدخال مبلغ صحيح بدقة قرش واحد')
+  .transform((value) => (value.startsWith('-')
+    ? `-${normalizeDecimal(value.slice(1))}`
+    : normalizeDecimal(value)));
+
+const signedToCents = (value: string) => (
+  value.startsWith('-') ? -toCents(value.slice(1)) : toCents(value)
+);
+
+const sumMethods = (value: Record<string, string>) => Object.values(value)
+  .reduce((total, amount) => total + toCents(amount), BigInt(0));
+
+export const cashierSessionSummarySchema = cashierSessionSchema.extend({
+  /** Elapsed so far while the shift is still open, total once it has closed. */
+  durationMinutes: z.number().int().min(0),
+  saleCount: z.number().int().min(0),
+  taken: shiftMoneyByMethodSchema,
+  refunded: shiftMoneyByMethodSchema,
+  takenTotal: exactMoneySchema,
+  refundedTotal: exactMoneySchema,
+  net: signedMoneySchema,
+}).strict().superRefine((value, context) => {
+  const check = (path: string, expected: bigint, actual: string) => {
+    if (expected !== toCents(actual)) {
+      context.addIssue({ code: 'custom', path: [path], message: 'إجمالي الوردية غير متسق' });
+    }
+  };
+  check('takenTotal', sumMethods(value.taken), value.takenTotal);
+  check('refundedTotal', sumMethods(value.refunded), value.refundedTotal);
+  if (toCents(value.takenTotal) - toCents(value.refundedTotal) !== signedToCents(value.net)) {
+    context.addIssue({ code: 'custom', path: ['net'], message: 'إجمالي الوردية غير متسق' });
+  }
+});
+
+export const cashierSessionInvoiceSchema = z.object({
+  id: positiveMysqlIntSchema,
+  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
+  client: z.object({
+    id: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255).nullable(),
+    phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
+  }).strict(),
+  total: positiveMoneySchema,
+  /**
+   * What this shift took and handed back on this invoice, which is not the
+   * invoice total once an invoice can be paid across two shifts.
+   */
+  takenInShift: exactMoneySchema,
+  refundedInShift: exactMoneySchema,
+  soldAt: isoDateTimeSchema,
+}).strict();
+
+export const cashierSessionDetailSchema = z.object({
+  summary: cashierSessionSummarySchema,
+  invoices: z.array(cashierSessionInvoiceSchema),
+}).strict();
+
+export type CashierSessionListQuery = z.infer<typeof cashierSessionListQuerySchema>;
+export type CashierSessionSummaryDto = z.infer<typeof cashierSessionSummarySchema>;
+export type CashierSessionInvoiceDto = z.infer<typeof cashierSessionInvoiceSchema>;
+export type CashierSessionDetailDto = z.infer<typeof cashierSessionDetailSchema>;
+
 export type InvoiceHistoryItem = z.infer<typeof invoiceHistoryItemSchema>;

@@ -33,6 +33,9 @@ const setup = (current: typeof session | null = session) => {
       session: { ...session, closedAt: now, closedByAccountId: 1, closedByUsername: 'admin' },
     })),
     autoCloseExpired: vi.fn(async () => []),
+    list: vi.fn(async () => ({ items: [], total: 0 })),
+    findMoneyById: vi.fn(async () => null),
+    listInvoices: vi.fn(async () => []),
   };
   const resolveBranchContext = vi.fn(async (
     actor: { role: 'admin' | 'cashier'; accountId: number },

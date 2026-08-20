@@ -1,5 +1,6 @@
 import {
   cashierSessionCurrentQuerySchema,
+  cashierSessionListQuerySchema,
   cashierSessionParamsSchema,
   recoveryCloseCashierSessionSchema,
 } from '@capella/contracts';
@@ -99,6 +100,24 @@ export const createCashierSessionsRouter = (service: CashierSessionService) => {
     }
   });
 
+  router.get('/', async (request, response, next) => {
+    try {
+      const query = cashierSessionListQuerySchema.parse(request.query);
+      const result = await service.list(actorFrom(response), query);
+      response.json({
+        data: result.items,
+        meta: {
+          page: query.page,
+          pageSize: query.pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.pageSize),
+        },
+      });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
   router.get('/current', async (request, response, next) => {
     try {
       const query = cashierSessionCurrentQuerySchema.parse(request.query);
@@ -111,6 +130,24 @@ export const createCashierSessionsRouter = (service: CashierSessionService) => {
   router.post('/close', async (_request, response, next) => {
     try {
       response.json({ data: await service.close(actorFrom(response)) });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.get('/:sessionId', async (request, response, next) => {
+    try {
+      const { sessionId } = cashierSessionParamsSchema.parse(request.params);
+      response.json({ data: await service.summary(actorFrom(response), sessionId) });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.get('/:sessionId/invoices', async (request, response, next) => {
+    try {
+      const { sessionId } = cashierSessionParamsSchema.parse(request.params);
+      response.json({ data: await service.detail(actorFrom(response), sessionId) });
     } catch (error) {
       handleError(error, response, next);
     }
