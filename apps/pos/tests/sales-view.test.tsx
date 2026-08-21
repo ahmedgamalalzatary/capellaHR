@@ -216,7 +216,7 @@ describe('ERP service-sale view', () => {
     }
   });
 
-  it('offers to print the receipt once the sale is saved, and prints on confirmation', async () => {
+  it('prints the receipt automatically once the sale is saved, without asking', async () => {
     const print = vi.fn();
     vi.stubGlobal('print', print);
     renderView();
@@ -224,14 +224,35 @@ describe('ERP service-sale view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
-    await screen.findByRole('dialog', { name: 'طباعة الإيصال' });
-    expect(print).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'نعم، اطبع' }));
-
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     // The printed receipt is the same document the invoice page prints.
     expect(document.querySelector('[data-receipt]')?.textContent).toContain(invoice.invoiceNumber);
     expect(screen.queryByRole('dialog', { name: 'طباعة الإيصال' })).toBeNull();
+    expect(screen.getByText('تم حفظ الفاتورة')).toBeDefined();
+  });
+
+  it('prints one copy per saved sale even as the saved-sale card re-renders', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await buildDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+    // Re-printing stays a deliberate click; a re-render must not send a second copy.
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the saved sale visible when the browser cannot print', async () => {
+    vi.stubGlobal('print', undefined);
+    renderView();
+    await buildDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('الطباعة غير متاحة في هذا المتصفح');
     expect(screen.getByText('تم حفظ الفاتورة')).toBeDefined();
   });
 
@@ -247,22 +268,6 @@ describe('ERP service-sale view', () => {
     expect(document.querySelector('[data-customer-receipt]')).not.toBeNull();
     expect(document.querySelectorAll('[data-employee-receipt]').length)
       .toBe(invoiceEmployees(structuredClone(invoice) as unknown as PublicInvoiceDto).length);
-  });
-
-  it('keeps the saved sale without printing when the receipt is declined', async () => {
-    const print = vi.fn();
-    vi.stubGlobal('print', print);
-    renderView();
-    await buildDraft();
-    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
-
-    fireEvent.click(await screen.findByRole('button', { name: 'لا، شكراً' }));
-
-    expect(print).not.toHaveBeenCalled();
-    expect(screen.queryByRole('dialog', { name: 'طباعة الإيصال' })).toBeNull();
-    expect(mocks.completeSale).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('تم حفظ الفاتورة')).toBeDefined();
   });
 
   it('completes a product-only invoice without selecting or submitting an employee', async () => {

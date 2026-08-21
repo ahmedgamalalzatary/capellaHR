@@ -459,8 +459,8 @@ function SaleWorkspace({
   const [storageError, setStorageError] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
   const [completed, setCompleted] = useState<PublicInvoiceDto | null>(null);
-  /** Asked once per saved sale: the receipt is optional, the invoice is already stored. */
-  const [printPrompt, setPrintPrompt] = useState(false);
+  /** Printed once per saved sale, so a retry render never sends a second copy to the printer. */
+  const autoPrinted = useRef<number | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState(createUuid);
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
@@ -763,7 +763,6 @@ function SaleWorkspace({
       setReplacesIdempotencyKey(null);
       setCompleted(invoice);
       setPrintError(null);
-      setPrintPrompt(true);
       void invalidateErpCaches(queryClient, 'sale');
     },
     onError: (error, input) => {
@@ -893,7 +892,7 @@ function SaleWorkspace({
   };
 
   /** The receipt is printed by the browser, so the counter printer needs no extra driver. */
-  const printReceipt = () => {
+  const printReceipt = useCallback(() => {
     setPrintError(null);
     if (typeof window.print !== 'function') {
       setPrintError('الطباعة غير متاحة في هذا المتصفح. افتح الإيصال واطبعه من صفحة الفاتورة.');
@@ -904,7 +903,14 @@ function SaleWorkspace({
     } catch {
       setPrintError('تعذر فتح نافذة الطباعة. تحقق من إعدادات المتصفح والطابعة ثم حاول مرة أخرى.');
     }
-  };
+  }, []);
+
+  /** Every saved sale prints straight away; the cashier never confirms the receipt. */
+  useEffect(() => {
+    if (!completed || autoPrinted.current === completed.id) return;
+    autoPrinted.current = completed.id;
+    printReceipt();
+  }, [completed, printReceipt]);
 
   const reset = () => {
     selectClient(null);
@@ -916,7 +922,7 @@ function SaleWorkspace({
     setDiscountValue('');
     setTaxValue('');
     setCompleted(null);
-    setPrintPrompt(false);
+    autoPrinted.current = null;
     setPrintError(null);
     setDraftRestored(false);
     setDraftStorageError(false);
@@ -991,19 +997,6 @@ function SaleWorkspace({
         <div className="hidden print:block">
           <ReceiptBundle invoice={completed} />
         </div>
-
-        {printPrompt ? (
-          <Modal title="طباعة الإيصال" onClose={() => setPrintPrompt(false)}>
-            <p className="text-sm">تم حفظ الفاتورة. هل تريد طباعة إيصال للعميل؟</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setPrintPrompt(false)}>لا، شكراً</Button>
-              <Button onClick={() => { setPrintPrompt(false); printReceipt(); }}>
-                <Printer className="size-4" aria-hidden />
-                نعم، اطبع
-              </Button>
-            </div>
-          </Modal>
-        ) : null}
       </>
     );
   }
