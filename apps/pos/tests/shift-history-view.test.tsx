@@ -103,6 +103,23 @@ describe('ShiftHistoryView', () => {
     ));
   });
 
+  test('lets an Admin retry when the branch list will not load', async () => {
+    // Without the branch list no branch can be chosen, and without a branch the shifts
+    // query never runs — so a silent failure leaves the screen permanently empty.
+    mocks.getSession.mockResolvedValue({ actor: { type: 'admin', accountId: 1 } });
+    mocks.listCashierSessionBranches.mockRejectedValueOnce(new Error('network'));
+    renderView();
+
+    expect(await screen.findByText('تعذر تحميل الفروع.')).toBeDefined();
+    mocks.listCashierSessionBranches.mockResolvedValue({
+      items: [{ id: 3, name: 'الفرع الرئيسي' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة تحميل الفروع' }));
+
+    expect(await screen.findByRole('option', { name: 'الفرع الرئيسي' })).toBeDefined();
+  });
+
   test('says plainly when a till has no history yet', async () => {
     mocks.listCashierSessions.mockResolvedValue(pageOf([]));
     renderView();

@@ -82,4 +82,16 @@ describe('EmployeeSettlementPanel', () => {
     expect(screen.getByText('-1000.00 ج')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'طباعة' })).toBeTruthy();
   });
+
+  test('keeps the print button off the printed statement', async () => {
+    // The print rule reveals everything inside .print-statement, so a button left in
+    // there is printed onto the employee's settlement sheet.
+    mocks.listEmployeeDebts.mockResolvedValue([]);
+    mocks.getEmployeeSettlement.mockResolvedValue(statement);
+
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByText('استقالة')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'طباعة' }).className).toContain('print:hidden');
+  });
 });

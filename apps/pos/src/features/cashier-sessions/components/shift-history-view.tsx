@@ -69,6 +69,16 @@ export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: numbe
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
             </Select>
+            {/* No branch list means no branch can be chosen, and the shifts query below stays
+                switched off, so this failure has to be visible and recoverable here. */}
+            {branches.isError ? (
+              <Notice tone="danger" role="alert">
+                <p>تعذر تحميل الفروع.</p>
+                <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>
+                  إعادة تحميل الفروع
+                </Button>
+              </Notice>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}

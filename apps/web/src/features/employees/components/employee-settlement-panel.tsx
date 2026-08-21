@@ -128,7 +128,8 @@ export function EmployeeSettlementPanel({ employee, onClose }: EmployeeSettlemen
               </div>
             ))}
           </dl>
-          <Button size="sm" variant="secondary" onClick={() => window.print()}>
+          {/* Inside the printed section, so it has to take itself out of the print. */}
+          <Button size="sm" variant="secondary" className="print:hidden" onClick={() => window.print()}>
             طباعة
           </Button>
         </section>

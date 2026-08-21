@@ -219,6 +219,9 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   foreignKey({ name: 'erp_invoice_payments_session_fk', columns: [table.cashierSessionId], foreignColumns: [cashierSessions.id] }),
   foreignKey({ name: 'erp_invoice_payments_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   uniqueIndex('erp_invoice_payments_invoice_method_unique').on(table.invoiceId, table.method),
+  // Lets a refund line point at a payment and its invoice together, so it cannot name a
+  // payment that belongs to a different invoice.
+  uniqueIndex('erp_invoice_payments_id_invoice_unique').on(table.id, table.invoiceId),
   index('erp_invoice_payments_session_paid_idx').on(table.cashierSessionId, table.paidAt),
   check('erp_invoice_payments_amount_positive', sql`${table.amount} > 0`),
 ]);
@@ -245,12 +248,15 @@ export const invoiceReversals = mysqlTable('erp_invoice_reversals', {
   cashierSessionId: int('cashier_session_id'),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
-  foreignKey({ name: 'erp_invoice_reversals_session_fk', columns: [table.cashierSessionId], foreignColumns: [cashierSessions.id] }),
+  // Branch-scoped like the invoice's own session link: an id-only reference would let a
+  // refund be attributed to a till in another branch.
+  foreignKey({ name: 'erp_invoice_reversals_session_branch_fk', columns: [table.cashierSessionId, table.branchId], foreignColumns: [cashierSessions.id, cashierSessions.branchId] }),
   index('erp_invoice_reversals_session_created_idx').on(table.cashierSessionId, table.createdAt),
   foreignKey({ name: 'erp_invoice_reversals_invoice_branch_fk', columns: [table.invoiceId, table.branchId], foreignColumns: [invoices.id, invoices.branchId] }),
   foreignKey({ name: 'erp_invoice_reversals_acting_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
   foreignKey({ name: 'erp_invoice_reversals_approving_account_fk', columns: [table.approvingAccountId], foreignColumns: [accounts.id] }),
   uniqueIndex('erp_invoice_reversals_idempotency_unique').on(table.idempotencyKey),
+  uniqueIndex('erp_invoice_reversals_id_invoice_unique').on(table.id, table.invoiceId),
   index('erp_invoice_reversals_invoice_created_idx').on(table.invoiceId, table.createdAt),
   check('erp_invoice_reversals_reason_required', sql`CHAR_LENGTH(TRIM(${table.reason})) > 0`),
   check('erp_invoice_reversals_amounts_consistent', sql`${table.grossAmount} > 0 and ${table.discountAmount} >= 0 and ${table.taxAmount} >= 0 and ${table.total} = ${table.grossAmount} - ${table.discountAmount} + ${table.taxAmount} and ${table.total} >= 0`),
@@ -280,6 +286,11 @@ export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments
   id: int('id').autoincrement().primaryKey(),
   reversalId: int('reversal_id').notNull(),
   /**
+   * Carried so the database can check that the reversal and the payment being reversed
+   * are the same invoice's, which no single-column reference can express.
+   */
+  invoiceId: int('invoice_id').notNull(),
+  /**
    * The original payment this refund reverses, when there is one. A refund may be
    * handed back on a method the sale never used, or for more than what is left on
    * the matching payment; either way it stands on its own and this stays null.
@@ -288,8 +299,9 @@ export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments
   methodSnapshot: mysqlEnum('method_snapshot', erpPaymentMethods).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
 }, (table) => [
-  foreignKey({ name: 'erp_reversal_payments_reversal_fk', columns: [table.reversalId], foreignColumns: [invoiceReversals.id] }),
-  foreignKey({ name: 'erp_reversal_payments_payment_fk', columns: [table.invoicePaymentId], foreignColumns: [invoicePayments.id] }),
+  foreignKey({ name: 'erp_reversal_payments_reversal_invoice_fk', columns: [table.reversalId, table.invoiceId], foreignColumns: [invoiceReversals.id, invoiceReversals.invoiceId] }),
+  // Null invoice_payment_id skips this check, which is what an unlinked refund needs.
+  foreignKey({ name: 'erp_reversal_payments_payment_invoice_fk', columns: [table.invoicePaymentId, table.invoiceId], foreignColumns: [invoicePayments.id, invoicePayments.invoiceId] }),
   uniqueIndex('erp_invoice_reversal_payments_method_unique').on(table.reversalId, table.methodSnapshot),
   check('erp_invoice_reversal_payments_amount_positive', sql`${table.amount} > 0`),
 ]);

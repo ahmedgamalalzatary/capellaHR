@@ -177,11 +177,24 @@ export const createProductStockService = (dependencies: {
       const context = await resolveBranchContext(actor, input.branchId);
       const product = await inBranch(context.branchId, id);
       if (product.barcode) return product;
-      const result = await repository.update(
-        id, context.branchId, { barcode: inStoreBarcodeFor(id) }, context.accountId,
-      );
-      if (!result) throw error('PRODUCT_NOT_FOUND');
-      return result;
+      // Our code is derived from the product id, but a supplier sticker already on the shelf
+      // may carry the same digits, and the same index guards both.
+      const barcode = inStoreBarcodeFor(id);
+      await rejectDuplicateBarcode(context.branchId, barcode, id);
+      try {
+        const result = await repository.update(
+          id, context.branchId, { barcode }, context.accountId,
+        );
+        if (!result) throw error('PRODUCT_NOT_FOUND');
+        return result;
+      } catch (cause) {
+        if (!isDuplicate(cause)) throw cause;
+        const clash = await repository.findByBarcode(context.branchId, barcode);
+        // Nothing holds the code, so whatever collided was not this barcode. Reporting it as
+        // taken would send the admin hunting for a sticker that does not exist.
+        if (!clash) throw cause;
+        throw error('PRODUCT_BARCODE_EXISTS', clash.id);
+      }
     },
     async adjust(actor: ErpAccountIdentity, id: number, input: AdjustProductStockInput) {
       const context = await resolveBranchContext(actor, input.branchId);

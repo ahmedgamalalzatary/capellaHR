@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
-import { Barcode, barcodeSvg } from '@/lib/barcode/render-barcode';
+import { barcodeSvg } from '@/lib/barcode/render-barcode';
 
 /** Shared by the skip check and the sticker so the two never disagree. */
 const BARCODE_HEIGHT_MM = 9;
@@ -29,12 +29,17 @@ export function ProductLabelSheet({ products, onPrinted }: {
   products: LabelProduct[];
   onPrinted: () => void;
 }) {
+  // The screen hands us a fresh arrow function on every render, so the callback is read
+  // through a ref: the dialog opens once per mounted sheet, not once per re-render.
+  const handlePrinted = useRef(onPrinted);
+  handlePrinted.current = onPrinted;
+
   useEffect(() => {
     const { body } = document;
     body.classList.add('printing-report');
     const finish = () => {
       body.classList.remove('printing-report');
-      onPrinted();
+      handlePrinted.current();
     };
     window.addEventListener('afterprint', finish, { once: true });
     window.print();
@@ -42,25 +47,36 @@ export function ProductLabelSheet({ products, onPrinted }: {
       window.removeEventListener('afterprint', finish);
       body.classList.remove('printing-report');
     };
-  }, [onPrinted]);
+  }, []);
 
   if (typeof document === 'undefined') return null;
-  const printable = products.filter(
-    (product) => product.barcode && barcodeSvg(product.barcode, undefined, { heightMm: BARCODE_HEIGHT_MM }),
-  );
+  // Drawn once and reused: the same call decides whether the sticker can be printed at all
+  // and supplies the bars, so no product is rendered through bwip-js twice.
+  const printable = products.flatMap((product) => {
+    const svg = product.barcode
+      ? barcodeSvg(product.barcode, undefined, { heightMm: BARCODE_HEIGHT_MM })
+      : null;
+    return svg ? [{ product, svg }] : [];
+  });
 
   return createPortal(
     <div id="print-root" className="text-ink">
       {/* Overrides the report page rule, which is A4-shaped and would waste a roll. */}
       <style>{`@media print { ${LABEL_PAGE_RULE} }`}</style>
-      {printable.map((product) => (
+      {printable.map(({ product, svg }) => (
         <div
           key={product.id}
-          className="flex break-after-page flex-col items-center justify-center gap-0.5 text-center"
+          // The break after the last sticker would feed one blank label off the roll.
+          className="flex break-after-page flex-col items-center justify-center gap-0.5 text-center last:break-after-auto"
           style={{ width: `${LABEL_SIZE_MM.width}mm`, height: `${LABEL_SIZE_MM.height}mm` }}
         >
           <span className="w-full truncate px-1 text-[9pt] font-semibold leading-tight">{product.name}</span>
-          <Barcode value={product.barcode!} heightMm={BARCODE_HEIGHT_MM} className="w-[34mm]" />
+          <div
+            role="img"
+            aria-label={product.barcode!}
+            className="w-[34mm]"
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
           <span className="text-[7pt] tracking-wider">{product.barcode}</span>
           <span className="text-[9pt] font-semibold">{product.sellingPrice} ج.م</span>
         </div>

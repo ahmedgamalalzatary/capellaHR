@@ -15,7 +15,9 @@ const restrictedMessages = async (source: string, relativePath: string) => {
 };
 
 describe('ERP module import boundaries', () => {
-  it('prevents HR modules from importing ERP', { timeout: 15_000 }, async () => {
+  // Spawns a real TypeScript compile, which takes seconds on its own and considerably
+  // longer when the rest of the suite is competing for the same cores.
+  it('prevents HR modules from importing ERP', { timeout: 90_000 }, async () => {
     const messages = await restrictedMessages(
       "import '../erp/sales/index.js';",
       'src/modules/auth/index.ts',

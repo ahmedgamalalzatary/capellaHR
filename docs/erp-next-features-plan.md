@@ -11,7 +11,7 @@ was taken by the engineer because the code left no reasonable alternative it is 
 
 `docs/architecture.md` is stale (it still describes the original HR scaffold) and was not
 used. `docs/erp-plan.md` is current and is the source of truth for why the system is shaped
-the way it is; §12 below lists the decisions in it that these nine changes overturn.
+the way it is; §13 below lists the decisions in it that these nine changes overturn.
 
 ---
 
@@ -48,7 +48,7 @@ customer's `.env` picks `hr`, `erp`, or `full`, and only that edition's modules 
 at boot. **Every new module must be registered there**, or it will not exist at runtime.
 
 **Migrations.** All schemas migrate on every installation regardless of edition. The next
-migration number is **0070** (`packages/database/migrations/` currently ends at `0069`).
+migration number is **0075** (`packages/database/migrations/` currently ends at `0074`).
 Each migration is one `.sql` file plus a `meta/00NN_snapshot.json` and an updated
 `meta/_journal.json`.
 
@@ -529,7 +529,7 @@ and a sound-free visual warning; the existing stock rules are untouched.
 |---|---|
 | `packages/database/src/schema/erp/catalog/index.ts` | `erpProducts` gains `barcode varchar(32)` nullable, unique per branch, plus a character/length check. A supplier code is stored exactly as scanned |
 | `packages/database/migrations/0073_product_barcode.sql` + meta | new |
-| `packages/contracts/src/modules/erp/catalog/index.ts` | barcode on product create/update/read; `productBarcodeLookupSchema`; EAN-13 check-digit validation applied only to codes we generate |
+| `packages/contracts/src/modules/erp/stock/index.ts` | barcode on product create/update/read; `productBarcodeLookupSchema`; EAN-13 check-digit validation applied only to codes we generate |
 | `apps/api/src/modules/erp/stock/*-repository.ts`, `*-service.ts`, `*-router.ts` | store the barcode; `GET /erp/products/by-barcode/:code`; generate a free in-store code on request |
 | `apps/pos/src/lib/barcode/use-barcode-scanner.ts` | new — the keyboard-wedge hook |
 | `apps/pos/src/lib/barcode/render-barcode.tsx` | new — SVG renderer wrapping `bwip-js` |
@@ -635,6 +635,12 @@ the reassignment row. The existing check constraint is widened to permit them, a
 unique index is unaffected because neither is an `earned` entry. Both employees' monthly
 commission projections are refreshed in the same transaction, exactly as a sale does.
 
+**Repeated submissions are not blocked — decided, with the risk accepted.** Unlike refunds,
+a reassignment carries no operation reference, so sending the same move twice records it
+twice: the receiving employee is credited twice and the losing employee debited twice, and
+payroll follows. The button being disabled while the request is in flight is the only guard.
+Chosen deliberately to keep the feature small; revisit if a double credit is ever seen.
+
 **When payroll is already finalised.** A refund in that situation posts an HR deduction. A
 reassignment would need a deduction for one person *and* an increase for the other, and no
 "post-payroll commission increase" mechanism exists. **Engineering call: block reassignment
@@ -660,7 +666,7 @@ itself enforces through `assertAssignable`.
 | File | Change |
 |---|---|
 | `packages/database/src/schema/erp/sales/index.ts` | new `invoiceLineReassignments`; widen the ledger entry-type enum and its check constraint |
-| `packages/database/migrations/0074_invoice_line_reassignment.sql` + meta | new |
+| `packages/database/migrations/0075_invoice_line_reassignment.sql` + meta | new |
 | `packages/contracts/src/modules/erp/sales/index.ts` | `reassignInvoiceLineSchema`; invoice line DTO gains `originalEmployee` and `reassignments[]` |
 | `apps/api/src/modules/erp/sales/sale-service.ts` | `reassignLine`; new error codes (`REASSIGN_PAYROLL_FINALIZED`, `REASSIGN_LINE_NOT_SERVICE`, `REASSIGN_SAME_EMPLOYEE`) |
 | `apps/api/src/modules/erp/sales/sale-repository.ts` | the transaction: insert the reassignment, append both ledger entries, refresh both payroll inputs, audit; `hydrateInvoice` overlays the current performer |
@@ -707,6 +713,17 @@ payroll in no way whatsoever.** That removes the single most dangerous area of i
 dropped so the same method can be tendered repeatedly on different days. The columns added
 in Step 3 (`paid_at`, `cashier_session_id`, `acting_account_id`) already make each instalment
 attributable to the shift that took it.
+
+**Each instalment carries its own reference — decided.** That dropped index is what stops a
+repeated request from being recorded twice today, so it cannot simply go: a hiccup while
+taking 100 of a 300 invoice would otherwise leave the invoice showing 200 paid and the drawer
+100 short. `recordPayment` takes an operation reference from the till, stored on the row and
+unique per invoice. A second arrival of the same reference **with the same amount and the same
+method** returns the existing payment instead of appending another, so a retry after a hiccup
+is harmless. If the amount or the method differs, the reference is being reused for a different
+instalment, which is refused with `IDEMPOTENCY_CONFLICT` rather than replayed — otherwise the
+till would be told 150 was taken when the stored row says 100. Same shape as the refund path,
+which already compares the stored request this way.
 
 **The invoice gains a settlement state**, kept separate from the refund status so the two
 never interfere: `amount_paid` and a stored generated `balance_due = total - amount_paid`,
@@ -763,7 +780,7 @@ so a new **`erp-receivables`** report lists open balances by client and age.
 | File | Change |
 |---|---|
 | `packages/database/src/schema/erp/sales/index.ts` | drop the payments unique index; `invoices` gains `amountPaid`, generated `balanceDue`, `settlementStatus`, and the three checks |
-| `packages/database/migrations/0075_partial_payment.sql` + meta | new — backfill `amount_paid = total`, `settlement_status = 'settled'` for every existing invoice |
+| `packages/database/migrations/0076_partial_payment.sql` + meta | new — backfill `amount_paid = total`, `settlement_status = 'settled'` for every existing invoice |
 | `packages/contracts/src/modules/erp/sales/index.ts` | the four relaxations in the table above; new `recordInvoicePaymentSchema`; totals gain `amountPaid`, `balanceDue`, `settlementStatus` |
 | `apps/api/src/modules/erp/sales/sale-service.ts` | `recordPayment`; new errors (`PAYMENT_EXCEEDS_BALANCE`, `PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES`, `INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID`) |
 | `apps/api/src/modules/erp/sales/sale-repository.ts` | allow a short or zero payment on a product-only sale; the `recordPayment` transaction; a refund reduces the balance first and pays out only the excess; hydrate the new fields |
@@ -869,8 +886,11 @@ Gaps from rolled-back transactions are acceptable, exactly as with invoice numbe
 **States.** `waiting → serving → done`, with `skipped` and `cancelled` as terminal states.
 Skipping is recorded, not deleted, so an argument about who was skipped has an answer.
 
-**Where a ticket comes from.** Completed sales create tickets automatically. Step 9's
-bookings create them on arrival. A staff member can also add someone by hand.
+**Where a ticket comes from — one owner, decided.** The completed sale creates the tickets,
+always, inside the sale transaction. A booking marked "arrived" creates none: it opens the
+sales screen, and the tickets appear when that sale completes. Otherwise a booked client who
+arrives and pays would be issued two numbers for one service. A staff member can still add a
+walk-in by hand, which is the only other way a ticket is born.
 
 **Business date** uses the existing Cairo calendar helper
 (`apps/api/src/modules/erp/cairo-calendar.ts`), so the day boundary matches invoices and
@@ -907,7 +927,7 @@ New module `erp-queue`, following the `erp-transfers` module as its template.
 |---|---|
 | `packages/database/src/schema/erp/queue/index.ts` | new — `erpServiceQueueEntries`, `erpServiceQueueSequences` |
 | `packages/database/src/schema/erp/index.ts` | export it |
-| `packages/database/migrations/0076_service_queue.sql` + meta | new |
+| `packages/database/migrations/0077_service_queue.sql` + meta | new |
 | `packages/contracts/src/modules/erp/queue/index.ts` | new |
 | `packages/contracts/src/modules/erp/index.ts` | export it |
 | `packages/contracts/tests/modules/erp/queue/queue-contracts.test.ts` | new |
@@ -959,6 +979,20 @@ filled, and the cashier completes the sale exactly as always. The booking is sta
 `converted` with the resulting invoice id inside that sale's transaction. This keeps the one
 sale path, the one commission path, and the one stock path that the system already trusts.
 
+**First press wins — decided.** Two people can press "arrived" on the same booking at the same
+moment, and without a guard the client is charged twice for one visit. Both steps of the
+handover are therefore conditional updates over the statuses the state machine defines:
+
+- pressing arrived is `set status = 'arrived' where status = 'booked'`;
+- completing the sale is `set status = 'converted' where status = 'arrived'`, inside the sale
+  transaction.
+
+Each one must check that it changed **exactly one row** before going any further — the sale is
+only posted once that stamp is known to have landed, so a booking that someone else already
+took never produces a second invoice. Whoever loses is told the booking is already being
+handled. A unique index on the invoice's `booking_id` makes it impossible for two invoices to
+claim one booking even if both checks are ever bypassed.
+
 **Preferred employee is a preference, not a promise.** The person may not be checked in when
 the client arrives. The sales screen already refuses to sell a service assigned to an absent
 employee, and the booking must not weaken that rule — so the preferred employee is prefilled
@@ -1002,7 +1036,7 @@ New module `erp-bookings`.
 |---|---|
 | `packages/database/src/schema/erp/bookings/index.ts` | new — `erpBookings`, `erpBookingServices` |
 | `packages/database/src/schema/erp/index.ts` | export it |
-| `packages/database/migrations/0077_bookings.sql` + meta | new |
+| `packages/database/migrations/0078_bookings.sql` + meta | new |
 | `packages/contracts/src/modules/erp/bookings/index.ts` | new |
 | `packages/contracts/src/modules/erp/index.ts` | export it |
 | `packages/contracts/tests/modules/erp/bookings/booking-contracts.test.ts` | new |
@@ -1062,7 +1096,8 @@ passing, not because they were asked for.
    only when an employee changes branch (`employees-repository.ts:126-141`), not when they
    are deactivated. This is **not** currently a bug — every read filters on
    `employment_status = 'active'` (`branch-cashier-roster-repository.ts:23`) — but the stale
-   rows will reappear if a future query forgets that filter. Worth tidying in Step 2.
+   rows will reappear if a future query forgets that filter. Deferred: Step 2 deliberately
+   leaves it alone, because cleaning it up changes what deactivation writes.
 
 ---
 

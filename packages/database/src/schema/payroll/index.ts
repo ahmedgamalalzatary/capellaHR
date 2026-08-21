@@ -174,6 +174,23 @@ export const employeeTerminations = mysqlTable('employee_terminations', {
   check('employee_terminations_forfeited_nonnegative', sql`${table.forfeitedSalaryAmount} >= 0`),
   check('employee_terminations_cash_nonnegative', sql`${table.cashCollectedAmount} >= 0`),
   check('employee_terminations_debt_nonnegative', sql`${table.debtRecordedAmount} >= 0`),
+  /**
+   * A shortfall is either collected at the counter or left as a debt, never both. The
+   * service picks one branch; this is the database refusing the impossible pair outright.
+   */
+  check(
+    'employee_terminations_shortfall_single_outcome',
+    sql`${table.cashCollectedAmount} = 0 or ${table.debtRecordedAmount} = 0`,
+  ),
+  /**
+   * The printed statement has to add up. The recorded debt is deliberately outside the
+   * identity: it is a row that outlives employment, not an adjustment to this month's pay.
+   */
+  check(
+    'employee_terminations_statement_reconciles',
+    sql`${table.netSalaryBeforeSettlement} - ${table.advancesRecovered} + ${table.writeOffAmount}
+      - ${table.forfeitedSalaryAmount} + ${table.cashCollectedAmount} = ${table.finalNetSalary}`,
+  ),
 ]);
 
 export const pendingDeactivationAdvanceDecisions = [

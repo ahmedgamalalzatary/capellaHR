@@ -997,6 +997,7 @@ export const createDrizzleSaleRepository = (
           if (paymentRows.length) {
             await transaction.insert(invoiceReversalPayments).values(paymentRows.map((payment) => ({
               reversalId,
+              invoiceId: operation.invoiceId,
               invoicePaymentId: payment.invoicePaymentId,
               methodSnapshot: payment.method,
               amount: payment.amount,

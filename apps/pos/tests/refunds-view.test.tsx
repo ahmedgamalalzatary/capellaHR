@@ -212,12 +212,61 @@ describe('refunds tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
     expect(await screen.findByText('تعذر تنفيذ الاسترداد.')).toBeDefined();
 
+    // The server's own words for this are "the operation key is used for a different
+    // request", which means nothing at a till. The refund already went through.
+    refundInvoice.mockRejectedValueOnce(Object.assign(
+      new Error('مفتاح العملية مستخدم لطلب مختلف'),
+      { status: 409, code: 'IDEMPOTENCY_CONFLICT' },
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    expect(await screen.findByText('تم تنفيذ هذا الاسترداد بالفعل. حدّث الفاتورة لمراجعته.')).toBeDefined();
+
     fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء الفاتورة' }));
     fireEvent.change(screen.getByLabelText('سبب الإلغاء'), { target: { value: 'اختبار' } });
     voidInvoice.mockRejectedValueOnce(new Error('network failure'));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
     expect(await screen.findByText('تعذر إلغاء الفاتورة.')).toBeDefined();
+  });
+
+  it('will not post a refund again after the server says it is already stored', async () => {
+    // The money is already back with the client. Closing the dialog used to forget that, and
+    // the next تأكيد would have paid them a second time.
+    renderView();
+    await openInvoice();
+    const quoted = {
+      lines: [{
+        invoiceLineId: saleFixtures.completedInvoice.lines[0].id,
+        quantity: 1,
+        grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+      payments: [{ method: 'cash' as const, refundableAmount: '185.00' }],
+    };
+    quoteRefund.mockResolvedValue(quoted);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'اختبار' } });
+    refundInvoice.mockRejectedValueOnce(Object.assign(
+      new Error('مفتاح العملية مستخدم لطلب مختلف'),
+      { status: 409, code: 'IDEMPOTENCY_CONFLICT' },
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await screen.findByText('تم تنفيذ هذا الاسترداد بالفعل. حدّث الفاتورة لمراجعته.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'رجوع' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'احسب الاسترداد' }));
+    await screen.findByLabelText('سبب الاسترداد');
+
+    expect(screen.getByRole('button', { name: 'تأكيد الاسترداد' })).toHaveProperty('disabled', true);
+    expect(screen.getAllByText('تم تنفيذ هذا الاسترداد بالفعل. حدّث الفاتورة لمراجعته.').length)
+      .toBeGreaterThan(0);
+    expect(refundInvoice).toHaveBeenCalledTimes(1);
   });
 
   const confirmRefund = async () => {

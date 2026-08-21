@@ -113,6 +113,38 @@ describe('ERP product stock service', () => {
     expect(vi.mocked(Reflect.get(repo, 'update'))).not.toHaveBeenCalled();
   });
 
+  it('refuses to generate a code that already belongs to another product', async () => {
+    // The in-store code is derived from the product id, but a supplier sticker may already
+    // carry those digits. Printing it would point one code at two products on the shelf.
+    const repo = repository();
+    vi.mocked(Reflect.get(repo, 'findByBarcode')).mockResolvedValue({ ...product, id: 99, barcode: '2000000000114' });
+    await expect(service(repo).generateBarcode(admin, 11, { branchId: 2 }))
+      .rejects.toMatchObject({ code: 'PRODUCT_BARCODE_EXISTS', existingId: 99 });
+    expect(vi.mocked(Reflect.get(repo, 'update'))).not.toHaveBeenCalled();
+  });
+
+  it('reports a code taken between the check and the write as a conflict, not a crash', async () => {
+    const repo = repository();
+    const dupError = Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    vi.mocked(Reflect.get(repo, 'update')).mockRejectedValueOnce(dupError);
+    vi.mocked(Reflect.get(repo, 'findByBarcode'))
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...product, id: 99, barcode: '2000000000114' });
+    await expect(service(repo).generateBarcode(admin, 11, { branchId: 2 }))
+      .rejects.toMatchObject({ code: 'PRODUCT_BARCODE_EXISTS', existingId: 99 });
+  });
+
+  it('does not blame the barcode for a collision no product holds', async () => {
+    // The write failed on some other index. Saying "barcode already used" would send the
+    // admin looking for a sticker that is not on any shelf.
+    const repo = repository();
+    const dupError = Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    vi.mocked(Reflect.get(repo, 'update')).mockRejectedValueOnce(dupError);
+    vi.mocked(Reflect.get(repo, 'findByBarcode')).mockResolvedValue(null);
+    await expect(service(repo).generateBarcode(admin, 11, { branchId: 2 }))
+      .rejects.toBe(dupError);
+  });
+
   it('distinguishes a duplicate name from a duplicate barcode', async () => {
     const repo = repository();
     // Pre-check passes (race: the duplicate was inserted after we checked)

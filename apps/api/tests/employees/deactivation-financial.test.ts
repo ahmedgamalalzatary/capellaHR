@@ -32,6 +32,7 @@ const lifecycleWith = (options: {
   netAfterAcceleration?: string;
   currentNetSalary?: string;
   unpaidAdvanceAmount?: string;
+  currentMonthAdvanceAmount?: string;
   preview?: () => Promise<{ netSalary: string }>;
   previewInContext?: () => Promise<unknown>;
   isFinalized?: () => Promise<boolean>;
@@ -54,6 +55,7 @@ const lifecycleWith = (options: {
         deactivationImpact: vi.fn(async () => ({
           ...impact,
           unpaidAdvanceAmount: options.unpaidAdvanceAmount ?? '3000.00',
+          currentMonthAdvanceAmount: options.currentMonthAdvanceAmount ?? impact.currentMonthAdvanceAmount,
         })),
         accelerateForDeletion: accelerate,
       },
@@ -243,6 +245,26 @@ describe('deactivation decision tree', () => {
       expectedProjectedNetSalary: '1500.00',
       expectedAmountOwed: '0.00',
     }), context)).rejects.toMatchObject({ code: 'EMPLOYEE_ZERO_SALARY_NOT_ALLOWED' });
+  });
+
+  it('records nothing when there is no advance debt to forgive', async () => {
+    // Nobody owes anything, so "forgive the debt" has nothing to forgive. A 0.00 write-off
+    // would be a meaningless row in the books.
+    const { lifecycle: subject, adjustments, debts } = lifecycleWith({
+      unpaidAdvanceAmount: '0.00',
+      currentMonthAdvanceAmount: '0.00',
+      netAfterAcceleration: '2000.00',
+    });
+
+    await subject.prepareEmployeeDeactivation(1, at, decide({
+      advanceDecision: 'ignore_debt',
+      expectedUnpaidAdvanceAmount: '0.00',
+      expectedProjectedNetSalary: '2000.00',
+      expectedAmountOwed: '0.00',
+    }), context);
+
+    expect(adjustments).toEqual([]);
+    expect(debts).toEqual([]);
   });
 
   it('writes off the whole debt so an ignored balance pays the full salary', async () => {

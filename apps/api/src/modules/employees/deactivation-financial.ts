@@ -173,11 +173,14 @@ export const createEmployeeFinancialLifecycle = (
       };
       if (input.advanceDecision === 'ignore_debt') {
         // The accelerated installments stay charged; an equal write-off restores the salary, so
-        // the books still show what was owed and what the company absorbed.
-        await settlements.recordAdjustment(
-          employeeId, at, 'write_off', impact.unpaidAdvanceAmount, context,
-        );
-        figures.writeOffAmount = impact.unpaidAdvanceAmount;
+        // the books still show what was owed and what the company absorbed. Nothing owed means
+        // nothing to forgive, and a zero row would say the company absorbed something.
+        if (cents(impact.unpaidAdvanceAmount) > 0n) {
+          await settlements.recordAdjustment(
+            employeeId, at, 'write_off', impact.unpaidAdvanceAmount, context,
+          );
+          figures.writeOffAmount = impact.unpaidAdvanceAmount;
+        }
       } else if (input.advanceDecision === 'zero_salary') {
         // Same salary figure the preview screen judged this on, so the server never refuses an
         // option the admin was just offered.

@@ -100,9 +100,8 @@ describe('DeactivationDialog', () => {
       />,
     );
 
+    // Left padded on purpose: the dialog is expected to trim it before handing it back.
     fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: '  استقالة  ' } });
-    fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
-    fireEvent.change(screen.getByLabelText(/سبب ترك العمل/), { target: { value: 'استقالة' } });
     fireEvent.change(screen.getByLabelText(/آخر يوم عمل/), { target: { value: '2026-08-19' } });
     fireEvent.click(screen.getByRole('button', { name: 'متابعة' }));
     fireEvent.click(screen.getByRole('button', { name: 'تجميع الأقساط وخصمها من الراتب' }));

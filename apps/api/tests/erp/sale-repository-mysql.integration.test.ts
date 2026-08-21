@@ -947,7 +947,7 @@ describe('ERP sale repository MySQL integration', () => {
     const guardMessage = async (invoicePaymentId: number, methodSnapshot: 'cash' | 'visa') => {
       try {
         await database.insert(invoiceReversalPayments).values({
-          reversalId: pendingId, invoicePaymentId, methodSnapshot, amount: '185.00',
+          reversalId: pendingId, invoiceId: completed.id, invoicePaymentId, methodSnapshot, amount: '185.00',
         });
         return 'accepted';
       } catch (error) {
@@ -964,7 +964,7 @@ describe('ERP sale repository MySQL integration', () => {
 
     // The honest link is still accepted.
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoicePaymentId: ownPayment!.id,
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: ownPayment!.id,
       methodSnapshot: 'cash', amount: '185.00',
     });
     expect(await database.select().from(invoiceReversalPayments)
@@ -1259,7 +1259,7 @@ describe('ERP sale repository MySQL integration', () => {
       quantity: 1, grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
     });
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
     });
     await expect(database.update(invoiceReversals).set({ status: 'finalized' })
       .where(eq(invoiceReversals.id, pendingId))).rejects.toBeDefined();
@@ -1314,6 +1314,7 @@ describe('ERP sale repository MySQL integration', () => {
     });
     await database.insert(invoiceReversalPayments).values({
       reversalId: pendingId,
+      invoiceId: completed.id,
       invoicePaymentId: payment.id,
       methodSnapshot: payment.method,
       amount: '185.00',
@@ -1349,7 +1350,7 @@ describe('ERP sale repository MySQL integration', () => {
       quantity: 1, grossAmount: '1.00', discountAmount: '0.00', taxAmount: '0.00', total: '1.00',
     });
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '1.00',
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '1.00',
     });
     await database.update(erpProductStocks).set({ quantity: 2 })
       .where(eq(erpProductStocks.productId, data.productId));
@@ -1388,7 +1389,7 @@ describe('ERP sale repository MySQL integration', () => {
       quantity: 1, grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
     });
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
     });
     await database.insert(erpStockMovements).values({
       productId: data.productId, branchId: data.branchId,
@@ -1437,7 +1438,7 @@ describe('ERP sale repository MySQL integration', () => {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       });
       await database.insert(invoiceReversalPayments).values({
-        reversalId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '185.00',
+        reversalId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '185.00',
       });
       await database.insert(commissionLedgerEntries).values({
         invoiceId: completed.id, invoiceLineId: completed.lines[0]!.id,
@@ -1489,7 +1490,7 @@ describe('ERP sale repository MySQL integration', () => {
         grossAmount: '0.10', discountAmount: '0.00', taxAmount: '0.00', total: '0.10',
       });
       await database.insert(invoiceReversalPayments).values({
-        reversalId, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '0.10',
+        reversalId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '0.10',
       });
       return reversalId;
     };
@@ -2202,7 +2203,7 @@ describe('ERP sale repository MySQL integration', () => {
     });
 
     // Thirteen digits, unique to this run, so a rerun cannot clash with itself.
-    const code = `2${String(process.pid).padStart(6, '0')}${String(Date.now()).slice(-6)}`;
+    const code = `2${String(process.pid).slice(-6).padStart(6, '0')}${String(Date.now()).slice(-6)}`;
     const coded = await repository.create(write('a', code), data.adminAccountId);
     expect(await repository.findByBarcode(data.branchId, coded.barcode!))
       .toMatchObject({ id: coded.id });

@@ -40,6 +40,24 @@ describe('ProductLabelSheet', () => {
     expect(baseElement.querySelector('style')?.textContent).toContain('40mm 30mm');
   });
 
+  it('does not page-break after the last sticker, which would eject a blank one', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product(), product({ id: 12, barcode: '2000000000121' })]} onPrinted={vi.fn()} />);
+    const labels = [...baseElement.querySelectorAll('#print-root > div')];
+    expect(labels).toHaveLength(2);
+    expect(labels.at(-1)?.className).toContain('last:break-after-auto');
+  });
+
+  it('opens the print dialog once, even when the caller re-renders', () => {
+    // The screen passes a fresh arrow function every render, so an effect keyed on it
+    // would reprint on any background refresh.
+    window.print = vi.fn();
+    const { rerender } = render(<ProductLabelSheet products={[product()]} onPrinted={() => undefined} />);
+    rerender(<ProductLabelSheet products={[product()]} onPrinted={() => undefined} />);
+    rerender(<ProductLabelSheet products={[product()]} onPrinted={() => undefined} />);
+    expect(window.print).toHaveBeenCalledTimes(1);
+  });
+
   it('tells the caller once the print dialog has closed', () => {
     window.print = vi.fn();
     const onPrinted = vi.fn();

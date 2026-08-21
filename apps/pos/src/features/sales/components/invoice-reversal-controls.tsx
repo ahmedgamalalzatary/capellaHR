@@ -77,6 +77,18 @@ export function InvoiceReversalControls({
     }
     return commandIdentity.current.key;
   };
+  /**
+   * The refund the server says is already stored. Closing the dialog would otherwise mint a
+   * fresh operation key, and pressing تأكيد again would post a *second* refund for a client
+   * who has already been paid. So the answer outlives the dialog and is dropped only when the
+   * parent hands back a refreshed invoice showing the reversal.
+   */
+  const settledCommand = useRef<string | null>(null);
+  const seenReversals = useRef(invoice.reversals.length);
+  if (seenReversals.current !== invoice.reversals.length) {
+    seenReversals.current = invoice.reversals.length;
+    settledCommand.current = null;
+  }
   const selectedLines = invoice.lines.flatMap((line) => {
     const quantity = Number(quantities[line.id] ?? 0);
     return Number.isInteger(quantity) && quantity > 0 && quantity <= line.refundableQuantity
@@ -131,6 +143,11 @@ export function InvoiceReversalControls({
       setTenderAmounts(proposeTenders(value));
     },
   });
+  const isAlreadyRefunded = (error: unknown) => (
+    typeof error === 'object' && error !== null
+    && Reflect.get(error, 'code') === 'IDEMPOTENCY_CONFLICT'
+  );
+  const alreadyRefundedMessage = 'تم تنفيذ هذا الاسترداد بالفعل. حدّث الفاتورة لمراجعته.';
   const refund = useMutation({
     mutationFn: () => {
       const payload = {
@@ -141,14 +158,20 @@ export function InvoiceReversalControls({
       };
       return refundInvoice(invoice.id, {
         ...payload,
-        // What is being refunded identifies the command; how the money is handed
-        // back does not. If the answer is lost after the till already paid out,
-        // the cashier may well retry with the split moved to another method, and
-        // that retry has to replay the stored refund instead of posting a second.
+        // What is being refunded identifies the command; how the money is handed back
+        // does not. If nothing was stored, a retry simply posts the refund. If the
+        // refund already went through, the key still matches, so the till cannot pay
+        // out twice — a retry that moved the split to another method is refused
+        // (IDEMPOTENCY_CONFLICT) rather than replayed, because the server compares the
+        // stored payments too. The refund stands, and settledCommand keeps this dialog from
+        // minting a new key for it, so it is not re-postable from here either.
         idempotencyKey: idempotencyKeyFor({
           branchId, reason: payload.reason, lines: payload.lines,
         }),
       });
+    },
+    onError: (cause) => {
+      if (isAlreadyRefunded(cause)) settledCommand.current = commandIdentity.current?.fingerprint ?? null;
     },
     onSuccess: (value) => {
       onUpdated(value);
@@ -187,7 +210,7 @@ export function InvoiceReversalControls({
     setMode(null);
     setQuoted(null);
     setTenderAmounts({});
-    commandIdentity.current = null;
+    if (settledCommand.current === null) commandIdentity.current = null;
     quote.reset();
     refund.reset();
     voidMutation.reset();
@@ -213,6 +236,12 @@ export function InvoiceReversalControls({
       setPrintError('تعذر فتح نافذة الطباعة. تحقق من إعدادات المتصفح والطابعة ثم حاول مرة أخرى.');
     }
   };
+  // Matches what idempotencyKeyFor is given below, so the same refund typed again is
+  // recognised even after the dialog was closed and reopened.
+  const refundFingerprint = JSON.stringify({
+    branchId, reason: reason.trim(), lines: selectedLines,
+  });
+  const refundAlreadySettled = settledCommand.current === refundFingerprint;
   const printableReversal = refunded?.reversals.at(-1);
   const tenderMessage = quoted === null || tendersBalance
     ? null
@@ -226,10 +255,18 @@ export function InvoiceReversalControls({
   const errorMessage = quote.error
     ? responseMessage(quote.error, 'تعذر حساب مبلغ الاسترداد.')
     : refund.error
-      ? responseMessage(refund.error, 'تعذر تنفيذ الاسترداد.')
+      // The server refuses a retry whose split moved, and says so in terms of operation
+      // keys. At a till the only thing worth saying is that the money already went back.
+      ? isAlreadyRefunded(refund.error)
+        ? alreadyRefundedMessage
+        : responseMessage(refund.error, 'تعذر تنفيذ الاسترداد.')
       : voidMutation.error
         ? responseMessage(voidMutation.error, 'تعذر إلغاء الفاتورة.')
-        : null;
+        // Survives closing the refund dialog, so reopening it never looks like a fresh
+        // chance to hand the money over again. A void has its own answers, so it wins here.
+        : refundAlreadySettled && mode !== 'void'
+          ? alreadyRefundedMessage
+          : null;
 
   return (
     <div data-print-controls className="space-y-4">
@@ -400,7 +437,7 @@ export function InvoiceReversalControls({
           <div className="flex justify-end gap-2">
             <Button variant="ghost" disabled={reversalPending} onClick={() => close()}>رجوع</Button>
             <Button
-              disabled={!reason.trim() || !tendersBalance || refund.isPending}
+              disabled={!reason.trim() || !tendersBalance || refund.isPending || refundAlreadySettled}
               onClick={() => refund.mutate()}
             >
               {refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}
