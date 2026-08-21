@@ -46,6 +46,12 @@ export function ShiftDetailView({ sessionId }: { sessionId: number }) {
   });
 
   const summary = detail.data?.summary;
+  /**
+   * The invoice read is branch-scoped and an admin session carries no branch of
+   * its own, so the receipt page answers ERP_BRANCH_REQUIRED unless the shift's
+   * own branch travels with the link. A cashier's branch matches theirs anyway.
+   */
+  const branchQuery = summary ? `?branchId=${summary.branchId}` : '';
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-6">
@@ -124,7 +130,7 @@ export function ShiftDetailView({ sessionId }: { sessionId: number }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
                       className="font-mono font-semibold text-ink underline underline-offset-4"
-                      href={`/invoices/${invoice.id}`}
+                      href={`/invoices/${invoice.id}${branchQuery}`}
                     >
                       {invoice.invoiceNumber}
                     </Link>

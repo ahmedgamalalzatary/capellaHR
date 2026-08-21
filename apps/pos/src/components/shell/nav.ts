@@ -1,4 +1,5 @@
 import {
+  Armchair,
   ArrowLeftRight,
   Clock3,
   FileText,
@@ -49,6 +50,8 @@ export const adminNavigation: NavGroup[] = [
       // Only an Admin moves stock between branches.
       { href: '/transfers', label: 'تحويل المنتجات', icon: ArrowLeftRight },
       { href: '/expenses', label: 'المصروفات', icon: Wallet },
+      // A note about what the branch owns, for the Admin's reference only.
+      { href: '/fixed-assets', label: 'الأصول الثابتة', icon: Armchair },
     ],
   },
   {

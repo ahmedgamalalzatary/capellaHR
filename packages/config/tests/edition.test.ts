@@ -39,7 +39,7 @@ describe('edition registry', () => {
       'devices', 'shifts', 'attendance', 'reports',
       'erp-assignment', 'erp-catalog', 'erp-clients', 'erp-stock',
       'erp-suppliers', 'erp-expenses', 'erp-sales', 'erp-commissions', 'erp-reports',
-      'erp-transfers',
+      'erp-transfers', 'erp-fixed-assets',
     ]));
     expect(resolved.modules).not.toContain('payroll');
     expect(resolved.modules).not.toContain('self-service');

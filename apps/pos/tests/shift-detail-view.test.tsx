@@ -77,6 +77,13 @@ describe('ShiftDetailView', () => {
     expect(mocks.getCashierSessionDetail).toHaveBeenCalledWith(14);
   });
 
+  test('links each sale to the invoice with the shift branch, which an admin must send', async () => {
+    renderView();
+
+    const link = await screen.findByRole('link', { name: 'INV-2026.08.01-12.00-3' });
+    expect(link.getAttribute('href')).toBe('/invoices/41?branchId=3');
+  });
+
   test('refuses a shift the actor may not read without pretending it is empty', async () => {
     mocks.getCashierSessionDetail.mockRejectedValue(new ApiError(403, {
       code: 'ERP_CASHIER_SESSION_NOT_OWNER',

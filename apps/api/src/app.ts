@@ -23,7 +23,7 @@ import type {
   CashierSessionService,
   SaleService,
 } from './modules/erp/sales/index.js';
-import type { ClientService, ExpenseService, ProductStockService, StockTransferService, SupplierPurchaseService } from './modules/erp/index.js';
+import type { ClientService, ExpenseService, FixedAssetService, ProductStockService, StockTransferService, SupplierPurchaseService } from './modules/erp/index.js';
 import type { CategoryService, ServiceCatalogService } from './modules/erp/index.js';
 import type { EmployeeAssignmentService } from './modules/erp/assignment/index.js';
 import type { CommissionService } from './modules/erp/commissions/index.js';
@@ -65,6 +65,7 @@ export interface AppDependencies {
   erpSupplierPurchaseService?: SupplierPurchaseService;
   erpStockTransferService?: StockTransferService;
   erpExpenseService?: ExpenseService;
+  erpFixedAssetService?: FixedAssetService;
   erpAssignmentService?: EmployeeAssignmentService;
   erpCommissionService?: CommissionService;
   publicConfig?: { timeZone: string; locale: string };

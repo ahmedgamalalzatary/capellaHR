@@ -26,6 +26,7 @@ import {
   createErpCatalogModule,
   createErpClientsModule,
   createErpExpensesModule,
+  createErpFixedAssetsModule,
   createErpReportsModule,
   createErpStockModule,
   createErpSuppliersModule,
@@ -242,6 +243,10 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     branches: branchModule.erp,
     employees: employeeModule.erp,
   }) : undefined;
+  const erpFixedAssetsModule = enabled('erp-fixed-assets') ? createErpFixedAssetsModule(database, {
+    audit: auditModule.erp,
+    branches: branchModule.erp,
+  }) : undefined;
   const salesModule = enabled('erp-sales') ? createSalesModule(database, {
     audit: auditModule.erp,
     branches: branchModule.erp,
@@ -333,6 +338,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     ...(erpSuppliersModule ? { erpSupplierPurchaseService: erpSuppliersModule.service } : {}),
     ...(erpTransfersModule ? { erpStockTransferService: erpTransfersModule.service } : {}),
     ...(erpExpensesModule ? { erpExpenseService: erpExpensesModule.service } : {}),
+    ...(erpFixedAssetsModule ? { erpFixedAssetService: erpFixedAssetsModule.service } : {}),
     ...(erpAssignmentModule ? { erpAssignmentService: erpAssignmentModule.service } : {}),
     ...(commissionModule ? { erpCommissionService: commissionModule.service } : {}),
   };

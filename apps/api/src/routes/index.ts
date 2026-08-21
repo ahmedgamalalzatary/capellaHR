@@ -28,7 +28,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createErpClientsRouter, createErpExpensesRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type ClientService, type ExpenseService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
+import { createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type ClientService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -73,6 +73,7 @@ export const createApiRouter = (dependencies: {
   erpSupplierPurchaseService?: SupplierPurchaseService;
   erpStockTransferService?: StockTransferService;
   erpExpenseService?: ExpenseService;
+  erpFixedAssetService?: FixedAssetService;
   erpAssignmentService?: EmployeeAssignmentService;
   erpCommissionService?: CommissionService;
   publicConfig?: { timeZone: string; locale: string };
@@ -248,6 +249,12 @@ export const createApiRouter = (dependencies: {
     if (dependencies.erpExpenseService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
       router.use('/erp/expenses', erpAuth.authenticate, erpAuth.requireErpAccount, createErpExpensesRouter(dependencies.erpExpenseService));
+    }
+    if (dependencies.erpFixedAssetService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      // The register is the admin's own note about branch property; a cashier
+      // has no business reading or changing it.
+      router.use('/erp/fixed-assets', erpAuth.authenticate, erpAuth.requireAdmin, createErpFixedAssetsRouter(dependencies.erpFixedAssetService));
     }
     if (dependencies.erpAssignmentService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);

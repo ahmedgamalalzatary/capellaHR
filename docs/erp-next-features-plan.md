@@ -48,7 +48,8 @@ customer's `.env` picks `hr`, `erp`, or `full`, and only that edition's modules 
 at boot. **Every new module must be registered there**, or it will not exist at runtime.
 
 **Migrations.** All schemas migrate on every installation regardless of edition. The next
-migration number is **0075** (`packages/database/migrations/` currently ends at `0074`).
+migration number is **0076** (`packages/database/migrations/` currently ends at `0075`,
+the fixed-assets register).
 Each migration is one `.sql` file plus a `meta/00NN_snapshot.json` and an updated
 `meta/_journal.json`.
 
@@ -139,6 +140,31 @@ Quick wins first, as decided. Two ordering notes that matter:
 | 7 | Sales screen restyle to one full page | Large | POS only |
 | 8 | Live per-service queue | Large | **new** `erp-queue` |
 | 9 | Customer booking | Large | **new** `erp-bookings` |
+| — | Fixed-assets register — **built**, outside the numbered steps | Small | **new** `erp-fixed-assets` |
+
+### The fixed-assets register (built)
+
+What the branch owns rather than sells: chairs, mirrors, air conditioners. Asked for as a
+standalone note and built as one — `erp_fixed_assets` (migration `0075`) is a leaf that no
+sale, stock movement, commission, report or payroll figure reads, and that reads nothing of
+its own beyond the branch and the account that wrote the line.
+
+Decisions taken with the owner:
+
+- **Branch-scoped**, like every other ERP record, so a second branch keeps its own list.
+- **Only the name is required.** Quantity, unit price, location, purchase date and condition
+  are all nullable and mean *not written down* rather than zero. The total value is worked
+  out for display from quantity × unit price, so it can never disagree with them, and shows
+  nothing when either is blank.
+- **An edit replaces the whole line** — `PUT /erp/fixed-assets/:id`, not `PATCH`, because a
+  field left out of the body is one the admin cleared, not one to leave as it was. The row is
+  locked before an edit or a delete, so two admins with the same line open cannot both act on
+  it.
+- **Edited and deleted in place**, unlike the money records that are corrected by reversal —
+  nothing points at a line, so removing one breaks nothing. The audit event is the only
+  trace a deleted line leaves behind.
+- **Admin only**, enforced by `requireAdmin` on `/erp/fixed-assets` and by
+  `RequireErpAccount role="admin"` on the POS page; the entry appears on the admin rail only.
 
 ---
 
@@ -670,11 +696,18 @@ the reassignment row. The existing check constraint is widened to permit them, a
 unique index is unaffected because neither is an `earned` entry. Both employees' monthly
 commission projections are refreshed in the same transaction, exactly as a sale does.
 
-**Repeated submissions are not blocked — decided, with the risk accepted.** Unlike refunds,
-a reassignment carries no operation reference, so sending the same move twice records it
-twice: the receiving employee is credited twice and the losing employee debited twice, and
-payroll follows. The button being disabled while the request is in flight is the only guard.
-Chosen deliberately to keep the feature small; revisit if a double credit is ever seen.
+**Repeated submissions are idempotent — decided.** A double send would credit the receiving
+employee twice and debit the losing employee twice, and payroll would follow, so the button
+being disabled while the request is in flight is not enough: a retry after a hiccup, or the
+same move sent from a second till, would still land twice. Each submission therefore carries
+an operation reference, stored on the reassignment row under a unique
+`(invoice_line_id, operation_reference)` index. A second arrival of the same reference **for
+the same line and the same pair of employees** returns the existing reassignment instead of
+appending another, and the database refuses the duplicate even if two requests race. If any
+of those differ, the reference is being reused for a different move, which is refused with
+`IDEMPOTENCY_CONFLICT` rather than replayed — otherwise the till would be told the
+commission moved to one employee while the stored row names another. Same shape as the refund
+path and as the instalment reference in Step 6.
 
 **When payroll is already finalised.** A refund in that situation posts an HR deduction. A
 reassignment would need a deduction for one person *and* an increase for the other, and no
@@ -700,9 +733,9 @@ itself enforces through `assertAssignable`.
 
 | File | Change |
 |---|---|
-| `packages/database/src/schema/erp/sales/index.ts` | new `invoiceLineReassignments`; widen the ledger entry-type enum and its check constraint |
-| `packages/database/migrations/0075_invoice_line_reassignment.sql` + meta | new |
-| `packages/contracts/src/modules/erp/sales/index.ts` | `reassignInvoiceLineSchema`; invoice line DTO gains `originalEmployee` and `reassignments[]` |
+| `packages/database/src/schema/erp/sales/index.ts` | new `invoiceLineReassignments`, carrying `operationReference` under a unique `(invoice_line_id, operation_reference)` index; widen the ledger entry-type enum and its check constraint |
+| `packages/database/migrations/0076_invoice_line_reassignment.sql` + meta | new |
+| `packages/contracts/src/modules/erp/sales/index.ts` | `reassignInvoiceLineSchema`, including the operation reference; invoice line DTO gains `originalEmployee` and `reassignments[]` |
 | `apps/api/src/modules/erp/sales/sale-service.ts` | `reassignLine`; new error codes (`REASSIGN_PAYROLL_FINALIZED`, `REASSIGN_LINE_NOT_SERVICE`, `REASSIGN_SAME_EMPLOYEE`) |
 | `apps/api/src/modules/erp/sales/sale-repository.ts` | the transaction: insert the reassignment, append both ledger entries, refresh both payroll inputs, audit; `hydrateInvoice` overlays the current performer |
 | `apps/api/src/modules/erp/index.ts`, `apps/api/src/routes/index.ts` | `POST /erp/sales/invoices/:id/lines/:lineId/reassign` |
@@ -711,7 +744,7 @@ itself enforces through `assertAssignable`.
 | `apps/pos/src/features/sales/components/reassign-employee-dialog.tsx` | new |
 | `apps/pos/src/features/sales/components/receipt.tsx` | print the current performer; show the original as history |
 | `apps/pos/src/features/sales/api/sales-api.ts` | new call |
-| `apps/api/tests/erp/sale-service.test.ts`, `sale-repository-mysql.integration.test.ts`, `commission-repository.test.ts` | commission moves, payroll-finalised block, absent-employee block |
+| `apps/api/tests/erp/sale-service.test.ts`, `sale-repository-mysql.integration.test.ts`, `commission-repository.test.ts` | commission moves, payroll-finalised block, absent-employee block; the same reference sent twice — and twice concurrently against MySQL — leaves one reassignment row and one pair of ledger entries; the same reference reused for a different line or a different employee is refused with `IDEMPOTENCY_CONFLICT` |
 | `apps/pos/tests/invoice-receipt-view.test.tsx` | dialog and reprint |
 
 ---
@@ -814,8 +847,8 @@ so a new **`erp-receivables`** report lists open balances by client and age.
 
 | File | Change |
 |---|---|
-| `packages/database/src/schema/erp/sales/index.ts` | drop the payments unique index; `invoices` gains `amountPaid`, generated `balanceDue`, `settlementStatus`, and the three checks |
-| `packages/database/migrations/0076_partial_payment.sql` + meta | new — backfill `amount_paid = total`, `settlement_status = 'settled'` for every existing invoice |
+| `packages/database/src/schema/erp/sales/index.ts` | `payments` gains `operationReference`; the `(invoice_id, method)` unique index is replaced by a unique `(invoice_id, operation_reference)`; `invoices` gains `amountPaid`, generated `balanceDue`, `settlementStatus`, and the three checks |
+| `packages/database/migrations/0077_partial_payment.sql` + meta | new — add `operation_reference`, drop `erp_invoice_payments_invoice_method_unique` and add `erp_invoice_payments_invoice_reference_unique` in its place, backfill each existing payment with its own reference, and backfill `amount_paid = total`, `settlement_status = 'settled'` for every existing invoice |
 | `packages/contracts/src/modules/erp/sales/index.ts` | the four relaxations in the table above; new `recordInvoicePaymentSchema`; totals gain `amountPaid`, `balanceDue`, `settlementStatus` |
 | `apps/api/src/modules/erp/sales/sale-service.ts` | `recordPayment`; new errors (`PAYMENT_EXCEEDS_BALANCE`, `PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES`, `INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID`) |
 | `apps/api/src/modules/erp/sales/sale-repository.ts` | allow a short or zero payment on a product-only sale; the `recordPayment` transaction; a refund reduces the balance first and pays out only the excess; hydrate the new fields |
@@ -829,7 +862,7 @@ so a new **`erp-receivables`** report lists open balances by client and age.
 | `apps/pos/src/features/sales/components/receipt.tsx`, `invoice-history-view.tsx` | show paid / balance |
 | `apps/pos/src/features/sales/offline-sale-queue.ts`, `offline-sale-sync.ts` | carry the paid amount through the offline queue |
 | `apps/pos/src/features/erp-reports/components/erp-reports-view.tsx` | the new report tab |
-| `apps/api/tests/erp/*`, `apps/pos/tests/*` | short and zero payment allowed only without services; instalments; the 1000/300/500 return worked example and the return-exceeds-debt case; void block; offline replay |
+| `apps/api/tests/erp/*`, `apps/pos/tests/*` | short and zero payment allowed only without services; instalments; the 1000/300/500 return worked example and the return-exceeds-debt case; void block; offline replay; a MySQL integration test firing the same reference twice concurrently and asserting one payment row, the second call returning the first, and a differing amount or method raising `IDEMPOTENCY_CONFLICT` |
 
 ---
 
@@ -962,7 +995,7 @@ New module `erp-queue`, following the `erp-transfers` module as its template.
 |---|---|
 | `packages/database/src/schema/erp/queue/index.ts` | new — `erpServiceQueueEntries`, `erpServiceQueueSequences` |
 | `packages/database/src/schema/erp/index.ts` | export it |
-| `packages/database/migrations/0077_service_queue.sql` + meta | new |
+| `packages/database/migrations/0078_service_queue.sql` + meta | new |
 | `packages/contracts/src/modules/erp/queue/index.ts` | new |
 | `packages/contracts/src/modules/erp/index.ts` | export it |
 | `packages/contracts/tests/modules/erp/queue/queue-contracts.test.ts` | new |
@@ -1071,7 +1104,7 @@ New module `erp-bookings`.
 |---|---|
 | `packages/database/src/schema/erp/bookings/index.ts` | new — `erpBookings`, `erpBookingServices` |
 | `packages/database/src/schema/erp/index.ts` | export it |
-| `packages/database/migrations/0078_bookings.sql` + meta | new |
+| `packages/database/migrations/0079_bookings.sql` + meta | new |
 | `packages/contracts/src/modules/erp/bookings/index.ts` | new |
 | `packages/contracts/src/modules/erp/index.ts` | export it |
 | `packages/contracts/tests/modules/erp/bookings/booking-contracts.test.ts` | new |
@@ -1127,7 +1160,7 @@ passing, not because they were asked for.
    repository except migration snapshots. A debt recorded when an employee leaves can never
    be marked as paid. Fixed by Step 2.
 
-3. **Migrations 0072 and 0074 could not run on a database with data in it — fixed.**
+2. **Migrations 0072 and 0074 could not run on a database with data in it — fixed.**
    Both backfill a new column with an `UPDATE`, and both tables carry guard triggers that
    refuse exactly that write: `erp_invoice_payments_validate_update` calls a completed
    invoice's payments immutable (and takes a `FOR UPDATE` lock on `erp_invoices`, which
@@ -1140,7 +1173,7 @@ passing, not because they were asked for.
    error to read. Both files now drop the guard for the length of the backfill and recreate
    it verbatim. Worth knowing: a silent `db:migrate` is not proof it worked.
 
-2. **`erp_branch_cashier_roster` keeps rows for deactivated employees.** Roster cleanup runs
+3. **`erp_branch_cashier_roster` keeps rows for deactivated employees.** Roster cleanup runs
    only when an employee changes branch (`employees-repository.ts:126-141`), not when they
    are deactivated. This is **not** currently a bug — every read filters on
    `employment_status = 'active'` (`branch-cashier-roster-repository.ts:23`) — but the stale

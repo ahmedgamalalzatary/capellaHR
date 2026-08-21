@@ -184,6 +184,19 @@ describe('PosShell', () => {
       .toBe('/expenses');
   });
 
+  test('keeps the fixed assets register on the admin rail only', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
+    renderShell();
+    expect((await screen.findByRole('link', { name: 'الأصول الثابتة' })).getAttribute('href'))
+      .toBe('/fixed-assets');
+
+    cleanup();
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
+    renderShell();
+    await screen.findByRole('link', { name: 'المصروفات' });
+    expect(screen.queryByRole('link', { name: 'الأصول الثابتة' })).toBeNull();
+  });
+
   test('marks the active destination in the responsive primary navigation', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();

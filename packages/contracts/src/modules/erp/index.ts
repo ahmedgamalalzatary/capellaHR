@@ -4,6 +4,7 @@ export * from './clients/index.js';
 export * from './commissions/index.js';
 export * from './erp-reports/index.js';
 export * from './expenses/index.js';
+export * from './fixed-assets/index.js';
 export * from './sales/index.js';
 export * from './stock/index.js';
 export * from './suppliers/index.js';

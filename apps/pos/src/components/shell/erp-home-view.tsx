@@ -42,6 +42,7 @@ const adminGroups: ReadonlyArray<{
       { href: '/products', label: 'المنتجات والمخزون' },
       { href: '/suppliers', label: 'الموردون والمشتريات' },
       { href: '/transfers', label: 'تحويل المنتجات بين الفروع' },
+      { href: '/fixed-assets', label: 'الأصول الثابتة' },
     ],
   },
   {
