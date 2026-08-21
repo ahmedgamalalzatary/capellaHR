@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 
 import { invoiceClientLabel } from '@/lib/client-label';
 import { Barcode } from '@/lib/barcode/render-barcode';
+import { RECEIPT_PAGE_RULE } from '@/lib/print/hardware';
+import { PrintPageRule } from '@/lib/print/page-rule';
 
 import { formatCairoDateTime, paymentLabels } from './invoice-format';
 
@@ -195,6 +197,7 @@ export function EmployeeReceipt({
 export function ReceiptBundle({ invoice }: { invoice: PublicInvoiceDto }) {
   return (
     <div data-receipt-sheet className="space-y-4">
+      <PrintPageRule rule={RECEIPT_PAGE_RULE} />
       <Receipt invoice={invoice} />
       {invoiceEmployees(invoice).map((employee) => (
         <EmployeeReceipt key={employee.id} invoice={invoice} employee={employee} />

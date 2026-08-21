@@ -52,7 +52,7 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 import { createUuid } from '@/lib/uuid';
 
 import { completeSale, quoteSale } from '../api/sales-api';
-import { Receipt } from './receipt';
+import { ReceiptBundle } from './receipt';
 import {
   enqueueOfflineSale,
   getOfflineSaleQueueVersion,
@@ -989,7 +989,7 @@ function SaleWorkspace({
 
         {/* Only the receipt reaches the paper; the print stylesheet hides everything else. */}
         <div className="hidden print:block">
-          <Receipt invoice={completed} />
+          <ReceiptBundle invoice={completed} />
         </div>
 
         {printPrompt ? (

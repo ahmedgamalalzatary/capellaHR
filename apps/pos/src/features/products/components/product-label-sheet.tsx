@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 
 import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
 import { barcodeSvg } from '@/lib/barcode/render-barcode';
+import { PrintPageRule } from '@/lib/print/page-rule';
 
 /** Shared by the skip check and the sticker so the two never disagree. */
 const BARCODE_HEIGHT_MM = 9;
@@ -62,7 +63,7 @@ export function ProductLabelSheet({ products, onPrinted }: {
   return createPortal(
     <div id="print-root" className="text-ink">
       {/* Overrides the report page rule, which is A4-shaped and would waste a roll. */}
-      <style>{`@media print { ${LABEL_PAGE_RULE} }`}</style>
+      <PrintPageRule rule={LABEL_PAGE_RULE} />
       {printable.map(({ product, svg }) => (
         <div
           key={product.id}

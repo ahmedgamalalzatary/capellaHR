@@ -5,10 +5,17 @@ ALTER TABLE `erp_invoice_reversal_payments` DROP FOREIGN KEY `erp_reversal_payme
 ALTER TABLE `erp_invoice_reversals` DROP FOREIGN KEY `erp_invoice_reversals_session_fk`;
 --> statement-breakpoint
 ALTER TABLE `erp_invoice_reversal_payments` ADD `invoice_id` int;--> statement-breakpoint
+-- The reversal payment guard rejects every update outright, so the backfill drops it
+-- and puts it back verbatim. An empty table never reaches this statement, which is why
+-- the guard was not noticed until a database with refunds in it ran the migration.
+DROP TRIGGER `erp_invoice_reversal_payments_reject_update`;--> statement-breakpoint
 UPDATE `erp_invoice_reversal_payments` `rp`
   JOIN `erp_invoice_reversals` `r` ON `r`.`id` = `rp`.`reversal_id`
   SET `rp`.`invoice_id` = `r`.`invoice_id`
   WHERE `rp`.`invoice_id` IS NULL;--> statement-breakpoint
+CREATE TRIGGER `erp_invoice_reversal_payments_reject_update`
+BEFORE UPDATE ON `erp_invoice_reversal_payments`
+FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice reversal payment facts are immutable';--> statement-breakpoint
 ALTER TABLE `erp_invoice_reversal_payments` MODIFY COLUMN `invoice_id` int NOT NULL;--> statement-breakpoint
 ALTER TABLE `erp_invoice_payments` ADD CONSTRAINT `erp_invoice_payments_id_invoice_unique` UNIQUE(`id`,`invoice_id`);--> statement-breakpoint
 ALTER TABLE `erp_invoice_reversals` ADD CONSTRAINT `erp_invoice_reversals_id_invoice_unique` UNIQUE(`id`,`invoice_id`);--> statement-breakpoint

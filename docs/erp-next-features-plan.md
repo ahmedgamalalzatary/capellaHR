@@ -89,12 +89,24 @@ updating old ones. Two existing patterns do this and both are reused below:
 | 7 | Queue ticket | **No separate ticket.** The queue positions print on the sale receipt itself. |
 | 1 | Bookings screen | **One day at a time**, appointments in time order. |
 
-### Hardware, identified from the photos
+### Hardware, read off the machines' own labels
 
 | | Model | What it means for us |
 |---|---|---|
-| Printer | **Xprinter XP-233B** thermal barcode printer | Label roll 20–60 mm wide, 127 mm/s, **USB**, cash-drawer port. It is a *label* printer, not the receipt printer. |
+| Receipt printer | **Xprinter XP-T80Q** thermal receipt printer | **80 mm** roll, 200 mm/s, **USB + Ethernet**, ESC/POS, cash-drawer port (24 V). This is the slip printer at the counter, and 80 mm is exactly what the receipt layout was built for. |
+| Label printer | **Xprinter XP-233B** thermal barcode printer | Label roll **20–60 mm** wide, 127 mm/s, **USB**, ESC/POS, cash-drawer port (12 V). It is a *label* printer, not the receipt printer. |
 | Scanner | **Datalogic QuickScan Lite QW2100** | **1D only** (no QR / no 2D). USB. Ships as a **keyboard wedge**: it types the barcode digits and presses Enter. No driver, no browser permission, no WebUSB. |
+
+Both printers speak ESC/POS and both have a cash-drawer port, and neither fact changes
+the design: everything is printed through the Windows driver and the browser's print
+dialog, so no raw bytes are ever sent and **the drawer cannot be opened from the
+browser** — it stays a manual pull unless a local print agent is ever built. The
+XP-T80Q's Ethernet port is the one thing that would make silent server-side printing
+possible later (raw ESC/POS to port 9100); nothing uses it today.
+
+`apps/pos/src/lib/print/hardware.ts` holds these three machines as the single place the
+code reads them from: the receipt's `@page` rule is derived from the XP-T80Q's 80 mm
+roll, and the sticker size is checked against the XP-233B's 20–60 mm range.
 
 Two consequences that shape the whole barcode design:
 
@@ -590,6 +602,29 @@ Step 4 is implemented. What the plan did not anticipate:
   screen the refund dialog opens itself; on the invoices screen the browser
   navigates to the invoice. Both wait for the matching row rather than guessing
   an id from the code.
+
+### Printing, after the machines were identified
+
+Three changes landed once the labels were read:
+
+- **The receipt carries its own page rule.** Without it the slip inherited the app's
+  `@page { size: auto }` and printed at whatever the driver last defaulted to — an A4
+  sheet with a thin receipt on it when the label printer was the selected device. The
+  rule now comes from `RECEIPT_PAGE_RULE`, derived from the XP-T80Q's 80 mm roll with
+  margins that leave exactly the 72 mm the receipt is laid out at. Height stays `auto`,
+  so a slip is as long as its sale and never padded to a page.
+- **A sale prints what the invoice page prints.** The sales screen printed only the
+  customer's copy while `/invoices/:id` printed the full bundle — customer slip plus one
+  copy per employee. The two now render the same `ReceiptBundle`, so what the cashier
+  gets after a sale and what a reprint gives are the same document.
+- **One `PrintPageRule` component** carries the paper for all three printable documents
+  (receipt, refund note, sticker sheet). `@page` is global and cannot be scoped by class,
+  so each document must declare its own paper while it is mounted; the A4 rule in
+  `globals.css` stays the default for reports.
+
+Still open, and hardware-only: printing a real slip and a real sticker on the machines,
+confirming the roll really is 40 × 30 mm, and deciding whether Chrome runs with
+`--kiosk-printing` so the cashier is not asked to pick a printer on every sale.
 
 ---
 
@@ -1091,6 +1126,19 @@ passing, not because they were asked for.
    `packages/database/src/schema/payroll/index.ts:135` and appears nowhere else in the
    repository except migration snapshots. A debt recorded when an employee leaves can never
    be marked as paid. Fixed by Step 2.
+
+3. **Migrations 0072 and 0074 could not run on a database with data in it — fixed.**
+   Both backfill a new column with an `UPDATE`, and both tables carry guard triggers that
+   refuse exactly that write: `erp_invoice_payments_validate_update` calls a completed
+   invoice's payments immutable (and takes a `FOR UPDATE` lock on `erp_invoices`, which
+   MySQL rejects outright when the statement already joins that table),
+   `erp_invoice_reversals_validate_finalize` allows an update only as a pending→finalized
+   transition, and `erp_invoice_reversal_payments_reject_update` rejects every update
+   unconditionally. An empty database never reaches those statements, so tests and fresh
+   installs passed while any real database stopped mid-file — and drizzle-kit recorded the
+   migration as applied and exited **0** regardless, leaving a half-migrated schema with no
+   error to read. Both files now drop the guard for the length of the backfill and recreate
+   it verbatim. Worth knowing: a silent `db:migrate` is not proof it worked.
 
 2. **`erp_branch_cashier_roster` keeps rows for deactivated employees.** Roster cleanup runs
    only when an employee changes branch (`employees-repository.ts:126-141`), not when they
