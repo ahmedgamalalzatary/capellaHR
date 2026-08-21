@@ -1,0 +1,150 @@
+# ==============================
+# Python
+# ==============================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================
+# Virtual Environments
+# ==============================
+
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==============================
+# Environment / Secrets
+# ==============================
+
+.env
+.env.*
+!.env.example
+
+# ==============================
+# IDE
+# ==============================
+
+.idea/
+.vscode/
+*.iml
+
+# ==============================
+# OS
+# ==============================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# Logs
+# ==============================
+
+*.log
+logs/
+
+# ==============================
+# Testing
+# ==============================
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# ==============================
+# Temporary Files
+# ==============================
+
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ==============================
+# Biometric / Employee Data
+# NEVER commit these
+# ==============================
+
+storage/
+data/
+datasets/
+
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.bmp
+*.tiff
+*.tif
+
+# Face embeddings / biometric data
+*.npy
+*.npz
+*.pkl
+*.pickle
+
+# ==============================
+# ML Models
+# ==============================
+
+# Model weights can be large and may have
+# separate licenses. Download them through
+# scripts instead of committing them.
+
+models/**/*.onnx
+models/**/*.pth
+models/**/*.pt
+models/**/*.bin
+models/**/*.weights
+
+# ==============================
+# Jupyter
+# ==============================
+
+.ipynb_checkpoints/
+
+# ==============================
+# Docker
+# ==============================
+
+docker-compose.override.yml
+
+# ==============================
+# Local Development
+# ==============================
+
+.local/
+.cache/
