@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Liveness Test</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        video {
+            width: 640px;
+            max-width: 90%;
+            border: 2px solid #333;
+            border-radius: 10px;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #result {
+            margin-top: 20px;
+            font-size: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Face Liveness Test</h1>
+
+<video id="video" autoplay playsinline></video>
+
+<br>
+
+<button id="startCamera">
+    Start Camera
+</button>
+
+<button id="checkLiveness">
+    Check Liveness
+</button>
+
+<div id="result">
+    Waiting...
+</div>
+
+<script>
+
+const video = document.getElementById("video");
+const startCameraButton = document.getElementById("startCamera");
+const checkLivenessButton = document.getElementById("checkLiveness");
+const result = document.getElementById("result");
+
+let stream = null;
+
+
+// ============================================
+// Start webcam
+// ============================================
+
+startCameraButton.addEventListener("click", async () => {
+
+    try {
+
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: "user",
+                width: 1280,
+                height: 720
+            },
+            audio: false
+        });
+
+        video.srcObject = stream;
+
+        result.textContent = "Camera started";
+
+    } catch (error) {
+
+        console.error(error);
+
+        result.textContent =
+            "Could not access camera: " + error.message;
+    }
+
+});
+
+
+// ============================================
+// Capture one frame
+// ============================================
+
+function captureFrame() {
+
+    const canvas = document.createElement("canvas");
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext("2d");
+
+    context.drawImage(
+        video,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    return new Promise((resolve) => {
+
+        canvas.toBlob(
+            (blob) => resolve(blob),
+            "image/jpeg",
+            0.90
+        );
+
+    });
+}
+
+
+// ============================================
+// Capture multiple webcam frames
+// ============================================
+
+async function captureFrames(count = 8) {
+
+    const frames = [];
+
+    for (let i = 0; i < count; i++) {
+
+        const frame = await captureFrame();
+
+        frames.push(frame);
+
+        // wait 100ms between frames
+        await new Promise(
+            resolve => setTimeout(resolve, 100)
+        );
+    }
+
+    return frames;
+}
+
+
+// ============================================
+// Send frames to AI service
+// ============================================
+
+checkLivenessButton.addEventListener(
+    "click",
+    async () => {
+
+        if (!stream) {
+
+            result.textContent =
+                "Start the camera first.";
+
+            return;
+        }
+
+        result.textContent =
+            "Capturing webcam frames...";
+
+        try {
+
+            const frames =
+                await captureFrames(8);
+
+            const formData =
+                new FormData();
+
+            frames.forEach(
+                (frame, index) => {
+
+                    formData.append(
+                        "files",
+                        frame,
+                        `frame_${index}.jpg`
+                    );
+
+                }
+            );
+
+            result.textContent =
+                "Sending frames to AI service...";
+
+            const response =
+                await fetch(
+                    "http://localhost:8000/api/v1/liveness",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            console.log(data);
+
+            result.textContent =
+                JSON.stringify(
+                    data,
+                    null,
+                    2
+                );
+
+        } catch (error) {
+
+            console.error(error);
+
+            result.textContent =
+                "Error: " + error.message;
+        }
+
+    }
+);
+
+</script>
+
+</body>
+</html>
