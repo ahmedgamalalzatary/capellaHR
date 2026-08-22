@@ -1,0 +1,16 @@
+services:
+  attendance-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: attendance-ai
+
+    ports:
+      - "8000:8000"
+
+    restart: unless-stopped
+
+    environment:
+      APP_NAME: "Attendance AI Service"
+      APP_VERSION: "0.1.0"
