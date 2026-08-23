@@ -1,0 +1,28 @@
+iPhone Browser
+      │
+      │ 8–12 camera frames
+      ▼
+AI Docker
+      │
+      ├── YuNet
+      │     └── exactly 1 face
+      │
+      ├── MiniFASNetV2
+      │     └── 2.7× face crop
+      │
+      ├── MiniFASNetV1SE
+      │     └── 4.0× face crop
+      │
+      ├── ensemble scores
+      │
+      └── temporal aggregation
+              │
+              ▼
+        LIVE / SPOOF
+
+ THEN :
+         LIVE
+         ↓
+        Face embedding
+         ↓
+        Compare to employee embedding

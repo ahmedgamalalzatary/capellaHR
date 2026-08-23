@@ -12,12 +12,14 @@ class TemporalLivenessResult:
 
 
 class TemporalLivenessAggregator:
+
     def __init__(
         self,
         threshold: float = 0.50,
-        min_valid_frames: int = 3,
-        min_live_ratio: float = 0.70,
+        min_valid_frames: int = 5,
+        min_live_ratio: float = 0.75,
     ) -> None:
+
         self.threshold = threshold
         self.min_valid_frames = min_valid_frames
         self.min_live_ratio = min_live_ratio
@@ -27,9 +29,9 @@ class TemporalLivenessAggregator:
         scores: list[float],
     ) -> TemporalLivenessResult:
 
-        total_frames = len(scores)
+        total = len(scores)
 
-        if total_frames == 0:
+        if total == 0:
             return TemporalLivenessResult(
                 is_live=False,
                 score=0.0,
@@ -40,24 +42,24 @@ class TemporalLivenessAggregator:
             )
 
         live_frames = sum(
-            1 for score in scores
-            if score >= self.threshold
+            score >= self.threshold
+            for score in scores
         )
 
-        spoof_frames = total_frames - live_frames
+        spoof_frames = (
+            total - live_frames
+        )
 
-        valid_frames = total_frames
+        live_ratio = (
+            live_frames / total
+        )
 
-        live_ratio = live_frames / valid_frames
+        mean_score = (
+            sum(scores) / total
+        )
 
-        mean_score = sum(scores) / valid_frames
-
-        # A person must have:
-        # 1. enough valid frames
-        # 2. a high percentage of live frames
-        # 3. a reasonable average live score
         is_live = (
-            valid_frames >= self.min_valid_frames
+            total >= self.min_valid_frames
             and live_ratio >= self.min_live_ratio
             and mean_score >= self.threshold
         )
@@ -67,6 +69,6 @@ class TemporalLivenessAggregator:
             score=mean_score,
             live_frames=live_frames,
             spoof_frames=spoof_frames,
-            valid_frames=valid_frames,
-            total_frames=total_frames,
+            valid_frames=total,
+            total_frames=total,
         )

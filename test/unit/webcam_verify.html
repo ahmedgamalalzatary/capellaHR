@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Verify Identity Live</title>
+    <style>
+        body { font-family: Arial; text-align: center; margin-top: 20px; }
+        video { width: 640px; border: 2px solid #333; border-radius: 10px; }
+        .controls { margin: 20px auto; max-width: 600px; text-align: left; }
+        textarea { width: 100%; height: 80px; margin-bottom: 10px; }
+        input { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        pre { text-align: left; background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+
+<h1>Live Identity Verification</h1>
+<video id="video" autoplay playsinline></video>
+
+<div class="controls">
+    <label>Employee ID:</label>
+    <input type="text" id="empId" value="123">
+
+    <label>Paste Enrolled Embedding (JSON Array `[0.231, ...]`):</label>
+    <textarea id="embeddingStr"></textarea>
+
+    <div style="text-align: center; margin-top: 10px;">
+        <button id="startCamera">1. Start Camera</button>
+        <button id="verifyIdentity">2. Verify Identity</button>
+    </div>
+</div>
+
+<pre id="result">Waiting...</pre>
+
+<script>
+const video = document.getElementById("video");
+const result = document.getElementById("result");
+let stream = null;
+
+document.getElementById("startCamera").addEventListener("click", async () => {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        video.srcObject = stream;
+        result.textContent = "Camera started. Ready to verify.";
+    } catch (error) {
+        result.textContent = "Camera error: " + error.message;
+    }
+});
+
+async function captureFrames(count = 5) {
+    const frames = [];
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+
+    for (let i = 0; i < count; i++) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.90));
+        frames.push(blob);
+        await new Promise(res => setTimeout(res, 150)); // 150ms delay
+    }
+    return frames;
+}
+
+document.getElementById("verifyIdentity").addEventListener("click", async () => {
+    if (!stream) {
+        result.textContent = "Start camera first!";
+        return;
+    }
+
+    const empId = document.getElementById("empId").value.trim();
+    // ADDED .trim() HERE to fix the invisible space bug
+    const embeddingStr = document.getElementById("embeddingStr").value.trim();
+
+    if (!embeddingStr.startsWith("[")) {
+        result.textContent = "Error: Please paste just the array starting with '[' and ending with ']'";
+        return;
+    }
+
+    result.textContent = "Capturing live frames...";
+    const frames = await captureFrames(5);
+
+    const formData = new FormData();
+    formData.append("employee_id", empId);
+    formData.append("enrolled_embedding", embeddingStr);
+    frames.forEach((frame, idx) => formData.append("files", frame, `frame_${idx}.jpg`));
+
+    result.textContent = "Analyzing liveness and identity...";
+
+    try {
+        const response = await fetch("http://localhost:8000/api/v1/verify", {
+            method: "POST",
+            body: formData
+        });
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+    } catch (error) {
+        result.textContent = "Error: " + error.message;
+    }
+});
+</script>
+</body>
+</html>

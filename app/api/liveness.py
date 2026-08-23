@@ -5,7 +5,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.config import settings
 from app.face.detector import FaceDetector
-from app.liveness.detector import LivenessDetector
+from app.liveness.ensemble import MiniFASNetEnsemble
 from app.liveness.temporal import TemporalLivenessAggregator
 
 
@@ -13,14 +13,15 @@ router = APIRouter()
 
 face_detector = FaceDetector()
 
-liveness_detector = LivenessDetector(
-    model_path=settings.liveness_model_path,
+liveness_detector = MiniFASNetEnsemble(
+    v2_path=settings.liveness_v2_model_path,
+    v1se_path=settings.liveness_v1se_model_path,
     threshold=settings.liveness_threshold,
 )
 
 temporal_aggregator = TemporalLivenessAggregator(
     threshold=settings.liveness_threshold,
-    min_valid_frames=3,
+    min_valid_frames=5,
     min_live_ratio=0.70,
 )
 
@@ -29,7 +30,7 @@ temporal_aggregator = TemporalLivenessAggregator(
 async def check_liveness(
     files: list[UploadFile] = File(...),
 ):
-    if len(files) < 3:
+    if len(files) < 5:
         raise HTTPException(
             status_code=400,
             detail="At least 5 frames are required",
@@ -37,6 +38,7 @@ async def check_liveness(
 
     scores: list[float] = []
     labels: list[str] = []
+    frame_results = []
 
     processed_frames = 0
     rejected_frames = 0
@@ -76,26 +78,40 @@ async def check_liveness(
 
         face = faces[0]
 
+        bbox = (
+            face.x,
+            face.y,
+            face.width,
+            face.height,
+        )
+
         result = liveness_detector.predict(
             image=image,
-            x=face.x,
-            y=face.y,
-            width=face.width,
-            height=face.height,
+            bbox=bbox,
         )
+
 
         scores.append(result.score)
         labels.append(result.label)
 
+        frame_results.append(
+            {
+                "frame": processed_frames + 1,
+                "label": result.label,
+                "live_score": result.score,
+                "probabilities": result.probabilities,
+            }
+        )
+
         processed_frames += 1
 
-    if len(scores) < 3:
+    if len(scores) < 1:
         return {
             "success": False,
             "decision": "retry",
             "reason": "insufficient_valid_frames",
             "valid_frames": len(scores),
-            "required_frames": 5,
+            "required_frames": 1,
             "rejected_frames": rejected_frames,
         }
 
@@ -137,4 +153,6 @@ async def check_liveness(
         "replay_attack_frames": replay_count,
 
         "rejected_frames": rejected_frames,
+        "frames": frame_results,
+
     }

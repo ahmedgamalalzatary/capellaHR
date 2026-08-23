@@ -5,6 +5,8 @@ from app.api.health import router as health_router
 from app.api.detect import router as detect_router
 from app.api.liveness import router as liveness_router
 from app.api.verify import router as verify_router
+from app.api.enroll import router as enroll_router
+
 from app.core.config import settings
 
 
@@ -13,10 +15,6 @@ app = FastAPI(
     version=settings.app_version,
 )
 
-
-# ==============================
-# CORS
-# ==============================
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,10 +28,6 @@ app.add_middleware(
 )
 
 
-# ==============================
-# API Routes
-# ==============================
-
 app.include_router(
     health_router,
     prefix="/api/v1",
@@ -46,6 +40,11 @@ app.include_router(
 
 app.include_router(
     liveness_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    enroll_router,
     prefix="/api/v1",
 )
 

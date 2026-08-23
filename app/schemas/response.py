@@ -24,3 +24,12 @@ class VerifyResponse(BaseModel):
     similarity: Optional[float] = None
 
     reason: Optional[str] = None
+
+class EnrollResponse(BaseModel):
+    success: bool
+    employee_id: str
+    decision: str
+    reason: Optional[str] = None
+    embedding: Optional[list[float]] = None  # <-- Added this line
+    embedding_dimensions: Optional[int] = None
+    message: Optional[str] = None
