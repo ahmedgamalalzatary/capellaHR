@@ -6,6 +6,7 @@ from app.api.detect import router as detect_router
 from app.api.liveness import router as liveness_router
 from app.api.verify import router as verify_router
 from app.api.enroll import router as enroll_router
+from app.api.ui import router as ui_router
 
 from app.core.config import settings
 
@@ -52,3 +53,5 @@ app.include_router(
     verify_router,
     prefix="/api/v1",
 )
+
+app.include_router(ui_router)
