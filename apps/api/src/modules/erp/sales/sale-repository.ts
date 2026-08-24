@@ -14,6 +14,7 @@ import {
   erpServices,
   employees,
   invoiceLines,
+  invoiceLineReassignments,
   invoicePayments,
   invoiceReversalLines,
   invoiceReversalPayments,
@@ -40,7 +41,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ErpAuditCapability, ErpPayrollCapability } from '../hr-capabilities.js';
 import { cairoMonth, nextMonth, startOfCairoDate } from '../cairo-calendar.js';
 import { CASHIER_SESSION_MAX_DURATION_MS } from './cashier-sessions-service.js';
-import { SaleError, type CompleteSaleOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
+import { SaleError, type CompleteSaleOperation, type ReassignInvoiceLineOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
 import {
   allocateReversalAmounts,
   calculateAdjustment,
@@ -102,6 +103,18 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       .where(eq(employees.id, invoice.sellerEmployeeId)).limit(1))[0] ?? null;
   const lines = await executor.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
+  const reassignments = await executor.select().from(invoiceLineReassignments)
+    .where(eq(invoiceLineReassignments.invoiceId, invoiceId))
+    .orderBy(asc(invoiceLineReassignments.createdAt), asc(invoiceLineReassignments.id));
+  const reassignmentEmployeeIds = [...new Set(reassignments.flatMap((row) => [
+    row.fromEmployeeId, row.toEmployeeId,
+  ]))];
+  const reassignmentEmployees = reassignmentEmployeeIds.length
+    ? await executor.select({
+      id: employees.id, employeeCode: employees.employeeCode, name: employees.fullName,
+    }).from(employees).where(inArray(employees.id, reassignmentEmployeeIds))
+    : [];
+  const reassignmentEmployeeById = new Map(reassignmentEmployees.map((row) => [row.id, row]));
   const payments = await executor.select().from(invoicePayments)
     .where(eq(invoicePayments.invoiceId, invoiceId)).orderBy(asc(invoicePayments.id));
   const reversals = await executor.select().from(invoiceReversals)
@@ -118,10 +131,13 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
     ? await executor.select().from(invoiceReversalPayments)
       .where(inArray(invoiceReversalPayments.reversalId, reversalIds)).orderBy(asc(invoiceReversalPayments.id))
     : [];
-  const accountIds = [...new Set(reversals.flatMap((reversal) => [
+  const accountIds = [...new Set([
+    ...reversals.flatMap((reversal) => [
     reversal.actingAccountId,
     ...(reversal.approvingAccountId === null ? [] : [reversal.approvingAccountId]),
-  ]))];
+    ]),
+    ...reassignments.map((row) => row.actingAccountId),
+  ])];
   const reversalAccounts = accountIds.length
     ? await executor.select({ id: accounts.id, username: accounts.username }).from(accounts)
       .where(inArray(accounts.id, accountIds))
@@ -164,7 +180,13 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       accountId: invoice.actingAccountId,
       username: invoice.authorizedBySnapshot,
     },
-    lines: lines.map((line) => ({
+    lines: lines.map((line) => {
+      const history = reassignments.filter((row) => row.invoiceLineId === line.id);
+      const latest = history.at(-1);
+      const currentEmployee = latest
+        ? reassignmentEmployeeById.get(latest.toEmployeeId)!
+        : null;
+      return ({
       id: line.id,
       lineNumber: line.lineNumber,
       itemType: line.itemType,
@@ -173,18 +195,27 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       quantity: line.quantity,
       unitPrice: line.unitPrice,
       lineTotal: line.lineTotal,
-      employee: line.employeeId === null ? null : {
-        id: line.employeeId,
-        employeeCode: line.employeeCodeSnapshot!,
-        name: line.employeeNameSnapshot!,
+      employee: line.employeeId === null ? null : currentEmployee ?? {
+        id: line.employeeId, employeeCode: line.employeeCodeSnapshot!, name: line.employeeNameSnapshot!,
       },
+      originalEmployee: line.employeeId === null ? null : {
+        id: line.employeeId, employeeCode: line.employeeCodeSnapshot!, name: line.employeeNameSnapshot!,
+      },
+      reassignments: history.map((row) => ({
+        id: row.id,
+        fromEmployee: reassignmentEmployeeById.get(row.fromEmployeeId)!,
+        toEmployee: reassignmentEmployeeById.get(row.toEmployeeId)!,
+        reason: row.reason,
+        actingAccount: accountById.get(row.actingAccountId)!,
+        createdAt: asIso(row.createdAt),
+      })),
       commissionRule: line.commissionRuleSnapshot,
       commissionRate: line.commissionRateSnapshot,
       commissionAmount: line.commissionAmountSnapshot,
       productCostBasis: line.productCostBasisSnapshot,
       refundedQuantity: refundedByLine.get(line.id) ?? 0,
       refundableQuantity: line.quantity - (refundedByLine.get(line.id) ?? 0),
-    })),
+    }); }),
     discount: invoice.discountKind === null ? null : {
       kind: invoice.discountKind,
       value: invoice.discountValue!,
@@ -402,21 +433,14 @@ export const createDrizzleSaleRepository = (
       employeeId,
       payrollMonth: month,
       calculateAmount: async () => {
-        const invoiceIds = [...new Set((await transaction.selectDistinct({ id: invoices.id })
-          .from(invoices)
-          .innerJoin(invoiceLines, eq(invoiceLines.invoiceId, invoices.id))
+        const entries = await transaction.select({ amount: commissionLedgerEntries.amount })
+          .from(commissionLedgerEntries)
+          .innerJoin(invoices, eq(invoices.id, commissionLedgerEntries.invoiceId))
           .where(and(
-            eq(invoiceLines.employeeId, employeeId),
+            eq(commissionLedgerEntries.employeeId, employeeId),
             gte(invoices.soldAt, startOfCairoDate(`${month}-01`)),
             lt(invoices.soldAt, startOfCairoDate(`${nextMonth(month)}-01`)),
-          ))).map(({ id }) => id))];
-        const entries = invoiceIds.length
-          ? await transaction.select({ amount: commissionLedgerEntries.amount })
-            .from(commissionLedgerEntries).where(and(
-              eq(commissionLedgerEntries.employeeId, employeeId),
-              inArray(commissionLedgerEntries.invoiceId, invoiceIds),
-            ))
-          : [];
+          ));
         return signedMoney(entries.reduce((total, entry) => total + toCents(entry.amount), 0n));
       },
       reference: `erp-commission:${month}:${employeeId}`,
@@ -430,6 +454,7 @@ export const createDrizzleSaleRepository = (
     const byInvoice = new Map<number, Array<{ id: number; name: string }>>();
     if (!invoiceIds.length) return byInvoice;
     const rows = await database.select({
+      id: invoiceLines.id,
       invoiceId: invoiceLines.invoiceId,
       employeeId: invoiceLines.employeeId,
       employeeName: invoiceLines.employeeNameSnapshot,
@@ -437,10 +462,28 @@ export const createDrizzleSaleRepository = (
       inArray(invoiceLines.invoiceId, invoiceIds),
       isNotNull(invoiceLines.employeeId),
     )).orderBy(asc(invoiceLines.invoiceId), asc(invoiceLines.lineNumber));
+    const reassignedRows = await database.select().from(invoiceLineReassignments).where(
+      inArray(invoiceLineReassignments.invoiceId, invoiceIds),
+    ).orderBy(
+      asc(invoiceLineReassignments.invoiceLineId),
+      desc(invoiceLineReassignments.createdAt),
+      desc(invoiceLineReassignments.id),
+    );
+    const latestByLine = new Map<number, number>();
+    for (const row of reassignedRows) {
+      if (!latestByLine.has(row.invoiceLineId)) latestByLine.set(row.invoiceLineId, row.toEmployeeId);
+    }
+    const targetIds = [...new Set(latestByLine.values())];
+    const targets = targetIds.length ? await database.select({
+      id: employees.id, name: employees.fullName,
+    }).from(employees).where(inArray(employees.id, targetIds)) : [];
+    const targetById = new Map(targets.map((employee) => [employee.id, employee.name]));
     for (const row of rows) {
       const current = byInvoice.get(row.invoiceId) ?? [];
-      if (current.some((employee) => employee.id === row.employeeId)) continue;
-      current.push({ id: row.employeeId!, name: row.employeeName! });
+      const employeeId = latestByLine.get(row.id) ?? row.employeeId!;
+      const employeeName = targetById.get(employeeId) ?? row.employeeName!;
+      if (current.some((employee) => employee.id === employeeId)) continue;
+      current.push({ id: employeeId, name: employeeName });
       byInvoice.set(row.invoiceId, current);
     }
     return byInvoice;
@@ -512,6 +555,24 @@ export const createDrizzleSaleRepository = (
     if (!isDeepStrictEqual(reconstructed, {
       type: operation.type, invoiceId: operation.invoiceId, input: operation.input,
     })) throw new SaleError('IDEMPOTENCY_CONFLICT');
+    const invoice = await hydrateInvoice(executor, row.invoiceId);
+    if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
+    return invoice;
+  };
+
+  const existingReassignment = async (
+    operation: ReassignInvoiceLineOperation,
+    executor: Executor = database,
+  ) => {
+    const row = (await executor.select().from(invoiceLineReassignments).where(
+      eq(invoiceLineReassignments.operationReference, operation.input.operationReference),
+    ).limit(1))[0];
+    if (!row) return null;
+    if (row.invoiceId !== operation.invoiceId
+      || row.invoiceLineId !== operation.invoiceLineId
+      || row.toEmployeeId !== operation.input.employeeId) {
+      throw new SaleError('IDEMPOTENCY_CONFLICT');
+    }
     const invoice = await hydrateInvoice(executor, row.invoiceId);
     if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
     return invoice;
@@ -816,6 +877,109 @@ export const createDrizzleSaleRepository = (
       }
     },
 
+    async reassignLine(operation: ReassignInvoiceLineOperation) {
+      const existing = await existingReassignment(operation);
+      if (existing) return existing;
+      try {
+        return await database.transaction(async (transaction) => {
+          const invoice = (await transaction.select().from(invoices).where(and(
+            eq(invoices.id, operation.invoiceId),
+            eq(invoices.branchId, operation.input.branchId),
+          )).for('update').limit(1))[0];
+          if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
+          if (invoice.status !== 'completed') throw new SaleError('INVOICE_NOT_REASSIGNABLE');
+          const committedRetry = await existingReassignment(operation, transaction);
+          if (committedRetry) return committedRetry;
+          const line = (await transaction.select().from(invoiceLines).where(and(
+            eq(invoiceLines.id, operation.invoiceLineId),
+            eq(invoiceLines.invoiceId, operation.invoiceId),
+            eq(invoiceLines.branchId, operation.input.branchId),
+          )).for('update').limit(1))[0];
+          if (!line) throw new SaleError('INVOICE_NOT_FOUND');
+          if (line.itemType !== 'service' || line.employeeId === null
+            || line.commissionRuleSnapshot === 'none') {
+            throw new SaleError('REASSIGN_LINE_NOT_SERVICE');
+          }
+          const prior = (await transaction.select().from(invoiceLineReassignments).where(
+            eq(invoiceLineReassignments.invoiceLineId, line.id),
+          ).orderBy(desc(invoiceLineReassignments.createdAt), desc(invoiceLineReassignments.id))
+            .limit(1))[0];
+          const fromEmployeeId = prior?.toEmployeeId ?? line.employeeId;
+          if (fromEmployeeId === operation.input.employeeId) {
+            throw new SaleError('REASSIGN_SAME_EMPLOYEE');
+          }
+          const target = await operation.assertEmployee(transaction);
+          const employeeIds = [fromEmployeeId, target.id].sort((left, right) => left - right);
+          if (payroll) {
+            for (const employeeId of employeeIds) {
+              await payroll.lockCommissionEmployee(employeeId, transaction);
+            }
+          }
+          const inserted = await transaction.insert(invoiceLineReassignments).values({
+            invoiceId: invoice.id,
+            invoiceLineId: line.id,
+            branchId: invoice.branchId,
+            fromEmployeeId,
+            toEmployeeId: target.id,
+            reason: operation.input.reason,
+            operationReference: operation.input.operationReference,
+            actingAccountId: operation.actingAccountId,
+            createdAt: operation.reassignedAt,
+          });
+          const reassignmentId = Number(inserted[0].insertId);
+          const ledgerBase = {
+            invoiceId: invoice.id,
+            invoiceLineId: line.id,
+            actingAccountId: operation.actingAccountId,
+            invoiceLineReassignmentId: reassignmentId,
+            commissionRuleSnapshot: line.commissionRuleSnapshot,
+            commissionRateSnapshot: line.commissionRateSnapshot,
+            baseAmount: line.lineTotal,
+            createdAt: operation.reassignedAt,
+          };
+          await transaction.insert(commissionLedgerEntries).values({
+            ...ledgerBase,
+            employeeId: fromEmployeeId,
+            entryType: 'reassignment_out' as const,
+            amount: signedMoney(-toCents(line.commissionAmountSnapshot)),
+          });
+          await transaction.insert(commissionLedgerEntries).values({
+            ...ledgerBase,
+            employeeId: target.id,
+            entryType: 'reassignment_in' as const,
+            amount: line.commissionAmountSnapshot,
+          });
+          for (const employeeId of employeeIds) {
+            const result = await projectCommission(
+              transaction, employeeId, cairoMonth(invoice.soldAt),
+            );
+            if (result === 'payroll_finalized'
+              || result === 'payroll_finalized_without_commission') {
+              throw new SaleError('REASSIGN_PAYROLL_FINALIZED');
+            }
+          }
+          const afterState = await hydrateInvoice(transaction, invoice.id);
+          if (!afterState) throw new SaleError('INVOICE_NOT_FOUND');
+          await audit.record(transaction, {
+            module: 'erp-sales', action: 'reassign_employee',
+            entityType: 'invoice_line', entityId: line.id,
+            afterState,
+            relatedIds: {
+              invoiceId: invoice.id, branchId: invoice.branchId,
+              fromEmployeeId, toEmployeeId: target.id,
+            },
+            createdAt: operation.reassignedAt,
+          });
+          return afterState;
+        });
+      } catch (error) {
+        if (!isDuplicateEntryError(error)) throw error;
+        const replay = await existingReassignment(operation);
+        if (!replay) throw new SaleError('IDEMPOTENCY_CONFLICT');
+        return replay;
+      }
+    },
+
     async reverse(operation: ReverseInvoiceOperation) {
       const existing = await existingReversal(operation);
       if (existing) return existing;
@@ -828,7 +992,15 @@ export const createDrizzleSaleRepository = (
           eq(invoiceLines.invoiceId, operation.invoiceId),
           eq(invoiceLines.branchId, operation.input.branchId),
           isNotNull(invoiceLines.employeeId),
-        ))).map(({ employeeId }) => employeeId!))].sort((left, right) => left - right);
+        ))).map(({ employeeId }) => employeeId!))];
+      const reassignedEmployeeIds = (await database.select({
+        employeeId: invoiceLineReassignments.toEmployeeId,
+      }).from(invoiceLineReassignments).where(
+        eq(invoiceLineReassignments.invoiceId, operation.invoiceId),
+      )).map(({ employeeId }) => employeeId);
+      const commissionEmployeeIds = [...new Set([
+        ...invoiceEmployeeIds, ...reassignedEmployeeIds,
+      ])].sort((left, right) => left - right);
       try {
         return await database.transaction(async (transaction) => {
           const original = (await transaction.select().from(invoices).where(and(
@@ -841,7 +1013,7 @@ export const createDrizzleSaleRepository = (
           // branch while the receiving branch keeps it: stock from nothing.
           if (original.kind !== 'sale') throw new SaleError('TRANSFER_NOT_REVERSIBLE');
           if (payroll) {
-            for (const employeeId of invoiceEmployeeIds) {
+            for (const employeeId of commissionEmployeeIds) {
               await payroll.lockCommissionEmployee(employeeId, transaction);
             }
           }
@@ -1038,6 +1210,9 @@ export const createDrizzleSaleRepository = (
 
           const ledger = await transaction.select().from(commissionLedgerEntries)
             .where(eq(commissionLedgerEntries.invoiceId, original.id));
+          const assignmentHistory = await transaction.select().from(invoiceLineReassignments)
+            .where(eq(invoiceLineReassignments.invoiceId, original.id))
+            .orderBy(desc(invoiceLineReassignments.createdAt), desc(invoiceLineReassignments.id));
           const finalizedReversalIds = new Set((await transaction.select({ id: invoiceReversals.id })
             .from(invoiceReversals).where(and(
               eq(invoiceReversals.invoiceId, original.id),
@@ -1049,9 +1224,17 @@ export const createDrizzleSaleRepository = (
           for (const line of originalLines.filter((candidate) => (
             candidate.itemType === 'service' && selectedByLine.has(candidate.id)
           ))) {
-            const earned = ledger.find((entry) => (
-              entry.invoiceLineId === line.id && entry.entryType === 'earned'
-            ))!;
+            const currentAssignment = assignmentHistory.find((entry) => (
+              entry.invoiceLineId === line.id
+            ));
+            const earned = currentAssignment
+              ? ledger.find((entry) => (
+                entry.invoiceLineReassignmentId === currentAssignment.id
+                && entry.entryType === 'reassignment_in'
+              ))!
+              : ledger.find((entry) => (
+                entry.invoiceLineId === line.id && entry.entryType === 'earned'
+              ))!;
             const priorBase = ledger.filter((entry) => (
               entry.reversesEntryId === earned.id
               && entry.invoiceReversalId !== null
@@ -1061,7 +1244,7 @@ export const createDrizzleSaleRepository = (
             const base = toCents(line.unitPrice) * BigInt(selectedByLine.get(line.id)!);
             const amount = commissionCents(priorBase + base, earned.commissionRateSnapshot)
               - commissionCents(priorBase, earned.commissionRateSnapshot);
-            const lineEmployeeId = line.employeeId ?? earned.employeeId;
+            const lineEmployeeId = earned.employeeId;
             reversedByEmployee.set(
               lineEmployeeId,
               (reversedByEmployee.get(lineEmployeeId) ?? 0n) + amount,

@@ -38,7 +38,7 @@ export const commissionSummarySchema = z.object({
 
 export const commissionEntrySchema = z.object({
   id: positiveMysqlIntSchema,
-  type: z.enum(['earned', 'reversal']),
+  type: z.enum(['earned', 'reversal', 'reassignment_out', 'reassignment_in']),
   invoiceId: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   invoiceLineId: positiveMysqlIntSchema,
@@ -48,6 +48,7 @@ export const commissionEntrySchema = z.object({
   commissionRate: z.string().regex(/^\d{1,3}\.\d{2}$/),
   amount: signedMoneySchema,
   reversalId: positiveMysqlIntSchema.nullable(),
+  reassignmentId: positiveMysqlIntSchema.nullable(),
   occurredAt: z.string().datetime({ offset: true }),
 }).strict();
 

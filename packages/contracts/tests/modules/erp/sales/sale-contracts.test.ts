@@ -22,6 +22,7 @@ import {
   refundInvoiceSchema,
   refundQuoteInputSchema,
   refundQuoteSchema,
+  reassignInvoiceLineSchema,
   voidInvoiceSchema,
 } from '../../../../src/modules/erp/sales/index.js';
 
@@ -44,6 +45,25 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('validates idempotent employee reassignment commands', () => {
+    expect(reassignInvoiceLineSchema.parse({
+      branchId: 2,
+      employeeId: 11,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: '  الموظفة المنفذة فعليًا  ',
+    })).toEqual({
+      branchId: 2,
+      employeeId: 11,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'الموظفة المنفذة فعليًا',
+    });
+    expect(reassignInvoiceLineSchema.safeParse({
+      employeeId: 11,
+      operationReference: 'not-a-uuid',
+      reason: '   ',
+    }).success).toBe(false);
+  });
+
   it('validates idempotent void commands with a required trimmed reason', () => {
     expect(voidInvoiceSchema.parse({
       branchId: 2,
@@ -223,6 +243,8 @@ describe('ERP complete-sale contracts', () => {
       itemType: 'product' as const,
       sourceId: 34,
       employee: null,
+      originalEmployee: null,
+      reassignments: [],
       commissionRule: 'none' as const,
       commissionRate: '0.00',
       commissionAmount: '0.00',
@@ -274,6 +296,31 @@ describe('ERP complete-sale contracts', () => {
     });
     expect(parsed.lines.map((row) => row.employee?.id)).toEqual([8, 11]);
     expect(parsed).not.toHaveProperty('assignedEmployee');
+  });
+
+  it('publishes current and original employees with reassignment history', () => {
+    const [line] = saleFixtures.completedInvoice.lines;
+    const originalEmployee = line.employee;
+    const currentEmployee = { id: 11, employeeCode: 1011, name: 'هدى محمود' };
+    const reassignment = {
+      id: 91,
+      fromEmployee: originalEmployee,
+      toEmployee: currentEmployee,
+      reason: 'الموظفة المنفذة فعليًا',
+      actingAccount: { id: 4, username: 'cashier' },
+      createdAt: '2026-08-03T12:00:00.000Z',
+    };
+    const parsed = invoiceSchema.parse({
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...line,
+        employee: currentEmployee,
+        originalEmployee,
+        reassignments: [reassignment],
+      }],
+    });
+    expect(parsed.lines[0]).toMatchObject({ employee: currentEmployee, originalEmployee });
+    expect(parsed.lines[0]?.reassignments).toEqual([reassignment]);
   });
 
   it('requires and normalizes a positive unit price for every service sale line', () => {

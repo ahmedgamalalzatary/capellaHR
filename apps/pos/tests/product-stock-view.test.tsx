@@ -46,6 +46,21 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('opens the stock adjustment panel above the products table, not below it', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findAllByText('شامبو');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
+    const heading = await screen.findByText('تسوية مخزون شامبو');
+    const panel = heading.closest('div.shadow-card')!;
+    const productsTable = screen.getAllByRole('table')
+      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'الإجراءات' }))!;
+
+    expect(productsTable.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
   it('lines every movement cell up under its own header', async () => {
     mocks.movements.mockResolvedValue({
       items: [{

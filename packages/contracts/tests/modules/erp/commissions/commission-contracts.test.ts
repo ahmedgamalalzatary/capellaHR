@@ -30,12 +30,12 @@ describe('ERP commission contracts', () => {
         invoiceLineCount: 3, reversalCount: 1,
       },
       entries: [{
-        id: 11, type: 'reversal', invoiceId: 21, invoiceNumber: 'INV-2026.08.03-14.35-17',
+        id: 11, type: 'reassignment_out', invoiceId: 21, invoiceNumber: 'INV-2026.08.03-14.35-17',
         invoiceLineId: 31, lineNumber: 1, serviceName: 'Hair', baseAmount: '100.00',
-        commissionRate: '10.00', amount: '-10.00', reversalId: 41,
+        commissionRate: '10.00', amount: '-10.00', reversalId: null, reassignmentId: 51,
         occurredAt: '2026-09-01T09:00:00.000Z',
       }],
-    }).entries[0]).toMatchObject({ reversalId: 41, amount: '-10.00' });
+    }).entries[0]).toMatchObject({ reassignmentId: 51, amount: '-10.00' });
   });
 
   it('rejects money outside the DECIMAL(14,2) database range', () => {

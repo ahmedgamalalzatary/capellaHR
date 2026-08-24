@@ -23,11 +23,13 @@ import { salesQueryKeys } from '../query-keys';
 import { requestReference, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
 import { ReceiptBundle } from './receipt';
+import { ReassignEmployeeDialog } from './reassign-employee-dialog';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
   const [exportId, setExportId] = useState<number>();
+  const [reassignLineId, setReassignLineId] = useState<number | null>(null);
   const queryClient = useQueryClient();
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
@@ -164,6 +166,35 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       : null}
     {printError ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{printError}</p> : null}
     <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} /></CardContent></Card>
+    {query.data.status === 'completed'
+      && query.data.lines.some((line) => line.itemType === 'service') ? (
+      <Card data-print-controls className="mx-auto max-w-2xl">
+        <CardContent className="space-y-2 p-4">
+          <p className="text-sm font-medium">تصحيح موظف الخدمة</p>
+          {query.data.lines.filter((line) => line.itemType === 'service').map((line) => (
+            <div key={line.id} className="flex items-center justify-between gap-3 border-t border-line pt-2">
+              <span className="text-sm">{line.name} — {line.employee?.name}</span>
+              <Button variant="secondary" size="sm" onClick={() => setReassignLineId(line.id)}>
+                تغيير الموظف
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    ) : null}
+    {reassignLineId === null ? null : (
+      <ReassignEmployeeDialog
+        invoice={query.data}
+        line={query.data.lines.find((line) => line.id === reassignLineId)!}
+        {...(branchId === undefined ? {} : { branchId })}
+        onClose={() => setReassignLineId(null)}
+        onUpdated={(invoice) => {
+          const invoiceKey = salesQueryKeys.invoice(invoiceId, branchId);
+          queryClient.setQueryData(invoiceKey, invoice);
+          void invalidateErpCaches(queryClient, 'sale', invoiceKey);
+        }}
+      />
+    )}
     <InvoiceReversalControls invoice={query.data} showRefundAction={false} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
       void invalidateErpCaches(queryClient, 'reversal');

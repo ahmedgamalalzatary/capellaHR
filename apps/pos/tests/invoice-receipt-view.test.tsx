@@ -8,6 +8,8 @@ const getInvoice = vi.hoisted(() => vi.fn());
 const quoteRefund = vi.hoisted(() => vi.fn());
 const refundInvoice = vi.hoisted(() => vi.fn());
 const voidInvoice = vi.hoisted(() => vi.fn());
+const reassignInvoiceLine = vi.hoisted(() => vi.fn());
+const listAssignableEmployees = vi.hoisted(() => vi.fn());
 const reportExports = vi.hoisted(() => ({
   actor: { current: 'admin' as 'admin' | 'cashier' },
   create: vi.fn(), list: vi.fn(), get: vi.fn(), retry: vi.fn(), download: vi.fn(),
@@ -20,6 +22,10 @@ vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
   quoteRefund,
   refundInvoice,
   voidInvoice,
+  reassignInvoiceLine,
+}));
+vi.mock('../src/features/employee-assignment/api/assignable-employees-api', () => ({
+  listAssignableEmployees,
 }));
 vi.mock('../src/features/auth', () => ({
   useSession: () => ({
@@ -73,6 +79,24 @@ describe('stored invoice receipt', () => {
     voidInvoice.mockReset().mockResolvedValue({
       ...saleFixtures.completedInvoice, status: 'voided',
       eligibility: { canVoid: false, canRefund: false },
+    });
+    listAssignableEmployees.mockReset().mockResolvedValue([{
+      id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2,
+    }]);
+    reassignInvoiceLine.mockReset().mockResolvedValue({
+      ...saleFixtures.completedInvoice,
+      lines: saleFixtures.completedInvoice.lines.map((line) => ({
+        ...line,
+        employee: { id: 11, employeeCode: 1011, name: 'هدى محمود' },
+        reassignments: [{
+          id: 91,
+          fromEmployee: line.originalEmployee,
+          toEmployee: { id: 11, employeeCode: 1011, name: 'هدى محمود' },
+          reason: 'الموظفة المنفذة فعليًا',
+          actingAccount: { id: 1, username: 'admin' },
+          createdAt: '2026-08-03T12:00:00.000Z',
+        }],
+      })),
     });
     reportExports.actor.current = 'admin';
     const job = {
@@ -128,6 +152,27 @@ describe('stored invoice receipt', () => {
     expect(print).toHaveBeenCalledOnce();
     expect(getInvoice).toHaveBeenCalledTimes(1);
     expect(getInvoice).toHaveBeenCalledWith(44, 2);
+  });
+
+  it('reassigns a service to a present employee and retains the original on the receipt', async () => {
+    renderView();
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    fireEvent.click(screen.getByRole('button', { name: 'تغيير الموظف' }));
+    fireEvent.click(await screen.findByRole('button', { name: /هدى محمود/ }));
+    fireEvent.change(screen.getByLabelText('سبب التغيير'), {
+      target: { value: 'الموظفة المنفذة فعليًا' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد التغيير' }));
+
+    await waitFor(() => expect(reassignInvoiceLine).toHaveBeenCalledWith(44, 81, {
+      branchId: 2,
+      employeeId: 11,
+      operationReference: expect.any(String),
+      reason: 'الموظفة المنفذة فعليًا',
+    }));
+    expect(await screen.findAllByText('هدى محمود')).not.toHaveLength(0);
+    expect(screen.getAllByText(/مُسند أصلاً إلى/).length).toBeGreaterThan(0);
   });
 
   it('falls back to the authorizing account for legacy invoices without a seller', async () => {

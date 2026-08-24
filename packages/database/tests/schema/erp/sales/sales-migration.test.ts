@@ -35,6 +35,36 @@ const lineEmployeeMigrationName = readdirSync(migrationsDirectory)
 const lineEmployeeMigration = lineEmployeeMigrationName
   ? readFileSync(`${migrationsDirectory}/${lineEmployeeMigrationName}`, 'utf8')
   : '';
+const reassignmentMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0076_.*\.sql$/.test(name));
+const reassignmentMigration = reassignmentMigrationName
+  ? readFileSync(`${migrationsDirectory}/${reassignmentMigrationName}`, 'utf8')
+  : '';
+
+describe('ERP invoice-line reassignment migration', () => {
+  it('adds immutable reassignment facts and linked commission movements', () => {
+    expect(reassignmentMigrationName).toBeDefined();
+    expect(reassignmentMigration).toContain('CREATE TABLE `erp_invoice_line_reassignments`');
+    expect(reassignmentMigration).toContain('erp_invoice_line_reassignments_line_operation_unique');
+    expect(reassignmentMigration).toContain(
+      'UNIQUE(`operation_reference`)',
+    );
+    expect(reassignmentMigration).toContain("enum('earned','reversal','reassignment_out','reassignment_in')");
+    expect(reassignmentMigration).toContain('invoice_line_reassignment_id');
+    expect(reassignmentMigration).toContain('erp_commission_ledger_line_reassignment_fk');
+  });
+
+  it('guards reassignment history and the matching ledger pair', () => {
+    expect(reassignmentMigration).toContain('erp_invoice_line_reassignments_validate_insert');
+    expect(reassignmentMigration).toContain('Reassignment source employee is not current');
+    expect(reassignmentMigration).toContain("invoice_status <> 'completed'");
+    expect(reassignmentMigration).toContain('erp_invoice_line_reassignments_reject_update');
+    expect(reassignmentMigration).toContain('erp_invoice_line_reassignments_reject_delete');
+    expect(reassignmentMigration).toContain('erp_commission_ledger_entry_consistent');
+    expect(reassignmentMigration).toContain('reassignment_out');
+    expect(reassignmentMigration).toContain('reassignment_in');
+  });
+});
 
 describe('ERP per-line employee migration', () => {
   it('moves the performing employee from the invoice onto each service line', () => {

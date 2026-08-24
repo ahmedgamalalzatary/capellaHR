@@ -143,6 +143,27 @@ describe('ERP sales persistence foundation', () => {
       .toContain('erp_invoice_lines_employee_consistent');
   });
 
+  it('records immutable employee reassignments for sold service lines', () => {
+    const reassignments = table('invoiceLineReassignments');
+    expect(Object.keys(reassignments)).toEqual(expect.arrayContaining([
+      'id', 'invoiceId', 'invoiceLineId', 'branchId', 'fromEmployeeId', 'toEmployeeId',
+      'reason', 'operationReference', 'actingAccountId', 'createdAt',
+    ]));
+    const config = getTableConfig(reassignments);
+    expect(config.indexes.map((value) => value.config.name)).toEqual(expect.arrayContaining([
+      'erp_invoice_line_reassignments_line_operation_unique',
+      'erp_invoice_line_reassignments_line_created_idx',
+    ]));
+    expect(config.foreignKeys.map((value) => value.getName())).toEqual(expect.arrayContaining([
+      'erp_invoice_line_reassignments_line_invoice_branch_fk',
+      'erp_invoice_line_reassignments_from_employee_branch_fk',
+      'erp_invoice_line_reassignments_to_employee_branch_fk',
+    ]));
+    expect(config.checks.map((value) => value.name)).toContain(
+      'erp_invoice_line_reassignments_employee_changed',
+    );
+  });
+
   it('defines exact payment breakdowns using only the locked methods', () => {
     expect(salesSchema.erpPaymentMethods).toEqual([
       'cash', 'visa', 'instapay', 'vodafone_cash',
@@ -204,7 +225,7 @@ describe('ERP sales persistence foundation', () => {
     const ledger = table('commissionLedgerEntries');
     expect(Object.keys(ledger)).toEqual(expect.arrayContaining([
       'id', 'invoiceId', 'invoiceLineId', 'employeeId', 'actingAccountId',
-      'entryType', 'reversesEntryId', 'invoiceReversalId', 'commissionRuleSnapshot',
+      'entryType', 'reversesEntryId', 'invoiceReversalId', 'invoiceLineReassignmentId', 'commissionRuleSnapshot',
       'commissionRateSnapshot', 'baseAmount', 'amount', 'createdAt',
     ]));
     const config = getTableConfig(ledger);
@@ -218,6 +239,9 @@ describe('ERP sales persistence foundation', () => {
     );
     expect(config.foreignKeys.map((value) => value.getName())).toContain(
       'erp_commission_ledger_invoice_reversal_fk',
+    );
+    expect(config.foreignKeys.map((value) => value.getName())).toContain(
+      'erp_commission_ledger_line_reassignment_fk',
     );
     expect(config.checks.map((value) => value.name)).toEqual(expect.arrayContaining([
       'erp_commission_ledger_entry_consistent',

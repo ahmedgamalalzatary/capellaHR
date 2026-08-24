@@ -172,6 +172,7 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   foreignKey({ name: 'erp_invoice_lines_product_branch_fk', columns: [table.productId, table.branchId], foreignColumns: [erpProducts.id, erpProducts.branchId] }),
   foreignKey({ name: 'erp_invoice_lines_employee_branch_fk', columns: [table.employeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   uniqueIndex('erp_invoice_lines_invoice_line_unique').on(table.invoiceId, table.lineNumber),
+  uniqueIndex('erp_invoice_lines_id_invoice_branch_unique').on(table.id, table.invoiceId, table.branchId),
   index('erp_invoice_lines_service_idx').on(table.serviceId),
   index('erp_invoice_lines_product_idx').on(table.productId),
   index('erp_invoice_lines_employee_idx').on(table.employeeId),
@@ -197,6 +198,45 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
     'erp_invoice_lines_cost_consistent',
     sql`(item_type = 'service' and product_cost_basis_snapshot is null) or (item_type = 'product' and product_cost_basis_snapshot is not null and product_cost_basis_snapshot >= 0)`,
   ),
+]);
+
+export const invoiceLineReassignments = mysqlTable('erp_invoice_line_reassignments', {
+  id: int('id').autoincrement().primaryKey(),
+  invoiceId: int('invoice_id').notNull(),
+  invoiceLineId: int('invoice_line_id').notNull(),
+  branchId: int('branch_id').notNull(),
+  fromEmployeeId: int('from_employee_id').notNull(),
+  toEmployeeId: int('to_employee_id').notNull(),
+  reason: varchar('reason', { length: 1000 }).notNull(),
+  operationReference: varchar('operation_reference', { length: 36 }).notNull(),
+  actingAccountId: int('acting_account_id').notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({
+    name: 'erp_invoice_line_reassignments_line_invoice_branch_fk',
+    columns: [table.invoiceLineId, table.invoiceId, table.branchId],
+    foreignColumns: [invoiceLines.id, invoiceLines.invoiceId, invoiceLines.branchId],
+  }),
+  foreignKey({
+    name: 'erp_invoice_line_reassignments_from_employee_branch_fk',
+    columns: [table.fromEmployeeId, table.branchId],
+    foreignColumns: [employees.id, employees.branchId],
+  }),
+  foreignKey({
+    name: 'erp_invoice_line_reassignments_to_employee_branch_fk',
+    columns: [table.toEmployeeId, table.branchId],
+    foreignColumns: [employees.id, employees.branchId],
+  }),
+  foreignKey({
+    name: 'erp_invoice_line_reassignments_acting_account_fk',
+    columns: [table.actingAccountId], foreignColumns: [accounts.id],
+  }),
+  uniqueIndex('erp_invoice_line_reassignments_line_operation_unique')
+    .on(table.operationReference),
+  index('erp_invoice_line_reassignments_line_created_idx')
+    .on(table.invoiceLineId, table.createdAt, table.id),
+  check('erp_invoice_line_reassignments_employee_changed', sql`${table.fromEmployeeId} <> ${table.toEmployeeId}`),
+  check('erp_invoice_line_reassignments_reason_required', sql`CHAR_LENGTH(TRIM(${table.reason})) > 0`),
 ]);
 
 export const invoicePayments = mysqlTable('erp_invoice_payments', {
@@ -320,9 +360,10 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
   invoiceLineId: int('invoice_line_id').notNull(),
   employeeId: int('employee_id').notNull(),
   actingAccountId: int('acting_account_id').notNull(),
-  entryType: mysqlEnum('entry_type', ['earned', 'reversal']).notNull(),
+  entryType: mysqlEnum('entry_type', ['earned', 'reversal', 'reassignment_out', 'reassignment_in']).notNull(),
   reversesEntryId: int('reverses_entry_id'),
   invoiceReversalId: int('invoice_reversal_id'),
+  invoiceLineReassignmentId: int('invoice_line_reassignment_id'),
   commissionRuleSnapshot: mysqlEnum('commission_rule_snapshot', ['service_default', 'employee_override']).notNull(),
   commissionRateSnapshot: decimal('commission_rate_snapshot', { precision: 5, scale: 2 }).notNull(),
   baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull(),
@@ -341,6 +382,11 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
     foreignColumns: [table.id],
   }),
   foreignKey({
+    name: 'erp_commission_ledger_line_reassignment_fk',
+    columns: [table.invoiceLineReassignmentId],
+    foreignColumns: [invoiceLineReassignments.id],
+  }),
+  foreignKey({
     name: 'erp_commission_ledger_invoice_reversal_fk',
     columns: [table.invoiceReversalId],
     foreignColumns: [invoiceReversals.id],
@@ -351,10 +397,10 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
   index('erp_commission_ledger_reversal_idx').on(table.reversesEntryId),
   check(
     'erp_commission_ledger_entry_consistent',
-    sql`(entry_type = 'earned' and reverses_entry_id is null and invoice_reversal_id is null) or (entry_type = 'reversal' and reverses_entry_id is not null and invoice_reversal_id is not null)`,
+    sql`(entry_type = 'earned' and reverses_entry_id is null and invoice_reversal_id is null and invoice_line_reassignment_id is null) or (entry_type = 'reversal' and reverses_entry_id is not null and invoice_reversal_id is not null and invoice_line_reassignment_id is null) or (entry_type in ('reassignment_out', 'reassignment_in') and reverses_entry_id is null and invoice_reversal_id is null and invoice_line_reassignment_id is not null)`,
   ),
   check(
     'erp_commission_ledger_amount_direction',
-    sql`${table.baseAmount} > 0 and ${table.commissionRateSnapshot} between 0 and 100 and ((entry_type = 'earned' and amount >= 0) or (entry_type = 'reversal' and amount <= 0))`,
+    sql`${table.baseAmount} > 0 and ${table.commissionRateSnapshot} between 0 and 100 and ((entry_type in ('earned', 'reassignment_in') and amount >= 0) or (entry_type in ('reversal', 'reassignment_out') and amount <= 0))`,
   ),
 ]);

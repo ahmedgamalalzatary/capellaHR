@@ -33,6 +33,12 @@ const affected: Record<ErpMutationEffect, ReadonlyArray<keyof typeof roots>> = {
 export const invalidateErpCaches = (
   queryClient: QueryClient,
   effect: ErpMutationEffect,
+  preserveQueryKey?: readonly unknown[],
 ) => Promise.all(affected[effect].map((domain) => (
-  queryClient.invalidateQueries({ queryKey: roots[domain] })
+  queryClient.invalidateQueries({
+    queryKey: roots[domain],
+    ...(preserveQueryKey ? {
+      predicate: (query) => JSON.stringify(query.queryKey) !== JSON.stringify(preserveQueryKey),
+    } : {}),
+  })
 )));

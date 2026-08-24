@@ -12,6 +12,7 @@ import {
   quoteSale,
   quoteRefund,
   refundInvoice,
+  reassignInvoiceLine,
   voidInvoice,
 } from '../src/features/sales/api/sales-api';
 
@@ -70,6 +71,14 @@ describe('sales API', () => {
     };
     await voidInvoice(44, voidCommand);
     expect(mocks.post).toHaveBeenCalledWith('/erp/sales/44/void', voidCommand);
+  });
+
+  it('posts an employee reassignment to the selected stored service line', async () => {
+    const command = {
+      branchId: 2, employeeId: 11, operationReference: crypto.randomUUID(), reason: 'Actual performer',
+    };
+    await reassignInvoiceLine(44, 81, command);
+    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/invoices/44/lines/81/reassign', command);
   });
 
   it('serializes branch-scoped client visit pagination', async () => {

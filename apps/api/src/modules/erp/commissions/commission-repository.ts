@@ -5,7 +5,7 @@ import {
   invoiceLines,
   invoices,
 } from '@capella/database/schema';
-import { and, asc, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt } from 'drizzle-orm';
 
 import type { CommissionEntry, CommissionListQuery, CommissionSummary } from '@capella/contracts';
 import { nextMonth, startOfCairoDate } from '../cairo-calendar.js';
@@ -36,6 +36,7 @@ const entryFields = {
   commissionRate: commissionLedgerEntries.commissionRateSnapshot,
   amount: commissionLedgerEntries.amount,
   reversalId: commissionLedgerEntries.invoiceReversalId,
+  reassignmentId: commissionLedgerEntries.invoiceLineReassignmentId,
   occurredAt: commissionLedgerEntries.createdAt,
 };
 
@@ -48,7 +49,6 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
       .innerJoin(invoiceLines, eq(invoiceLines.id, commissionLedgerEntries.invoiceLineId))
       .where(and(
         eq(commissionLedgerEntries.employeeId, employeeId),
-        eq(invoiceLines.employeeId, employeeId),
         gte(invoices.soldAt, start),
         lt(invoices.soldAt, end),
         ...(branchId === undefined ? [] : [eq(invoices.branchId, branchId)]),
@@ -73,7 +73,7 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
     let earned = 0n;
     let reversed = 0n;
     for (const row of rows) {
-      if (row.type === 'earned') earned += toCents(row.amount);
+      if (row.type === 'earned' || row.type === 'reassignment_in') earned += toCents(row.amount);
       else reversed += -toCents(row.amount);
     }
     return {
@@ -83,8 +83,8 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
         earnedAmount: money(earned),
         reversedAmount: money(reversed),
         netAmount: money(earned - reversed),
-        invoiceLineCount: rows.filter(({ type }) => type === 'earned').length,
-        reversalCount: rows.filter(({ type }) => type === 'reversal').length,
+        invoiceLineCount: rows.filter(({ type }) => type === 'earned' || type === 'reassignment_in').length,
+        reversalCount: rows.filter(({ type }) => type === 'reversal' || type === 'reassignment_out').length,
       },
       entries: rows.map((row) => ({
         ...row,
@@ -99,7 +99,7 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
       const end = startOfCairoDate(`${nextMonth(query.month)}-01`);
       // Commission follows the service line, so one invoice can list several
       // employees here.
-      const ids = [...new Set((await database.selectDistinct({ employeeId: invoiceLines.employeeId })
+      const ids = [...new Set((await database.selectDistinct({ employeeId: commissionLedgerEntries.employeeId })
         .from(invoices).innerJoin(
           invoiceLines,
           eq(invoiceLines.invoiceId, invoices.id),
@@ -108,16 +108,14 @@ export const createDrizzleCommissionRepository = (database: Database): Commissio
           and(
             eq(commissionLedgerEntries.invoiceId, invoices.id),
             eq(commissionLedgerEntries.invoiceLineId, invoiceLines.id),
-            eq(commissionLedgerEntries.employeeId, invoiceLines.employeeId),
           ),
         ).where(and(
           eq(invoices.branchId, branchId),
-          isNotNull(invoiceLines.employeeId),
           gte(invoices.soldAt, start),
           lt(invoices.soldAt, end),
           ...(query.employeeId === undefined
             ? []
-            : [eq(invoiceLines.employeeId, query.employeeId)]),
+            : [eq(commissionLedgerEntries.employeeId, query.employeeId)]),
         ))).map(({ employeeId }) => employeeId).filter((id): id is number => id !== null))];
       if (ids.length === 0) return { items: [], total: 0 };
       const ordered = await database.select({ id: employees.id }).from(employees)

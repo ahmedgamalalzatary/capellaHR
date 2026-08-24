@@ -1,6 +1,6 @@
 # Beauty Center ERP — Next Features Plan
 
-Status: **Steps 1-4 built; Steps 5-9 still plan only.** Written 2026-08-19 after reading the
+Status: **Steps 1-5 built; Steps 6-9 still plan only.** Written 2026-08-19 after reading the
 current codebase. Covers the nine changes requested on 2026-08-19.
 
 This document is written to be read by a person who is not going to open the code. Every
@@ -135,7 +135,7 @@ Quick wins first, as decided. Two ordering notes that matter:
 | 2 | Employee termination: close the settlement gaps — **built** | Small | no — extends `employees` / `payroll` |
 | 3 | Till shift history + live shift totals — **built** | Medium | no — extends `erp-sales` |
 | 4 | Barcodes: print, scan, sell — **built** | Medium | no — extends `erp-catalog` + POS |
-| 5 | Reassign the employee on a sold service | Medium | no — extends `erp-sales` + `erp-commissions` |
+| 5 | Reassign the employee on a sold service — **built** | Medium | no — extends `erp-sales` + `erp-commissions` |
 | 6 | Partial payment on product-only invoices | Large | no — extends `erp-sales` |
 | 7 | Sales screen restyle to one full page | Large | POS only |
 | 8 | Live per-service queue | Large | **new** `erp-queue` |

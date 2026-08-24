@@ -4,9 +4,11 @@ import {
   completeSaleSchema,
   invoiceHistoryQuerySchema,
   invoiceParamsSchema,
+  invoiceLineParamsSchema,
   quoteSaleInputSchema,
   refundInvoiceSchema,
   refundQuoteInputSchema,
+  reassignInvoiceLineSchema,
   voidInvoiceSchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Response } from 'express';
@@ -139,6 +141,18 @@ export const createErpSalesRouter = (service: SaleService) => {
       const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
       const input = refundInvoiceSchema.parse(request.body);
       response.status(201).json({ data: await service.refund(actorFrom(response), invoiceId, input) });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.post('/invoices/:invoiceId/lines/:lineId/reassign', async (request, response, next) => {
+    try {
+      const { invoiceId, lineId } = invoiceLineParamsSchema.parse(request.params);
+      const input = reassignInvoiceLineSchema.parse(request.body);
+      response.status(201).json({
+        data: await service.reassignLine(actorFrom(response), invoiceId, lineId, input),
+      });
     } catch (error) {
       handleError(error, response, next);
     }

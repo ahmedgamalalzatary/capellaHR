@@ -6,6 +6,7 @@ import type {
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
+  ReassignInvoiceLineInput,
   RefundInvoiceInput,
   RefundQuoteInput,
   SaleQuote,
@@ -72,6 +73,16 @@ export type ReverseInvoiceOperation = ReverseInvoiceOperationBase & (
   | { type: 'refund'; input: RefundInvoiceInput & { branchId: number } }
 );
 
+export type ReassignInvoiceLineOperation = {
+  invoiceId: number;
+  invoiceLineId: number;
+  input: ReassignInvoiceLineInput & { branchId: number };
+  actingAccountId: number;
+  actingAccountRole: 'admin' | 'cashier';
+  reassignedAt: Date;
+  assertEmployee(context: unknown): Promise<AssignableEmployee>;
+};
+
 export interface SaleRepository {
   quote(branchId: number, input: QuoteSaleInput): Promise<SaleQuote>;
   findByIdempotencyKey(
@@ -83,6 +94,7 @@ export interface SaleRepository {
   } | null>;
   complete(operation: CompleteSaleOperation): Promise<InvoiceDto>;
   reverse(operation: ReverseInvoiceOperation): Promise<InvoiceDto>;
+  reassignLine(operation: ReassignInvoiceLineOperation): Promise<InvoiceDto>;
   listClientVisits(
     branchId: number,
     clientId: number,
@@ -112,7 +124,11 @@ type SaleErrorCode =
   | 'TRANSFER_NOT_REVERSIBLE'
   | 'VOID_DATE_EXPIRED'
   | 'REFUND_QUANTITY_EXCEEDED'
-  | 'REFUND_PAYMENT_MISMATCH';
+  | 'REFUND_PAYMENT_MISMATCH'
+  | 'REASSIGN_PAYROLL_FINALIZED'
+  | 'REASSIGN_LINE_NOT_SERVICE'
+  | 'REASSIGN_SAME_EMPLOYEE'
+  | 'INVOICE_NOT_REASSIGNABLE';
 
 const messages: Record<SaleErrorCode, string> = {
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
@@ -132,6 +148,10 @@ const messages: Record<SaleErrorCode, string> = {
   VOID_DATE_EXPIRED: 'الإلغاء الكامل متاح في يوم البيع فقط',
   REFUND_QUANTITY_EXCEEDED: 'الكمية المستردة تتجاوز الكمية المتبقية',
   REFUND_PAYMENT_MISMATCH: 'توزيع مبلغ الاسترداد غير صحيح',
+  REASSIGN_PAYROLL_FINALIZED: 'لا يمكن تغيير الموظف بعد اعتماد راتب أي من الموظفين لهذا الشهر',
+  REASSIGN_LINE_NOT_SERVICE: 'يمكن تغيير الموظف في بنود الخدمات فقط',
+  REASSIGN_SAME_EMPLOYEE: 'الموظف المحدد هو الموظف الحالي بالفعل',
+  INVOICE_NOT_REASSIGNABLE: 'يمكن تغيير الموظف قبل إلغاء أو استرداد أي جزء من الفاتورة فقط',
 };
 
 export class SaleError extends Error {
@@ -236,6 +256,34 @@ export const createSaleService = (dependencies: {
         actingAccountId: accountId, actingAccountRole: actor.role, reversedAt: new Date(),
       });
       return invoice;
+    },
+
+    async reassignLine(
+      actor: ErpAccountIdentity,
+      invoiceId: number,
+      invoiceLineId: number,
+      input: ReassignInvoiceLineInput,
+    ) {
+      const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
+      try {
+        return await repository.reassignLine({
+          invoiceId,
+          invoiceLineId,
+          input: { ...input, branchId },
+          actingAccountId: accountId,
+          actingAccountRole: actor.role,
+          reassignedAt: new Date(),
+          assertEmployee: (context) => assignment.assertAssignable(actor, {
+            employeeId: input.employeeId,
+            branchId,
+          }, context),
+        });
+      } catch (error) {
+        if (error instanceof ErpAssignmentError) {
+          throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
+        }
+        throw error;
+      }
     },
 
     async quoteRefund(actor: ErpAccountIdentity, invoiceId: number, input: RefundQuoteInput) {

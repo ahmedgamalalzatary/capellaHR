@@ -5,7 +5,7 @@ import type { createDatabase } from '@capella/database';
 import { createDrizzleCommissionRepository } from '../../src/modules/erp/commissions/commission-repository.js';
 
 describe('commission repository', () => {
-  it('requires list ledger employees to match the employee on their own service line', async () => {
+  it('lists employees from ledger ownership so reassignment recipients are included', async () => {
     const queries: string[] = [];
     const database = drizzle({
       client: { query: vi.fn().mockResolvedValue([[], []]) } as never,
@@ -16,9 +16,10 @@ describe('commission repository', () => {
       month: '2026-08', page: 1, pageSize: 20,
     });
 
-    expect(queries[0]).toMatch(
+    expect(queries[0]).not.toMatch(
       /commission_ledger_entries`.`employee_id`\s*=\s*`erp_invoice_lines`.`employee_id`/,
     );
+    expect(queries[0]).toMatch(/commission_ledger_entries`.`employee_id`/);
     expect(queries[0]).toMatch(
       /commission_ledger_entries`.`invoice_line_id`\s*=\s*`erp_invoice_lines`.`id`/,
     );

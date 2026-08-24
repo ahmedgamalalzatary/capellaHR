@@ -166,6 +166,20 @@ export const refundInvoiceSchema = reversalCommandBaseSchema.extend({
   });
 });
 
+export const reassignInvoiceLineSchema = z.object({
+  branchId: positiveMysqlIntSchema.optional(),
+  employeeId: positiveMysqlIntSchema,
+  operationReference: z.string().uuid(),
+  reason: z.string().trim()
+    .min(1, 'سبب تغيير الموظف مطلوب')
+    .max(1000, 'سبب تغيير الموظف طويل جدًا'),
+}).strict();
+
+export const invoiceLineParamsSchema = z.object({
+  invoiceId: coercedMysqlIntSchema,
+  lineId: coercedMysqlIntSchema,
+}).strict();
+
 export const refundQuoteInputSchema = z.object({
   branchId: coercedMysqlIntSchema.optional(),
   lines: z.array(refundLineSelectionSchema).min(1).max(100),
@@ -357,6 +371,24 @@ export const saleQuoteSchema = z.object({
   validateAdjustment(value.tax, value.totals.taxAmount, value.totals.subtotal, 'tax', context);
 });
 
+const invoiceEmployeeSchema = z.object({
+  id: positiveMysqlIntSchema,
+  employeeCode: positiveMysqlIntSchema,
+  name: z.string().min(1).max(255),
+}).strict();
+
+const invoiceLineReassignmentSchema = z.object({
+  id: positiveMysqlIntSchema,
+  fromEmployee: invoiceEmployeeSchema,
+  toEmployee: invoiceEmployeeSchema,
+  reason: z.string().min(1).max(1000),
+  actingAccount: z.object({
+    id: positiveMysqlIntSchema,
+    username: z.string().min(1).max(255),
+  }).strict(),
+  createdAt: isoDateTimeSchema,
+}).strict();
+
 const invoiceLineSchema = z.object({
   id: positiveMysqlIntSchema,
   lineNumber: positiveMysqlIntSchema,
@@ -367,11 +399,9 @@ const invoiceLineSchema = z.object({
   unitPrice: positiveMoneySchema,
   lineTotal: positiveMoneySchema,
   /** The employee who performed this service; a product line names nobody. */
-  employee: z.object({
-    id: positiveMysqlIntSchema,
-    employeeCode: positiveMysqlIntSchema,
-    name: z.string().min(1).max(255),
-  }).strict().nullable(),
+  employee: invoiceEmployeeSchema.nullable(),
+  originalEmployee: invoiceEmployeeSchema.nullable(),
+  reassignments: z.array(invoiceLineReassignmentSchema),
   commissionRule: commissionRuleSchema,
   commissionRate: percentageSchema,
   commissionAmount: exactMoneySchema,
@@ -636,6 +666,10 @@ export const saleErrorSchema = z.object({
     'VOID_DATE_EXPIRED',
     'REFUND_QUANTITY_EXCEEDED',
     'REFUND_PAYMENT_MISMATCH',
+    'REASSIGN_PAYROLL_FINALIZED',
+    'REASSIGN_LINE_NOT_SERVICE',
+    'REASSIGN_SAME_EMPLOYEE',
+    'INVOICE_NOT_REASSIGNABLE',
   ]),
   message: z.string().min(1),
   field: z.string().min(1).optional(),
@@ -676,6 +710,8 @@ export const saleFixtures = {
       unitPrice: '200.00',
       lineTotal: '200.00',
       employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+      originalEmployee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+      reassignments: [],
       commissionRule: 'employee_override',
       commissionRate: '15.00',
       commissionAmount: '30.00',
@@ -713,6 +749,7 @@ export type BranchCashierRosterItem = z.infer<typeof branchCashierRosterItemSche
 export type ReplaceBranchCashierRosterInput = z.infer<typeof replaceBranchCashierRosterSchema>;
 export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;
 export type RefundInvoiceInput = z.infer<typeof refundInvoiceSchema>;
+export type ReassignInvoiceLineInput = z.infer<typeof reassignInvoiceLineSchema>;
 export type RefundQuoteInput = z.infer<typeof refundQuoteInputSchema>;
 export type RefundQuote = z.infer<typeof refundQuoteSchema>;
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;

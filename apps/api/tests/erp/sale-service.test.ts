@@ -43,6 +43,8 @@ const invoice = {
     id: 81, lineNumber: 1, itemType: 'service' as const, sourceId: 21,
     name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
     employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+    originalEmployee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+    reassignments: [],
     commissionRule: 'employee_override' as const, commissionRate: '15.00',
     commissionAmount: '30.00', productCostBasis: null,
     refundedQuantity: 0, refundableQuantity: 1,
@@ -82,6 +84,8 @@ const productInvoice = {
     sourceId: 31,
     name: 'شامبو',
     employee: null,
+    originalEmployee: null,
+    reassignments: [],
     commissionRule: 'none' as const,
     commissionRate: '0.00',
     commissionAmount: '0.00',
@@ -93,6 +97,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   const findByIdempotencyKey = vi.fn().mockResolvedValue(null);
   const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(invoice);
   const reverse = vi.fn<SaleRepository['reverse']>().mockResolvedValue(invoice);
+  const reassignLine = vi.fn<SaleRepository['reassignLine']>().mockResolvedValue(invoice);
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const findInvoiceById = vi.fn().mockResolvedValue(invoice);
@@ -101,6 +106,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
     findByIdempotencyKey,
     complete: completeRepository,
     reverse,
+    reassignLine,
     listClientVisits,
     listInvoices,
     findInvoiceById,
@@ -131,11 +137,52 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   });
   return {
     service, repository, assertAssignable, quoteRepository, completeRepository,
-    listInvoices, findInvoiceById,
+    listInvoices, findInvoiceById, reassignLine,
   };
 };
 
 describe('ERP sale service', () => {
+  it('reassigns a sold service through a branch-scoped atomic operation', async () => {
+    const { service, reassignLine, assertAssignable } = setup();
+    const command = {
+      employeeId: 11,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'الموظفة المنفذة فعليًا',
+    };
+
+    await expect(service.reassignLine(actor, 44, 81, command)).resolves.toEqual(invoice);
+    const operation = reassignLine.mock.calls[0]![0];
+    expect(operation).toMatchObject({
+      invoiceId: 44, invoiceLineId: 81, actingAccountId: 3,
+      actingAccountRole: 'cashier', input: { ...command, branchId: 2 },
+    });
+    await operation.assertEmployee({ id: 'transaction' });
+    expect(assertAssignable).toHaveBeenCalledWith(
+      actor, { employeeId: 11, branchId: 2 }, { id: 'transaction' },
+    );
+  });
+
+  it('maps a reassignment attendance race to the stable assignment error', async () => {
+    const repository = setup().repository;
+    repository.reassignLine = vi.fn<SaleRepository['reassignLine']>(async (operation) => {
+      await operation.assertEmployee({});
+      return invoice;
+    });
+    const failing = createSaleService({
+      repository,
+      resolveBranchContext: vi.fn().mockResolvedValue({ accountId: 3, branchId: 2 }),
+      assignment: { assertAssignable: vi.fn().mockRejectedValue(
+        new ErpAssignmentError('ERP_EMPLOYEE_NOT_PRESENT', 'not present'),
+      ) },
+      invoiceNumbers: { allocate: vi.fn() },
+    });
+    await expect(failing.reassignLine(actor, 44, 81, {
+      employeeId: 11,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'correction',
+    })).rejects.toEqual(new SaleError('EMPLOYEE_NOT_ASSIGNABLE'));
+  });
+
   it('quotes an exact partial refund from stored invoice facts and remaining tenders', async () => {
     const { service } = setup();
     await expect((service as unknown as {

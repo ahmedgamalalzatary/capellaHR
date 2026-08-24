@@ -238,6 +238,37 @@ export function ProductStockView() {
             </CardContent>
           </Card>
 
+          {adjusting ? (
+            <Card className="shadow-card">
+              <CardContent className="space-y-4 p-4 sm:p-5">
+                <SectionHeading title={`تسوية مخزون ${adjusting.name}`} description="الرصيد الحالي يتغير فورًا وتُسجَّل الحركة في السجل." />
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="adjust-delta">تغيير الكمية</Label>
+                    <Input id="adjust-delta" aria-label="تغيير الكمية" type="number" className="text-start" disabled={commandPending} value={delta} onChange={(event) => setDelta(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="adjust-reason">سبب التسوية</Label>
+                    <Select id="adjust-reason" aria-label="سبب التسوية" disabled={commandPending} value={reason} onChange={(event) => setReason(event.target.value as typeof reason)}>
+                      <option value="count_correction">تصحيح جرد</option>
+                      <option value="wastage">هالك</option>
+                      <option value="damage">تالف</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="adjust-note">ملاحظة التسوية</Label>
+                    <Input id="adjust-note" aria-label="ملاحظة التسوية" placeholder="ملاحظة" disabled={commandPending} value={note} onChange={(event) => setNote(event.target.value)} />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                  <Button disabled={!Number(delta) || commandPending} onClick={() => { if (!commandPending) adjust.mutate(); }}>حفظ</Button>
+                  <Button variant="ghost" disabled={commandPending} onClick={() => setAdjusting(null)}>إلغاء</Button>
+                </div>
+                {adjust.isError ? <FieldError>{errorText(adjust.error)}</FieldError> : null}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card className="overflow-hidden shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
               <div className="relative w-full max-w-xs">
@@ -323,37 +354,6 @@ export function ProductStockView() {
               setConfirmingToggle(null);
             }}
           /> : null}
-
-          {adjusting ? (
-            <Card className="shadow-card">
-              <CardContent className="space-y-4 p-4 sm:p-5">
-                <SectionHeading title={`تسوية مخزون ${adjusting.name}`} description="الرصيد الحالي يتغير فورًا وتُسجَّل الحركة في السجل." />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="adjust-delta">تغيير الكمية</Label>
-                    <Input id="adjust-delta" aria-label="تغيير الكمية" type="number" className="text-start" disabled={commandPending} value={delta} onChange={(event) => setDelta(event.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="adjust-reason">سبب التسوية</Label>
-                    <Select id="adjust-reason" aria-label="سبب التسوية" disabled={commandPending} value={reason} onChange={(event) => setReason(event.target.value as typeof reason)}>
-                      <option value="count_correction">تصحيح جرد</option>
-                      <option value="wastage">هالك</option>
-                      <option value="damage">تالف</option>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="adjust-note">ملاحظة التسوية</Label>
-                    <Input id="adjust-note" aria-label="ملاحظة التسوية" placeholder="ملاحظة" disabled={commandPending} value={note} onChange={(event) => setNote(event.target.value)} />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
-                  <Button disabled={!Number(delta) || commandPending} onClick={() => { if (!commandPending) adjust.mutate(); }}>حفظ</Button>
-                  <Button variant="ghost" disabled={commandPending} onClick={() => setAdjusting(null)}>إلغاء</Button>
-                </div>
-                {adjust.isError ? <FieldError>{errorText(adjust.error)}</FieldError> : null}
-              </CardContent>
-            </Card>
-          ) : null}
 
           <Card className="overflow-hidden shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">

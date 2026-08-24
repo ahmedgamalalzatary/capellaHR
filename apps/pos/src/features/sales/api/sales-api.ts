@@ -9,6 +9,7 @@ import type {
   RefundInvoiceInput,
   RefundQuote,
   RefundQuoteInput,
+  ReassignInvoiceLineInput,
   SaleQuote,
   VoidInvoiceInput,
 } from '@capella/contracts';
@@ -61,4 +62,13 @@ export const voidInvoice = (invoiceId: number, input: VoidInvoiceInput) => (
   api.post<PublicInvoiceDto>(
     `/erp/sales/${encodeURIComponent(String(invoiceId))}/void`, input,
   )
+);
+
+export const reassignInvoiceLine = (
+  invoiceId: number,
+  lineId: number,
+  input: ReassignInvoiceLineInput,
+) => api.post<PublicInvoiceDto>(
+  `/erp/sales/invoices/${encodeURIComponent(String(invoiceId))}/lines/${encodeURIComponent(String(lineId))}/reassign`,
+  input,
 );

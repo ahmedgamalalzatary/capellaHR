@@ -155,7 +155,14 @@ export function EmployeeReceipt({
         <tbody>
           {share.lines.map((line) => (
             <tr key={line.id}>
-              <td className="border border-line px-1.5 py-1.5 text-start">{line.name}</td>
+              <td className="border border-line px-1.5 py-1.5 text-start">
+                <span>{line.name}</span>
+                {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
+                  <span className="block text-[10px] text-muted">
+                    مُسند أصلاً إلى {line.originalEmployee.name}
+                  </span>
+                ) : null}
+              </td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrice}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.lineTotal}</td>
@@ -254,7 +261,14 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <tbody>
           {invoice.lines.map((line) => (
             <tr key={line.id}>
-              <td className="border border-line px-1.5 py-1.5 text-start">{line.name}</td>
+              <td className="border border-line px-1.5 py-1.5 text-start">
+                <span>{line.name}</span>
+                {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
+                  <span className="block text-[10px] text-muted">
+                    مُسند أصلاً إلى {line.originalEmployee.name}
+                  </span>
+                ) : null}
+              </td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrice}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.lineTotal}</td>
