@@ -67,11 +67,17 @@ async def verify(
 
         # Predict liveness for this frame
         liveness_result = liveness_detector.predict(image=image, bbox=bbox)
-        scores.append(liveness_result.score)
+
+        # THE FIX: Invert the score!
+        # The model is outputting the Spoof probability (0.015).
+        # We subtract it from 1.0 to get your True Liveness score (0.985).
+        actual_liveness = 1.0 - float(liveness_result.score)
+
+        scores.append(actual_liveness)
 
         # Keep track of the highest quality frame for identity matching
-        if liveness_result.score > highest_score:
-            highest_score = liveness_result.score
+        if actual_liveness > highest_score:
+            highest_score = actual_liveness
             best_face = face
             best_image = image
 
