@@ -72,6 +72,7 @@ class MiniFASNetEnsemble:
             self.v1se_session.get_inputs()[0].name
         )
 
+
     @staticmethod
     def _crop(
             image: np.ndarray,
@@ -79,38 +80,45 @@ class MiniFASNetEnsemble:
             scale: float,
     ) -> np.ndarray:
         x, y, w, h = bbox
+        img_h, img_w = image.shape[:2]
+
+
+        max_scale_h = img_h / float(h)
+        max_scale_w = img_w / float(w)
+        actual_scale = min(scale, max_scale_h, max_scale_w)
+
+        new_w = int(w * actual_scale)
+        new_h = int(h * actual_scale)
+
         center_x = x + w / 2.0
         center_y = y + h / 2.0
 
-        size = max(w, h)
-        crop_size = int(size * scale)
+        left = int(center_x - new_w / 2.0)
+        top = int(center_y - new_h / 2.0)
+        right = left + new_w
+        bottom = top + new_h
 
-        left = int(center_x - crop_size / 2)
-        top = int(center_y - crop_size / 2)
-        right = left + crop_size
-        bottom = top + crop_size
+        # Shift the box safely if it hits an edge
+        if left < 0:
+            right -= left
+            left = 0
+        if top < 0:
+            bottom -= top
+            top = 0
+        if right > img_w:
+            left -= (right - img_w)
+            right = img_w
+        if bottom > img_h:
+            top -= (bottom - img_h)
+            bottom = img_h
 
-        img_h, img_w = image.shape[:2]
+        # Final safety clamp
+        left = max(0, left)
+        top = max(0, top)
+        right = min(img_w, right)
+        bottom = min(img_h, bottom)
 
-        # Use black padding (zeros) - this is what the model expects!
-        padded = np.zeros((crop_size, crop_size, 3), dtype=image.dtype)
-
-        src_left = max(0, left)
-        src_top = max(0, top)
-        src_right = min(img_w, right)
-        src_bottom = min(img_h, bottom)
-
-        if src_right <= src_left or src_bottom <= src_top:
-            raise ValueError("Invalid face crop")
-
-        dst_left = src_left - left
-        dst_top = src_top - top
-        dst_right = dst_left + (src_right - src_left)
-        dst_bottom = dst_top + (src_bottom - src_top)
-
-        padded[dst_top:dst_bottom, dst_left:dst_right] = image[src_top:src_bottom, src_left:src_right]
-
-        return padded
+        return image[top:bottom, left:right]
 
     @staticmethod
     def _prepare(crop: np.ndarray) -> np.ndarray:
