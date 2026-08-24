@@ -9,6 +9,8 @@ const quoteRefund = vi.hoisted(() => vi.fn());
 const refundInvoice = vi.hoisted(() => vi.fn());
 const voidInvoice = vi.hoisted(() => vi.fn());
 const reassignInvoiceLine = vi.hoisted(() => vi.fn());
+const recordInvoicePayment = vi.hoisted(() => vi.fn());
+const getCurrentCashierSession = vi.hoisted(() => vi.fn());
 const listAssignableEmployees = vi.hoisted(() => vi.fn());
 const reportExports = vi.hoisted(() => ({
   actor: { current: 'admin' as 'admin' | 'cashier' },
@@ -23,6 +25,10 @@ vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
   refundInvoice,
   voidInvoice,
   reassignInvoiceLine,
+  recordInvoicePayment,
+}));
+vi.mock('../src/features/cashier-sessions', () => ({
+  getCurrentCashierSession,
 }));
 vi.mock('../src/features/employee-assignment/api/assignable-employees-api', () => ({
   listAssignableEmployees,
@@ -98,6 +104,8 @@ describe('stored invoice receipt', () => {
         }],
       })),
     });
+    getCurrentCashierSession.mockReset().mockResolvedValue({ id: 14, branchId: 2 });
+    recordInvoicePayment.mockReset();
     reportExports.actor.current = 'admin';
     const job = {
       id: 91, reportType: 'erp-invoice', status: 'queued', filters: { branchId: 2 },
@@ -117,6 +125,40 @@ describe('stored invoice receipt', () => {
     });
     reportExports.retry.mockReset().mockResolvedValue(job);
     reportExports.download.mockReset().mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+  });
+
+  it('records a later payment on an open product invoice', async () => {
+    const productLine = {
+      ...saleFixtures.completedInvoice.lines[0], itemType: 'product' as const,
+      sourceId: 31, employee: null, originalEmployee: null, reassignments: [],
+      commissionRule: 'none' as const, commissionRate: '0.00', commissionAmount: '0.00',
+      productCostBasis: '50.00',
+    };
+    const open = {
+      ...saleFixtures.completedInvoice,
+      lines: [productLine],
+      totals: {
+        ...saleFixtures.completedInvoice.totals,
+        paymentTotal: '50.00', amountPaid: '50.00', creditedAmount: '0.00',
+        balanceDue: '135.00', settlementStatus: 'open' as const,
+      },
+      payments: [{ method: 'cash' as const, amount: '50.00', refundedAmount: '0.00', refundableAmount: '50.00' }],
+      eligibility: { canVoid: false, canRefund: true },
+    };
+    getInvoice.mockResolvedValue(open);
+    recordInvoicePayment.mockResolvedValue({
+      ...open,
+      totals: { ...open.totals, paymentTotal: '185.00', amountPaid: '185.00', balanceDue: '0.00', settlementStatus: 'settled' },
+    });
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'تسجيل دفعة' }));
+    fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '135.00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل وطباعة الدفعة' }));
+    await waitFor(() => expect(recordInvoicePayment).toHaveBeenCalledWith(44, expect.objectContaining({
+      branchId: 2, cashierSessionId: 14, method: 'cash', amount: '135.00',
+    })));
+    expect((await screen.findAllByText('إيصال دفعة')).length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-payment-receipt]')).not.toBeNull();
   });
 
   afterEach(() => {

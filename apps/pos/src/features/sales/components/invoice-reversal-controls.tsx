@@ -32,7 +32,7 @@ const money = (value: bigint) => `${value / BigInt(100)}.${String(value % BigInt
  * cashier to place.
  */
 const proposeTenders = (quote: RefundQuote) => {
-  let remaining = cents(quote.totals.total) ?? BigInt(0);
+  let remaining = cents(quote.cashPayout ?? quote.totals.total) ?? BigInt(0);
   const proposal: Partial<Record<PaymentMethod, string>> = {};
   for (const payment of quote.payments) {
     if (remaining === BigInt(0)) break;
@@ -120,7 +120,7 @@ export function InvoiceReversalControls({
   );
   // A total we cannot read is not a total of zero: treating it as one would let an
   // empty split "balance" and post a refund of nothing.
-  const quotedTotal = quoted === null ? null : cents(quoted.totals.total);
+  const quotedTotal = quoted === null ? null : cents(quoted.cashPayout ?? quoted.totals.total);
   const tenderDifference = quotedTotal === null ? null : tenderTotal - quotedTotal;
   const tendersBalance = !hasInvalidTender && tenderDifference === BigInt(0);
   /**
@@ -392,6 +392,15 @@ export function InvoiceReversalControls({
                 <span>الإجمالي المسترد</span>
                 <span className="tabular text-lg">{quoted.totals.total} ج.م</span>
               </p>
+              <p className="flex items-baseline justify-between text-sm">
+                <span>المبلغ الخارج من الخزنة</span>
+                <span className="tabular font-semibold">{quoted.cashPayout ?? quoted.totals.total} ج.م</span>
+              </p>
+              {(quoted.cashPayout ?? quoted.totals.total) !== quoted.totals.total ? (
+                <p className="rounded-control border border-success/20 bg-success-soft p-2 text-[13px] text-success">
+                  يُخصم الباقي من رصيد العميل المستحق قبل دفع أي نقد.
+                </p>
+              ) : null}
               {/*
                 Prefilled with the way the money came in, but the cashier decides where
                 it actually goes back — a card sale may be refunded in cash.

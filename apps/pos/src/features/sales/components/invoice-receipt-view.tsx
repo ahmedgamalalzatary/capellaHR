@@ -9,6 +9,7 @@ import { Button, Card, CardContent, EmptyState } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
 import { useSession } from '@/features/auth';
+import { getCurrentCashierSession } from '@/features/cashier-sessions';
 import {
   createErpReportExport,
   downloadErpReportExport,
@@ -24,12 +25,14 @@ import { requestReference, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
 import { ReceiptBundle } from './receipt';
 import { ReassignEmployeeDialog } from './reassign-employee-dialog';
+import { RecordPaymentDialog } from './record-payment-dialog';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
   const [exportId, setExportId] = useState<number>();
   const [reassignLineId, setReassignLineId] = useState<number | null>(null);
+  const [recordingPayment, setRecordingPayment] = useState(false);
   const queryClient = useQueryClient();
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
@@ -39,6 +42,11 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
     queryFn: () => getInvoice(invoiceId, branchId),
     enabled: Number.isInteger(invoiceId) && invoiceId > 0 && validBranch,
     retry: false,
+  });
+  const currentCashierSession = useQuery({
+    queryKey: ['erp-sales', 'cashier-session', branchId ?? null],
+    queryFn: () => getCurrentCashierSession(branchId),
+    enabled: validBranch,
   });
   const existingExport = useQuery({
     queryKey: ['erp-reports', 'invoice-export', invoiceId],
@@ -166,6 +174,22 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       : null}
     {printError ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{printError}</p> : null}
     <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} /></CardContent></Card>
+    {query.data.totals.settlementStatus === 'open' ? (
+      <Card data-print-controls className="mx-auto max-w-2xl">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <p className="text-sm font-medium">رصيد مستحق على العميل</p>
+            <p className="text-xl font-semibold tabular">{query.data.totals.balanceDue} ج.م</p>
+          </div>
+          <Button
+            disabled={!currentCashierSession.data}
+            onClick={() => setRecordingPayment(true)}
+          >
+            تسجيل دفعة
+          </Button>
+        </CardContent>
+      </Card>
+    ) : null}
     {query.data.status === 'completed'
       && query.data.lines.some((line) => line.itemType === 'service') ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
@@ -188,6 +212,19 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         line={query.data.lines.find((line) => line.id === reassignLineId)!}
         {...(branchId === undefined ? {} : { branchId })}
         onClose={() => setReassignLineId(null)}
+        onUpdated={(invoice) => {
+          const invoiceKey = salesQueryKeys.invoice(invoiceId, branchId);
+          queryClient.setQueryData(invoiceKey, invoice);
+          void invalidateErpCaches(queryClient, 'sale', invoiceKey);
+        }}
+      />
+    )}
+    {!recordingPayment || !currentCashierSession.data ? null : (
+      <RecordPaymentDialog
+        invoice={query.data}
+        cashierSessionId={currentCashierSession.data.id}
+        {...(branchId === undefined ? {} : { branchId })}
+        onClose={() => setRecordingPayment(false)}
         onUpdated={(invoice) => {
           const invoiceKey = salesQueryKeys.invoice(invoiceId, branchId);
           queryClient.setQueryData(invoiceKey, invoice);

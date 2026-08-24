@@ -192,9 +192,12 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                     {formatCairoDateTime(invoice.soldAt)}
                   </time>
                 </div>
-                <strong className="tabular text-lg font-semibold text-ink sm:text-start">
-                  {invoice.total} ج.م
-                </strong>
+                <div className="text-start">
+                  <strong className="block tabular text-lg font-semibold text-ink">{invoice.total} ج.م</strong>
+                  {invoice.settlementStatus === 'open' ? (
+                    <span className="text-sm font-medium text-warning">متبقي {invoice.balanceDue} ج.م</span>
+                  ) : <span className="text-sm text-success">مسددة</span>}
+                </div>
               </CardContent>
             </Card>
           </li>

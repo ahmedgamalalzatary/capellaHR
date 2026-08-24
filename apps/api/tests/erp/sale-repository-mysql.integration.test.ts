@@ -40,7 +40,7 @@ import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-re
 import { createDrizzleBranchCashierRosterRepository } from '../../src/modules/erp/sales/branch-cashier-roster-repository.js';
 import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock/index.js';
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
-import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
+import type { CompleteSaleOperation, ReverseInvoiceOperation } from '../../src/modules/erp/sales/sale-service.js';
 import { createErpPayrollCapability, type ErpPayrollCapability } from '../../src/modules/payroll/index.js';
 
 const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
@@ -232,6 +232,81 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('records one concurrent idempotent instalment on a product-only invoice', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '30.00' }];
+    const open = await repository.complete(sale);
+    expect(open.totals).toMatchObject({ amountPaid: '30.00', balanceDue: '70.00', settlementStatus: 'open' });
+
+    const payment = {
+      invoiceId: open.id,
+      input: {
+        branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+        method: 'cash' as const, amount: '70.00', operationReference: crypto.randomUUID(),
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier' as const,
+      paidAt: new Date(data.at.getTime() + 60_000),
+    };
+    const [first, retry] = await Promise.all([
+      repository.recordPayment(payment), repository.recordPayment(payment),
+    ]);
+    expect(first.totals.balanceDue).toBe('0.00');
+    expect(retry.totals.balanceDue).toBe('0.00');
+    expect(await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, open.id))).toHaveLength(2);
+    await expect(repository.findByIdempotencyKey(sale.input.idempotencyKey, {
+      actingAccountId: data.accountId, actingAccountRole: 'cashier',
+    })).resolves.toMatchObject({ input: { payments: [{ method: 'cash', amount: '30.00' }] } });
+    await expect(repository.recordPayment({
+      ...payment, input: { ...payment.input, amount: '69.00' },
+    })).rejects.toEqual(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }));
+  });
+
+  it('credits product returns against debt before paying cash back', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '30.00' }];
+    const open = await repository.complete(sale);
+    const line = open.lines[0]!;
+    const firstRefund = {
+      type: 'refund', invoiceId: open.id,
+      input: {
+        branchId: data.branchId, idempotencyKey: crypto.randomUUID(), reason: 'First return',
+        lines: [{ invoiceLineId: line.id, quantity: 1 }], payments: [],
+      },
+      actingAccountId: data.adminAccountId, actingAccountRole: 'admin',
+      reversedAt: new Date(data.at.getTime() + 60_000),
+    } satisfies ReverseInvoiceOperation;
+    const first = await repository.reverse(firstRefund);
+    expect(first.totals).toMatchObject({
+      amountPaid: '30.00', creditedAmount: '50.00', balanceDue: '20.00', settlementStatus: 'open',
+    });
+    await expect(repository.reverse(firstRefund)).resolves.toEqual(first);
+    const second = await repository.reverse({
+      type: 'refund', invoiceId: open.id,
+      input: {
+        branchId: data.branchId, idempotencyKey: crypto.randomUUID(), reason: 'Second return',
+        lines: [{ invoiceLineId: line.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '30.00' }],
+      },
+      actingAccountId: data.adminAccountId, actingAccountRole: 'admin',
+      reversedAt: new Date(data.at.getTime() + 120_000),
+    });
+    expect(second.totals).toMatchObject({
+      amountPaid: '0.00', creditedAmount: '100.00', balanceDue: '0.00', settlementStatus: 'settled',
+    });
+  });
+
   it('counts each shift by the money keyed to it, not by the invoices raised in it', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -1091,7 +1166,8 @@ describe('ERP sale repository MySQL integration', () => {
     const guardMessage = async (invoicePaymentId: number, methodSnapshot: 'cash' | 'visa') => {
       try {
         await database.insert(invoiceReversalPayments).values({
-          reversalId: pendingId, invoiceId: completed.id, invoicePaymentId, methodSnapshot, amount: '185.00',
+          reversalId: pendingId, invoiceId: completed.id, invoicePaymentId, methodSnapshot,
+          amount: '185.00', cashAmount: '185.00',
         });
         return 'accepted';
       } catch (error) {
@@ -1109,7 +1185,7 @@ describe('ERP sale repository MySQL integration', () => {
     // The honest link is still accepted.
     await database.insert(invoiceReversalPayments).values({
       reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: ownPayment!.id,
-      methodSnapshot: 'cash', amount: '185.00',
+      methodSnapshot: 'cash', amount: '185.00', cashAmount: '185.00',
     });
     expect(await database.select().from(invoiceReversalPayments)
       .where(eq(invoiceReversalPayments.reversalId, pendingId))).toHaveLength(1);
@@ -1403,7 +1479,8 @@ describe('ERP sale repository MySQL integration', () => {
       quantity: 1, grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
     });
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id,
+      methodSnapshot: 'cash', amount: '50.00', cashAmount: '50.00',
     });
     await expect(database.update(invoiceReversals).set({ status: 'finalized' })
       .where(eq(invoiceReversals.id, pendingId))).rejects.toBeDefined();
@@ -1462,6 +1539,7 @@ describe('ERP sale repository MySQL integration', () => {
       invoicePaymentId: payment.id,
       methodSnapshot: payment.method,
       amount: '185.00',
+      cashAmount: '185.00',
     });
 
     await expect(database.update(invoiceReversals).set({ status: 'finalized' })
@@ -1494,7 +1572,8 @@ describe('ERP sale repository MySQL integration', () => {
       quantity: 1, grossAmount: '1.00', discountAmount: '0.00', taxAmount: '0.00', total: '1.00',
     });
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '1.00',
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id,
+      methodSnapshot: 'cash', amount: '1.00', cashAmount: '1.00',
     });
     await database.update(erpProductStocks).set({ quantity: 2 })
       .where(eq(erpProductStocks.productId, data.productId));
@@ -1533,7 +1612,8 @@ describe('ERP sale repository MySQL integration', () => {
       quantity: 1, grossAmount: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00',
     });
     await database.insert(invoiceReversalPayments).values({
-      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '50.00',
+      reversalId: pendingId, invoiceId: completed.id, invoicePaymentId: payment.id,
+      methodSnapshot: 'cash', amount: '50.00', cashAmount: '50.00',
     });
     await database.insert(erpStockMovements).values({
       productId: data.productId, branchId: data.branchId,
@@ -1582,7 +1662,8 @@ describe('ERP sale repository MySQL integration', () => {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       });
       await database.insert(invoiceReversalPayments).values({
-        reversalId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '185.00',
+        reversalId, invoiceId: completed.id, invoicePaymentId: payment.id,
+        methodSnapshot: 'cash', amount: '185.00', cashAmount: '185.00',
       });
       await database.insert(commissionLedgerEntries).values({
         invoiceId: completed.id, invoiceLineId: completed.lines[0]!.id,
@@ -1634,7 +1715,8 @@ describe('ERP sale repository MySQL integration', () => {
         grossAmount: '0.10', discountAmount: '0.00', taxAmount: '0.00', total: '0.10',
       });
       await database.insert(invoiceReversalPayments).values({
-        reversalId, invoiceId: completed.id, invoicePaymentId: payment.id, methodSnapshot: 'cash', amount: '0.10',
+        reversalId, invoiceId: completed.id, invoicePaymentId: payment.id,
+        methodSnapshot: 'cash', amount: '0.10', cashAmount: '0.10',
       });
       return reversalId;
     };

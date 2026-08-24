@@ -53,7 +53,8 @@ const invoice = {
   tax: { kind: 'fixed' as const, value: '5.00', amount: '5.00' },
   totals: {
     subtotal: '200.00', discountAmount: '20.00', taxAmount: '5.00',
-    total: '185.00', paymentTotal: '185.00',
+    total: '185.00', paymentTotal: '185.00', amountPaid: '185.00',
+    creditedAmount: '0.00', balanceDue: '0.00', settlementStatus: 'settled' as const,
   },
   payments: [{
     method: 'cash' as const, amount: '185.00',
@@ -98,6 +99,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(invoice);
   const reverse = vi.fn<SaleRepository['reverse']>().mockResolvedValue(invoice);
   const reassignLine = vi.fn<SaleRepository['reassignLine']>().mockResolvedValue(invoice);
+  const recordPayment = vi.fn<SaleRepository['recordPayment']>().mockResolvedValue(invoice);
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const findInvoiceById = vi.fn().mockResolvedValue(invoice);
@@ -107,6 +109,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
     complete: completeRepository,
     reverse,
     reassignLine,
+    recordPayment,
     listClientVisits,
     listInvoices,
     findInvoiceById,
@@ -137,11 +140,28 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   });
   return {
     service, repository, assertAssignable, quoteRepository, completeRepository,
-    listInvoices, findInvoiceById, reassignLine,
+    listInvoices, findInvoiceById, reassignLine, recordPayment,
   };
 };
 
 describe('ERP sale service', () => {
+  it('records a later payment through a branch-scoped operation', async () => {
+    const { service, recordPayment } = setup();
+    const command = {
+      cashierSessionId: 14,
+      method: 'cash' as const,
+      amount: '100.00',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+    };
+    await expect(service.recordPayment(actor, 44, command)).resolves.toEqual(invoice);
+    expect(recordPayment).toHaveBeenCalledWith(expect.objectContaining({
+      invoiceId: 44,
+      actingAccountId: 3,
+      actingAccountRole: 'cashier',
+      input: { ...command, branchId: 2 },
+    }));
+  });
+
   it('reassigns a sold service through a branch-scoped atomic operation', async () => {
     const { service, reassignLine, assertAssignable } = setup();
     const command = {
@@ -199,6 +219,7 @@ describe('ERP sale service', () => {
       totals: {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       },
+      cashPayout: '185.00',
       payments: [
         { method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' },
         { method: 'visa', paidAmount: '0.00', refundableAmount: '0.00' },
@@ -206,6 +227,27 @@ describe('ERP sale service', () => {
         { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
       ],
     });
+  });
+
+  it('uses a product return to reduce debt before quoting any cash payout', async () => {
+    const openProductInvoice = {
+      ...productInvoice,
+      totals: {
+        ...productInvoice.totals,
+        paymentTotal: '50.00', amountPaid: '50.00', creditedAmount: '0.00',
+        balanceDue: '135.00', settlementStatus: 'open' as const,
+      },
+      payments: [{
+        method: 'cash' as const, amount: '50.00',
+        refundedAmount: '0.00', refundableAmount: '50.00',
+      }],
+    } satisfies InvoiceDto;
+    const { service } = setup({ findInvoiceById: vi.fn().mockResolvedValue(openProductInvoice) });
+    const quoted = await service.quoteRefund(actor, 44, {
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+    });
+    expect(quoted.totals.total).toBe('185.00');
+    expect(quoted.cashPayout).toBe('50.00');
   });
 
   it('offers a method the sale never used so the money can go back another way', async () => {
@@ -231,6 +273,24 @@ describe('ERP sale service', () => {
       { method: 'instapay', paidAmount: '0.00', refundableAmount: '0.00' },
       { method: 'vodafone_cash', paidAmount: '0.00', refundableAmount: '0.00' },
     ]);
+  });
+
+  it('aggregates repeated instalments of the same method in a refund quote', async () => {
+    const { service } = setup({
+      findInvoiceById: vi.fn().mockResolvedValue({
+        ...productInvoice,
+        payments: [
+          { method: 'cash', amount: '100.00', refundedAmount: '10.00', refundableAmount: '90.00' },
+          { method: 'cash', amount: '85.00', refundedAmount: '5.00', refundableAmount: '80.00' },
+        ],
+      }),
+    });
+    const quoted = await service.quoteRefund(actor, 44, {
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+    });
+    expect(quoted.payments[0]).toEqual({
+      method: 'cash', paidAmount: '185.00', refundableAmount: '170.00',
+    });
   });
 
   it('submits branch-scoped partial refunds and voids through the atomic repository', async () => {

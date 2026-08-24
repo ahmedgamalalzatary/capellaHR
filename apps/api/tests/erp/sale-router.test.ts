@@ -17,6 +17,7 @@ const setup = (overrides: Partial<SaleService> = {}) => {
   const voidInvoice = vi.fn().mockResolvedValue({ id: 44, status: 'voided' });
   const quoteRefund = vi.fn().mockResolvedValue({ totals: { total: '185.00' } });
   const reassignLine = vi.fn().mockResolvedValue({ id: 44 });
+  const recordPayment = vi.fn().mockResolvedValue({ id: 44 });
   const service = {
     quote,
     complete,
@@ -27,6 +28,7 @@ const setup = (overrides: Partial<SaleService> = {}) => {
     void: voidInvoice,
     quoteRefund,
     reassignLine,
+    recordPayment,
     ...overrides,
   };
   const app = express();
@@ -40,10 +42,26 @@ const setup = (overrides: Partial<SaleService> = {}) => {
     void _next;
     response.status(500).json({ error: { code: 'UNEXPECTED' } });
   });
-  return { app, quote, complete, listClientVisits, listInvoices, getInvoice, refund, voidInvoice, quoteRefund, reassignLine };
+  return { app, quote, complete, listClientVisits, listInvoices, getInvoice, refund, voidInvoice, quoteRefund, reassignLine, recordPayment };
 };
 
 describe('ERP sales router', () => {
+  it('validates and submits a later invoice payment', async () => {
+    const { app, recordPayment } = setup();
+    const response = await request(app).post('/erp/sales/invoices/44/payments').send({
+      branchId: 2,
+      cashierSessionId: 14,
+      method: 'cash',
+      amount: '100.00',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+    });
+    expect(response.status).toBe(201);
+    expect(recordPayment).toHaveBeenCalledWith(actor, 44, {
+      branchId: 2, cashierSessionId: 14, method: 'cash', amount: '100.00',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+    });
+  });
+
   it('validates and submits an invoice-line employee reassignment', async () => {
     const { app, reassignLine } = setup();
     const response = await request(app).post('/erp/sales/invoices/44/lines/81/reassign').send({

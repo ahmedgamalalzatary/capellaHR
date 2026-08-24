@@ -799,12 +799,15 @@ function SaleWorkspace({
   const ready = Boolean(
     client && sellerOnRoster && serviceLinesAssigned && lines.length > 0
       && servicePricesValid && quote.data && !quote.isFetching
-      && remaining === BigInt(0) && !completion.isPending && !pendingSale,
+      && remaining !== null && remaining >= BigInt(0)
+      && (!hasServiceLines || remaining === BigInt(0))
+      && !completion.isPending && !pendingSale,
   );
 
   const makeInput = (): CompleteSaleInput | null => {
     if (!client || !seller || !sellerOnRoster || !serviceLinesAssigned
-      || !quote.data || remaining !== BigInt(0)) return null;
+      || !quote.data || remaining === null || remaining < BigInt(0)
+      || (hasServiceLines && remaining !== BigInt(0))) return null;
     const paymentRows = paymentMethods.flatMap(({ method }) => {
       const amount = payments[method];
       return amount && toCents(amount)! > BigInt(0) ? [{ method, amount }] : [];
@@ -1388,6 +1391,11 @@ function SaleWorkspace({
       {confirming ? (
         <Modal title="تأكيد البيع" onClose={() => setConfirming(false)}>
           <p className="text-sm">سيتم حفظ الفاتورة نهائيًا بقيمة {quote.data?.totals.total} ج.م.</p>
+          {!hasServiceLines && remaining !== null && remaining > BigInt(0) ? (
+            <p className="mt-2 rounded-control border border-warning/20 bg-warning-soft p-3 text-sm text-warning">
+              سيبقى على العميل {money(remaining)} ج.م بعد حفظ الفاتورة.
+            </p>
+          ) : null}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setConfirming(false)}>رجوع</Button>
             <Button disabled={completion.isPending} onClick={submit}>تأكيد البيع</Button>

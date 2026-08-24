@@ -35,7 +35,7 @@ describe('ERP sales persistence foundation', () => {
 
     const payments = table('invoiceReversalPayments');
     expect(Object.keys(payments)).toEqual(expect.arrayContaining([
-      'id', 'reversalId', 'invoicePaymentId', 'methodSnapshot', 'amount',
+      'id', 'reversalId', 'invoicePaymentId', 'methodSnapshot', 'amount', 'cashAmount',
     ]));
     expect(getTableConfig(payments).indexes.map((value) => value.config.name)).toContain(
       'erp_invoice_reversal_payments_method_unique',
@@ -170,11 +170,28 @@ describe('ERP sales persistence foundation', () => {
     ]);
     const payments = table('invoicePayments');
     const config = getTableConfig(payments);
+    expect(Object.keys(payments)).toEqual(expect.arrayContaining(['operationReference', 'isInitial']));
     expect(config.indexes.map((value) => value.config.name)).toContain(
+      'erp_invoice_payments_invoice_reference_unique',
+    );
+    expect(config.indexes.map((value) => value.config.name)).not.toContain(
       'erp_invoice_payments_invoice_method_unique',
     );
     expect(config.checks.map((value) => value.name)).toContain(
       'erp_invoice_payments_amount_positive',
+    );
+  });
+
+  it('stores invoice settlement totals and enforces their consistency', () => {
+    const invoices = table('invoices');
+    expect(Object.keys(invoices)).toEqual(expect.arrayContaining([
+      'amountPaid', 'creditedAmount', 'balanceDue', 'settlementStatus',
+    ]));
+    expect(getTableConfig(invoices).checks.map((value) => value.name)).toEqual(
+      expect.arrayContaining([
+        'erp_invoices_amount_paid_valid',
+        'erp_invoices_settlement_status_consistent',
+      ]),
     );
   });
 

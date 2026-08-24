@@ -44,6 +44,8 @@ const invoice = (input: CompleteSaleInput): PublicInvoiceDto => ({
   totals: {
     subtotal: '185.00', discountAmount: '0.00', taxAmount: '0.00',
     total: '185.00', paymentTotal: '185.00',
+    amountPaid: '185.00', creditedAmount: '0.00', balanceDue: '0.00',
+    settlementStatus: 'settled',
   },
   payments: [{
     method: 'cash', amount: '185.00', refundedAmount: '0.00', refundableAmount: '185.00',

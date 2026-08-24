@@ -13,6 +13,7 @@ import {
   quoteRefund,
   refundInvoice,
   reassignInvoiceLine,
+  recordInvoicePayment,
   voidInvoice,
 } from '../src/features/sales/api/sales-api';
 
@@ -79,6 +80,15 @@ describe('sales API', () => {
     };
     await reassignInvoiceLine(44, 81, command);
     expect(mocks.post).toHaveBeenCalledWith('/erp/sales/invoices/44/lines/81/reassign', command);
+  });
+
+  it('posts an idempotent later payment to the stored invoice', async () => {
+    const command = {
+      branchId: 2, cashierSessionId: 14, method: 'cash' as const,
+      amount: '100.00', operationReference: crypto.randomUUID(),
+    };
+    await recordInvoicePayment(44, command);
+    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/invoices/44/payments', command);
   });
 
   it('serializes branch-scoped client visit pagination', async () => {

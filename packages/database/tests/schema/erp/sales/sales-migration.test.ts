@@ -40,6 +40,23 @@ const reassignmentMigrationName = readdirSync(migrationsDirectory)
 const reassignmentMigration = reassignmentMigrationName
   ? readFileSync(`${migrationsDirectory}/${reassignmentMigrationName}`, 'utf8')
   : '';
+const partialPaymentMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0077_.*\.sql$/.test(name));
+const partialPaymentMigration = partialPaymentMigrationName
+  ? readFileSync(`${migrationsDirectory}/${partialPaymentMigrationName}`, 'utf8')
+  : '';
+
+describe('ERP product partial-payment migration', () => {
+  it('turns payments into an idempotent ledger and stores settlement state', () => {
+    expect(partialPaymentMigrationName).toBeDefined();
+    expect(partialPaymentMigration).toContain('operation_reference');
+    expect(partialPaymentMigration).toContain('erp_invoice_payments_invoice_reference_unique');
+    expect(partialPaymentMigration).toContain('amount_paid');
+    expect(partialPaymentMigration).toContain('balance_due');
+    expect(partialPaymentMigration).toContain('settlement_status');
+    expect(partialPaymentMigration).toContain('Partial payment is not allowed with services');
+  });
+});
 
 describe('ERP invoice-line reassignment migration', () => {
   it('adds immutable reassignment facts and linked commission movements', () => {

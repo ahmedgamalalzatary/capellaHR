@@ -9,6 +9,7 @@ import {
   refundInvoiceSchema,
   refundQuoteInputSchema,
   reassignInvoiceLineSchema,
+  recordInvoicePaymentSchema,
   voidInvoiceSchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Response } from 'express';
@@ -152,6 +153,18 @@ export const createErpSalesRouter = (service: SaleService) => {
       const input = reassignInvoiceLineSchema.parse(request.body);
       response.status(201).json({
         data: await service.reassignLine(actorFrom(response), invoiceId, lineId, input),
+      });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
+  router.post('/invoices/:invoiceId/payments', async (request, response, next) => {
+    try {
+      const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
+      const input = recordInvoicePaymentSchema.parse(request.body);
+      response.status(201).json({
+        data: await service.recordPayment(actorFrom(response), invoiceId, input),
       });
     } catch (error) {
       handleError(error, response, next);

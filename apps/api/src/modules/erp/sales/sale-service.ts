@@ -6,6 +6,7 @@ import type {
   InvoiceHistoryItem,
   InvoiceHistoryQuery,
   QuoteSaleInput,
+  RecordInvoicePaymentInput,
   ReassignInvoiceLineInput,
   RefundInvoiceInput,
   RefundQuoteInput,
@@ -20,7 +21,11 @@ import { ErpAssignmentError } from '../assignment/assignment-service.js';
 import type { ErpBranchContextResolver } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 import type { AssignableEmployee } from '../assignment/assignment-service.js';
-import { allocateReversalAmounts, MoneyCalculationError } from './services/sale-calculations.js';
+import { allocateReversalAmounts, MoneyCalculationError, toCents } from './services/sale-calculations.js';
+
+const moneyFromCents = (value: bigint) => (
+  `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`
+);
 
 /**
  * A sale posted from inside the system rather than from a request: a transfer
@@ -83,6 +88,14 @@ export type ReassignInvoiceLineOperation = {
   assertEmployee(context: unknown): Promise<AssignableEmployee>;
 };
 
+export type RecordInvoicePaymentOperation = {
+  invoiceId: number;
+  input: RecordInvoicePaymentInput & { branchId: number };
+  actingAccountId: number;
+  actingAccountRole: 'admin' | 'cashier';
+  paidAt: Date;
+};
+
 export interface SaleRepository {
   quote(branchId: number, input: QuoteSaleInput): Promise<SaleQuote>;
   findByIdempotencyKey(
@@ -95,6 +108,7 @@ export interface SaleRepository {
   complete(operation: CompleteSaleOperation): Promise<InvoiceDto>;
   reverse(operation: ReverseInvoiceOperation): Promise<InvoiceDto>;
   reassignLine(operation: ReassignInvoiceLineOperation): Promise<InvoiceDto>;
+  recordPayment(operation: RecordInvoicePaymentOperation): Promise<InvoiceDto>;
   listClientVisits(
     branchId: number,
     clientId: number,
@@ -128,7 +142,10 @@ type SaleErrorCode =
   | 'REASSIGN_PAYROLL_FINALIZED'
   | 'REASSIGN_LINE_NOT_SERVICE'
   | 'REASSIGN_SAME_EMPLOYEE'
-  | 'INVOICE_NOT_REASSIGNABLE';
+  | 'INVOICE_NOT_REASSIGNABLE'
+  | 'PAYMENT_EXCEEDS_BALANCE'
+  | 'PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES'
+  | 'INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID';
 
 const messages: Record<SaleErrorCode, string> = {
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
@@ -152,6 +169,9 @@ const messages: Record<SaleErrorCode, string> = {
   REASSIGN_LINE_NOT_SERVICE: 'يمكن تغيير الموظف في بنود الخدمات فقط',
   REASSIGN_SAME_EMPLOYEE: 'الموظف المحدد هو الموظف الحالي بالفعل',
   INVOICE_NOT_REASSIGNABLE: 'يمكن تغيير الموظف قبل إلغاء أو استرداد أي جزء من الفاتورة فقط',
+  PAYMENT_EXCEEDS_BALANCE: 'الدفعة أكبر من الرصيد المستحق',
+  PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES: 'فواتير الخدمات يجب سدادها بالكامل',
+  INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID: 'لا يمكن إلغاء فاتورة مدفوعة جزئيًا؛ استخدم الاسترداد',
 };
 
 export class SaleError extends Error {
@@ -286,6 +306,21 @@ export const createSaleService = (dependencies: {
       }
     },
 
+    async recordPayment(
+      actor: ErpAccountIdentity,
+      invoiceId: number,
+      input: RecordInvoicePaymentInput,
+    ) {
+      const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
+      return repository.recordPayment({
+        invoiceId,
+        input: { ...input, branchId },
+        actingAccountId: accountId,
+        actingAccountRole: actor.role,
+        paidAt: new Date(),
+      });
+    },
+
     async quoteRefund(actor: ErpAccountIdentity, invoiceId: number, input: RefundQuoteInput) {
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       const invoice = await repository.findInvoiceById(branchId, invoiceId);
@@ -311,18 +346,26 @@ export const createSaleService = (dependencies: {
             taxAmount: allocation.taxAmount,
             total: allocation.total,
           },
+          cashPayout: moneyFromCents(
+            toCents(allocation.total) > toCents(invoice.totals.balanceDue)
+              ? toCents(allocation.total) - toCents(invoice.totals.balanceDue)
+              : 0n,
+          ),
           // Every method is offered, in a stable order, so the cashier can hand the
           // money back another way than it came in. A method the sale never used
           // simply shows zero on both amounts.
-          payments: allocation.total === '0.00' ? [] : paymentMethodSchema.options
+          payments: toCents(allocation.total) <= toCents(invoice.totals.balanceDue)
+            ? [] : paymentMethodSchema.options
             .map((method) => {
-              const payment = invoice.payments.find(
-                (candidate) => candidate.method === method,
-              );
+              const payments = invoice.payments.filter((candidate) => candidate.method === method);
               return {
                 method,
-                paidAmount: payment?.amount ?? '0.00',
-                refundableAmount: payment?.refundableAmount ?? '0.00',
+                paidAmount: moneyFromCents(payments.reduce(
+                  (sum, payment) => sum + toCents(payment.amount), BigInt(0),
+                )),
+                refundableAmount: moneyFromCents(payments.reduce(
+                  (sum, payment) => sum + toCents(payment.refundableAmount), BigInt(0),
+                )),
               };
             }),
         };

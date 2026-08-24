@@ -175,6 +175,14 @@ export const reassignInvoiceLineSchema = z.object({
     .max(1000, 'سبب تغيير الموظف طويل جدًا'),
 }).strict();
 
+export const recordInvoicePaymentSchema = z.object({
+  branchId: positiveMysqlIntSchema.optional(),
+  cashierSessionId: positiveMysqlIntSchema,
+  method: paymentMethodSchema,
+  amount: positiveMoneySchema,
+  operationReference: z.string().uuid(),
+}).strict();
+
 export const invoiceLineParamsSchema = z.object({
   invoiceId: coercedMysqlIntSchema,
   lineId: coercedMysqlIntSchema,
@@ -200,6 +208,7 @@ export const refundQuoteSchema = z.object({
     taxAmount: exactMoneySchema,
     total: exactMoneySchema,
   }).strict(),
+  cashPayout: exactMoneySchema,
   /**
    * Every method is offered, not only the ones the sale used: the cashier decides
    * how the money physically goes back. `paidAmount` is what the till originally
@@ -217,17 +226,24 @@ export const refundQuoteSchema = z.object({
       });
     }
   })),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (toCents(value.cashPayout) > toCents(value.totals.total)) {
+    context.addIssue({ code: 'custom', path: ['cashPayout'], message: 'المبلغ النقدي أكبر من قيمة المرتجع' });
+  }
+});
 
 export const paymentBreakdownSchema = z.object({
   total: positiveMoneySchema,
-  payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
+  payments: z.array(paymentSchema),
+  allowPartialPayment: z.boolean().optional(),
+  allowRepeatedMethods: z.boolean().optional(),
 }).strict().superRefine((value, context) => {
   const paymentTotal = value.payments.reduce(
     (sum, payment) => sum + toCents(payment.amount),
     BigInt(0),
   );
-  if (paymentTotal !== toCents(value.total)) {
+  if ((!value.allowPartialPayment && paymentTotal !== toCents(value.total))
+    || (value.allowPartialPayment && paymentTotal > toCents(value.total))) {
     context.addIssue({
       code: 'custom',
       path: ['payments'],
@@ -235,7 +251,10 @@ export const paymentBreakdownSchema = z.object({
     });
   }
   const methods = value.payments.map(({ method }) => method);
-  if (new Set(methods).size !== methods.length) {
+  if (!value.allowRepeatedMethods && methods.length > paymentMethodSchema.options.length) {
+    context.addIssue({ code: 'custom', path: ['payments'], message: 'عدد وسائل الدفع غير صالح' });
+  }
+  if (!value.allowRepeatedMethods && new Set(methods).size !== methods.length) {
     context.addIssue({ code: 'custom', path: ['payments'], message: 'لا يمكن تكرار وسيلة الدفع' });
   }
 });
@@ -249,8 +268,11 @@ export const completeSaleSchema = z.object({
   lines: z.array(completeSaleLineSchema).min(1).max(100),
   discount: adjustmentSchema.optional(),
   tax: adjustmentSchema.optional(),
-  payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
+  payments: z.array(paymentSchema).max(paymentMethodSchema.options.length),
 }).strict().superRefine((value, context) => {
+  if (value.lines.some((line) => line.itemType === 'service') && value.payments.length === 0) {
+    context.addIssue({ code: 'custom', path: ['payments'], message: 'فواتير الخدمات يجب سدادها بالكامل' });
+  }
   const seen = new Set<string>();
   value.payments.forEach((payment, index) => {
     if (seen.has(payment.method)) {
@@ -276,15 +298,25 @@ export const invoiceTotalsSchema = z.object({
   discountAmount: exactMoneySchema,
   taxAmount: exactMoneySchema,
   total: positiveMoneySchema,
-  paymentTotal: positiveMoneySchema,
+  paymentTotal: exactMoneySchema,
+  amountPaid: exactMoneySchema,
+  creditedAmount: exactMoneySchema,
+  balanceDue: exactMoneySchema,
+  settlementStatus: z.enum(['settled', 'open']),
 }).strict().superRefine((value, context) => {
   const expected = toCents(value.subtotal) - toCents(value.discountAmount)
     + toCents(value.taxAmount);
   if (expected !== toCents(value.total)) {
     context.addIssue({ code: 'custom', path: ['total'], message: 'إجمالي الفاتورة غير متسق' });
   }
-  if (toCents(value.paymentTotal) !== toCents(value.total)) {
-    context.addIssue({ code: 'custom', path: ['paymentTotal'], message: 'مجموع المدفوعات لا يساوي إجمالي الفاتورة' });
+  const total = toCents(value.total);
+  const paid = toCents(value.amountPaid);
+  const credited = toCents(value.creditedAmount);
+  const balance = total - credited - paid;
+  if (toCents(value.paymentTotal) < paid || balance < BigInt(0)
+    || toCents(value.balanceDue) !== balance
+    || value.settlementStatus !== (balance === BigInt(0) ? 'settled' : 'open')) {
+    context.addIssue({ code: 'custom', path: ['amountPaid'], message: 'حالة سداد الفاتورة غير متسقة' });
   }
 });
 
@@ -522,7 +554,7 @@ export const invoiceSchema = z.object({
   discount: storedAdjustmentSchema.nullable(),
   tax: storedAdjustmentSchema.nullable(),
   totals: invoiceTotalsSchema,
-  payments: z.array(storedInvoicePaymentSchema).min(1).max(paymentMethodSchema.options.length),
+  payments: z.array(storedInvoicePaymentSchema),
   reversals: z.array(invoiceReversalSchema),
   eligibility: z.object({ canVoid: z.boolean(), canRefund: z.boolean() }).strict(),
   soldAt: isoDateTimeSchema,
@@ -553,12 +585,20 @@ export const invoiceSchema = z.object({
   const breakdown = paymentBreakdownSchema.safeParse({
     total: value.totals.total,
     payments: value.payments.map(({ method, amount }) => ({ method, amount })),
+    allowPartialPayment: value.lines.every((line) => line.itemType === 'product'),
+    allowRepeatedMethods: true,
   });
   if (!breakdown.success) {
     context.addIssue({
       code: 'custom',
       path: ['payments'],
       message: 'تفاصيل المدفوعات غير متسقة مع إجمالي الفاتورة',
+    });
+  }
+  if (value.lines.some((line) => line.itemType === 'service')
+    && value.totals.settlementStatus !== 'settled') {
+    context.addIssue({
+      code: 'custom', path: ['totals', 'settlementStatus'], message: 'فواتير الخدمات يجب سدادها بالكامل',
     });
   }
 });
@@ -628,6 +668,9 @@ export const invoiceHistoryItemSchema = z.object({
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   total: positiveMoneySchema,
+  amountPaid: exactMoneySchema,
+  balanceDue: exactMoneySchema,
+  settlementStatus: z.enum(['settled', 'open']),
   // The phone travels with the row: a client recorded without a name is
   // otherwise unidentifiable in the invoice list.
   client: z.object({
@@ -670,6 +713,9 @@ export const saleErrorSchema = z.object({
     'REASSIGN_LINE_NOT_SERVICE',
     'REASSIGN_SAME_EMPLOYEE',
     'INVOICE_NOT_REASSIGNABLE',
+    'PAYMENT_EXCEEDS_BALANCE',
+    'PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES',
+    'INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID',
   ]),
   message: z.string().min(1),
   field: z.string().min(1).optional(),
@@ -727,6 +773,10 @@ export const saleFixtures = {
       taxAmount: '5.00',
       total: '185.00',
       paymentTotal: '185.00',
+      amountPaid: '185.00',
+      creditedAmount: '0.00',
+      balanceDue: '0.00',
+      settlementStatus: 'settled',
     },
     payments: [{
       method: 'cash', amount: '185.00', refundedAmount: '0.00', refundableAmount: '185.00',
@@ -750,6 +800,7 @@ export type ReplaceBranchCashierRosterInput = z.infer<typeof replaceBranchCashie
 export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;
 export type RefundInvoiceInput = z.infer<typeof refundInvoiceSchema>;
 export type ReassignInvoiceLineInput = z.infer<typeof reassignInvoiceLineSchema>;
+export type RecordInvoicePaymentInput = z.infer<typeof recordInvoicePaymentSchema>;
 export type RefundQuoteInput = z.infer<typeof refundQuoteInputSchema>;
 export type RefundQuote = z.infer<typeof refundQuoteSchema>;
 export type PaymentMethod = z.infer<typeof paymentMethodSchema>;

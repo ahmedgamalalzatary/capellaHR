@@ -38,10 +38,11 @@ import {
   or,
 } from 'drizzle-orm';
 import { isDeepStrictEqual } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import type { ErpAuditCapability, ErpPayrollCapability } from '../hr-capabilities.js';
 import { cairoMonth, nextMonth, startOfCairoDate } from '../cairo-calendar.js';
 import { CASHIER_SESSION_MAX_DURATION_MS } from './cashier-sessions-service.js';
-import { SaleError, type CompleteSaleOperation, type ReassignInvoiceLineOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
+import { SaleError, type CompleteSaleOperation, type ReassignInvoiceLineOperation, type RecordInvoicePaymentOperation, type ReverseInvoiceOperation, type SaleRepository } from './sale-service.js';
 import {
   allocateReversalAmounts,
   calculateAdjustment,
@@ -155,7 +156,7 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
     if (payment.invoicePaymentId === null) continue;
     refundedByPayment.set(
       payment.invoicePaymentId,
-      (refundedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.amount),
+      (refundedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.cashAmount),
     );
   }
 
@@ -232,6 +233,10 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       taxAmount: invoice.taxAmount,
       total: invoice.total,
       paymentTotal: sumMoney(payments.map(({ amount }) => amount)),
+      amountPaid: invoice.amountPaid,
+      creditedAmount: invoice.creditedAmount,
+      balanceDue: invoice.balanceDue!,
+      settlementStatus: invoice.settlementStatus,
     },
     payments: payments.map(({ id, method, amount }) => {
       const refunded = refundedByPayment.get(id) ?? 0n;
@@ -269,7 +274,8 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
         };
       }),
       payments: reversalPayments.filter((payment) => payment.reversalId === reversal.id)
-        .map((payment) => ({ method: payment.methodSnapshot, amount: payment.amount })),
+        .filter((payment) => payment.cashAmount !== '0.00')
+        .map((payment) => ({ method: payment.methodSnapshot, amount: payment.cashAmount })),
       totals: {
         grossAmount: reversal.grossAmount,
         discountAmount: reversal.discountAmount,
@@ -280,6 +286,7 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
     })),
     eligibility: {
       canVoid: invoice.status === 'completed'
+        && (invoice.settlementStatus === 'settled' || invoice.amountPaid === '0.00')
         && invoiceBusinessDate(invoice.invoiceNumber) === cairoDate(new Date()),
       canRefund: invoice.status === 'completed' || invoice.status === 'partially_refunded',
     },
@@ -293,7 +300,9 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
   const lines = await executor.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
   const payments = await executor.select().from(invoicePayments)
-    .where(eq(invoicePayments.invoiceId, invoiceId)).orderBy(asc(invoicePayments.id));
+    .where(and(
+      eq(invoicePayments.invoiceId, invoiceId), eq(invoicePayments.isInitial, true),
+    )).orderBy(asc(invoicePayments.id));
   const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
@@ -547,9 +556,10 @@ export const createDrizzleSaleRepository = (
             lines: lines.map((line) => ({
               invoiceLineId: line.invoiceLineId, quantity: line.quantity,
             })),
-            payments: payments.map((payment) => ({
-              method: payment.methodSnapshot, amount: payment.amount,
-            })),
+            payments: payments.filter((payment) => payment.cashAmount !== '0.00')
+              .map((payment) => ({
+                method: payment.methodSnapshot, amount: payment.cashAmount,
+              })),
           },
         };
     if (!isDeepStrictEqual(reconstructed, {
@@ -759,7 +769,12 @@ export const createDrizzleSaleRepository = (
             }
             throw error;
           }
-          if (totals.paymentTotal !== totals.total) throw new SaleError('PAYMENT_TOTAL_MISMATCH');
+          if (toCents(totals.paymentTotal) > toCents(totals.total)) {
+            throw new SaleError('PAYMENT_TOTAL_MISMATCH');
+          }
+          if (serviceInputs.length && totals.paymentTotal !== totals.total) {
+            throw new SaleError('PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES');
+          }
 
           const inserted = await transaction.insert(invoices).values({
             branchId: input.branchId,
@@ -782,6 +797,8 @@ export const createDrizzleSaleRepository = (
             taxValue: input.tax?.value ?? null,
             taxAmount: totals.taxAmount,
             total: totals.total,
+            amountPaid: totals.paymentTotal,
+            settlementStatus: totals.paymentTotal === totals.total ? 'settled' : 'open',
             soldAt: operation.soldAt,
             createdAt: operation.soldAt,
           });
@@ -829,6 +846,8 @@ export const createDrizzleSaleRepository = (
             invoiceId,
             method: payment.method,
             amount: payment.amount,
+            operationReference: randomUUID(),
+            isInitial: true,
             // Money is attributed to the shift and the account that took it, so a
             // later instalment can belong to a later shift than the invoice.
             cashierSessionId: input.cashierSessionId,
@@ -875,6 +894,79 @@ export const createDrizzleSaleRepository = (
         }
         return existing.invoice;
       }
+    },
+
+    async recordPayment(operation: RecordInvoicePaymentOperation) {
+      return database.transaction(async (transaction) => {
+        const original = (await transaction.select().from(invoices).where(and(
+          eq(invoices.id, operation.invoiceId),
+          eq(invoices.branchId, operation.input.branchId),
+        )).for('update').limit(1))[0];
+        if (!original || original.status === 'draft') throw new SaleError('INVOICE_NOT_FOUND');
+
+        const existing = (await transaction.select().from(invoicePayments).where(and(
+          eq(invoicePayments.invoiceId, original.id),
+          eq(invoicePayments.operationReference, operation.input.operationReference),
+        )).limit(1))[0];
+        if (existing) {
+          if (existing.method !== operation.input.method || existing.amount !== operation.input.amount) {
+            throw new SaleError('IDEMPOTENCY_CONFLICT');
+          }
+          const replayed = await hydrateInvoice(transaction, original.id);
+          if (!replayed) throw new SaleError('INVOICE_NOT_FOUND');
+          return replayed;
+        }
+        if (!['completed', 'partially_refunded'].includes(original.status)) {
+          throw new SaleError('INVOICE_NOT_REVERSIBLE');
+        }
+        const hasService = (await transaction.select({ id: invoiceLines.id }).from(invoiceLines)
+          .where(and(eq(invoiceLines.invoiceId, original.id), eq(invoiceLines.itemType, 'service')))
+          .limit(1))[0];
+        if (hasService) throw new SaleError('PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES');
+        if (toCents(operation.input.amount) > toCents(original.balanceDue!)) {
+          throw new SaleError('PAYMENT_EXCEEDS_BALANCE');
+        }
+        const session = (await transaction.select().from(cashierSessions).where(and(
+          eq(cashierSessions.id, operation.input.cashierSessionId),
+          eq(cashierSessions.branchId, operation.input.branchId),
+          isNull(cashierSessions.closedAt),
+          gt(cashierSessions.openedAt,
+            new Date(operation.paidAt.getTime() - CASHIER_SESSION_MAX_DURATION_MS)),
+        )).for('update').limit(1))[0];
+        if (!session || (operation.actingAccountRole === 'cashier'
+          && session.openedByAccountId !== operation.actingAccountId)) {
+          throw new SaleError('CASHIER_SESSION_NOT_OPEN');
+        }
+        const beforeState = await hydrateInvoice(transaction, original.id);
+        await transaction.insert(invoicePayments).values({
+          invoiceId: original.id,
+          method: operation.input.method,
+          amount: operation.input.amount,
+          operationReference: operation.input.operationReference,
+          isInitial: false,
+          cashierSessionId: session.id,
+          actingAccountId: operation.actingAccountId,
+          paidAt: operation.paidAt,
+          createdAt: operation.paidAt,
+        });
+        const amountPaid = signedMoney(
+          toCents(original.amountPaid) + toCents(operation.input.amount),
+        );
+        await transaction.update(invoices).set({
+          amountPaid,
+          settlementStatus: toCents(amountPaid) + toCents(original.creditedAmount) === toCents(original.total)
+            ? 'settled' : 'open',
+        }).where(eq(invoices.id, original.id));
+        const afterState = await hydrateInvoice(transaction, original.id);
+        if (!afterState) throw new SaleError('INVOICE_NOT_FOUND');
+        await audit.record(transaction, {
+          module: 'erp-sales', action: 'record_payment', entityType: 'invoice',
+          entityId: original.id, beforeState, afterState,
+          relatedIds: { branchId: original.branchId, cashierSessionId: session.id },
+          createdAt: operation.paidAt,
+        });
+        return afterState;
+      });
     },
 
     async reassignLine(operation: ReassignInvoiceLineOperation) {
@@ -1027,6 +1119,10 @@ export const createDrizzleSaleRepository = (
             && invoiceBusinessDate(original.invoiceNumber) !== cairoDate(operation.reversedAt)) {
             throw new SaleError('VOID_DATE_EXPIRED');
           }
+          if (operation.type === 'void' && original.settlementStatus === 'open'
+            && original.amountPaid !== '0.00') {
+            throw new SaleError('INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID');
+          }
 
           const account = (await transaction.select({
             role: accounts.role, branchId: accounts.branchId, active: accounts.active,
@@ -1084,7 +1180,7 @@ export const createDrizzleSaleRepository = (
             .where(eq(invoicePayments.invoiceId, original.id)).orderBy(asc(invoicePayments.id));
           const priorPayments = await transaction.select({
             invoicePaymentId: invoiceReversalPayments.invoicePaymentId,
-            amount: invoiceReversalPayments.amount,
+            cashAmount: invoiceReversalPayments.cashAmount,
           }).from(invoiceReversalPayments).innerJoin(
             invoiceReversals,
             eq(invoiceReversals.id, invoiceReversalPayments.reversalId),
@@ -1097,17 +1193,41 @@ export const createDrizzleSaleRepository = (
             if (payment.invoicePaymentId === null) continue;
             reversedByPayment.set(
               payment.invoicePaymentId,
-              (reversedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.amount),
+              (reversedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.cashAmount),
+            );
+          }
+          const voidPaymentByMethod = new Map<typeof originalPayments[number]['method'], bigint>();
+          for (const payment of originalPayments) {
+            voidPaymentByMethod.set(
+              payment.method,
+              (voidPaymentByMethod.get(payment.method) ?? 0n) + toCents(payment.amount),
             );
           }
           const requestedPayments = operation.type === 'void'
-            ? originalPayments.map(({ method, amount }) => ({ method, amount }))
+            ? [...voidPaymentByMethod].map(([method, amount]) => ({ method, amount: signedMoney(amount) }))
             : operation.input.payments;
+          const cashPayoutCents = toCents(allocation.total) > toCents(original.balanceDue!)
+            ? toCents(allocation.total) - toCents(original.balanceDue!)
+            : 0n;
+          if (sumMoney(requestedPayments.map(({ amount }) => amount))
+            !== signedMoney(cashPayoutCents)) {
+            throw new SaleError('REFUND_PAYMENT_MISMATCH');
+          }
+          const debtCreditCents = toCents(allocation.total) - cashPayoutCents;
+          const allocatedPayments = requestedPayments.length
+            ? requestedPayments.map((payment, index) => ({
+              ...payment,
+              cashAmount: payment.amount,
+              amount: index === 0
+                ? signedMoney(toCents(payment.amount) + debtCreditCents)
+                : payment.amount,
+            }))
+            : [{ method: 'cash' as const, amount: allocation.total, cashAmount: '0.00' }];
           // How the money physically goes back is the cashier's call, so any method
           // is accepted and only the total is checked. A refund is still linked to
           // the payment it reverses whenever it matches one and fits inside what is
           // left on it, which keeps the per-payment refundable accounting exact.
-          const paymentRows = requestedPayments.map((requested) => {
+          const paymentRows = allocatedPayments.map((requested) => {
             const payment = originalPayments.find((candidate) => candidate.method === requested.method);
             const remaining = payment === undefined
               ? 0n
@@ -1117,11 +1237,9 @@ export const createDrizzleSaleRepository = (
               invoicePaymentId: linked ? payment.id : null,
               method: requested.method,
               amount: requested.amount,
+              cashAmount: requested.cashAmount,
             };
           });
-          if (sumMoney(paymentRows.map(({ amount }) => amount)) !== allocation.total) {
-            throw new SaleError('REFUND_PAYMENT_MISMATCH');
-          }
 
           const beforeState = await hydrateInvoice(transaction, original.id);
           // The money goes back out of whichever till is open now, which is not the
@@ -1173,6 +1291,7 @@ export const createDrizzleSaleRepository = (
               invoicePaymentId: payment.invoicePaymentId,
               methodSnapshot: payment.method,
               amount: payment.amount,
+              cashAmount: payment.cashAmount,
             })));
           }
 
@@ -1361,6 +1480,9 @@ export const createDrizzleSaleRepository = (
         invoiceNumber: invoices.invoiceNumber,
         status: invoices.status,
         total: invoices.total,
+        amountPaid: invoices.amountPaid,
+        balanceDue: invoices.balanceDue,
+        settlementStatus: invoices.settlementStatus,
         clientId: invoices.clientId,
         clientName: invoices.clientNameSnapshot,
         clientPhone: invoices.clientPhoneSnapshot,
@@ -1374,6 +1496,9 @@ export const createDrizzleSaleRepository = (
           invoiceNumber: row.invoiceNumber,
           status: row.status as Exclude<typeof row.status, 'draft'>,
           total: row.total,
+          amountPaid: row.amountPaid,
+          balanceDue: row.balanceDue!,
+          settlementStatus: row.settlementStatus,
           client: { id: row.clientId, name: row.clientName, phone: row.clientPhone },
           employees: employeesByInvoice.get(row.id) ?? [],
           soldAt: asIso(row.soldAt),

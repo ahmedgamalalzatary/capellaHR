@@ -116,7 +116,7 @@ const moneyBySession = async (executor: Executor, sessionIds: number[]) => {
   const refundedRows = await executor.select({
     sessionId: invoiceReversals.cashierSessionId,
     method: invoiceReversalPayments.methodSnapshot,
-    amount: sql<string>`sum(${invoiceReversalPayments.amount})`,
+    amount: sql<string>`sum(${invoiceReversalPayments.cashAmount})`,
   }).from(invoiceReversalPayments)
     .innerJoin(invoiceReversals, eq(invoiceReversals.id, invoiceReversalPayments.reversalId))
     .where(and(

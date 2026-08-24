@@ -23,6 +23,7 @@ import {
   refundQuoteInputSchema,
   refundQuoteSchema,
   reassignInvoiceLineSchema,
+  recordInvoicePaymentSchema,
   voidInvoiceSchema,
 } from '../../../../src/modules/erp/sales/index.js';
 
@@ -45,6 +46,33 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('allows zero or short payment only for product-only sale commands', () => {
+    const productOnly = {
+      ...validDraft,
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+      payments: [],
+    };
+    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
+    expect(completeSaleSchema.safeParse({ ...validDraft, payments: [] }).success).toBe(false);
+  });
+
+  it('validates idempotent later invoice payments', () => {
+    expect(recordInvoicePaymentSchema.parse({
+      cashierSessionId: 13,
+      method: 'cash',
+      amount: '100',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+    })).toEqual({
+      cashierSessionId: 13,
+      method: 'cash',
+      amount: '100.00',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+    });
+    expect(recordInvoicePaymentSchema.safeParse({
+      cashierSessionId: 13, method: 'cash', amount: '0', operationReference: 'bad',
+    }).success).toBe(false);
+  });
+
   it('validates idempotent employee reassignment commands', () => {
     expect(reassignInvoiceLineSchema.parse({
       branchId: 2,
@@ -116,6 +144,7 @@ describe('ERP complete-sale contracts', () => {
       totals: {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       },
+      cashPayout: '185.00',
       payments: [{ method: 'cash', paidAmount: '185.00', refundableAmount: '185.00' }],
     }).success).toBe(true);
   });
@@ -129,6 +158,7 @@ describe('ERP complete-sale contracts', () => {
       totals: {
         grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
       },
+      cashPayout: '185.00',
       payments: [
         { method: 'cash' as const, paidAmount: '0.00', refundableAmount: '0.00' },
         { method: 'visa' as const, paidAmount: '185.00', refundableAmount: '185.00' },
@@ -289,6 +319,10 @@ describe('ERP complete-sale contracts', () => {
         taxAmount: '5.00',
         total: '365.00',
         paymentTotal: '365.00',
+        amountPaid: '365.00',
+        creditedAmount: '0.00',
+        balanceDue: '0.00',
+        settlementStatus: 'settled' as const,
       },
       payments: [{
         method: 'cash', amount: '365.00', refundedAmount: '0.00', refundableAmount: '365.00',
@@ -357,6 +391,10 @@ describe('ERP complete-sale contracts', () => {
       taxAmount: '5.00',
       total: '185.00',
       paymentTotal: '185.00',
+      amountPaid: '185.00',
+      creditedAmount: '0.00',
+      balanceDue: '0.00',
+      settlementStatus: 'settled' as const,
     };
     expect(invoiceTotalsSchema.parse(totals)).toEqual(totals);
     expect(invoiceTotalsSchema.safeParse({ ...totals, total: '184.99' }).success).toBe(false);
@@ -379,6 +417,34 @@ describe('ERP complete-sale contracts', () => {
         { method: 'visa', amount: '84.99' },
       ],
     }).success).toBe(false);
+  });
+
+  it('derives receivable balance from net cash and return credits', () => {
+    expect(invoiceTotalsSchema.safeParse({
+      subtotal: '1000.00', discountAmount: '0.00', taxAmount: '0.00',
+      total: '1000.00', paymentTotal: '300.00', amountPaid: '300.00',
+      creditedAmount: '500.00', balanceDue: '200.00', settlementStatus: 'open',
+    }).success).toBe(true);
+    expect(refundQuoteSchema.safeParse({
+      lines: [{
+        invoiceLineId: 81, quantity: 1, grossAmount: '200.00',
+        discountAmount: '20.00', taxAmount: '5.00', total: '185.00',
+      }],
+      totals: { grossAmount: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+      cashPayout: '185.01', payments: [],
+    }).success).toBe(false);
+  });
+
+  it('allows a payment method to repeat across later instalments', () => {
+    expect(paymentBreakdownSchema.safeParse({
+      total: '300.00',
+      payments: [
+        { method: 'cash', amount: '100.00' },
+        { method: 'cash', amount: '50.00' },
+      ],
+      allowPartialPayment: true,
+      allowRepeatedMethods: true,
+    }).success).toBe(true);
   });
 
   it('publishes the selling cashier on invoices and keeps legacy invoices seller-free', () => {
@@ -444,6 +510,7 @@ describe('ERP complete-sale contracts', () => {
       totals: {
         grossAmount: '0.01', discountAmount: '0.01', taxAmount: '0.00', total: '0.00',
       },
+      cashPayout: '0.00',
       payments: [],
     }).success).toBe(true);
   });
@@ -606,6 +673,7 @@ describe('ERP complete-sale contracts', () => {
       invoiceNumber: 'INV-2026.08.03-14.35-17',
       status: 'completed',
       total: '185.00',
+      amountPaid: '185.00', balanceDue: '0.00', settlementStatus: 'settled',
       client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
       employees: [{ id: 8, name: 'سارة علي' }, { id: 11, name: 'هدى محمود' }],
       soldAt: '2026-08-03T11:35:00.000Z',
@@ -618,6 +686,7 @@ describe('ERP complete-sale contracts', () => {
       invoiceNumber: 'INV-2026.08.03-14.35-17',
       status: 'completed',
       total: '185.00',
+      amountPaid: '185.00', balanceDue: '0.00', settlementStatus: 'settled',
       client: { id: 5, name: null, phone: '01012345678' },
       employees: [],
       soldAt: '2026-08-03T11:35:00.000Z',

@@ -24,6 +24,7 @@ export const erpTabReportTypes = [
   'erp-stock',
   'erp-profit',
   'erp-client-history',
+  'erp-receivables',
 ] as const;
 
 export const erpReportTypes = [...erpTabReportTypes, 'erp-invoice'] as const;

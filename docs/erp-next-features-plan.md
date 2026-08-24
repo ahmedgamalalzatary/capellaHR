@@ -1,6 +1,6 @@
 # Beauty Center ERP — Next Features Plan
 
-Status: **Steps 1-5 built; Steps 6-9 still plan only.** Written 2026-08-19 after reading the
+Status: **Steps 1-6 built; Steps 7-9 still plan only.** Written 2026-08-19 after reading the
 current codebase. Covers the nine changes requested on 2026-08-19.
 
 This document is written to be read by a person who is not going to open the code. Every
@@ -794,9 +794,11 @@ till would be told 150 was taken when the stored row says 100. Same shape as the
 which already compares the stored request this way.
 
 **The invoice gains a settlement state**, kept separate from the refund status so the two
-never interfere: `amount_paid` and a stored generated `balance_due = total - amount_paid`,
-plus a `settlement_status` of `settled` or `open`. A database check enforces
-`0 <= amount_paid <= total`, and that a service-bearing invoice is always `settled` — the
+never interfere: net client money retained as `amount_paid`, return value as
+`credited_amount`, and a stored generated
+`balance_due = total - credited_amount - amount_paid`, plus a `settlement_status` of
+`settled` or `open`. Database checks enforce non-negative values whose sum never exceeds
+the total, and triggers ensure that a service-bearing invoice is always settled — the
 products-only restriction is a database invariant, not just a screen rule.
 
 **No minimum down payment — decided.** The cashier may take any amount, including nothing at
@@ -847,7 +849,7 @@ so a new **`erp-receivables`** report lists open balances by client and age.
 
 | File | Change |
 |---|---|
-| `packages/database/src/schema/erp/sales/index.ts` | `payments` gains `operationReference`; the `(invoice_id, method)` unique index is replaced by a unique `(invoice_id, operation_reference)`; `invoices` gains `amountPaid`, generated `balanceDue`, `settlementStatus`, and the three checks |
+| `packages/database/src/schema/erp/sales/index.ts` | `payments` gains `operationReference` and an initial/instalment fact; the `(invoice_id, method)` unique index is replaced by a unique `(invoice_id, operation_reference)`; `invoices` gains `amountPaid`, `creditedAmount`, generated `balanceDue`, `settlementStatus`, and consistency checks |
 | `packages/database/migrations/0077_partial_payment.sql` + meta | new — add `operation_reference`, drop `erp_invoice_payments_invoice_method_unique` and add `erp_invoice_payments_invoice_reference_unique` in its place, backfill each existing payment with its own reference, and backfill `amount_paid = total`, `settlement_status = 'settled'` for every existing invoice |
 | `packages/contracts/src/modules/erp/sales/index.ts` | the four relaxations in the table above; new `recordInvoicePaymentSchema`; totals gain `amountPaid`, `balanceDue`, `settlementStatus` |
 | `apps/api/src/modules/erp/sales/sale-service.ts` | `recordPayment`; new errors (`PAYMENT_EXCEEDS_BALANCE`, `PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES`, `INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID`) |

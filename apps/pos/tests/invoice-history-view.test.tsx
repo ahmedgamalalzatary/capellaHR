@@ -36,6 +36,9 @@ const item = {
   invoiceNumber: saleFixtures.completedInvoice.invoiceNumber,
   status: 'completed',
   total: saleFixtures.completedInvoice.totals.total,
+  amountPaid: saleFixtures.completedInvoice.totals.amountPaid,
+  balanceDue: saleFixtures.completedInvoice.totals.balanceDue,
+  settlementStatus: saleFixtures.completedInvoice.totals.settlementStatus,
   client: { id: 5, name: saleFixtures.completedInvoice.client.name },
   employees: [
     { id: 8, name: saleFixtures.completedInvoice.lines[0].employee.name },

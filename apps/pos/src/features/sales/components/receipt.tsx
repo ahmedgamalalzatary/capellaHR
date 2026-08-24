@@ -305,12 +305,26 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           <span>الإجمالي النهائي</span>
           <span className="tabular">{invoice.totals.total} ج.م</span>
         </div>
+        <div className="flex justify-between font-semibold">
+          <span>صافي المدفوع</span>
+          <span className="tabular">{invoice.totals.amountPaid} ج.م</span>
+        </div>
+        {invoice.totals.creditedAmount !== '0.00' ? (
+          <div className="flex justify-between">
+            <span>رصيد مرتجعات</span>
+            <span className="tabular">{invoice.totals.creditedAmount} ج.م</span>
+          </div>
+        ) : null}
+        <div className="flex justify-between font-bold">
+          <span>المتبقي</span>
+          <span className="tabular">{invoice.totals.balanceDue} ج.م</span>
+        </div>
       </div>
       <div className="border-b border-dashed border-ink py-3">
         <h2 className="text-sm font-semibold">المدفوعات</h2>
         <div className="mt-1.5 space-y-1.5 text-xs">
-          {invoice.payments.map((payment) => (
-            <div key={payment.method} className="flex justify-between">
+          {invoice.payments.map((payment, index) => (
+            <div key={`${payment.method}-${index}`} className="flex justify-between">
               <span>{paymentLabels[payment.method]}</span>
               <span className="tabular">{payment.amount} ج.م</span>
             </div>

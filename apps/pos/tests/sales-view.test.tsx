@@ -306,6 +306,30 @@ describe('ERP service-sale view', () => {
     expect(mocks.completeSale.mock.calls[0]?.[0].lines[0]).not.toHaveProperty('employeeId');
   });
 
+  it('submits a product-only sale with a balance left open', async () => {
+    mocks.quoteSale.mockResolvedValue({
+      lines: [{
+        itemType: 'product', sourceId: 31, name: 'شامبو', quantity: 1,
+        unitPrice: '50.00', lineTotal: '50.00',
+      }],
+      discount: null, tax: null,
+      totals: { subtotal: '50.00', discountAmount: '0.00', taxAmount: '0.00', total: '50.00' },
+    });
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(await screen.findByRole('button', { name: /شامبو/ }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    fireEvent.change(await screen.findByLabelText('نقدي'), { target: { value: '20.00' } });
+    const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect(review).toHaveProperty('disabled', false));
+    fireEvent.click(review);
+    expect(screen.getByText(/سيبقى على العميل 30.00/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledWith(
+      expect.objectContaining({ payments: [{ method: 'cash', amount: '20.00' }] }),
+    ));
+  });
+
   it('blocks submission until a roster seller is chosen', async () => {
     renderView();
 

@@ -192,7 +192,7 @@ const salesFacts = (filters: ReportFilters) => sql`
 `;
 
 const paymentFacts = (filters: ReportFilters) => sql`
-  SELECT CONCAT('sale-', payment.id) id, invoice.sold_at eventDate, branch.name branchName,
+  SELECT CONCAT('sale-', payment.id) id, payment.paid_at eventDate, branch.name branchName,
     invoice.invoice_number invoiceNumber, 'sale' eventType,
     payment.method paymentMethod, payment.amount amount
   FROM erp_invoice_payments payment
@@ -202,13 +202,13 @@ const paymentFacts = (filters: ReportFilters) => sql`
     sql`invoice.status <> 'draft'`,
     sql`invoice.kind = 'sale'`,
     ...branchFilter(filters, 'invoice.branch_id'),
-    ...timestampFilter(filters, 'invoice.sold_at'),
+    ...timestampFilter(filters, 'payment.paid_at'),
     ...searchFilter(filters, ['invoice.invoice_number', 'payment.method']),
   ])}
   UNION ALL
   SELECT CONCAT(reversal.type, '-', reversal_payment.id) id, reversal.created_at eventDate,
     branch.name branchName, invoice.invoice_number invoiceNumber, reversal.type eventType,
-    reversal_payment.method_snapshot paymentMethod, -reversal_payment.amount amount
+    reversal_payment.method_snapshot paymentMethod, -reversal_payment.cash_amount amount
   FROM erp_invoice_reversal_payments reversal_payment
   INNER JOIN erp_invoice_reversals reversal ON reversal.id = reversal_payment.reversal_id
   -- Never joined back to the original payment: money handed back on a method the
@@ -218,6 +218,7 @@ const paymentFacts = (filters: ReportFilters) => sql`
   INNER JOIN branches branch ON branch.id = reversal.branch_id
   ${condition([
     sql`reversal.status = 'finalized'`,
+    sql`reversal_payment.cash_amount > 0`,
     ...branchFilter(filters, 'reversal.branch_id'),
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, ['invoice.invoice_number', 'reversal_payment.method_snapshot']),
@@ -509,6 +510,23 @@ const clientFacts = (filters: ReportFilters) => sql`
   ])}
 `;
 
+const receivableFacts = (filters: ReportFilters) => sql`
+  SELECT invoice.id id, invoice.sold_at soldAt, branch.name branchName,
+    invoice.invoice_number invoiceNumber, invoice.client_name_snapshot clientName,
+    invoice.client_phone_snapshot clientPhone, invoice.total originalTotal,
+    invoice.amount_paid amountPaid, invoice.credited_amount creditedAmount,
+    invoice.balance_due balanceDue, DATEDIFF(CURRENT_DATE, DATE(invoice.sold_at)) ageDays
+  FROM erp_invoices invoice
+  INNER JOIN branches branch ON branch.id = invoice.branch_id
+  ${condition([
+    sql`invoice.kind = 'sale'`, sql`invoice.status <> 'draft'`, sql`invoice.balance_due > 0`,
+    ...branchFilter(filters, 'invoice.branch_id'), ...timestampFilter(filters, 'invoice.sold_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'invoice.client_name_snapshot', 'invoice.client_phone_snapshot',
+    ]),
+  ])}
+`;
+
 const invoiceFacts = (filters: ReportFilters, selection: ReportSelection) => {
   const invoiceId = selection.mode === 'selected' && selection.ids.length === 1
     ? selection.ids[0]
@@ -548,6 +566,7 @@ const factsFor = (
     case 'erp-stock': return stockFacts(filters);
     case 'erp-profit': return profitFacts(filters);
     case 'erp-client-history': return clientFacts(filters);
+    case 'erp-receivables': return receivableFacts(filters);
     case 'erp-invoice': return invoiceFacts(filters, selection);
   }
 };
@@ -573,6 +592,7 @@ const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-stock': return sql`COUNT(*) totalRecords, ${sum('quantityDelta', 'netQuantityChange')}`;
     case 'erp-profit': return sql`COUNT(*) totalRecords, ${sum('revenue', 'totalRevenue')}, ${sum('cost', 'totalCost')}, ${sum('profit', 'totalProfit')}`;
     case 'erp-client-history': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
+    case 'erp-receivables': return sql`COUNT(*) totalRecords, ${sum('balanceDue', 'totalBalanceDue')}`;
     case 'erp-invoice': return sql`COUNT(*) totalRecords, ${sum('lineTotal', 'lineSubtotal')}`;
   }
 };
@@ -581,6 +601,7 @@ const moneySummaryKeys = new Set([
   'totalSales', 'totalDiscount', 'totalTax', 'totalRevenue', 'totalNetPayments',
   'totalNetSales', 'totalCommission', 'totalRefunds', 'totalVoids',
   'totalNetExpenses', 'totalNetPurchases', 'totalCost', 'totalProfit', 'lineSubtotal',
+  'totalBalanceDue',
 ]);
 
 const normalizeCell = (value: unknown): ReportCell => {

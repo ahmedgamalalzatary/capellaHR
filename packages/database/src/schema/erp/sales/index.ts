@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  boolean,
   date,
   decimal,
   foreignKey,
@@ -57,6 +58,7 @@ export const invoiceAdjustmentKinds = ['percentage', 'fixed'] as const;
 export const invoiceItemTypes = ['service', 'product'] as const;
 export const commissionRules = ['service_default', 'employee_override', 'none'] as const;
 export const erpPaymentMethods = ['cash', 'visa', 'instapay', 'vodafone_cash'] as const;
+export const invoiceSettlementStatuses = ['settled', 'open'] as const;
 
 export const invoices = mysqlTable('erp_invoices', {
   id: int('id').autoincrement().primaryKey(),
@@ -82,6 +84,12 @@ export const invoices = mysqlTable('erp_invoices', {
   taxValue: decimal('tax_value', { precision: 14, scale: 2 }),
   taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
   total: decimal('total', { precision: 14, scale: 2 }).notNull(),
+  amountPaid: decimal('amount_paid', { precision: 14, scale: 2 }).notNull().default('0.00'),
+  creditedAmount: decimal('credited_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+  balanceDue: decimal('balance_due', { precision: 14, scale: 2 })
+    .generatedAlwaysAs(sql`total - credited_amount - amount_paid`, { mode: 'stored' }),
+  settlementStatus: mysqlEnum('settlement_status', invoiceSettlementStatuses)
+    .notNull().default('open'),
   soldAt: timestamp('sold_at', { mode: 'date', fsp: 3 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
@@ -107,6 +115,14 @@ export const invoices = mysqlTable('erp_invoices', {
   check(
     'erp_invoices_totals_consistent',
     sql`${table.total} = ${table.subtotal} - ${table.discountAmount} + ${table.taxAmount} and ${table.total} > 0`,
+  ),
+  check(
+    'erp_invoices_amount_paid_valid',
+    sql`${table.amountPaid} >= 0 and ${table.creditedAmount} >= 0 and ${table.amountPaid} + ${table.creditedAmount} <= ${table.total}`,
+  ),
+  check(
+    'erp_invoices_settlement_status_consistent',
+    sql`(${table.settlementStatus} = 'settled' and ${table.amountPaid} + ${table.creditedAmount} = ${table.total}) or (${table.settlementStatus} = 'open' and ${table.amountPaid} + ${table.creditedAmount} < ${table.total})`,
   ),
   check(
     'erp_invoices_discount_consistent',
@@ -244,6 +260,8 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   invoiceId: int('invoice_id').notNull(),
   method: mysqlEnum('method', erpPaymentMethods).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
+  operationReference: varchar('operation_reference', { length: 36 }).notNull(),
+  isInitial: boolean('is_initial').notNull().default(true),
   /**
    * The shift that actually took this money, the account that took it, and when.
    * Today they always match the invoice, but once an invoice can be paid in
@@ -258,7 +276,8 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   foreignKey({ name: 'erp_invoice_payments_invoice_fk', columns: [table.invoiceId], foreignColumns: [invoices.id] }),
   foreignKey({ name: 'erp_invoice_payments_session_fk', columns: [table.cashierSessionId], foreignColumns: [cashierSessions.id] }),
   foreignKey({ name: 'erp_invoice_payments_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
-  uniqueIndex('erp_invoice_payments_invoice_method_unique').on(table.invoiceId, table.method),
+  uniqueIndex('erp_invoice_payments_invoice_reference_unique')
+    .on(table.invoiceId, table.operationReference),
   // Lets a refund line point at a payment and its invoice together, so it cannot name a
   // payment that belongs to a different invoice.
   uniqueIndex('erp_invoice_payments_id_invoice_unique').on(table.id, table.invoiceId),
@@ -337,6 +356,8 @@ export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments
    */
   invoicePaymentId: int('invoice_payment_id'),
   methodSnapshot: mysqlEnum('method_snapshot', erpPaymentMethods).notNull(),
+  /** Physical money returned; `amount` also includes debt cancelled by the return. */
+  cashAmount: decimal('cash_amount', { precision: 14, scale: 2 }).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
 }, (table) => [
   foreignKey({ name: 'erp_reversal_payments_reversal_invoice_fk', columns: [table.reversalId, table.invoiceId], foreignColumns: [invoiceReversals.id, invoiceReversals.invoiceId] }),
@@ -344,6 +365,7 @@ export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments
   foreignKey({ name: 'erp_reversal_payments_payment_invoice_fk', columns: [table.invoicePaymentId, table.invoiceId], foreignColumns: [invoicePayments.id, invoicePayments.invoiceId] }),
   uniqueIndex('erp_invoice_reversal_payments_method_unique').on(table.reversalId, table.methodSnapshot),
   check('erp_invoice_reversal_payments_amount_positive', sql`${table.amount} > 0`),
+  check('erp_invoice_reversal_payments_cash_valid', sql`${table.cashAmount} >= 0 and ${table.cashAmount} <= ${table.amount}`),
 ]);
 
 export const invoiceDailySequences = mysqlTable('erp_invoice_daily_sequences', {

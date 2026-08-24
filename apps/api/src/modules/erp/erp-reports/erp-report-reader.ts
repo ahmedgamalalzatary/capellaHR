@@ -164,6 +164,15 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['eventType', 'نوع الحركة'], ['employeeName', 'الموظف'], ['amount', 'المبلغ'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
+  'erp-receivables': {
+    title: 'تقرير أرصدة العملاء',
+    columns: [
+      ['id', 'المعرف'], ['soldAt', 'تاريخ البيع'], ['branchName', 'الفرع'],
+      ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'], ['clientPhone', 'الهاتف'],
+      ['originalTotal', 'قيمة الفاتورة'], ['amountPaid', 'صافي المدفوع'],
+      ['creditedAmount', 'رصيد المرتجعات'], ['balanceDue', 'المستحق'], ['ageDays', 'العمر بالأيام'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
   'erp-invoice': {
     title: 'فاتورة مبيعات',
     columns: [

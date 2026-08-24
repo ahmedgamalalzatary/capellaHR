@@ -51,9 +51,11 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-stock': 'تقرير المخزون',
   'erp-profit': 'تقرير الأرباح',
   'erp-client-history': 'تقرير سجل العملاء',
+  'erp-receivables': 'تقرير أرصدة العملاء',
 };
 
 const summaryLabels: Record<string, string> = {
+  totalBalanceDue: 'إجمالي الأرصدة المستحقة',
   totalRecords: 'إجمالي السجلات', totalSales: 'إجمالي المبيعات',
   totalDiscount: 'إجمالي الخصومات', totalTax: 'إجمالي الضرائب',
   totalQuantity: 'صافي الكمية', totalRevenue: 'صافي الإيراد',
