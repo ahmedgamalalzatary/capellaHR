@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -8,7 +8,9 @@ class HealthResponse(BaseModel):
     version: str
 
 
+
 class VerifyResponse(BaseModel):
+
     success: bool
     decision: str
 
@@ -24,6 +26,19 @@ class VerifyResponse(BaseModel):
     similarity: Optional[float] = None
 
     reason: Optional[str] = None
+
+    # Diagnostics
+    received_frames: int = 0
+    processed_frames: int = 0
+
+    invalid_image_frames: int = 0
+    no_face_frames: int = 0
+    multiple_face_frames: int = 0
+
+    live_frames: int = 0
+    spoof_frames: int = 0
+
+    frame_results: list[dict[str, Any]] = []
 
 class EnrollResponse(BaseModel):
     success: bool
