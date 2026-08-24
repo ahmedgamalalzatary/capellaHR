@@ -23,6 +23,7 @@ import {
 import {
   createCommissionModule,
   createErpAssignmentModule,
+  createErpBookingsModule,
   createErpCatalogModule,
   createErpClientsModule,
   createErpExpensesModule,
@@ -62,6 +63,10 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
 
   const branchModule = createBranchesModule(database);
   const auditModule = createAuditModule(database, { timeZone });
+  const erpBookingsModule = enabled('erp-bookings') ? createErpBookingsModule(database, {
+    audit: auditModule.erp,
+    branches: branchModule.erp,
+  }) : undefined;
   let reconcileAbsencesBeforeShiftChange: AttendanceShiftChangeReconciler = () => Promise.resolve(0);
   const employeeRepository = createDrizzleEmployeeRepository(
     database,
@@ -180,9 +185,12 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     deviceModule?.lifecycle,
     employeeFinancialLifecycle,
     employeeUploadStore,
-    // Left unwired deliberately: nothing can hold open work against an employee until the
-    // bookings and service-queue modules exist. Wire them here when they land.
-    undefined,
+    erpBookingsModule ? {
+      countOpenWork: async (employeeId) => ({
+        futureBookings: await erpBookingsModule.service.countFutureForEmployee(employeeId),
+        openQueueTickets: 0,
+      }),
+    } : undefined,
   );
   applyPendingDeactivation = async (employeeId, at, context) => {
     await employeeModule.service.applyPendingDeactivation(employeeId, at, context);
@@ -253,6 +261,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     employees: employeeModule.erp,
     assignment: required(erpAssignmentModule, 'erp-assignment').service,
     ...(payrollModule ? { payroll: payrollModule.erp } : {}),
+    ...(erpBookingsModule ? { bookings: erpBookingsModule.conversion } : {}),
   }) : undefined;
   const erpTransfersModule = enabled('erp-transfers') && salesModule
     ? createErpTransfersModule(database, {
@@ -330,6 +339,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
       erpSaleService: salesModule.sales,
     } : {}),
     ...(erpClientsModule ? { erpClientService: erpClientsModule.service } : {}),
+    ...(erpBookingsModule ? { erpBookingService: erpBookingsModule.service } : {}),
     ...(erpCatalogModule ? {
       erpCategoryService: erpCatalogModule.categories,
       erpServiceCatalogService: erpCatalogModule.services,

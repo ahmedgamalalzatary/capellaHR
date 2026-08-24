@@ -1,6 +1,7 @@
 import {
   Armchair,
   ArrowLeftRight,
+  CalendarDays,
   Clock3,
   FileText,
   LayoutDashboard,
@@ -35,6 +36,7 @@ export const adminNavigation: NavGroup[] = [
     items: [
       { href: '/', label: 'لوحة الإدارة', icon: LayoutDashboard },
       { href: '/sales', label: 'بيع جديد', icon: ShoppingCart },
+      { href: '/bookings', label: 'دفتر المواعيد', icon: CalendarDays },
       { href: '/invoices', label: 'الفواتير', icon: ReceiptText },
       { href: '/refunds', label: 'المرتجعات', icon: RotateCcw },
       { href: '/clients', label: 'العملاء', icon: Users },
@@ -78,6 +80,7 @@ export const cashierNavigation: NavGroup[] = [
     items: [
       { href: '/', label: 'الوردية', icon: Clock3 },
       { href: '/sales', label: 'بيع جديد', icon: ShoppingCart },
+      { href: '/bookings', label: 'دفتر المواعيد', icon: CalendarDays },
       { href: '/invoices', label: 'الفواتير', icon: ReceiptText },
       { href: '/refunds', label: 'المرتجعات', icon: RotateCcw },
       { href: '/clients', label: 'العملاء', icon: Users },

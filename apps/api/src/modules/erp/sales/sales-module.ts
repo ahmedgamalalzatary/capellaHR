@@ -25,6 +25,7 @@ export const createSalesModule = (
     employees: ErpEmployeeCapability;
     assignment: EmployeeAssignmentService;
     payroll?: ErpPayrollCapability;
+    bookings?: Parameters<typeof createSaleService>[0]['bookings'];
   },
 ) => {
   const cashierSessionRepository = createDrizzleCashierSessionRepository(
@@ -49,6 +50,7 @@ export const createSalesModule = (
     resolveBranchContext: createErpBranchContextResolver(capabilities),
     assignment: capabilities.assignment,
     invoiceNumbers: createInvoiceNumberAllocator(createDrizzleInvoiceSequenceStore(database)),
+    ...(capabilities.bookings ? { bookings: capabilities.bookings } : {}),
   });
   return { cashierSessionRepository, cashierSessions, branchCashierRoster, saleRepository, sales };
 };

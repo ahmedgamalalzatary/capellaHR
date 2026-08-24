@@ -39,7 +39,7 @@ describe('edition registry', () => {
       'devices', 'shifts', 'attendance', 'reports',
       'erp-assignment', 'erp-catalog', 'erp-clients', 'erp-stock',
       'erp-suppliers', 'erp-expenses', 'erp-sales', 'erp-commissions', 'erp-reports',
-      'erp-transfers', 'erp-fixed-assets',
+      'erp-transfers', 'erp-fixed-assets', 'erp-bookings',
     ]));
     expect(resolved.modules).not.toContain('payroll');
     expect(resolved.modules).not.toContain('self-service');
@@ -77,6 +77,8 @@ describe('edition registry', () => {
     expect(MODULE_REGISTRY.bonuses.requires).toContain('payroll');
     expect(MODULE_REGISTRY.attendance.requires).toEqual(['devices', 'shifts']);
     expect(MODULE_REGISTRY['weekly-day-offs'].requires).toEqual(['payroll']);
+    expect(MODULE_REGISTRY['erp-bookings'].requires)
+      .toEqual(['erp-clients', 'erp-catalog', 'erp-sales']);
   });
 
   it('allows each dedicated frontend only in editions that include its product plane', () => {

@@ -29,6 +29,7 @@ const adminGroups: ReadonlyArray<{
     icon: ShoppingCart,
     links: [
       { href: '/sales', label: 'بيع جديد' },
+      { href: '/bookings', label: 'دفتر المواعيد' },
       { href: '/invoices', label: 'الفواتير والإيصالات' },
       { href: '/clients', label: 'العملاء' },
     ],

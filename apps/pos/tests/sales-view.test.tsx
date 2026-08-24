@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   listAssignableEmployees: vi.fn(),
   clientPickerProps: vi.fn(),
   servicePickerProps: vi.fn(),
+  getBooking: vi.fn(),
 }));
 
 vi.mock('../src/features/auth', () => ({
@@ -82,6 +83,10 @@ vi.mock('../src/features/sales/api/sales-api', () => ({
   quoteSale: mocks.quoteSale,
   completeSale: mocks.completeSale,
 }));
+vi.mock('../src/features/bookings', () => ({
+  getBooking: mocks.getBooking,
+  bookingQueryKeys: { detail: (id: number) => ['erp-bookings', 'detail', id, 'own'] },
+}));
 vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/features/sales/offline-sale-sync')>();
   return {
@@ -104,9 +109,9 @@ import {
 // The saved-sale screen now prints the real receipt, so the stub must be a whole invoice.
 const invoice = saleFixtures.completedInvoice;
 
-const renderView = () => {
+const renderView = (bookingId?: number) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><SalesView /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><SalesView {...(bookingId === undefined ? {} : { bookingId })} /></QueryClientProvider>);
   return client;
 };
 
@@ -177,7 +182,23 @@ describe('ERP service-sale view', () => {
       { id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 },
     ]);
     mocks.synchronizeOfflineSales.mockReset();
+    mocks.getBooking.mockReset();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  });
+
+  it('prefills an arrived booking and carries it into the sale command', async () => {
+    mocks.getBooking.mockResolvedValue({
+      id: 22, branchId: 2,
+      client: { id: 5, fullName: 'منى أحمد', phone: '01012345678' },
+      scheduledAt: '2026-08-25T07:30:00.000Z', status: 'arrived', note: null, invoiceId: null,
+      services: [{ serviceId: 21, serviceName: 'صبغة شعر', servicePrice: '200.00', preferredEmployee: { id: 8, name: 'سارة علي' } }],
+      createdAt: '', updatedAt: '',
+    });
+    renderView(22);
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    ));
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
   });
 
   afterEach(() => {

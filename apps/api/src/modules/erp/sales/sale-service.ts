@@ -194,8 +194,21 @@ export const createSaleService = (dependencies: {
   invoiceNumbers: {
     allocate(): Promise<{ invoiceNumber: string; allocatedAt: Date }>;
   };
+  bookings?: {
+    convert(
+      transaction: SaleTransaction,
+      input: {
+        bookingId: number;
+        branchId: number;
+        clientId: number;
+        invoiceId: number;
+        serviceIds: number[];
+        convertedAt: Date;
+      },
+    ): Promise<void>;
+  };
 }) => {
-  const { repository, resolveBranchContext, assignment, invoiceNumbers } = dependencies;
+  const { repository, resolveBranchContext, assignment, invoiceNumbers, bookings } = dependencies;
   const resolveInput = async (actor: ErpAccountIdentity, input: InternalCompleteSaleInput) => {
     const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
     return { resolved: { ...input, branchId }, accountId };
@@ -238,6 +251,26 @@ export const createSaleService = (dependencies: {
         const employeeIds = [...new Set(resolved.lines.flatMap((line) => (
           line.itemType === 'service' ? [line.employeeId] : []
         )))].sort((left, right) => left - right);
+        const bookingHandover = resolved.bookingId === undefined ? undefined
+          : async (transaction: SaleTransaction, invoice: InvoiceDto) => {
+              if (!bookings) throw new SaleError('SALE_VALIDATION_FAILED');
+              await bookings.convert(transaction, {
+                bookingId: resolved.bookingId!,
+                branchId: resolved.branchId,
+                clientId: resolved.clientId,
+                invoiceId: invoice.id,
+                serviceIds: resolved.lines.flatMap((line) => (
+                  line.itemType === 'service' ? [line.serviceId] : []
+                )),
+                convertedAt: number.allocatedAt,
+              });
+            };
+        const afterInvoice = bookingHandover || options?.afterInvoice
+          ? async (transaction: SaleTransaction, invoice: InvoiceDto) => {
+              await bookingHandover?.(transaction, invoice);
+              await options?.afterInvoice?.(transaction, invoice);
+            }
+          : undefined;
         const invoice = await repository.complete({
           input: resolved,
           actingAccountId: accountId,
@@ -246,7 +279,7 @@ export const createSaleService = (dependencies: {
           soldAt: number.allocatedAt,
           ...(options?.pricing ? { pricing: options.pricing } : {}),
           ...(options?.kind ? { kind: options.kind } : {}),
-          ...(options?.afterInvoice ? { afterInvoice: options.afterInvoice } : {}),
+          ...(afterInvoice ? { afterInvoice } : {}),
           ...(employeeIds.length ? {
             assertEmployees: async (context: unknown) => {
               const assignable: AssignableEmployee[] = [];

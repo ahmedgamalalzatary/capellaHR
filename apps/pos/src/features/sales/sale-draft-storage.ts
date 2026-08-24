@@ -15,6 +15,7 @@ export type SaleDraftOwner = {
 };
 
 export type SaleDraft = {
+  bookingId?: number;
   client: Client | null;
   employee: AssignableEmployee | null;
   seller: BranchCashierRosterMember | null;
@@ -122,7 +123,8 @@ const hasIdentity = (value: unknown): value is Record<string, unknown> & {
 const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
   if (!isRecord(value)) return false;
   const payments = value.payments;
-  return (value.client === null || (isRecord(value.client)
+  return (value.bookingId === undefined || (Number.isInteger(value.bookingId) && Number(value.bookingId) > 0))
+    && (value.client === null || (isRecord(value.client)
     && typeof value.client.id === 'number'
     && typeof value.client.branchId === 'number'))
     && (value.employee === null || (hasIdentity(value.employee)

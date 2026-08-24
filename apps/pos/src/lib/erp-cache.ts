@@ -9,6 +9,7 @@ const roots = {
   expenses: ['expenses'],
   commissions: ['erp-commissions'],
   reports: ['erp-reports'],
+  bookings: ['erp-bookings'],
 } as const;
 
 export type ErpMutationEffect =
@@ -23,7 +24,7 @@ export type ErpMutationEffect =
 const affected: Record<ErpMutationEffect, ReadonlyArray<keyof typeof roots>> = {
   catalog: ['catalog', 'reports'],
   client: ['clients', 'reports'],
-  sale: ['sales', 'clients', 'products', 'commissions', 'reports'],
+  sale: ['sales', 'clients', 'products', 'commissions', 'reports', 'bookings'],
   reversal: ['sales', 'clients', 'products', 'commissions', 'reports'],
   purchase: ['suppliers', 'products', 'reports'],
   expense: ['expenses', 'reports'],

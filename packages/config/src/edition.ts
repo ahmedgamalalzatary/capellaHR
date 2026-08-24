@@ -11,7 +11,7 @@ export const MODULE_NAMES = [
   'reports', 'self-service', 'dashboard',
   'erp-assignment', 'erp-catalog', 'erp-clients', 'erp-stock', 'erp-suppliers',
   'erp-expenses', 'erp-sales', 'erp-commissions', 'erp-reports', 'erp-transfers',
-  'erp-fixed-assets',
+  'erp-fixed-assets', 'erp-bookings',
 ] as const;
 
 export type ModuleName = (typeof MODULE_NAMES)[number];
@@ -56,6 +56,7 @@ export const MODULE_REGISTRY = {
   // A written-down list of the branch's own furniture and machines. Nothing
   // reads it and it reads nothing: a leaf, on purpose.
   'erp-fixed-assets': module('sellable', []),
+  'erp-bookings': module('sellable', ['erp-clients', 'erp-catalog', 'erp-sales']),
   'erp-sales': module('sellable', ['erp-assignment']),
   // Moving stock between branches is a sale from one branch to the other.
   'erp-transfers': module('sellable', ['erp-stock', 'erp-sales']),
@@ -100,6 +101,7 @@ const ERP_MODULES: readonly ModuleName[] = [
   'erp-reports',
   'erp-transfers',
   'erp-fixed-assets',
+  'erp-bookings',
 ];
 
 const EDITION_ROOTS: Record<EditionName, readonly ModuleName[]> = {

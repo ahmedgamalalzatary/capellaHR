@@ -201,7 +201,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Costing | **Last purchase cost** is the cost basis |
 | Suppliers | **No returns; purchases always fully paid** — no supplier balances or credit |
 | Negative stock | **Never allowed, with no override** |
-| Appointments | **Out of scope** |
+| Appointments | **Staff-only appointment book in the POS.** Admin or Cashier records a client, one or more services, optional preferred employees, date/time and note. Arrival hands the booking to the normal sale flow; there is no public booking page, deposit, reminder integration, or automatic double-booking rule. |
 | Backup/restore | **No in-app backup feature.** (Strong ops recommendation, separate from the product: automated server-level MySQL dumps per installation) |
 | Categories | **One table** with a type flag (`service` / `expense`), name unique per type — chosen as the production-ready option (single CRUD, single audit path) |
 | Multi-frontend security | **Same-origin `/api` proxy path per frontend** (§5): cookies stay `SameSite=strict` host-only, no CORS relaxation, independent HR/POS sessions |

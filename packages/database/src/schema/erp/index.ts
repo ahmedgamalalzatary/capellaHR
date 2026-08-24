@@ -1,4 +1,5 @@
 export * from './catalog/index.js';
+export * from './bookings/index.js';
 export * from './clients/index.js';
 export * from './erp-reports/index.js';
 export * from './expenses/index.js';

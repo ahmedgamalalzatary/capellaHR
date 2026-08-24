@@ -46,6 +46,21 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('accepts an optional booking handover', () => {
+    const parsed = completeSaleSchema.parse({
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      bookingId: 22,
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+      lines: [{
+        itemType: 'service', serviceId: 21, quantity: 1,
+        unitPrice: '200.00', employeeId: 8,
+      }],
+      payments: [{ method: 'cash', amount: '200.00' }],
+    });
+    expect(parsed.bookingId).toBe(22);
+  });
   it('allows zero or short payment only for product-only sale commands', () => {
     const productOnly = {
       ...validDraft,

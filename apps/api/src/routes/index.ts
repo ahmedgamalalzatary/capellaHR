@@ -28,7 +28,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type ClientService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
+import { createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -67,6 +67,7 @@ export const createApiRouter = (dependencies: {
   erpBranchCashierRosterService?: BranchCashierRosterService;
   erpSaleService?: SaleService;
   erpClientService?: ClientService;
+  erpBookingService?: BookingService;
   erpCategoryService?: CategoryService;
   erpServiceCatalogService?: ServiceCatalogService;
   erpProductStockService?: ProductStockService;
@@ -204,6 +205,15 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createErpClientsRouter(dependencies.erpClientService),
+      );
+    }
+    if (dependencies.erpBookingService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use(
+        '/erp/bookings',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+        createErpBookingsRouter(dependencies.erpBookingService),
       );
     }
     if (dependencies.erpCategoryService) {

@@ -32,6 +32,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { useSession } from '@/features/auth';
+import { bookingQueryKeys, getBooking } from '@/features/bookings';
 import {
   getCurrentCashierSession,
   listCashierSessionBranches,
@@ -193,7 +194,7 @@ const removePendingRequest = (input: CompleteSaleInput) => {
   removeOfflineSale(input.idempotencyKey);
 };
 
-export function SalesView() {
+export function SalesView({ bookingId }: { bookingId?: number }) {
   const auth = useSession();
   const actor = auth.data?.actor;
   const isAdmin = actor?.type === 'admin';
@@ -312,6 +313,7 @@ export function SalesView() {
           cashierSessionId={session.data.id}
           accountId={null}
           role="admin"
+          {...(bookingId === undefined ? {} : { bookingId })}
         />
       </section>
     );
@@ -325,6 +327,7 @@ export function SalesView() {
       cashierSessionId={session.data.id}
       accountId={actor.type === 'cashier' ? actor.accountId : null}
       role={actor.type}
+      {...(bookingId === undefined ? {} : { bookingId })}
     />
   );
 }
@@ -403,12 +406,14 @@ function SaleWorkspace({
   cashierSessionId,
   accountId,
   role,
+  bookingId,
 }: {
   branchId?: number;
   workspaceBranchId: number;
   cashierSessionId: number;
   accountId: number | null;
   role: 'admin' | 'cashier';
+  bookingId?: number;
 }) {
   const queryClient = useQueryClient();
   const workspaceOwner = useMemo<PendingSaleOwner>(() => ({
@@ -418,6 +423,8 @@ function SaleWorkspace({
     cashierSessionId,
   }), [accountId, cashierSessionId, role, workspaceBranchId]);
   const [client, setClient] = useState<Client | null>(null);
+  const [activeBookingId, setActiveBookingId] = useState<number>();
+  const [bookingPrefillError, setBookingPrefillError] = useState<string>();
   const [employee, setEmployee] = useState<AssignableEmployee | null>(null);
   const [seller, setSeller] = useState<BranchCashierRosterMember | null>(null);
   const roster = useQuery({
@@ -431,6 +438,16 @@ function SaleWorkspace({
     if (roster.isSuccess && seller && !sellerOnRoster) setSeller(null);
   }, [roster.isSuccess, seller, sellerOnRoster]);
   const [lines, setLines] = useState<Line[]>([]);
+  const booking = useQuery({
+    queryKey: bookingQueryKeys.detail(bookingId ?? 0, branchId),
+    queryFn: () => getBooking(bookingId!, branchId),
+    enabled: bookingId !== undefined,
+  });
+  const bookingEmployees = useQuery({
+    queryKey: employeeAssignmentQueryKeys.present(branchId),
+    queryFn: () => listAssignableEmployees(branchId === undefined ? {} : { branchId }),
+    enabled: bookingId !== undefined,
+  });
   const [discountKind, setDiscountKind] = useState<AdjustmentKind>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [taxKind, setTaxKind] = useState<AdjustmentKind>('percentage');
@@ -477,6 +494,49 @@ function SaleWorkspace({
   const hasDraftProgress = Boolean(
     client || employee || seller || lines.length > 0 || discountValue || taxValue || paymentsTouched,
   );
+  useEffect(() => {
+    if (!draftHydrated || !booking.data || !bookingEmployees.data
+      || activeBookingId !== undefined || offeredDraft || hasDraftProgress) return;
+    if (booking.data.status !== 'arrived') {
+      setBookingPrefillError('هذا الحجز لم يعد جاهزًا للبيع.');
+      return;
+    }
+    let cancelled = false;
+    void getClient(booking.data.client.id, branchId).then((savedClient) => {
+      if (cancelled) return;
+      const present = new Map(bookingEmployees.data.map((item) => [item.id, item]));
+      setClient(savedClient);
+      setLines(booking.data.services.map((bookedService) => ({
+        itemType: 'service' as const,
+        quantity: 1,
+        unitPrice: bookedService.servicePrice ?? '',
+        employee: bookedService.preferredEmployee
+          ? present.get(bookedService.preferredEmployee.id) ?? null
+          : null,
+        service: {
+          id: bookedService.serviceId,
+          branchId: booking.data.branchId,
+          categoryId: 0,
+          categoryName: '',
+          categoryIsActive: true,
+          name: bookedService.serviceName,
+          description: null,
+          price: bookedService.servicePrice,
+          commissionPercent: '0.00',
+          isActive: true,
+          createdAt: '',
+          updatedAt: '',
+        },
+      })));
+      setActiveBookingId(booking.data.id);
+    }).catch((cause) => {
+      if (!cancelled) setBookingPrefillError(errorMessage(cause));
+    });
+    return () => { cancelled = true; };
+  }, [
+    activeBookingId, booking.data, bookingEmployees.data, branchId,
+    draftHydrated, hasDraftProgress, offeredDraft,
+  ]);
   const matchesActiveDraft = useCallback((pending: PendingSale) => (
     pending.owner.accountId === workspaceOwner.accountId
       && pending.owner.role === workspaceOwner.role
@@ -703,6 +763,7 @@ function SaleWorkspace({
       return;
     }
     const saved = writeSaleDraft(workspaceOwner, {
+      ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
       client,
       employee,
       seller,
@@ -722,6 +783,7 @@ function SaleWorkspace({
     discountKind,
     discountValue,
     employee,
+    activeBookingId,
     hasDraftProgress,
     idempotencyKey,
     lines,
@@ -817,6 +879,7 @@ function SaleWorkspace({
       clientId: client.id,
       sellerEmployeeId: seller.id,
       cashierSessionId,
+      ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
       idempotencyKey,
       lines: lines.map(({ service, quantity, unitPrice, itemType, employee: performer }) => (
         itemType === 'product'
@@ -845,6 +908,7 @@ function SaleWorkspace({
       owner: workspaceOwner,
       input,
       recoveryDraft: {
+        ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
         client,
         employee: hasServiceLines ? employee : null,
         seller,
@@ -878,6 +942,7 @@ function SaleWorkspace({
     removeSaleDraft(workspaceOwner, idempotencyKey);
     selectClient(null);
     setEmployee(draft.employee);
+    setActiveBookingId(draft.bookingId);
     setSeller(draft.seller ?? null);
     setLines(restoredLines(draft));
     setDiscountKind(draft.discountKind);
@@ -918,6 +983,7 @@ function SaleWorkspace({
   const reset = () => {
     selectClient(null);
     setEmployee(null);
+    setActiveBookingId(undefined);
     setSeller(null);
     setLines([]);
     setPayments({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
@@ -945,6 +1011,7 @@ function SaleWorkspace({
     if (!draft) return;
     setOfferedDraft(null);
     setEmployee(draft.employee);
+    setActiveBookingId(draft.bookingId);
     setSeller(draft.seller ?? null);
     setLines(restoredLines(draft));
     setDiscountKind(draft.discountKind);
@@ -1021,6 +1088,14 @@ function SaleWorkspace({
 
       {draftRestored ? (
         <Notice tone="success">تم استعادة مسودة البيع المحفوظة لهذا الحساب والوردية.</Notice>
+      ) : null}
+
+      {bookingPrefillError || booking.isError ? (
+        <Notice tone="danger" role="alert">
+          {bookingPrefillError ?? errorMessage(booking.error)}
+        </Notice>
+      ) : activeBookingId !== undefined ? (
+        <Notice tone="success">تم تحميل الحجز في البيع. أكمل اختيار الكاشير والموظفين ثم احفظ الفاتورة.</Notice>
       ) : null}
 
       {conflictRestored ? (

@@ -1,6 +1,6 @@
 # Beauty Center ERP — Next Features Plan
 
-Status: **Steps 1-6 built; Steps 7-9 still plan only.** Written 2026-08-19 after reading the
+Status: **Steps 1-6 and 9 built; Steps 7-8 still plan only.** Written 2026-08-19 after reading the
 current codebase. Covers the nine changes requested on 2026-08-19.
 
 This document is written to be read by a person who is not going to open the code. Every
@@ -1126,6 +1126,26 @@ New module `erp-bookings`.
 | `apps/pos/tests/e2e/bookings.spec.ts` | new |
 
 **Optional:** an `erp-bookings` report type for no-show and conversion rates.
+
+### Built — what the plan missed
+
+Step 9 is implemented. It uses migration `0078` because the planned queue module has not
+been built and therefore did not consume that number. The booking module remains independent
+of the queue; when Step 8 lands, converted bookings will enter it through the ordinary sale
+completion path.
+
+Two necessary workflow details were added while building:
+
+- An arrived booking can be returned to `booked` when the prefilled sale is abandoned, so a
+  staff member never leaves the appointment permanently claimed by mistake.
+- Preferred employees can be changed or cleared on open bookings. This is required to resolve
+  the employee-termination pre-check; without it, the only escape from a future booking assigned
+  to a departing employee would have been cancelling the client's appointment.
+
+The appointment form prints a Code 128 booking ticket after saving. Overdue booked appointments
+are grouped under "did not arrive" and are never changed automatically. Completing the prefilled
+sale conditionally stamps the arrived booking as converted inside the sale transaction; the
+client and booked service set must match, and idempotent sale replay reconstructs the booking id.
 
 ---
 

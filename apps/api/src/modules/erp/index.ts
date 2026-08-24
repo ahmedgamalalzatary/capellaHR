@@ -2,6 +2,7 @@ export * from './branch-context.js';
 export * from './erp-actor.js';
 export * from './hr-capabilities.js';
 export * from './assignment/index.js';
+export * from './bookings/index.js';
 export * from './catalog/index.js';
 export * from './clients/index.js';
 export * from './commissions/index.js';

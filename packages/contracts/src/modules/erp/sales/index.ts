@@ -264,6 +264,7 @@ export const completeSaleSchema = z.object({
   clientId: positiveMysqlIntSchema,
   sellerEmployeeId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
+  bookingId: positiveMysqlIntSchema.optional(),
   idempotencyKey: z.string().uuid(),
   lines: z.array(completeSaleLineSchema).min(1).max(100),
   discount: adjustmentSchema.optional(),

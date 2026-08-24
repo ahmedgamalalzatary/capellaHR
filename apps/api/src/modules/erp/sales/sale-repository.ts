@@ -7,6 +7,7 @@ import {
   clients,
   commissionLedgerEntries,
   erpCategories,
+  erpBookings,
   erpProducts,
   erpProductStocks,
   erpStockMovements,
@@ -303,6 +304,8 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
     .where(and(
       eq(invoicePayments.invoiceId, invoiceId), eq(invoicePayments.isInitial, true),
     )).orderBy(asc(invoicePayments.id));
+  const booking = (await executor.select({ id: erpBookings.id }).from(erpBookings)
+    .where(eq(erpBookings.invoiceId, invoiceId)).limit(1))[0];
   const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
@@ -310,6 +313,7 @@ const reconstructInput = async (executor: Executor, invoiceId: number) => {
       sellerEmployeeId: invoice.sellerEmployeeId,
     }),
     cashierSessionId: invoice.cashierSessionId,
+    ...(booking ? { bookingId: booking.id } : {}),
     idempotencyKey: invoice.idempotencyKey,
     lines: lines.map((line) => line.itemType === 'service'
       ? {

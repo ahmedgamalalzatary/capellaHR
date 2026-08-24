@@ -145,6 +145,36 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
 };
 
 describe('ERP sale service', () => {
+  it('claims an arrived booking inside the sale transaction', async () => {
+    const converted = vi.fn().mockResolvedValue(undefined);
+    const setupResult = setup();
+    const service = createSaleService({
+      repository: setupResult.repository,
+      resolveBranchContext: vi.fn().mockResolvedValue({ accountId: 3, branchId: 2 }),
+      assignment: { assertAssignable: setupResult.assertAssignable },
+      invoiceNumbers: {
+        allocate: vi.fn().mockResolvedValue({
+          invoiceNumber: invoice.invoiceNumber,
+          allocatedAt: new Date(invoice.soldAt),
+        }),
+      },
+      bookings: { convert: converted },
+    });
+    await service.complete(actor, { ...input, bookingId: 22 });
+    const operation = setupResult.completeRepository.mock.calls[0]![0];
+    await operation.afterInvoice?.({ id: 'tx' } as never, invoice);
+    expect(converted).toHaveBeenCalledWith(
+      { id: 'tx' },
+      expect.objectContaining({
+        bookingId: 22,
+        branchId: 2,
+        clientId: 5,
+        invoiceId: 44,
+        serviceIds: [21],
+      }),
+    );
+  });
+
   it('records a later payment through a branch-scoped operation', async () => {
     const { service, recordPayment } = setup();
     const command = {
