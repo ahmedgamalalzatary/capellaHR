@@ -38,11 +38,11 @@ class MiniFASNetEnsemble:
     """
 
     LABELS = {
-        0: "replay_attack",
-        1: "live",
-        2: "print_attack",
+        0: "live",
+        1: "print_attack",
+        2: "replay_attack",
     }
-    LIVE_CLASS = 1
+    LIVE_CLASS = 0
 
 
     def __init__(
