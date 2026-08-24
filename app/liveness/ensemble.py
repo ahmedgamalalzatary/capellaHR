@@ -72,7 +72,6 @@ class MiniFASNetEnsemble:
             self.v1se_session.get_inputs()[0].name
         )
 
-
     @staticmethod
     def _crop(
             image: np.ndarray,
@@ -83,7 +82,6 @@ class MiniFASNetEnsemble:
         center_x = x + w / 2.0
         center_y = y + h / 2.0
 
-        # FIX: Force a perfectly square crop to prevent aspect ratio distortion
         size = max(w, h)
         crop_size = int(size * scale)
 
@@ -94,11 +92,8 @@ class MiniFASNetEnsemble:
 
         img_h, img_w = image.shape[:2]
 
-        # Initialize a square canvas
-        padded = np.zeros(
-            (crop_size, crop_size, 3),
-            dtype=image.dtype,
-        )
+        # Use black padding (zeros) - this is what the model expects!
+        padded = np.zeros((crop_size, crop_size, 3), dtype=image.dtype)
 
         src_left = max(0, left)
         src_top = max(0, top)
@@ -113,13 +108,7 @@ class MiniFASNetEnsemble:
         dst_right = dst_left + (src_right - src_left)
         dst_bottom = dst_top + (src_bottom - src_top)
 
-        padded[
-            dst_top:dst_bottom,
-            dst_left:dst_right,
-        ] = image[
-            src_top:src_bottom,
-            src_left:src_right,
-        ]
+        padded[dst_top:dst_bottom, dst_left:dst_right] = image[src_top:src_bottom, src_left:src_right]
 
         return padded
 
@@ -130,9 +119,6 @@ class MiniFASNetEnsemble:
             (80, 80),
             interpolation=cv2.INTER_LINEAR,
         )
-
-        # 🚨 THE REAL FIX: Convert BGR to RGB so your skin looks normal to the AI!
-        crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
 
         tensor = crop.astype(np.float32) / 255.0
         tensor = np.transpose(tensor, (2, 0, 1))
@@ -180,26 +166,32 @@ class MiniFASNetEnsemble:
         # Model 1: MiniFASNetV2 - scale 2.7
         # --------------------------------------------
         crop_v2 = self._crop(image=image, bbox=bbox, scale=2.7)
+
+        # 🚨 ADD THIS: Save the crop for Model 1
+        cv2.imwrite("debug_crop_v2.jpg", crop_v2)
+
         tensor_v2 = self._prepare(crop_v2)
         logits_v2 = self._infer(
             session=self.v2_session,
             input_name=self.v2_input,
             tensor=tensor_v2,
         )
-        # Softmax INDIVIDUALLY
         prob_v2 = self._softmax(logits_v2)
 
         # --------------------------------------------
         # Model 2: MiniFASNetV1SE - scale 4.0
         # --------------------------------------------
         crop_v1se = self._crop(image=image, bbox=bbox, scale=4.0)
+
+        # 🚨 ADD THIS: Save the crop for Model 2
+        cv2.imwrite("debug_crop_v1se.jpg", crop_v1se)
+
         tensor_v1se = self._prepare(crop_v1se)
         logits_v1se = self._infer(
             session=self.v1se_session,
             input_name=self.v1se_input,
             tensor=tensor_v1se,
         )
-        # Softmax INDIVIDUALLY
         prob_v1se = self._softmax(logits_v1se)
 
         # --------------------------------------------
