@@ -131,7 +131,9 @@ class MiniFASNetEnsemble:
             interpolation=cv2.INTER_LINEAR,
         )
 
-        # We removed the RGB conversion! OpenCV BGR is correct.
+        # 🚨 THE REAL FIX: Convert BGR to RGB so your skin looks normal to the AI!
+        crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+
         tensor = crop.astype(np.float32) / 255.0
         tensor = np.transpose(tensor, (2, 0, 1))
         tensor = np.expand_dims(tensor, axis=0)

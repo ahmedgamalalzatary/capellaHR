@@ -65,21 +65,18 @@ async def verify(
         face = faces[0]
         bbox = (face.x, face.y, face.width, face.height)
 
-        # Predict liveness for this frame
+        # Predict liveness for this frame (No flipping!)
         liveness_result = liveness_detector.predict(image=image, bbox=bbox)
 
-        # THE FIX: Invert the score!
-        # The model is outputting the Spoof probability (0.015).
-        # We subtract it from 1.0 to get your True Liveness score (0.985).
-        actual_liveness = 1.0 - float(liveness_result.score)
-
-        scores.append(actual_liveness)
+        scores.append(liveness_result.score)
 
         # Keep track of the highest quality frame for identity matching
-        if actual_liveness > highest_score:
-            highest_score = actual_liveness
+        if liveness_result.score > highest_score:
+            highest_score = liveness_result.score
             best_face = face
             best_image = image
+
+
 
     # 4. Aggregate Temporal Liveness
     temporal_result = temporal_aggregator.aggregate(scores)
