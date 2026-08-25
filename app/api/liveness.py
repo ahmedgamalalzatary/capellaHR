@@ -21,7 +21,7 @@ liveness_detector = MiniFASNetEnsemble(
 
 temporal_aggregator = TemporalLivenessAggregator(
     threshold=settings.liveness_threshold,
-    min_valid_frames=5,
+    min_valid_frames=3,
     min_live_ratio=0.70,
 )
 

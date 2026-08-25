@@ -98,14 +98,12 @@ class MiniFASNetEnsemble:
     ) -> LivenessResult:
         # Model 1: V2 (Scale 2.7)
         crop_v2 = self._crop(image=image, bbox=bbox, scale=2.7)
-        cv2.imwrite("debug_crop_v2.jpg", crop_v2)
         tensor_v2 = self._prepare(crop_v2)
         logits_v2 = self._infer(self.v2_session, self.v2_input, tensor_v2)
         prob_v2 = self._softmax(logits_v2)
 
         # Model 2: V1SE (Scale 4.0)
         crop_v1se = self._crop(image=image, bbox=bbox, scale=4.0)
-        cv2.imwrite("debug_crop_v1se.jpg", crop_v1se)
         tensor_v1se = self._prepare(crop_v1se)
         logits_v1se = self._infer(self.v1se_session, self.v1se_input, tensor_v1se)
         prob_v1se = self._softmax(logits_v1se)
