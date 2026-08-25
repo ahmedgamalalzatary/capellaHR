@@ -8,9 +8,20 @@ services:
 
     ports:
       - "8000:8000"
+    
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: "2.5G"
+        reservations:
+          cpus: "0.5"
+          memory: "1G"
 
     restart: unless-stopped
 
     environment:
+      OMP-NUM_THREADS : 1
       APP_NAME: "Attendance AI Service"
       APP_VERSION: "0.1.0"
