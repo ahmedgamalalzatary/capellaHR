@@ -1,4 +1,10 @@
 DROP TRIGGER IF EXISTS `erp_invoices_validate_lifecycle`;--> statement-breakpoint
+ALTER TABLE `erp_invoice_reversal_payments`
+  DROP INDEX `erp_invoice_reversal_payments_method_unique`,
+  ADD UNIQUE INDEX `erp_invoice_reversal_payments_method_payment_unique` (`reversal_id`, `method_snapshot`, `invoice_payment_id`);--> statement-breakpoint
+UPDATE `erp_invoices`
+  SET `credited_amount` = 0.00, `settlement_status` = 'open'
+  WHERE `status` = 'draft';--> statement-breakpoint
 CREATE TRIGGER `erp_invoices_validate_lifecycle`
 BEFORE UPDATE ON `erp_invoices`
 FOR EACH ROW
@@ -59,6 +65,11 @@ BEGIN
           AND NEW.credited_amount <=> OLD.credited_amount
           AND NEW.settlement_status <=> OLD.settlement_status) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice settlement update is invalid';
+      END IF;
+      IF service_count > 0
+        AND NEW.credited_amount <=> OLD.credited_amount
+        AND (payment_total <> NEW.amount_paid OR NEW.settlement_status <> 'settled') THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Service invoice must stay fully settled';
       END IF;
     ELSE
       IF OLD.status IN ('refunded', 'voided')

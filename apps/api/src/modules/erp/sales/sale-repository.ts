@@ -1305,30 +1305,16 @@ export const createDrizzleSaleRepository = (
             total: line.total,
           })));
           if (paymentRows.length) {
-            // The database stores one reversal-payment row per method. Multiple
-            // original payments can nevertheless contribute to that method, so
-            // fold those allocations together before inserting.
-            const byMethod = new Map<string, { invoicePaymentId: number | null; methodSnapshot: typeof paymentRows[number]['method']; amount: bigint; cashAmount: bigint }>();
-            for (const payment of paymentRows.filter((entry) => toCents(entry.amount) > 0n)) {
-              const current = byMethod.get(payment.method);
-              const amount = toCents(payment.amount);
-              const cashAmount = toCents(payment.cashAmount);
-              if (!current) {
-                byMethod.set(payment.method, { invoicePaymentId: payment.invoicePaymentId, methodSnapshot: payment.method, amount, cashAmount });
-              } else {
-                current.amount += amount;
-                current.cashAmount += cashAmount;
-                if (current.invoicePaymentId !== payment.invoicePaymentId) current.invoicePaymentId = null;
-              }
-            }
-            const reversalPaymentValues = [...byMethod.values()].map((payment) => ({
+            const reversalPaymentValues = paymentRows
+              .filter((payment) => toCents(payment.amount) > 0n)
+              .map((payment) => ({
               reversalId,
               invoiceId: operation.invoiceId,
-              invoicePaymentId: payment.invoicePaymentId,
-              methodSnapshot: payment.methodSnapshot,
-              amount: signedMoney(payment.amount),
-              cashAmount: signedMoney(payment.cashAmount),
-            }));
+                invoicePaymentId: payment.invoicePaymentId,
+                methodSnapshot: payment.method,
+                amount: payment.amount,
+                cashAmount: payment.cashAmount,
+              }));
             if (reversalPaymentValues.length) {
               await transaction.insert(invoiceReversalPayments).values(reversalPaymentValues);
             }

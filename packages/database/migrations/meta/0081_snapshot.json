@@ -7130,11 +7130,12 @@
         }
       },
       "indexes": {
-        "erp_invoice_reversal_payments_method_unique": {
-          "name": "erp_invoice_reversal_payments_method_unique",
+        "erp_invoice_reversal_payments_method_payment_unique": {
+          "name": "erp_invoice_reversal_payments_method_payment_unique",
           "columns": [
             "reversal_id",
-            "method_snapshot"
+            "method_snapshot",
+            "invoice_payment_id"
           ],
           "isUnique": true
         }
