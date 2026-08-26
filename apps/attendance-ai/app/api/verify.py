@@ -38,8 +38,8 @@ temporal_aggregator = TemporalLivenessAggregator(
     threshold=settings.liveness_threshold,
 
     # IMPORTANT:
-    # Require at least 5 valid frames.
-    min_valid_frames=5,
+    # Require at least 3 valid frames.
+    min_valid_frames=3,
 
     # At least 70% of valid frames must be live.
     min_live_ratio=0.70,
