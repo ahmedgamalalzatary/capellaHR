@@ -15,6 +15,19 @@ import { createBooking, listBookingEmployeeOptions } from '../api/bookings-api';
 import type { BookingDto } from '../api/bookings-api';
 import { BookingTicket } from './booking-ticket';
 
+const cairoDateTimeToIso = (value: string) => {
+  const naive = new Date(`${value}:00Z`);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(naive).reduce<Record<string, string>>((result, part) => {
+    result[part.type] = part.value;
+    return result;
+  }, {});
+  const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+  return new Date(naive.getTime() - (represented - naive.getTime())).toISOString();
+};
+
 export function BookingForm({ branchId, onClose, onSaved }: {
   branchId?: number;
   onClose: () => void;
@@ -34,7 +47,7 @@ export function BookingForm({ branchId, onClose, onSaved }: {
     mutationFn: () => createBooking({
       ...(branchId === undefined ? {} : { branchId }),
       clientId: client!.id,
-      scheduledAt: new Date(scheduledAt).toISOString(),
+      scheduledAt: cairoDateTimeToIso(scheduledAt),
       services: services.map(({ id }) => ({
         serviceId: id,
         ...(preferences[id] === undefined ? {} : { preferredEmployeeId: preferences[id] }),

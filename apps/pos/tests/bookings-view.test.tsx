@@ -6,10 +6,11 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   updateStatus: vi.fn(),
   push: vi.fn(),
+  session: { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() } as any,
 }));
 
 vi.mock('../src/features/auth', () => ({
-  useSession: () => ({ data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } } }),
+  useSession: () => mocks.session,
 }));
 vi.mock('../src/features/bookings/api/bookings-api', () => ({
   listBookings: mocks.list,
@@ -52,6 +53,7 @@ describe('appointment book', () => {
     mocks.list.mockReset().mockResolvedValue([booking]);
     mocks.updateStatus.mockReset().mockResolvedValue({ ...booking, status: 'arrived' });
     mocks.push.mockReset();
+    mocks.session = { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() };
   });
 
   it('shows one day in time order with services and preferred employee', async () => {
@@ -73,5 +75,13 @@ describe('appointment book', () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'اليوم التالي' }));
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ date: '2026-08-26' }));
+  });
+
+  it('shows a retry when session verification fails', () => {
+    const refetch = vi.fn();
+    mocks.session = { data: undefined, isPending: false, isError: true, refetch };
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 });

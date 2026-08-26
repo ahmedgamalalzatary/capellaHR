@@ -217,7 +217,11 @@ describe('ERP sales foundation MySQL integration', () => {
       });
       let emptyCompletionRejected = false;
       try {
-        await transaction.update(invoices).set({ status: 'completed' })
+        await transaction.update(invoices).set({
+          status: 'completed',
+          amountPaid: '0.04',
+          settlementStatus: 'settled',
+        })
           .where(eq(invoices.id, emptyInvoiceId));
       } catch {
         emptyCompletionRejected = true;
@@ -225,7 +229,11 @@ describe('ERP sales foundation MySQL integration', () => {
 
       let unpaidCompletionRejected = false;
       try {
-        await transaction.update(invoices).set({ status: 'completed' })
+        await transaction.update(invoices).set({
+          status: 'completed',
+          amountPaid: '0.00',
+          settlementStatus: 'open',
+        })
           .where(eq(invoices.id, invoiceId));
       } catch {
         unpaidCompletionRejected = true;
@@ -247,7 +255,11 @@ describe('ERP sales foundation MySQL integration', () => {
         .where(eq(invoicePayments.invoiceId, invoiceId));
       let lineSubtotalMismatchRejected = false;
       try {
-        await transaction.update(invoices).set({ status: 'completed' })
+        await transaction.update(invoices).set({
+          status: 'completed',
+          amountPaid: '0.05',
+          settlementStatus: 'settled',
+        })
           .where(eq(invoices.id, invoiceId));
       } catch {
         lineSubtotalMismatchRejected = true;
@@ -259,7 +271,11 @@ describe('ERP sales foundation MySQL integration', () => {
 
       let missingCommissionRejected = false;
       try {
-        await transaction.update(invoices).set({ status: 'completed' })
+        await transaction.update(invoices).set({
+          status: 'completed',
+          amountPaid: '0.04',
+          settlementStatus: 'settled',
+        })
           .where(eq(invoices.id, invoiceId));
       } catch {
         missingCommissionRejected = true;
@@ -278,7 +294,11 @@ describe('ERP sales foundation MySQL integration', () => {
         createdAt: now,
       }))[0].insertId);
 
-      await transaction.update(invoices).set({ status: 'completed' })
+      await transaction.update(invoices).set({
+        status: 'completed',
+        amountPaid: '0.04',
+        settlementStatus: 'settled',
+      })
         .where(eq(invoices.id, invoiceId));
 
       let paymentInsertRejected = false;

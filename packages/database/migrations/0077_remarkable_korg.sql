@@ -31,7 +31,8 @@ FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice reversal paymen
 ALTER TABLE `erp_invoice_reversal_payments` MODIFY COLUMN `cash_amount` decimal(14,2) NOT NULL;--> statement-breakpoint
 DROP TRIGGER `erp_invoices_validate_lifecycle`;--> statement-breakpoint
 UPDATE `erp_invoices` invoice SET invoice.amount_paid = invoice.total,
-  invoice.credited_amount = 0.00, invoice.settlement_status = 'settled';--> statement-breakpoint
+  invoice.credited_amount = 0.00, invoice.settlement_status = 'settled'
+  WHERE invoice.status <> 'draft';--> statement-breakpoint
 ALTER TABLE `erp_invoice_payments` ADD CONSTRAINT `erp_invoice_payments_invoice_reference_unique` UNIQUE(`invoice_id`,`operation_reference`);--> statement-breakpoint
 ALTER TABLE `erp_invoice_payments` DROP INDEX `erp_invoice_payments_invoice_method_unique`;--> statement-breakpoint
 ALTER TABLE `erp_invoice_reversal_payments` ADD CONSTRAINT `erp_invoice_reversal_payments_cash_valid` CHECK (`erp_invoice_reversal_payments`.`cash_amount` >= 0 and `erp_invoice_reversal_payments`.`cash_amount` <= `erp_invoice_reversal_payments`.`amount`);--> statement-breakpoint
@@ -92,7 +93,11 @@ BEGIN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Completed invoice facts are immutable';
     END IF;
     IF NEW.status = OLD.status THEN
-      IF OLD.status NOT IN ('completed', 'partially_refunded') OR service_count > 0 THEN
+      IF OLD.status NOT IN ('completed', 'partially_refunded')
+        OR (service_count > 0
+          AND NEW.amount_paid <=> OLD.amount_paid
+          AND NEW.credited_amount <=> OLD.credited_amount
+          AND NEW.settlement_status <=> OLD.settlement_status) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice settlement update is invalid';
       END IF;
     ELSE

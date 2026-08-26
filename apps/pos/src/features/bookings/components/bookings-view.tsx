@@ -90,6 +90,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   ] : [];
 
   if (session.isPending) return <LoadingState label="جارٍ تحميل دفتر المواعيد…" />;
+  if (session.isError) return <EmptyState title="Session verification failed" action={<Button onClick={() => void session.refetch()}>Retry</Button>} />;
   return <section className="space-y-5">
     <PageHeader
       title="دفتر المواعيد"

@@ -25,5 +25,6 @@ it('submits attendance payload and camera image as multipart form data', async (
     employeeCode: 42, pin: '1234', source: 'personal_device', latitude: 30,
     longitude: 31, gpsAccuracyMeters: 8, installationMarker: 'installation-marker-123',
   });
-  expect(form.get('faceImage')).toMatchObject({ type: 'image/jpeg', size: faceImage.size });
+  expect(form.getAll('faceImages')).toHaveLength(1);
+  expect(form.get('faceImages')).toMatchObject({ type: 'image/jpeg', size: faceImage.size });
 });

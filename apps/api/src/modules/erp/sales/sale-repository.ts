@@ -846,7 +846,7 @@ export const createDrizzleSaleRepository = (
               });
             }
           }
-          await transaction.insert(invoicePayments).values(input.payments.map((payment) => ({
+          if (input.payments.length > 0) await transaction.insert(invoicePayments).values(input.payments.map((payment) => ({
             invoiceId,
             method: payment.method,
             amount: payment.amount,
@@ -859,7 +859,12 @@ export const createDrizzleSaleRepository = (
             paidAt: operation.soldAt,
             createdAt: operation.soldAt,
           })));
-          await transaction.update(invoices).set({ status: 'completed' })
+          const amountPaid = input.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n);
+          await transaction.update(invoices).set({
+            status: 'completed',
+            amountPaid: signedMoney(amountPaid),
+            settlementStatus: amountPaid === toCents(totals.total) ? 'settled' : 'open',
+          })
             .where(eq(invoices.id, invoiceId));
           for (const employeeId of employeeIds) {
             await projectCommission(transaction, employeeId, cairoMonth(operation.soldAt));
@@ -1231,18 +1236,29 @@ export const createDrizzleSaleRepository = (
           // is accepted and only the total is checked. A refund is still linked to
           // the payment it reverses whenever it matches one and fits inside what is
           // left on it, which keeps the per-payment refundable accounting exact.
-          const paymentRows = allocatedPayments.map((requested) => {
-            const payment = originalPayments.find((candidate) => candidate.method === requested.method);
-            const remaining = payment === undefined
-              ? 0n
-              : toCents(payment.amount) - (reversedByPayment.get(payment.id) ?? 0n);
-            const linked = payment !== undefined && toCents(requested.amount) <= remaining;
-            return {
-              invoicePaymentId: linked ? payment.id : null,
-              method: requested.method,
-              amount: requested.amount,
-              cashAmount: requested.cashAmount,
-            };
+          const paymentRows = allocatedPayments.flatMap((requested) => {
+            let remainingCash = toCents(requested.cashAmount);
+            const rows: Array<{ invoicePaymentId: number | null; method: typeof requested.method; amount: string; cashAmount: string }> = [];
+            for (const payment of originalPayments.filter(({ method }) => method === requested.method)) {
+              const remaining = toCents(payment.amount) - (reversedByPayment.get(payment.id) ?? 0n);
+              const linkedCents = remainingCash < remaining ? remainingCash : remaining;
+              if (linkedCents <= 0n) continue;
+              reversedByPayment.set(payment.id, (reversedByPayment.get(payment.id) ?? 0n) + linkedCents);
+              rows.push({ invoicePaymentId: payment.id, method: requested.method, amount: signedMoney(linkedCents), cashAmount: signedMoney(linkedCents) });
+              remainingCash -= linkedCents;
+              if (remainingCash === 0n) break;
+            }
+            const linkedCash = toCents(requested.cashAmount) - remainingCash;
+            const remainderAmount = toCents(requested.amount) - linkedCash;
+            if (remainderAmount > 0n || rows.length === 0) {
+              rows.push({
+                invoicePaymentId: null,
+                method: requested.method,
+                amount: signedMoney(remainderAmount),
+                cashAmount: signedMoney(remainingCash),
+              });
+            }
+            return rows;
           });
 
           const beforeState = await hydrateInvoice(transaction, original.id);
@@ -1289,14 +1305,33 @@ export const createDrizzleSaleRepository = (
             total: line.total,
           })));
           if (paymentRows.length) {
-            await transaction.insert(invoiceReversalPayments).values(paymentRows.map((payment) => ({
+            // The database stores one reversal-payment row per method. Multiple
+            // original payments can nevertheless contribute to that method, so
+            // fold those allocations together before inserting.
+            const byMethod = new Map<string, { invoicePaymentId: number | null; methodSnapshot: typeof paymentRows[number]['method']; amount: bigint; cashAmount: bigint }>();
+            for (const payment of paymentRows.filter((entry) => toCents(entry.amount) > 0n)) {
+              const current = byMethod.get(payment.method);
+              const amount = toCents(payment.amount);
+              const cashAmount = toCents(payment.cashAmount);
+              if (!current) {
+                byMethod.set(payment.method, { invoicePaymentId: payment.invoicePaymentId, methodSnapshot: payment.method, amount, cashAmount });
+              } else {
+                current.amount += amount;
+                current.cashAmount += cashAmount;
+                if (current.invoicePaymentId !== payment.invoicePaymentId) current.invoicePaymentId = null;
+              }
+            }
+            const reversalPaymentValues = [...byMethod.values()].map((payment) => ({
               reversalId,
               invoiceId: operation.invoiceId,
               invoicePaymentId: payment.invoicePaymentId,
-              methodSnapshot: payment.method,
-              amount: payment.amount,
-              cashAmount: payment.cashAmount,
-            })));
+              methodSnapshot: payment.methodSnapshot,
+              amount: signedMoney(payment.amount),
+              cashAmount: signedMoney(payment.cashAmount),
+            }));
+            if (reversalPaymentValues.length) {
+              await transaction.insert(invoiceReversalPayments).values(reversalPaymentValues);
+            }
           }
 
           const selectedByLine = new Map(selected.map((line) => [line.invoiceLineId, line.quantity]));

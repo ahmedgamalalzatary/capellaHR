@@ -74,10 +74,18 @@ describe('attendance HTTP API', () => {
     });
     const checkIn = await request(app).post('/api/v1/attendance/check-in')
       .field('payload', JSON.stringify(payload))
-      .attach('faceImage', liveImage, { filename: 'face.jpg', contentType: 'image/jpeg' });
+      .attach('faceImages', liveImage, { filename: 'face-1.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-2.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-3.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-4.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-5.jpg', contentType: 'image/jpeg' });
     const checkOut = await request(app).post('/api/v1/attendance/check-out')
       .field('payload', JSON.stringify(payload))
-      .attach('faceImage', liveImage, { filename: 'face.jpg', contentType: 'image/jpeg' });
+      .attach('faceImages', liveImage, { filename: 'face-1.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-2.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-3.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-4.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-5.jpg', contentType: 'image/jpeg' });
     expect(checkIn.status).toBe(201);
     expect(checkOut.status).toBe(200);
     expect(vi.mocked(service.checkIn)).toHaveBeenCalledWith(expect.objectContaining(payload));
@@ -163,7 +171,11 @@ describe('attendance HTTP API', () => {
       longitude: 31.2357,
       gpsAccuracyMeters: 8,
       installationMarker: 'installation-marker-123',
-      })).attach('faceImage', liveImage, { filename: 'face.jpg', contentType: 'image/jpeg' });
+      })).attach('faceImages', liveImage, { filename: 'face-1.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-2.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-3.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-4.jpg', contentType: 'image/jpeg' })
+      .attach('faceImages', liveImage, { filename: 'face-5.jpg', contentType: 'image/jpeg' });
 
     expect(response.status).toBe(500);
     expect(response.body.error).toMatchObject({

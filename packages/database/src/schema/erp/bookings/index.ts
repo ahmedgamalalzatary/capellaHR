@@ -28,7 +28,7 @@ export const erpBookings = mysqlTable('erp_bookings', {
   status: mysqlEnum('status', erpBookingStatuses).notNull().default('booked'),
   note: varchar('note', { length: 1000 }),
   actingAccountId: int('acting_account_id').notNull().references(() => accounts.id),
-  invoiceId: int('invoice_id').references(() => invoices.id),
+  invoiceId: int('invoice_id'),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
@@ -36,6 +36,11 @@ export const erpBookings = mysqlTable('erp_bookings', {
     name: 'erp_bookings_client_branch_fk',
     columns: [table.clientId, table.branchId],
     foreignColumns: [clients.id, clients.branchId],
+  }),
+  foreignKey({
+    name: 'erp_bookings_invoice_branch_fk',
+    columns: [table.invoiceId, table.branchId],
+    foreignColumns: [invoices.id, invoices.branchId],
   }),
   uniqueIndex('erp_bookings_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('erp_bookings_invoice_unique').on(table.invoiceId),
@@ -49,7 +54,7 @@ export const erpBookingServices = mysqlTable('erp_booking_services', {
   bookingId: int('booking_id').notNull(),
   branchId: int('branch_id').notNull(),
   serviceId: int('service_id').notNull(),
-  preferredEmployeeId: int('preferred_employee_id').references(() => employees.id),
+  preferredEmployeeId: int('preferred_employee_id'),
 }, (table) => [
   foreignKey({
     name: 'erp_booking_services_booking_branch_fk',
@@ -60,6 +65,11 @@ export const erpBookingServices = mysqlTable('erp_booking_services', {
     name: 'erp_booking_services_service_branch_fk',
     columns: [table.serviceId, table.branchId],
     foreignColumns: [erpServices.id, erpServices.branchId],
+  }),
+  foreignKey({
+    name: 'erp_booking_services_preferred_employee_branch_fk',
+    columns: [table.preferredEmployeeId, table.branchId],
+    foreignColumns: [employees.id, employees.branchId],
   }),
   uniqueIndex('erp_booking_services_booking_service_unique')
     .on(table.bookingId, table.serviceId),

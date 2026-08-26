@@ -450,6 +450,13 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(false);
   });
 
+  it('rejects an invoice whose stored payment rows disagree with paymentTotal', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      totals: { ...saleFixtures.completedInvoice.totals, paymentTotal: '100.00', amountPaid: '100.00', balanceDue: '85.00', settlementStatus: 'open' },
+    }).success).toBe(false);
+  });
+
   it('allows a payment method to repeat across later instalments', () => {
     expect(paymentBreakdownSchema.safeParse({
       total: '300.00',

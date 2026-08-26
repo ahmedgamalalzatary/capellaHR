@@ -24,6 +24,7 @@ const identity = {
   branchLongitude: 31.2357,
   branchRadiusMeters: 150,
   personalPhotoPath: 'employees/personal.jpg',
+  faceEmbedding: JSON.stringify(Array.from({ length: 128 }, () => 0)),
 };
 const session = {
   id: 11,
@@ -80,6 +81,7 @@ const event = {
   gpsAccuracyMeters: 8,
   installationMarker,
   faceImage: Buffer.from('live-face'),
+  faceImages: Array.from({ length: 5 }, () => Buffer.from('live-face')),
 };
 
 const createService = (repository = makeRepository()) => {
@@ -87,8 +89,8 @@ const createService = (repository = makeRepository()) => {
     verify: vi.fn(async () => ({ id: 9, verified: true })),
   };
   const verifyPin = vi.fn(async () => true);
-  const compare = vi.fn<AttendanceFaceGateway['compare']>(async () => ({ kind: 'match' }));
-  const faces = { compare };
+  const verify = vi.fn<NonNullable<AttendanceFaceGateway['verify']>>(async () => ({ kind: 'match' }));
+  const faces = { verify, compare: vi.fn<NonNullable<AttendanceFaceGateway['compare']>>() };
   return {
     repository,
     devices,
@@ -177,14 +179,15 @@ describe('attendance service', () => {
 
   it('records a face mismatch and does not create attendance', async () => {
     const setup = createService();
-    setup.faces.compare.mockResolvedValue({ kind: 'mismatch' });
+    setup.faces.verify.mockResolvedValue({ kind: 'mismatch' });
 
     await expect(setup.service.checkIn(event)).rejects.toMatchObject({
       code: 'ATTENDANCE_FACE_MISMATCH',
     });
-    expect(setup.faces.compare).toHaveBeenCalledWith(
-      'employees/personal.jpg',
-      event.faceImage,
+    expect(setup.faces.verify).toHaveBeenCalledWith(
+      7,
+      expect.any(Array),
+      event.faceImages,
     );
     expect(setup.repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
       failureReason: 'FACE_MISMATCH',

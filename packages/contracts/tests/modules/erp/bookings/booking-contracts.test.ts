@@ -49,6 +49,10 @@ describe('booking contracts', () => {
       .toEqual({ date: '2026-08-25', branchId: 2 });
   });
 
+  it('rejects impossible calendar dates before querying the diary', () => {
+    expect(listBookingsQuerySchema.safeParse({ date: '2026-02-30' }).success).toBe(false);
+  });
+
   it('allows only explicit staff status actions', () => {
     for (const status of ['arrived', 'booked', 'cancelled', 'no_show'] as const) {
       expect(updateBookingStatusSchema.parse({ status })).toEqual({ status });
