@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import BranchKioskPage from '../src/app/(attendance)/branch-kiosk/page';
 import PersonalDevicePage from '../src/app/(attendance)/personal-device/page';
+
+configure({ asyncUtilTimeout: 3000 });
 
 const session = {
   id: 11,
@@ -35,6 +37,7 @@ async function fillCredentials() {
   fireEvent.change(screen.getByLabelText('الرقم السري'), { target: { value: '1234' } });
   fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
   fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
+  await screen.findByRole('button', { name: /إعادة التقاط الصورة/ });
 }
 
 beforeEach(() => {

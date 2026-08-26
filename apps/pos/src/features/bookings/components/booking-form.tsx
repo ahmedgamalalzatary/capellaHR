@@ -15,6 +15,29 @@ import { createBooking, listBookingEmployeeOptions } from '../api/bookings-api';
 import type { BookingDto } from '../api/bookings-api';
 import { BookingTicket } from './booking-ticket';
 
+export const cairoDateTimeToIso = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null;
+  const naive = Date.parse(`${value}:00Z`);
+  if (Number.isNaN(naive)) return null;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  // Search the valid offset range so gaps produce no candidate and repeated
+  // times deterministically choose the earlier instant.
+  const candidates: Date[] = [];
+  for (let offsetMinutes = -14 * 60; offsetMinutes <= 14 * 60; offsetMinutes += 1) {
+    const candidate = new Date(naive - offsetMinutes * 60_000);
+    const parts = formatter.formatToParts(candidate).reduce<Record<string, string>>((result, part) => {
+      result[part.type] = part.value;
+      return result;
+    }, {});
+    const represented = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+    if (represented === value) candidates.push(candidate);
+  }
+  return candidates.sort((left, right) => left.getTime() - right.getTime())[0]?.toISOString() ?? null;
+};
+
 export function BookingForm({ branchId, onClose, onSaved }: {
   branchId?: number;
   onClose: () => void;
@@ -31,16 +54,20 @@ export function BookingForm({ branchId, onClose, onSaved }: {
     queryFn: () => listBookingEmployeeOptions(branchId),
   });
   const save = useMutation({
-    mutationFn: () => createBooking({
-      ...(branchId === undefined ? {} : { branchId }),
-      clientId: client!.id,
-      scheduledAt: new Date(scheduledAt).toISOString(),
-      services: services.map(({ id }) => ({
-        serviceId: id,
-        ...(preferences[id] === undefined ? {} : { preferredEmployeeId: preferences[id] }),
-      })),
-      ...(note.trim() ? { note: note.trim() } : {}),
-    }),
+    mutationFn: () => {
+      const scheduledAtIso = cairoDateTimeToIso(scheduledAt);
+      if (scheduledAtIso === null) throw new Error('Invalid Cairo local time');
+      return createBooking({
+        ...(branchId === undefined ? {} : { branchId }),
+        clientId: client!.id,
+        scheduledAt: scheduledAtIso,
+        services: services.map(({ id }) => ({
+          serviceId: id,
+          ...(preferences[id] === undefined ? {} : { preferredEmployeeId: preferences[id] }),
+        })),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      });
+    },
     onSuccess: async (booking) => { setSaved(booking); await onSaved(); },
   });
   if (saved) return <Modal title="تذكرة الموعد" onClose={onClose}>

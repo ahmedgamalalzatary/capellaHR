@@ -36,7 +36,12 @@ export const createBookingSchema = z.object({
 });
 
 export const listBookingsQuerySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+    const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+    const candidate = new Date(Date.UTC(year, month - 1, day));
+    return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1
+      && candidate.getUTCDate() === day;
+  }, 'Invalid calendar date'),
   branchId: coercedMysqlIntSchema.optional(),
 }).strict();
 

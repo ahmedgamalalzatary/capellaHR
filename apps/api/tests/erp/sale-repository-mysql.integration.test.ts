@@ -307,6 +307,54 @@ describe('ERP sale repository MySQL integration', () => {
     });
   });
 
+  it('preserves each original payment link when one refund spans repeated methods', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.discount = undefined;
+    sale.input.tax = undefined;
+    sale.input.payments = [{ method: 'cash', amount: '30.00' }];
+    const open = await repository.complete(sale);
+    const paid = await repository.recordPayment({
+      invoiceId: open.id,
+      input: {
+        branchId: data.branchId,
+        cashierSessionId: data.cashierSessionId,
+        method: 'cash',
+        amount: '70.00',
+        operationReference: crypto.randomUUID(),
+      },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      paidAt: new Date(data.at.getTime() + 60_000),
+    });
+
+    const refunded = await repository.reverse({
+      type: 'refund',
+      invoiceId: paid.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Return spanning two cash instalments',
+        lines: [{ invoiceLineId: paid.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '50.00' }],
+      },
+      actingAccountId: data.adminAccountId,
+      actingAccountRole: 'admin',
+      reversedAt: new Date(data.at.getTime() + 120_000),
+    });
+
+    expect(refunded.payments).toEqual([
+      { method: 'cash', amount: '30.00', refundedAmount: '30.00', refundableAmount: '0.00' },
+      { method: 'cash', amount: '70.00', refundedAmount: '20.00', refundableAmount: '50.00' },
+    ]);
+    const stored = await database.select().from(invoiceReversalPayments)
+      .where(eq(invoiceReversalPayments.reversalId, refunded.reversals[0]!.id));
+    expect(stored).toHaveLength(2);
+    expect(stored.every(({ invoicePaymentId }) => invoicePaymentId !== null)).toBe(true);
+  });
+
   it('counts each shift by the money keyed to it, not by the invoices raised in it', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -1130,13 +1178,15 @@ describe('ERP sale repository MySQL integration', () => {
       reversedAt: new Date('2026-08-04T09:00:00.000Z'),
     });
 
-    // 50 cash does not fit inside the 30 the client paid in cash, so the refund
-    // stands on its own rather than pretending to reverse that payment.
+    // The first 30 is linked; only the excess 20 stands on its own.
     expect(await database.select().from(invoiceReversalPayments)
       .where(eq(invoiceReversalPayments.reversalId, refunded.reversals[0]!.id)))
-      .toEqual([expect.objectContaining({ invoicePaymentId: null, amount: '50.00' })]);
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ invoicePaymentId: expect.any(Number), amount: '30.00' }),
+        expect.objectContaining({ invoicePaymentId: null, amount: '20.00' }),
+      ]));
     expect(refunded.payments).toEqual([
-      { method: 'cash', amount: '30.00', refundedAmount: '0.00', refundableAmount: '30.00' },
+      { method: 'cash', amount: '30.00', refundedAmount: '30.00', refundableAmount: '0.00' },
       { method: 'visa', amount: '70.00', refundedAmount: '0.00', refundableAmount: '70.00' },
     ]);
   });
@@ -1220,13 +1270,12 @@ describe('ERP sale repository MySQL integration', () => {
     const after = await refund(crypto.randomUUID(), 'visa', '50.00');
 
     // Both units are back, so nothing more can be refunded, even though the cash
-    // payment still reads as untouched: `refundableAmount` describes that payment
-    // row, not what the invoice still owes.
+    // Linked allocations reduce each original payment independently.
     expect(after.status).toBe('refunded');
     expect(after.eligibility.canRefund).toBe(false);
     expect(after.lines[0]).toMatchObject({ refundedQuantity: 2, refundableQuantity: 0 });
     expect(after.payments).toEqual([
-      { method: 'cash', amount: '30.00', refundedAmount: '0.00', refundableAmount: '30.00' },
+      { method: 'cash', amount: '30.00', refundedAmount: '30.00', refundableAmount: '0.00' },
       { method: 'visa', amount: '70.00', refundedAmount: '50.00', refundableAmount: '20.00' },
     ]);
   });

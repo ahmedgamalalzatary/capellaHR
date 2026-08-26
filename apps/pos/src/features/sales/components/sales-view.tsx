@@ -495,8 +495,13 @@ function SaleWorkspace({
     client || employee || seller || lines.length > 0 || discountValue || taxValue || paymentsTouched,
   );
   useEffect(() => {
-    if (!draftHydrated || !booking.data || !bookingEmployees.data
-      || activeBookingId !== undefined || offeredDraft || hasDraftProgress) return;
+    if (!draftHydrated || activeBookingId !== undefined || offeredDraft || hasDraftProgress) return;
+    if (bookingEmployees.isError) {
+      setBookingPrefillError(errorMessage(bookingEmployees.error));
+      return;
+    }
+    if (!booking.data || !bookingEmployees.data) return;
+    setBookingPrefillError(undefined);
     if (booking.data.status !== 'arrived') {
       setBookingPrefillError('هذا الحجز لم يعد جاهزًا للبيع.');
       return;
@@ -534,7 +539,7 @@ function SaleWorkspace({
     });
     return () => { cancelled = true; };
   }, [
-    activeBookingId, booking.data, bookingEmployees.data, branchId,
+    activeBookingId, booking.data, bookingEmployees.data, bookingEmployees.error, bookingEmployees.isError, branchId,
     draftHydrated, hasDraftProgress, offeredDraft,
   ]);
   const matchesActiveDraft = useCallback((pending: PendingSale) => (

@@ -589,6 +589,10 @@ export const invoiceSchema = z.object({
     allowPartialPayment: value.lines.every((line) => line.itemType === 'product'),
     allowRepeatedMethods: true,
   });
+  const storedPaymentTotal = value.payments.reduce((sum, payment) => sum + toCents(payment.amount), BigInt(0));
+  if (storedPaymentTotal !== toCents(value.totals.paymentTotal)) {
+    context.addIssue({ code: 'custom', path: ['totals', 'paymentTotal'], message: 'إجمالي المدفوعات لا يطابق سجلات الدفع' });
+  }
   if (!breakdown.success) {
     context.addIssue({
       code: 'custom',

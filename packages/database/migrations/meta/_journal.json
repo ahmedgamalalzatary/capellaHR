@@ -561,6 +561,20 @@
       "when": 1787563000000,
       "tag": "0079_ai_face_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "5",
+      "when": 1787746354881,
+      "tag": "0080_regular_fenris",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "5",
+      "when": 1787746354882,
+      "tag": "0081_invoice_settlement_trigger",
+      "breakpoints": true
     }
   ]
 }

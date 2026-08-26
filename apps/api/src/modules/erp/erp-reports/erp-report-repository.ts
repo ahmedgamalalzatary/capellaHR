@@ -511,7 +511,7 @@ const clientFacts = (filters: ReportFilters) => sql`
 `;
 
 const receivableFacts = (filters: ReportFilters) => sql`
-  SELECT invoice.id id, invoice.sold_at soldAt, branch.name branchName,
+  SELECT invoice.id id, invoice.sold_at eventDate, invoice.sold_at soldAt, branch.name branchName,
     invoice.invoice_number invoiceNumber, invoice.client_name_snapshot clientName,
     invoice.client_phone_snapshot clientPhone, invoice.total originalTotal,
     invoice.amount_paid amountPaid, invoice.credited_amount creditedAmount,

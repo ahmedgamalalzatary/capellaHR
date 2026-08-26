@@ -363,7 +363,7 @@ export const invoiceReversalPayments = mysqlTable('erp_invoice_reversal_payments
   foreignKey({ name: 'erp_reversal_payments_reversal_invoice_fk', columns: [table.reversalId, table.invoiceId], foreignColumns: [invoiceReversals.id, invoiceReversals.invoiceId] }),
   // Null invoice_payment_id skips this check, which is what an unlinked refund needs.
   foreignKey({ name: 'erp_reversal_payments_payment_invoice_fk', columns: [table.invoicePaymentId, table.invoiceId], foreignColumns: [invoicePayments.id, invoicePayments.invoiceId] }),
-  uniqueIndex('erp_invoice_reversal_payments_method_unique').on(table.reversalId, table.methodSnapshot),
+  uniqueIndex('erp_invoice_reversal_payments_method_payment_unique').on(table.reversalId, table.methodSnapshot, table.invoicePaymentId),
   check('erp_invoice_reversal_payments_amount_positive', sql`${table.amount} > 0`),
   check('erp_invoice_reversal_payments_cash_valid', sql`${table.cashAmount} >= 0 and ${table.cashAmount} <= ${table.amount}`),
 ]);

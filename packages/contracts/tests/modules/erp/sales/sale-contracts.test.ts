@@ -450,6 +450,19 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(false);
   });
 
+  it('rejects an invoice whose stored payment rows disagree with paymentTotal', () => {
+    const result = invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      totals: { ...saleFixtures.completedInvoice.totals, paymentTotal: '100.00', amountPaid: '100.00', balanceDue: '85.00', settlementStatus: 'open' },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected invoice validation to fail');
+    expect(result.error.issues).toContainEqual(expect.objectContaining({
+      path: ['totals', 'paymentTotal'],
+      message: 'إجمالي المدفوعات لا يطابق سجلات الدفع',
+    }));
+  });
+
   it('allows a payment method to repeat across later instalments', () => {
     expect(paymentBreakdownSchema.safeParse({
       total: '300.00',

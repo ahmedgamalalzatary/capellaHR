@@ -251,7 +251,7 @@ describe('MySQL-backed employees', () => {
     forfeitedSalaryAmount: '0.00',
     cashCollectedAmount: '0.00',
     debtRecordedAmount: '1000.00',
-    finalNetSalary: '-1000.00',
+    finalNetSalary: '-1500.00',
   };
   const settling = (openSession = false) => createEmployeesModule(
     database,

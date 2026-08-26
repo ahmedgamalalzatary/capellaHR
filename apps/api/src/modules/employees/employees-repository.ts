@@ -6,8 +6,9 @@ import type { EmployeeDeactivationDecisions, EmployeeImages, EmployeeRecord, Emp
 type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 const auditEmployee = (employee: EmployeeRecord) => {
-  const { faceEmbedding: _faceEmbedding, ...redacted } = employee;
-  return redacted;
+    const redacted = { ...employee } as Partial<EmployeeRecord>;
+    delete redacted.faceEmbedding;
+    return redacted as Omit<EmployeeRecord, 'faceEmbedding'>;
 };
 export type EmployeeBeforeDurationChange = (
   employeeId: number,

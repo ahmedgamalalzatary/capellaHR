@@ -6,7 +6,7 @@ import {
   erpBookings,
   erpServices,
 } from '@capella/database/schema';
-import { and, asc, eq, gt, gte, inArray, lt } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, gt, gte, inArray, lt } from 'drizzle-orm';
 
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -152,13 +152,59 @@ export const createDrizzleBookingRepository = (
   async listDay(branchId, date) {
     const start = startOfCairoDate(date);
     const end = startOfCairoDate(nextDate(date));
-    const rows = await database.select({ id: erpBookings.id }).from(erpBookings).where(and(
+    const rows = await database.select({
+      id: erpBookings.id,
+      branchId: erpBookings.branchId,
+      clientId: clients.id,
+      clientName: clients.fullName,
+      clientPhone: clients.phone,
+      scheduledAt: erpBookings.scheduledAt,
+      status: erpBookings.status,
+      note: erpBookings.note,
+      invoiceId: erpBookings.invoiceId,
+      createdAt: erpBookings.createdAt,
+      updatedAt: erpBookings.updatedAt,
+    }).from(erpBookings).innerJoin(clients, eq(clients.id, erpBookings.clientId)).where(and(
       eq(erpBookings.branchId, branchId),
       gte(erpBookings.scheduledAt, start),
       lt(erpBookings.scheduledAt, end),
     )).orderBy(asc(erpBookings.scheduledAt), asc(erpBookings.id));
-    return Promise.all(rows.map(({ id }) => hydrate(database, branchId, id)))
-      .then((items) => items.filter((item): item is BookingRecord => item !== null));
+    if (rows.length === 0) return [];
+    const services = await database.select({
+      bookingId: erpBookingServices.bookingId,
+      serviceId: erpBookingServices.serviceId,
+      serviceName: erpServices.name,
+      servicePrice: erpServices.price,
+      employeeId: employees.id,
+      employeeName: employees.fullName,
+    }).from(erpBookingServices)
+      .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
+      .leftJoin(employees, eq(employees.id, erpBookingServices.preferredEmployeeId))
+      .where(and(eq(erpBookingServices.branchId, branchId), inArray(erpBookingServices.bookingId, rows.map(({ id }) => id))))
+      .orderBy(asc(erpBookingServices.id));
+    const servicesByBooking = new Map<number, typeof services>();
+    for (const service of services) {
+      const list = servicesByBooking.get(service.bookingId) ?? [];
+      list.push(service);
+      servicesByBooking.set(service.bookingId, list);
+    }
+    return rows.map((row) => ({
+      id: row.id,
+      branchId: row.branchId,
+      client: { id: row.clientId, fullName: row.clientName, phone: row.clientPhone },
+      scheduledAt: row.scheduledAt,
+      status: row.status,
+      note: row.note,
+      invoiceId: row.invoiceId,
+      services: (servicesByBooking.get(row.id) ?? []).map((service) => ({
+        serviceId: service.serviceId,
+        serviceName: service.serviceName,
+        servicePrice: service.servicePrice,
+        preferredEmployee: service.employeeId === null ? null : { id: service.employeeId, name: service.employeeName ?? '' },
+      })),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
   },
 
   async transition(branchId, id, from, to, changedAt) {
@@ -191,14 +237,14 @@ export const createDrizzleBookingRepository = (
   },
 
   async countFutureForEmployee(employeeId, now) {
-    const rows = await database.select({ id: erpBookings.id }).from(erpBookings)
+    const rows = await database.select({ count: countDistinct(erpBookings.id) }).from(erpBookings)
       .innerJoin(erpBookingServices, eq(erpBookingServices.bookingId, erpBookings.id))
       .where(and(
         eq(erpBookingServices.preferredEmployeeId, employeeId),
         inArray(erpBookings.status, ['booked', 'arrived']),
         gt(erpBookings.scheduledAt, now),
       ));
-    return rows.length;
+    return Number(rows[0]?.count ?? 0);
   },
 
   listActiveEmployees(branchId) {

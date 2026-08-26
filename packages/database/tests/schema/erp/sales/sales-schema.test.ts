@@ -38,7 +38,7 @@ describe('ERP sales persistence foundation', () => {
       'id', 'reversalId', 'invoicePaymentId', 'methodSnapshot', 'amount', 'cashAmount',
     ]));
     expect(getTableConfig(payments).indexes.map((value) => value.config.name)).toContain(
-      'erp_invoice_reversal_payments_method_unique',
+      'erp_invoice_reversal_payments_method_payment_unique',
     );
     // Money handed back on a method the sale never used reverses no payment row.
     const paymentColumns = new Map(getTableConfig(payments).columns
