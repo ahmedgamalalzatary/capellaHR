@@ -16,7 +16,7 @@ class TemporalLivenessAggregator:
     def __init__(
         self,
         threshold: float = 0.50,
-        min_valid_frames: int = 5,
+        min_valid_frames: int = 3,
         min_live_ratio: float = 0.75,
     ) -> None:
 
