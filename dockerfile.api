@@ -35,7 +35,6 @@ RUN --mount=type=cache,id=capellahr-pnpm,target=/pnpm/store \
 
 COPY . .
 
-RUN node apps/api/scripts/download-face-assets.mjs models
 RUN pnpm exec turbo run build --filter=@capella/api... --filter=@capella/worker...
 RUN pnpm --filter @capella/api deploy --prod --legacy /prod/api
 RUN pnpm --filter @capella/worker deploy --prod --legacy /prod/worker
