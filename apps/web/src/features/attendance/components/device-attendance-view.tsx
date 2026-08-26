@@ -61,7 +61,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
   const [eventType, setEventType] = useState<AttendanceEventType>('check_in');
   const [employeeCode, setEmployeeCode] = useState('');
   const [pin, setPin] = useState('');
-  const [faceImage, setFaceImage] = useState<Blob | null>(null);
+  const [faceImage, setFaceImage] = useState<Blob[] | null>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [success, setSuccess] = useState<{
     session: AttendanceSession;
@@ -77,7 +77,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
       eventType: AttendanceEventType;
       employeeCode: string;
       pin: string;
-      faceImage: Blob | null;
+      faceImage: Blob[] | null;
     }) => {
       if (!/^\d+$/.test(request.employeeCode) || Number(request.employeeCode) <= 0) throw new Error('INVALID_EMPLOYEE_CODE');
       if (!/^\d{4}$/.test(request.pin)) throw new Error('INVALID_PIN');
@@ -90,7 +90,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
         source,
         ...location,
         installationMarker: marker,
-        faceImage: request.faceImage,
+        faceImages: request.faceImage,
       });
       return { session, eventType: request.eventType };
     },

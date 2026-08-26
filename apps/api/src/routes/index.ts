@@ -51,6 +51,7 @@ export const createApiRouter = (dependencies: {
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
+  employeeFaceEnrollment?: (employeeId: string, photo: Buffer) => Promise<number[] | null>;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
   weeklyDayOffService?: WeeklyDayOffService;
@@ -130,6 +131,7 @@ export const createApiRouter = (dependencies: {
         dependencies.authService,
         dependencies.employeeUploadMaxBytes,
         dependencies.employeeUploadStore,
+        dependencies.employeeFaceEnrollment,
       ));
     }
     if (dependencies.deviceService) router.use('/devices', createDevicesRouter(dependencies.deviceService, dependencies.authService));

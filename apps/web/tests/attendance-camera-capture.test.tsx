@@ -9,7 +9,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it('captures one JPEG frame and stops the camera tracks', async () => {
+it('captures distinct temporal JPEG frames before stopping the camera tracks', async () => {
   const stop = vi.fn();
   const stream = { getTracks: () => [{ stop }] } as unknown as MediaStream;
   Object.defineProperty(navigator, 'mediaDevices', {
@@ -20,8 +20,7 @@ it('captures one JPEG frame and stops the camera tracks', async () => {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     drawImage: vi.fn(),
   } as unknown as CanvasRenderingContext2D);
-  let finishEncoding: BlobCallback | undefined;
-  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => { finishEncoding = callback; });
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob([String(Math.random())], { type: 'image/jpeg' })));
   const onChange = vi.fn();
 
   render(<AttendanceCameraCapture value={null} onChange={onChange} disabled={false} />);
@@ -29,10 +28,11 @@ it('captures one JPEG frame and stops the camera tracks', async () => {
   await screen.findByRole('button', { name: 'التقاط الصورة' });
   fireEvent.click(screen.getByRole('button', { name: 'التقاط الصورة' }));
 
+  await waitFor(() => expect(onChange).toHaveBeenCalledOnce(), { timeout: 2500 });
+  const frames = onChange.mock.calls[0]?.[0] as Blob[];
+  expect(frames).toHaveLength(8);
+  expect(new Set(frames).size).toBe(8);
   expect(stop).toHaveBeenCalledOnce();
-  expect(onChange).not.toHaveBeenCalled();
-  finishEncoding?.(new Blob(['face'], { type: 'image/jpeg' }));
-  await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ type: 'image/jpeg' })));
 });
 
 it('stops the camera and reports failure when canvas drawing is unavailable', async () => {
@@ -61,5 +61,5 @@ it('captures successfully after the React Strict Mode effect replay', async () =
   fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
   fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
 
-  await waitFor(() => expect(onChange).toHaveBeenCalledOnce());
+  await waitFor(() => expect(onChange).toHaveBeenCalledOnce(), { timeout: 2500 });
 });

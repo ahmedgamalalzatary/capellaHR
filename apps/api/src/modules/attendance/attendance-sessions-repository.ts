@@ -81,7 +81,7 @@ export const createAttendanceSessionsRepository = (
         branchLatitude: branches.latitude,
         branchLongitude: branches.longitude,
         branchRadiusMeters: branches.attendanceRadiusMeters,
-        personalPhotoPath: employeeImages.storagePath,
+        faceEmbedding: employees.faceEmbedding,
       }).from(employees).innerJoin(branches, eq(branches.id, employees.branchId))
         .leftJoin(employeeImages, and(
           eq(employeeImages.employeeId, employees.id),

@@ -28,7 +28,7 @@ const handle = (error: unknown, res: Response) => {
 };
 // Multipart field names are part of the public employee-image API contract.
 const fields = [{ name: 'personal', maxCount: 1 }, { name: 'idFront', maxCount: 1 }, { name: 'idBack', maxCount: 1 }];
-export const createEmployeesRouter = (service: EmployeeService, authService: Pick<AuthService, 'authenticate'>, maxImageBytes: number, store?: EmployeeUploadStore) => {
+export const createEmployeesRouter = (service: EmployeeService, authService: Pick<AuthService, 'authenticate'>, maxImageBytes: number, store?: EmployeeUploadStore, enrollFace?: (employeeId: string, photo: Buffer) => Promise<number[] | null>) => {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxImageBytes, files: 3 } });
   const acceptUploads = (request: Request, response: Response, next: NextFunction) => upload.fields(fields)(request, response, (error) => { if (error) handle(error, response); else next(); });
   const router = Router(); const auth = createAuthMiddleware(authService); router.use(auth.authenticate, auth.requireAdmin);
@@ -58,7 +58,11 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
         images[kind] = await store.save(files[kind][0]);
         saved.push(images[kind].storagePath);
       }
-      res.status(201).json({ data: await service.create({ ...createEmployeeFieldsSchema.parse(req.body), images }) });
+      const fields = createEmployeeFieldsSchema.parse(req.body);
+      const personal = files?.personal?.[0];
+      const embedding = personal && enrollFace ? await enrollFace(String(fields.personalPhone), personal.buffer) : null;
+      if (personal && enrollFace && !embedding) throw new EmployeeUploadError('INVALID_IMAGE', 'تعذر تسجيل الوجه');
+      res.status(201).json({ data: await service.create({ ...fields, images, faceEmbedding: embedding ? JSON.stringify(embedding) : null }) });
     } catch (e) { await compensate(saved); handle(e, res); }
   });
   router.patch('/:id', acceptUploads, async (req, res) => {
@@ -72,7 +76,10 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
       const body: unknown = req.body; const hasBodyFields = body !== null && typeof body === 'object' && Object.keys(body).length > 0;
       const parsed = hasBodyFields ? updateEmployeeFieldsSchema.parse(body) : {};
       if (!hasBodyFields && Object.keys(images).length === 0) updateEmployeeFieldsSchema.parse({});
-      const result = await service.update(id, { ...parsed, ...(Object.keys(images).length ? { images } : {}) });
+      const personal = files?.personal?.[0];
+      const embedding = personal && enrollFace ? await enrollFace(String(id), personal.buffer) : null;
+      if (personal && enrollFace && !embedding) throw new EmployeeUploadError('INVALID_IMAGE', 'تعذر تسجيل الوجه');
+      const result = await service.update(id, { ...parsed, ...(Object.keys(images).length ? { images } : {}), ...(embedding ? { faceEmbedding: JSON.stringify(embedding) } : {}) });
       committed = true;
       if (store) for (const image of Object.values(result.replacedImages)) {
         if (!image) continue; const oldPath = image.storagePath;

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { AppDependencies } from '../app.js';
 import { createAdvanceModule } from '../modules/advances/index.js';
-import { createAttendanceModule, createOnnxFaceGateway, type AttendanceShiftChangeReconciler } from '../modules/attendance/index.js';
+import { createAiFaceGateway, createAttendanceModule, type AttendanceShiftChangeReconciler } from '../modules/attendance/index.js';
 import { createAuditModule } from '../modules/audit/index.js';
 import { createAuthModule } from '../modules/auth/index.js';
 import { createBonusModule } from '../modules/bonuses/index.js';
@@ -50,6 +50,7 @@ export interface ApiRuntimeOptions {
   maxEmployeeImageBytes: number;
   reportFilesRoot?: string;
   employeeUploadsRoot?: string;
+  aiFaceServiceUrl?: string;
 }
 
 const required = <T>(value: T | undefined, name: string): T => {
@@ -78,6 +79,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
       ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads/employees'),
     options.maxEmployeeImageBytes,
   );
+  const faceGateway = createAiFaceGateway({ baseUrl: options.aiFaceServiceUrl ?? 'http://attendance-ai:8000' });
 
   const deviceModule = enabled('devices') ? createDevicesModule(database) : undefined;
   const shiftModule = enabled('shifts') ? createShiftsModule(database, {
@@ -102,7 +104,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     return createAttendanceModule(
       database,
       attendanceDevices,
-      createOnnxFaceGateway((storagePath) => employeeUploadStore.read(storagePath)),
+      faceGateway,
       {
         isFinanciallyLocked: (employeeId, attendanceDate, context) => (
           payrollForAttendance.current?.isFinanciallyLocked(employeeId, attendanceDate, context)
@@ -316,6 +318,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     branchService: branchModule.service,
     employeeService: employeeModule.service,
     employeeUploadStore: employeeModule.uploadStore,
+    employeeFaceEnrollment: (employeeId, photo) => faceGateway.enroll(Number(employeeId), new Blob([photo], { type: 'image/jpeg' })),
     employeeUploadMaxBytes: options.maxEmployeeImageBytes,
     employeeAuthenticationEnabled: enabled('self-service'),
     auditService: auditModule.service,

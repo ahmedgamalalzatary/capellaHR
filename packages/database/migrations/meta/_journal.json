@@ -554,6 +554,13 @@
       "when": 1787561851058,
       "tag": "0078_busy_talkback",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "5",
+      "when": 1787563000000,
+      "tag": "0079_ai_face_embeddings",
+      "breakpoints": true
     }
   ]
 }

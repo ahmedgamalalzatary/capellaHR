@@ -5,6 +5,10 @@ import { currentAuditActor, writeAudit } from '../audit/index.js';
 import type { EmployeeDeactivationDecisions, EmployeeImages, EmployeeRecord, EmployeeRepository, EmployeeSettlementFigures, ImageKind } from './employees-service.js';
 type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+const auditEmployee = (employee: EmployeeRecord) => {
+  const { faceEmbedding: _faceEmbedding, ...redacted } = employee;
+  return redacted;
+};
 export type EmployeeBeforeDurationChange = (
   employeeId: number,
   previousDurationMinutes: number,
@@ -67,9 +71,9 @@ const commitDeactivation = async (
   const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
   await writeAudit(tx, {
     module: 'employees', action: 'deactivate', entityType: 'employee', entityId: id,
-    beforeState: before,
+    beforeState: auditEmployee(before),
     afterState: {
-      ...record,
+      ...auditEmployee(record),
       advanceDecision: decisions.advanceDecision,
       negativeBalanceDecision: decisions.negativeBalanceDecision ?? null,
       reason: decisions.reason,
@@ -98,8 +102,8 @@ export const createDrizzleEmployeeRepository = (
       const highest = await tx.select({ value: max(employees.employeeCode) }).from(employees);
       const code = Math.max(sequence[0]!.nextCode, (highest[0]?.value ?? 0) + 1);
       await tx.update(employeeCodeSequence).set({ nextCode: code + 1 }).where(eq(employeeCodeSequence.id, 1));
-      const createdAt = now(); const { images, ...fields } = input;
-      const result = await tx.insert(employees).values({ ...fields, employeeCode: code, createdAt, updatedAt: createdAt });
+      const createdAt = now(); const { images, faceEmbedding, ...fields } = input;
+      const result = await tx.insert(employees).values({ ...fields, ...(faceEmbedding ? { faceEmbedding } : {}), employeeCode: code, createdAt, updatedAt: createdAt });
       const id = Number(result[0].insertId);
       await tx.insert(employeePhoneReservations).values([...new Set([fields.personalPhone, fields.whatsappPhone])].map((phone) => ({ phone, employeeId: id })));
       const imageValues = (Object.entries(images) as [ImageKind, NonNullable<EmployeeImages[ImageKind]>][])
@@ -118,7 +122,7 @@ export const createDrizzleEmployeeRepository = (
       const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
       await writeAudit(tx, {
         module: 'employees', action: 'create', entityType: 'employee', entityId: id,
-        afterState: record, relatedIds: { branchId: fields.branchId }, createdAt,
+        afterState: auditEmployee(record), relatedIds: { branchId: fields.branchId }, createdAt,
       });
       return record;
     });
@@ -203,7 +207,7 @@ export const createDrizzleEmployeeRepository = (
       await writeAudit(tx, {
         module: 'employees', action: branchChanged ? 'branch_reassign' : revokeSessions ? 'pin_reset' : 'update',
         entityType: 'employee', entityId: id,
-        beforeState: before, afterState: record,
+        beforeState: auditEmployee(before), afterState: auditEmployee(record),
         relatedIds: branchChanged
           ? { previousBranchId: before.branchId, branchId: record.branchId }
           : { branchId: record.branchId },
@@ -238,7 +242,7 @@ export const createDrizzleEmployeeRepository = (
       const after = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
       await writeAudit(tx, {
         module: 'employees', action: 'delete', entityType: 'employee', entityId: id,
-        beforeState: before, afterState: after,
+        beforeState: auditEmployee(before), afterState: auditEmployee(after),
         relatedIds: { branchId: before.branchId }, createdAt: at,
       });
       return 'deleted';
@@ -407,7 +411,7 @@ export const createDrizzleEmployeeRepository = (
       const record = await hydrate(tx, (await tx.select().from(employees).where(eq(employees.id, id)).limit(1))[0]!);
       await writeAudit(tx, {
         module: 'employees', action: 'activate', entityType: 'employee', entityId: id,
-        beforeState: await hydrate(tx, current), afterState: record,
+        beforeState: auditEmployee(await hydrate(tx, current)), afterState: auditEmployee(record),
         relatedIds: { branchId: current.branchId }, createdAt: at,
       });
       return { kind: 'success' as const, record };

@@ -66,11 +66,14 @@ services:
       API_PORT: 4000
       PUBLIC_ORIGINS: ${PUBLIC_ORIGINS:?PUBLIC_ORIGINS is required}
       REPORT_FILES_ROOT: /app/uploads/reports
+      AI_FACE_SERVICE_URL: http://attendance-ai:8000
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      attendance-ai:
+        condition: service_healthy
     ports:
       - 127.0.0.1:4020:4000
     volumes:
@@ -84,6 +87,30 @@ services:
       retries: 8
       start_period: 30s
     mem_limit: 384m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  attendance-ai:
+    image: capella-attendance-ai:latest
+    build:
+      context: ./apps/attendance-ai
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    mem_limit: 1536m
     security_opt:
       - no-new-privileges:true
     logging:

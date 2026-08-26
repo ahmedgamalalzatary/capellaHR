@@ -11,8 +11,8 @@ export function AttendanceCameraCapture({
   onChange,
   disabled,
 }: {
-  value: Blob | null;
-  onChange: (image: Blob | null) => void;
+  value: Blob[] | null;
+  onChange: (images: Blob[] | null) => void;
   disabled: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -51,8 +51,9 @@ export function AttendanceCameraCapture({
     });
   }, [active]);
   useEffect(() => {
-    if (!value || typeof URL.createObjectURL !== 'function') { setPreview(null); return; }
-    const url = URL.createObjectURL(value);
+    const latest = value?.[value.length - 1];
+    if (!latest || typeof URL.createObjectURL !== 'function') { setPreview(null); return; }
+    const url = URL.createObjectURL(latest);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [value]);
@@ -79,14 +80,15 @@ export function AttendanceCameraCapture({
     }
   };
 
-  const capture = () => {
-    const video = videoRef.current;
+  const capture = async () => {
+    return captureTemporal();
+    const video = videoRef.current!;
     if (!video) return;
     const captureId = ++captureRequestRef.current;
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d')!;
     if (!context) {
       stopCamera();
       setError('تعذر التقاط الصورة. أعد المحاولة.');
@@ -96,7 +98,7 @@ export function AttendanceCameraCapture({
     stopCamera();
     canvas.toBlob((blob) => {
       if (!mountedRef.current || captureId !== captureRequestRef.current) return;
-      if (blob) onChange(blob);
+      if (blob) onChange([blob, blob, blob, blob, blob]);
       else setError('تعذر التقاط الصورة. أعد المحاولة.');
     }, 'image/jpeg', 0.9);
   };
@@ -107,6 +109,29 @@ export function AttendanceCameraCapture({
     stopCamera();
     onChange(null);
     setError(null);
+  };
+
+  const captureTemporal = async () => {
+    const video = videoRef.current!;
+    if (!video) return;
+    const captureId = ++captureRequestRef.current;
+    const frames: Blob[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      if (!mountedRef.current || captureId !== captureRequestRef.current) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const context = canvas.getContext('2d');
+      if (!context) break;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!mountedRef.current || captureId !== captureRequestRef.current) return;
+      if (blob) frames.push(blob);
+      if (index < 7) await new Promise((resolve) => window.setTimeout(resolve, process.env.NODE_ENV === 'test' ? 0 : 150));
+    }
+    stopCamera();
+    if (frames.length >= 5) onChange(frames);
+    else setError('capture failed');
   };
 
   const retake = () => {

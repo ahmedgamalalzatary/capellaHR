@@ -43,6 +43,7 @@ export interface AppDependencies {
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
+  employeeFaceEnrollment?: (employeeId: string, photo: Buffer) => Promise<number[] | null>;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
   weeklyDayOffService?: WeeklyDayOffService;

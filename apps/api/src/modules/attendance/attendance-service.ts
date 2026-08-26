@@ -19,18 +19,20 @@ type AttendanceIdentity = {
   branchLatitude: number;
   branchLongitude: number;
   branchRadiusMeters: number;
-  personalPhotoPath: string | null;
+  faceEmbedding?: string | null;
+  personalPhotoPath?: string | null;
 };
 
 export type FaceComparisonResult =
   | { kind: 'match' }
-  | { kind: 'mismatch' | 'face_not_found' | 'multiple_faces' | 'invalid_image' | 'failed' };
+  | { kind: 'mismatch' | 'face_not_found' | 'multiple_faces' | 'invalid_image' | 'failed' | 'spoof' };
 
 export interface AttendanceFaceGateway {
+  verify?(employeeId: number, embedding: number[], frames: Blob[]): Promise<FaceComparisonResult>;
   compare(personalPhotoPath: string, liveImage: Buffer): Promise<FaceComparisonResult>;
 }
 
-export type EmployeeAttendanceSubmission = EmployeeAttendanceEvent & { faceImage: Buffer };
+export type EmployeeAttendanceSubmission = EmployeeAttendanceEvent & { faceImage: Buffer; faceImages?: Buffer[] };
 
 export type AttendanceSession = {
   id: number;
@@ -308,14 +310,30 @@ export const createAttendanceService = (
       });
     }
 
-    if (!identity.personalPhotoPath) {
+    if (!identity.faceEmbedding && !identity.personalPhotoPath) {
       return deny({
         code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED',
         message: 'لا توجد صورة شخصية صالحة للموظف', suspicious: false,
       });
     }
-    const faceResult = await faces.compare(identity.personalPhotoPath, input.faceImage);
+    let faceResult: FaceComparisonResult;
+    if (identity.faceEmbedding && faces.verify) try {
+      const parsed: unknown = JSON.parse(identity.faceEmbedding);
+      if (!Array.isArray(parsed) || parsed.length !== 128 || parsed.some((value) => typeof value !== 'number')) throw new Error('invalid embedding');
+      faceResult = await faces.verify(identity.id, parsed as number[], (input.faceImages ?? (input.faceImage ? [input.faceImage] : [])) as unknown as Blob[]);
+    } catch {
+      return deny({
+        code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED',
+        message: 'تعذر التحقق من بيانات الوجه', suspicious: false,
+      });
+    } else {
+      return deny({
+        code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED',
+        message: 'تعذر التحقق من بيانات الوجه', suspicious: false,
+      });
+    }
     if (faceResult.kind !== 'match') {
+      if (faceResult.kind === 'spoof') return deny({ code: 'ATTENDANCE_FACE_SPOOF_DETECTED', reason: 'FACE_SPOOF_DETECTED', message: 'تم اكتشاف محاولة تزييف', suspicious: true });
       const faceFailures = {
         mismatch: { code: 'ATTENDANCE_FACE_MISMATCH', reason: 'FACE_MISMATCH', message: 'الصورة لا تطابق صورة الموظف', suspicious: true },
         face_not_found: { code: 'ATTENDANCE_FACE_NOT_FOUND', reason: 'FACE_NOT_FOUND', message: 'لم يتم العثور على وجه واضح في الصورة', suspicious: false },

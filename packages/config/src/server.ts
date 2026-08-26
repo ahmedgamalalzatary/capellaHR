@@ -38,6 +38,7 @@ const schema = z.object({
   MAX_EMPLOYEE_IMAGE_BYTES: z.coerce.number().int().positive().max(16_777_216).default(16_777_216),
   REPORT_WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
   REPORT_FILES_ROOT: z.string().trim().min(1).max(500).optional(),
+  AI_FACE_SERVICE_URL: z.string().url().default('http://attendance-ai:8000'),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(1).max(10).optional(),
   PUBLIC_ORIGINS: originListSchema,
   DEV_CORS_ORIGINS: originListSchema,

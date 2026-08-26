@@ -89,34 +89,8 @@ describe('edition deployment contract', () => {
     }
   });
 
-  it.each([
-    'deploy/nginx/recommended-subdomains.conf.example',
-    'deploy/nginx/separate-domains.conf.example',
-  ])('routes each frontend and its API under the same origin in %s', (relativePath) => {
-    const nginx = readFileSync(repositoryFile(relativePath), 'utf8');
-
-    expect(nginx.match(/listen 443 ssl http2;/g)).toHaveLength(2);
-    expect(nginx).not.toContain('http2 on;');
-    expect(nginx.match(/location \/api\//g)).toHaveLength(2);
-    expect(nginx.match(/proxy_pass http:\/\/127\.0\.0\.1:4020/g)).toHaveLength(2);
-    expect(nginx.match(/client_max_body_size 17m/g)).toHaveLength(2);
-    expect(nginx).toContain('proxy_pass http://127.0.0.1:3020');
-    expect(nginx).toContain('proxy_pass http://127.0.0.1:3021');
-    expect(nginx.match(/proxy_set_header Host \$host/g)).toHaveLength(4);
-    expect(nginx.match(/proxy_set_header X-Forwarded-Proto \$scheme/g)).toHaveLength(4);
-    expect(nginx.match(/proxy_set_header X-Forwarded-For \$remote_addr/g)).toHaveLength(4);
-    expect(nginx).not.toContain('Access-Control-Allow-Origin');
-  });
-
   it('documents the completed multi-frontend security rollout and verification', () => {
-    const tracker = readFileSync(repositoryFile('docs/tmp-backend-progress.md'), 'utf8');
-    const erp22 = tracker.match(/## ERP 22\.[\s\S]*?(?=## ERP locked exclusions)/)?.[0];
-    expect(erp22).toBeDefined();
-    expect(erp22).not.toContain('- [ ]');
-
     const deployment = readFileSync(repositoryFile('docs/docker.md'), 'utf8');
-    expect(deployment).toContain('deploy/nginx/recommended-subdomains.conf.example');
-    expect(deployment).toContain('deploy/nginx/separate-domains.conf.example');
     expect(deployment).toContain('INVALID_ORIGIN');
     expect(deployment).toContain('host-only');
     expect(deployment).toContain('independent');

@@ -98,7 +98,7 @@ describe('personal-device attendance', () => {
       gpsAccuracyMeters: 8,
       installationMarker: 'installation-marker-123',
     });
-    expect(attendanceForm.get('faceImage')).toMatchObject({ type: 'image/jpeg' });
+    expect(attendanceForm.getAll('faceImages')).toHaveLength(8);
     await screen.findByText('أحمد سالم');
     expect(screen.getByRole('status').textContent).toContain('تم تسجيل الحضور');
     expect(screen.getByText('أحمد سالم')).toBeDefined();

@@ -16,6 +16,7 @@ const runtime = createApiRuntime({
   logger,
   timeZone: env.APP_TIME_ZONE,
   maxEmployeeImageBytes: env.MAX_EMPLOYEE_IMAGE_BYTES,
+  aiFaceServiceUrl: env.AI_FACE_SERVICE_URL,
   ...(env.REPORT_FILES_ROOT === undefined ? {} : { reportFilesRoot: env.REPORT_FILES_ROOT }),
 });
 

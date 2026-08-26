@@ -42,26 +42,30 @@ const statusFor = (code: string) => {
 
 const faceUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1 },
+  limits: { fileSize: 5 * 1024 * 1024, files: 12, fields: 1 },
 });
 
 const receiveFaceImage = (request: Request, response: Response) => new Promise<void>((resolve, reject) => {
-  faceUpload.single('faceImage')(request, response, (error) => (
+  faceUpload.any()(request, response, (error) => (
     error ? reject(error instanceof Error ? error : new Error(String(error))) : resolve()
   ));
 });
 
 const employeeSubmission = async (request: Request) => {
-  if (!request.file) throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'صورة الكاميرا مطلوبة');
-  const detected = await fileTypeFromBuffer(request.file.buffer);
-  if (!detected || !['image/jpeg', 'image/png', 'image/webp'].includes(detected.mime)) {
-    throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'صورة الكاميرا غير صالحة');
-  }
-  try {
-    await sharp(request.file.buffer, { limitInputPixels: 12_000_000, sequentialRead: true })
-      .rotate().raw().toBuffer();
-  } catch {
-    throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'صورة الكاميرا غير صالحة');
+  const files = ((request.files as Express.Multer.File[] | undefined) ?? []).filter((file) => file.fieldname === 'faceImages' || file.fieldname === 'faceImage');
+  if (files.length < 5) throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'خمس صور كاميرا مطلوبة للتحقق');
+  const buffers: Buffer[] = [];
+  for (const file of files) {
+    const detected = await fileTypeFromBuffer(file.buffer);
+    if (!detected || !['image/jpeg', 'image/png', 'image/webp'].includes(detected.mime)) {
+      throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'صورة الكاميرا غير صالحة');
+    }
+    try {
+      await sharp(file.buffer, { limitInputPixels: 12_000_000, sequentialRead: true }).rotate().raw().toBuffer();
+    } catch {
+      throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'صورة الكاميرا غير صالحة');
+    }
+    buffers.push(file.buffer);
   }
   let payload: unknown;
   const body: unknown = request.body;
@@ -71,20 +75,19 @@ const employeeSubmission = async (request: Request) => {
   try { payload = JSON.parse(String(rawPayload)); } catch {
     throw new AttendanceError('ATTENDANCE_FACE_IMAGE_INVALID', 'بيانات طلب الحضور غير صالحة');
   }
-  return { ...employeeAttendanceEventSchema.parse(payload), faceImage: request.file.buffer };
+  return { ...employeeAttendanceEventSchema.parse(payload), faceImage: buffers[0]!, faceImages: buffers };
 };
 
 const useEmployeeSubmission = async <T>(request: Request, action: (
   submission: Awaited<ReturnType<typeof employeeSubmission>>,
 ) => Promise<T>) => {
-  const uploadedBuffer = request.file?.buffer;
+  const uploadedBuffers = ((request.files as Express.Multer.File[] | undefined) ?? []).map((file) => file.buffer);
   try {
     const submission = await employeeSubmission(request);
     return await action(submission);
   } finally {
-    uploadedBuffer?.fill(0);
-    if (request.file?.buffer !== uploadedBuffer) request.file?.buffer.fill(0);
-    request.file = undefined;
+    uploadedBuffers.forEach((buffer) => buffer.fill(0));
+    request.files = undefined;
   }
 };
 

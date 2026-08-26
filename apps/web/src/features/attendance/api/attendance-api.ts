@@ -119,17 +119,18 @@ export interface EmployeeAttendanceInput {
   longitude: number;
   gpsAccuracyMeters: number;
   installationMarker: string;
-  faceImage: Blob;
+  faceImages?: Blob[];
+  faceImage?: Blob;
 }
 
 export const recordEmployeeAttendance = (
   eventType: AttendanceEventType,
   input: EmployeeAttendanceInput,
 ) => {
-  const { faceImage, ...payload } = input;
+  const { faceImages = input.faceImage ? [input.faceImage] : [], faceImage: _faceImage, ...payload } = input;
   const form = new FormData();
   form.set('payload', JSON.stringify(payload));
-  form.set('faceImage', faceImage, 'face.jpg');
+  faceImages.forEach((image, index) => form.append('faceImages', image, `frame-${index + 1}.jpg`));
   return api.postForm<AttendanceSession>(
     `/attendance/${eventType === 'check_in' ? 'check-in' : 'check-out'}`,
     form,

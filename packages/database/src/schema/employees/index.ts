@@ -6,6 +6,7 @@ export const employees = mysqlTable('employees', {
   id: int('id').autoincrement().primaryKey(), employeeCode: int('employee_code').notNull(), fullName: varchar('full_name', { length: 255 }).notNull(),
   personalPhone: varchar('personal_phone', { length: 11 }).notNull(), whatsappPhone: varchar('whatsapp_phone', { length: 11 }).notNull(), pinHash: varchar('pin_hash', { length: 255 }).notNull(),
   credentialVersion: int('credential_version').notNull().default(1),
+  faceEmbedding: varchar('face_embedding', { length: 4096 }),
   age: int('age').notNull(), address: varchar('address', { length: 1000 }).notNull(), branchId: int('branch_id').notNull().references(() => branches.id),
   shiftDurationMinutes: int('shift_duration_minutes').notNull(), monthlyBaseSalary: decimal('monthly_base_salary', { precision: 12, scale: 2 }).notNull(),
   employmentStatus: mysqlEnum('employment_status', ['active', 'inactive']).notNull().default('active'),
