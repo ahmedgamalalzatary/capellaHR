@@ -1098,6 +1098,7 @@ function SaleWorkspace({
       {bookingPrefillError || booking.isError ? (
         <Notice tone="danger" role="alert">
           {bookingPrefillError ?? errorMessage(booking.error)}
+          {bookingEmployees.isError ? <Button variant="secondary" size="sm" onClick={() => void bookingEmployees.refetch()}>إعادة المحاولة</Button> : null}
         </Notice>
       ) : activeBookingId !== undefined ? (
         <Notice tone="success">تم تحميل الحجز في البيع. أكمل اختيار الكاشير والموظفين ثم احفظ الفاتورة.</Notice>
@@ -1459,7 +1460,7 @@ function SaleWorkspace({
                     تعذر حفظ طلب البيع بأمان. تأكد من إتاحة تخزين المتصفح ثم حاول مرة أخرى.
                   </p>
                 ) : null}
-                <Button size="lg" className="w-full" disabled={!ready} onClick={() => setConfirming(true)}>
+                <Button size="lg" className="w-full" disabled={!ready} onClick={submit}>
                   مراجعة وإتمام البيع + طباعة
                 </Button>
               </CardContent>

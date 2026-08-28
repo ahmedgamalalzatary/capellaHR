@@ -87,7 +87,7 @@ export function BookingForm({ branchId, onClose, onSaved }: {
       </div>)}
       <div className="space-y-1.5"><Label htmlFor="booking-time">التاريخ والوقت</Label><Input id="booking-time" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} /></div>
       <div className="space-y-1.5"><Label htmlFor="booking-note">ملاحظة</Label><Input id="booking-note" value={note} onChange={(event) => setNote(event.target.value)} /></div>
-      {save.isError ? <p role="alert" className="text-sm text-danger">{save.error instanceof ApiError ? save.error.message : 'تعذر حفظ الحجز.'}</p> : null}
+      {save.isError ? <p role="alert" className="text-sm text-danger">{save.error instanceof ApiError ? save.error.message : save.error instanceof Error && save.error.message === 'Invalid Cairo local time' ? 'الوقت المحلي غير صالح.' : 'تعذر حفظ الحجز.'}</p> : null}
       <div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button disabled={!client || !scheduledAt || services.length === 0 || save.isPending} onClick={() => save.mutate()}>حفظ الحجز</Button></div>
     </div>
   </Modal>;

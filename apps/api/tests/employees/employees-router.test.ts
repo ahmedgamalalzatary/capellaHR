@@ -27,7 +27,7 @@ describe('employee router', () => {
     expect(response.body.error.code).toBe('INVALID_IMAGE');
   });
 
-  it('creates an employee without image uploads or an image store', async () => {
+  it('requires a personal image for employee creation', async () => {
     const create = vi.fn(async (input: Record<string, unknown>) => ({ id: 1, employeeCode: 1, ...input }));
     const createService = { create } as unknown as EmployeeService;
     const response = await request(createApp({
@@ -46,11 +46,11 @@ describe('employee router', () => {
       monthlyBaseSalary: '5000.00',
     });
 
-    expect(response.status).toBe(201);
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ images: {} }));
+    expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
   });
 
-  it('creates an employee from text-only multipart fields without an image store', async () => {
+  it('rejects text-only employee creation without a personal image', async () => {
     const create = vi.fn(async (input: Record<string, unknown>) => ({ id: 1, employeeCode: 1, ...input }));
     const createService = { create } as unknown as EmployeeService;
     const response = await request(createApp({
@@ -69,8 +69,8 @@ describe('employee router', () => {
       .field('shiftDurationMinutes', '480')
       .field('monthlyBaseSalary', '5000.00');
 
-    expect(response.status).toBe(201);
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ images: {} }));
+    expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('maps the injected Multer size limit to IMAGE_TOO_LARGE', async () => {

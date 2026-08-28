@@ -25,14 +25,8 @@ export const BARCODE_SCANNER = {
   symbologies: ['ean13', 'code128'],
 } as const;
 
-/**
- * The width the receipt is laid out at, matching the `[data-receipt]` rule in
- * globals.css. The page margins below are derived from it so the slip always
- * fills the roll edge to edge.
- */
+/** Kept for consumers that need the nominal printable receipt width. */
 export const RECEIPT_CONTENT_WIDTH_MM = 72;
-
-const RECEIPT_SIDE_MARGIN_MM = (RECEIPT_PRINTER.paperWidthMm - RECEIPT_CONTENT_WIDTH_MM) / 2;
 
 /**
  * Without this the receipt inherits the app's `size: auto` rule and the paper is
@@ -41,7 +35,7 @@ const RECEIPT_SIDE_MARGIN_MM = (RECEIPT_PRINTER.paperWidthMm - RECEIPT_CONTENT_W
  * is as long as the sale, never padded to a page.
  */
 export const RECEIPT_PAGE_RULE =
-  `@page { size: ${RECEIPT_PRINTER.paperWidthMm}mm auto; margin: 0 ${RECEIPT_SIDE_MARGIN_MM}mm; }`;
+  `@page { size: ${RECEIPT_PRINTER.paperWidthMm}mm auto; margin: 0; }`;
 
 /** A sticker the XP-233B cannot feed prints skewed or jams the roll. */
 export const labelFitsRoll = ({ width }: { width: number; height: number }) =>

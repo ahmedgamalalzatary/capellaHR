@@ -53,6 +53,18 @@ const makeService = (): AttendanceService => ({
 });
 
 describe('attendance HTTP API', () => {
+  it('returns a location-specific error for invalid GPS payloads', async () => {
+    const response = await request(createApp({ attendanceService: makeService(), authService: makeAuth() }))
+      .post('/api/v1/attendance/check-in')
+      .field('payload', JSON.stringify({ employeeCode: 42, pin: '1234', source: 'personal_device', latitude: 91, longitude: 31, gpsAccuracyMeters: 8, installationMarker: 'installation-marker-123' }))
+      .attach('faceImages', await validJpegFixture(), 'frame-1.jpg')
+      .attach('faceImages', await validJpegFixture(), 'frame-2.jpg')
+      .attach('faceImages', await validJpegFixture(), 'frame-3.jpg')
+      .attach('faceImages', await validJpegFixture(), 'frame-4.jpg')
+      .attach('faceImages', await validJpegFixture(), 'frame-5.jpg');
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('ATTENDANCE_LOCATION_INVALID');
+  });
   it('keeps employee check-in/out public while validating every factor payload', async () => {
     const service = makeService();
     const app = createApp({ authService: makeAuth(null), attendanceService: service });

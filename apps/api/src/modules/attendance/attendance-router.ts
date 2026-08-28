@@ -97,6 +97,10 @@ const handle = (error: unknown, response: Response, next: NextFunction) => {
     return;
   }
   if (error instanceof ZodError) {
+    if (error.issues.some((issue) => ['latitude', 'longitude', 'gpsAccuracyMeters'].includes(String(issue.path[0])))) {
+      fail(response, 400, 'ATTENDANCE_LOCATION_INVALID', 'Device location data is invalid');
+      return;
+    }
     const fieldErrors: Record<string, string[]> = {};
     for (const issue of error.issues) {
       const field = issue.path.join('.') || '_root';

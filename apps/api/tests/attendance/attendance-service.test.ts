@@ -150,6 +150,18 @@ describe('attendance service', () => {
     }));
   });
 
+  it('rejects a GPS fix whose accuracy exceeds the branch radius', async () => {
+    const setup = createService();
+
+    await expect(setup.service.checkIn({ ...event, gpsAccuracyMeters: 151 })).rejects.toMatchObject({
+      code: 'ATTENDANCE_LOCATION_UNRELIABLE',
+    });
+    expect(setup.repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      failureReason: 'LOCATION_UNRELIABLE', suspicious: true,
+    }));
+    expect(setup.repository.checkIn).not.toHaveBeenCalled();
+  });
+
   it('rejects a new check-in for an inactive employee', async () => {
     const repository = makeRepository();
     vi.mocked(repository.findIdentityByCode).mockResolvedValue({ ...identity, employmentStatus: 'inactive' });

@@ -60,14 +60,12 @@ BEGIN
     END IF;
     IF NEW.status = OLD.status THEN
       IF OLD.status NOT IN ('completed', 'partially_refunded')
-        OR (service_count > 0
-          AND NEW.amount_paid <=> OLD.amount_paid
+        OR (NEW.amount_paid <=> OLD.amount_paid
           AND NEW.credited_amount <=> OLD.credited_amount
           AND NEW.settlement_status <=> OLD.settlement_status) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invoice settlement update is invalid';
       END IF;
-      IF service_count > 0
-        AND NEW.credited_amount <=> OLD.credited_amount
+      IF NEW.credited_amount <=> OLD.credited_amount
         AND (payment_total <> NEW.amount_paid OR NEW.settlement_status <> 'settled') THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Service invoice must stay fully settled';
       END IF;

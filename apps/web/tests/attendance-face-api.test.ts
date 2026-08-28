@@ -9,11 +9,11 @@ it('submits attendance payload and camera image as multipart form data', async (
     status: 201,
     headers: { 'Content-Type': 'application/json' },
   })));
-  const faceImage = new File(['camera-frame'], 'face.jpg', { type: 'image/jpeg' });
+  const faceImages = Array.from({ length: 5 }, (_, index) => new File([`camera-frame-${index + 1}`], `face-${index + 1}.jpg`, { type: 'image/jpeg' }));
   const payload = {
     employeeCode: 42, pin: '1234', source: 'personal_device' as const,
     latitude: 30, longitude: 31, gpsAccuracyMeters: 8,
-    installationMarker: 'installation-marker-123', faceImage,
+    installationMarker: 'installation-marker-123', faceImages,
   };
 
   await recordEmployeeAttendance('check_in', payload);
@@ -25,6 +25,6 @@ it('submits attendance payload and camera image as multipart form data', async (
     employeeCode: 42, pin: '1234', source: 'personal_device', latitude: 30,
     longitude: 31, gpsAccuracyMeters: 8, installationMarker: 'installation-marker-123',
   });
-  expect(form.getAll('faceImages')).toHaveLength(1);
-  expect(form.get('faceImages')).toMatchObject({ type: 'image/jpeg', size: faceImage.size });
+  expect(form.getAll('faceImages')).toHaveLength(5);
+  expect(form.getAll('faceImages')).toEqual(faceImages.map((image) => expect.objectContaining({ type: 'image/jpeg', size: image.size })));
 });

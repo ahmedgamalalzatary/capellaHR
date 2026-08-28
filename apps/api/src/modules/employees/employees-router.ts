@@ -60,6 +60,7 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
       }
       const fields = createEmployeeFieldsSchema.parse(req.body);
       const personal = files?.personal?.[0];
+      if (!personal || !enrollFace) throw new EmployeeUploadError('INVALID_IMAGE', 'صورة شخصية مطلوبة لتسجيل الوجه');
       const embedding = personal && enrollFace ? await enrollFace(String(fields.personalPhone), personal.buffer) : null;
       if (personal && enrollFace && !embedding) throw new EmployeeUploadError('INVALID_IMAGE', 'تعذر تسجيل الوجه');
       res.status(201).json({ data: await service.create({ ...fields, images, faceEmbedding: embedding ? JSON.stringify(embedding) : null }) });

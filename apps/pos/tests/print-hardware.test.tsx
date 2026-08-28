@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   LABEL_PRINTER,
-  RECEIPT_CONTENT_WIDTH_MM,
   RECEIPT_PAGE_RULE,
   RECEIPT_PRINTER,
   labelFitsRoll,
@@ -51,10 +50,8 @@ describe('receipt paper', () => {
     expect(RECEIPT_PAGE_RULE).toContain(`size: ${RECEIPT_PRINTER.paperWidthMm}mm auto`);
   });
 
-  it('leaves side margins that print the slip at its full content width', () => {
-    const margin = Number(/margin:\s*0\s+([\d.]+)mm/.exec(RECEIPT_PAGE_RULE)?.[1]);
-    expect(margin).toBeGreaterThan(0);
-    expect(RECEIPT_PRINTER.paperWidthMm - margin * 2).toBe(RECEIPT_CONTENT_WIDTH_MM);
+  it('leaves edge margins to the printer driver', () => {
+    expect(RECEIPT_PAGE_RULE).toContain('margin: 0;');
   });
 
   it('carries its own page rule so a sale never prints on the label roll shape', () => {

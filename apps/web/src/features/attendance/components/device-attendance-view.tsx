@@ -33,7 +33,12 @@ const operationMessage = (eventType: AttendanceEventType) => (
 );
 
 const errorMessage = (error: unknown) => {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof ApiError) {
+    if (error.code === 'ATTENDANCE_LOCATION_INVALID' || error.code === 'ATTENDANCE_LOCATION_UNRELIABLE') {
+      return 'لم يتمكن النظام من التحقق من موقع الجهاز بدقة كافية. أعد المحاولة من مكان مفتوح.';
+    }
+    return error.message;
+  }
   if (error instanceof AttendanceLocationError) {
     if (error.reason === 'permission') return 'اسمح للموقع من إعدادات المتصفح، ثم أعد المحاولة.';
     if (error.reason === 'timeout') return 'استغرق تحديد الموقع وقتًا طويلًا. انتقل إلى مكان مفتوح وأعد المحاولة.';

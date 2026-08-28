@@ -81,7 +81,7 @@ describe('appointment book', () => {
     const refetch = vi.fn();
     mocks.session = { data: undefined, isPending: false, isError: true, refetch };
     renderView();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     expect(refetch).toHaveBeenCalledOnce();
   });
 });

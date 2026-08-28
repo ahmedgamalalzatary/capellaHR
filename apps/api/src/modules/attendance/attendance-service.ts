@@ -20,7 +20,6 @@ type AttendanceIdentity = {
   branchLongitude: number;
   branchRadiusMeters: number;
   faceEmbedding?: string | null;
-  personalPhotoPath?: string | null;
 };
 
 export type FaceComparisonResult =
@@ -93,7 +92,8 @@ type AttendanceMutationFailure =
   | 'already_approved'
   | 'already_reviewed'
   | 'financially_locked'
-  | 'not_automatic_timeout';
+  | 'not_automatic_timeout'
+  | 'location_unreliable';
 
 export type AttendanceMutationResult =
   | { kind: 'success'; session: AttendanceSession }
@@ -214,6 +214,7 @@ const failures: Record<AttendanceMutationFailure, {
   already_reviewed: { code: 'ATTENDANCE_DENIED_ALREADY_REVIEWED', reason: 'ALREADY_REVIEWED', message: 'تمت مراجعة المحاولة من قبل', suspicious: false },
   financially_locked: { code: 'ATTENDANCE_FINANCIALLY_LOCKED', reason: 'FINANCIALLY_LOCKED', message: 'تم اعتماد الفترة ماليًا ولا يمكن تعديلها', suspicious: false },
   not_automatic_timeout: { code: 'ATTENDANCE_AUTOMATIC_TIMEOUT_ONLY', reason: 'NOT_AUTOMATIC_TIMEOUT', message: 'يمكن تصحيح الخروج التلقائي فقط', suspicious: false },
+  location_unreliable: { code: 'ATTENDANCE_LOCATION_UNRELIABLE', reason: 'LOCATION_UNRELIABLE', message: 'Location accuracy is insufficient', suspicious: true },
 };
 
 const mutationValue = (result: AttendanceMutationResult) => {
@@ -310,7 +311,11 @@ export const createAttendanceService = (
       });
     }
 
-    if (!identity.faceEmbedding && !identity.personalPhotoPath) {
+    if (!Number.isFinite(input.gpsAccuracyMeters) || input.gpsAccuracyMeters > identity.branchRadiusMeters) {
+      return deny(failures.location_unreliable);
+    }
+
+    if (!identity.faceEmbedding) {
       return deny({
         code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED',
         message: 'لا توجد صورة شخصية صالحة للموظف', suspicious: false,

@@ -214,7 +214,6 @@ describe('ERP service-sale view', () => {
     }
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     await screen.findByText('تم حفظ الفاتورة');
     // The number shows on the saved-sale card; the print copy repeats it on the receipt.
@@ -243,7 +242,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     // The printed receipt is the same document the invoice page prints.
@@ -258,7 +256,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     // Re-printing stays a deliberate click; a re-render must not send a second copy.
@@ -271,7 +268,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('الطباعة غير متاحة في هذا المتصفح');
     expect(screen.getByText('تم حفظ الفاتورة')).toBeDefined();
@@ -282,7 +278,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await screen.findByText('تم حفظ الفاتورة');
 
     expect(document.querySelector('[data-receipt-sheet]')).not.toBeNull();
@@ -314,7 +309,6 @@ describe('ERP service-sale view', () => {
     const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
     await waitFor(() => expect(review).toHaveProperty('disabled', false));
     fireEvent.click(review);
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     await screen.findByText('تم حفظ الفاتورة');
     expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
@@ -344,8 +338,7 @@ describe('ERP service-sale view', () => {
     const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
     await waitFor(() => expect(review).toHaveProperty('disabled', false));
     fireEvent.click(review);
-    expect(screen.getByText(/سيبقى على العميل 30.00/)).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
+    expect(screen.queryByRole('dialog', { name: 'تأكيد البيع' })).toBeNull();
     await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledWith(
       expect.objectContaining({ payments: [{ method: 'cash', amount: '20.00' }] }),
     ));
@@ -417,7 +410,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await screen.findByText('تعذر تأكيد نتيجة البيع');
     const stored = JSON.parse(readStoredPending() ?? '{}') as {
       input?: { idempotencyKey?: string };
@@ -438,7 +430,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     expect((await screen.findAllByRole('alert')).some(
       (alert) => alert.textContent?.includes('الموظف لم يعد حاضرًا في الفرع'),
@@ -465,7 +456,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await screen.findByRole('button', { name: 'حذف البيع المعلق' });
 
     fireEvent.click(screen.getByRole('button', { name: 'حذف البيع المعلق' }));
@@ -484,7 +474,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await screen.findByRole('button', { name: 'حذف البيع المعلق' });
     fireEvent.click(screen.getByRole('button', { name: 'حذف البيع المعلق' }));
     const remove = vi.spyOn(Storage.prototype, 'removeItem')
@@ -502,7 +491,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     expect(await screen.findByText('بانتظار الاتصال')).toBeDefined();
     expect(mocks.completeSale).not.toHaveBeenCalled();
@@ -519,7 +507,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     expect(await screen.findByText('تعذر تأكيد نتيجة البيع')).toBeDefined();
     expect(readStoredPending()).not.toBeNull();
@@ -552,7 +539,6 @@ describe('ERP service-sale view', () => {
     }));
 
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
 
     const pendingKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
@@ -626,7 +612,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     expect(mocks.completeSale).not.toHaveBeenCalled();
     mocks.completeSale
       .mockRejectedValueOnce(new ApiError(503, {
@@ -757,7 +742,6 @@ describe('ERP service-sale view', () => {
       .mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
 
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     expect(await screen.findByText(/تعذر حفظ طلب البيع بأمان/)).toBeDefined();
     expect(mocks.completeSale).not.toHaveBeenCalled();
@@ -1024,7 +1008,6 @@ describe('ERP service-sale view', () => {
 
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await screen.findByText('تم حفظ الفاتورة');
     fireEvent.click(screen.getByRole('button', { name: 'بيع جديد' }));
 
@@ -1084,7 +1067,6 @@ describe('ERP service-sale view', () => {
       name: 'مراجعة وإتمام البيع + طباعة',
     }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     await screen.findByText('تم حفظ الفاتورة');
     const submitted = mocks.completeSale.mock.calls[0]?.[0] as {
@@ -1132,7 +1114,6 @@ describe('ERP service-sale view', () => {
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
     await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
     const replacement = {
       owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
@@ -1242,7 +1223,6 @@ describe('ERP service-sale view', () => {
     const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
     await waitFor(() => expect(review).toHaveProperty('disabled', false));
     fireEvent.click(review);
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
 
     await screen.findByText('تم حفظ الفاتورة');
     expect(mocks.completeSale.mock.calls[0]?.[0].lines).toEqual([
@@ -1275,8 +1255,6 @@ describe('ERP service-sale view', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
       .toHaveProperty('disabled', false));
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد البيع' }));
-
     await screen.findByText('تم حفظ الفاتورة');
     expect(mocks.completeSale.mock.calls[0]?.[0].lines).toEqual([
       { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 11 },
@@ -1353,14 +1331,13 @@ describe('ERP service-sale view', () => {
     expect(await screen.findByText('لا توجد فروع متاحة')).toBeDefined();
   });
 
-  it('closes the sale confirmation dialog with Escape', async () => {
+  it('submits immediately from the review-and-print button without a confirmation dialog', async () => {
     renderView();
     await buildDraft();
+
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
-    expect(screen.getByRole('dialog', { name: 'تأكيد البيع' })).toBeDefined();
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('dialog', { name: 'تأكيد البيع' })).toBeNull();
   });
 });
