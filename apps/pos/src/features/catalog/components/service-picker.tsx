@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, Card, EmptyState, Input } from '@capella/ui';
 
@@ -23,9 +23,11 @@ import { serverErrorMessage } from './catalog-messages';
 export function ServicePicker({
   onSelect,
   branchId,
+  onAvailabilityChange,
 }: {
   onSelect?: (service: ServiceListItem) => void;
   branchId?: number;
+  onAvailabilityChange?: (available: boolean) => void;
 }) {
   const [search, setSearch] = useState('');
   // Whitespace-only input must read as "no filter", so the trimmed term drives
@@ -42,7 +44,19 @@ export function ServicePicker({
     }),
   });
 
+  const availabilityQuery = useQuery({
+    queryKey: catalogQueryKeys.services({ picker: true, availability: true, branchId }),
+    queryFn: () => listServices({
+      isActive: true,
+      pageSize: 1,
+      ...(branchId === undefined ? {} : { branchId }),
+    }),
+  });
+
   const items = servicesQuery.data?.items ?? [];
+  useEffect(() => {
+    if (availabilityQuery.isSuccess) onAvailabilityChange?.(trimmed ? true : availabilityQuery.data.items.length > 0);
+  }, [availabilityQuery.data?.items.length, availabilityQuery.isSuccess, onAvailabilityChange, trimmed]);
 
   return (
     <div className="space-y-3">

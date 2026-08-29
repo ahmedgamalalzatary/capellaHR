@@ -11,6 +11,7 @@ const service = () => ({
   listDay: vi.fn().mockResolvedValue([{ id: 9 }]),
   updateStatus: vi.fn().mockResolvedValue({ id: 9, status: 'arrived' }),
   countFutureForEmployee: vi.fn(),
+  hasAny: vi.fn(),
   listEmployeeOptions: vi.fn().mockResolvedValue([]),
   updatePreference: vi.fn().mockResolvedValue({ id: 9 }),
 });

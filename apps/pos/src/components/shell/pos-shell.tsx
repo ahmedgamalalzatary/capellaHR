@@ -11,8 +11,11 @@ import {
   getCurrentCashierSession,
 } from '@/features/cashier-sessions';
 import { clearAllSaleDrafts } from '@/features/sales';
+import { hasBookingsEver } from '@/features/bookings';
+import { listCategories, listServices } from '@/features/catalog';
+import { listSellableProducts } from '@/features/products';
 
-import { adminNavigation, cashierNavigation } from './nav';
+import { adminNavigation, cashierNavigation, filterCashierNavigation } from './nav';
 import { Sidebar, SIDEBAR_ID } from './sidebar';
 import { Topbar } from './topbar';
 
@@ -28,7 +31,35 @@ export function PosShell({ children }: { children: ReactNode }) {
     queryFn: () => getCurrentCashierSession(),
     enabled: isCashier,
   });
-  const visibleNavigation = isAdmin ? adminNavigation : cashierNavigation;
+  const branchId = cashierSession.data?.branchId;
+  const cashierCapabilities = useQuery({
+    queryKey: ['cashier-navigation-capabilities', branchId],
+    enabled: isCashier && branchId !== undefined,
+    queryFn: async () => {
+      if (branchId === undefined) throw new Error('Cashier branch is unavailable');
+      const activeBranchId = branchId;
+      const [categories, services, products, bookings] = await Promise.all([
+        listCategories({ branchId: activeBranchId, isActive: true, page: 1, pageSize: 1 }),
+        listServices({ branchId: activeBranchId, isActive: true, page: 1, pageSize: 1 }),
+        listSellableProducts({ branchId: activeBranchId, page: 1, pageSize: 1 }),
+        hasBookingsEver(activeBranchId),
+      ]);
+      const hasCatalogContent = categories.items.length > 0 || services.items.length > 0;
+      return { hasSalesContent: hasCatalogContent || products.items.length > 0, hasCatalogContent, hasBookings: bookings };
+    },
+  });
+  const visibleNavigation = isAdmin ? adminNavigation : cashierCapabilities.data
+    ? filterCashierNavigation(cashierNavigation, cashierCapabilities.data)
+    : cashierNavigation;
+
+  useEffect(() => {
+    if (!isCashier || !cashierCapabilities.data) return;
+    const current = window.location.pathname;
+    const allowed = current === '/sales' ? cashierCapabilities.data.hasSalesContent
+      : current === '/bookings' ? cashierCapabilities.data.hasBookings
+        : current === '/catalog' ? cashierCapabilities.data.hasCatalogContent : true;
+    if (!allowed) router.replace('/');
+  }, [cashierCapabilities.data, isCashier, router]);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const wideRef = useRef(false);

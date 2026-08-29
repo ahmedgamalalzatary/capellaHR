@@ -2,7 +2,7 @@
 
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Percent, Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   Badge,
@@ -104,7 +104,7 @@ export function CatalogView() {
       ...(trimmedServiceSearch ? { search: trimmedServiceSearch } : {}),
       page,
     })),
-    enabled: scopeReady && tab === 'services',
+    enabled: scopeReady,
   });
 
   const invalidate = () => invalidateErpCaches(queryClient, 'catalog');
@@ -128,6 +128,16 @@ export function CatalogView() {
 
   const categories = categoriesQuery.data ?? [];
   const services = servicesQuery.data ?? [];
+  const hasActiveSearch = trimmedCategorySearch.length > 0 || trimmedServiceSearch.length > 0;
+  const visibleTabs = isAdmin || hasActiveSearch || !categoriesQuery.isSuccess || !servicesQuery.isSuccess
+    ? tabs
+    : tabs.filter((entry) => entry.key === 'categories' ? categories.length > 0 : services.length > 0);
+
+  // Keep the selected tab valid after branch data loads or changes.
+  useEffect(() => {
+    const firstVisible = visibleTabs[0]?.key;
+    if (firstVisible && !visibleTabs.some((entry) => entry.key === tab)) setTab(firstVisible);
+  }, [tab, visibleTabs]);
 
   return (
     <section className="space-y-6">
@@ -180,7 +190,7 @@ export function CatalogView() {
             aria-label="أقسام الكتالوج"
             className="inline-flex gap-1 rounded-control border border-line bg-paper p-1"
           >
-            {tabs.map((entry) => (
+            {visibleTabs.map((entry) => (
               <button
                 key={entry.key}
                 type="button"

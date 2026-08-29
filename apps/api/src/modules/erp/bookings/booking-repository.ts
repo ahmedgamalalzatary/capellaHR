@@ -207,6 +207,12 @@ export const createDrizzleBookingRepository = (
     }));
   },
 
+  async hasAny(branchId) {
+    const row = await database.select({ id: erpBookings.id }).from(erpBookings)
+      .where(eq(erpBookings.branchId, branchId)).limit(1);
+    return row.length > 0;
+  },
+
   async transition(branchId, id, from, to, changedAt) {
     return database.transaction(async (transaction) => {
       const scope = and(

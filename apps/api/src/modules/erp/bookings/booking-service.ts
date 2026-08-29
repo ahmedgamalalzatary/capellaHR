@@ -42,6 +42,7 @@ export interface BookingRepository {
   create(input: CreateBookingWrite): Promise<BookingRecord>;
   findById(branchId: number, id: number): Promise<BookingRecord | null>;
   listDay(branchId: number, cairoDate: string): Promise<BookingRecord[]>;
+  hasAny?(branchId: number): Promise<boolean>;
   transition(
     branchId: number,
     id: number,
@@ -130,6 +131,11 @@ export const createBookingService = (dependencies: {
     async listDay(actor: ErpAccountIdentity, query: ListBookingsQuery) {
       const { branchId } = await resolveBranchContext(actor, query.branchId);
       return repository.listDay(branchId, query.date);
+    },
+
+    async hasAny(actor: ErpAccountIdentity, requestedBranchId?: number) {
+      const { branchId } = await resolveBranchContext(actor, requestedBranchId);
+      return repository.hasAny ? repository.hasAny(branchId) : false;
     },
 
     async listEmployeeOptions(actor: ErpAccountIdentity, requestedBranchId?: number) {

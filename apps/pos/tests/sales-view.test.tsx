@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 
 import { ApiError } from '../src/lib/api/client';
 
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   listAssignableEmployees: vi.fn(),
   clientPickerProps: vi.fn(),
   servicePickerProps: vi.fn(),
+  serviceAvailable: { current: true },
   getBooking: vi.fn(),
 }));
 
@@ -44,9 +46,10 @@ vi.mock('../src/features/clients', () => ({
   ),
 }));
 vi.mock('../src/features/catalog', () => ({
-  ServicePicker: (props: { branchId?: number; onSelect: (value: unknown) => void }) => (
-    mocks.servicePickerProps(props),
-    <>
+  ServicePicker: (props: { branchId?: number; onSelect: (value: unknown) => void; onAvailabilityChange?: (value: boolean) => void }) => {
+    useEffect(() => { props.onAvailabilityChange?.(mocks.serviceAvailable.current); }, [props.onAvailabilityChange]);
+    return (
+    mocks.servicePickerProps(props), <>
       <button onClick={() => props.onSelect({
         id: 21, branchId: 2, categoryId: 1, categoryName: 'شعر', categoryIsActive: true,
         name: 'صبغة شعر', description: null, price: '200.00', commissionPercent: '10.00',
@@ -61,8 +64,8 @@ vi.mock('../src/features/catalog', () => ({
       })}>
         أضف خدمة بسعر مفتوح
       </button>
-    </>
-  ),
+    </>);
+  },
 }));
 vi.mock('../src/features/products/api/products-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -141,6 +144,19 @@ const buildDraft = async () => {
 };
 
 describe('ERP service-sale view', () => {
+  it('gives the only available item picker the full width', async () => {
+    mocks.serviceAvailable.current = false;
+    renderView();
+    const product = await screen.findByRole('button', { name: /شامبو/ });
+    expect(product.closest('.grid')?.className).toBe('grid gap-4');
+  });
+
+  it('labels the item section with Products when Services are empty', async () => {
+    mocks.serviceAvailable.current = false;
+    renderView();
+    expect(await screen.findByText('المنتجات')).toBeDefined();
+    expect(screen.queryByText('الخدمات والمنتجات')).toBeNull();
+  });
   it('announces Cashier-session loading', () => {
     mocks.getCurrentSession.mockReturnValue(new Promise(() => undefined));
     renderView();
@@ -162,6 +178,7 @@ describe('ERP service-sale view', () => {
     ]);
     mocks.clientPickerProps.mockReset();
     mocks.servicePickerProps.mockReset();
+    mocks.serviceAvailable.current = true;
     mocks.quoteSale.mockReset().mockResolvedValue({
       lines: [{ itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' }],
       discount: { kind: 'percentage', value: '10.00', amount: '20.00' },
@@ -244,6 +261,7 @@ describe('ERP service-sale view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
 
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog', { name: 'تأكيد البيع' })).toBeNull();
     // The printed receipt is the same document the invoice page prints.
     expect(document.querySelector('[data-receipt]')?.textContent).toContain(invoice.invoiceNumber);
     expect(screen.queryByRole('dialog', { name: 'طباعة الإيصال' })).toBeNull();

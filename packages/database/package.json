@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "db:generate": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs generate",
-    "db:migrate": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs migrate",
+    "db:migrate": "node --env-file=../../.env node_modules/tsx/dist/cli.mjs src/migration-runner.ts",
     "db:push": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node --env-file=../../.env node_modules/drizzle-kit/bin.cjs studio",
     "db:seed": "node --env-file=../../.env node_modules/tsx/dist/cli.mjs src/seed/index.ts",

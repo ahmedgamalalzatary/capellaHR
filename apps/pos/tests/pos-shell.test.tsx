@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { PosShell } from '../src/components/shell/pos-shell';
+import { cashierNavigation, filterCashierNavigation } from '../src/components/shell/nav';
 
 const { replaceMock, getSessionMock, logoutMock, getCurrentSessionMock, pathname } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
@@ -63,6 +64,16 @@ beforeEach(() => {
 });
 
 describe('PosShell', () => {
+  test('filters only empty cashier workflows and removes empty groups', () => {
+    const result = filterCashierNavigation(cashierNavigation, {
+      hasSalesContent: false,
+      hasBookings: false,
+      hasCatalogContent: false,
+    });
+    expect(result.flatMap((group) => group.items).map((item) => item.href)).not.toContain('/sales');
+    expect(result.flatMap((group) => group.items).map((item) => item.href)).not.toContain('/bookings');
+    expect(result.flatMap((group) => group.items).map((item) => item.href)).not.toContain('/catalog');
+  });
   test('renders the children content', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();

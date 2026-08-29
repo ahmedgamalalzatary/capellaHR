@@ -18,7 +18,7 @@ describe('migration runner', () => {
 
     expect(exitCode).toBe(0);
     expect(execute).toHaveBeenCalledWith(
-      'pnpm',
+      process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
       ['exec', 'drizzle-kit', 'migrate'],
       expect.objectContaining({ stdio: 'inherit' }),
     );

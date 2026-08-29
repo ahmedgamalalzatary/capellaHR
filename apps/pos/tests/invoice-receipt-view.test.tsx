@@ -239,19 +239,20 @@ describe('stored invoice receipt', () => {
       saleFixtures.completedInvoice.invoiceNumber,
       expect.objectContaining({ type: 'svg' }),
     ));
-    expect(screen.getByTestId('receipt-qr').innerHTML).toContain('svg');
+    expect(customerReceipt().getByTestId('receipt-qr').innerHTML).toContain('svg');
     expect(customerReceipt().getByText('Capella Care')).toBeDefined();
-    expect(screen.getByText('إيصال بيع')).toBeDefined();
+    expect(screen.queryByText('إيصال بيع')).toBeNull();
     expect(customerReceipt().getByText('رقم الفاتورة')).toBeDefined();
     expect(customerReceipt().getByText('التاريخ')).toBeDefined();
     expect(document.querySelector('[data-receipt]')).not.toBeNull();
   });
 
+
   it('lays out every sold line in a priced quantity table', async () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    const table = customerReceipt().getByRole('table');
+    const table = customerReceipt().getAllByRole('table')[0]!;
     expect(within(table).getAllByRole('columnheader').map((header) => header.textContent))
       .toEqual(['الصنف', 'عدد', 'سعر', 'قيمة']);
     const rows = within(table).getAllByRole('row');
@@ -277,8 +278,8 @@ describe('stored invoice receipt', () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(screen.getByText('عدد الأصناف').parentElement?.textContent).toContain('1');
-    expect(screen.getByText('إجمالي الكميات').parentElement?.textContent).toContain('1');
+    expect(screen.getByText('عدد الأصناف').closest('table')?.textContent).toContain('1');
+    expect(screen.getByText('إجمالي الكميات').closest('table')?.textContent).toContain('1');
     expect(customerReceipt().getByText('المجموع الفرعي').parentElement?.textContent)
       .toContain('200.00');
     expect(customerReceipt().getByText('الخصم').parentElement?.textContent).toContain('20.00');
@@ -306,8 +307,8 @@ describe('stored invoice receipt', () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(screen.getByText('نقدي').parentElement?.textContent).toContain('185.00');
-    expect(screen.getByText('المدفوع').parentElement?.textContent).toContain('185.00');
+    expect(customerReceipt().queryByText('نقدي')).toBeNull();
+    expect(customerReceipt().queryByText('المدفوع')).toBeNull();
     expect(customerReceipt().getByText('شكرًا لزيارتكم')).toBeDefined();
   });
 
@@ -696,7 +697,7 @@ describe('stored invoice receipt', () => {
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     // The QW2100 is a 1D scanner and cannot read the QR code at all.
-    const barcode = screen.getByRole('img', { name: saleFixtures.completedInvoice.invoiceNumber });
+    const barcode = customerReceipt().getByRole('img', { name: saleFixtures.completedInvoice.invoiceNumber });
     expect(barcode.innerHTML).toContain('svg');
   });
 });

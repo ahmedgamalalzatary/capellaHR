@@ -26,6 +26,10 @@ const renderView = () => {
   render(<QueryClientProvider client={queryClient}><SuppliersPurchasesView /></QueryClientProvider>);
   return queryClient;
 };
+const openPurchaseForm = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'إضافة فاتورة مشتريات' }));
+  await screen.findByLabelText('المورد للمشتريات');
+};
 
 beforeEach(() => { actor.current = 'admin'; mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
@@ -60,6 +64,7 @@ describe('SuppliersPurchasesView', () => {
     const queryClient = renderView(); queryClient.setQueryData(['erp-reports', 'existing'], {}); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } }); fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
     await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, name: 'مورد جديد' })));
+    await openPurchaseForm();
     fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } }); fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } });
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
     expect(screen.getByText('الإجمالي: 25.00 ج.م')).toBeDefined(); fireEvent.click(screen.getByRole('button', { name: 'ترحيل المشتريات' }));
@@ -151,6 +156,7 @@ describe('SuppliersPurchasesView', () => {
     renderView();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm();
     fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } });
     fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
 
@@ -230,6 +236,8 @@ describe('SuppliersPurchasesView', () => {
 
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '5' } });
 
+    expect(screen.queryByText('تصحيح للمشتريات #9')).toBeNull();
+    await openPurchaseForm();
     expect(screen.getByText('ترحيل مشتريات جديدة')).toBeDefined();
     expect((await screen.findByLabelText('المورد للمشتريات') as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText('تصفية حسب المورد') as HTMLSelectElement).value).toBe('');
@@ -237,6 +245,7 @@ describe('SuppliersPurchasesView', () => {
 
   it('rejects non-integer quantities without crashing the exact-total render', async () => {
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm();
     await screen.findByLabelText('الكمية'); fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '1.5' } });
     expect(screen.getByText('الإجمالي: 0.00 ج.م')).toBeDefined();
     expect(screen.getByRole('button', { name: 'ترحيل المشتريات' }).hasAttribute('disabled')).toBe(true);
@@ -244,6 +253,7 @@ describe('SuppliersPurchasesView', () => {
 
   it('keeps inactive products out of entry while retaining them in history filters', async () => {
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm();
     const entry = await screen.findByLabelText('المنتج'); const history = screen.getByLabelText('تصفية حسب المنتج');
     expect(within(entry).queryByRole('option', { name: 'منتج قديم' })).toBeNull();
     expect(within(history).getByRole('option', { name: 'منتج قديم' })).toBeDefined();

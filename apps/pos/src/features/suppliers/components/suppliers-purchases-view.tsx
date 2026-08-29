@@ -1,8 +1,9 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { Plus, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label, Modal } from '@capella/ui';
 
@@ -46,14 +47,17 @@ const quantityValue = (value: string) => {
   const parsed = BigInt(value);
   return parsed <= BigInt(2_147_483_647) ? parsed : null;
 };
-const exactTotal = (lines: DraftLine[]) => {
+const moneyFromCents = (total: bigint) => {
   const hundred = BigInt(100);
-  const total = lines.reduce(
-    (sum, line) => sum + cents(line.unitCost) * (quantityValue(line.quantity) ?? BigInt(0)),
-    BigInt(0),
-  );
   return `${total / hundred}.${String(total % hundred).padStart(2, '0')}`;
 };
+const lineAmount = (line: DraftLine) => moneyFromCents(
+  cents(line.unitCost) * (quantityValue(line.quantity) ?? BigInt(0)),
+);
+const exactTotal = (lines: DraftLine[]) => moneyFromCents(lines.reduce(
+  (sum, line) => sum + cents(line.unitCost) * (quantityValue(line.quantity) ?? BigInt(0)),
+  BigInt(0),
+));
 
 export function SuppliersPurchasesView() {
   const queryClient = useQueryClient();
@@ -84,6 +88,7 @@ export function SuppliersPurchasesView() {
   const [cancelling, setCancelling] = useState<Purchase | null>(null);
   const [reason, setReason] = useState('');
   const [successMessage, setSuccessMessage] = useState<string>();
+  const [purchasePanelOpen, setPurchasePanelOpen] = useState(false);
 
   const branches = useQuery({
     queryKey: ['supplier-branches'],
@@ -149,7 +154,7 @@ export function SuppliersPurchasesView() {
   const changeBranch = (value: string) => {
     if (saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending) return;
     setSelectedBranchId(value ? Number(value) : undefined);
-    clearSupplier(); resetDraft(); setHistorySupplier(''); setHistoryProduct(''); setStatus('');
+    clearSupplier(); resetDraft(); setPurchasePanelOpen(false); setHistorySupplier(''); setHistoryProduct(''); setStatus('');
     setPage(1); setConfirmingToggle(null); setCancelling(null); setReason('');
   };
   const updateLine = (key: number, changes: Partial<DraftLine>) => {
@@ -169,6 +174,7 @@ export function SuppliersPurchasesView() {
       unitCost: line.unitCost,
     })));
     setLineKey((value) => value + purchase.lines.length);
+    setPurchasePanelOpen(true);
   };
   const openCancellation = (purchase: Purchase) => { setReason(''); setCancelling(purchase); };
   const closeCancellation = () => { setCancelling(null); setReason(''); };
@@ -204,7 +210,7 @@ export function SuppliersPurchasesView() {
       })),
       ...(correctionOf === undefined ? {} : { correctsPurchaseId: correctionOf }),
     }),
-    onSuccess: async () => { purchaseDraft.clear(); resetDraft(); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
+    onSuccess: async () => { purchaseDraft.clear(); resetDraft(); setPurchasePanelOpen(false); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
   });
   const cancel = useMutation({
     mutationFn: () => cancelPurchase(cancelling!.id, { ...branchScope, reason }),
@@ -215,12 +221,39 @@ export function SuppliersPurchasesView() {
   ));
   const activeSuppliers = suppliers.data?.items.filter((supplier) => supplier.isActive) ?? [];
   const commandPending = saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending;
+  const closePurchasePanel = () => {
+    if (commandPending) return;
+    setPurchasePanelOpen(false);
+  };
+
+  useEffect(() => {
+    if (!purchasePanelOpen) return;
+    const html = document.documentElement;
+    const previousOverflow = html.style.overflow;
+    html.style.overflow = 'hidden';
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || commandPending) return;
+      event.stopPropagation();
+      setPurchasePanelOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      html.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [purchasePanelOpen, commandPending]);
 
   return (
     <section className="space-y-6">
       <PageHeader
         title="الموردون والمشتريات"
         description="ترحيل مشتريات مدفوعة بالكامل إلى المخزون مع سجل غير قابل للتعديل."
+        actions={scopeReady ? (
+          <Button disabled={commandPending} onClick={() => setPurchasePanelOpen(true)}>
+            <Plus className="size-4" aria-hidden />
+            إضافة فاتورة مشتريات
+          </Button>
+        ) : undefined}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
@@ -341,108 +374,154 @@ export function SuppliersPurchasesView() {
             )}
           </Card>
 
-          <Card className="shadow-card">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <SectionHeading
-                title={correctionOf === undefined ? 'ترحيل مشتريات جديدة' : `تصحيح للمشتريات #${correctionOf}`}
-                description="المشتريات مدفوعة بالكامل عند الترحيل، ولا تُعدَّل بعده إلا بتصحيح جديد."
-              />
-              {purchaseDraft.pending ? (
-                <DraftNotice
-                  onRestore={() => {
-                    const stored = purchaseDraft.restore();
-                    if (!stored) return;
-                    setSupplierId(stored.supplierId);
-                    setPurchaseDate(stored.purchaseDate);
-                    setLines(stored.lines);
-                    setLineKey(Math.max(...stored.lines.map((line) => line.key), 0) + 1);
-                  }}
-                  onDiscard={purchaseDraft.discard}
-                />
-              ) : null}
-              {suppliers.isError || activeProducts.isError ? (
-                <EmptyState title="تعذر تحميل خيارات المشتريات" className="py-8" action={<Button onClick={() => { void suppliers.refetch(); void activeProducts.refetch(); }}>إعادة المحاولة</Button>} />
-              ) : suppliers.isPending || activeProducts.isPending ? (
-                <LoadingState label="جارٍ تحميل خيارات المشتريات…" className="py-10" />
-              ) : (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="purchase-supplier">المورد للمشتريات</Label>
-                      <Select
-                        id="purchase-supplier"
-                        value={supplierId}
-                        disabled={commandPending}
-                        onChange={(event) => { if (commandPending) return; setIdempotencyKey(createUuid()); setSupplierId(event.target.value); }}
-                      >
-                        <option value="">اختر المورد</option>
-                        {activeSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="purchase-date">تاريخ المشتريات</Label>
-                      <Input id="purchase-date" type="date" disabled={commandPending} value={purchaseDate} onChange={(event) => { if (commandPending) return; setIdempotencyKey(createUuid()); setPurchaseDate(event.target.value); }} />
-                    </div>
+          {purchasePanelOpen && typeof document !== 'undefined' ? createPortal(
+            <div
+              className="fixed inset-0 z-50 flex h-dvh justify-end bg-black/40"
+              onClick={closePurchasePanel}
+            >
+              <aside
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="purchase-panel-title"
+                className="flex h-full min-h-0 w-full max-w-xl flex-col bg-paper shadow-lg"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line/70 px-5 py-4">
+                  <div className="min-w-0">
+                    <h2 id="purchase-panel-title" className="text-base font-semibold text-ink">
+                      {correctionOf === undefined ? 'ترحيل مشتريات جديدة' : `تصحيح للمشتريات #${correctionOf}`}
+                    </h2>
+                    <p className="mt-1 text-[13px] text-muted">
+                      المشتريات مدفوعة بالكامل عند الترحيل، ولا تُعدَّل بعده إلا بتصحيح جديد.
+                    </p>
                   </div>
+                  <Button variant="ghost" size="sm" aria-label="إغلاق فاتورة المشتريات" disabled={commandPending} onClick={closePurchasePanel}>
+                    <X className="size-4" aria-hidden />
+                  </Button>
+                </div>
 
-                  <ul className="space-y-3">
-                    {lines.map((line, index) => (
-                      <li key={line.key} className="rounded-control border border-line bg-surface/50 p-3">
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[2fr_1fr_1fr_auto] xl:items-end">
-                          <div className="space-y-1.5">
-                            <Label htmlFor={`purchase-product-${line.key}`}>المنتج</Label>
-                            <Select
-                              id={`purchase-product-${line.key}`}
-                              value={line.productId}
-                              disabled={commandPending}
-                              onChange={(event) => { if (!commandPending) updateLine(line.key, { productId: event.target.value }); }}
-                            >
-                              <option value="">اختر المنتج</option>
-                              {activeProducts.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                            </Select>
+                <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
+                  {purchaseDraft.pending ? (
+                    <DraftNotice
+                      onRestore={() => {
+                        const stored = purchaseDraft.restore();
+                        if (!stored) return;
+                        setSupplierId(stored.supplierId);
+                        setPurchaseDate(stored.purchaseDate);
+                        setLines(stored.lines);
+                        setLineKey(Math.max(...stored.lines.map((line) => line.key), 0) + 1);
+                      }}
+                      onDiscard={purchaseDraft.discard}
+                    />
+                  ) : null}
+                  {suppliers.isError || activeProducts.isError ? (
+                    <EmptyState title="تعذر تحميل خيارات المشتريات" className="py-8" action={<Button onClick={() => { void suppliers.refetch(); void activeProducts.refetch(); }}>إعادة المحاولة</Button>} />
+                  ) : suppliers.isPending || activeProducts.isPending ? (
+                    <LoadingState label="جارٍ تحميل خيارات المشتريات…" className="py-10" />
+                  ) : (
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="purchase-date">تاريخ المشتريات</Label>
+                        <Input id="purchase-date" type="date" disabled={commandPending} value={purchaseDate} onChange={(event) => { if (commandPending) return; setIdempotencyKey(createUuid()); setPurchaseDate(event.target.value); }} />
+                        <p className="text-[12px] text-muted">اختر تاريخ الفاتورة الفعلي حتى يبقى حركة المخزون مرتبة زمنياً.</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="purchase-supplier">المورد للمشتريات</Label>
+                        <Select
+                          id="purchase-supplier"
+                          value={supplierId}
+                          disabled={commandPending}
+                          onChange={(event) => { if (commandPending) return; setIdempotencyKey(createUuid()); setSupplierId(event.target.value); }}
+                        >
+                          <option value="">اختر المورد</option>
+                          {activeSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                        </Select>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium text-ink">بنود الفاتورة</p>
+                            <p className="text-[12px] text-muted">كل منتج يظهر مرة واحدة داخل نفس الفاتورة.</p>
                           </div>
-                          <div className="space-y-1.5">
-                            <Label htmlFor={`purchase-quantity-${line.key}`}>الكمية</Label>
-                            <Input id={`purchase-quantity-${line.key}`} type="number" min="1" className="text-start" disabled={commandPending} value={line.quantity} onChange={(event) => { if (!commandPending) updateLine(line.key, { quantity: event.target.value }); }} />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label htmlFor={`purchase-cost-${line.key}`}>تكلفة الوحدة</Label>
-                            <Input id={`purchase-cost-${line.key}`} inputMode="decimal" className="text-start" disabled={commandPending} value={line.unitCost} onChange={(event) => { if (!commandPending) updateLine(line.key, { unitCost: event.target.value }); }} />
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`حذف البند ${index + 1}`}
-                            disabled={commandPending || lines.length === 1}
-                            onClick={() => { if (commandPending) return; setIdempotencyKey(createUuid()); setLines((current) => current.filter((entry) => entry.key !== line.key)); }}
-                          >
-                            <Trash2 className="size-4" aria-hidden />
-                            <span className="xl:sr-only">حذف البند {index + 1}</span>
+                          <Button variant="secondary" size="sm" disabled={commandPending} onClick={() => { if (commandPending) return; setIdempotencyKey(createUuid()); setLines((current) => [blankLine(lineKey), ...current]); setLineKey((value) => value + 1); }}>
+                            <Plus className="size-4" aria-hidden />
+                            إضافة بند
                           </Button>
                         </div>
-                      </li>
-                    ))}
-                  </ul>
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line/70 pt-4">
-                    <Button variant="secondary" size="sm" disabled={commandPending} onClick={() => { if (commandPending) return; setIdempotencyKey(createUuid()); setLines((current) => [...current, blankLine(lineKey)]); setLineKey((value) => value + 1); }}>
-                      <Plus className="size-4" aria-hidden />
-                      إضافة بند
-                    </Button>
-                    <p className="tabular text-base font-semibold text-ink">الإجمالي: {exactTotal(lines)} ج.م</p>
-                  </div>
+                        <ul className="space-y-3">
+                          {lines.map((line, index) => (
+                            <li key={line.key} className="rounded-control border border-line p-3">
+                              <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+                                <div className="space-y-1">
+                                  <Label htmlFor={`purchase-product-${line.key}`}>المنتج</Label>
+                                  <Select
+                                    id={`purchase-product-${line.key}`}
+                                    value={line.productId}
+                                    disabled={commandPending}
+                                    onChange={(event) => { if (!commandPending) updateLine(line.key, { productId: event.target.value }); }}
+                                  >
+                                    <option value="">اختر المنتج</option>
+                                    {activeProducts.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                                  </Select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`purchase-quantity-${line.key}`}>الكمية</Label>
+                                  <Input id={`purchase-quantity-${line.key}`} type="number" min="1" className="text-start" disabled={commandPending} value={line.quantity} onChange={(event) => { if (!commandPending) updateLine(line.key, { quantity: event.target.value }); }} />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`purchase-cost-${line.key}`}>تكلفة الوحدة</Label>
+                                  <Input id={`purchase-cost-${line.key}`} inputMode="decimal" className="text-start" disabled={commandPending} value={line.unitCost} onChange={(event) => { if (!commandPending) updateLine(line.key, { unitCost: event.target.value }); }} />
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium">إجمالي السعر</p>
+                                  <p className="flex h-9 items-center rounded-control border border-line bg-surface/50 px-3 tabular text-sm">{lineAmount(line)}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center justify-between gap-2 text-[12px] text-muted">
+                                <span>إجمالي البند: {lineAmount(line)}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  aria-label={`حذف البند ${index + 1}`}
+                                  disabled={commandPending || lines.length === 1}
+                                  onClick={() => { if (commandPending) return; setIdempotencyKey(createUuid()); setLines((current) => current.filter((entry) => entry.key !== line.key)); }}
+                                >
+                                  <Trash2 className="size-4" aria-hidden />
+                                  حذف البند
+                                </Button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button disabled={!supplierId || !purchaseDate || !validLines || commandPending} onClick={() => { if (!commandPending) post.mutate(); }}>
-                      {correctionOf === undefined ? 'ترحيل المشتريات' : 'ترحيل التصحيح'}
-                    </Button>
-                    {correctionOf !== undefined ? <Button variant="ghost" disabled={commandPending} onClick={resetDraft}>إلغاء التصحيح</Button> : null}
-                  </div>
-                  {post.isError ? <FieldError>{errorText(post.error)}</FieldError> : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
+                      <dl className="space-y-2 rounded-control border border-line bg-surface/40 px-4 py-3 text-sm">
+                        <div className="flex justify-between gap-3">
+                          <dt className="text-muted">إجمالي الفاتورة</dt>
+                          <dd className="tabular">{exactTotal(lines)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-3 font-semibold text-ink">
+                          <dt>الإجمالي النهائي</dt>
+                          <dd className="tabular">{exactTotal(lines)} ج.م</dd>
+                        </div>
+                      </dl>
+                      <p className="tabular text-base font-semibold text-ink">الإجمالي: {exactTotal(lines)} ج.م</p>
+                      {post.isError ? <FieldError>{errorText(post.error)}</FieldError> : null}
+                    </>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 border-t border-line/70 bg-paper px-5 py-4">
+                  <Button disabled={!supplierId || !purchaseDate || !validLines || commandPending} onClick={() => { if (!commandPending) post.mutate(); }}>
+                    {correctionOf === undefined ? 'ترحيل المشتريات' : 'ترحيل التصحيح'}
+                  </Button>
+                  {correctionOf !== undefined ? <Button variant="ghost" disabled={commandPending} onClick={() => { resetDraft(); setPurchasePanelOpen(false); }}>إلغاء التصحيح</Button> : null}
+                </div>
+              </aside>
+            </div>,
+            document.body,
+          ) : null}
 
           <Card className="overflow-hidden shadow-card">
             <CardContent className="space-y-4 p-4 sm:p-5">

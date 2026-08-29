@@ -20,6 +20,9 @@ const query = (input: Record<string, string | number | undefined>) => {
 export const listBookings = (input: ListBookingsQuery) => (
   api.get<BookingDto[]>(`/erp/bookings${query(input)}`)
 );
+export const hasBookingsEver = (branchId?: number) => (
+  api.get<boolean>(`/erp/bookings/exists${query({ branchId })}`)
+);
 export const getBooking = (id: number, branchId?: number) => (
   api.get<BookingDto>(`/erp/bookings/${id}${query({ branchId })}`)
 );

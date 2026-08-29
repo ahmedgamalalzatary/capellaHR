@@ -45,9 +45,9 @@ export function ReceiptFooter() {
   return (
     <footer className="pt-3 text-center">
       <p>شكرًا لزيارتكم</p>
-      <p className="mt-1 text-xs">Tel : 01034660596 - 01034668590</p>
-      <p className="text-xs">www.capellacares.com</p>
-      <div className="mt-2 space-y-0.5 text-[11px] leading-snug text-muted">
+      <p className="mt-1">Tel : 01034660596 - 01034668590</p>
+      <p>www.capellacares.com</p>
+      <div className="mt-2 space-y-0.5 leading-snug">
         <p>سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك</p>
         <p>1- خلال 14 يوم إذا كان المنتج بحالته الأصلية</p>
         <p>2- خلال 30 يوم إذا كان المنتج به عيب صناعة</p>
@@ -59,6 +59,9 @@ export function ReceiptFooter() {
 
 type PublicInvoiceLine = PublicInvoiceDto['lines'][number];
 type ReceiptEmployee = NonNullable<PublicInvoiceLine['employee']>;
+
+const RECEIPT_SUMMARY_CLASS =
+  'table ms-auto w-[72%] border-collapse border-0 [&>div]:table-row [&>div>div]:table-cell [&>div>span]:table-cell [&>div>div]:border-black [&>div>span]:border-black [&>div>div]:border [&>div>span]:border [&>div:first-child>div]:border-t-0 [&>div:first-child>span]:border-t-0 [&>div>div]:px-2 [&>div>span]:px-2 [&>div>div]:py-1 [&>div>span]:py-1 [&>div>div]:text-center [&>div>span]:text-center';
 
 const HUNDRED = BigInt(100);
 const ZERO = BigInt(0);
@@ -132,18 +135,24 @@ export function EmployeeReceipt({
       data-employee-receipt
       className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink"
     >
-      <header className="border-b border-dashed border-ink pb-3">
-        <p className="font-serif text-2xl italic leading-none">Capella Care</p>
-        <h1 className="mt-1.5 text-lg font-bold">نسخة الموظف</h1>
+      <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
+        <div>
+          <p className="font-serif text-[30px] italic leading-none tracking-tight">Capella Care</p>
+          <h1 className="mt-1.5 text-end text-lg font-bold" dir="rtl">نسخة الموظف</h1>
+        </div>
+        <ReceiptQr value={invoice.invoiceNumber} />
       </header>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 border-b border-dashed border-ink py-3">
+      <div className="flex justify-center border-b border-solid border-black py-2">
+        <Barcode value={invoice.invoiceNumber} symbology="code128" heightMm={8} className="w-full [&_svg]:h-auto [&_svg]:w-full" />
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt>
         <dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>
         <dt>الموظف</dt><dd>{employee.name}</dd>
         <dt>كود الموظف</dt><dd className="tabular">{employee.employeeCode}</dd>
       </dl>
-      <table className="mt-3 w-full border-collapse text-xs">
+      <table className="mt-2 w-full border-collapse text-[11px] [&_th]:border-black [&_td]:border-black">
         <thead>
           <tr className="bg-surface">
             <th scope="col" className="border border-line px-1.5 py-1.5 text-start font-medium">الصنف</th>
@@ -170,7 +179,7 @@ export function EmployeeReceipt({
           ))}
         </tbody>
       </table>
-      <div className="space-y-1 border-b border-dashed border-ink py-3 text-xs">
+      <div data-receipt-summary className={RECEIPT_SUMMARY_CLASS}>
         <div className="flex justify-between">
           <span>المجموع الفرعي</span>
           <span className="tabular">{share.subtotal} ج.م</span>
@@ -187,7 +196,7 @@ export function EmployeeReceipt({
             <span className="tabular">+ {share.tax} ج.م</span>
           </div>
         ) : null}
-        <div className="mt-1.5 flex items-baseline justify-between border-y-2 border-ink py-1.5 text-sm font-bold">
+        <div data-grand-total className="flex justify-between">
           <span>إجمالي الموظف</span>
           <span className="tabular">{share.total} ج.م</span>
         </div>
@@ -221,11 +230,9 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
       data-customer-receipt
       className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink"
     >
-      <header className="flex items-start justify-between gap-3 border-b border-dashed border-ink pb-3">
+      <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
-          <p className="font-serif text-2xl italic leading-none">Capella Care</p>
-          <h1 className="mt-1.5 text-lg font-bold">كابيلا</h1>
-          <p className="text-xs text-muted">إيصال بيع</p>
+          <p className="font-serif text-[30px] italic leading-none tracking-tight">Capella Care</p>
         </div>
         <ReceiptQr value={invoice.invoiceNumber} />
       </header>
@@ -234,10 +241,10 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         * and cannot read it, so the slip also carries a Code 128 the counter can
         * scan to pull the invoice up for a refund.
         */}
-      <div className="flex justify-center border-b border-dashed border-ink py-2">
+      <div className="flex justify-center border-b border-solid border-black py-2">
         <Barcode value={invoice.invoiceNumber} symbology="code128" heightMm={8} className="w-full [&_svg]:h-auto [&_svg]:w-full" />
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 border-b border-dashed border-ink py-3">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt><dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>
         <dt>العميل</dt><dd>{invoiceClientLabel(invoice.client)}</dd>
@@ -249,7 +256,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           : <dt>بواسطة</dt>}
         <dd>{invoice.seller?.name ?? invoice.authorizedBy.username}</dd>
       </dl>
-      <table className="mt-3 w-full border-collapse text-xs">
+      <table className="mt-2 w-full border-collapse text-[11px] [&_th]:border-black [&_td]:border-black">
         <thead>
           <tr className="bg-surface">
             <th scope="col" className="border border-line px-1.5 py-1.5 text-start font-medium">الصنف</th>
@@ -276,15 +283,17 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           ))}
         </tbody>
       </table>
-      <div className="space-y-1 border-b border-dashed border-ink py-3 text-xs">
-        <div className="flex justify-between text-muted">
-          <span>عدد الأصناف</span>
-          <span className="tabular">{invoice.lines.length}</span>
-        </div>
-        <div className="flex justify-between text-muted">
-          <span>إجمالي الكميات</span>
-          <span className="tabular">{totalQuantity}</span>
-        </div>
+      <table className="w-full border-collapse [&_td]:border [&_td]:border-black [&_td]:px-2 [&_td]:py-1 [&_td]:text-center [&_tr:first-child_td]:border-t-0">
+        <tbody>
+          <tr>
+            <td>عدد الأصناف</td>
+            <td className="tabular">{invoice.lines.length}</td>
+            <td>إجمالي الكميات</td>
+            <td className="tabular">{totalQuantity}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div data-receipt-summary className={RECEIPT_SUMMARY_CLASS}>
         <div className="flex justify-between">
           <span>المجموع الفرعي</span>
           <span className="tabular">{invoice.totals.subtotal} ج.م</span>
@@ -301,11 +310,11 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
             <span className="tabular">+ {invoice.tax.amount} ج.م</span>
           </div>
         ) : null}
-        <div data-grand-total className="mt-1.5 flex items-baseline justify-between border-y-2 border-ink py-1.5 text-sm font-bold">
+        <div data-grand-total className="flex justify-between">
           <span>الإجمالي النهائي</span>
           <span className="tabular">{invoice.totals.total} ج.م</span>
         </div>
-        <div className="flex justify-between font-semibold">
+        <div className="flex justify-between">
           <span>صافي المدفوع</span>
           <span className="tabular">{invoice.totals.amountPaid} ج.م</span>
         </div>
@@ -315,24 +324,9 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
             <span className="tabular">{invoice.totals.creditedAmount} ج.م</span>
           </div>
         ) : null}
-        <div className="flex justify-between font-bold">
+        <div className="flex justify-between">
           <span>المتبقي</span>
           <span className="tabular">{invoice.totals.balanceDue} ج.م</span>
-        </div>
-      </div>
-      <div className="border-b border-dashed border-ink py-3">
-        <h2 className="text-sm font-semibold">المدفوعات</h2>
-        <div className="mt-1.5 space-y-1.5 text-xs">
-          {invoice.payments.map((payment, index) => (
-            <div key={`${payment.method}-${index}`} className="flex justify-between">
-              <span>{paymentLabels[payment.method]}</span>
-              <span className="tabular">{payment.amount} ج.م</span>
-            </div>
-          ))}
-          <div className="flex justify-between border-t border-dashed border-line pt-1.5 font-bold">
-            <span>المدفوع</span>
-            <span className="tabular">{invoice.totals.paymentTotal} ج.م</span>
-          </div>
         </div>
       </div>
       <ReceiptFooter />

@@ -67,6 +67,12 @@ export const createErpBookingsRouter = (service: BookingService) => {
       response.json({ data: await service.listDay(actorFrom(response), query) });
     } catch (cause) { handle(cause, response); }
   });
+  router.get('/exists', async (request, response) => {
+    try {
+      const branchId = request.query.branchId === undefined ? undefined : bookingIdParamsSchema.shape.id.parse(request.query.branchId);
+      response.json({ data: await service.hasAny(actorFrom(response), branchId) });
+    } catch (cause) { handle(cause, response); }
+  });
   router.get('/employee-options', async (request, response) => {
     try {
       const branchId = optionalBranch(request.query.branchId);

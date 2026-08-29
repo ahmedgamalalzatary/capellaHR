@@ -101,3 +101,23 @@ export const cashierNavigation: NavGroup[] = [
 export const isActiveNavItem = (href: string, pathname: string) => (
   href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`)
 );
+
+export type CashierNavigationCapabilities = {
+  hasSalesContent: boolean;
+  hasBookings: boolean;
+  hasCatalogContent: boolean;
+};
+
+export const filterCashierNavigation = (
+  navigation: NavGroup[],
+  capabilities: CashierNavigationCapabilities,
+) => navigation
+  .map((group) => ({
+    ...group,
+    items: group.items.filter((item) => (
+      item.href === '/sales' ? capabilities.hasSalesContent
+        : item.href === '/bookings' ? capabilities.hasBookings
+          : item.href === '/catalog' ? capabilities.hasCatalogContent : true
+    )),
+  }))
+  .filter((group) => group.items.length > 0);

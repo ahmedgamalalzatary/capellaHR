@@ -59,9 +59,11 @@ export async function runMigrations(options: MigrationRunnerOptions = {}): Promi
 
   writeLog(stdout, now, 'Starting database migrations.');
 
-  const result = execute('pnpm', ['exec', 'drizzle-kit', 'migrate'], {
+  const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+  const result = execute(packageManager, ['exec', 'drizzle-kit', 'migrate'], {
     cwd: databasePackageRoot,
     stdio: 'inherit',
+    ...(process.platform === 'win32' ? { shell: true } : {}),
   });
 
   if (result.error) {

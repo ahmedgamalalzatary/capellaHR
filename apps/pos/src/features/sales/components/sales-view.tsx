@@ -438,6 +438,8 @@ function SaleWorkspace({
     if (roster.isSuccess && seller && !sellerOnRoster) setSeller(null);
   }, [roster.isSuccess, seller, sellerOnRoster]);
   const [lines, setLines] = useState<Line[]>([]);
+  const [hasServices, setHasServices] = useState(true);
+  const [hasProducts, setHasProducts] = useState(true);
   const booking = useQuery({
     queryKey: bookingQueryKeys.detail(bookingId ?? 0, branchId),
     queryFn: () => getBooking(bookingId!, branchId),
@@ -471,7 +473,6 @@ function SaleWorkspace({
     setClient(next);
   }, []);
   const [draftStorageError, setDraftStorageError] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
   const [storageError, setStorageError] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
@@ -816,14 +817,12 @@ function SaleWorkspace({
     onSuccess: ({ invoice, queued, retryableFailure }, input) => {
       submitting.current = false;
       if (!invoice) {
-        setConfirming(false);
         setAmbiguous(retryableFailure || queued?.state === 'failed');
         return;
       }
       removePendingRequest(input);
       setPendingSale(null);
       setAmbiguous(false);
-      setConfirming(false);
       removeSaleDraft(workspaceOwner, input.idempotencyKey);
       setDraftRestored(false);
       setConflictRestored(false);
@@ -834,7 +833,6 @@ function SaleWorkspace({
     },
     onError: (error, input) => {
       submitting.current = false;
-      setConfirming(false);
       const isAuthoritativeRejection = error instanceof ApiError
         && error.status >= 400 && error.status < 500;
       setAmbiguous(!isAuthoritativeRejection);
@@ -930,13 +928,11 @@ function SaleWorkspace({
     });
     if (!queued) {
       submitting.current = false;
-      setConfirming(false);
       setStorageError(true);
       return;
     }
     setStorageError(false);
     setPendingSale(stored);
-    setConfirming(false);
     if (navigator.onLine) completion.mutate(input);
     else submitting.current = false;
   };
@@ -1249,9 +1245,11 @@ function SaleWorkspace({
             </Card>
 
             <Card className="shadow-card">
-              <CardHeader><CardTitle><StepTitle step={3} label="الخدمات والمنتجات" /></CardTitle></CardHeader>
+              <CardHeader><CardTitle><StepTitle step={3} label={hasServices && hasProducts ? 'الخدمات والمنتجات' : hasServices ? 'الخدمات' : 'المنتجات'} /></CardTitle></CardHeader>
               <CardContent className="space-y-5 p-5">
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={hasServices && hasProducts ? 'grid gap-4 md:grid-cols-2' : 'grid gap-4'}>
+                  {!hasServices && !hasProducts ? <EmptyState title="لا توجد خدمات أو منتجات متاحة" /> : null}
+                  {hasServices ? (
                   <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => {
                     const found = current.find(({ service: item, itemType }) => itemType !== 'product' && item.id === service.id);
                     return found
@@ -1266,8 +1264,9 @@ function SaleWorkspace({
                           // The chosen default performs whatever is added next.
                           employee,
                         }];
-                  })} />
-                  <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
+                  })} onAvailabilityChange={setHasServices} />
+                  ) : null}
+                  {hasProducts ? <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
                     const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
                     return found
                       ? current.map((line) => line.itemType === 'product' && line.service.id === product.id
@@ -1280,7 +1279,7 @@ function SaleWorkspace({
                           itemType: 'product',
                           employee: null,
                         }];
-                  })} />
+                  })} onAvailabilityChange={setHasProducts} /> : null}
                 </div>
 
                 {lines.length > 0 ? (
@@ -1468,21 +1467,6 @@ function SaleWorkspace({
           </div>
         </div>
       </fieldset>
-
-      {confirming ? (
-        <Modal title="تأكيد البيع" onClose={() => setConfirming(false)}>
-          <p className="text-sm">سيتم حفظ الفاتورة نهائيًا بقيمة {quote.data?.totals.total} ج.م.</p>
-          {!hasServiceLines && remaining !== null && remaining > BigInt(0) ? (
-            <p className="mt-2 rounded-control border border-warning/20 bg-warning-soft p-3 text-sm text-warning">
-              سيبقى على العميل {money(remaining)} ج.م بعد حفظ الفاتورة.
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConfirming(false)}>رجوع</Button>
-            <Button disabled={completion.isPending} onClick={submit}>تأكيد البيع</Button>
-          </div>
-        </Modal>
-      ) : null}
 
       {discarding ? (
         <Modal title="تأكيد حذف البيع المعلق" onClose={() => {
