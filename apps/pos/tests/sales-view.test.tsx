@@ -466,6 +466,27 @@ describe('ERP service-sale view', () => {
     }) as HTMLButtonElement).disabled).toBe(false));
   });
 
+  it('refetches the client by id when a conflicted sale is reopened for review', async () => {
+    mocks.completeSale.mockRejectedValueOnce(new ApiError(409, {
+      code: 'EMPLOYEE_NOT_ASSIGNABLE',
+      message: 'الموظف لم يعد حاضرًا في الفرع',
+    }));
+    renderView();
+    await buildDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'مراجعة وتعديل البيع' }));
+    await screen.findByText(/تم استعادة البيع للمراجعة/);
+
+    // The recovery draft holds only the client id, so the record is fetched back
+    // and the cashier never has to pick the same client again.
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    ));
+    await waitFor(() => expect((screen.getByRole('button', {
+      name: 'مراجعة وإتمام البيع + طباعة',
+    }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
   it('requires explicit confirmation before discarding a conflicted queued sale', async () => {
     mocks.completeSale.mockRejectedValueOnce(new ApiError(409, {
       code: 'INSUFFICIENT_STOCK',
