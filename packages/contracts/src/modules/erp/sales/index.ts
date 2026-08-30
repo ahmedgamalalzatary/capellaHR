@@ -445,9 +445,6 @@ const invoiceLineSchema = z.object({
   if (value.itemType === 'service' && value.employee === null) {
     context.addIssue({ code: 'custom', path: ['employee'], message: 'الخدمة يجب أن تحمل الموظف المنفّذ' });
   }
-  if (value.itemType === 'product' && value.employee !== null) {
-    context.addIssue({ code: 'custom', path: ['employee'], message: 'المنتج لا يُسند إلى موظف' });
-  }
   if (value.refundedQuantity + value.refundableQuantity !== value.quantity) {
     context.addIssue({ code: 'custom', path: ['refundableQuantity'], message: 'كميات الاسترداد غير متسقة' });
   }
@@ -463,13 +460,6 @@ const invoiceLineSchema = z.object({
   if (value.itemType === 'service'
     && toCents(value.commissionAmount) !== percentageAmount(value.lineTotal, value.commissionRate)) {
     context.addIssue({ code: 'custom', path: ['commissionAmount'], message: 'عمولة الخدمة غير متسقة' });
-  }
-  if (value.itemType === 'product' && (value.productCostBasis === null || value.commissionRule !== 'none')) {
-    context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'المنتج لا يحقق عمولة' });
-  }
-  if (value.itemType === 'product'
-    && (value.commissionRate !== '0.00' || value.commissionAmount !== '0.00')) {
-    context.addIssue({ code: 'custom', path: ['commissionAmount'], message: 'المنتج لا يحقق عمولة' });
   }
 });
 

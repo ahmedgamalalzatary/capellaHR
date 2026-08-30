@@ -405,7 +405,7 @@ const quoteProducts = async (
   const ids = [...new Set(lines.map(({ productId }) => productId))].sort((left, right) => left - right);
   let query = executor.select({
     id: erpProducts.id, name: erpProducts.name, price: erpProducts.sellingPrice,
-    cost: erpProducts.lastPurchaseCost, quantity: erpProductStocks.quantity,
+    cost: erpProducts.lastPurchaseCost, commissionPercent: erpProducts.commissionPercent, quantity: erpProductStocks.quantity,
   }).from(erpProducts).innerJoin(erpProductStocks, and(
     eq(erpProductStocks.productId, erpProducts.id),
     eq(erpProductStocks.branchId, erpProducts.branchId),
@@ -426,7 +426,7 @@ const quoteProducts = async (
       itemType: 'product' as const, sourceId: product.id, name: product.name,
       quantity: line.quantity, unitPrice,
       lineTotal: calculateLineTotal(unitPrice, line.quantity),
-      productCostBasis: product.cost, balanceBefore,
+      productCostBasis: product.cost, commissionPercent: product.commissionPercent, balanceBefore,
     };
   });
 };
@@ -699,6 +699,7 @@ export const createDrizzleSaleRepository = (
             : (await transaction.select({
               id: employees.id,
               fullName: employees.fullName,
+              employeeCode: employees.employeeCode,
             }).from(branchCashierRoster).innerJoin(employees, and(
               eq(employees.id, branchCashierRoster.employeeId),
               eq(employees.branchId, branchCashierRoster.branchId),
@@ -748,14 +749,15 @@ export const createDrizzleSaleRepository = (
               commissionRule: rule,
               commissionRate: rate,
               commissionAmount: calculateCommission(line.lineTotal, rate),
+              balanceBefore: undefined,
             };
           });
           const calculatedProducts = quotedProducts.map((line) => ({
             ...line,
-            employee: null,
-            commissionRule: 'none' as const,
-            commissionRate: '0.00',
-            commissionAmount: '0.00',
+            employee: seller && Number(line.commissionPercent ?? 0) > 0 ? { id: seller.id, fullName: seller.fullName, employeeCode: seller.employeeCode } : null,
+            commissionRule: seller && Number(line.commissionPercent ?? 0) > 0 ? 'service_default' as const : 'none' as const,
+            commissionRate: seller && Number(line.commissionPercent ?? 0) > 0 ? line.commissionPercent : '0.00',
+            commissionAmount: seller && Number(line.commissionPercent ?? 0) > 0 ? calculateCommission(line.lineTotal, line.commissionPercent) : '0.00',
           }));
           const byKey = keyedQueues([...calculatedServices, ...calculatedProducts]);
           const calculatedLines = input.lines.map((line) => byKey.get(`${line.itemType}:${line.itemType === 'service' ? line.serviceId : line.productId}`)!.shift()!);
@@ -828,14 +830,15 @@ export const createDrizzleSaleRepository = (
               productCostBasisSnapshot: line.itemType === 'product' ? line.productCostBasis : null,
             });
             const invoiceLineId = Number(insertedLine[0].insertId);
-            if (line.itemType === 'service') {
+            if (line.employee && line.commissionRule !== 'none') {
               await transaction.insert(commissionLedgerEntries).values({
                 invoiceId, invoiceLineId, employeeId: line.employee.id,
                 actingAccountId: operation.actingAccountId, entryType: 'earned',
                 commissionRuleSnapshot: line.commissionRule, commissionRateSnapshot: line.commissionRate,
                 baseAmount: line.lineTotal, amount: line.commissionAmount, createdAt: operation.soldAt,
               });
-            } else {
+            }
+            if (line.itemType === 'product') {
               const balanceAfter = line.balanceBefore - line.quantity;
               await transaction.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: operation.soldAt }).where(and(
                 eq(erpProductStocks.productId, line.sourceId), eq(erpProductStocks.branchId, input.branchId),

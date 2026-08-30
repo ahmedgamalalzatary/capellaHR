@@ -70,6 +70,7 @@ export function ProductStockView() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [cost, setCost] = useState('0');
+  const [commissionPercent, setCommissionPercent] = useState('0');
   const [threshold, setThreshold] = useState('0');
   const [barcode, setBarcode] = useState('');
   const [labelling, setLabelling] = useState<Product | null>(null);
@@ -94,20 +95,20 @@ export function ProductStockView() {
   const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listAllProducts(productParams), enabled: scopeReady });
   const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(queryClient, 'product');
-  const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setThreshold('0'); setBarcode(''); };
-  const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setThreshold(String(product.lowStockThreshold)); setBarcode(product.barcode ?? ''); };
+  const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setCommissionPercent('0'); setThreshold('0'); setBarcode(''); };
+  const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setCommissionPercent(product.commissionPercent ?? '0'); setThreshold(String(product.lowStockThreshold)); setBarcode(product.barcode ?? ''); };
 
   /** A new product only: editing starts from a stored row. */
   const draft = useFormDraft(
     editing === null ? `product:${branchId ?? 'own'}` : null,
-    { name, description, price, cost, threshold, barcode },
+    { name, description, price, cost, commissionPercent, threshold, barcode },
     name.trim() !== '' || description.trim() !== '' || price.trim() !== '',
   );
 
   const save = useMutation({
     mutationFn: () => editing
-      ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold), barcode })
-      : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, lowStockThreshold: Number(threshold), barcode }),
+      ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, commissionPercent, lowStockThreshold: Number(threshold), barcode })
+      : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, commissionPercent, lowStockThreshold: Number(threshold), barcode }),
     onSuccess: async () => { clearProductForm(); setSuccessMessage('تم حفظ المنتج.'); await refresh(); },
   });
   const toggle = useMutation({
@@ -218,6 +219,8 @@ export function ProductStockView() {
                 <div className="space-y-1.5">
                   <Label htmlFor="product-cost">آخر تكلفة شراء</Label>
                   <Input id="product-cost" aria-label="آخر تكلفة شراء" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
+                  <Label htmlFor="product-commission">عمولة البائع %</Label>
+                  <Input id="product-commission" aria-label="عمولة البائع %" type="number" min="0" max="100" step="0.01" className="text-start" disabled={commandPending} value={commissionPercent} onChange={(event) => setCommissionPercent(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="product-barcode">الباركود</Label>

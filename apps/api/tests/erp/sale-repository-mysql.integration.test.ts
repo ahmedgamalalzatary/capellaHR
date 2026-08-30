@@ -1936,8 +1936,9 @@ describe('ERP sale repository MySQL integration', () => {
     ]));
   });
 
-  it('decrements product stock, snapshots cost, records movement, and earns no commission', async () => {
+  it('decrements product stock, snapshots cost, records movement, and earns seller commission', async () => {
     const data = await fixture();
+    await database.update(erpProducts).set({ commissionPercent: '10.00' }).where(eq(erpProducts.id, data.productId));
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const request = operation(data, crypto.randomUUID());
     request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
@@ -1947,28 +1948,26 @@ describe('ERP sale repository MySQL integration', () => {
     request.input.payments = [{ method: 'cash', amount: '100.00' }];
     const result = await repository.complete(request);
 
-    expect(result.lines[0]).toMatchObject({ sourceId: data.productId, employee: null, productCostBasis: '30.00', commissionRule: 'none', commissionAmount: '0.00' });
+    expect(result.lines[0]).toMatchObject({ sourceId: data.productId, employee: expect.objectContaining({ id: data.sellerEmployeeId }), productCostBasis: '30.00', commissionRule: 'service_default', commissionRate: '10.00', commissionAmount: '10.00' });
     expect((await database.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, result.id)))[0])
       .toMatchObject({
-        employeeId: null,
-        employeeNameSnapshot: null,
-        employeeCodeSnapshot: null,
+        employeeId: data.sellerEmployeeId,
       });
     expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(0);
     expect(await database.select().from(erpStockMovements).where(eq(erpStockMovements.sourceId, result.id))).toEqual([
       expect.objectContaining({ productId: data.productId, reason: 'sale', quantityDelta: -2, balanceAfter: 0 }),
     ]);
-    expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(0);
+    expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(1);
     await expect(repository.listInvoices(data.branchId, { page: 1, pageSize: 20 }))
       .resolves.toMatchObject({
         items: expect.arrayContaining([
-          expect.objectContaining({ id: result.id, employees: [] }),
+          expect.objectContaining({ id: result.id, employees: [{ id: data.sellerEmployeeId, name: expect.any(String) }] }),
         ]),
       });
     await expect(repository.listClientVisits(data.branchId, data.clientId, { page: 1, pageSize: 20 }))
       .resolves.toMatchObject({
         items: expect.arrayContaining([
-          expect.objectContaining({ id: result.id, employees: [] }),
+          expect.objectContaining({ id: result.id, employees: [{ id: data.sellerEmployeeId, name: expect.any(String) }] }),
         ]),
       });
     await expect(repository.findByIdempotencyKey(request.input.idempotencyKey, {

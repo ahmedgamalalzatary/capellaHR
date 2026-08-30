@@ -3,7 +3,7 @@ import { api } from '@/lib/api/client';
 
 export interface Product {
   id: number; branchId: number; name: string; description: string | null;
-  sellingPrice: string; lastPurchaseCost: string; lowStockThreshold: number;
+  sellingPrice: string; lastPurchaseCost: string; commissionPercent?: string; lowStockThreshold: number;
   barcode: string | null;
   isActive: boolean; quantity: number; createdAt: string; updatedAt: string;
 }

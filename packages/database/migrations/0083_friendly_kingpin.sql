@@ -1,0 +1,2 @@
+ALTER TABLE `erp_invoice_lines` DROP CONSTRAINT `erp_invoice_lines_commission_consistent`;--> statement-breakpoint
+ALTER TABLE `erp_invoice_lines` ADD CONSTRAINT `erp_invoice_lines_commission_consistent` CHECK (commission_rate_snapshot between 0 and 100 and commission_amount_snapshot >= 0 and ((item_type = 'product' and ((commission_rule_snapshot = 'none' and commission_rate_snapshot = 0 and commission_amount_snapshot = 0) or commission_rule_snapshot <> 'none')) or (item_type = 'service' and commission_rule_snapshot <> 'none')));

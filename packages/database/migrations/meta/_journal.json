@@ -575,6 +575,27 @@
       "when": 1787746354882,
       "tag": "0081_invoice_settlement_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "5",
+      "when": 1788033900648,
+      "tag": "0082_wild_lady_bullseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "5",
+      "when": 1788034710447,
+      "tag": "0083_friendly_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "5",
+      "when": 1788035000000,
+      "tag": "0084_product_commission_trigger_fix",
+      "breakpoints": true
     }
   ]
 }

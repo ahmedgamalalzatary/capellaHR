@@ -179,7 +179,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Payment timing | **Always paid in full at sale.** No deposits, tabs, installments, or prepaid packages — explicitly out of scope |
 | Service pricing | Optional catalog price: fixed prices are locked during sale; services without a catalog price require a positive seller-entered unit price. Admins convert modes by deleting or adding the catalog price. |
 | Assignment eligibility | **Strictly checked-in employees**, no cashier override — an unchecked-in employee checks in via HR first |
-| Product commission | **None** — commission applies to services only; product sales are tracked per invoice but earn nothing |
+| Product commission | Configurable percentage per product; paid to the invoice seller and recorded in the same immutable commission ledger |
 | Deployment model | **Per-customer installation** (own server + own MySQL) — confirmed; §4 rests on this |
 | POS sessions | **Exactly one open cashier session per branch at a time** — two cashiers can never be open simultaneously |
 | Login split | Employee code+PIN login exists **for attendance/self-service only**; business actions (selling, invoices, …) require an account (§6) with username + password |

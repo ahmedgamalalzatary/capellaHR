@@ -12,13 +12,19 @@ import {
 } from '../../../../src/modules/erp/stock/index.js';
 
 describe('ERP product and stock contracts', () => {
+  it('accepts and normalizes a product commission percentage', () => {
+    expect(createProductSchema.parse({
+      name: 'Shampoo', sellingPrice: '100', commissionPercent: '7.5',
+    }).commissionPercent).toBe('7.50');
+  });
+
   it('normalizes exact product money and blank descriptions', () => {
     expect(createProductSchema.parse({
       branchId: '2', name: '  Shampoo  ', description: '  ', sellingPrice: '125.5',
       lastPurchaseCost: '80', lowStockThreshold: 4,
     })).toEqual({
       branchId: 2, name: 'Shampoo', description: null, sellingPrice: '125.50',
-      lastPurchaseCost: '80.00', lowStockThreshold: 4, barcode: null,
+      lastPurchaseCost: '80.00', commissionPercent: '0.00', lowStockThreshold: 4, barcode: null,
     });
   });
 

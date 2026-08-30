@@ -27,6 +27,9 @@ const money = (positive: boolean) => z.string()
     }
     return normalized;
   });
+const percentage = z.string().regex(/^\d{1,3}(?:\.\d{1,2})?$/)
+  .transform((value) => { const [whole = '', fraction = ''] = value.split('.'); return `${whole.replace(/^0+(?=\d)/, '')}.${fraction.padEnd(2, '0')}`; })
+  .refine((value) => Number(value) <= 100, 'commission percentage cannot exceed 100');
 /**
  * A barcode is whatever the QW2100 typed. A supplier's own code is kept exactly
  * as scanned because we do not control its format, so this validates only what a
@@ -73,7 +76,7 @@ const queryBoolean = z.preprocess(
 );
 const branchScope = { branchId: coercedMysqlIntSchema.optional() };
 const hasEditableField = (value: Record<string, unknown>, context: z.RefinementCtx) => {
-  if (!['name', 'description', 'sellingPrice', 'lastPurchaseCost', 'lowStockThreshold', 'isActive', 'barcode'].some((key) => key in value)) {
+  if (!['name', 'description', 'sellingPrice', 'lastPurchaseCost', 'commissionPercent', 'lowStockThreshold', 'isActive', 'barcode'].some((key) => key in value)) {
     context.addIssue({ code: 'custom', message: 'يجب إرسال حقل واحد على الأقل' });
   }
 };
@@ -83,6 +86,7 @@ export const createProductSchema = z.object({
   description: description.optional(),
   sellingPrice: money(true),
   lastPurchaseCost: money(false).default('0'),
+  commissionPercent: percentage.default('0'),
   lowStockThreshold: z.number().int().nonnegative().max(2_147_483_647).default(0),
   barcode: barcode.default(''),
   ...branchScope,
@@ -93,6 +97,7 @@ export const updateProductSchema = z.object({
   description: description.optional(),
   sellingPrice: money(true).optional(),
   lastPurchaseCost: money(false).optional(),
+  commissionPercent: percentage.optional(),
   lowStockThreshold: z.number().int().nonnegative().max(2_147_483_647).optional(),
   isActive: z.boolean().optional(),
   barcode: barcode.optional(),

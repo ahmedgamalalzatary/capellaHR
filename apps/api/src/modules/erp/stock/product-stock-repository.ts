@@ -10,6 +10,7 @@ const productSelection = {
   id: erpProducts.id, branchId: erpProducts.branchId, name: erpProducts.name,
   description: erpProducts.description, sellingPrice: erpProducts.sellingPrice,
   lastPurchaseCost: erpProducts.lastPurchaseCost, lowStockThreshold: erpProducts.lowStockThreshold,
+  commissionPercent: erpProducts.commissionPercent,
   barcode: erpProducts.barcode, isActive: erpProducts.isActive, quantity: erpProductStocks.quantity,
   createdAt: erpProducts.createdAt, updatedAt: erpProducts.updatedAt,
 };

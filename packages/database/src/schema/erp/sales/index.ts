@@ -196,7 +196,7 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   // and may only be employee-free while its invoice is still a draft.
   check(
     'erp_invoice_lines_employee_consistent',
-    sql`(item_type = 'product' and employee_id is null and employee_name_snapshot is null and employee_code_snapshot is null) or (item_type = 'service' and ((employee_id is null and employee_name_snapshot is null and employee_code_snapshot is null) or (employee_id is not null and employee_name_snapshot is not null and employee_code_snapshot > 0)))`,
+    sql`((item_type in ('product','service')) and ((employee_id is null and employee_name_snapshot is null and employee_code_snapshot is null) or (employee_id is not null and employee_name_snapshot is not null and employee_code_snapshot > 0)))`,
   ),
   check(
     'erp_invoice_lines_source_consistent',
@@ -208,7 +208,7 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   ),
   check(
     'erp_invoice_lines_commission_consistent',
-    sql`commission_rate_snapshot between 0 and 100 and commission_amount_snapshot >= 0 and ((item_type = 'product' and commission_rule_snapshot = 'none' and commission_rate_snapshot = 0 and commission_amount_snapshot = 0) or (item_type = 'service' and commission_rule_snapshot <> 'none'))`,
+    sql`commission_rate_snapshot between 0 and 100 and commission_amount_snapshot >= 0 and ((item_type = 'product' and ((commission_rule_snapshot = 'none' and commission_rate_snapshot = 0 and commission_amount_snapshot = 0) or commission_rule_snapshot <> 'none')) or (item_type = 'service' and commission_rule_snapshot <> 'none'))`,
   ),
   check(
     'erp_invoice_lines_cost_consistent',

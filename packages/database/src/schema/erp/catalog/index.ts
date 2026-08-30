@@ -118,6 +118,7 @@ export const erpProducts = mysqlTable('erp_products', {
   description: varchar('description', { length: 1000 }),
   sellingPrice: decimal('selling_price', { precision: 12, scale: 2 }).notNull(),
   lastPurchaseCost: decimal('last_purchase_cost', { precision: 12, scale: 2 }).notNull().default('0.00'),
+  commissionPercent: decimal('commission_percent', { precision: 5, scale: 2 }).notNull().default('0.00'),
   lowStockThreshold: int('low_stock_threshold').notNull().default(0),
   /**
    * Either the supplier's own code, kept exactly as the scanner read it off the
@@ -143,6 +144,7 @@ export const erpProducts = mysqlTable('erp_products', {
   index('erp_products_branch_active_idx').on(table.branchId, table.isActive),
   check('erp_products_selling_price_positive', sql`${table.sellingPrice} > 0`),
   check('erp_products_purchase_cost_nonnegative', sql`${table.lastPurchaseCost} >= 0`),
+  check('erp_products_commission_range', sql`${table.commissionPercent} between 0 and 100`),
   check('erp_products_low_stock_nonnegative', sql`${table.lowStockThreshold} >= 0`),
   check(
     'erp_products_barcode_scannable',

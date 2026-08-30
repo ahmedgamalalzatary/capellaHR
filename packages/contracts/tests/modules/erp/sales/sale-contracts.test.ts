@@ -282,7 +282,7 @@ describe('ERP complete-sale contracts', () => {
     expect(completeSaleSchema.safeParse({ ...productOnly, sellerEmployeeId: 0 }).success).toBe(false);
   });
 
-  it('carries the performing employee on each service line and none on product lines', () => {
+  it('carries the performing employee on service and product lines', () => {
     const productLine = {
       ...saleFixtures.completedInvoice.lines[0],
       itemType: 'product' as const,
@@ -290,9 +290,9 @@ describe('ERP complete-sale contracts', () => {
       employee: null,
       originalEmployee: null,
       reassignments: [],
-      commissionRule: 'none' as const,
-      commissionRate: '0.00',
-      commissionAmount: '0.00',
+      commissionRule: 'service_default' as const,
+      commissionRate: '10.00',
+      commissionAmount: '20.00',
       productCostBasis: '50.00',
     };
 
@@ -310,7 +310,7 @@ describe('ERP complete-sale contracts', () => {
         ...productLine,
         employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
       }],
-    }).success).toBe(false);
+    }).success).toBe(true);
   });
 
   it('publishes one invoice holding two different service employees', () => {
@@ -571,7 +571,7 @@ describe('ERP complete-sale contracts', () => {
         commissionRate: '10.00',
         commissionAmount: '20.00',
       }],
-    }).success).toBe(false);
+    }).success).toBe(true);
   });
 
   it('rejects stored invoice snapshots whose cross-field arithmetic is inconsistent', () => {

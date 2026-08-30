@@ -18,6 +18,7 @@ export type ProductStockRecord = {
   description: string | null;
   sellingPrice: string;
   lastPurchaseCost: string;
+  commissionPercent?: string;
   lowStockThreshold: number;
   barcode: string | null;
   isActive: boolean;
@@ -30,7 +31,7 @@ export type ProductStockWrite = Omit<ProductStockRecord, 'id' | 'quantity' | 'cr
   openingQuantity: number;
 };
 export type ProductStockChanges = Partial<Pick<ProductStockWrite,
-  'name' | 'nameNormalized' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'lowStockThreshold' | 'barcode' | 'isActive'>>;
+  'name' | 'nameNormalized' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'commissionPercent' | 'lowStockThreshold' | 'barcode' | 'isActive'>>;
 export type StockMovementRecord = {
   id: number; productId: number; branchId: number; reason: string; sourceType: string;
   sourceId: number | null; quantityDelta: number; balanceAfter: number;
@@ -89,7 +90,7 @@ export const createProductStockService = (dependencies: {
   return {
     async create(actor: ErpAccountIdentity, input: {
       branchId?: number | undefined; name: string; description?: string | null | undefined; sellingPrice: string;
-      lastPurchaseCost: string; lowStockThreshold: number; barcode?: string | null | undefined;
+      lastPurchaseCost: string; commissionPercent?: string; lowStockThreshold: number; barcode?: string | null | undefined;
     }) {
       const context = await resolveBranchContext(actor, input.branchId);
       const name = input.name.trim();
@@ -100,6 +101,7 @@ export const createProductStockService = (dependencies: {
         return await repository.create({
           branchId: context.branchId, name, nameNormalized, description: input.description ?? null,
           sellingPrice: input.sellingPrice, lastPurchaseCost: input.lastPurchaseCost,
+          commissionPercent: input.commissionPercent ?? '0.00',
           lowStockThreshold: input.lowStockThreshold, barcode: input.barcode ?? null,
           isActive: true, openingQuantity: 0,
         }, context.accountId);
@@ -134,6 +136,7 @@ export const createProductStockService = (dependencies: {
       if (input.description !== undefined) changes.description = input.description;
       if (input.sellingPrice !== undefined) changes.sellingPrice = input.sellingPrice;
       if (input.lastPurchaseCost !== undefined) changes.lastPurchaseCost = input.lastPurchaseCost;
+      if (input.commissionPercent !== undefined) changes.commissionPercent = input.commissionPercent;
       if (input.lowStockThreshold !== undefined) changes.lowStockThreshold = input.lowStockThreshold;
       if (input.barcode !== undefined) {
         changes.barcode = input.barcode;
