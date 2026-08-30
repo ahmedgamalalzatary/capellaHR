@@ -67,7 +67,10 @@ export const createAiFaceGateway = ({ baseUrl, fetcher = fetch }: AiFaceGatewayO
           ? { kind: 'rejected' as const, reason: result.detail === 'Invalid image file' ? 'invalid_image' : 'invalid_request' }
           : { kind: 'unavailable' as const };
       }
-      if (result.data.success && result.data.embedding?.length === 128) {
+      if (result.data.success
+        && Array.isArray(result.data.embedding)
+        && result.data.embedding.length === 128
+        && result.data.embedding.every(Number.isFinite)) {
         return { kind: 'enrolled' as const, embedding: result.data.embedding };
       }
       return { kind: 'rejected' as const, reason: result.data.reason ?? 'invalid_response' };

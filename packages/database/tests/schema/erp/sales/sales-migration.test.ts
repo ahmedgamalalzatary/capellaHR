@@ -45,6 +45,26 @@ const partialPaymentMigrationName = readdirSync(migrationsDirectory)
 const partialPaymentMigration = partialPaymentMigrationName
   ? readFileSync(`${migrationsDirectory}/${partialPaymentMigrationName}`, 'utf8')
   : '';
+const productCommissionMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0084_.*\.sql$/.test(name));
+const productCommissionMigration = productCommissionMigrationName
+  ? readFileSync(`${migrationsDirectory}/${productCommissionMigrationName}`, 'utf8')
+  : '';
+
+describe('ERP product commission trigger repair', () => {
+  it('preserves cumulative amount validation for earned and reassigned reversal targets', () => {
+    expect(productCommissionMigrationName).toBeDefined();
+    expect(productCommissionMigration).toContain("original.entry_type IN ('earned','reassignment_in')");
+    expect(productCommissionMigration).toContain('NEW.base_amount > target_base');
+    expect(productCommissionMigration).toContain('target_amount <> ROUND(target_base * target_rate / 100, 2)');
+    expect(productCommissionMigration).toContain('ROUND((reversed_base + NEW.base_amount) * target_rate / 100, 2)');
+    expect(productCommissionMigration).toContain('reversed_base + NEW.base_amount > target_base');
+  });
+
+  it('keeps partial-payment completion restricted only when an invoice has services', () => {
+    expect(productCommissionMigration).toContain('IF service_count > 0 AND payment_total <> NEW.total THEN');
+  });
+});
 
 describe('ERP product partial-payment migration', () => {
   it('turns payments into an idempotent ledger and stores settlement state', () => {

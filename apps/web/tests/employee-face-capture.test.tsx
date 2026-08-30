@@ -1,16 +1,21 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-const detect = vi.fn();
-const close = vi.fn();
+const detectorMocks = vi.hoisted(() => ({
+  detect: vi.fn(),
+  close: vi.fn(),
+  create: vi.fn(),
+}));
+const { detect, close } = detectorMocks;
 
 vi.mock('../src/features/employees/lib/employee-face-detector', () => ({
-  createEmployeeFaceDetector: vi.fn(async () => ({ detect, close })),
+  createEmployeeFaceDetector: detectorMocks.create,
 }));
 
 import { EmployeeFaceCapture } from '../src/features/employees/components/employee-face-capture';
 
 beforeEach(() => {
+  detectorMocks.create.mockImplementation(async () => ({ detect, close }));
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) },
@@ -66,4 +71,37 @@ it('blocks capture and explains when no face is visible', async () => {
 
   await screen.findByText('ضع وجهًا واحدًا داخل الإطار');
   expect((screen.getByRole('button', { name: 'استخدام هذه الصورة' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('scales normalized landmarks before evaluating a non-square analysis frame', async () => {
+  detect.mockReturnValue([{
+    x: 5, y: 4, width: 10, height: 12,
+    leftEye: { x: 0.4, y: 0.42 }, rightEye: { x: 0.6, y: 0.48 }, nose: { x: 0.5, y: 0.55 },
+  }]);
+  render(<EmployeeFaceCapture value={null} onChange={vi.fn()} disabled={false} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'فتح كاميرا الوجه' }));
+  const video = await screen.findByLabelText('معاينة صورة وجه الموظف');
+  Object.defineProperties(video, { videoWidth: { value: 20 }, videoHeight: { value: 20 } });
+  fireEvent.loadedData(video);
+
+  await waitFor(() => expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100'));
+});
+
+it('stops a camera stream acquired after the component unmounts', async () => {
+  let resolveStream!: (stream: MediaStream) => void;
+  const stop = vi.fn();
+  const pendingStream = new Promise<MediaStream>((resolve) => { resolveStream = resolve; });
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: vi.fn(() => pendingStream) },
+  });
+  const view = render(<EmployeeFaceCapture value={null} onChange={vi.fn()} disabled={false} />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'فتح كاميرا الوجه' }));
+  await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce());
+  view.unmount();
+  resolveStream({ getTracks: () => [{ stop }] } as unknown as MediaStream);
+
+  await waitFor(() => expect(stop).toHaveBeenCalledOnce());
 });

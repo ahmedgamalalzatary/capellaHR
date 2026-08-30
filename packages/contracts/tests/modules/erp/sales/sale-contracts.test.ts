@@ -571,7 +571,23 @@ describe('ERP complete-sale contracts', () => {
         commissionRate: '10.00',
         commissionAmount: '20.00',
       }],
-    }).success).toBe(true);
+    }).success).toBe(false);
+  });
+
+  it('publishes a product commission percentage in sale quotes', () => {
+    const result = saleQuoteSchema.safeParse({
+      lines: [{
+        itemType: 'product', sourceId: 21, name: 'Shampoo', quantity: 1,
+        unitPrice: '100.00', lineTotal: '100.00', commissionPercent: '12.50',
+      }],
+      discount: null,
+      tax: null,
+      totals: {
+        subtotal: '100.00', discountAmount: '0.00', taxAmount: '0.00', total: '100.00',
+      },
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it('rejects stored invoice snapshots whose cross-field arithmetic is inconsistent', () => {

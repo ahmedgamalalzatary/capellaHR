@@ -197,6 +197,7 @@ export function ProductStockView() {
                     setDescription(stored.description);
                     setPrice(stored.price);
                     setCost(stored.cost);
+                    setCommissionPercent(stored.commissionPercent ?? '0');
                     setThreshold(stored.threshold);
                     setBarcode(stored.barcode ?? '');
                   }}

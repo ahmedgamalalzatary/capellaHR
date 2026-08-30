@@ -602,7 +602,15 @@ export const createDrizzleSaleRepository = (
       const lines = input.lines.map((line) => {
         const sourceId = line.itemType === 'service' ? line.serviceId : line.productId;
         const quoted = byKey.get(`${line.itemType}:${sourceId}`)!.shift()!;
-        return { itemType: quoted.itemType, sourceId: quoted.sourceId, name: quoted.name, quantity: quoted.quantity, unitPrice: quoted.unitPrice, lineTotal: quoted.lineTotal };
+        return {
+          itemType: quoted.itemType,
+          sourceId: quoted.sourceId,
+          name: quoted.name,
+          quantity: quoted.quantity,
+          unitPrice: quoted.unitPrice,
+          lineTotal: quoted.lineTotal,
+          ...(quoted.itemType === 'product' ? { commissionPercent: quoted.commissionPercent } : {}),
+        };
       });
       let totals;
       try {
@@ -669,14 +677,6 @@ export const createDrizzleSaleRepository = (
             && session.openedByAccountId !== operation.actingAccountId)) {
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
-          if (payroll) {
-            // Ascending order, so two concurrent sales sharing employees queue
-            // behind each other instead of deadlocking.
-            for (const employeeId of employeeIds) {
-              await payroll.lockCommissionEmployee(employeeId, transaction);
-            }
-          }
-
           const client = (await transaction.select().from(clients).where(and(
             eq(clients.id, input.clientId),
             eq(clients.branchId, input.branchId),
@@ -711,6 +711,18 @@ export const createDrizzleSaleRepository = (
             )).for('update').limit(1))[0];
           if (input.sellerEmployeeId !== undefined && !seller) {
             throw new SaleError('SELLER_NOT_ON_ROSTER');
+          }
+          if (payroll) {
+            // Lock a product seller conservatively before product rows are read.
+            // The final projection below still includes only employees who
+            // actually earned commission from the authoritative locked rows.
+            const lockEmployeeIds = [...new Set([
+              ...employeeIds,
+              ...(seller && productInputs.length ? [seller.id] : []),
+            ])].sort((left, right) => left - right);
+            for (const employeeId of lockEmployeeIds) {
+              await payroll.lockCommissionEmployee(employeeId, transaction);
+            }
           }
           const assignedEmployees = serviceInputs.length
             ? await operation.assertEmployees!(transaction)
@@ -761,6 +773,9 @@ export const createDrizzleSaleRepository = (
           }));
           const byKey = keyedQueues([...calculatedServices, ...calculatedProducts]);
           const calculatedLines = input.lines.map((line) => byKey.get(`${line.itemType}:${line.itemType === 'service' ? line.serviceId : line.productId}`)!.shift()!);
+          const projectedEmployeeIds = [...new Set(calculatedLines.flatMap((line) => (
+            line.employee && line.commissionRule !== 'none' ? [line.employee.id] : []
+          )))].sort((left, right) => left - right);
           let totals;
           try {
             totals = calculateSaleTotals({
@@ -869,7 +884,7 @@ export const createDrizzleSaleRepository = (
             settlementStatus: amountPaid === toCents(totals.total) ? 'settled' : 'open',
           })
             .where(eq(invoices.id, invoiceId));
-          for (const employeeId of employeeIds) {
+          for (const employeeId of projectedEmployeeIds) {
             await projectCommission(transaction, employeeId, cairoMonth(operation.soldAt));
           }
           const completed = await hydrateInvoice(transaction, invoiceId);
@@ -1365,15 +1380,15 @@ export const createDrizzleSaleRepository = (
               eq(invoiceReversals.invoiceId, original.id),
               eq(invoiceReversals.status, 'finalized'),
             ))).map(({ id }) => id));
-          // Reversed commission is owed back per employee: each service line
-          // takes it from whoever earned it.
+          // Reversed commission is owed back per employee: each commissioned
+          // line takes it from whoever earned it.
           const reversedByEmployee = new Map<number, bigint>();
           for (const line of originalLines.filter((candidate) => (
-            candidate.itemType === 'service' && selectedByLine.has(candidate.id)
+            candidate.commissionRuleSnapshot !== 'none' && selectedByLine.has(candidate.id)
           ))) {
-            const currentAssignment = assignmentHistory.find((entry) => (
-              entry.invoiceLineId === line.id
-            ));
+            const currentAssignment = line.itemType === 'service'
+              ? assignmentHistory.find((entry) => entry.invoiceLineId === line.id)
+              : undefined;
             const earned = currentAssignment
               ? ledger.find((entry) => (
                 entry.invoiceLineReassignmentId === currentAssignment.id

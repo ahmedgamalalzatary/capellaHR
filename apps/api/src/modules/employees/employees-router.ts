@@ -23,7 +23,14 @@ const handle = (error: unknown, res: Response) => {
       ? fail(res, 400, 'IMAGE_TOO_LARGE', 'حجم الصورة يتجاوز الحد الأقصى المسموح')
       : fail(res, 400, 'INVALID_IMAGE', 'ملف الصورة غير صالح');
   }
-  if (error instanceof EmployeeUploadError) return fail(res, 400, error.code, error.message);
+  if (error instanceof EmployeeUploadError) {
+    const status = error.code === 'FACE_SERVICE_TIMEOUT'
+      ? 504
+      : error.code === 'FACE_SERVICE_UNAVAILABLE'
+        ? 503
+        : 400;
+    return fail(res, status, error.code, error.message);
+  }
   if (error instanceof EmployeeError) return fail(res, error.code === 'EMPLOYEE_NOT_FOUND' || error.code === 'EMPLOYEE_BRANCH_NOT_FOUND' || error.code === 'EMPLOYEE_DEBT_NOT_FOUND' ? 404 : error.code === 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' || error.code === 'EMPLOYEE_FINANCIALS_UNAVAILABLE' ? 503 : 409, error.code, error.message);
   throw error;
 };

@@ -38,6 +38,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  sessionStorage.clear();
   actor.current = 'admin';
   mocks.listProducts.mockResolvedValue({
     items: [product], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
@@ -46,6 +47,21 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('restores the product commission percentage from a saved draft', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('اسم المنتج'), { target: { value: 'زيت شعر' } });
+    fireEvent.change(screen.getByLabelText('عمولة البائع %'), { target: { value: '17.5' } });
+    cleanup();
+
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+
+    expect((screen.getByLabelText('عمولة البائع %') as HTMLInputElement).value).toBe('17.5');
+  });
   it('opens the stock adjustment panel above the products table, not below it', async () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });

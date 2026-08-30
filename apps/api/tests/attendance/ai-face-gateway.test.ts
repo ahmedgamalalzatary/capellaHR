@@ -41,6 +41,21 @@ describe('AI face service gateway', () => {
     });
   });
 
+  it('rejects a successful enrollment response with non-numeric embedding values', async () => {
+    const embedding = Array.from({ length: 128 }, () => 0.25) as Array<number | null>;
+    embedding[64] = null;
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      embedding,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const gateway = createAiFaceGateway({ baseUrl: 'http://attendance-ai:8000', fetcher });
+
+    await expect(gateway.enroll(42, new Blob(['photo'], { type: 'image/jpeg' }))).resolves.toEqual({
+      kind: 'rejected',
+      reason: 'invalid_response',
+    });
+  });
+
   it('distinguishes an unavailable enrollment service from a rejected face', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('offline'));

@@ -157,6 +157,27 @@ describe('employee router', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['timeout', 504, 'FACE_SERVICE_TIMEOUT'],
+    ['unavailable', 503, 'FACE_SERVICE_UNAVAILABLE'],
+  ] as const)('maps a face-service %s to its service HTTP status', async (kind, status, code) => {
+    const store = {
+      save: vi.fn(async () => ({ storagePath: 'employees/new.jpg', originalName: 'new.jpg', mimeType: 'image/jpeg', sizeBytes: 5 })),
+      remove: vi.fn(async () => undefined),
+      recordCleanupFailure: vi.fn(async () => undefined),
+    } as unknown as EmployeeUploadStore;
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: { update: vi.fn() } as unknown as EmployeeService,
+      employeeUploadStore: store,
+      employeeUploadMaxBytes: 16_777_216,
+      employeeFaceEnrollment: vi.fn(async () => ({ kind })),
+    })).patch('/api/v1/employees/1').attach('personal', Buffer.from('image'), 'new.jpg');
+
+    expect(response.status).toBe(status);
+    expect(response.body.error.code).toBe(code);
+  });
+
   it('previews, confirms deactivation, and reactivates through explicit admin endpoints', async () => {
     const lifecycleService = {
       previewDeactivation: vi.fn(async () => ({

@@ -34,11 +34,13 @@ export function EmployeeFaceCapture({
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<EmployeeFaceDetector | null>(null);
   const intervalRef = useRef<number | null>(null);
+  const requestRef = useRef(0);
   const [active, setActive] = useState(false);
   const [quality, setQuality] = useState<EmployeeFaceQuality>({ code: 'no_face', ready: false, score: 0 });
   const [error, setError] = useState<string | null>(null);
 
   const stop = () => {
+    requestRef.current += 1;
     if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
     intervalRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -47,6 +49,7 @@ export function EmployeeFaceCapture({
   };
 
   useEffect(() => () => {
+    requestRef.current += 1;
     if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     detectorRef.current?.close();
@@ -80,21 +83,40 @@ export function EmployeeFaceCapture({
       y: face.y * scaleY,
       width: face.width * scaleX,
       height: face.height * scaleY,
+      leftEye: { x: face.leftEye.x * canvas.width, y: face.leftEye.y * canvas.height },
+      rightEye: { x: face.rightEye.x * canvas.width, y: face.rightEye.y * canvas.height },
+      nose: { x: face.nose.x * canvas.width, y: face.nose.y * canvas.height },
     }));
     setQuality(evaluateEmployeeFaceQuality(context.getImageData(0, 0, canvas.width, canvas.height), faces));
   };
 
   const open = async () => {
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
     setError(null);
     try {
-      detectorRef.current ??= await createEmployeeFaceDetector();
-      streamRef.current = await navigator.mediaDevices.getUserMedia({
+      let detector = detectorRef.current;
+      if (!detector) {
+        detector = await createEmployeeFaceDetector();
+        if (requestRef.current !== requestId) {
+          detector.close();
+          return;
+        }
+        detectorRef.current = detector;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       });
+      if (requestRef.current !== requestId) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      streamRef.current = stream;
       setQuality({ code: 'no_face', ready: false, score: 0 });
       setActive(true);
     } catch {
+      if (requestRef.current !== requestId) return;
       stop();
       setError('تعذر فتح كاميرا الوجه أو تحميل أداة فحص الصورة. تحقق من الإذن والاتصال ثم أعد المحاولة.');
     }

@@ -341,6 +341,7 @@ const quoteLineSchema = z.object({
   quantity: positiveMysqlIntSchema,
   unitPrice: positiveMoneySchema,
   lineTotal: positiveMoneySchema,
+  commissionPercent: percentageSchema.optional(),
 }).strict().superRefine((value, context) => {
   if (toCents(value.lineTotal) !== toCents(value.unitPrice) * BigInt(value.quantity)) {
     context.addIssue({ code: 'custom', path: ['lineTotal'], message: 'إجمالي البند غير متسق' });
@@ -431,7 +432,7 @@ const invoiceLineSchema = z.object({
   quantity: positiveMysqlIntSchema,
   unitPrice: positiveMoneySchema,
   lineTotal: positiveMoneySchema,
-  /** The employee who performed this service; a product line names nobody. */
+  /** The employee who earned this line's commission, when one exists. */
   employee: invoiceEmployeeSchema.nullable(),
   originalEmployee: invoiceEmployeeSchema.nullable(),
   reassignments: z.array(invoiceLineReassignmentSchema),
@@ -456,6 +457,11 @@ const invoiceLineSchema = z.object({
   }
   if (value.itemType === 'service' && value.commissionRule === 'none') {
     context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'الخدمة تتطلب قاعدة عمولة' });
+  }
+  if (value.itemType === 'product' && value.commissionRule === 'none'
+    && (toCents(value.commissionRate) !== BigInt(0)
+      || toCents(value.commissionAmount) !== BigInt(0))) {
+    context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'المنتج بلا عمولة يجب أن يحمل قيم عمولة صفرية' });
   }
   if (value.itemType === 'service'
     && toCents(value.commissionAmount) !== percentageAmount(value.lineTotal, value.commissionRate)) {
