@@ -60,6 +60,25 @@ export function ReceiptFooter() {
 type PublicInvoiceLine = PublicInvoiceDto['lines'][number];
 type ReceiptEmployee = NonNullable<PublicInvoiceLine['employee']>;
 
+/**
+ * The old INV-* payload's viewBox made width:100% + height:auto land at ~6mm
+ * on this slip. A short global number has a squat viewBox, so the same CSS
+ * grows the bars to ~36mm. Stretch to full width and pin the height.
+ */
+function ReceiptInvoiceBarcode({ value }: { value: string }) {
+  return (
+    <div className="overflow-hidden border-b border-solid border-black py-2">
+      <Barcode
+        value={value}
+        symbology="code128"
+        heightMm={6}
+        stretch
+        className="block w-full [&_svg]:block [&_svg]:h-[6mm] [&_svg]:w-full"
+      />
+    </div>
+  );
+}
+
 const RECEIPT_SUMMARY_CLASS =
   'table ms-auto w-[72%] border-collapse border-0 [&>div]:table-row [&>div>div]:table-cell [&>div>span]:table-cell [&>div>div]:border-black [&>div>span]:border-black [&>div>div]:border [&>div>span]:border [&>div:first-child>div]:border-t-0 [&>div:first-child>span]:border-t-0 [&>div>div]:px-2 [&>div>span]:px-2 [&>div>div]:py-1 [&>div>span]:py-1 [&>div>div]:text-center [&>div>span]:text-center';
 
@@ -142,9 +161,7 @@ export function EmployeeReceipt({
         </div>
         <ReceiptQr value={invoice.invoiceNumber} />
       </header>
-      <div className="flex justify-center border-b border-solid border-black py-2">
-        <Barcode value={invoice.invoiceNumber} symbology="code128" heightMm={8} className="w-full [&_svg]:h-auto [&_svg]:w-full" />
-      </div>
+      <ReceiptInvoiceBarcode value={invoice.invoiceNumber} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt>
@@ -241,9 +258,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         * and cannot read it, so the slip also carries a Code 128 the counter can
         * scan to pull the invoice up for a refund.
         */}
-      <div className="flex justify-center border-b border-solid border-black py-2">
-        <Barcode value={invoice.invoiceNumber} symbology="code128" heightMm={8} className="w-full [&_svg]:h-auto [&_svg]:w-full" />
-      </div>
+      <ReceiptInvoiceBarcode value={invoice.invoiceNumber} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt><dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>

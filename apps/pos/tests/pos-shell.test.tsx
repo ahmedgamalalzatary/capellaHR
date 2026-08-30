@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { PosShell } from '../src/components/shell/pos-shell';
 import { cashierNavigation, filterCashierNavigation } from '../src/components/shell/nav';
 
-const { replaceMock, getSessionMock, logoutMock, getCurrentSessionMock, pathname } = vi.hoisted(() => ({
+const { replaceMock, getSessionMock, logoutMock, getCurrentSessionMock, hasBookingsEverMock, pathname } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
   getSessionMock: vi.fn(),
   logoutMock: vi.fn(),
   getCurrentSessionMock: vi.fn(),
+  hasBookingsEverMock: vi.fn(),
   pathname: { current: '/sales' },
 }));
 
@@ -27,6 +28,11 @@ vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
 vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getCurrentCashierSession: getCurrentSessionMock,
+}));
+
+vi.mock('../src/features/bookings/api/bookings-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  hasBookingsEver: hasBookingsEverMock,
 }));
 
 function PendingCommand() {
@@ -54,6 +60,7 @@ afterEach(() => {
 beforeEach(() => {
   pathname.current = '/sales';
   getCurrentSessionMock.mockResolvedValue(null);
+  hasBookingsEverMock.mockResolvedValue(false);
   // jsdom ships no matchMedia; the shell watches the md breakpoint to close the
   // mobile drawer, so tests run as a narrow viewport with the drawer available.
   vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -64,6 +71,24 @@ beforeEach(() => {
 });
 
 describe('PosShell', () => {
+  test('hides bookings from a cashier with no open shift when the branch has never booked', async () => {
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 9 } });
+    renderShell();
+    expect(await screen.findByRole('link', { name: 'الوردية' })).toBeDefined();
+    await waitFor(() => expect(hasBookingsEverMock).toHaveBeenCalled());
+    expect(screen.queryByRole('link', { name: 'دفتر المواعيد' })).toBeNull();
+  });
+
+  test('shows bookings to a cashier with no open shift when the branch has booking history', async () => {
+    hasBookingsEverMock.mockResolvedValue(true);
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 9 } });
+    renderShell();
+    expect(await screen.findByRole('link', { name: 'دفتر المواعيد' })).toHaveProperty(
+      'href',
+      expect.stringContaining('/bookings'),
+    );
+  });
+
   test('filters only empty cashier workflows and removes empty groups', () => {
     const result = filterCashierNavigation(cashierNavigation, {
       hasSalesContent: false,

@@ -14,9 +14,14 @@ export type BarcodeSymbology = 'ean13' | 'code128';
 export const symbologyFor = (value: string): BarcodeSymbology =>
   (/^\d{12,13}$/.test(value) ? 'ean13' : 'code128');
 
-const draw = (value: string, symbology: BarcodeSymbology, heightMm: number): string | null => {
+const draw = (
+  value: string,
+  symbology: BarcodeSymbology,
+  heightMm: number,
+  stretch: boolean,
+): string | null => {
   try {
-    return toSVG({
+    const svg = toSVG({
       bcid: symbology,
       text: value,
       height: heightMm,
@@ -24,6 +29,9 @@ const draw = (value: string, symbology: BarcodeSymbology, heightMm: number): str
       paddingwidth: 0,
       paddingheight: 0,
     });
+    // Default SVG meet letterboxes a short Code 128 inside a wide box. The
+    // receipt needs the bars to fill that box the way a long INV-* payload did.
+    return stretch ? svg.replace('<svg ', '<svg preserveAspectRatio="none" ') : svg;
   } catch {
     return null;
   }
@@ -42,13 +50,13 @@ const draw = (value: string, symbology: BarcodeSymbology, heightMm: number): str
 export function barcodeSvg(
   value: string,
   symbology?: BarcodeSymbology,
-  { heightMm = 10 }: { heightMm?: number } = {},
+  { heightMm = 10, stretch = false }: { heightMm?: number; stretch?: boolean } = {},
 ): string | null {
   if (!value) return null;
-  if (symbology) return draw(value, symbology, heightMm);
+  if (symbology) return draw(value, symbology, heightMm, stretch);
   const preferred = symbologyFor(value);
-  return draw(value, preferred, heightMm)
-    ?? (preferred === 'ean13' ? draw(value, 'code128', heightMm) : null);
+  return draw(value, preferred, heightMm, stretch)
+    ?? (preferred === 'ean13' ? draw(value, 'code128', heightMm, stretch) : null);
 }
 
 /**
@@ -60,14 +68,19 @@ export function Barcode({
   value,
   symbology,
   heightMm,
+  stretch,
   className,
 }: {
   value: string;
   symbology?: BarcodeSymbology;
   heightMm?: number;
+  stretch?: boolean;
   className?: string;
 }) {
-  const svg = barcodeSvg(value, symbology, heightMm === undefined ? {} : { heightMm });
+  const svg = barcodeSvg(value, symbology, {
+    ...(heightMm === undefined ? {} : { heightMm }),
+    ...(stretch ? { stretch: true } : {}),
+  });
   if (!svg) return null;
   return (
     <div

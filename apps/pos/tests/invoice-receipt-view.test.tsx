@@ -700,4 +700,20 @@ describe('stored invoice receipt', () => {
     const barcode = customerReceipt().getByRole('img', { name: saleFixtures.completedInvoice.invoiceNumber });
     expect(barcode.innerHTML).toContain('svg');
   });
+
+  it('keeps the invoice barcode a thin full-width strip for short global numbers', async () => {
+    renderView();
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+
+    const barcode = customerReceipt().getByRole('img', {
+      name: saleFixtures.completedInvoice.invoiceNumber,
+    });
+    // The old INV-* payload's viewBox made height:auto land at ~22px on this
+    // slip. A short number like "4" with the same width:100% + height:auto
+    // grows to ~135px. Pin the height to that thin strip and keep full width.
+    expect(barcode.className).toMatch(/\bw-full\b/);
+    expect(barcode.className).toMatch(/\[&_svg\]:w-full/);
+    expect(barcode.className).toMatch(/\[&_svg\]:h-\[6mm\]/);
+    expect(barcode.innerHTML).toContain('preserveAspectRatio="none"');
+  });
 });

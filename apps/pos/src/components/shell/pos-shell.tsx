@@ -32,34 +32,44 @@ export function PosShell({ children }: { children: ReactNode }) {
     enabled: isCashier,
   });
   const branchId = cashierSession.data?.branchId;
+  const bookingsEver = useQuery({
+    queryKey: ['cashier-has-bookings-ever'],
+    enabled: isCashier,
+    queryFn: () => hasBookingsEver(),
+  });
   const cashierCapabilities = useQuery({
     queryKey: ['cashier-navigation-capabilities', branchId],
     enabled: isCashier && branchId !== undefined,
     queryFn: async () => {
       if (branchId === undefined) throw new Error('Cashier branch is unavailable');
       const activeBranchId = branchId;
-      const [categories, services, products, bookings] = await Promise.all([
+      const [categories, services, products] = await Promise.all([
         listCategories({ branchId: activeBranchId, isActive: true, page: 1, pageSize: 1 }),
         listServices({ branchId: activeBranchId, isActive: true, page: 1, pageSize: 1 }),
         listSellableProducts({ branchId: activeBranchId, page: 1, pageSize: 1 }),
-        hasBookingsEver(activeBranchId),
       ]);
       const hasCatalogContent = categories.items.length > 0 || services.items.length > 0;
-      return { hasSalesContent: hasCatalogContent || products.items.length > 0, hasCatalogContent, hasBookings: bookings };
+      return { hasSalesContent: hasCatalogContent || products.items.length > 0, hasCatalogContent };
     },
   });
-  const visibleNavigation = isAdmin ? adminNavigation : cashierCapabilities.data
-    ? filterCashierNavigation(cashierNavigation, cashierCapabilities.data)
-    : cashierNavigation;
+  const visibleNavigation = isAdmin ? adminNavigation : filterCashierNavigation(cashierNavigation, {
+    hasSalesContent: cashierCapabilities.data?.hasSalesContent ?? true,
+    hasCatalogContent: cashierCapabilities.data?.hasCatalogContent ?? true,
+    hasBookings: bookingsEver.data === true,
+  });
 
   useEffect(() => {
-    if (!isCashier || !cashierCapabilities.data) return;
+    if (!isCashier) return;
     const current = window.location.pathname;
+    if (current === '/bookings') {
+      if (bookingsEver.isFetched && bookingsEver.data !== true) router.replace('/');
+      return;
+    }
+    if (!cashierCapabilities.data) return;
     const allowed = current === '/sales' ? cashierCapabilities.data.hasSalesContent
-      : current === '/bookings' ? cashierCapabilities.data.hasBookings
-        : current === '/catalog' ? cashierCapabilities.data.hasCatalogContent : true;
+      : current === '/catalog' ? cashierCapabilities.data.hasCatalogContent : true;
     if (!allowed) router.replace('/');
-  }, [cashierCapabilities.data, isCashier, router]);
+  }, [bookingsEver.data, bookingsEver.isFetched, cashierCapabilities.data, isCashier, router]);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const wideRef = useRef(false);

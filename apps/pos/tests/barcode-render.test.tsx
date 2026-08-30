@@ -49,4 +49,9 @@ describe('barcode rendering', () => {
   it('derives the print page rule from the one label-size constant', () => {
     expect(LABEL_PAGE_RULE).toContain(`${LABEL_SIZE_MM.width}mm ${LABEL_SIZE_MM.height}mm`);
   });
+
+  it('stretches a short Code 128 to its box instead of letterboxing it', () => {
+    expect(barcodeSvg('12', 'code128', { stretch: true })).toContain('preserveAspectRatio="none"');
+    expect(barcodeSvg('12', 'code128')).not.toContain('preserveAspectRatio="none"');
+  });
 });
