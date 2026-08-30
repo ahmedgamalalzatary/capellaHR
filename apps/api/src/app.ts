@@ -16,7 +16,7 @@ import type { AdvanceService } from './modules/advances/index.js';
 import type { ReportService } from './modules/reports/index.js';
 import type { SelfServiceService } from './modules/self-service/index.js';
 import type { AuditService } from './modules/audit/index.js';
-import type { AttendanceService } from './modules/attendance/index.js';
+import type { AttendanceService, FaceEnrollmentResult } from './modules/attendance/index.js';
 import type { DashboardService } from './modules/dashboard/index.js';
 import type {
   BranchCashierRosterService,
@@ -43,7 +43,7 @@ export interface AppDependencies {
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
-  employeeFaceEnrollment?: (employeeId: string, photo: Buffer) => Promise<number[] | null>;
+  employeeFaceEnrollment?: (employeeId: string, photo: Buffer) => Promise<FaceEnrollmentResult>;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
   weeklyDayOffService?: WeeklyDayOffService;

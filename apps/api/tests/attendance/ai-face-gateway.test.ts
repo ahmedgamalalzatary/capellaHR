@@ -15,11 +15,41 @@ describe('AI face service gateway', () => {
 
     const result = await gateway.enroll(42, new Blob(['photo'], { type: 'image/jpeg' }));
 
-    expect(result).toHaveLength(128);
+    expect(result).toEqual({
+      kind: 'enrolled',
+      embedding: expect.any(Array),
+    });
+    if (result.kind === 'enrolled') expect(result.embedding).toHaveLength(128);
     expect(fetcher).toHaveBeenCalledWith('http://attendance-ai:8000/api/v1/enroll', expect.objectContaining({ method: 'POST' }));
     const request = fetcher.mock.calls[0]?.[1];
     expect(request?.body).toBeInstanceOf(FormData);
     expect((request?.body as FormData).get('employee_id')).toBe('42');
+  });
+
+  it('preserves a rejected enrollment reason from the face service', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      success: false,
+      employee_id: '42',
+      decision: 'rejected',
+      reason: 'multiple_faces_detected',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const gateway = createAiFaceGateway({ baseUrl: 'http://attendance-ai:8000', fetcher });
+
+    await expect(gateway.enroll(42, new Blob(['photo'], { type: 'image/jpeg' }))).resolves.toEqual({
+      kind: 'rejected',
+      reason: 'multiple_faces_detected',
+    });
+  });
+
+  it('distinguishes an unavailable enrollment service from a rejected face', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('offline'));
+    const gateway = createAiFaceGateway({ baseUrl: 'http://attendance-ai:8000', fetcher });
+
+    await expect(gateway.enroll(42, new Blob(['photo'], { type: 'image/jpeg' }))).resolves.toEqual({
+      kind: 'unavailable',
+    });
+    warning.mockRestore();
   });
 
   it('verifies all captured frames against the stored embedding', async () => {

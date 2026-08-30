@@ -64,7 +64,7 @@ export const employeeCreateFormSchema = z.object({
   pin,
   branchId: requiredNumber('اختر الفرع').pipe(z.number().int('اختر الفرع').positive('اختر الفرع')),
   monthlyBaseSalary: salary,
-  personal: imageFile.optional(),
+  personal: imageFile,
   idFront: imageFile.optional(),
   idBack: imageFile.optional(),
 });

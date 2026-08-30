@@ -130,6 +130,33 @@ describe('employee router', () => {
     expect(recordCleanupFailure).toHaveBeenCalledWith('employees/old.png', expect.any(Error));
   });
 
+  it('explains why a replacement face was rejected', async () => {
+    const update = vi.fn(async () => ({ employee: { id: 1 }, replacedImages: {} }));
+    const store = {
+      save: vi.fn(async () => ({ storagePath: 'employees/new.jpg', originalName: 'new.jpg', mimeType: 'image/jpeg', sizeBytes: 5 })),
+      remove: vi.fn(async () => undefined),
+      recordCleanupFailure: vi.fn(async () => undefined),
+    } as unknown as EmployeeUploadStore;
+    const employeeFaceEnrollment = vi.fn(async () => ({
+      kind: 'rejected' as const,
+      reason: 'no_face_detected',
+    }));
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: { update } as unknown as EmployeeService,
+      employeeUploadStore: store,
+      employeeUploadMaxBytes: 16_777_216,
+      employeeFaceEnrollment,
+    })).patch('/api/v1/employees/1').attach('personal', Buffer.from('image'), 'new.jpg');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatchObject({
+      code: 'FACE_NOT_DETECTED',
+      message: 'لم يتم العثور على وجه واضح في الصورة',
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('previews, confirms deactivation, and reactivates through explicit admin endpoints', async () => {
     const lifecycleService = {
       previewDeactivation: vi.fn(async () => ({

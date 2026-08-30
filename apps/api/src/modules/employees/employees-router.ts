@@ -4,9 +4,10 @@ import multer from 'multer';
 import { ZodError } from 'zod';
 import { createAuthMiddleware } from '../auth/auth-middleware.js';
 import type { AuthService } from '../auth/auth-service.js';
-import { EmployeeUploadError, type EmployeeUploadStore } from './employee-upload-store.js';
+import { EmployeeUploadError, type EmployeeUploadErrorCode, type EmployeeUploadStore } from './employee-upload-store.js';
 import { EmployeeError, type EmployeeImages, type EmployeeService, type ImageKind } from './employees-service.js';
 import { responseRequestId } from '../../shared/http/index.js';
+import type { FaceEnrollmentResult } from '../attendance/ai-face-gateway.js';
 const fail = (res: Response, status: number, code: string, message: string, fieldErrors?: Record<string, string[]>) => res.status(status).json({ error: { code, message, ...(fieldErrors ? { fieldErrors } : {}), requestId: responseRequestId(res) } });
 const handle = (error: unknown, res: Response) => {
   if (error instanceof ZodError) {
@@ -28,7 +29,20 @@ const handle = (error: unknown, res: Response) => {
 };
 // Multipart field names are part of the public employee-image API contract.
 const fields = [{ name: 'personal', maxCount: 1 }, { name: 'idFront', maxCount: 1 }, { name: 'idBack', maxCount: 1 }];
-export const createEmployeesRouter = (service: EmployeeService, authService: Pick<AuthService, 'authenticate'>, maxImageBytes: number, store?: EmployeeUploadStore, enrollFace?: (employeeId: string, photo: Buffer) => Promise<number[] | null>) => {
+const enrollmentError = (result: Exclude<FaceEnrollmentResult, { kind: 'enrolled' }>) => {
+  if (result.kind === 'timeout') return new EmployeeUploadError('FACE_SERVICE_TIMEOUT', 'انتهت مهلة تسجيل الوجه. أعد المحاولة');
+  if (result.kind === 'unavailable') return new EmployeeUploadError('FACE_SERVICE_UNAVAILABLE', 'خدمة تسجيل الوجه غير متاحة الآن');
+  const failures: Record<string, [EmployeeUploadErrorCode, string]> = {
+    no_face_detected: ['FACE_NOT_DETECTED', 'لم يتم العثور على وجه واضح في الصورة'],
+    multiple_faces_detected: ['MULTIPLE_FACES_DETECTED', 'يجب أن يظهر وجه واحد فقط في الصورة'],
+    invalid_image: ['INVALID_IMAGE', 'ملف صورة الوجه غير صالح'],
+    invalid_request: ['INVALID_IMAGE', 'تعذر قراءة صورة الوجه'],
+    invalid_response: ['FACE_SERVICE_INVALID_RESPONSE', 'أعادت خدمة تسجيل الوجه نتيجة غير صالحة'],
+  };
+  const [code, message] = failures[result.reason] ?? ['FACE_ENROLLMENT_REJECTED' as const, 'رفضت خدمة تسجيل الوجه الصورة'];
+  return new EmployeeUploadError(code, message);
+};
+export const createEmployeesRouter = (service: EmployeeService, authService: Pick<AuthService, 'authenticate'>, maxImageBytes: number, store?: EmployeeUploadStore, enrollFace?: (employeeId: string, photo: Buffer) => Promise<FaceEnrollmentResult>) => {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxImageBytes, files: 3 } });
   const acceptUploads = (request: Request, response: Response, next: NextFunction) => upload.fields(fields)(request, response, (error) => { if (error) handle(error, response); else next(); });
   const router = Router(); const auth = createAuthMiddleware(authService); router.use(auth.authenticate, auth.requireAdmin);
@@ -61,9 +75,9 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
       const fields = createEmployeeFieldsSchema.parse(req.body);
       const personal = files?.personal?.[0];
       if (!personal || !enrollFace) throw new EmployeeUploadError('INVALID_IMAGE', 'صورة شخصية مطلوبة لتسجيل الوجه');
-      const embedding = personal && enrollFace ? await enrollFace(String(fields.personalPhone), personal.buffer) : null;
-      if (!embedding) throw new EmployeeUploadError('INVALID_IMAGE', 'تعذر تسجيل الوجه');
-      res.status(201).json({ data: await service.create({ ...fields, images, faceEmbedding: embedding ? JSON.stringify(embedding) : null }) });
+      const enrollment = await enrollFace(String(fields.personalPhone), personal.buffer);
+      if (enrollment.kind !== 'enrolled') throw enrollmentError(enrollment);
+      res.status(201).json({ data: await service.create({ ...fields, images, faceEmbedding: JSON.stringify(enrollment.embedding) }) });
     } catch (e) { await compensate(saved); handle(e, res); }
   });
   router.patch('/:id', acceptUploads, async (req, res) => {
@@ -78,9 +92,9 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
       const parsed = hasBodyFields ? updateEmployeeFieldsSchema.parse(body) : {};
       if (!hasBodyFields && Object.keys(images).length === 0) updateEmployeeFieldsSchema.parse({});
       const personal = files?.personal?.[0];
-      const embedding = personal && enrollFace ? await enrollFace(String(id), personal.buffer) : null;
-      if (personal && enrollFace && !embedding) throw new EmployeeUploadError('INVALID_IMAGE', 'تعذر تسجيل الوجه');
-      const result = await service.update(id, { ...parsed, ...(Object.keys(images).length ? { images } : {}), ...(embedding ? { faceEmbedding: JSON.stringify(embedding) } : {}) });
+      const enrollment = personal && enrollFace ? await enrollFace(String(id), personal.buffer) : null;
+      if (enrollment && enrollment.kind !== 'enrolled') throw enrollmentError(enrollment);
+      const result = await service.update(id, { ...parsed, ...(Object.keys(images).length ? { images } : {}), ...(enrollment?.kind === 'enrolled' ? { faceEmbedding: JSON.stringify(enrollment.embedding) } : {}) });
       committed = true;
       if (store) for (const image of Object.values(result.replacedImages)) {
         if (!image) continue; const oldPath = image.storagePath;

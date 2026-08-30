@@ -26,7 +26,7 @@ import { createAdvancesRouter, type AdvanceService } from '../modules/advances/i
 import { createReportsRouter, type ReportService } from '../modules/reports/index.js';
 import { createSelfServiceRouter, type SelfServiceService } from '../modules/self-service/index.js';
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
-import { createAttendanceRouter, type AttendanceService } from '../modules/attendance/index.js';
+import { createAttendanceRouter, type AttendanceService, type FaceEnrollmentResult } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
 import { createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
@@ -51,7 +51,7 @@ export const createApiRouter = (dependencies: {
   branchService?: BranchService;
   employeeService?: EmployeeService;
   employeeUploadStore?: EmployeeUploadStore;
-  employeeFaceEnrollment?: (employeeId: string, photo: Buffer) => Promise<number[] | null>;
+  employeeFaceEnrollment?: (employeeId: string, photo: Buffer) => Promise<FaceEnrollmentResult>;
   deviceService?: DeviceService;
   shiftService?: ShiftService;
   weeklyDayOffService?: WeeklyDayOffService;

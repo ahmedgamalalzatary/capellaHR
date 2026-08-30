@@ -35,14 +35,14 @@ import {
   type EmployeeCreateFormValues,
   type EmployeeUpdateFormValues,
 } from '../schemas/employee-form';
+import { EmployeeFaceCapture } from './employee-face-capture';
 import { employeeQueryKeys } from '../query-keys';
 
 type CreateFormInput = import('zod').input<typeof employeeCreateFormSchema>;
 type UpdateFormInput = import('zod').input<typeof employeeUpdateFormSchema>;
 
 // Ordered image fields keep create and edit forms synchronized with the multipart contract.
-const IMAGE_FIELDS: { kind: EmployeeImageKind; label: string }[] = [
-  { kind: 'personal', label: 'الصورة الشخصية' },
+const IMAGE_FIELDS: { kind: Exclude<EmployeeImageKind, 'personal'>; label: string }[] = [
   { kind: 'idFront', label: 'صورة البطاقة (وجه)' },
   { kind: 'idBack', label: 'صورة البطاقة (ظهر)' },
 ];
@@ -122,6 +122,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<CreateFormInput, unknown, EmployeeCreateFormValues>({
     resolver: zodResolver(employeeCreateFormSchema),
@@ -183,7 +184,15 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
             <TextField form={form} name="monthlyBaseSalary" label="الراتب الأساسي (جنيه)" />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="صورة الوجه" htmlFor="employee-face-capture" required error={errors.personal?.message}>
+            <EmployeeFaceCapture
+              value={(watch('personal') as File | undefined) ?? null}
+              onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
+              disabled={save.isPending}
+            />
+          </Field>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             {IMAGE_FIELDS.map(({ kind, label }) => (
               <ImageField
                 key={kind}
@@ -230,6 +239,7 @@ function EditEmployeeForm({
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<UpdateFormInput, unknown, EmployeeUpdateFormValues>({
     resolver: zodResolver(employeeUpdateFormSchema),
@@ -300,7 +310,15 @@ function EditEmployeeForm({
             <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="استبدال صورة الوجه" htmlFor="employee-face-capture" error={errors.personal?.message}>
+            <EmployeeFaceCapture
+              value={(watch('personal') as File | undefined) ?? null}
+              onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
+              disabled={save.isPending}
+            />
+          </Field>
+
+          <div className="grid gap-4 sm:grid-cols-2">
             {IMAGE_FIELDS.map(({ kind, label }) => (
               <ImageField
                 key={kind}

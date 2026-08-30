@@ -3,7 +3,17 @@ import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import type { ImageMetadata } from './employees-service.js';
-export class EmployeeUploadError extends Error { constructor(public readonly code: 'IMAGE_REQUIRED' | 'INVALID_IMAGE' | 'IMAGE_TOO_LARGE', message: string) { super(message); } }
+export type EmployeeUploadErrorCode =
+  | 'IMAGE_REQUIRED'
+  | 'INVALID_IMAGE'
+  | 'IMAGE_TOO_LARGE'
+  | 'FACE_NOT_DETECTED'
+  | 'MULTIPLE_FACES_DETECTED'
+  | 'FACE_SERVICE_TIMEOUT'
+  | 'FACE_SERVICE_UNAVAILABLE'
+  | 'FACE_SERVICE_INVALID_RESPONSE'
+  | 'FACE_ENROLLMENT_REJECTED';
+export class EmployeeUploadError extends Error { constructor(public readonly code: EmployeeUploadErrorCode, message: string) { super(message); } }
 export const createEmployeeUploadStore = (root: string, maxImageBytes: number) => ({
   async save(file: Express.Multer.File): Promise<ImageMetadata> {
     if (file.size > maxImageBytes) throw new EmployeeUploadError('IMAGE_TOO_LARGE', 'حجم الصورة يتجاوز الحد الأقصى المسموح');

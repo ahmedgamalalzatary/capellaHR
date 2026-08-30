@@ -30,6 +30,14 @@ vi.mock('../src/features/branches/api/branches-api', () => ({
   listBranches: mocks.listBranches,
 }));
 
+vi.mock('../src/features/employees/components/employee-face-capture', () => ({
+  EmployeeFaceCapture: ({ onChange }: { onChange: (file: File) => void }) => (
+    <button type="button" onClick={() => onChange(new File(['face'], 'personal.jpg', { type: 'image/jpeg' }))}>
+      التقاط وجه صالح
+    </button>
+  ),
+}));
+
 import { EmployeesView } from '../src/features/employees/components/employees-view';
 
 const employee = {
@@ -142,7 +150,7 @@ describe('EmployeesView', () => {
     fireEvent.change(screen.getByLabelText(/^الفرع/), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText(/مدة الوردية/), { target: { value: '480' } });
     fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: '7000' } });
-    setFile(/الصورة الشخصية/, image('personal.jpg'));
+    fireEvent.click(screen.getByRole('button', { name: 'التقاط وجه صالح' }));
     setFile(/صورة البطاقة \(وجه\)/, image('front.jpg'));
     setFile(/صورة البطاقة \(ظهر\)/, image('back.jpg'));
 
@@ -181,17 +189,17 @@ describe('EmployeesView', () => {
     fireEvent.change(screen.getByLabelText(/^الفرع/), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText(/مدة الوردية/), { target: { value: '480' } });
     fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: '7000' } });
-    setFile(/الصورة الشخصية/, image('personal.jpg'));
+    fireEvent.click(screen.getByRole('button', { name: 'التقاط وجه صالح' }));
     setFile(/صورة البطاقة \(وجه\)/, image('front.jpg'));
     setFile(/صورة البطاقة \(ظهر\)/, image('back.jpg'));
 
-    fireEvent.change(screen.getByLabelText(/الصورة الشخصية/), { target: { files: [] } });
+    fireEvent.change(screen.getByLabelText(/صورة البطاقة \(وجه\)/), { target: { files: [] } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
 
     await waitFor(() => expect(mocks.createEmployee).toHaveBeenCalledTimes(1));
     const payload = mocks.createEmployee.mock.calls[0]?.[0] as Record<string, File | undefined>;
-    expect(payload['personal']).toBeUndefined();
-    expect(payload['idFront']?.name).toBe('front.jpg');
+    expect(payload['personal']?.name).toBe('personal.jpg');
+    expect(payload['idFront']).toBeUndefined();
     expect(payload['idBack']?.name).toBe('back.jpg');
   });
 
@@ -248,7 +256,7 @@ describe('EmployeesView', () => {
     fireEvent.change(screen.getByLabelText(/^الفرع/), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText(/مدة الوردية/), { target: { value: '721' } });
     fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: '7000' } });
-    setFile(/الصورة الشخصية/, image('personal.jpg'));
+    fireEvent.click(screen.getByRole('button', { name: 'التقاط وجه صالح' }));
     setFile(/صورة البطاقة \(وجه\)/, image('front.jpg'));
     setFile(/صورة البطاقة \(ظهر\)/, image('back.jpg'));
 

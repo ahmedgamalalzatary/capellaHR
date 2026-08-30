@@ -182,7 +182,7 @@ describe('shared branch kiosk', () => {
     expect((screen.getByLabelText('الرقم السري') as HTMLInputElement).value).toBe('');
   });
 
-  it('shows the server denial and permits a fresh unlimited attempt', async () => {
+  it('shows the server denial without clearing the employee credentials', async () => {
     vi.mocked(fetch).mockImplementationOnce(() => response({
       error: { code: 'ATTENDANCE_OUT_OF_RANGE', message: 'الموقع خارج نطاق الفرع المسموح' },
     }, 409));
@@ -190,8 +190,8 @@ describe('shared branch kiosk', () => {
     await fillCredentials();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الحضور' }));
     expect((await screen.findByRole('alert')).textContent).toContain('الموقع خارج نطاق الفرع المسموح');
-    expect((screen.getByLabelText('كود الموظف') as HTMLInputElement).value).toBe('');
-    expect((screen.getByLabelText('الرقم السري') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('كود الموظف') as HTMLInputElement).value).toBe('42');
+    expect((screen.getByLabelText('الرقم السري') as HTMLInputElement).value).toBe('1234');
     expect(screen.getByLabelText('كود الموظف').getAttribute('autocomplete')).toBe('off');
     expect(screen.getByLabelText('الرقم السري').getAttribute('autocomplete')).toBe('off');
     expect((screen.getByRole('button', { name: 'إعادة المحاولة' }) as HTMLButtonElement).disabled).toBe(false);

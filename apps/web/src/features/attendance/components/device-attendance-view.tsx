@@ -107,9 +107,7 @@ export function DeviceAttendanceView({ source, title, eyebrow, description }: De
       void invalidateAttendanceDependents(queryClient);
     },
     onError: () => {
-      setPin('');
       setFaceImage(null);
-      if (isKiosk) setEmployeeCode('');
     },
     onSettled: (_data, error) => {
       if (error) setFailure(error);
