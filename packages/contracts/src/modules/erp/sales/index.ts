@@ -458,10 +458,19 @@ const invoiceLineSchema = z.object({
   if (value.itemType === 'service' && value.commissionRule === 'none') {
     context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'الخدمة تتطلب قاعدة عمولة' });
   }
-  if (value.itemType === 'product' && value.commissionRule === 'none'
-    && (toCents(value.commissionRate) !== BigInt(0)
-      || toCents(value.commissionAmount) !== BigInt(0))) {
-    context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'المنتج بلا عمولة يجب أن يحمل قيم عمولة صفرية' });
+  if (value.itemType === 'product') {
+    if (value.commissionRule === 'none'
+      && (toCents(value.commissionRate) !== BigInt(0)
+        || toCents(value.commissionAmount) !== BigInt(0))) {
+      context.addIssue({ code: 'custom', path: ['commissionRule'], message: 'المنتج بلا عمولة يجب أن يحمل قيم عمولة صفرية' });
+    }
+    if (value.commissionRule !== 'none' && value.employee === null) {
+      context.addIssue({ code: 'custom', path: ['employee'], message: 'المنتج ذو العمولة يجب أن يحمل الموظف المستحق' });
+    }
+    if (value.commissionRule !== 'none'
+      && toCents(value.commissionAmount) !== percentageAmount(value.lineTotal, value.commissionRate)) {
+      context.addIssue({ code: 'custom', path: ['commissionAmount'], message: 'عمولة المنتج غير متسقة' });
+    }
   }
   if (value.itemType === 'service'
     && toCents(value.commissionAmount) !== percentageAmount(value.lineTotal, value.commissionRate)) {

@@ -299,7 +299,7 @@ describe('ERP complete-sale contracts', () => {
     expect(invoiceSchema.safeParse({
       ...saleFixtures.completedInvoice,
       lines: [productLine],
-    }).success).toBe(true);
+    }).success).toBe(false);
     expect(invoiceSchema.safeParse({
       ...saleFixtures.completedInvoice,
       lines: [{ ...saleFixtures.completedInvoice.lines[0], employee: null }],
@@ -311,6 +311,21 @@ describe('ERP complete-sale contracts', () => {
         employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
       }],
     }).success).toBe(true);
+  });
+
+  it('rejects a mismatched commissioned product amount', () => {
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        itemType: 'product',
+        productCostBasis: '50.00',
+        employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
+        commissionRule: 'service_default',
+        commissionRate: '10.00',
+        commissionAmount: '19.99',
+      }],
+    }).success).toBe(false);
   });
 
   it('publishes one invoice holding two different service employees', () => {
