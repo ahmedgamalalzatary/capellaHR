@@ -67,7 +67,7 @@ type ReceiptEmployee = NonNullable<PublicInvoiceLine['employee']>;
  */
 function ReceiptInvoiceBarcode({ value }: { value: string }) {
   return (
-    <div className="overflow-hidden border-b border-solid border-black py-2">
+    <div className="overflow-hidden border-b border-solid border-black px-6 py-2">
       <Barcode
         value={value}
         symbology="code128"
@@ -152,11 +152,11 @@ export function EmployeeReceipt({
     <article
       data-receipt
       data-employee-receipt
-      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm text-ink"
+      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm font-semibold text-ink"
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
-          <p className="font-serif text-[30px] italic leading-none tracking-tight">Capella Care</p>
+          <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
           <h1 className="mt-1.5 text-end text-lg font-bold" dir="rtl">نسخة الموظف</h1>
         </div>
         <ReceiptQr value={invoice.invoiceNumber} />
@@ -245,11 +245,11 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
     <article
       data-receipt
       data-customer-receipt
-      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm text-ink"
+      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm font-semibold text-ink"
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
-          <p className="font-serif text-[30px] italic leading-none tracking-tight">Capella Care</p>
+          <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
         </div>
         <ReceiptQr value={invoice.invoiceNumber} />
       </header>

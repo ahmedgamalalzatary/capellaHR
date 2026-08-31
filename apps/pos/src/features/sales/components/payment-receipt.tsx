@@ -18,7 +18,7 @@ export function PaymentReceipt({
   amount: string;
   operationReference: string;
 }) {
-  return <article data-payment-receipt data-receipt className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink">
+  return <article data-payment-receipt data-receipt className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm font-semibold text-ink">
     <PrintPageRule rule={RECEIPT_PAGE_RULE} />
     <header className="border-b border-dashed border-ink pb-3">
       <p className="font-serif text-2xl italic leading-none">Capella Care</p>

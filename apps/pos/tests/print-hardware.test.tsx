@@ -11,6 +11,7 @@ import {
 import { LABEL_SIZE_MM } from '../src/lib/barcode/label-size';
 import { ReceiptBundle } from '../src/features/sales/components/receipt';
 import { RefundReceipt } from '../src/features/sales/components/refund-receipt';
+import { PaymentReceipt } from '../src/features/sales/components/payment-receipt';
 
 afterEach(cleanup);
 
@@ -62,6 +63,23 @@ describe('receipt paper', () => {
   it('sizes the refund note to the same roll as the sale it reverses', () => {
     render(<RefundReceipt invoice={invoice} reversal={refund} />);
     expect(printRules().some((rule) => rule.includes(RECEIPT_PAGE_RULE))).toBe(true);
+  });
+
+  it('prints every sales, employee, refund, and payment receipt with semibold fields', () => {
+    render(<>
+      <ReceiptBundle invoice={invoice} />
+      <RefundReceipt invoice={invoice} reversal={refund} />
+      <PaymentReceipt
+        invoice={invoice}
+        method="cash"
+        amount="100.00"
+        operationReference="payment-1"
+      />
+    </>);
+
+    const receipts = [...document.querySelectorAll<HTMLElement>('[data-receipt]')];
+    expect(receipts.length).toBeGreaterThanOrEqual(4);
+    expect(receipts.every((receipt) => receipt.classList.contains('font-semibold'))).toBe(true);
   });
 });
 
