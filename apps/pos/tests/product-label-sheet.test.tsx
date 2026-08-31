@@ -40,6 +40,15 @@ describe('ProductLabelSheet', () => {
     expect(baseElement.querySelector('style')?.textContent).toContain('40mm 30mm');
   });
 
+  it('rotates the complete sticker content 90 degrees clockwise', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
+    const content = baseElement.querySelector<HTMLElement>('[data-product-label-content]');
+    expect(content?.style.width).toBe('30mm');
+    expect(content?.style.height).toBe('40mm');
+    expect(content?.style.transform).toBe('rotate(90deg)');
+  });
+
   it('does not page-break after the last sticker, which would eject a blank one', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product(), product({ id: 12, barcode: '2000000000121' })]} onPrinted={vi.fn()} />);

@@ -68,18 +68,28 @@ export function ProductLabelSheet({ products, onPrinted }: {
         <div
           key={product.id}
           // The break after the last sticker would feed one blank label off the roll.
-          className="flex break-after-page flex-col items-center justify-center gap-0.5 text-center last:break-after-auto"
+          className="flex break-after-page items-center justify-center overflow-hidden last:break-after-auto"
           style={{ width: `${LABEL_SIZE_MM.width}mm`, height: `${LABEL_SIZE_MM.height}mm` }}
         >
-          <span className="w-full truncate px-1 text-[9pt] font-semibold leading-tight">{product.name}</span>
           <div
-            role="img"
-            aria-label={product.barcode!}
-            className="w-[34mm]"
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
-          <span className="text-[7pt] tracking-wider">{product.barcode}</span>
-          <span className="text-[9pt] font-semibold">{product.sellingPrice} ج.م</span>
+            data-product-label-content
+            className="flex shrink-0 flex-col items-center justify-center gap-0.5 text-center"
+            style={{
+              width: `${LABEL_SIZE_MM.height}mm`,
+              height: `${LABEL_SIZE_MM.width}mm`,
+              transform: 'rotate(90deg)',
+            }}
+          >
+            <span className="w-full truncate px-1 text-[9pt] font-semibold leading-tight">{product.name}</span>
+            <div
+              role="img"
+              aria-label={product.barcode!}
+              className="w-[34mm]"
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+            <span className="text-[7pt] tracking-wider">{product.barcode}</span>
+            <span className="text-[9pt] font-semibold">{product.sellingPrice} ج.م</span>
+          </div>
         </div>
       ))}
     </div>,

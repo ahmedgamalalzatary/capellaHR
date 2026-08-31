@@ -152,7 +152,7 @@ export function EmployeeReceipt({
     <article
       data-receipt
       data-employee-receipt
-      className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink"
+      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm text-ink"
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
@@ -245,7 +245,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
     <article
       data-receipt
       data-customer-receipt
-      className="mx-auto w-full max-w-[80mm] bg-paper p-4 text-sm text-ink"
+      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm text-ink"
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
