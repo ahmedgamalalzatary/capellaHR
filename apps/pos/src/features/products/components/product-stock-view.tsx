@@ -299,6 +299,7 @@ export function ProductStockView() {
                         <TH>الباركود</TH>
                         <TH numeric>السعر</TH>
                         <TH numeric>التكلفة</TH>
+                        <TH numeric>عمولة البائع %</TH>
                         <TH numeric>الرصيد</TH>
                         <TH>الإجراءات</TH>
                       </THead>
@@ -316,6 +317,7 @@ export function ProductStockView() {
                             <TD className="tabular text-muted">{product.barcode ?? '—'}</TD>
                             <TD numeric>{product.sellingPrice}</TD>
                             <TD numeric className="text-muted">{product.lastPurchaseCost}</TD>
+                            <TD numeric className="text-muted">{product.commissionPercent ?? '0.00'}%</TD>
                             <TD numeric className="font-medium">{product.quantity}</TD>
                             <TD>
                               <RowActions>

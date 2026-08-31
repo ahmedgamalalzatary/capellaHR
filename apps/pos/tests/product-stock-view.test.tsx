@@ -47,6 +47,20 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('shows each product commission percentage in the products table', async () => {
+    mocks.listProducts.mockResolvedValue({
+      items: [{ ...product, commissionPercent: '3.00' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: '\u0627\u0644\u0631\u0626\u064a\u0633\u064a' });
+    fireEvent.change(screen.getByLabelText('\u0627\u0644\u0641\u0631\u0639'), { target: { value: '2' } });
+
+    const productsTable = await screen.findByRole('table');
+    expect(within(productsTable).getByRole('columnheader', { name: '\u0639\u0645\u0648\u0644\u0629 \u0627\u0644\u0628\u0627\u0626\u0639 %' })).toBeDefined();
+    expect(within(productsTable).getByRole('cell', { name: '3.00%' })).toBeDefined();
+  });
+
   it('restores the product commission percentage from a saved draft', async () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
