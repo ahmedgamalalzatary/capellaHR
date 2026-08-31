@@ -14,6 +14,16 @@ export interface EmployeeFaceQuality {
   score: number;
 }
 
+export type EmployeeFaceQualityTone = 'danger' | 'warning' | 'success';
+
+export const employeeFaceQualityTone = (
+  quality: EmployeeFaceQuality,
+): EmployeeFaceQualityTone => {
+  if (quality.ready) return 'success';
+  if (quality.code === 'no_face' || quality.code === 'multiple_faces') return 'danger';
+  return 'warning';
+};
+
 export const evaluateEmployeeFaceQuality = (
   frame: ImageData,
   faces: BrowserFaceDetection[],

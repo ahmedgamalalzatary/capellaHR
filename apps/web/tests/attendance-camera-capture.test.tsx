@@ -1,12 +1,72 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+
+const detectorMocks = vi.hoisted(() => ({
+  detect: vi.fn(),
+  close: vi.fn(),
+  create: vi.fn(),
+}));
+
+vi.mock('../src/features/employees/lib/employee-face-detector', () => ({
+  createEmployeeFaceDetector: detectorMocks.create,
+}));
 
 import { AttendanceCameraCapture } from '../src/features/attendance/components/attendance-camera-capture';
+
+const qualityData = new Uint8ClampedArray(160 * 120 * 4);
+for (let pixel = 0; pixel < 160 * 120; pixel += 1) {
+  const value = pixel % 2 === 0 ? 70 : 150;
+  qualityData.set([value, value, value, 255], pixel * 4);
+}
+const qualityContext = () => ({
+  drawImage: vi.fn(),
+  getImageData: vi.fn(() => ({ data: qualityData, width: 160, height: 120, colorSpace: 'srgb' })),
+} as unknown as CanvasRenderingContext2D);
+
+beforeEach(() => {
+  detectorMocks.create.mockResolvedValue({
+    detect: detectorMocks.detect,
+    close: detectorMocks.close,
+  });
+  detectorMocks.detect.mockReturnValue([{
+    x: 320, y: 120, width: 640, height: 432,
+    leftEye: { x: 0.4, y: 0.42 }, rightEye: { x: 0.6, y: 0.42 }, nose: { x: 0.5, y: 0.55 },
+  }]);
+});
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+it('uses a non-square preview and blocks capture until live face quality is green', async () => {
+  const stop = vi.fn();
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) },
+  });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(qualityContext());
+
+  render(<AttendanceCameraCapture value={null} onChange={vi.fn()} disabled={false} />);
+  fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
+  const video = await screen.findByLabelText('معاينة الكاميرا');
+  expect(video.className).toContain('aspect-video');
+  Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+
+  detectorMocks.detect.mockReturnValueOnce([]);
+  fireEvent.loadedData(video);
+  await waitFor(() => expect(screen.getByRole('progressbar').className).toContain('bg-danger'));
+  expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(true);
+
+  detectorMocks.detect.mockReturnValueOnce([{
+    x: 320, y: 120, width: 640, height: 432,
+    leftEye: { x: 0.4, y: 0.42 }, rightEye: { x: 0.6, y: 0.42 }, nose: { x: 0.5, y: 0.55 },
+  }]);
+  fireEvent.loadedData(video);
+  await waitFor(() => expect(screen.getByRole('progressbar').className).toContain('bg-success'));
+  expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it('captures distinct temporal JPEG frames before stopping the camera tracks', async () => {
@@ -17,15 +77,16 @@ it('captures distinct temporal JPEG frames before stopping the camera tracks', a
     value: { getUserMedia: vi.fn(async () => stream) },
   });
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-    drawImage: vi.fn(),
-  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(qualityContext());
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob([String(Math.random())], { type: 'image/jpeg' })));
   const onChange = vi.fn();
 
   render(<AttendanceCameraCapture value={null} onChange={onChange} disabled={false} />);
   fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
-  await screen.findByRole('button', { name: 'التقاط الصورة' });
+  const video = await screen.findByLabelText('معاينة الكاميرا');
+  Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+  fireEvent.loadedData(video);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: 'التقاط الصورة' }));
 
   await waitFor(() => expect(onChange).toHaveBeenCalledOnce(), { timeout: 2500 });
@@ -39,10 +100,16 @@ it('stops the camera and reports failure when canvas drawing is unavailable', as
   const stop = vi.fn();
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) } });
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+    .mockReturnValueOnce(qualityContext())
+    .mockReturnValue(null);
 
   render(<AttendanceCameraCapture value={null} onChange={vi.fn()} disabled={false} />);
   fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
+  const video = await screen.findByLabelText('معاينة الكاميرا');
+  Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+  fireEvent.loadedData(video);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
 
   expect(stop).toHaveBeenCalledOnce();
@@ -53,12 +120,16 @@ it('captures successfully after the React Strict Mode effect replay', async () =
   const stop = vi.fn();
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) } });
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(qualityContext());
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob(['face'], { type: 'image/jpeg' })));
   const onChange = vi.fn();
 
   render(<StrictMode><AttendanceCameraCapture value={null} onChange={onChange} disabled={false} /></StrictMode>);
   fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
+  const video = await screen.findByLabelText('معاينة الكاميرا');
+  Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+  fireEvent.loadedData(video);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
 
   await waitFor(() => expect(onChange).toHaveBeenCalledOnce(), { timeout: 2500 });

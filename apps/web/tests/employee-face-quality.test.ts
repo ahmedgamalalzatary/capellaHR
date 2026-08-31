@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   evaluateEmployeeFaceQuality,
+  employeeFaceQualityTone,
   type BrowserFaceDetection,
 } from '../src/features/employees/lib/employee-face-quality';
 
@@ -31,6 +32,12 @@ const face = (overrides: Partial<BrowserFaceDetection> = {}): BrowserFaceDetecti
 });
 
 describe('employee face quality', () => {
+  it('maps unusable, improvable, and ready frames to red, yellow, and green guidance', () => {
+    expect(employeeFaceQualityTone({ code: 'no_face', ready: false, score: 0 })).toBe('danger');
+    expect(employeeFaceQualityTone({ code: 'too_far', ready: false, score: 30 })).toBe('warning');
+    expect(employeeFaceQualityTone({ code: 'ready', ready: true, score: 100 })).toBe('success');
+  });
+
   it('requires exactly one face', () => {
     expect(evaluateEmployeeFaceQuality(frame(150, true), []).code).toBe('no_face');
     expect(evaluateEmployeeFaceQuality(frame(150, true), [face(), face()]).code).toBe('multiple_faces');

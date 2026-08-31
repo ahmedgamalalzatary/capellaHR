@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BranchKioskPage from '../src/app/(attendance)/branch-kiosk/page';
 import PersonalDevicePage from '../src/app/(attendance)/personal-device/page';
 
+const detectorMocks = vi.hoisted(() => ({ detect: vi.fn(), close: vi.fn(), create: vi.fn() }));
+
+vi.mock('../src/features/employees/lib/employee-face-detector', () => ({
+  createEmployeeFaceDetector: detectorMocks.create,
+}));
+
 configure({ asyncUtilTimeout: 3000 });
 
 const session = {
@@ -36,18 +42,35 @@ async function fillCredentials() {
   fireEvent.change(screen.getByLabelText('كود الموظف'), { target: { value: '42' } });
   fireEvent.change(screen.getByLabelText('الرقم السري'), { target: { value: '1234' } });
   fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
+  const video = await screen.findByLabelText('معاينة الكاميرا');
+  Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+  fireEvent.loadedData(video);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: 'التقاط الصورة' }));
   await screen.findByRole('button', { name: /إعادة التقاط الصورة/ });
 }
 
 beforeEach(() => {
+  detectorMocks.create.mockResolvedValue({ detect: detectorMocks.detect, close: detectorMocks.close });
+  detectorMocks.detect.mockReturnValue([{
+    x: 320, y: 120, width: 640, height: 432,
+    leftEye: { x: 0.4, y: 0.42 }, rightEye: { x: 0.6, y: 0.42 }, nose: { x: 0.5, y: 0.55 },
+  }]);
   const stream = { getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream;
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia: vi.fn(async () => stream) },
   });
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  const data = new Uint8ClampedArray(160 * 120 * 4);
+  for (let pixel = 0; pixel < 160 * 120; pixel += 1) {
+    const value = pixel % 2 === 0 ? 70 : 150;
+    data.set([value, value, value, 255], pixel * 4);
+  }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage: vi.fn(),
+    getImageData: vi.fn(() => ({ data, width: 160, height: 120, colorSpace: 'srgb' })),
+  } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob(['face'], { type: 'image/jpeg' })));
   Object.defineProperty(window, 'localStorage', {
     configurable: true,

@@ -7,19 +7,7 @@ import { Button } from '@capella/ui';
 
 import { createEmployeeFaceDetector, type EmployeeFaceDetector } from '../lib/employee-face-detector';
 import { evaluateEmployeeFaceQuality, type EmployeeFaceQuality } from '../lib/employee-face-quality';
-
-const qualityMessages: Record<EmployeeFaceQuality['code'], string> = {
-  ready: 'الصورة جاهزة للتسجيل',
-  no_face: 'ضع وجهًا واحدًا داخل الإطار',
-  multiple_faces: 'يجب أن يظهر وجه واحد فقط',
-  too_far: 'اقترب قليلًا من الكاميرا',
-  too_close: 'ابتعد قليلًا عن الكاميرا',
-  off_center: 'ضع وجهك في منتصف الإطار',
-  not_frontal: 'انظر مباشرة إلى الكاميرا',
-  too_dark: 'الإضاءة ضعيفة؛ انتقل إلى مكان أكثر إضاءة',
-  too_bright: 'الإضاءة قوية جدًا؛ ابتعد عن مصدر الضوء',
-  blurry: 'الصورة غير واضحة؛ اثبت أمام الكاميرا',
-};
+import { FaceQualityGuidance } from './face-quality-guidance';
 
 export function EmployeeFaceCapture({
   value,
@@ -160,14 +148,7 @@ export function EmployeeFaceCapture({
     <div className="rounded-control border border-line bg-surface p-4">
       <p className="text-sm font-medium">صورة الوجه المباشرة</p>
       {active ? <video ref={videoRef} aria-label="معاينة صورة وجه الموظف" muted playsInline onLoadedData={startAnalysis} className="mt-3 aspect-video w-full rounded-control bg-ink object-cover" /> : null}
-      {active ? (
-        <div className="mt-3">
-          <div role="progressbar" aria-label="جودة صورة الوجه" aria-valuemin={0} aria-valuemax={100} aria-valuenow={quality.score} className="h-2 overflow-hidden rounded-full bg-line">
-            <div className={`h-full transition-[width] ${quality.ready ? 'bg-success' : 'bg-warning'}`} style={{ width: `${quality.score}%` }} />
-          </div>
-          <p className={`mt-2 text-sm ${quality.ready ? 'text-success' : 'text-muted'}`}>{qualityMessages[quality.code]}</p>
-        </div>
-      ) : null}
+      {active ? <FaceQualityGuidance quality={quality} /> : null}
       {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {!active ? <Button id="employee-face-capture" type="button" variant="secondary" disabled={disabled} onClick={() => void open()}><Camera className="size-4" aria-hidden />فتح كاميرا الوجه</Button> : null}
