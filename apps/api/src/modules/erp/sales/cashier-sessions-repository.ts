@@ -4,6 +4,7 @@ import {
   authSessions,
   branches,
   cashierSessions,
+  erpExpenses,
   invoicePayments,
   invoiceReversalPayments,
   invoiceReversals,
@@ -19,6 +20,7 @@ import {
   type CashierSessionMoneyByMethod,
   type CashierSessionMoneyRecord,
   type CashierSessionRecord,
+  type CashierSessionReportAccountingRecord,
   type CashierSessionRepository,
 } from './cashier-sessions-service.js';
 
@@ -195,6 +197,67 @@ export const createDrizzleCashierSessionRepository = (
     const session = await findById(database, sessionId);
     if (!session) return null;
     return withMoney([session], await moneyBySession(database, [sessionId]))[0]!;
+  },
+
+  async readReportAccounting(input) {
+    const [salesRow] = await database.select({
+      gross: sql<string>`coalesce(sum(${invoices.subtotal}), 0)`,
+      discount: sql<string>`coalesce(sum(${invoices.discountAmount}), 0)`,
+      tax: sql<string>`coalesce(sum(${invoices.taxAmount}), 0)`,
+      creditSales: sql<string>`coalesce(sum(
+        ${invoices.total} - ${invoices.creditedAmount} - coalesce((
+          select sum(p.amount) from erp_invoice_payments p
+          where p.invoice_id = ${invoices.id} and p.is_initial = true
+        ), 0)
+      ), 0)`,
+    }).from(invoices).where(eq(invoices.cashierSessionId, input.sessionId));
+
+    const [returnsRow] = await database.select({
+      gross: sql<string>`coalesce(sum(${invoiceReversals.grossAmount}), 0)`,
+      discount: sql<string>`coalesce(sum(${invoiceReversals.discountAmount}), 0)`,
+      tax: sql<string>`coalesce(sum(${invoiceReversals.taxAmount}), 0)`,
+    }).from(invoiceReversals).where(and(
+      eq(invoiceReversals.cashierSessionId, input.sessionId),
+      eq(invoiceReversals.status, 'finalized'),
+    ));
+
+    const [expenseRow] = await database.select({
+      amount: sql<string>`coalesce(sum(case
+        when ${erpExpenses.kind} = 'reversal' then -${erpExpenses.amount}
+        else ${erpExpenses.amount}
+      end), 0)`,
+    }).from(erpExpenses).where(and(
+      eq(erpExpenses.branchId, input.branchId),
+      sql`${erpExpenses.createdAt} >= ${input.openedAt}`,
+      sql`${erpExpenses.createdAt} <= ${input.closedAt}`,
+    ));
+
+    const [collectedRow] = await database.select({
+      amount: sql<string>`coalesce(sum(${invoicePayments.amount}), 0)`,
+    }).from(invoicePayments).where(and(
+      eq(invoicePayments.cashierSessionId, input.sessionId),
+      eq(invoicePayments.isInitial, false),
+    ));
+
+    const gross = toCents(salesRow?.gross ?? '0.00');
+    const returns = toCents(returnsRow?.gross ?? '0.00');
+    const discount = toCents(salesRow?.discount ?? '0.00')
+      - toCents(returnsRow?.discount ?? '0.00');
+    const tax = toCents(salesRow?.tax ?? '0.00') - toCents(returnsRow?.tax ?? '0.00');
+    const total = gross - returns;
+    return {
+      sales: {
+        gross: fromCents(gross),
+        returns: fromCents(returns),
+        total: fromCents(total),
+        discount: fromCents(discount),
+        tax: fromCents(tax),
+        net: fromCents(total - discount + tax),
+      },
+      expenses: fromCents(toCents(expenseRow?.amount ?? '0.00')),
+      collectedPayments: fromCents(toCents(collectedRow?.amount ?? '0.00')),
+      creditSales: fromCents(toCents(salesRow?.creditSales ?? '0.00')),
+    } satisfies CashierSessionReportAccountingRecord;
   },
 
   async listInvoices(sessionId) {

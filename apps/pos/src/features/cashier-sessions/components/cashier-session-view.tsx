@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Clock3, UserRound } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
 import {
@@ -70,6 +71,7 @@ function SessionFact({
 }
 
 export function CashierSessionView() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const authQuery = useSession();
   const actor = authQuery.data?.actor;
@@ -113,9 +115,10 @@ export function CashierSessionView() {
 
   const closeMutation = useMutation({
     mutationFn: closeCashierSession,
-    onSuccess: () => {
+    onSuccess: (closedSession) => {
       setConfirmClose(false);
       queryClient.setQueryData(currentKey, null);
+      router.push(`/cashier-sessions/${closedSession.id}/report`);
     },
     onError: async (error) => {
       if (error instanceof ApiError && (

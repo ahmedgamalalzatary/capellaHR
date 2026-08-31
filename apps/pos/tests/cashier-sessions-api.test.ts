@@ -12,6 +12,7 @@ describe('Cashier-session POS API boundary', () => {
     expect(Reflect.get(cashierSessions, 'listCashierSessions')).toBeTypeOf('function');
     expect(Reflect.get(cashierSessions, 'getCashierSessionSummary')).toBeTypeOf('function');
     expect(Reflect.get(cashierSessions, 'getCashierSessionDetail')).toBeTypeOf('function');
+    expect(Reflect.get(cashierSessions, 'getCashierSessionReport')).toBeTypeOf('function');
   });
 
   it('keys the shift history, one shift, and its sales apart from the open shift', () => {
@@ -20,6 +21,7 @@ describe('Cashier-session POS API boundary', () => {
       list: (branchId: number | undefined, page: number) => readonly unknown[];
       summary: (sessionId: number) => readonly unknown[];
       detail: (sessionId: number) => readonly unknown[];
+      report: (sessionId: number) => readonly unknown[];
     };
 
     expect(new Set([
@@ -27,7 +29,8 @@ describe('Cashier-session POS API boundary', () => {
       JSON.stringify(keys.list(3, 1)),
       JSON.stringify(keys.summary(14)),
       JSON.stringify(keys.detail(14)),
-    ]).size).toBe(4);
+      JSON.stringify(keys.report(14)),
+    ]).size).toBe(5);
     // Paging must refetch, so the page belongs in the key.
     expect(keys.list(3, 1)).not.toEqual(keys.list(3, 2));
   });

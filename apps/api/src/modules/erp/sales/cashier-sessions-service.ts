@@ -30,6 +30,19 @@ export type CashierSessionMoneyByMethod = {
   vodafone_cash: string;
 };
 
+const toMoneyCents = (value: string) => {
+  const negative = value.startsWith('-');
+  const [whole = '0', fraction = '00'] = (negative ? value.slice(1) : value).split('.');
+  const cents = BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, '0').slice(0, 2));
+  return negative ? -cents : cents;
+};
+
+const fromMoneyCents = (value: bigint) => {
+  const negative = value < BigInt(0);
+  const absolute = negative ? -value : value;
+  return `${negative ? '-' : ''}${absolute / BigInt(100)}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`;
+};
+
 /** A shift with the money it moved, counted from the payment rows keyed to it. */
 export type CashierSessionMoneyRecord = CashierSessionRecord & {
   saleCount: number;
@@ -43,6 +56,20 @@ export type CashierSessionMoneyRecord = CashierSessionRecord & {
 export type CashierSessionSummaryRecord = CashierSessionMoneyRecord & {
   /** Elapsed so far while the shift is open, total once it has closed. */
   durationMinutes: number;
+};
+
+export type CashierSessionReportAccountingRecord = {
+  sales: {
+    gross: string;
+    returns: string;
+    total: string;
+    discount: string;
+    tax: string;
+    net: string;
+  };
+  expenses: string;
+  collectedPayments: string;
+  creditSales: string;
 };
 
 export type CashierSessionInvoiceRecord = {
@@ -71,6 +98,12 @@ export interface CashierSessionRepository {
     pageSize: number;
   }): Promise<{ items: CashierSessionMoneyRecord[]; total: number }>;
   findMoneyById(sessionId: number): Promise<CashierSessionMoneyRecord | null>;
+  readReportAccounting(input: {
+    sessionId: number;
+    branchId: number;
+    openedAt: Date;
+    closedAt: Date;
+  }): Promise<CashierSessionReportAccountingRecord>;
   listInvoices(sessionId: number): Promise<CashierSessionInvoiceRecord[]>;
   open(input: {
     branchId: number;
@@ -210,6 +243,24 @@ export const createCashierSessionService = (dependencies: {
     async detail(actor: ErpAccountIdentity, sessionId: number) {
       const summary = await readable(actor, sessionId);
       return { summary, invoices: await dependencies.repository.listInvoices(sessionId) };
+    },
+
+    async report(actor: ErpAccountIdentity, sessionId: number) {
+      const summary = await readable(actor, sessionId);
+      const accounting = await dependencies.repository.readReportAccounting({
+        sessionId,
+        branchId: summary.branchId,
+        openedAt: summary.openedAt,
+        closedAt: summary.closedAt ?? now(),
+      });
+      const netByMethod = Object.fromEntries(Object.keys(summary.taken).map((method) => [
+        method,
+        fromMoneyCents(
+          toMoneyCents(summary.taken[method as keyof CashierSessionMoneyByMethod])
+          - toMoneyCents(summary.refunded[method as keyof CashierSessionMoneyByMethod]),
+        ),
+      ])) as CashierSessionMoneyByMethod;
+      return { summary, ...accounting, netByMethod };
     },
 
     async open(actor: ErpAccountIdentity) {

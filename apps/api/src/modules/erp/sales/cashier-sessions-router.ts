@@ -144,6 +144,15 @@ export const createCashierSessionsRouter = (service: CashierSessionService) => {
     }
   });
 
+  router.get('/:sessionId/report', async (request, response, next) => {
+    try {
+      const { sessionId } = cashierSessionParamsSchema.parse(request.params);
+      response.json({ data: await service.report(actorFrom(response), sessionId) });
+    } catch (error) {
+      handleError(error, response, next);
+    }
+  });
+
   router.get('/:sessionId/invoices', async (request, response, next) => {
     try {
       const { sessionId } = cashierSessionParamsSchema.parse(request.params);

@@ -6,5 +6,6 @@ export const cashierSessionQueryKeys = {
     ['cashier-sessions', 'list', branchId ?? 'cashier', page] as const
   ),
   summary: (sessionId: number) => ['cashier-sessions', 'summary', sessionId] as const,
+  report: (sessionId: number) => ['cashier-sessions', 'report', sessionId] as const,
   detail: (sessionId: number) => ['cashier-sessions', 'detail', sessionId] as const,
 };

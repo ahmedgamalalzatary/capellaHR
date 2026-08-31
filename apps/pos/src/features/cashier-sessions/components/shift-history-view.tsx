@@ -116,6 +116,14 @@ export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: numbe
                     >
                       تفاصيل الوردية {shift.id}
                     </Link>
+                    {shift.closedAt ? (
+                      <Link
+                        className="text-sm font-medium text-ink underline underline-offset-4"
+                        href={`/cashier-sessions/${shift.id}/report`}
+                      >
+                        تقرير نهاية الوردية
+                      </Link>
+                    ) : null}
                     {shift.closedAt === null ? <Badge variant="success">مفتوحة</Badge> : null}
                     {shift.autoClosedAt ? <Badge variant="warning">أُغلقت تلقائيًا</Badge> : null}
                   </div>

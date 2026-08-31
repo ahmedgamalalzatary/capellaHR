@@ -151,4 +151,52 @@ describe('ERP Cashier-session contracts', () => {
     expect(contracts.cashierSessionDetailSchema.safeParse({ ...detail, invoices: [] }).success)
       .toBe(true);
   });
+
+  it('defines an internally consistent full shift-ending report', () => {
+    const report = {
+      summary: {
+        id: 12,
+        branchId: 3,
+        branchName: 'الفرع الرئيسي',
+        openedByAccountId: 8,
+        openedByUsername: 'cashier.one',
+        openedAt: '2026-08-01T09:00:00.000Z',
+        closedAt: '2026-08-01T17:00:00.000Z',
+        closedByAccountId: 8,
+        closedByUsername: 'cashier.one',
+        autoClosedAt: null,
+        durationMinutes: 480,
+        saleCount: 2,
+        taken: { cash: '300.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00' },
+        refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+        takenTotal: '400.00',
+        refundedTotal: '50.00',
+        net: '350.00',
+      },
+      sales: {
+        gross: '500.00',
+        returns: '50.00',
+        total: '450.00',
+        discount: '25.00',
+        tax: '5.00',
+        net: '430.00',
+      },
+      expenses: '30.00',
+      collectedPayments: '20.00',
+      creditSales: '100.00',
+      netByMethod: {
+        cash: '250.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',
+      },
+    };
+
+    expect(contracts.cashierSessionReportSchema.parse(report)).toEqual(report);
+    expect(contracts.cashierSessionReportSchema.safeParse({
+      ...report,
+      sales: { ...report.sales, net: '431.00' },
+    }).success).toBe(false);
+    expect(contracts.cashierSessionReportSchema.safeParse({
+      ...report,
+      netByMethod: { cash: '350.00' },
+    }).success).toBe(false);
+  });
 });

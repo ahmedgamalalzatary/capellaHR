@@ -56,6 +56,15 @@ const setup = () => {
     autoCloseExpired: vi.fn<CashierSessionRepository['autoCloseExpired']>(async () => []),
     list: vi.fn<CashierSessionRepository['list']>(async () => ({ items: [money], total: 1 })),
     findMoneyById: vi.fn<CashierSessionRepository['findMoneyById']>(async () => money),
+    readReportAccounting: vi.fn<CashierSessionRepository['readReportAccounting']>(async () => ({
+      sales: {
+        gross: '500.00', returns: '50.00', total: '450.00',
+        discount: '25.00', tax: '5.00', net: '430.00',
+      },
+      expenses: '30.00',
+      collectedPayments: '20.00',
+      creditSales: '100.00',
+    })),
     listInvoices: vi.fn<CashierSessionRepository['listInvoices']>(async () => []),
   };
   const resolveBranchContext = vi.fn(async (actor: { role: 'admin' | 'cashier'; accountId: number }, branchId?: number) => ({
@@ -277,5 +286,31 @@ describe('ERP Cashier-session service', () => {
       invoices: [invoice],
     });
     expect(repository.listInvoices).toHaveBeenCalledWith(14);
+  });
+
+  it('builds the full report after applying the same shift ownership check', async () => {
+    const { repository, service } = setup();
+
+    await expect(service.report({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
+      .resolves.toMatchObject({
+        summary: { id: 14, net: '350.00' },
+        sales: { gross: '500.00', returns: '50.00', net: '430.00' },
+        expenses: '30.00',
+        collectedPayments: '20.00',
+        creditSales: '100.00',
+        netByMethod: {
+          cash: '350.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00',
+        },
+      });
+    expect(repository.readReportAccounting).toHaveBeenCalledWith({
+      sessionId: 14,
+      branchId: 3,
+      openedAt: now,
+      closedAt: now,
+    });
+
+    repository.findMoneyById.mockResolvedValueOnce({ ...money, openedByAccountId: 99 });
+    await expect(service.report({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
+      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_OWNER' });
   });
 });

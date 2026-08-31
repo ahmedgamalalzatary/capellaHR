@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
   getSession: vi.fn(),
   getCurrentCashierSession: vi.fn(),
   openCashierSession: vi.fn(),
@@ -14,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   getCashierSessionSummary: vi.fn(),
   listCashierSessions: vi.fn(),
 }));
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -150,6 +153,7 @@ describe('CashierSessionView', () => {
     expect(mocks.closeCashierSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد إغلاق الوردية' }));
     await waitFor(() => expect(mocks.closeCashierSession).toHaveBeenCalledTimes(1));
+    expect(mocks.push).toHaveBeenCalledWith('/cashier-sessions/14/report');
   });
 
   test('refreshes stale state when normal close finds the session already gone', async () => {

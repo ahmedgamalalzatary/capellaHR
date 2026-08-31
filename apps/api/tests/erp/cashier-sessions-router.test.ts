@@ -33,6 +33,18 @@ const summary = {
   net: '350.00',
 };
 
+const report = {
+  summary,
+  sales: {
+    gross: '500.00', returns: '50.00', total: '450.00',
+    discount: '25.00', tax: '5.00', net: '430.00',
+  },
+  expenses: '30.00',
+  collectedPayments: '20.00',
+  creditSales: '100.00',
+  netByMethod: { cash: '350.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+};
+
 const setup = () => {
   const service = {
     closeExpired: vi.fn(async () => []),
@@ -46,6 +58,7 @@ const setup = () => {
     })),
     list: vi.fn(async () => ({ items: [summary], total: 1, page: 1, pageSize: 20 })),
     summary: vi.fn(async () => summary),
+    report: vi.fn(async () => report),
     detail: vi.fn(async () => ({ summary, invoices: [] })),
     recoveryClose: vi.fn(async () => ({
       ...session,
@@ -251,6 +264,25 @@ describe('ERP Cashier-session routes', () => {
       .set('Cookie', 'capella_session=admin');
     expect(detail.status).toBe(200);
     expect(detail.body.data).toMatchObject({ summary: { id: 14 }, invoices: [] });
+  });
+
+  it('returns the dedicated full shift-ending report', async () => {
+    const { app, service } = setup();
+    const response = await request(app)
+      .get('/api/v1/erp/cashier-sessions/14/report')
+      .set('Cookie', 'capella_session=cashier');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
+      summary: { id: 14 },
+      sales: { net: '430.00' },
+      expenses: '30.00',
+      creditSales: '100.00',
+    });
+    expect(service.report).toHaveBeenCalledWith(
+      { role: 'cashier', accountId: 8, branchId: 3 },
+      14,
+    );
   });
 
   it('answers a shift the actor may not read with the service refusal', async () => {

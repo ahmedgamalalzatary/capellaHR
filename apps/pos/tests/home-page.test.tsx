@@ -3,9 +3,12 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
   getSession: vi.fn(),
   getCurrentCashierSession: vi.fn(async () => null),
 }));
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),

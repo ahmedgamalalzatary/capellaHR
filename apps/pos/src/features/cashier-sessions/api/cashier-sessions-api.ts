@@ -1,6 +1,7 @@
 import type {
   CashierSessionDetailDto,
   CashierSessionDto,
+  CashierSessionReportDto,
   CashierSessionSummaryDto,
   RecoveryCloseCashierSessionInput,
 } from '@capella/contracts';
@@ -10,6 +11,7 @@ import { api } from '@/lib/api/client';
 export type CashierSession = CashierSessionDto;
 /** A shift with the money it moved: the same row the history and the live card read. */
 export type CashierSessionSummary = CashierSessionSummaryDto;
+export type CashierSessionReport = CashierSessionReportDto;
 export type CashierSessionDetail = CashierSessionDetailDto;
 
 export interface CashierSessionBranch {
@@ -49,6 +51,12 @@ export function listCashierSessions(params: { branchId?: number; page?: number }
 export function getCashierSessionSummary(sessionId: number) {
   return api.get<CashierSessionSummary>(
     `/erp/cashier-sessions/${encodeURIComponent(String(sessionId))}`,
+  );
+}
+
+export function getCashierSessionReport(sessionId: number) {
+  return api.get<CashierSessionReport>(
+    `/erp/cashier-sessions/${encodeURIComponent(String(sessionId))}/report`,
   );
 }
 

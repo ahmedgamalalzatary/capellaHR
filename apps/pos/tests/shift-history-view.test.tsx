@@ -81,6 +81,8 @@ describe('ShiftHistoryView', () => {
     expect(within(row).getByText('450.00 ج.م')).toBeDefined();
     expect(within(row).getByRole('link', { name: /تفاصيل الوردية/ }).getAttribute('href'))
       .toBe('/cashier-sessions/14');
+    expect(within(row).getByRole('link', { name: 'تقرير نهاية الوردية' }).getAttribute('href'))
+      .toBe('/cashier-sessions/14/report');
   });
 
   test('names the shift the system ended, so nobody looks for who closed it', async () => {

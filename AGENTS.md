@@ -53,11 +53,8 @@ For a medium-to-high complexity fix or feature:
 
 1. Establish a baseline by running all applicable validation commands, including build, lint, typecheck, and tests. Record unrelated baseline failures. Fix failures caused by the change or required to validate it before feature work. Skip this pre-change baseline only when you are 100% certain the same applicable validation suite already passed in the current, uncompacted session or chat and no relevant workspace state has changed since that run.
 2. Implement the requested change.
-3. Spawn a sub-agent to perform a strict, deep review of the changes. Address every valid reported issue.
-4. Run the complete applicable validation suite again and restore a green baseline.
-5. For a big feature or bug only, spawn a new independent sub-agent to review the updated changes again. Address every valid reported issue.
-6. Run the complete applicable validation suite once more and report a concise summary of the changes and verification results.
-
+3.Run the complete applicable validation suite again and restore a green baseline.
+4. Run the complete applicable validation suite once more and report a concise summary of the changes and verification results.
 ## Context compaction
 
 - If context is compacted, re-read every instruction or reference document read at the start of the task. Do not rely only on the compaction summary.

@@ -35,6 +35,13 @@ const setup = (current: typeof session | null = session) => {
     autoCloseExpired: vi.fn(async () => []),
     list: vi.fn(async () => ({ items: [], total: 0 })),
     findMoneyById: vi.fn(async () => null),
+    readReportAccounting: vi.fn(async () => ({
+      sales: {
+        gross: '0.00', returns: '0.00', total: '0.00',
+        discount: '0.00', tax: '0.00', net: '0.00',
+      },
+      expenses: '0.00', collectedPayments: '0.00', creditSales: '0.00',
+    })),
     listInvoices: vi.fn(async () => []),
   };
   const resolveBranchContext = vi.fn(async (

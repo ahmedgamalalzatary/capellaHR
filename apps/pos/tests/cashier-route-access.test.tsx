@@ -27,7 +27,7 @@ describe('ERP route guards per role', () => {
     expect(CashierAccountsLayout({ children }).props.role).toBe('admin');
   });
 
-  it('keeps shift oversight admin-only, since a cashier opens their own shift at home', () => {
-    expect(CashierSessionsLayout({ children }).props.role).toBe('admin');
+  it('allows cashiers to read their own shift-ending reports', () => {
+    expect(CashierSessionsLayout({ children }).props.role).toBeUndefined();
   });
 });

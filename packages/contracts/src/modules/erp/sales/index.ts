@@ -876,6 +876,44 @@ export const cashierSessionSummarySchema = cashierSessionSchema.extend({
   }
 });
 
+const signedShiftMoneyByMethodSchema = z.object({
+  cash: signedMoneySchema,
+  visa: signedMoneySchema,
+  instapay: signedMoneySchema,
+  vodafone_cash: signedMoneySchema,
+}).strict();
+
+export const cashierSessionReportSchema = z.object({
+  summary: cashierSessionSummarySchema,
+  sales: z.object({
+    gross: exactMoneySchema,
+    returns: exactMoneySchema,
+    total: signedMoneySchema,
+    discount: signedMoneySchema,
+    tax: signedMoneySchema,
+    net: signedMoneySchema,
+  }).strict(),
+  expenses: signedMoneySchema,
+  collectedPayments: exactMoneySchema,
+  creditSales: exactMoneySchema,
+  netByMethod: signedShiftMoneyByMethodSchema,
+}).strict().superRefine((value, context) => {
+  const sales = value.sales;
+  const expectedTotal = toCents(sales.gross) - toCents(sales.returns);
+  const expectedNet = expectedTotal - signedToCents(sales.discount) + signedToCents(sales.tax);
+  if (signedToCents(sales.total) !== expectedTotal) {
+    context.addIssue({ code: 'custom', path: ['sales', 'total'], message: 'إجمالي مبيعات الوردية غير متسق' });
+  }
+  if (signedToCents(sales.net) !== expectedNet) {
+    context.addIssue({ code: 'custom', path: ['sales', 'net'], message: 'صافي مبيعات الوردية غير متسق' });
+  }
+  const methodNet = Object.values(value.netByMethod)
+    .reduce((total, amount) => total + signedToCents(amount), BigInt(0));
+  if (methodNet !== signedToCents(value.summary.net)) {
+    context.addIssue({ code: 'custom', path: ['netByMethod'], message: 'صافي وسائل الدفع غير متسق' });
+  }
+});
+
 export const cashierSessionInvoiceSchema = z.object({
   id: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
@@ -902,6 +940,7 @@ export const cashierSessionDetailSchema = z.object({
 
 export type CashierSessionListQuery = z.infer<typeof cashierSessionListQuerySchema>;
 export type CashierSessionSummaryDto = z.infer<typeof cashierSessionSummarySchema>;
+export type CashierSessionReportDto = z.infer<typeof cashierSessionReportSchema>;
 export type CashierSessionInvoiceDto = z.infer<typeof cashierSessionInvoiceSchema>;
 export type CashierSessionDetailDto = z.infer<typeof cashierSessionDetailSchema>;
 
