@@ -28,7 +28,7 @@ export function currentAttendanceLocation(): Promise<AttendanceLocation> {
             : 'unavailable';
         reject(new AttendanceLocationError(reason));
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 },
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 30_000 },
     );
   });
 }
