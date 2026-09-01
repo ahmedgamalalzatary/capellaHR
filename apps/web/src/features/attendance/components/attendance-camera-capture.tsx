@@ -27,6 +27,7 @@ export function AttendanceCameraCapture({
   const captureRequestRef = useRef(0);
   const mountedRef = useRef(true);
   const [active, setActive] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [quality, setQuality] = useState<EmployeeFaceQuality>({ code: 'no_face', ready: false, score: 0 });
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -61,22 +62,22 @@ export function AttendanceCameraCapture({
     });
   }, [active]);
   useEffect(() => {
-    const latest = value?.[value.length - 1];
-    if (!latest || typeof URL.createObjectURL !== 'function') { setPreview(null); return; }
-    const url = URL.createObjectURL(latest);
+    const first = value?.[0];
+    if (!first || typeof URL.createObjectURL !== 'function') { setPreview(null); return; }
+    const url = URL.createObjectURL(first);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [value]);
 
-  const analyze = () => {
+  const assessVideo = () => {
     const video = videoRef.current;
     const detector = detectorRef.current;
-    if (!video || !detector || !video.videoWidth || !video.videoHeight) return;
+    if (!video || !detector || !video.videoWidth || !video.videoHeight) return null;
     const canvas = document.createElement('canvas');
     canvas.width = 160;
     canvas.height = 120;
     const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return;
+    if (!context) return null;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const scaleX = canvas.width / video.videoWidth;
     const scaleY = canvas.height / video.videoHeight;
@@ -90,10 +91,15 @@ export function AttendanceCameraCapture({
       rightEye: { x: face.rightEye.x * canvas.width, y: face.rightEye.y * canvas.height },
       nose: { x: face.nose.x * canvas.width, y: face.nose.y * canvas.height },
     }));
-    setQuality(evaluateEmployeeFaceQuality(
+    return evaluateEmployeeFaceQuality(
       context.getImageData(0, 0, canvas.width, canvas.height),
       faces,
-    ));
+    );
+  };
+
+  const analyze = () => {
+    const result = assessVideo();
+    if (result) setQuality(result);
   };
 
   const startAnalysis = () => {
@@ -152,8 +158,20 @@ export function AttendanceCameraCapture({
     if (!video) return;
     const captureId = ++captureRequestRef.current;
     const frames: Blob[] = [];
+    if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
+    intervalRef.current = null;
+    setCapturing(true);
+    setError(null);
     for (let index = 0; index < 8; index += 1) {
       if (!mountedRef.current || captureId !== captureRequestRef.current) return;
+      const currentQuality = assessVideo();
+      if (!currentQuality?.ready) {
+        stopCamera();
+        setCapturing(false);
+        setQuality(currentQuality ?? { code: 'no_face', ready: false, score: 0 });
+        setError('ثبّت الهاتف وأبقِ وجهك كاملًا داخل الإطار طوال فترة التقاط الصورة، ثم أعد المحاولة.');
+        return;
+      }
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth || 1280;
       canvas.height = video.videoHeight || 720;
@@ -166,8 +184,9 @@ export function AttendanceCameraCapture({
       if (index < 7) await new Promise((resolve) => window.setTimeout(resolve, process.env.NODE_ENV === 'test' ? 0 : 150));
     }
     stopCamera();
+    setCapturing(false);
     if (frames.length >= 5) onChange(frames);
-    else setError('capture failed');
+    else setError('تعذر التقاط صور كافية. ثبّت الهاتف ووجهك ثم أعد المحاولة.');
   };
 
   const retake = () => {
@@ -188,17 +207,18 @@ export function AttendanceCameraCapture({
         {value ? <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-1 text-[12px] font-medium text-success"><Check className="size-3.5" aria-hidden />تم الالتقاط</span> : null}
       </div>
       <div className={mediaFrame}>
-        {active ? <video ref={videoRef} aria-label="معاينة الكاميرا" muted playsInline onLoadedData={startAnalysis} className="aspect-video size-full object-cover" /> : null}
-        {!active && value && preview ? <Image src={preview} alt="الصورة الملتقطة" width={640} height={480} unoptimized className="size-full object-cover" /> : null}
+        {active ? <video ref={videoRef} aria-label="معاينة الكاميرا" muted playsInline onLoadedData={startAnalysis} className="aspect-video size-full object-contain" /> : null}
+        {!active && value && preview ? <Image src={preview} alt="الصورة الملتقطة" width={640} height={480} unoptimized className="size-full object-contain" /> : null}
         {!active && value && !preview ? <p role="status" className="px-3 text-center text-sm text-success">تم التقاط الصورة.</p> : null}
         {!active && !value ? <span className="grid gap-2 text-center text-muted"><Camera className="mx-auto size-7" aria-hidden /><span className="text-[12px]">وجّه الكاميرا نحو وجهك في مكان جيد الإضاءة.</span></span> : null}
       </div>
+      {capturing ? <p role="status" aria-live="polite" className="mt-3 text-center text-sm font-medium text-success">جارٍ التقاط صور التحقق… ثبّت الهاتف ووجهك داخل الإطار.</p> : null}
       {active ? <FaceQualityGuidance quality={quality} /> : null}
       {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
       <div className="mt-3 flex flex-wrap justify-center gap-2">
         {!active && !value ? <Button type="button" variant="secondary" disabled={disabled} onClick={() => void openCamera()}><Camera className="size-4" aria-hidden />فتح الكاميرا</Button> : null}
-        {active ? <Button type="button" disabled={disabled || !quality.ready} onClick={capture}><Camera className="size-4" aria-hidden />التقاط الصورة</Button> : null}
-        {active ? <Button type="button" variant="ghost" disabled={disabled} onClick={cancel}>إلغاء</Button> : null}
+        {active ? <Button type="button" disabled={disabled || capturing || !quality.ready} onClick={capture}><Camera className="size-4" aria-hidden />{capturing ? 'جارٍ الالتقاط…' : 'التقاط الصورة'}</Button> : null}
+        {active ? <Button type="button" variant="ghost" disabled={disabled || capturing} onClick={cancel}>إلغاء</Button> : null}
         {value ? <Button type="button" variant="secondary" disabled={disabled} onClick={retake}><RefreshCw className="size-4" aria-hidden />إعادة التقاط الصورة</Button> : null}
       </div>
     </div>
