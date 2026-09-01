@@ -2,12 +2,21 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createReportExportSchema,
+  erpTabReportTypes,
   listReportExportsQuerySchema,
   reportQuerySchema,
   reportTypeSchema,
 } from '../../../src/modules/reports/index.js';
 
 describe('report contracts', () => {
+  it('publishes all consumables operational reports through the existing report system', () => {
+    expect(erpTabReportTypes).toEqual(expect.arrayContaining([
+      'erp-service-completions',
+      'erp-consumable-usage',
+      'erp-consumable-ledger',
+      'erp-service-exceptions',
+    ]));
+  });
   it('defines only the locked business report tabs', () => {
     expect(reportTypeSchema.options).toEqual([
       'branches',
@@ -37,6 +46,10 @@ describe('report contracts', () => {
       'erp-client-history',
       'erp-receivables',
       'erp-service-queue',
+      'erp-service-completions',
+      'erp-consumable-usage',
+      'erp-consumable-ledger',
+      'erp-service-exceptions',
       'erp-invoice',
     ]);
   });

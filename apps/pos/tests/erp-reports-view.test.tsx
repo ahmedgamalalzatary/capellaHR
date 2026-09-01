@@ -107,7 +107,7 @@ describe('ErpReportsView', () => {
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
     const selector = await screen.findByRole('group', { name: 'أنواع تقارير ERP' });
-    expect(within(selector).getAllByRole('button')).toHaveLength(17);
+    expect(within(selector).getAllByRole('button')).toHaveLength(21);
     expect(within(selector).getByRole('button', { name: 'تقرير أرصدة العملاء' })).toBeDefined();
     expect(within(selector).getByRole('button', { name: 'تقرير أرقام أدوار الخدمات' })).toBeDefined();
     await screen.findByRole('option', { name: 'الفرع الرئيسي' });

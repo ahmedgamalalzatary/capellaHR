@@ -288,6 +288,13 @@ describe('ERP Cashier-session service', () => {
     expect(repository.listInvoices).toHaveBeenCalledWith(14);
   });
 
+  it('blocks manual shift close while sold services still need completion reports', async () => {
+    const { repository, service } = setup();
+    repository.close.mockResolvedValueOnce({ kind: 'unfinished_services', count: 3 });
+    await expect(service.close({ role: 'cashier', accountId: 8, branchId: 3 }))
+      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES' });
+  });
+
   it('builds the full report after applying the same shift ownership check', async () => {
     const { repository, service } = setup();
     repository.findMoneyById.mockResolvedValue({ ...money, closedAt: now });

@@ -533,7 +533,8 @@ const serviceQueueFacts = (filters: ReportFilters) => sql`
     queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
     invoice.client_name_snapshot clientName,
     line.employee_name_snapshot employeeName,
-    invoice.authorized_by_snapshot authorizedBy
+    invoice.authorized_by_snapshot authorizedBy, queue.status status,
+    queue.completed_at completedAt
   FROM erp_service_queue_entries queue
   INNER JOIN erp_invoices invoice
     ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
@@ -551,6 +552,84 @@ const serviceQueueFacts = (filters: ReportFilters) => sql`
       'invoice.authorized_by_snapshot', 'CAST(queue.queue_number AS CHAR)',
       'CAST(queue.cashier_session_id AS CHAR)',
     ]),
+  ])}
+`;
+
+const serviceCompletionFacts = (filters: ReportFilters) => sql`
+  SELECT report.id id, report.created_at eventDate, branch.name branchName,
+    queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
+    queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
+    invoice.client_name_snapshot clientName, line.employee_name_snapshot employeeName,
+    report.completion_kind completionKind,
+    COALESCE(GROUP_CONCAT(CONCAT(product.name, ' ', usage.quantity, ' ', config.unit)
+      ORDER BY product.name SEPARATOR '، '), '') consumables,
+    COALESCE(SUM(usage.total_cost), 0) totalCost
+  FROM erp_service_consumption_reports report
+  INNER JOIN erp_service_queue_entries queue ON queue.id = report.service_queue_entry_id
+  INNER JOIN erp_invoices invoice ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
+  INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id AND line.invoice_id = queue.invoice_id
+  INNER JOIN branches branch ON branch.id = queue.branch_id
+  LEFT JOIN erp_service_consumption_usages usage ON usage.report_id = report.id
+  LEFT JOIN erp_products product ON product.id = usage.product_id
+  LEFT JOIN erp_consumable_configurations config ON config.product_id = usage.product_id AND config.branch_id = usage.branch_id
+  ${condition([
+    sql`report.is_current = true`, ...branchFilter(filters, 'queue.branch_id'),
+    ...timestampFilter(filters, 'report.created_at'),
+    ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', 'line.employee_name_snapshot', 'product.name']),
+  ])}
+  GROUP BY report.id, report.created_at, branch.name, queue.cashier_session_id,
+    line.item_name_snapshot, queue.queue_number, invoice.invoice_number,
+    invoice.client_name_snapshot, line.employee_name_snapshot, report.completion_kind
+`;
+
+const consumableUsageFacts = (filters: ReportFilters) => sql`
+  SELECT usage.id id, report.created_at eventDate, branch.name branchName,
+    product.name productName, config.unit unit, line.item_name_snapshot serviceName,
+    line.employee_name_snapshot employeeName, usage.quantity quantity, usage.total_cost cost
+  FROM erp_service_consumption_usages usage
+  INNER JOIN erp_service_consumption_reports report ON report.id = usage.report_id
+  INNER JOIN erp_service_queue_entries queue ON queue.id = report.service_queue_entry_id
+  INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id
+  INNER JOIN erp_products product ON product.id = usage.product_id
+  INNER JOIN erp_consumable_configurations config ON config.product_id = usage.product_id AND config.branch_id = usage.branch_id
+  INNER JOIN branches branch ON branch.id = usage.branch_id
+  ${condition([
+    sql`report.is_current = true`, ...branchFilter(filters, 'usage.branch_id'),
+    ...timestampFilter(filters, 'report.created_at'),
+    ...searchFilter(filters, ['product.name', 'line.item_name_snapshot', 'line.employee_name_snapshot']),
+  ])}
+`;
+
+const consumableLedgerFacts = (filters: ReportFilters) => sql`
+  SELECT ledger.id id, ledger.created_at eventDate, branch.name branchName,
+    product.name productName, config.unit unit, ledger.entry_type entryType,
+    ledger.quantity_delta quantityDelta, ledger.balance_after balanceAfter,
+    ledger.unit_cost_snapshot unitCost, ledger.total_cost totalCost,
+    account.username actingUsername, ledger.note note
+  FROM erp_consumable_ledger_entries ledger
+  INNER JOIN erp_products product ON product.id = ledger.product_id
+  INNER JOIN erp_consumable_configurations config ON config.product_id = ledger.product_id AND config.branch_id = ledger.branch_id
+  INNER JOIN branches branch ON branch.id = ledger.branch_id
+  INNER JOIN accounts account ON account.id = ledger.acting_account_id
+  ${condition([
+    ...branchFilter(filters, 'ledger.branch_id'), ...timestampFilter(filters, 'ledger.created_at'),
+    ...searchFilter(filters, ['product.name', 'account.username', 'ledger.note']),
+  ])}
+`;
+
+const serviceExceptionFacts = (filters: ReportFilters) => sql`
+  SELECT queue.id id, queue.created_at eventDate, branch.name branchName,
+    queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
+    queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
+    invoice.client_name_snapshot clientName, line.employee_name_snapshot employeeName
+  FROM erp_service_queue_entries queue
+  INNER JOIN erp_invoices invoice ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
+  INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id
+  INNER JOIN branches branch ON branch.id = queue.branch_id
+  ${condition([
+    sql`queue.status = 'overdue'`, ...branchFilter(filters, 'queue.branch_id'),
+    ...timestampFilter(filters, 'queue.created_at'),
+    ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', 'line.employee_name_snapshot']),
   ])}
 `;
 
@@ -595,6 +674,10 @@ const factsFor = (
     case 'erp-client-history': return clientFacts(filters);
     case 'erp-receivables': return receivableFacts(filters);
     case 'erp-service-queue': return serviceQueueFacts(filters);
+    case 'erp-service-completions': return serviceCompletionFacts(filters);
+    case 'erp-consumable-usage': return consumableUsageFacts(filters);
+    case 'erp-consumable-ledger': return consumableLedgerFacts(filters);
+    case 'erp-service-exceptions': return serviceExceptionFacts(filters);
     case 'erp-invoice': return invoiceFacts(filters, selection);
   }
 };
@@ -622,6 +705,10 @@ const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-client-history': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
     case 'erp-receivables': return sql`COUNT(*) totalRecords, ${sum('balanceDue', 'totalBalanceDue')}`;
     case 'erp-service-queue': return sql`COUNT(*) totalRecords`;
+    case 'erp-service-completions': return sql`COUNT(*) totalRecords, ${sum('totalCost', 'totalCost')}`;
+    case 'erp-consumable-usage': return sql`COUNT(*) totalRecords, ${sum('quantity', 'totalQuantity')}, ${sum('cost', 'totalCost')}`;
+    case 'erp-consumable-ledger': return sql`COUNT(*) totalRecords, ${sum('quantityDelta', 'netQuantityChange')}, ${sum('totalCost', 'totalCost')}`;
+    case 'erp-service-exceptions': return sql`COUNT(*) totalRecords`;
     case 'erp-invoice': return sql`COUNT(*) totalRecords, ${sum('lineTotal', 'lineSubtotal')}`;
   }
 };
@@ -658,6 +745,16 @@ const stockReasonLabels: Record<string, string> = {
 const purchaseStatusLabels: Record<string, string> = {
   posted: 'مرحّلة', cancelled: 'ملغاة',
 };
+const serviceStatusLabels: Record<string, string> = {
+  pending: 'قيد الانتظار', completed: 'مكتملة', overdue: 'متأخرة',
+};
+const completionKindLabels: Record<string, string> = {
+  consumables: 'بمستهلكات', none: 'بدون مستهلكات',
+};
+const consumableEntryLabels: Record<string, string> = {
+  reserve: 'تحويل إلى المستهلكات', return: 'إرجاع إلى مخزون البيع', consume: 'استهلاك خدمة',
+  correction_restore: 'استرجاع تصحيح', correction_consume: 'استهلاك تصحيح',
+};
 
 export const localizeErpReportRow = (
   reportType: ErpReportType,
@@ -676,6 +773,16 @@ export const localizeErpReportRow = (
     }
     if (reportType === 'erp-purchases' && key === 'status' && typeof value === 'string') {
       return [key, purchaseStatusLabels[value] ?? value];
+    }
+    if ((reportType === 'erp-service-queue' || reportType === 'erp-service-completions'
+      || reportType === 'erp-service-exceptions') && key === 'status' && typeof value === 'string') {
+      return [key, serviceStatusLabels[value] ?? value];
+    }
+    if (reportType === 'erp-service-completions' && key === 'completionKind' && typeof value === 'string') {
+      return [key, completionKindLabels[value] ?? value];
+    }
+    if (reportType === 'erp-consumable-ledger' && key === 'entryType' && typeof value === 'string') {
+      return [key, consumableEntryLabels[value] ?? value];
     }
     return [key, value];
   }),

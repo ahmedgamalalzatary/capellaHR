@@ -22,6 +22,7 @@ import {
 } from '../modules/employees/index.js';
 import {
   createCommissionModule,
+  createConsumablesModule,
   createErpAssignmentModule,
   createErpBookingsModule,
   createErpCatalogModule,
@@ -243,6 +244,10 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     branches: branchModule.erp,
     employees: employeeModule.erp,
   }) : undefined;
+  const consumablesModule = enabled('erp-stock') && enabled('erp-sales') ? createConsumablesModule(database, {
+    audit: auditModule.erp,
+    branches: branchModule.erp,
+  }) : undefined;
   const erpSuppliersModule = enabled('erp-suppliers') ? createErpSuppliersModule(database, {
     audit: auditModule.erp,
     branches: branchModule.erp,
@@ -348,6 +353,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
       erpServiceCatalogService: erpCatalogModule.services,
     } : {}),
     ...(erpStockModule ? { erpProductStockService: erpStockModule.service } : {}),
+    ...(consumablesModule ? { erpConsumablesService: consumablesModule.service } : {}),
     ...(erpSuppliersModule ? { erpSupplierPurchaseService: erpSuppliersModule.service } : {}),
     ...(erpTransfersModule ? { erpStockTransferService: erpTransfersModule.service } : {}),
     ...(erpExpensesModule ? { erpExpenseService: erpExpensesModule.service } : {}),

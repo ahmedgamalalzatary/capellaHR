@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
@@ -321,6 +322,7 @@ export function ProductStockView() {
                             <TD numeric className="font-medium">{product.quantity}</TD>
                             <TD>
                               <RowActions>
+                                {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-subtle" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>مستهلك</Link> : null}
                                 <Button size="sm" disabled={commandPending} onClick={() => setAdjusting(product)}>تسوية</Button>
                                 {product.barcode
                                   ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => setLabelling(product)}>طباعة ملصق</Button>

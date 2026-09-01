@@ -28,7 +28,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService, type FaceEnrollmentResult } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
+import { createConsumablesRouter, createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ConsumablesService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -72,6 +72,7 @@ export const createApiRouter = (dependencies: {
   erpCategoryService?: CategoryService;
   erpServiceCatalogService?: ServiceCatalogService;
   erpProductStockService?: ProductStockService;
+  erpConsumablesService?: ConsumablesService;
   erpSupplierPurchaseService?: SupplierPurchaseService;
   erpStockTransferService?: StockTransferService;
   erpExpenseService?: ExpenseService;
@@ -244,6 +245,10 @@ export const createApiRouter = (dependencies: {
         erpAuth.requireErpAccount,
         createErpProductsRouter(dependencies.erpProductStockService),
       );
+    }
+    if (dependencies.erpConsumablesService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      router.use('/erp/consumables', erpAuth.authenticate, erpAuth.requireErpAccount, createConsumablesRouter(dependencies.erpConsumablesService));
     }
     if (dependencies.erpSupplierPurchaseService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);

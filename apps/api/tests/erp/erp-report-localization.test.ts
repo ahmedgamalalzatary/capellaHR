@@ -13,4 +13,20 @@ describe('ERP report row localization', () => {
     expect(localizeErpReportRow('erp-purchases', { status: 'posted' })).toEqual({ status: 'مرحّلة' });
     expect(localizeErpReportRow('erp-purchases', { status: 'cancelled' })).toEqual({ status: 'ملغاة' });
   });
+
+  it('localizes service completion fields', () => {
+    expect(localizeErpReportRow('erp-service-completions', {
+      status: 'completed',
+      completionKind: 'none',
+    })).toEqual({ status: 'مكتملة', completionKind: 'بدون مستهلكات' });
+    expect(localizeErpReportRow('erp-service-exceptions', { status: 'overdue' }))
+      .toEqual({ status: 'متأخرة' });
+  });
+
+  it('localizes consumables ledger entry types', () => {
+    expect(localizeErpReportRow('erp-consumable-ledger', { entryType: 'consume' }))
+      .toEqual({ entryType: 'استهلاك خدمة' });
+    expect(localizeErpReportRow('erp-consumable-ledger', { entryType: 'correction_restore' }))
+      .toEqual({ entryType: 'استرجاع تصحيح' });
+  });
 });

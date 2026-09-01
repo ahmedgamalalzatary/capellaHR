@@ -166,6 +166,33 @@ describe('ERP sales persistence foundation', () => {
     );
   });
 
+  it('tracks completion state on every individual queued service execution', () => {
+    const entries = table('serviceQueueEntries');
+    expect(Object.keys(entries)).toEqual(expect.arrayContaining([
+      'status', 'completedAt', 'completedByAccountId',
+    ]));
+    expect(getTableConfig(entries).checks.map((entry) => entry.name)).toContain(
+      'erp_service_queue_completion_consistent',
+    );
+  });
+
+  it('preserves every service consumption report revision and its actual usages', () => {
+    const reports = table('serviceConsumptionReports');
+    expect(Object.keys(reports)).toEqual(expect.arrayContaining([
+      'id', 'serviceQueueEntryId', 'revision', 'replacesReportId', 'isCurrent',
+      'completionKind', 'reason', 'actingAccountId', 'createdAt',
+    ]));
+    expect(getTableConfig(reports).indexes.map((entry) => entry.config.name)).toContain(
+      'erp_service_consumption_reports_queue_revision_unique',
+    );
+
+    const usages = table('serviceConsumptionUsages');
+    expect(Object.keys(usages)).toEqual(expect.arrayContaining([
+      'id', 'reportId', 'productId', 'branchId', 'quantity',
+      'unitCostSnapshot', 'totalCost', 'ledgerEntryId',
+    ]));
+  });
+
   it('records immutable employee reassignments for sold service lines', () => {
     const reassignments = table('invoiceLineReassignments');
     expect(Object.keys(reassignments)).toEqual(expect.arrayContaining([

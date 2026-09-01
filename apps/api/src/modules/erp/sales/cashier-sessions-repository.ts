@@ -9,6 +9,7 @@ import {
   invoiceReversalPayments,
   invoiceReversals,
   invoices,
+  serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/mysql-core';
@@ -356,6 +357,13 @@ export const createDrizzleCashierSessionRepository = (
       if (current.openedByAccountId !== input.closedByAccountId) {
         return { kind: 'not_owner' as const, session: before };
       }
+      const unfinished = await transaction.select({ value: sql<number>`count(*)` })
+        .from(serviceQueueEntries).where(and(
+          eq(serviceQueueEntries.cashierSessionId, current.id),
+          inArray(serviceQueueEntries.status, ['pending', 'overdue']),
+        ));
+      const unfinishedCount = Number(unfinished[0]?.value ?? 0);
+      if (unfinishedCount > 0) return { kind: 'unfinished_services' as const, count: unfinishedCount };
       await transaction.update(cashierSessions).set({
         closedAt: input.closedAt,
         closedByAccountId: input.closedByAccountId,
@@ -409,6 +417,10 @@ export const createDrizzleCashierSessionRepository = (
           eq(cashierSessions.id, current.id),
           isNull(cashierSessions.closedAt),
         ));
+        await transaction.update(serviceQueueEntries).set({ status: 'overdue' }).where(and(
+          eq(serviceQueueEntries.cashierSessionId, current.id),
+          eq(serviceQueueEntries.status, 'pending'),
+        ));
         // The till is signed out with the shift; whoever comes next logs in again.
         await transaction.update(authSessions).set({ revokedAt: closedAt }).where(and(
           eq(authSessions.accountId, current.openedByAccountId),
@@ -447,6 +459,10 @@ export const createDrizzleCashierSessionRepository = (
       }).where(and(
         eq(cashierSessions.id, current.id),
         isNull(cashierSessions.closedAt),
+      ));
+      await transaction.update(serviceQueueEntries).set({ status: 'overdue' }).where(and(
+        eq(serviceQueueEntries.cashierSessionId, current.id),
+        eq(serviceQueueEntries.status, 'pending'),
       ));
       const session = (await findById(transaction, current.id))!;
       await audit.record(transaction, {

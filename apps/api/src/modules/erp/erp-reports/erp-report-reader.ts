@@ -180,6 +180,41 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['shiftId', 'الوردية'], ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'],
       ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'],
       ['employeeName', 'الموظف'], ['authorizedBy', 'الكاشير'],
+      ['status', 'الحالة'], ['completedAt', 'وقت الإنهاء'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
+  'erp-service-completions': {
+    title: 'تقارير إنهاء الخدمات',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'وقت الإنهاء'], ['branchName', 'الفرع'],
+      ['shiftId', 'الوردية'], ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'],
+      ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'], ['employeeName', 'الموظف'],
+      ['completionKind', 'النتيجة'], ['consumables', 'المستهلكات'], ['totalCost', 'التكلفة'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
+  'erp-consumable-usage': {
+    title: 'استخدام المستهلكات',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'الوقت'], ['branchName', 'الفرع'],
+      ['productName', 'المستهلك'], ['unit', 'الوحدة'], ['serviceName', 'الخدمة'],
+      ['employeeName', 'الموظف'], ['quantity', 'الكمية'], ['cost', 'التكلفة'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
+  'erp-consumable-ledger': {
+    title: 'سجل مخزون المستهلكات',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'الوقت'], ['branchName', 'الفرع'],
+      ['productName', 'المستهلك'], ['unit', 'الوحدة'], ['entryType', 'الحركة'],
+      ['quantityDelta', 'التغيير'], ['balanceAfter', 'الرصيد'], ['unitCost', 'تكلفة الوحدة'],
+      ['totalCost', 'التكلفة'], ['actingUsername', 'المنفذ'], ['note', 'ملاحظة'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
+  'erp-service-exceptions': {
+    title: 'الخدمات المتأخرة',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'وقت البيع'], ['branchName', 'الفرع'],
+      ['shiftId', 'الوردية'], ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'],
+      ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'], ['employeeName', 'الموظف'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-invoice': {

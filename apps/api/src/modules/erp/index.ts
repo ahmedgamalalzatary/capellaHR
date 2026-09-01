@@ -6,6 +6,7 @@ export * from './bookings/index.js';
 export * from './catalog/index.js';
 export * from './clients/index.js';
 export * from './commissions/index.js';
+export * from './consumables/index.js';
 export * from './erp-reports/index.js';
 export * from './expenses/index.js';
 export * from './fixed-assets/index.js';

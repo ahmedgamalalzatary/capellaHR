@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LayoutList,
   Package,
+  PackageOpen,
   Percent,
   ReceiptText,
   RotateCcw,
@@ -67,6 +68,10 @@ export const adminNavigation: NavGroup[] = [
     label: 'النظام',
     items: [{ href: '/cashier-accounts', label: 'حسابات الكاشير', icon: UserCog }],
   },
+  {
+    label: 'المستهلكات',
+    items: [{ href: '/consumables', label: 'المستهلكات والخدمات', icon: PackageOpen }],
+  },
 ];
 
 /**
@@ -94,6 +99,10 @@ export const cashierNavigation: NavGroup[] = [
       { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },
       { href: '/expenses', label: 'المصروفات', icon: Wallet },
     ],
+  },
+  {
+    label: 'المستهلكات',
+    items: [{ href: '/consumables', label: 'المستهلكات والخدمات', icon: PackageOpen }],
   },
 ];
 

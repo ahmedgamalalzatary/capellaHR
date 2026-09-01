@@ -122,6 +122,7 @@ export interface CashierSessionRepository {
     | { kind: 'success'; session: CashierSessionRecord }
     | { kind: 'not_open' }
     | { kind: 'not_owner'; session: CashierSessionRecord }
+    | { kind: 'unfinished_services'; count: number }
   >;
   recoveryClose(input: {
     sessionId: number;
@@ -149,6 +150,7 @@ export type CashierSessionErrorCode =
   | 'ERP_CASHIER_SESSION_NOT_FOUND'
   | 'ERP_CASHIER_SESSION_NOT_CLOSED'
   | 'ERP_CASHIER_SESSION_ALREADY_CLOSED'
+  | 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES'
   | 'ERP_CASHIER_SESSION_INVALID_RECOVERY_REASON';
 
 export class CashierSessionError extends Error {
@@ -313,6 +315,12 @@ export const createCashierSessionService = (dependencies: {
         throw new CashierSessionError(
           'ERP_CASHIER_SESSION_NOT_OWNER',
           'لا يمكن إغلاق وردية فتحها حساب كاشير آخر',
+        );
+      }
+      if (result.kind === 'unfinished_services') {
+        throw new CashierSessionError(
+          'ERP_CASHIER_SESSION_UNFINISHED_SERVICES',
+          `يجب إنهاء تقارير ${result.count} خدمة قبل إغلاق الوردية`,
         );
       }
       return result.session;

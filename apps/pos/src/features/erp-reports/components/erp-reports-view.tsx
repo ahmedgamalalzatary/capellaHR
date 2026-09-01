@@ -53,6 +53,10 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-client-history': 'تقرير سجل العملاء',
   'erp-receivables': 'تقرير أرصدة العملاء',
   'erp-service-queue': 'تقرير أرقام أدوار الخدمات',
+  'erp-service-completions': 'تقارير إنهاء الخدمات',
+  'erp-consumable-usage': 'استخدام المستهلكات',
+  'erp-consumable-ledger': 'سجل مخزون المستهلكات',
+  'erp-service-exceptions': 'الخدمات المتأخرة',
 };
 
 const summaryLabels: Record<string, string> = {

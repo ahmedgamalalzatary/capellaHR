@@ -92,6 +92,8 @@ describe('ERP report reader', () => {
           { key: 'queueNumber', label: 'رقم الدور' },
           { key: 'serviceName', label: 'الخدمة' },
           { key: 'shiftId', label: 'الوردية' },
+          { key: 'status', label: 'الحالة' },
+          { key: 'completedAt', label: 'وقت الإنهاء' },
         ]),
       },
     });
