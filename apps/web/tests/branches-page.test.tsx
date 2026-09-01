@@ -52,9 +52,27 @@ function renderView() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('BranchesView', () => {
+  test('allows a recent GPS reading and waits 30 seconds when capturing branch location', async () => {
+    const getCurrentPosition = vi.fn();
+    vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition } });
+    listBranchesMock.mockResolvedValue(page([]));
+    renderView();
+
+    await waitFor(() => expect(listBranchesMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة فرع' }));
+    fireEvent.click(screen.getByRole('button', { name: /التقاط الموقع الحالي/ }));
+
+    expect(getCurrentPosition).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.any(Function),
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 30_000 },
+    );
+  });
+
   test('lists branches with name and location', async () => {
     listBranchesMock.mockResolvedValue(page([cairo]));
     renderView();

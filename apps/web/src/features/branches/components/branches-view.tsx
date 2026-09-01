@@ -73,7 +73,7 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
         setValue('gpsAccuracyMeters', Math.round(position.coords.accuracy), { shouldValidate: true });
       },
       () => setGpsError('تعذر تحديد الموقع. اسمح بالوصول للموقع أو أدخل الإحداثيات يدويًا.'),
-      { enableHighAccuracy: true, timeout: 10_000 },
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 30_000 },
     );
   };
 

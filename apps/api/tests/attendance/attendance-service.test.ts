@@ -150,10 +150,16 @@ describe('attendance service', () => {
     }));
   });
 
-  it('rejects a GPS fix whose accuracy exceeds the branch radius', async () => {
+  it('accepts GPS accuracy up to the relaxed 500-meter floor', async () => {
     const setup = createService();
 
-    await expect(setup.service.checkIn({ ...event, gpsAccuracyMeters: 151 })).rejects.toMatchObject({
+    await expect(setup.service.checkIn({ ...event, gpsAccuracyMeters: 500 })).resolves.toEqual(session);
+  });
+
+  it('rejects GPS accuracy beyond the relaxed 500-meter floor', async () => {
+    const setup = createService();
+
+    await expect(setup.service.checkIn({ ...event, gpsAccuracyMeters: 501 })).rejects.toMatchObject({
       code: 'ATTENDANCE_LOCATION_UNRELIABLE',
     });
     expect(setup.repository.recordDeniedAttempt).toHaveBeenCalledWith(expect.objectContaining({
@@ -261,6 +267,38 @@ describe('attendance service', () => {
       distanceMeters: radius,
       branchRadiusMeters: radius,
     }));
+  });
+
+  it('accepts a point within the capped 10-meter GPS tolerance', async () => {
+    const repository = makeRepository();
+    const longitude = 31.236;
+    const distance = calculateDistanceMeters(30.0444, longitude, 30.0444, 31.2357);
+    const branchRadiusMeters = distance - 10;
+    vi.mocked(repository.findIdentityByCode).mockResolvedValue({ ...identity, branchRadiusMeters });
+    const { service } = createService(repository);
+
+    await expect(service.checkIn({
+      ...event,
+      longitude,
+      gpsAccuracyMeters: 10,
+    })).resolves.toEqual(session);
+  });
+
+  it('rejects a point beyond the capped 10-meter GPS tolerance', async () => {
+    const repository = makeRepository();
+    const longitude = 31.236;
+    const distance = calculateDistanceMeters(30.0444, longitude, 30.0444, 31.2357);
+    vi.mocked(repository.findIdentityByCode).mockResolvedValue({
+      ...identity,
+      branchRadiusMeters: distance - 10.01,
+    });
+    const { service } = createService(repository);
+
+    await expect(service.checkIn({
+      ...event,
+      longitude,
+      gpsAccuracyMeters: 500,
+    })).rejects.toMatchObject({ code: 'ATTENDANCE_OUT_OF_RANGE' });
   });
 
   it('fails closed for a near-antipodal point whose haversine term rounds above one', async () => {

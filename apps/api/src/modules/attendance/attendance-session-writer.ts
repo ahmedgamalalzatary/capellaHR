@@ -27,6 +27,7 @@ import {
 import { createAttendanceSessionCloser } from './attendance-session-close.js';
 import {
   calculateDistanceMeters,
+  attendanceLocationIsWithinRange,
   type AttendanceMutationResult,
   type EmployeeAttendanceMutation,
 } from './attendance-service.js';
@@ -113,7 +114,11 @@ export const createAttendanceSessionWriter = (options: {
         employee.branchLatitude,
         employee.branchLongitude,
       );
-      if (!Number.isFinite(lockedDistance) || lockedDistance > employee.branchRadiusMeters) return { kind: 'out_of_range' };
+      if (!attendanceLocationIsWithinRange(
+        lockedDistance,
+        employee.branchRadiusMeters,
+        input.snapshot.gpsAccuracyMeters!,
+      )) return { kind: 'out_of_range' };
       input.snapshot.distanceMeters = lockedDistance;
       input.snapshot.branchLatitude = employee.branchLatitude;
       input.snapshot.branchLongitude = employee.branchLongitude;
@@ -297,7 +302,11 @@ export const createAttendanceSessionWriter = (options: {
       employee.branchLatitude,
       employee.branchLongitude,
     );
-    if (!Number.isFinite(distanceMeters) || distanceMeters > employee.branchRadiusMeters) {
+    if (!attendanceLocationIsWithinRange(
+      distanceMeters,
+      employee.branchRadiusMeters,
+      input.gpsAccuracyMeters,
+    )) {
       return {
         failure: {
           kind: 'out_of_range',

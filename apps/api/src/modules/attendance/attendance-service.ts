@@ -161,6 +161,8 @@ export class AttendanceError extends Error {
 }
 
 const EARTH_RADIUS_METERS = 6_371_000;
+const MAX_ACCEPTABLE_GPS_ACCURACY_METERS = 500;
+const MAX_LOCATION_DISTANCE_TOLERANCE_METERS = 10;
 const ATTENDANCE_TIMING_DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$O33BRlRwoIn+0l0wzrVq7g$jTAOxanRrPw/yvMxeDaz0CHzlDf77QOU6llfV3aKaXs';
 const radians = (degrees: number) => degrees * Math.PI / 180;
 
@@ -179,6 +181,21 @@ export const calculateDistanceMeters = (
   const a = Math.min(1, Math.max(0, haversine));
   return EARTH_RADIUS_METERS * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
+
+export const attendanceLocationAccuracyIsAcceptable = (
+  gpsAccuracyMeters: number,
+  branchRadiusMeters: number,
+) => Number.isFinite(gpsAccuracyMeters)
+  && gpsAccuracyMeters >= 0
+  && gpsAccuracyMeters <= Math.max(branchRadiusMeters, MAX_ACCEPTABLE_GPS_ACCURACY_METERS);
+
+export const attendanceLocationIsWithinRange = (
+  distanceMeters: number,
+  branchRadiusMeters: number,
+  gpsAccuracyMeters: number,
+) => Number.isFinite(distanceMeters)
+  && distanceMeters <= branchRadiusMeters
+    + Math.min(Math.max(gpsAccuracyMeters, 0), MAX_LOCATION_DISTANCE_TOLERANCE_METERS);
 
 export const calculateAttendanceMinutes = (
   checkInAt: Date,
@@ -302,7 +319,11 @@ export const createAttendanceService = (
     if (!verifiedDevice?.verified) {
       return deny(failures.device_invalid);
     }
-    if (distanceMeters === null || !Number.isFinite(distanceMeters) || distanceMeters > identity.branchRadiusMeters) {
+    if (distanceMeters === null || !attendanceLocationIsWithinRange(
+      distanceMeters,
+      identity.branchRadiusMeters,
+      input.gpsAccuracyMeters,
+    )) {
       return deny({
         code: 'ATTENDANCE_OUT_OF_RANGE',
         reason: 'OUT_OF_RANGE',
@@ -311,7 +332,7 @@ export const createAttendanceService = (
       });
     }
 
-    if (!Number.isFinite(input.gpsAccuracyMeters) || input.gpsAccuracyMeters > identity.branchRadiusMeters) {
+    if (!attendanceLocationAccuracyIsAcceptable(input.gpsAccuracyMeters, identity.branchRadiusMeters)) {
       return deny(failures.location_unreliable);
     }
 

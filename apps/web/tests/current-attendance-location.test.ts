@@ -22,7 +22,7 @@ describe('currentAttendanceLocation', () => {
     expect(getCurrentPosition).toHaveBeenCalledWith(
       expect.any(Function),
       expect.any(Function),
-      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 30_000 },
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 30_000 },
     );
 
     vi.unstubAllGlobals();
