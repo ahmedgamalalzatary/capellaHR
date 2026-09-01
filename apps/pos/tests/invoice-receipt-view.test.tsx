@@ -230,13 +230,13 @@ describe('stored invoice receipt', () => {
     expect(screen.queryByText('الكاشير')).toBeNull();
   });
 
-  it('brands the receipt header and encodes the invoice number as a QR code', async () => {
+  it('brands the receipt header and points every QR code to Capella Care on Instagram', async () => {
     const toString = vi.spyOn(QRCode, 'toString');
     renderView();
 
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     await waitFor(() => expect(toString).toHaveBeenCalledWith(
-      saleFixtures.completedInvoice.invoiceNumber,
+      'https://www.instagram.com/capellacare?igsh=aDllZTVycjc4ZjJw&utm_source=qr',
       expect.objectContaining({ type: 'svg' }),
     ));
     expect(customerReceipt().getByTestId('receipt-qr').innerHTML).toContain('svg');

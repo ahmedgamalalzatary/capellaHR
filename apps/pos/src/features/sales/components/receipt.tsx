@@ -11,11 +11,14 @@ import { PrintPageRule } from '@/lib/print/page-rule';
 
 import { formatCairoDateTime, paymentLabels } from './invoice-format';
 
-function ReceiptQr({ value }: { value: string }) {
+const CAPELLA_INSTAGRAM_URL =
+  'https://www.instagram.com/capellacare?igsh=aDllZTVycjc4ZjJw&utm_source=qr';
+
+function ReceiptQr() {
   const [svg, setSvg] = useState('');
   useEffect(() => {
     let cancelled = false;
-    QRCode.toString(value, { type: 'svg', margin: 1, width: 144 })
+    QRCode.toString(CAPELLA_INSTAGRAM_URL, { type: 'svg', margin: 1, width: 144 })
       .then((markup) => {
         if (!cancelled) setSvg(markup);
       })
@@ -25,7 +28,7 @@ function ReceiptQr({ value }: { value: string }) {
     return () => {
       cancelled = true;
     };
-  }, [value]);
+  }, []);
 
   return (
     <div
@@ -158,7 +161,7 @@ export function EmployeeReceipt({
           <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
           <h1 className="mt-1.5 text-end text-lg font-bold" dir="rtl">نسخة الموظف</h1>
         </div>
-        <ReceiptQr value={invoice.invoiceNumber} />
+        <ReceiptQr />
       </header>
       <ReceiptInvoiceBarcode value={invoice.invoiceNumber} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
@@ -250,12 +253,12 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <div>
           <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
         </div>
-        <ReceiptQr value={invoice.invoiceNumber} />
+        <ReceiptQr />
       </header>
       {/*
-        * The QR carries the same invoice number but the QW2100 is a 1D scanner
-        * and cannot read it, so the slip also carries a Code 128 the counter can
-        * scan to pull the invoice up for a refund.
+        * The QR opens Capella Care on Instagram. The QW2100 is a 1D scanner and
+        * cannot read it, so the separate Code 128 carries the invoice number the
+        * counter scans to pull the invoice up for a refund.
         */}
       <ReceiptInvoiceBarcode value={invoice.invoiceNumber} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
