@@ -147,6 +147,7 @@ export type CashierSessionErrorCode =
   | 'ERP_CASHIER_SESSION_NOT_OPEN'
   | 'ERP_CASHIER_SESSION_NOT_OWNER'
   | 'ERP_CASHIER_SESSION_NOT_FOUND'
+  | 'ERP_CASHIER_SESSION_NOT_CLOSED'
   | 'ERP_CASHIER_SESSION_ALREADY_CLOSED'
   | 'ERP_CASHIER_SESSION_INVALID_RECOVERY_REASON';
 
@@ -247,11 +248,17 @@ export const createCashierSessionService = (dependencies: {
 
     async report(actor: ErpAccountIdentity, sessionId: number) {
       const summary = await readable(actor, sessionId);
+      if (!summary.closedAt) {
+        throw new CashierSessionError(
+          'ERP_CASHIER_SESSION_NOT_CLOSED',
+          'يجب إغلاق وردية الكاشير قبل عرض التقرير',
+        );
+      }
       const accounting = await dependencies.repository.readReportAccounting({
         sessionId,
         branchId: summary.branchId,
         openedAt: summary.openedAt,
-        closedAt: summary.closedAt ?? now(),
+        closedAt: summary.closedAt,
       });
       const netByMethod = Object.fromEntries(Object.keys(summary.taken).map((method) => [
         method,

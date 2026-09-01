@@ -153,6 +153,16 @@ export function AttendanceCameraCapture({
     setError(null);
   };
 
+  const captureFrame = (video: HTMLVideoElement) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const context = canvas.getContext('2d');
+    if (!context) return Promise.resolve(null);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+  };
+
   const captureTemporal = async () => {
     const video = videoRef.current!;
     if (!video) return;
@@ -162,7 +172,11 @@ export function AttendanceCameraCapture({
     intervalRef.current = null;
     setCapturing(true);
     setError(null);
-    for (let index = 0; index < 8; index += 1) {
+    const firstFrame = await captureFrame(video);
+    if (!mountedRef.current || captureId !== captureRequestRef.current) return;
+    if (firstFrame) frames.push(firstFrame);
+    for (let index = 1; index < 8; index += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, process.env.NODE_ENV === 'test' ? 0 : 150));
       if (!mountedRef.current || captureId !== captureRequestRef.current) return;
       const currentQuality = assessVideo();
       if (!currentQuality?.ready) {
@@ -172,16 +186,9 @@ export function AttendanceCameraCapture({
         setError('ثبّت الهاتف وأبقِ وجهك كاملًا داخل الإطار طوال فترة التقاط الصورة، ثم أعد المحاولة.');
         return;
       }
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-      const context = canvas.getContext('2d');
-      if (!context) break;
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      const blob = await captureFrame(video);
       if (!mountedRef.current || captureId !== captureRequestRef.current) return;
       if (blob) frames.push(blob);
-      if (index < 7) await new Promise((resolve) => window.setTimeout(resolve, process.env.NODE_ENV === 'test' ? 0 : 150));
     }
     stopCamera();
     setCapturing(false);
@@ -207,8 +214,8 @@ export function AttendanceCameraCapture({
         {value ? <span className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-1 text-[12px] font-medium text-success"><Check className="size-3.5" aria-hidden />تم الالتقاط</span> : null}
       </div>
       <div className={mediaFrame}>
-        {active ? <video ref={videoRef} aria-label="معاينة الكاميرا" muted playsInline onLoadedData={startAnalysis} className="aspect-video size-full object-contain" /> : null}
-        {!active && value && preview ? <Image src={preview} alt="الصورة الملتقطة" width={640} height={480} unoptimized className="size-full object-contain" /> : null}
+        {active ? <video ref={videoRef} aria-label="معاينة الكاميرا" muted playsInline onLoadedData={startAnalysis} className="aspect-video size-full object-cover" /> : null}
+        {!active && value && preview ? <Image src={preview} alt="الصورة الملتقطة" width={640} height={480} unoptimized className="size-full object-cover" /> : null}
         {!active && value && !preview ? <p role="status" className="px-3 text-center text-sm text-success">تم التقاط الصورة.</p> : null}
         {!active && !value ? <span className="grid gap-2 text-center text-muted"><Camera className="mx-auto size-7" aria-hidden /><span className="text-[12px]">وجّه الكاميرا نحو وجهك في مكان جيد الإضاءة.</span></span> : null}
       </div>

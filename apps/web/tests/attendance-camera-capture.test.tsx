@@ -96,7 +96,7 @@ it('captures distinct temporal JPEG frames before stopping the camera tracks', a
   expect(stop).toHaveBeenCalledOnce();
 });
 
-it('keeps the full portrait camera frame visible in the live view and captured preview', async () => {
+it('fills the camera and preview frame like employee capture without black side bars', async () => {
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) },
@@ -113,17 +113,49 @@ it('keeps the full portrait camera frame visible in the live view and captured p
   const video = await screen.findByLabelText('معاينة الكاميرا');
   Object.defineProperties(video, { videoWidth: { value: 720 }, videoHeight: { value: 1280 } });
 
-  expect(video.className).toContain('object-contain');
-  expect(video.className).not.toContain('object-cover');
+  expect(video.className).toContain('object-cover');
+  expect(video.className).not.toContain('object-contain');
 
   const first = new Blob(['first'], { type: 'image/jpeg' });
   const last = new Blob(['last'], { type: 'image/jpeg' });
   view.unmount();
   render(<AttendanceCameraCapture value={[first, last]} onChange={vi.fn()} disabled={false} />);
   const preview = await screen.findByAltText('الصورة الملتقطة');
-  expect(preview.className).toContain('object-contain');
-  expect(preview.className).not.toContain('object-cover');
+  expect(preview.className).toContain('object-cover');
+  expect(preview.className).not.toContain('object-contain');
   expect(createObjectURL).toHaveBeenCalledWith(first);
+});
+
+it('captures the visible first frame before running another face analysis', async () => {
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) },
+  });
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  const events: string[] = [];
+  detectorMocks.detect.mockImplementation(() => {
+    events.push('analyze');
+    return [{ x: 320, y: 120, width: 640, height: 432, leftEye: { x: 0.4, y: 0.42 }, rightEye: { x: 0.6, y: 0.42 }, nose: { x: 0.5, y: 0.55 } }];
+  });
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function getContext(this: HTMLCanvasElement) {
+    const context = qualityContext();
+    if (this.width !== 160) context.drawImage = vi.fn(() => events.push('capture'));
+    return context;
+  });
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob(['face'], { type: 'image/jpeg' })));
+
+  render(<AttendanceCameraCapture value={null} onChange={vi.fn()} disabled={false} />);
+  fireEvent.click(screen.getByRole('button', { name: 'فتح الكاميرا' }));
+  const video = await screen.findByLabelText('معاينة الكاميرا');
+  Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 } });
+  fireEvent.loadedData(video);
+  await waitFor(() => expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false));
+  events.length = 0;
+
+  fireEvent.click(screen.getByRole('button', { name: 'التقاط الصورة' }));
+
+  await waitFor(() => expect(events.length).toBeGreaterThan(0));
+  expect(events[0]).toBe('capture');
 });
 
 it('rejects the burst when the face leaves the frame instead of submitting bad later images', async () => {
@@ -170,7 +202,7 @@ it('stops the camera and reports failure when canvas drawing is unavailable', as
   await waitFor(() => expect((screen.getByRole('button', { name: 'التقاط الصورة' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(await screen.findByRole('button', { name: 'التقاط الصورة' }));
 
-  expect(stop).toHaveBeenCalledOnce();
+  await waitFor(() => expect(stop).toHaveBeenCalledOnce());
   expect(screen.getByRole('alert')).toBeTruthy();
 });
 

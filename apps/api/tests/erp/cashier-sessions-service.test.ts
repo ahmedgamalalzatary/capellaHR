@@ -290,6 +290,7 @@ describe('ERP Cashier-session service', () => {
 
   it('builds the full report after applying the same shift ownership check', async () => {
     const { repository, service } = setup();
+    repository.findMoneyById.mockResolvedValue({ ...money, closedAt: now });
 
     await expect(service.report({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
       .resolves.toMatchObject({
@@ -312,5 +313,14 @@ describe('ERP Cashier-session service', () => {
     repository.findMoneyById.mockResolvedValueOnce({ ...money, openedByAccountId: 99 });
     await expect(service.report({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
       .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_OWNER' });
+  });
+
+  it('rejects reporting an open shift before reading its accounting', async () => {
+    const { repository, service } = setup();
+    repository.findMoneyById.mockResolvedValue({ ...money, closedAt: null });
+
+    await expect(service.report({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
+      .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_NOT_CLOSED' });
+    expect(repository.readReportAccounting).not.toHaveBeenCalled();
   });
 });
