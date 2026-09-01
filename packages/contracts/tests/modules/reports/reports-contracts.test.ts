@@ -36,6 +36,7 @@ describe('report contracts', () => {
       'erp-profit',
       'erp-client-history',
       'erp-receivables',
+      'erp-service-queue',
       'erp-invoice',
     ]);
   });

@@ -232,6 +232,38 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('allocates consecutive queue numbers per service and resets them with the cashier shift', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const firstSale = operation(data, crypto.randomUUID());
+    firstSale.input.lines[0] = { ...firstSale.input.lines[0]!, quantity: 3 };
+    firstSale.input.payments = [{ method: 'cash', amount: '545.00' }];
+    const first = await repository.complete(firstSale);
+    expect(first.lines[0]?.queueNumbers).toEqual([1, 2, 3]);
+
+    const secondSale = operation(data, crypto.randomUUID());
+    secondSale.invoiceNumber = `${firstSale.invoiceNumber}-2`;
+    secondSale.input.lines[0] = { ...secondSale.input.lines[0]!, quantity: 2 };
+    secondSale.input.payments = [{ method: 'cash', amount: '365.00' }];
+    const second = await repository.complete(secondSale);
+    expect(second.lines[0]?.queueNumbers).toEqual([4, 5]);
+
+    await database.update(cashierSessions).set({
+      closedAt: data.at,
+      closedByAccountId: data.accountId,
+    }).where(eq(cashierSessions.id, data.cashierSessionId));
+    const nextSessionId = Number((await database.insert(cashierSessions).values({
+      branchId: data.branchId,
+      openedByAccountId: data.accountId,
+      openedAt: data.at,
+    }))[0].insertId);
+    const nextShiftSale = operation(data, crypto.randomUUID());
+    nextShiftSale.invoiceNumber = `${firstSale.invoiceNumber}-3`;
+    nextShiftSale.input.cashierSessionId = nextSessionId;
+    const nextShift = await repository.complete(nextShiftSale);
+    expect(nextShift.lines[0]?.queueNumbers).toEqual([1]);
+  });
+
   it('records one concurrent idempotent instalment on a product-only invoice', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());

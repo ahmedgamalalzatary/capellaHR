@@ -258,7 +258,21 @@ describe('stored invoice receipt', () => {
     const rows = within(table).getAllByRole('row');
     expect(rows).toHaveLength(2);
     expect(within(rows[1]!).getAllByRole('cell').map((cell) => cell.textContent))
-      .toEqual(['صبغة شعر', '1', '200.00', '200.00']);
+      .toEqual(['صبغة شعرأرقام الدور: 1', '1', '200.00', '200.00']);
+  });
+
+  it('prints every per-shift service queue number on the customer receipt', async () => {
+    getInvoice.mockResolvedValue({
+      ...saleFixtures.completedInvoice,
+      lines: [{
+        ...saleFixtures.completedInvoice.lines[0],
+        quantity: 3,
+        queueNumbers: [5, 6, 7],
+      }],
+    });
+    renderView();
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+    expect(customerReceipt().queryByText('أرقام الدور: 5، 6، 7')).not.toBeNull();
   });
 
   it('prints the counter contact details and the consumer-protection return policy', async () => {

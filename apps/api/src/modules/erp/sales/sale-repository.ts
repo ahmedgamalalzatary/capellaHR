@@ -21,6 +21,7 @@ import {
   invoiceReversalPayments,
   invoiceReversals,
   invoices,
+  serviceQueueEntries,
 } from '@capella/database/schema';
 import {
   and,
@@ -105,6 +106,9 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       .where(eq(employees.id, invoice.sellerEmployeeId)).limit(1))[0] ?? null;
   const lines = await executor.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
+  const queueEntries = await executor.select().from(serviceQueueEntries)
+    .where(eq(serviceQueueEntries.invoiceId, invoiceId))
+    .orderBy(asc(serviceQueueEntries.invoiceLineId), asc(serviceQueueEntries.queueNumber));
   const reassignments = await executor.select().from(invoiceLineReassignments)
     .where(eq(invoiceLineReassignments.invoiceId, invoiceId))
     .orderBy(asc(invoiceLineReassignments.createdAt), asc(invoiceLineReassignments.id));
@@ -217,6 +221,9 @@ const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       productCostBasis: line.productCostBasisSnapshot,
       refundedQuantity: refundedByLine.get(line.id) ?? 0,
       refundableQuantity: line.quantity - (refundedByLine.get(line.id) ?? 0),
+      queueNumbers: queueEntries
+        .filter((entry) => entry.invoiceLineId === line.id)
+        .map((entry) => entry.queueNumber),
     }); }),
     discount: invoice.discountKind === null ? null : {
       kind: invoice.discountKind,
@@ -733,6 +740,20 @@ export const createDrizzleSaleRepository = (
             transaction, input.branchId, productInputs, true, operation.pricing,
           );
           const serviceIds = [...new Set(serviceInputs.map(({ serviceId }) => serviceId))];
+          const currentQueueEntries = serviceIds.length ? await transaction.select({
+            serviceId: serviceQueueEntries.serviceId,
+            queueNumber: serviceQueueEntries.queueNumber,
+          }).from(serviceQueueEntries).where(and(
+            eq(serviceQueueEntries.cashierSessionId, input.cashierSessionId),
+            inArray(serviceQueueEntries.serviceId, serviceIds),
+          )) : [];
+          const nextQueueNumber = new Map<number, number>();
+          for (const entry of currentQueueEntries) {
+            nextQueueNumber.set(
+              entry.serviceId,
+              Math.max(nextQueueNumber.get(entry.serviceId) ?? 1, entry.queueNumber + 1),
+            );
+          }
           const serviceRows = serviceIds.length ? await transaction.select({
             id: erpServices.id,
             commissionPercent: erpServices.commissionPercent,
@@ -845,6 +866,21 @@ export const createDrizzleSaleRepository = (
               productCostBasisSnapshot: line.itemType === 'product' ? line.productCostBasis : null,
             });
             const invoiceLineId = Number(insertedLine[0].insertId);
+            if (line.itemType === 'service') {
+              const firstQueueNumber = nextQueueNumber.get(line.sourceId) ?? 1;
+              await transaction.insert(serviceQueueEntries).values(
+                Array.from({ length: line.quantity }, (_, offset) => ({
+                  invoiceId,
+                  invoiceLineId,
+                  branchId: input.branchId,
+                  cashierSessionId: input.cashierSessionId,
+                  serviceId: line.sourceId,
+                  queueNumber: firstQueueNumber + offset,
+                  createdAt: operation.soldAt,
+                })),
+              );
+              nextQueueNumber.set(line.sourceId, firstQueueNumber + line.quantity);
+            }
             if (line.employee && line.commissionRule !== 'none') {
               await transaction.insert(commissionLedgerEntries).values({
                 invoiceId, invoiceLineId, employeeId: line.employee.id,

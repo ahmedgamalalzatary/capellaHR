@@ -442,9 +442,19 @@ const invoiceLineSchema = z.object({
   productCostBasis: exactMoneySchema.nullable(),
   refundedQuantity: z.number().int().min(0),
   refundableQuantity: z.number().int().min(0),
+  /** One number per sold service unit; products never enter a service queue. */
+  queueNumbers: z.array(positiveMysqlIntSchema).max(100),
 }).strict().superRefine((value, context) => {
   if (value.itemType === 'service' && value.employee === null) {
     context.addIssue({ code: 'custom', path: ['employee'], message: 'الخدمة يجب أن تحمل الموظف المنفّذ' });
+  }
+  if (value.itemType === 'service'
+    && (value.queueNumbers.length !== value.quantity
+      || new Set(value.queueNumbers).size !== value.queueNumbers.length)) {
+    context.addIssue({ code: 'custom', path: ['queueNumbers'], message: 'أرقام انتظار الخدمة غير متسقة' });
+  }
+  if (value.itemType === 'product' && value.queueNumbers.length !== 0) {
+    context.addIssue({ code: 'custom', path: ['queueNumbers'], message: 'المنتج لا يحمل رقم انتظار خدمة' });
   }
   if (value.refundedQuantity + value.refundableQuantity !== value.quantity) {
     context.addIssue({ code: 'custom', path: ['refundableQuantity'], message: 'كميات الاسترداد غير متسقة' });
@@ -774,6 +784,7 @@ export const saleFixtures = {
       productCostBasis: null,
       refundedQuantity: 0,
       refundableQuantity: 1,
+      queueNumbers: [1],
     }],
     discount: { kind: 'percentage', value: '10.00', amount: '20.00' },
     tax: { kind: 'fixed', value: '5.00', amount: '5.00' },

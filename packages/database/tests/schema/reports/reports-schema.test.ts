@@ -29,7 +29,7 @@ describe('reports schema', () => {
     expect(table.checks.some((check) => check.name === 'report_exports_attempt_count_nonnegative')).toBe(true);
     expect(table.checks.some((check) => check.name === 'report_exports_cycle_attempt_count_bounded')).toBe(true);
     expect(table.columns.find((column) => column.name === 'report_type')?.enumValues).toEqual(
-      expect.arrayContaining(['erp-sales', 'erp-profit', 'erp-invoice']),
+      expect.arrayContaining(['erp-sales', 'erp-profit', 'erp-service-queue', 'erp-invoice']),
     );
   });
 });

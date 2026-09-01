@@ -18,7 +18,8 @@ const reportTypes = [
   'erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products',
   'erp-employees', 'erp-commissions', 'erp-discounts', 'erp-taxes',
   'erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases',
-  'erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables', 'erp-invoice',
+  'erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables',
+  'erp-service-queue', 'erp-invoice',
 ] as const;
 
 export const reportExports = mysqlTable('report_exports', {

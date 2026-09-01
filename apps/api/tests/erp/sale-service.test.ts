@@ -47,7 +47,7 @@ const invoice = {
     reassignments: [],
     commissionRule: 'employee_override' as const, commissionRate: '15.00',
     commissionAmount: '30.00', productCostBasis: null,
-    refundedQuantity: 0, refundableQuantity: 1,
+    refundedQuantity: 0, refundableQuantity: 1, queueNumbers: [1],
   }],
   discount: { kind: 'percentage' as const, value: '10.00', amount: '20.00' },
   tax: { kind: 'fixed' as const, value: '5.00', amount: '5.00' },
@@ -91,6 +91,7 @@ const productInvoice = {
     commissionRate: '0.00',
     commissionAmount: '0.00',
     productCostBasis: '60.00',
+    queueNumbers: [],
   }],
 } satisfies InvoiceDto;
 const setup = (overrides: Partial<SaleRepository> = {}) => {

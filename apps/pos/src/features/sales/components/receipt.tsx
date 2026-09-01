@@ -185,6 +185,9 @@ export function EmployeeReceipt({
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">
                 <span>{line.name}</span>
+                {line.queueNumbers.length ? (
+                  <span className="block text-[10px]">أرقام الدور: {line.queueNumbers.join('، ')}</span>
+                ) : null}
                 {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
                   <span className="block text-[10px] text-muted">
                     مُسند أصلاً إلى {line.originalEmployee.name}
@@ -287,6 +290,9 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">
                 <span>{line.name}</span>
+                {line.queueNumbers.length ? (
+                  <span className="block text-[10px]">أرقام الدور: {line.queueNumbers.join('، ')}</span>
+                ) : null}
                 {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
                   <span className="block text-[10px] text-muted">
                     مُسند أصلاً إلى {line.originalEmployee.name}

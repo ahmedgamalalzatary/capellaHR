@@ -14,6 +14,7 @@ import {
   erpServices,
   invoiceLines,
   invoiceReversals,
+  serviceQueueEntries,
 } from '@capella/database/schema';
 import { erpTabReportTypes } from '@capella/contracts';
 import { eq, sql } from 'drizzle-orm';
@@ -210,6 +211,39 @@ afterAll(async () => {
 }, 30_000);
 
 describe('ERP reports MySQL reader', () => {
+  it('reports each issued queue number with its stored invoice and service snapshots', async () => {
+    const line = (await database.select().from(invoiceLines)
+      .where(eq(invoiceLines.id, serviceLineId)))[0]!;
+    const session = (await database.select().from(cashierSessions)
+      .where(eq(cashierSessions.branchId, branchId)).limit(1))[0]!;
+    await database.insert(serviceQueueEntries).values({
+      invoiceId,
+      invoiceLineId: serviceLineId,
+      branchId,
+      cashierSessionId: session.id,
+      serviceId: line.serviceId!,
+      queueNumber: 7,
+      createdAt: soldAt,
+    });
+
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-service-queue', { branchId, search: '7' }, { mode: 'all' },
+      { page: 1, pageSize: 20 }, reversedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success', total: 1,
+      snapshot: {
+        rows: [expect.objectContaining({
+          queueNumber: 7,
+          shiftId: session.id,
+          invoiceNumber: 'INV.2026.08.09.0001',
+          serviceName: 'خدمة تاريخية',
+        })],
+        summary: { totalRecords: 1 },
+      },
+    });
+  });
+
   it('includes product-only invoices in sales but not employee performance', async () => {
     const reader = createErpReportsModule(database).reader;
     const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };

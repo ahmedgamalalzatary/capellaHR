@@ -527,6 +527,33 @@ const receivableFacts = (filters: ReportFilters) => sql`
   ])}
 `;
 
+const serviceQueueFacts = (filters: ReportFilters) => sql`
+  SELECT queue.id id, queue.created_at eventDate, branch.name branchName,
+    queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
+    queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
+    invoice.client_name_snapshot clientName,
+    line.employee_name_snapshot employeeName,
+    invoice.authorized_by_snapshot authorizedBy
+  FROM erp_service_queue_entries queue
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
+  INNER JOIN erp_invoice_lines line
+    ON line.id = queue.invoice_line_id AND line.invoice_id = queue.invoice_id
+      AND line.branch_id = queue.branch_id
+  INNER JOIN branches branch ON branch.id = queue.branch_id
+  ${condition([
+    sql`invoice.status <> 'draft'`,
+    ...branchFilter(filters, 'queue.branch_id'),
+    ...timestampFilter(filters, 'queue.created_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'invoice.client_name_snapshot',
+      'line.item_name_snapshot', 'line.employee_name_snapshot',
+      'invoice.authorized_by_snapshot', 'CAST(queue.queue_number AS CHAR)',
+      'CAST(queue.cashier_session_id AS CHAR)',
+    ]),
+  ])}
+`;
+
 const invoiceFacts = (filters: ReportFilters, selection: ReportSelection) => {
   const invoiceId = selection.mode === 'selected' && selection.ids.length === 1
     ? selection.ids[0]
@@ -567,6 +594,7 @@ const factsFor = (
     case 'erp-profit': return profitFacts(filters);
     case 'erp-client-history': return clientFacts(filters);
     case 'erp-receivables': return receivableFacts(filters);
+    case 'erp-service-queue': return serviceQueueFacts(filters);
     case 'erp-invoice': return invoiceFacts(filters, selection);
   }
 };
@@ -593,6 +621,7 @@ const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-profit': return sql`COUNT(*) totalRecords, ${sum('revenue', 'totalRevenue')}, ${sum('cost', 'totalCost')}, ${sum('profit', 'totalProfit')}`;
     case 'erp-client-history': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
     case 'erp-receivables': return sql`COUNT(*) totalRecords, ${sum('balanceDue', 'totalBalanceDue')}`;
+    case 'erp-service-queue': return sql`COUNT(*) totalRecords`;
     case 'erp-invoice': return sql`COUNT(*) totalRecords, ${sum('lineTotal', 'lineSubtotal')}`;
   }
 };

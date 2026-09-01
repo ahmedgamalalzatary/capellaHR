@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "1f0f6f6b-6ae3-4e80-a0d5-5b9ab63b8a84",
-  "prevId": "94fdfdec-3241-44b7-b185-545905846015",
+  "id": "4284d51f-cf24-4fec-adb4-3b3058515713",
+  "prevId": "1f0f6f6b-6ae3-4e80-a0d5-5b9ab63b8a84",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -4245,7 +4245,7 @@
         },
         "report_type": {
           "name": "report_type",
-          "type": "enum('branches','employees','devices','shifts','weekly-day-off','attendance','payroll','bonuses','deductions','advances','erp-sales','erp-payment-methods','erp-services','erp-products','erp-employees','erp-commissions','erp-discounts','erp-taxes','erp-refunds','erp-voids','erp-expenses','erp-purchases','erp-stock','erp-profit','erp-client-history','erp-receivables','erp-invoice')",
+          "type": "enum('branches','employees','devices','shifts','weekly-day-off','attendance','payroll','bonuses','deductions','advances','erp-sales','erp-payment-methods','erp-services','erp-products','erp-employees','erp-commissions','erp-discounts','erp-taxes','erp-refunds','erp-voids','erp-expenses','erp-purchases','erp-stock','erp-profit','erp-client-history','erp-receivables','erp-service-queue','erp-invoice')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -7824,6 +7824,158 @@
         "erp_invoices_transfer_has_no_seller": {
           "name": "erp_invoices_transfer_has_no_seller",
           "value": "`erp_invoices`.`kind` = 'sale' or `erp_invoices`.`seller_employee_id` is null"
+        }
+      }
+    },
+    "erp_service_queue_entries": {
+      "name": "erp_service_queue_entries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "invoice_id": {
+          "name": "invoice_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "invoice_line_id": {
+          "name": "invoice_line_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cashier_session_id": {
+          "name": "cashier_session_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "service_id": {
+          "name": "service_id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "queue_number": {
+          "name": "queue_number",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "erp_service_queue_session_service_number_unique": {
+          "name": "erp_service_queue_session_service_number_unique",
+          "columns": [
+            "cashier_session_id",
+            "service_id",
+            "queue_number"
+          ],
+          "isUnique": true
+        },
+        "erp_service_queue_line_number_unique": {
+          "name": "erp_service_queue_line_number_unique",
+          "columns": [
+            "invoice_line_id",
+            "queue_number"
+          ],
+          "isUnique": true
+        },
+        "erp_service_queue_session_created_idx": {
+          "name": "erp_service_queue_session_created_idx",
+          "columns": [
+            "cashier_session_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "erp_service_queue_line_invoice_branch_fk": {
+          "name": "erp_service_queue_line_invoice_branch_fk",
+          "tableFrom": "erp_service_queue_entries",
+          "tableTo": "erp_invoice_lines",
+          "columnsFrom": [
+            "invoice_line_id",
+            "invoice_id",
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id",
+            "invoice_id",
+            "branch_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "erp_service_queue_session_branch_fk": {
+          "name": "erp_service_queue_session_branch_fk",
+          "tableFrom": "erp_service_queue_entries",
+          "tableTo": "erp_cashier_sessions",
+          "columnsFrom": [
+            "cashier_session_id",
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id",
+            "branch_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "erp_service_queue_service_branch_fk": {
+          "name": "erp_service_queue_service_branch_fk",
+          "tableFrom": "erp_service_queue_entries",
+          "tableTo": "erp_services",
+          "columnsFrom": [
+            "service_id",
+            "branch_id"
+          ],
+          "columnsTo": [
+            "id",
+            "branch_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "erp_service_queue_entries_id": {
+          "name": "erp_service_queue_entries_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {
+        "erp_service_queue_number_positive": {
+          "name": "erp_service_queue_number_positive",
+          "value": "`erp_service_queue_entries`.`queue_number` > 0"
         }
       }
     },

@@ -173,6 +173,15 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['creditedAmount', 'رصيد المرتجعات'], ['balanceDue', 'المستحق'], ['ageDays', 'العمر بالأيام'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
+  'erp-service-queue': {
+    title: 'تقرير أرقام أدوار الخدمات',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'وقت الإصدار'], ['branchName', 'الفرع'],
+      ['shiftId', 'الوردية'], ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'],
+      ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'],
+      ['employeeName', 'الموظف'], ['authorizedBy', 'الكاشير'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
   'erp-invoice': {
     title: 'فاتورة مبيعات',
     columns: [

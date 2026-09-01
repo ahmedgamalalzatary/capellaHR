@@ -294,6 +294,7 @@ describe('ERP complete-sale contracts', () => {
       commissionRate: '10.00',
       commissionAmount: '20.00',
       productCostBasis: '50.00',
+      queueNumbers: [],
     };
 
     expect(invoiceSchema.safeParse({
@@ -311,6 +312,22 @@ describe('ERP complete-sale contracts', () => {
         employee: { id: 8, employeeCode: 1008, name: 'سارة علي' },
       }],
     }).success).toBe(true);
+  });
+
+  it('publishes one positive queue number for every unit of a service line', () => {
+    const service = saleFixtures.completedInvoice.lines[0];
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{ ...service, quantity: 3, lineTotal: '600.00', commissionAmount: '90.00', refundableQuantity: 3, queueNumbers: [4, 5, 6] }],
+      totals: { ...saleFixtures.completedInvoice.totals, subtotal: '600.00', discountAmount: '60.00', total: '545.00', paymentTotal: '545.00', amountPaid: '545.00' },
+      discount: { kind: 'percentage', value: '10.00', amount: '60.00' },
+      tax: { kind: 'fixed', value: '5.00', amount: '5.00' },
+      payments: [{ method: 'cash', amount: '545.00', refundedAmount: '0.00', refundableAmount: '545.00' }],
+    }).success).toBe(true);
+    expect(invoiceSchema.safeParse({
+      ...saleFixtures.completedInvoice,
+      lines: [{ ...service, queueNumbers: [] }],
+    }).success).toBe(false);
   });
 
   it('rejects a mismatched commissioned product amount', () => {

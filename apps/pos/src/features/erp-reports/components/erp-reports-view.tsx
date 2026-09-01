@@ -52,6 +52,7 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-profit': 'تقرير الأرباح',
   'erp-client-history': 'تقرير سجل العملاء',
   'erp-receivables': 'تقرير أرصدة العملاء',
+  'erp-service-queue': 'تقرير أرقام أدوار الخدمات',
 };
 
 const summaryLabels: Record<string, string> = {

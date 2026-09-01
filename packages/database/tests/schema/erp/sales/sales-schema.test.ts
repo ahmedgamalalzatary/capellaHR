@@ -143,6 +143,29 @@ describe('ERP sales persistence foundation', () => {
       .toContain('erp_invoice_lines_employee_consistent');
   });
 
+  it('stores one durable queue number per sold service unit within its cashier shift', () => {
+    const entries = table('serviceQueueEntries');
+    expect(getTableName(entries)).toBe('erp_service_queue_entries');
+    expect(Object.keys(entries)).toEqual(expect.arrayContaining([
+      'id', 'invoiceId', 'invoiceLineId', 'branchId', 'cashierSessionId',
+      'serviceId', 'queueNumber', 'createdAt',
+    ]));
+    const config = getTableConfig(entries);
+    expect(config.indexes.map((value) => value.config.name)).toEqual(expect.arrayContaining([
+      'erp_service_queue_session_service_number_unique',
+      'erp_service_queue_line_number_unique',
+      'erp_service_queue_session_created_idx',
+    ]));
+    expect(config.foreignKeys.map((value) => value.getName())).toEqual(expect.arrayContaining([
+      'erp_service_queue_line_invoice_branch_fk',
+      'erp_service_queue_session_branch_fk',
+      'erp_service_queue_service_branch_fk',
+    ]));
+    expect(config.checks.map((value) => value.name)).toContain(
+      'erp_service_queue_number_positive',
+    );
+  });
+
   it('records immutable employee reassignments for sold service lines', () => {
     const reassignments = table('invoiceLineReassignments');
     expect(Object.keys(reassignments)).toEqual(expect.arrayContaining([

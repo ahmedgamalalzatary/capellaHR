@@ -75,4 +75,25 @@ describe('ERP report reader', () => {
     expect(batches).toEqual([[{ id: 1 }, { id: 2 }], [{ id: 3 }]]);
     expect(result).toMatchObject({ kind: 'success', total: 3, rowCount: 3 });
   });
+
+  it('publishes queue-history metadata for the existing reports page and PDF worker', async () => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+    const result = await createErpReportReader(repository).read(
+      'erp-service-queue', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success',
+      snapshot: {
+        title: 'تقرير أرقام أدوار الخدمات',
+        columns: expect.arrayContaining([
+          { key: 'queueNumber', label: 'رقم الدور' },
+          { key: 'serviceName', label: 'الخدمة' },
+          { key: 'shiftId', label: 'الوردية' },
+        ]),
+      },
+    });
+  });
 });

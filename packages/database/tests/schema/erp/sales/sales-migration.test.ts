@@ -50,6 +50,27 @@ const productCommissionMigrationName = readdirSync(migrationsDirectory)
 const productCommissionMigration = productCommissionMigrationName
   ? readFileSync(`${migrationsDirectory}/${productCommissionMigrationName}`, 'utf8')
   : '';
+const queueMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0085_.*\.sql$/.test(name));
+const queueMigration = queueMigrationName
+  ? readFileSync(`${migrationsDirectory}/${queueMigrationName}`, 'utf8')
+  : '';
+
+describe('ERP per-shift service queue migration', () => {
+  it('creates one constrained queue ticket per sold service unit', () => {
+    expect(queueMigrationName).toBeDefined();
+    expect(queueMigration).toContain('CREATE TABLE `erp_service_queue_entries`');
+    expect(queueMigration).toContain('erp_service_queue_session_service_number_unique');
+    expect(queueMigration).toContain('erp_service_queue_line_number_unique');
+    expect(queueMigration).toContain('erp_service_queue_line_invoice_branch_fk');
+    expect(queueMigration).toContain('erp_service_queue_session_branch_fk');
+    expect(queueMigration).toContain('erp_service_queue_service_branch_fk');
+    expect(queueMigration).toContain('ROW_NUMBER() OVER');
+    expect(queueMigration).toContain('line.quantity >= unit_numbers.unit_number');
+    expect(queueMigration).toContain('erp-service-queue');
+    expect(queueMigration).toContain('ALTER TABLE `report_exports`');
+  });
+});
 
 describe('ERP product commission trigger repair', () => {
   it('preserves cumulative amount validation for earned and reassigned reversal targets', () => {

@@ -216,6 +216,44 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   ),
 ]);
 
+/**
+ * One immutable queue ticket for every unit of a sold service. Numbering starts
+ * again for each service when a new cashier shift opens.
+ */
+export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
+  id: int('id').autoincrement().primaryKey(),
+  invoiceId: int('invoice_id').notNull(),
+  invoiceLineId: int('invoice_line_id').notNull(),
+  branchId: int('branch_id').notNull(),
+  cashierSessionId: int('cashier_session_id').notNull(),
+  serviceId: int('service_id').notNull(),
+  queueNumber: int('queue_number').notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({
+    name: 'erp_service_queue_line_invoice_branch_fk',
+    columns: [table.invoiceLineId, table.invoiceId, table.branchId],
+    foreignColumns: [invoiceLines.id, invoiceLines.invoiceId, invoiceLines.branchId],
+  }),
+  foreignKey({
+    name: 'erp_service_queue_session_branch_fk',
+    columns: [table.cashierSessionId, table.branchId],
+    foreignColumns: [cashierSessions.id, cashierSessions.branchId],
+  }),
+  foreignKey({
+    name: 'erp_service_queue_service_branch_fk',
+    columns: [table.serviceId, table.branchId],
+    foreignColumns: [erpServices.id, erpServices.branchId],
+  }),
+  uniqueIndex('erp_service_queue_session_service_number_unique')
+    .on(table.cashierSessionId, table.serviceId, table.queueNumber),
+  uniqueIndex('erp_service_queue_line_number_unique')
+    .on(table.invoiceLineId, table.queueNumber),
+  index('erp_service_queue_session_created_idx')
+    .on(table.cashierSessionId, table.createdAt),
+  check('erp_service_queue_number_positive', sql`${table.queueNumber} > 0`),
+]);
+
 export const invoiceLineReassignments = mysqlTable('erp_invoice_line_reassignments', {
   id: int('id').autoincrement().primaryKey(),
   invoiceId: int('invoice_id').notNull(),
