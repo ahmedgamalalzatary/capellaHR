@@ -50,8 +50,21 @@ describe('barcode rendering', () => {
     expect(LABEL_PAGE_RULE).toContain(`${LABEL_SIZE_MM.width}mm ${LABEL_SIZE_MM.height}mm`);
   });
 
-  it('stretches a short Code 128 to its box instead of letterboxing it', () => {
-    expect(barcodeSvg('12', 'code128', { stretch: true })).toContain('preserveAspectRatio="none"');
-    expect(barcodeSvg('12', 'code128')).not.toContain('preserveAspectRatio="none"');
+  it.each([
+    ['2000000000114', 'ean13' as const],
+    ['INV-2026.08.03-14.35-17', 'code128' as const],
+  ])('leaves scanner quiet zones around %s', (value, symbology) => {
+    const svg = barcodeSvg(value, symbology)!;
+    const [, viewBoxWidth = '0'] = svg.match(/viewBox="0 0 (\d+) /) ?? [];
+    const barPositions = [...svg.matchAll(/M(\d+) /g)].map((match) => Number(match[1]));
+
+    // bwip-js' default two-unit module means ten required blank modules occupy
+    // at least twenty viewBox units on each side of the symbol.
+    expect(Math.min(...barPositions)).toBeGreaterThanOrEqual(20);
+    expect(Number(viewBoxWidth) - Math.max(...barPositions)).toBeGreaterThanOrEqual(20);
+  });
+
+  it('never distorts bar widths with non-proportional SVG scaling', () => {
+    expect(barcodeSvg('INV-2026.08.03-14.35-17', 'code128')).not.toContain('preserveAspectRatio="none"');
   });
 });

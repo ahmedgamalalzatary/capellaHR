@@ -108,6 +108,7 @@ describe('CommissionsView', () => {
 
   it('shows monthly employee totals and invoice-line reversal traceability', async () => {
     mount();
+    fireEvent.change(screen.getByLabelText('شهر العمولة'), { target: { value: '2026-08' } });
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 

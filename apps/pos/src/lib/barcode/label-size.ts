@@ -4,7 +4,7 @@
  * from — the print page rule, the sheet layout and the barcode height. Changing
  * the roll is a one-line edit here, not a redesign.
  */
-export const LABEL_SIZE_MM = { width: 40, height: 30 } as const;
+export const LABEL_SIZE_MM = { width: 40, height: 15 } as const;
 
 /**
  * Printing goes through the printer's Windows driver rather than raw ESC/POS or

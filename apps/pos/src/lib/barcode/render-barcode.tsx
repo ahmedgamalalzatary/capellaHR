@@ -18,7 +18,6 @@ const draw = (
   value: string,
   symbology: BarcodeSymbology,
   heightMm: number,
-  stretch: boolean,
 ): string | null => {
   try {
     const svg = toSVG({
@@ -26,12 +25,12 @@ const draw = (
       text: value,
       height: heightMm,
       includetext: false,
-      paddingwidth: 0,
+      // A linear scanner needs a blank quiet zone before and after the symbol
+      // to distinguish its first and last bars from surrounding print.
+      paddingwidth: 10,
       paddingheight: 0,
     });
-    // Default SVG meet letterboxes a short Code 128 inside a wide box. The
-    // receipt needs the bars to fill that box the way a long INV-* payload did.
-    return stretch ? svg.replace('<svg ', '<svg preserveAspectRatio="none" ') : svg;
+    return svg;
   } catch {
     return null;
   }
@@ -50,13 +49,13 @@ const draw = (
 export function barcodeSvg(
   value: string,
   symbology?: BarcodeSymbology,
-  { heightMm = 10, stretch = false }: { heightMm?: number; stretch?: boolean } = {},
+  { heightMm = 10 }: { heightMm?: number } = {},
 ): string | null {
   if (!value) return null;
-  if (symbology) return draw(value, symbology, heightMm, stretch);
+  if (symbology) return draw(value, symbology, heightMm);
   const preferred = symbologyFor(value);
-  return draw(value, preferred, heightMm, stretch)
-    ?? (preferred === 'ean13' ? draw(value, 'code128', heightMm, stretch) : null);
+  return draw(value, preferred, heightMm)
+    ?? (preferred === 'ean13' ? draw(value, 'code128', heightMm) : null);
 }
 
 /**
@@ -68,18 +67,15 @@ export function Barcode({
   value,
   symbology,
   heightMm,
-  stretch,
   className,
 }: {
   value: string;
   symbology?: BarcodeSymbology;
   heightMm?: number;
-  stretch?: boolean;
   className?: string;
 }) {
   const svg = barcodeSvg(value, symbology, {
     ...(heightMm === undefined ? {} : { heightMm }),
-    ...(stretch ? { stretch: true } : {}),
   });
   if (!svg) return null;
   return (

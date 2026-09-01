@@ -61,19 +61,18 @@ type PublicInvoiceLine = PublicInvoiceDto['lines'][number];
 type ReceiptEmployee = NonNullable<PublicInvoiceLine['employee']>;
 
 /**
- * The old INV-* payload's viewBox made width:100% + height:auto land at ~6mm
- * on this slip. A short global number has a squat viewBox, so the same CSS
- * grows the bars to ~36mm. Stretch to full width and pin the height.
+ * The barcode uses the receipt's full nominal 72 mm content width. SVG's
+ * default proportional scaling preserves every Code 128 module instead of
+ * independently stretching bar widths to fill the box.
  */
 function ReceiptInvoiceBarcode({ value }: { value: string }) {
   return (
-    <div className="overflow-hidden border-b border-solid border-black px-6 py-2">
+    <div className="-mx-4 overflow-hidden border-b border-solid border-black px-2 py-2">
       <Barcode
         value={value}
         symbology="code128"
-        heightMm={6}
-        stretch
-        className="block w-full [&_svg]:block [&_svg]:h-[6mm] [&_svg]:w-full"
+        heightMm={10}
+        className="block w-full [&_svg]:block [&_svg]:h-[10mm] [&_svg]:w-full"
       />
     </div>
   );

@@ -701,7 +701,7 @@ describe('stored invoice receipt', () => {
     expect(barcode.innerHTML).toContain('svg');
   });
 
-  it('keeps the invoice barcode a thin full-width strip for short global numbers', async () => {
+  it('keeps the invoice barcode proportional instead of distorting its bars', async () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
@@ -713,7 +713,7 @@ describe('stored invoice receipt', () => {
     // grows to ~135px. Pin the height to that thin strip and keep full width.
     expect(barcode.className).toMatch(/\bw-full\b/);
     expect(barcode.className).toMatch(/\[&_svg\]:w-full/);
-    expect(barcode.className).toMatch(/\[&_svg\]:h-\[6mm\]/);
-    expect(barcode.innerHTML).toContain('preserveAspectRatio="none"');
+    expect(barcode.className).toMatch(/\[&_svg\]:h-\[10mm\]/);
+    expect(barcode.innerHTML).not.toContain('preserveAspectRatio="none"');
   });
 });
