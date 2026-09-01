@@ -78,7 +78,7 @@ describe('AI face service gateway', () => {
       identity_match: true,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const gateway = createAiFaceGateway({ baseUrl: 'http://attendance-ai:8000', fetcher });
-    const frames = [1, 2, 3, 4, 5].map((index) => new Blob([`frame-${index}`], { type: 'image/jpeg' }));
+    const frames = [1, 2, 3, 4, 5].map((index) => Buffer.from(`frame-${index}`));
     const embedding = Array.from({ length: 128 }, () => 0.25);
 
     await expect(gateway.verify(42, embedding, frames)).resolves.toEqual({ kind: 'match' });
@@ -88,5 +88,24 @@ describe('AI face service gateway', () => {
     expect(body.get('employee_id')).toBe('42');
     expect(JSON.parse(body.get('enrolled_embedding') as string)).toEqual(embedding);
     expect(body.getAll('files')).toHaveLength(5);
+  });
+
+  it('converts uploaded server buffers to image blobs before verification', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      decision: 'verified',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const gateway = createAiFaceGateway({ baseUrl: 'http://attendance-ai:8000', fetcher });
+    const frames = [1, 2, 3, 4, 5].map((index) => Buffer.from(`frame-${index}`));
+
+    await expect(gateway.verify(
+      42,
+      Array.from({ length: 128 }, () => 0.25),
+      frames,
+    )).resolves.toEqual({ kind: 'match' });
+
+    const body = fetcher.mock.calls[0]?.[1]?.body as FormData;
+    expect(body.getAll('files')).toHaveLength(5);
+    expect(body.getAll('files').every((frame) => frame instanceof Blob)).toBe(true);
   });
 });

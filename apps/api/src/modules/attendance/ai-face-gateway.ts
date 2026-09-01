@@ -75,11 +75,15 @@ export const createAiFaceGateway = ({ baseUrl, fetcher = fetch }: AiFaceGatewayO
       }
       return { kind: 'rejected' as const, reason: result.data.reason ?? 'invalid_response' };
     },
-    async verify(employeeId: number, embedding: number[], frames: Blob[]): Promise<FaceComparisonResult> {
+    async verify(employeeId: number, embedding: number[], frames: Buffer[]): Promise<FaceComparisonResult> {
       const body = new FormData();
       body.set('employee_id', String(employeeId));
       body.set('enrolled_embedding', JSON.stringify(embedding));
-      frames.forEach((frame, index) => body.append('files', frame, `frame-${index + 1}.jpg`));
+      frames.forEach((frame, index) => body.append(
+        'files',
+        new Blob([new Uint8Array(frame)], { type: 'image/jpeg' }),
+        `frame-${index + 1}.jpg`,
+      ));
       const result = await postForm<VerifyResponse>(fetcher, serviceUrl(baseUrl, '/api/v1/verify'), body);
       if (result.kind !== 'ok') return { kind: 'failed' };
       if (result.data.success && result.data.decision === 'verified') return { kind: 'match' };

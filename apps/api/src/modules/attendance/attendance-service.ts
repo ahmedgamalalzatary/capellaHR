@@ -27,7 +27,7 @@ export type FaceComparisonResult =
   | { kind: 'mismatch' | 'face_not_found' | 'multiple_faces' | 'invalid_image' | 'failed' | 'spoof' };
 
 export interface AttendanceFaceGateway {
-  verify?(employeeId: number, embedding: number[], frames: Blob[]): Promise<FaceComparisonResult>;
+  verify?(employeeId: number, embedding: number[], frames: Buffer[]): Promise<FaceComparisonResult>;
   compare(personalPhotoPath: string, liveImage: Buffer): Promise<FaceComparisonResult>;
 }
 
@@ -325,7 +325,7 @@ export const createAttendanceService = (
     if (identity.faceEmbedding && faces.verify) try {
       const parsed: unknown = JSON.parse(identity.faceEmbedding);
       if (!Array.isArray(parsed) || parsed.length !== 128 || parsed.some((value) => typeof value !== 'number')) throw new Error('invalid embedding');
-      faceResult = await faces.verify(identity.id, parsed as number[], (input.faceImages ?? (input.faceImage ? [input.faceImage] : [])) as unknown as Blob[]);
+      faceResult = await faces.verify(identity.id, parsed as number[], input.faceImages ?? [input.faceImage]);
     } catch {
       return deny({
         code: 'ATTENDANCE_FACE_COMPARISON_FAILED', reason: 'FACE_COMPARISON_FAILED',
