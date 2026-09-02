@@ -1,6 +1,6 @@
 'use client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type SetStateAction, useState } from 'react';
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { FieldError } from '@/components/feedback/notice';
@@ -13,31 +13,55 @@ import { listAllProducts } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 import { completeServiceExecutions, configureConsumable, correctServiceExecution, listConsumableBalances, listConsumableServices, transferConsumableStock } from '../api/consumables-api';
 type Usage = { productId: number | ''; quantity: string };
-const errorText = (error: unknown) => error instanceof ApiError ? error.message : 'تعذر تنفيذ العملية.';
+const emptyUsages = (): Usage[] => [{ productId: '', quantity: '' }];
+const errorText = (error: unknown) => error instanceof ApiError || error instanceof Error ? error.message : 'تعذر تنفيذ العملية.';
+const allPages = async <T,>(load: (page: number) => Promise<{ items: T[]; meta: { page: number; pageSize: number; total: number; totalPages: number } }>) => {
+  const first = await load(1);
+  const remaining = await Promise.all(Array.from({ length: Math.max(0, first.meta.totalPages - 1) }, (_, index) => load(index + 2)));
+  return { ...first, items: [first, ...remaining].flatMap((page) => page.items) };
+};
 export function ConsumablesView() {
   const queryClient = useQueryClient(); const session = useSession(); const isAdmin = session.data?.actor.type === 'admin';
   const [branchId, setBranchId] = useState<number | undefined>(() => { if (typeof window === 'undefined') return undefined; const value = Number(new URLSearchParams(window.location.search).get('branchId')); return value > 0 ? value : undefined; }); const ready = session.isSuccess && (!isAdmin || branchId !== undefined);
-  const [status, setStatus] = useState<'pending' | 'completed' | 'overdue'>('pending'); const [selected, setSelected] = useState<number[]>([]);
-  const [usages, setUsages] = useState<Usage[]>([{ productId: '', quantity: '' }]);
+  const [status, setStatus] = useState<'pending' | 'completed' | 'overdue'>('pending'); const [selected, rawSetSelected] = useState<number[]>([]);
+  const [usages, rawSetUsages] = useState<Usage[]>(emptyUsages);
   const [configProductId, setConfigProductId] = useState<number | ''>(() => { if (typeof window === 'undefined') return ''; const value = Number(new URLSearchParams(window.location.search).get('productId')); return value > 0 ? value : ''; }); const [unit, setUnit] = useState<'ml' | 'gm'>('ml'); const [packageSize, setPackageSize] = useState('');
   const [transferProductId, setTransferProductId] = useState<number | ''>(''); const [direction, setDirection] = useState<'reserve' | 'return'>('reserve'); const [packages, setPackages] = useState('1');
-  const [correctingId, setCorrectingId] = useState<number>(); const [correctionReason, setCorrectionReason] = useState('');
+  const [correctingId, rawSetCorrectingId] = useState<number>(); const [correctionReason, setCorrectionReason] = useState('');
   const params = branchId === undefined ? {} : { branchId }; const branches = useQuery({ queryKey: ['consumables-branches'], queryFn: () => listCatalogBranches(), enabled: isAdmin });
   const products = useQuery({ queryKey: ['consumables-products', branchId], queryFn: () => listAllProducts(params), enabled: ready && isAdmin });
-  const balances = useQuery({ queryKey: ['consumables-balances', branchId], queryFn: () => listConsumableBalances({ ...params, pageSize: 100 }), enabled: ready });
-  const services = useQuery({ queryKey: ['consumables-services', branchId, status], queryFn: () => listConsumableServices({ ...params, status, pageSize: 100 }), enabled: ready });
+  const balances = useQuery({ queryKey: ['consumables-balances', branchId], queryFn: () => allPages((page) => listConsumableBalances({ ...params, page, pageSize: 100 })), enabled: ready });
+  const services = useQuery({ queryKey: ['consumables-services', branchId, status], queryFn: () => allPages((page) => listConsumableServices({ ...params, status, page, pageSize: 100 })), enabled: ready });
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['consumables-balances'] }),
       queryClient.invalidateQueries({ queryKey: ['consumables-services'] }),
     ]);
   };
+  const setSelected = (next: SetStateAction<number[]>) => rawSetSelected((current) => {
+    const proposed = typeof next === 'function' ? next(current) : next;
+    const selectedServiceId = services.data?.items.find((item) => current.includes(item.id))?.serviceId;
+    return selectedServiceId === undefined || proposed.every((id) => services.data?.items.find((item) => item.id === id)?.serviceId === selectedServiceId) ? proposed : current;
+  });
+  const setUsages = (next: SetStateAction<Usage[]>) => rawSetUsages((current) => {
+    const proposed = typeof next === 'function' ? next(current) : next;
+    const productIds = proposed.flatMap((row) => typeof row.productId === 'number' ? [row.productId] : []);
+    return new Set(productIds).size === productIds.length ? proposed : current;
+  });
+  const setCorrectingId = (id: number | undefined) => { rawSetCorrectingId(id); if (id !== undefined) rawSetUsages(emptyUsages()); };
+  const usageErrors = usages.map((entry, index) => {
+    if (entry.productId === '' && entry.quantity.trim() === '') return null;
+    if (entry.productId === '') return `صف المستهلك ${index + 1}: اختر المنتج`;
+    if (!Number.isFinite(Number(entry.quantity)) || Number(entry.quantity) <= 0) return `صف المستهلك ${index + 1}: أدخل كمية أكبر من صفر`;
+    return null;
+  });
   const validUsages = usages.filter((entry): entry is { productId: number; quantity: string } => typeof entry.productId === 'number' && Number(entry.quantity) > 0);
-  const complete = useMutation({ mutationFn: () => completeServiceExecutions({ ...params, serviceQueueEntryIds: selected, usages: validUsages }), onSuccess: async () => { setSelected([]); await refresh(); } });
+  const usageValidationError = usageErrors.filter(Boolean).join('، ');
+  const complete = useMutation({ mutationFn: () => { if (usageValidationError) throw new Error(usageValidationError); return completeServiceExecutions({ ...params, serviceQueueEntryIds: selected, usages: validUsages }); }, onSuccess: async () => { setSelected([]); rawSetUsages(emptyUsages()); await refresh(); } });
   const configure = useMutation({ mutationFn: () => configureConsumable(Number(configProductId), { ...params, unit, packageSize }), onSuccess: refresh });
   const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages) }), onSuccess: refresh });
-  const correct = useMutation({ mutationFn: () => correctServiceExecution(correctingId!, { ...params, reason: correctionReason, usages: validUsages }), onSuccess: async () => { setCorrectingId(undefined); setCorrectionReason(''); await refresh(); } });
-  const mutations = [complete, configure, transfer, correct]; const pending = mutations.some((item) => item.isPending); const failed = mutations.find((item) => item.isError);
+  const correct = useMutation({ mutationFn: () => { if (usageValidationError) throw new Error(usageValidationError); return correctServiceExecution(correctingId!, { ...params, reason: correctionReason, usages: validUsages }); }, onSuccess: async () => { setCorrectingId(undefined); rawSetUsages(emptyUsages()); setCorrectionReason(''); await refresh(); } });
+  const mutations = [complete, configure, transfer, correct]; const pending = mutations.some((item) => item.isPending); const failed = mutations.find((item) => item.isError) ?? (usageValidationError ? { isError: true, error: new Error(usageValidationError) } : undefined);
   return <section className="space-y-6"><PageHeader title="المستهلكات والخدمات" description="إدارة رصيد ml/gm وإنهاء تقرير مستقل لكل خدمة مباعة." />
     {isAdmin ? <Card><CardContent className="space-y-4 p-4"><div><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setSelected([]); }}><option value="">اختر الفرع</option>{branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select></div>{ready ? <div className="grid gap-4 lg:grid-cols-2"><div className="space-y-3"><SectionHeading title="إعداد منتج كمستهلك" /><Select aria-label="منتج إعداد المستهلك" value={configProductId} onChange={(event) => setConfigProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المنتج</option>{products.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select><div className="flex gap-2"><Select aria-label="وحدة المستهلك" value={unit} onChange={(event) => setUnit(event.target.value as 'ml' | 'gm')}><option value="ml">ml</option><option value="gm">gm</option></Select><Input aria-label="حجم العبوة" type="number" min="0.001" step="0.001" value={packageSize} onChange={(event) => setPackageSize(event.target.value)} /></div><Button disabled={!configProductId || !Number(packageSize) || pending} onClick={() => configure.mutate()}>حفظ إعداد المستهلك</Button></div><div className="space-y-3"><SectionHeading title="تحويل عبوات كاملة" /><Select aria-label="منتج التحويل" value={transferProductId} onChange={(event) => setTransferProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المستهلك</option>{balances.data?.items.map((item) => <option key={item.productId} value={item.productId}>{item.productName}</option>)}</Select><div className="flex gap-2"><Select aria-label="اتجاه التحويل" value={direction} onChange={(event) => setDirection(event.target.value as 'reserve' | 'return')}><option value="reserve">حجز من مخزون البيع</option><option value="return">إرجاع لمخزون البيع</option></Select><Input aria-label="عدد العبوات" type="number" min="1" step="1" value={packages} onChange={(event) => setPackages(event.target.value)} /></div><Button disabled={!transferProductId || !Number(packages) || pending} onClick={() => transfer.mutate()}>تنفيذ التحويل</Button></div></div> : null}</CardContent></Card> : null}
     {!ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : <><Card><CardContent className="p-4"><SectionHeading title="أرصدة المستهلكات" />{balances.isPending ? <LoadingState label="جارٍ التحميل…" /> : <DataTable><THead><TH>المنتج</TH><TH numeric>مخزون البيع</TH><TH numeric>رصيد المستهلك</TH><TH numeric>حجم العبوة</TH></THead><tbody>{balances.data?.items.map((item) => <TR key={item.productId}><TD>{item.productName}</TD><TD numeric>{item.sellableQuantity}</TD><TD numeric>{item.consumableQuantity} {item.unit}</TD><TD numeric>{item.packageSize} {item.unit}</TD></TR>)}</tbody></DataTable>}</CardContent></Card>

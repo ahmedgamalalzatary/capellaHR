@@ -4,6 +4,7 @@ import {
   erpConsumableBalances,
   erpConsumableConfigurations,
   erpConsumableLedgerEntries,
+  erpConsumableTransfers,
   erpProducts,
   erpProductStocks,
   erpServices,
@@ -14,7 +15,7 @@ import {
   serviceConsumptionUsages,
   serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, asc, count, desc, eq, inArray, isNull, like, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { ConsumablesError, type ConsumablesRepository } from './consumables-service.js';
@@ -26,7 +27,10 @@ const milli = (value: string) => {
   const [whole = '0', fraction = ''] = value.split('.');
   return BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0').slice(0, 3));
 };
-const fromMilli = (value: bigint) => `${value / 1000n}.${(value % 1000n).toString().padStart(3, '0')}`;
+const fromMilli = (value: bigint) => {
+  const absolute = value < 0n ? -value : value;
+  return `${value < 0n ? '-' : ''}${absolute / 1000n}.${(absolute % 1000n).toString().padStart(3, '0')}`;
+};
 const moneyMicros = (value: string) => {
   const [whole = '0', fraction = ''] = value.split('.');
   return BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0').slice(0, 6));
@@ -123,6 +127,11 @@ export const createDrizzleConsumablesRepository = (
         ? (moneyMicros(product.lastPurchaseCost) * 1000n) / milli(configuration.packageSize)
         : await valuation(tx, input.productId, input.branchId, current);
       const totalCost = costMoney(amount, unitCost);
+      const transferId = Number((await tx.insert(erpConsumableTransfers).values({
+        productId: input.productId, branchId: input.branchId, direction: input.direction,
+        packages: input.packages, actingAccountId: input.accountId,
+        note: input.note ?? null, createdAt: at,
+      }))[0].insertId);
       await tx.update(erpConsumableBalances).set({ quantity: fromMilli(next), updatedAt: at }).where(and(
         eq(erpConsumableBalances.productId, input.productId), eq(erpConsumableBalances.branchId, input.branchId),
       ));
@@ -133,7 +142,7 @@ export const createDrizzleConsumablesRepository = (
         productId: input.productId, branchId: input.branchId,
         entryType: input.direction === 'reserve' ? 'reserve' : 'return',
         quantityDelta: fromMilli(input.direction === 'reserve' ? amount : -amount), balanceAfter: fromMilli(next),
-        unitCostSnapshot: fromMicros(unitCost), totalCost, sourceType: 'transfer', sourceId: null,
+        unitCostSnapshot: fromMicros(unitCost), totalCost, sourceType: 'transfer', sourceId: transferId,
         actingAccountId: input.accountId, note: input.note ?? null, createdAt: at,
       });
       const ledgerId = Number(ledgerInsert[0].insertId);
@@ -169,11 +178,13 @@ export const createDrizzleConsumablesRepository = (
   },
 
   async listServices(branchId, query, openedByAccountId) {
+    const currentEmployeeId = sql<number | null>`coalesce((select reassignment.to_employee_id from erp_invoice_line_reassignments reassignment where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeId})`;
+    const currentEmployeeName = sql<string | null>`coalesce((select employee.full_name from erp_invoice_line_reassignments reassignment inner join employees employee on employee.id = reassignment.to_employee_id where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeNameSnapshot})`;
     const filters = [eq(serviceQueueEntries.branchId, branchId)];
     if (query.status) filters.push(eq(serviceQueueEntries.status, query.status));
     if (query.cashierSessionId) filters.push(eq(serviceQueueEntries.cashierSessionId, query.cashierSessionId));
     if (query.serviceId) filters.push(eq(serviceQueueEntries.serviceId, query.serviceId));
-    if (query.employeeId) filters.push(eq(invoiceLines.employeeId, query.employeeId));
+    if (query.employeeId) filters.push(eq(currentEmployeeId, query.employeeId));
     if (openedByAccountId !== undefined) filters.push(eq(cashierSessions.openedByAccountId, openedByAccountId));
     if (query.search) filters.push(or(like(invoices.invoiceNumber, `%${query.search}%`), like(invoices.clientNameSnapshot, `%${query.search}%`))!);
     const where = and(...filters);
@@ -181,8 +192,8 @@ export const createDrizzleConsumablesRepository = (
       id: serviceQueueEntries.id, status: serviceQueueEntries.status, queueNumber: serviceQueueEntries.queueNumber,
       cashierSessionId: serviceQueueEntries.cashierSessionId, invoiceId: invoices.id, invoiceNumber: invoices.invoiceNumber,
       clientName: invoices.clientNameSnapshot, clientPhone: invoices.clientPhoneSnapshot,
-      serviceId: erpServices.id, serviceName: erpServices.name, employeeId: invoiceLines.employeeId,
-      employeeName: invoiceLines.employeeNameSnapshot, createdAt: serviceQueueEntries.createdAt,
+      serviceId: erpServices.id, serviceName: erpServices.name, employeeId: currentEmployeeId,
+      employeeName: currentEmployeeName, createdAt: serviceQueueEntries.createdAt,
       completedAt: serviceQueueEntries.completedAt,
     }).from(serviceQueueEntries)
       .innerJoin(invoices, eq(invoices.id, serviceQueueEntries.invoiceId))
@@ -207,6 +218,8 @@ export const createDrizzleConsumablesRepository = (
       if (executions.length !== input.serviceQueueEntryIds.length) return fail('CONSUMABLE_SERVICE_NOT_FOUND', 'إحدى الخدمات غير موجودة');
       if (new Set(executions.map((entry) => entry.serviceId)).size !== 1) return fail('CONSUMABLE_SERVICES_MUST_MATCH', 'الإدخال الجماعي متاح للخدمات المتطابقة فقط');
       if (executions.some((entry) => entry.status === 'completed')) return fail('CONSUMABLE_SERVICE_ALREADY_COMPLETED', 'إحدى الخدمات مكتملة بالفعل');
+      if (executions.some((entry) => entry.status === 'canceled')) return fail('CONSUMABLE_SERVICE_CANCELLED', 'إحدى الخدمات ملغاة');
+      if (new Set(input.usages.map((usage) => usage.productId)).size !== input.usages.length) return fail('CONSUMABLE_DUPLICATE_USAGE', 'تم تكرار أحد المستهلكات');
       if (input.accountRole === 'cashier') {
         const sessionIds = [...new Set(executions.map((entry) => entry.cashierSessionId))];
         const open = await tx.select({ id: cashierSessions.id }).from(cashierSessions).where(and(
@@ -215,16 +228,17 @@ export const createDrizzleConsumablesRepository = (
         if (open.length !== sessionIds.length) return fail('CONSUMABLE_SHIFT_CLOSED', 'لا يمكن للكاشير تعديل خدمات وردية مغلقة');
       }
       const demandMultiplier = BigInt(executions.length);
-      const balances = new Map<number, { current: bigint; unitCost: bigint }>();
-      for (const usage of input.usages) {
-        const balance = (await tx.select().from(erpConsumableBalances).where(and(
+      const balances = new Map<number, { current: bigint; unitCost: bigint; unit: 'ml' | 'gm' }>();
+      for (const usage of [...input.usages].sort((left, right) => left.productId - right.productId)) {
+        const balance = (await tx.select({ quantity: erpConsumableBalances.quantity, unit: erpConsumableConfigurations.unit }).from(erpConsumableBalances)
+          .innerJoin(erpConsumableConfigurations, and(eq(erpConsumableConfigurations.productId, erpConsumableBalances.productId), eq(erpConsumableConfigurations.branchId, erpConsumableBalances.branchId))).where(and(
           eq(erpConsumableBalances.productId, usage.productId), eq(erpConsumableBalances.branchId, input.branchId),
         )).for('update').limit(1))[0];
         if (!balance) return fail('CONSUMABLE_NOT_CONFIGURED', 'أحد المنتجات غير معد كمستهلك');
         const current = milli(balance.quantity);
         const required = milli(usage.quantity) * demandMultiplier;
         if (current < required) return fail('CONSUMABLE_INSUFFICIENT_BALANCE', 'رصيد أحد المستهلكات غير كافٍ');
-        balances.set(usage.productId, { current, unitCost: await valuation(tx, usage.productId, input.branchId, current) });
+        balances.set(usage.productId, { current, unitCost: await valuation(tx, usage.productId, input.branchId, current), unit: balance.unit });
       }
       const results: unknown[] = [];
       for (const execution of executions) {
@@ -245,7 +259,7 @@ export const createDrizzleConsumablesRepository = (
             totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: null, createdAt: at,
           });
           const ledgerEntryId = Number(ledgerInsert[0].insertId);
-          await tx.insert(serviceConsumptionUsages).values({ reportId, productId: usage.productId, branchId: input.branchId, quantity: usage.quantity, unitCostSnapshot: fromMicros(state.unitCost), totalCost, ledgerEntryId });
+          await tx.insert(serviceConsumptionUsages).values({ reportId, productId: usage.productId, branchId: input.branchId, quantity: usage.quantity, unit: state.unit, unitCostSnapshot: fromMicros(state.unitCost), totalCost, ledgerEntryId });
           await tx.update(erpConsumableBalances).set({ quantity: fromMilli(next), updatedAt: at }).where(and(eq(erpConsumableBalances.productId, usage.productId), eq(erpConsumableBalances.branchId, input.branchId)));
           state.current = next;
         }
@@ -261,18 +275,22 @@ export const createDrizzleConsumablesRepository = (
       const at = now();
       const execution = (await tx.select().from(serviceQueueEntries).where(and(eq(serviceQueueEntries.id, input.serviceQueueEntryId), eq(serviceQueueEntries.branchId, input.branchId))).for('update').limit(1))[0];
       if (!execution) return fail('CONSUMABLE_SERVICE_NOT_FOUND', 'الخدمة غير موجودة');
-      if (execution.status !== 'completed') return fail('CONSUMABLE_SERVICE_ALREADY_COMPLETED', 'يجب إكمال الخدمة قبل تصحيحها');
+      if (execution.status !== 'completed') return fail('CONSUMABLE_SERVICE_NOT_COMPLETED', 'يجب إكمال الخدمة قبل تصحيحها');
+      if (new Set(input.usages.map((usage) => usage.productId)).size !== input.usages.length) return fail('CONSUMABLE_DUPLICATE_USAGE', 'تم تكرار أحد المستهلكات');
       const session = (await tx.select().from(cashierSessions).where(eq(cashierSessions.id, execution.cashierSessionId)).limit(1))[0]!;
       if (input.accountRole === 'cashier' && (session.closedAt || session.openedByAccountId !== input.accountId)) return fail('CONSUMABLE_SHIFT_CLOSED', 'لا يمكن للكاشير تعديل خدمات وردية مغلقة');
       const previous = (await tx.select().from(serviceConsumptionReports).where(and(eq(serviceConsumptionReports.serviceQueueEntryId, execution.id), eq(serviceConsumptionReports.isCurrent, true))).for('update').limit(1))[0];
       if (!previous) return fail('CONSUMABLE_SERVICE_NOT_FOUND', 'تقرير الخدمة غير موجود');
       const oldUsages = await tx.select().from(serviceConsumptionUsages).where(eq(serviceConsumptionUsages.reportId, previous.id));
-      const productIds = [...new Set([...oldUsages.map((usage) => usage.productId), ...input.usages.map((usage) => usage.productId)])];
-      const states = new Map<number, { current: bigint; unitCost: bigint }>();
+      const productIds = [...new Set([...oldUsages.map((usage) => usage.productId), ...input.usages.map((usage) => usage.productId)])].sort((left, right) => left - right);
+      const states = new Map<number, { current: bigint; unitCost: bigint; unit: 'ml' | 'gm' }>();
       for (const productId of productIds) {
-        const balance = (await tx.select().from(erpConsumableBalances).where(and(eq(erpConsumableBalances.productId, productId), eq(erpConsumableBalances.branchId, input.branchId))).for('update').limit(1))[0];
+        const balance = (await tx.select({ quantity: erpConsumableBalances.quantity, unit: erpConsumableConfigurations.unit }).from(erpConsumableBalances)
+          .innerJoin(erpConsumableConfigurations, and(eq(erpConsumableConfigurations.productId, erpConsumableBalances.productId), eq(erpConsumableConfigurations.branchId, erpConsumableBalances.branchId)))
+          .where(and(eq(erpConsumableBalances.productId, productId), eq(erpConsumableBalances.branchId, input.branchId))).for('update').limit(1))[0];
         if (!balance) return fail('CONSUMABLE_NOT_CONFIGURED', 'أحد المنتجات غير معد كمستهلك');
-        states.set(productId, { current: milli(balance.quantity), unitCost: await valuation(tx, productId, input.branchId, milli(balance.quantity)) });
+        if (oldUsages.some((usage) => usage.productId === productId && usage.unit !== balance.unit)) return fail('CONSUMABLE_UNIT_MISMATCH', 'لا يمكن تصحيح استهلاك مسجل بوحدة تختلف عن الوحدة الحالية');
+        states.set(productId, { current: milli(balance.quantity), unitCost: await valuation(tx, productId, input.branchId, milli(balance.quantity)), unit: balance.unit });
       }
       await tx.update(serviceConsumptionReports).set({ isCurrent: false }).where(eq(serviceConsumptionReports.id, previous.id));
       const reportInsert = await tx.insert(serviceConsumptionReports).values({ serviceQueueEntryId: execution.id, revision: previous.revision + 1, replacesReportId: previous.id, isCurrent: true, completionKind: input.usages.length ? 'consumables' : 'none', reason: input.reason, actingAccountId: input.accountId, createdAt: at });
@@ -294,7 +312,7 @@ export const createDrizzleConsumablesRepository = (
         const unitCost = await valuation(tx, usage.productId, input.branchId, state.current);
         const totalCost = costMoney(amount, unitCost);
         const ledgerInsert = await tx.insert(erpConsumableLedgerEntries).values({ productId: usage.productId, branchId: input.branchId, entryType: 'correction_consume', quantityDelta: fromMilli(-amount), balanceAfter: fromMilli(next), unitCostSnapshot: fromMicros(unitCost), totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: input.reason, createdAt: at });
-        await tx.insert(serviceConsumptionUsages).values({ reportId, productId: usage.productId, branchId: input.branchId, quantity: usage.quantity, unitCostSnapshot: fromMicros(unitCost), totalCost, ledgerEntryId: Number(ledgerInsert[0].insertId) });
+        await tx.insert(serviceConsumptionUsages).values({ reportId, productId: usage.productId, branchId: input.branchId, quantity: usage.quantity, unit: state.unit, unitCostSnapshot: fromMicros(unitCost), totalCost, ledgerEntryId: Number(ledgerInsert[0].insertId) });
         state.current = next;
       }
       for (const [productId, state] of states) await tx.update(erpConsumableBalances).set({ quantity: fromMilli(state.current), updatedAt: at }).where(and(eq(erpConsumableBalances.productId, productId), eq(erpConsumableBalances.branchId, input.branchId)));

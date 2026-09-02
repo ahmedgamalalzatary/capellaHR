@@ -25,6 +25,9 @@ const failure = (response: Response, status: number, code: string, message: stri
 const handle = (cause: unknown, response: Response) => {
   if (cause instanceof ZodError) return failure(response, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة');
   if (cause instanceof ConsumablesError) {
+    if (cause.code === 'CONSUMABLE_SERVICE_NOT_COMPLETED') {
+      return failure(response, 409, cause.code, cause.message);
+    }
     const status = cause.code === 'CONSUMABLE_PRODUCT_NOT_FOUND' || cause.code === 'CONSUMABLE_SERVICE_NOT_FOUND' ? 404 : cause.code === 'CONSUMABLES_ADMIN_REQUIRED' ? 403 : 409;
     return failure(response, status, cause.code, cause.message);
   }

@@ -120,6 +120,30 @@ export const erpConsumableBalances = mysqlTable('erp_consumable_balances', {
   check('erp_consumable_balances_quantity_nonnegative', sql`${table.quantity} >= 0`),
 ]);
 
+export const erpConsumableTransfers = mysqlTable('erp_consumable_transfers', {
+  id: int('id').autoincrement().primaryKey(),
+  productId: int('product_id').notNull(),
+  branchId: int('branch_id').notNull(),
+  direction: mysqlEnum('direction', ['reserve', 'return']).notNull(),
+  packages: int('packages').notNull(),
+  actingAccountId: int('acting_account_id').notNull(),
+  note: varchar('note', { length: 500 }),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({
+    name: 'erp_consumable_transfers_configuration_fk',
+    columns: [table.productId, table.branchId],
+    foreignColumns: [erpConsumableConfigurations.productId, erpConsumableConfigurations.branchId],
+  }),
+  foreignKey({
+    name: 'erp_consumable_transfers_account_fk',
+    columns: [table.actingAccountId],
+    foreignColumns: [accounts.id],
+  }),
+  index('erp_consumable_transfers_product_created_idx').on(table.productId, table.createdAt),
+  check('erp_consumable_transfers_packages_positive', sql`${table.packages} > 0`),
+]);
+
 export const erpConsumableLedgerEntries = mysqlTable('erp_consumable_ledger_entries', {
   id: int('id').autoincrement().primaryKey(),
   productId: int('product_id').notNull(),
@@ -130,7 +154,7 @@ export const erpConsumableLedgerEntries = mysqlTable('erp_consumable_ledger_entr
   unitCostSnapshot: decimal('unit_cost_snapshot', { precision: 16, scale: 6 }).notNull(),
   totalCost: decimal('total_cost', { precision: 16, scale: 2 }).notNull(),
   sourceType: mysqlEnum('source_type', consumableLedgerSourceTypes).notNull(),
-  sourceId: int('source_id'),
+  sourceId: int('source_id').notNull(),
   actingAccountId: int('acting_account_id').notNull(),
   note: varchar('note', { length: 500 }),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -146,11 +170,16 @@ export const erpConsumableLedgerEntries = mysqlTable('erp_consumable_ledger_entr
     foreignColumns: [accounts.id],
   }),
   index('erp_consumable_ledger_product_created_idx').on(table.productId, table.createdAt),
+  uniqueIndex('erp_consumable_ledger_id_product_branch_unique').on(table.id, table.productId, table.branchId),
   index('erp_consumable_ledger_branch_created_idx').on(table.branchId, table.createdAt),
   index('erp_consumable_ledger_source_idx').on(table.sourceType, table.sourceId),
   check('erp_consumable_ledger_delta_nonzero', sql`${table.quantityDelta} <> 0`),
   check('erp_consumable_ledger_balance_nonnegative', sql`${table.balanceAfter} >= 0`),
   check('erp_consumable_ledger_cost_consistent', sql`${table.unitCostSnapshot} >= 0 and ${table.totalCost} >= 0`),
+  check(
+    'erp_consumable_ledger_source_consistent',
+    sql`(${table.entryType} in ('reserve', 'return') and ${table.sourceType} = 'transfer') or (${table.entryType} in ('consume', 'correction_restore', 'correction_consume') and ${table.sourceType} = 'service_report')`,
+  ),
   check(
     'erp_consumable_ledger_direction_consistent',
     sql`(${table.entryType} in ('reserve', 'correction_restore') and ${table.quantityDelta} > 0) or (${table.entryType} in ('return', 'consume', 'correction_consume') and ${table.quantityDelta} < 0)`,

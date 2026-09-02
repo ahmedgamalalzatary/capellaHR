@@ -19,7 +19,7 @@ import { employees } from '../../employees/index.js';
 import { branches } from '../../organization/index.js';
 import { erpProducts, erpServices } from '../catalog/index.js';
 import { clients } from '../clients/index.js';
-import { erpConsumableLedgerEntries } from '../stock/index.js';
+import { consumableUnits, erpConsumableLedgerEntries } from '../stock/index.js';
 
 export { erpProducts } from '../catalog/index.js';
 
@@ -190,6 +190,8 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   foreignKey({ name: 'erp_invoice_lines_employee_branch_fk', columns: [table.employeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   uniqueIndex('erp_invoice_lines_invoice_line_unique').on(table.invoiceId, table.lineNumber),
   uniqueIndex('erp_invoice_lines_id_invoice_branch_unique').on(table.id, table.invoiceId, table.branchId),
+  uniqueIndex('erp_invoice_lines_id_service_invoice_branch_unique')
+    .on(table.id, table.serviceId, table.invoiceId, table.branchId),
   index('erp_invoice_lines_service_idx').on(table.serviceId),
   index('erp_invoice_lines_product_idx').on(table.productId),
   index('erp_invoice_lines_employee_idx').on(table.employeeId),
@@ -229,15 +231,15 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
   cashierSessionId: int('cashier_session_id').notNull(),
   serviceId: int('service_id').notNull(),
   queueNumber: int('queue_number').notNull(),
-  status: mysqlEnum('status', ['pending', 'completed', 'overdue']).notNull().default('pending'),
+  status: mysqlEnum('status', ['pending', 'completed', 'overdue', 'canceled']).notNull().default('pending'),
   completedAt: timestamp('completed_at', { mode: 'date', fsp: 3 }),
   completedByAccountId: int('completed_by_account_id').references(() => accounts.id),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   foreignKey({
     name: 'erp_service_queue_line_invoice_branch_fk',
-    columns: [table.invoiceLineId, table.invoiceId, table.branchId],
-    foreignColumns: [invoiceLines.id, invoiceLines.invoiceId, invoiceLines.branchId],
+    columns: [table.invoiceLineId, table.serviceId, table.invoiceId, table.branchId],
+    foreignColumns: [invoiceLines.id, invoiceLines.serviceId, invoiceLines.invoiceId, invoiceLines.branchId],
   }),
   foreignKey({
     name: 'erp_service_queue_session_branch_fk',
@@ -258,7 +260,7 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
   check('erp_service_queue_number_positive', sql`${table.queueNumber} > 0`),
   check(
     'erp_service_queue_completion_consistent',
-    sql`(${table.status} in ('pending', 'overdue') and ${table.completedAt} is null and ${table.completedByAccountId} is null) or (${table.status} = 'completed' and ${table.completedAt} is not null and ${table.completedByAccountId} is not null)`,
+    sql`(${table.status} in ('pending', 'overdue', 'canceled') and ${table.completedAt} is null and ${table.completedByAccountId} is null) or (${table.status} = 'completed' and ${table.completedAt} is not null and ${table.completedByAccountId} is not null)`,
   ),
 ]);
 
@@ -268,6 +270,8 @@ export const serviceConsumptionReports = mysqlTable('erp_service_consumption_rep
   revision: int('revision').notNull(),
   replacesReportId: int('replaces_report_id'),
   isCurrent: boolean('is_current').notNull().default(true),
+  currentQueueEntryId: int('current_queue_entry_id')
+    .generatedAlwaysAs(sql`case when is_current then service_queue_entry_id else null end`, { mode: 'stored' }),
   completionKind: mysqlEnum('completion_kind', ['consumables', 'none']).notNull(),
   reason: varchar('reason', { length: 1000 }),
   actingAccountId: int('acting_account_id').notNull(),
@@ -282,8 +286,8 @@ export const serviceConsumptionReports = mysqlTable('erp_service_consumption_rep
   }),
   uniqueIndex('erp_service_consumption_reports_queue_revision_unique')
     .on(table.serviceQueueEntryId, table.revision),
-  index('erp_service_consumption_reports_queue_current_idx')
-    .on(table.serviceQueueEntryId, table.isCurrent),
+  uniqueIndex('erp_service_consumption_reports_queue_current_unique')
+    .on(table.currentQueueEntryId),
   check('erp_service_consumption_reports_revision_positive', sql`${table.revision} > 0`),
   check(
     'erp_service_consumption_reports_revision_consistent',
@@ -297,12 +301,17 @@ export const serviceConsumptionUsages = mysqlTable('erp_service_consumption_usag
   productId: int('product_id').notNull(),
   branchId: int('branch_id').notNull(),
   quantity: decimal('quantity', { precision: 16, scale: 3 }).notNull(),
+  unit: mysqlEnum('unit', consumableUnits).notNull(),
   unitCostSnapshot: decimal('unit_cost_snapshot', { precision: 16, scale: 6 }).notNull(),
   totalCost: decimal('total_cost', { precision: 16, scale: 2 }).notNull(),
   ledgerEntryId: int('ledger_entry_id').notNull(),
 }, (table) => [
   foreignKey({ name: 'erp_service_usages_report_fk', columns: [table.reportId], foreignColumns: [serviceConsumptionReports.id] }),
-  foreignKey({ name: 'erp_service_usages_ledger_fk', columns: [table.ledgerEntryId], foreignColumns: [erpConsumableLedgerEntries.id] }),
+  foreignKey({
+    name: 'erp_service_usages_ledger_fk',
+    columns: [table.ledgerEntryId, table.productId, table.branchId],
+    foreignColumns: [erpConsumableLedgerEntries.id, erpConsumableLedgerEntries.productId, erpConsumableLedgerEntries.branchId],
+  }),
   foreignKey({
     name: 'erp_service_consumption_usages_product_branch_fk',
     columns: [table.productId, table.branchId],

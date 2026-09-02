@@ -1,9 +1,9 @@
 import { createDatabase } from '@capella/database';
 import {
   accounts, branches, cashierSessions, clients, commissionLedgerEntries, employees, erpCategories,
-  erpConsumableBalances, erpConsumableLedgerEntries, erpProducts, erpProductStocks,
-  erpServices, erpStockMovements, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
-  serviceQueueEntries,
+  erpConsumableBalances, erpConsumableConfigurations, erpConsumableLedgerEntries, erpProducts, erpProductStocks,
+  erpServices, erpStockMovements, invoiceLineReassignments, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
+  serviceConsumptionUsages, serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
@@ -52,8 +52,10 @@ describe('consumables MySQL inventory integration', () => {
     await expect(repository.transfer({ ...data, direction: 'return', packages: 1, accountId })).resolves.toMatchObject({ sellableQuantity: 9, consumableQuantity: '150.000' });
     expect((await database.select().from(erpProductStocks).where(and(eq(erpProductStocks.productId, data.productId), eq(erpProductStocks.branchId, data.branchId))).limit(1))[0]?.quantity).toBe(9);
     expect((await database.select().from(erpConsumableBalances).where(eq(erpConsumableBalances.productId, data.productId)).limit(1))[0]?.quantity).toBe('150.000');
-    expect((await database.select().from(erpConsumableLedgerEntries)).map((row) => row.entryType)).toEqual(['reserve', 'return']);
-    expect((await database.select().from(erpStockMovements)).map((row) => row.reason)).toEqual(['consumable_reserve', 'consumable_return']);
+    expect((await database.select().from(erpConsumableLedgerEntries)
+      .where(eq(erpConsumableLedgerEntries.productId, data.productId))).map((row) => row.entryType)).toEqual(['reserve', 'return']);
+    expect((await database.select().from(erpStockMovements)
+      .where(eq(erpStockMovements.productId, data.productId))).map((row) => row.reason)).toEqual(['consumable_reserve', 'consumable_return']);
   });
 
   it('blocks transfers that would make either stock balance negative', async () => {
@@ -62,6 +64,17 @@ describe('consumables MySQL inventory integration', () => {
     await repository.configure(data.productId, data.branchId, 'gm', '100.000', accountId);
     await expect(repository.transfer({ ...data, direction: 'reserve', packages: 11, accountId })).rejects.toMatchObject({ code: 'CONSUMABLE_INSUFFICIENT_SELLABLE_STOCK' });
     await expect(repository.transfer({ ...data, direction: 'return', packages: 1, accountId })).rejects.toMatchObject({ code: 'CONSUMABLE_INSUFFICIENT_BALANCE' });
+  });
+
+  it('persists negative fractional transfer deltas as valid decimals', async () => {
+    const data = await fixture();
+    const repository = createDrizzleConsumablesRepository(database, createErpAuditCapability(), () => at);
+    await repository.configure(data.productId, data.branchId, 'ml', '0.500', accountId);
+    await repository.transfer({ ...data, direction: 'reserve', packages: 1, accountId });
+    await repository.transfer({ ...data, direction: 'return', packages: 1, accountId });
+    expect((await database.select({ delta: erpConsumableLedgerEntries.quantityDelta })
+      .from(erpConsumableLedgerEntries).where(eq(erpConsumableLedgerEntries.productId, data.productId))))
+      .toEqual([{ delta: '0.500' }, { delta: '-0.500' }]);
   });
 
   it('completes each queue ticket separately, supports no-consumables, and corrects by ledger differences', async () => {
@@ -81,13 +94,27 @@ describe('consumables MySQL inventory integration', () => {
     await database.update(invoices).set({ status: 'completed', amountPaid: '300.00', settlementStatus: 'settled' }).where(eq(invoices.id, invoiceId));
     const queueIds: number[] = [];
     for (let queueNumber = 1; queueNumber <= 3; queueNumber += 1) queueIds.push(Number((await database.insert(serviceQueueEntries).values({ invoiceId, invoiceLineId: lineId, branchId: data.branchId, cashierSessionId: sessionId, serviceId, queueNumber, createdAt: at }))[0].insertId));
+    const reassignedEmployeeId = Number((await database.insert(employees).values({ employeeCode: 900002, fullName: 'Reassigned Employee', personalPhone: '01000000002', whatsappPhone: '01000000002', pinHash: 'unused', age: 26, address: 'Cairo', branchId: data.branchId, shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00', createdAt: at, updatedAt: at }))[0].insertId);
+    await database.insert(invoiceLineReassignments).values({ invoiceId, invoiceLineId: lineId, branchId: data.branchId, fromEmployeeId: employeeId, toEmployeeId: reassignedEmployeeId, reason: 'Actual performer', operationReference: crypto.randomUUID(), actingAccountId: accountId, createdAt: at });
+    expect((await repository.listServices(data.branchId, { status: 'pending', employeeId: reassignedEmployeeId, page: 1, pageSize: 20 })).items)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ employeeId: reassignedEmployeeId, employeeName: 'Reassigned Employee' })]));
 
+    await expect(repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Too early', usages: [] }))
+      .rejects.toMatchObject({ code: 'CONSUMABLE_SERVICE_NOT_COMPLETED' });
     await repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: queueIds.slice(0, 2), usages: [{ productId: data.productId, quantity: '15.000' }] });
     await repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] });
     await repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Actual measurement', usages: [{ productId: data.productId, quantity: '5.000' }] });
 
+    await database.update(erpConsumableConfigurations).set({ unit: 'gm' }).where(and(
+      eq(erpConsumableConfigurations.productId, data.productId),
+      eq(erpConsumableConfigurations.branchId, data.branchId),
+    ));
+    await expect(repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Wrong unit', usages: [] }))
+      .rejects.toMatchObject({ code: 'CONSUMABLE_UNIT_MISMATCH' });
+
     expect((await database.select().from(erpConsumableBalances).where(eq(erpConsumableBalances.productId, data.productId)).limit(1))[0]?.quantity).toBe('280.000');
     expect((await database.select().from(serviceConsumptionReports)).map((report) => [report.revision, report.isCurrent, report.completionKind])).toEqual(expect.arrayContaining([[1, false, 'consumables'], [1, true, 'consumables'], [1, true, 'none'], [2, true, 'consumables']]));
+    expect((await database.select({ unit: serviceConsumptionUsages.unit }).from(serviceConsumptionUsages)).every(({ unit }) => unit === 'ml')).toBe(true);
     expect((await database.select().from(serviceQueueEntries)).every((entry) => entry.status === 'completed')).toBe(true);
   });
 });

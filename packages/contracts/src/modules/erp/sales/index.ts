@@ -89,7 +89,7 @@ const adjustmentSchema = z.discriminatedUnion('kind', [
 const serviceSaleLineSchema = z.object({
   itemType: z.literal('service'),
   serviceId: positiveMysqlIntSchema,
-  quantity: positiveMysqlIntSchema,
+  quantity: positiveMysqlIntSchema.max(100),
   unitPrice: serviceUnitPriceSchema,
 });
 

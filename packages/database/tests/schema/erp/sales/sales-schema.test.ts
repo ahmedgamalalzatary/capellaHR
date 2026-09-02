@@ -161,6 +161,9 @@ describe('ERP sales persistence foundation', () => {
       'erp_service_queue_session_branch_fk',
       'erp_service_queue_service_branch_fk',
     ]));
+    const lineQueueForeignKey = config.foreignKeys.find((value) => value.getName() === 'erp_service_queue_line_invoice_branch_fk')!;
+    expect(lineQueueForeignKey.reference().columns.map((column) => column.name))
+      .toEqual(['invoice_line_id', 'service_id', 'invoice_id', 'branch_id']);
     expect(config.checks.map((value) => value.name)).toContain(
       'erp_service_queue_number_positive',
     );
@@ -179,18 +182,25 @@ describe('ERP sales persistence foundation', () => {
   it('preserves every service consumption report revision and its actual usages', () => {
     const reports = table('serviceConsumptionReports');
     expect(Object.keys(reports)).toEqual(expect.arrayContaining([
-      'id', 'serviceQueueEntryId', 'revision', 'replacesReportId', 'isCurrent',
+      'id', 'serviceQueueEntryId', 'revision', 'replacesReportId', 'isCurrent', 'currentQueueEntryId',
       'completionKind', 'reason', 'actingAccountId', 'createdAt',
     ]));
     expect(getTableConfig(reports).indexes.map((entry) => entry.config.name)).toContain(
       'erp_service_consumption_reports_queue_revision_unique',
     );
+    expect(getTableConfig(reports).indexes.map((entry) => entry.config.name)).toContain(
+      'erp_service_consumption_reports_queue_current_unique',
+    );
 
     const usages = table('serviceConsumptionUsages');
     expect(Object.keys(usages)).toEqual(expect.arrayContaining([
       'id', 'reportId', 'productId', 'branchId', 'quantity',
-      'unitCostSnapshot', 'totalCost', 'ledgerEntryId',
+      'unit', 'unitCostSnapshot', 'totalCost', 'ledgerEntryId',
     ]));
+    const usageLedgerForeignKey = getTableConfig(usages).foreignKeys
+      .find((value) => value.getName() === 'erp_service_usages_ledger_fk')!;
+    expect(usageLedgerForeignKey.reference().columns.map((column) => column.name))
+      .toEqual(['ledger_entry_id', 'product_id', 'branch_id']);
   });
 
   it('records immutable employee reassignments for sold service lines', () => {

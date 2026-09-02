@@ -55,6 +55,16 @@ const queueMigrationName = readdirSync(migrationsDirectory)
 const queueMigration = queueMigrationName
   ? readFileSync(`${migrationsDirectory}/${queueMigrationName}`, 'utf8')
   : '';
+const consumablesMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0086_.*\.sql$/.test(name));
+const consumablesMigration = consumablesMigrationName
+  ? readFileSync(`${migrationsDirectory}/${consumablesMigrationName}`, 'utf8')
+  : '';
+const consumablesHardeningMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0088_.*\.sql$/.test(name));
+const consumablesHardeningMigration = consumablesHardeningMigrationName
+  ? readFileSync(`${migrationsDirectory}/${consumablesHardeningMigrationName}`, 'utf8')
+  : '';
 
 describe('ERP per-shift service queue migration', () => {
   it('creates one constrained queue ticket per sold service unit', () => {
@@ -69,6 +79,15 @@ describe('ERP per-shift service queue migration', () => {
     expect(queueMigration).toContain('line.quantity >= unit_numbers.unit_number');
     expect(queueMigration).toContain('erp-service-queue');
     expect(queueMigration).toContain('ALTER TABLE `report_exports`');
+  });
+
+  it('retires historical queue rows and hardens service-consumption ownership', () => {
+    expect(consumablesMigration).toContain("enum('pending','completed','overdue')");
+    expect(consumablesHardeningMigration).toContain("UPDATE `erp_service_queue_entries` SET `status` = 'canceled' WHERE `status` = 'pending'");
+    expect(consumablesHardeningMigration).toContain('erp_service_consumption_reports_queue_current_unique');
+    expect(consumablesHardeningMigration).toContain('FOREIGN KEY (`ledger_entry_id`,`product_id`,`branch_id`)');
+    expect(consumablesHardeningMigration).toContain('FOREIGN KEY (`invoice_line_id`,`service_id`,`invoice_id`,`branch_id`)');
+    expect(consumablesHardeningMigration).toContain('MODIFY COLUMN `source_id` int NOT NULL');
   });
 });
 

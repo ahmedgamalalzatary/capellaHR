@@ -24,6 +24,7 @@ import {
   invoiceReversals,
   invoices,
   payrollMonths,
+  serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/mysql2/migrator';
@@ -1018,6 +1019,9 @@ describe('ERP sale repository MySQL integration', () => {
     });
 
     expect(voided.status).toBe('voided');
+    expect(await database.select({ status: serviceQueueEntries.status }).from(serviceQueueEntries)
+      .where(eq(serviceQueueEntries.invoiceId, completed.id)))
+      .toEqual([expect.objectContaining({ status: 'canceled' })]);
     const reversalId = (await database.select({ id: invoiceReversals.id }).from(invoiceReversals)
       .where(eq(invoiceReversals.invoiceId, completed.id)))[0]!.id;
     expect(await database.select().from(commissionLedgerEntries)

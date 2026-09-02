@@ -13,7 +13,7 @@ vi.mock('../src/features/auth', () => ({ useSession: mocks.session }));
 
 import { ConsumablesView } from '../src/features/consumables/components/consumables-view';
 
-const page = (items: unknown[]) => ({ items, meta: { page: 1, pageSize: 20, total: items.length, totalPages: 1 } });
+const page = (items: unknown[], currentPage = 1, totalPages = 1) => ({ items, meta: { page: currentPage, pageSize: 100, total: items.length, totalPages } });
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><ConsumablesView /></QueryClientProvider>);
 
 beforeEach(() => {
@@ -43,5 +43,35 @@ describe('ConsumablesView', () => {
       expect(mocks.balances).toHaveBeenCalledTimes(2);
       expect(mocks.services).toHaveBeenCalledTimes(2);
     });
+    expect((screen.getAllByRole('combobox').at(-1) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByRole('spinbutton') as HTMLInputElement).value).toBe('');
+  });
+
+  it('loads every balance and service page', async () => {
+    mocks.balances
+      .mockResolvedValueOnce(page([{ productId: 9, productName: 'A', unit: 'ml', packageSize: '1.000', consumableQuantity: '1.000', sellableQuantity: 1 }], 1, 2))
+      .mockResolvedValueOnce(page([{ productId: 10, productName: 'B', unit: 'gm', packageSize: '1.000', consumableQuantity: '1.000', sellableQuantity: 1 }], 2, 2));
+    mocks.services
+      .mockResolvedValueOnce(page([{ id: 11, serviceId: 5, status: 'pending', queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }], 1, 2))
+      .mockResolvedValueOnce(page([{ id: 12, serviceId: 5, status: 'pending', queueNumber: 2, serviceName: 'Two', invoiceNumber: 'INV-2' }], 2, 2));
+    mount();
+    await screen.findByText('INV-2');
+    expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 100 }));
+    expect(mocks.services).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 100 }));
+  });
+
+  it('blocks incomplete usage rows and mixed-service selections', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, serviceId: 5, status: 'pending', queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' },
+      { id: 12, serviceId: 6, status: 'pending', queueNumber: 2, serviceName: 'Two', invoiceNumber: 'INV-2' },
+    ]));
+    mount();
+    const checks = await screen.findAllByRole('checkbox');
+    fireEvent.click(checks[0]!);
+    fireEvent.click(checks[1]!);
+    expect((checks[1] as HTMLInputElement).checked).toBe(false);
+    fireEvent.change(screen.getAllByRole('combobox').at(-1)!, { target: { value: '9' } });
+    fireEvent.click(screen.getAllByRole('button').at(-1)!);
+    await waitFor(() => expect(mocks.complete).not.toHaveBeenCalled());
   });
 });

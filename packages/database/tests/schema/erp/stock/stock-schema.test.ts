@@ -11,6 +11,12 @@ import {
 } from '../../../../src/schema/erp/stock/index.js';
 
 describe('ERP product stock schema', () => {
+  it('requires provenance for every consumable ledger entry', () => {
+    const config = getTableConfig(erpConsumableLedgerEntries);
+    expect(config.columns.find((column) => column.name === 'source_id')?.notNull).toBe(true);
+    expect(config.checks.map((value) => value.name)).toContain('erp_consumable_ledger_source_consistent');
+    expect(config.indexes.map((value) => value.config.name)).toContain('erp_consumable_ledger_id_product_branch_unique');
+  });
   it('records both sides of whole-package consumables transfers in sellable stock', () => {
     expect(stockMovementReasons).toEqual(expect.arrayContaining([
       'consumable_reserve', 'consumable_return',

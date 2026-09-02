@@ -46,6 +46,12 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('caps each service line at the supported queue cardinality', () => {
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ ...validDraft.lines[0], quantity: 101 }],
+    }).success).toBe(false);
+  });
   it('accepts an optional booking handover', () => {
     const parsed = completeSaleSchema.parse({
       clientId: 5,

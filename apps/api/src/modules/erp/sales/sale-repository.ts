@@ -1375,6 +1375,20 @@ export const createDrizzleSaleRepository = (
           }
 
           const selectedByLine = new Map(selected.map((line) => [line.invoiceLineId, line.quantity]));
+          for (const line of originalLines.filter((candidate) => (
+            candidate.itemType === 'service' && selectedByLine.has(candidate.id)
+          ))) {
+            const queueIds = (await transaction.select({ id: serviceQueueEntries.id })
+              .from(serviceQueueEntries).where(and(
+                eq(serviceQueueEntries.invoiceLineId, line.id),
+                inArray(serviceQueueEntries.status, ['pending', 'overdue']),
+              )).orderBy(desc(serviceQueueEntries.queueNumber))
+              .limit(selectedByLine.get(line.id)!).for('update')).map(({ id }) => id);
+            if (queueIds.length) {
+              await transaction.update(serviceQueueEntries).set({ status: 'canceled' })
+                .where(inArray(serviceQueueEntries.id, queueIds));
+            }
+          }
           const productLines = originalLines.filter((line) => (
             line.itemType === 'product' && selectedByLine.has(line.id)
           )).sort((left, right) => left.productId! - right.productId!);

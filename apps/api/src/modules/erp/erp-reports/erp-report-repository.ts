@@ -532,7 +532,7 @@ const serviceQueueFacts = (filters: ReportFilters) => sql`
     queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
     queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
     invoice.client_name_snapshot clientName,
-    line.employee_name_snapshot employeeName,
+    ${sql.raw(currentQueueEmployeeName)} employeeName,
     invoice.authorized_by_snapshot authorizedBy, queue.status status,
     queue.completed_at completedAt
   FROM erp_service_queue_entries queue
@@ -548,7 +548,7 @@ const serviceQueueFacts = (filters: ReportFilters) => sql`
     ...timestampFilter(filters, 'queue.created_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.client_name_snapshot',
-      'line.item_name_snapshot', 'line.employee_name_snapshot',
+      'line.item_name_snapshot', currentQueueEmployeeName,
       'invoice.authorized_by_snapshot', 'CAST(queue.queue_number AS CHAR)',
       'CAST(queue.cashier_session_id AS CHAR)',
     ]),
@@ -559,44 +559,42 @@ const serviceCompletionFacts = (filters: ReportFilters) => sql`
   SELECT report.id id, report.created_at eventDate, branch.name branchName,
     queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
     queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
-    invoice.client_name_snapshot clientName, line.employee_name_snapshot employeeName,
+    invoice.client_name_snapshot clientName, ${sql.raw(currentQueueEmployeeName)} employeeName,
     report.completion_kind completionKind,
-    COALESCE(GROUP_CONCAT(CONCAT(product.name, ' ', usage.quantity, ' ', config.unit)
+    COALESCE(GROUP_CONCAT(CONCAT(product.name, ' ', consumption_usage.quantity, ' ', consumption_usage.unit)
       ORDER BY product.name SEPARATOR '، '), '') consumables,
-    COALESCE(SUM(usage.total_cost), 0) totalCost
+    COALESCE(SUM(consumption_usage.total_cost), 0) totalCost
   FROM erp_service_consumption_reports report
   INNER JOIN erp_service_queue_entries queue ON queue.id = report.service_queue_entry_id
   INNER JOIN erp_invoices invoice ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
   INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id AND line.invoice_id = queue.invoice_id
   INNER JOIN branches branch ON branch.id = queue.branch_id
-  LEFT JOIN erp_service_consumption_usages usage ON usage.report_id = report.id
-  LEFT JOIN erp_products product ON product.id = usage.product_id
-  LEFT JOIN erp_consumable_configurations config ON config.product_id = usage.product_id AND config.branch_id = usage.branch_id
+  LEFT JOIN erp_service_consumption_usages consumption_usage ON consumption_usage.report_id = report.id
+  LEFT JOIN erp_products product ON product.id = consumption_usage.product_id
   ${condition([
     sql`report.is_current = true`, ...branchFilter(filters, 'queue.branch_id'),
     ...timestampFilter(filters, 'report.created_at'),
-    ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', 'line.employee_name_snapshot', 'product.name']),
+    ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', currentQueueEmployeeName, 'product.name']),
   ])}
   GROUP BY report.id, report.created_at, branch.name, queue.cashier_session_id,
     line.item_name_snapshot, queue.queue_number, invoice.invoice_number,
-    invoice.client_name_snapshot, line.employee_name_snapshot, report.completion_kind
+    invoice.client_name_snapshot, employeeName, report.completion_kind
 `;
 
 const consumableUsageFacts = (filters: ReportFilters) => sql`
-  SELECT usage.id id, report.created_at eventDate, branch.name branchName,
-    product.name productName, config.unit unit, line.item_name_snapshot serviceName,
-    line.employee_name_snapshot employeeName, usage.quantity quantity, usage.total_cost cost
-  FROM erp_service_consumption_usages usage
-  INNER JOIN erp_service_consumption_reports report ON report.id = usage.report_id
+  SELECT consumption_usage.id id, report.created_at eventDate, branch.name branchName,
+    product.name productName, consumption_usage.unit unit, line.item_name_snapshot serviceName,
+    ${sql.raw(currentQueueEmployeeName)} employeeName, consumption_usage.quantity quantity, consumption_usage.total_cost cost
+  FROM erp_service_consumption_usages consumption_usage
+  INNER JOIN erp_service_consumption_reports report ON report.id = consumption_usage.report_id
   INNER JOIN erp_service_queue_entries queue ON queue.id = report.service_queue_entry_id
   INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id
-  INNER JOIN erp_products product ON product.id = usage.product_id
-  INNER JOIN erp_consumable_configurations config ON config.product_id = usage.product_id AND config.branch_id = usage.branch_id
-  INNER JOIN branches branch ON branch.id = usage.branch_id
+  INNER JOIN erp_products product ON product.id = consumption_usage.product_id
+  INNER JOIN branches branch ON branch.id = consumption_usage.branch_id
   ${condition([
-    sql`report.is_current = true`, ...branchFilter(filters, 'usage.branch_id'),
+    sql`report.is_current = true`, ...branchFilter(filters, 'consumption_usage.branch_id'),
     ...timestampFilter(filters, 'report.created_at'),
-    ...searchFilter(filters, ['product.name', 'line.item_name_snapshot', 'line.employee_name_snapshot']),
+    ...searchFilter(filters, ['product.name', 'line.item_name_snapshot', currentQueueEmployeeName]),
   ])}
 `;
 
@@ -621,7 +619,7 @@ const serviceExceptionFacts = (filters: ReportFilters) => sql`
   SELECT queue.id id, queue.created_at eventDate, branch.name branchName,
     queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
     queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
-    invoice.client_name_snapshot clientName, line.employee_name_snapshot employeeName
+    invoice.client_name_snapshot clientName, ${sql.raw(currentQueueEmployeeName)} employeeName
   FROM erp_service_queue_entries queue
   INNER JOIN erp_invoices invoice ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
   INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id
@@ -629,7 +627,7 @@ const serviceExceptionFacts = (filters: ReportFilters) => sql`
   ${condition([
     sql`queue.status = 'overdue'`, ...branchFilter(filters, 'queue.branch_id'),
     ...timestampFilter(filters, 'queue.created_at'),
-    ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', 'line.employee_name_snapshot']),
+    ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', currentQueueEmployeeName]),
   ])}
 `;
 
@@ -745,6 +743,15 @@ const stockReasonLabels: Record<string, string> = {
 const purchaseStatusLabels: Record<string, string> = {
   posted: 'مرحّلة', cancelled: 'ملغاة',
 };
+
+const currentQueueEmployeeName = `COALESCE((
+  SELECT employee.full_name
+  FROM erp_invoice_line_reassignments reassignment
+  INNER JOIN employees employee ON employee.id = reassignment.to_employee_id
+  WHERE reassignment.invoice_line_id = line.id
+  ORDER BY reassignment.created_at DESC, reassignment.id DESC
+  LIMIT 1
+), line.employee_name_snapshot)`;
 const serviceStatusLabels: Record<string, string> = {
   pending: 'قيد الانتظار', completed: 'مكتملة', overdue: 'متأخرة',
 };

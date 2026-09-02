@@ -76,25 +76,48 @@ describe('ERP report reader', () => {
     expect(result).toMatchObject({ kind: 'success', total: 3, rowCount: 3 });
   });
 
-  it('publishes queue-history metadata for the existing reports page and PDF worker', async () => {
+  it.each([
+    ['erp-service-queue', 'تقرير أرقام أدوار الخدمات', [
+      ['id', 'المعرف'], ['eventDate', 'وقت الإصدار'], ['branchName', 'الفرع'], ['shiftId', 'الوردية'],
+      ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'], ['invoiceNumber', 'رقم الفاتورة'],
+      ['clientName', 'العميل'], ['employeeName', 'الموظف'], ['authorizedBy', 'الكاشير'],
+      ['status', 'الحالة'], ['completedAt', 'وقت الإنهاء'],
+    ]],
+    ['erp-service-completions', 'تقارير إنهاء الخدمات', [
+      ['id', 'المعرف'], ['eventDate', 'وقت الإنهاء'], ['branchName', 'الفرع'], ['shiftId', 'الوردية'],
+      ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'], ['invoiceNumber', 'رقم الفاتورة'],
+      ['clientName', 'العميل'], ['employeeName', 'الموظف'], ['completionKind', 'النتيجة'],
+      ['consumables', 'المستهلكات'], ['totalCost', 'التكلفة'],
+    ]],
+    ['erp-consumable-usage', 'استخدام المستهلكات', [
+      ['id', 'المعرف'], ['eventDate', 'الوقت'], ['branchName', 'الفرع'], ['productName', 'المستهلك'],
+      ['unit', 'الوحدة'], ['serviceName', 'الخدمة'], ['employeeName', 'الموظف'],
+      ['quantity', 'الكمية'], ['cost', 'التكلفة'],
+    ]],
+    ['erp-consumable-ledger', 'سجل مخزون المستهلكات', [
+      ['id', 'المعرف'], ['eventDate', 'الوقت'], ['branchName', 'الفرع'], ['productName', 'المستهلك'],
+      ['unit', 'الوحدة'], ['entryType', 'الحركة'], ['quantityDelta', 'التغيير'],
+      ['balanceAfter', 'الرصيد'], ['unitCost', 'تكلفة الوحدة'], ['totalCost', 'التكلفة'],
+      ['actingUsername', 'المنفذ'], ['note', 'ملاحظة'],
+    ]],
+    ['erp-service-exceptions', 'الخدمات المتأخرة', [
+      ['id', 'المعرف'], ['eventDate', 'وقت البيع'], ['branchName', 'الفرع'], ['shiftId', 'الوردية'],
+      ['serviceName', 'الخدمة'], ['queueNumber', 'رقم الدور'], ['invoiceNumber', 'رقم الفاتورة'],
+      ['clientName', 'العميل'], ['employeeName', 'الموظف'],
+    ]],
+  ] as const)('publishes exact %s metadata for report consumers', async (reportType, title, columns) => {
     const repository: ErpReportRepository = {
       readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
       readBatches: vi.fn(),
     };
     const result = await createErpReportReader(repository).read(
-      'erp-service-queue', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+      reportType, {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
     );
     expect(result).toMatchObject({
       kind: 'success',
       snapshot: {
-        title: 'تقرير أرقام أدوار الخدمات',
-        columns: expect.arrayContaining([
-          { key: 'queueNumber', label: 'رقم الدور' },
-          { key: 'serviceName', label: 'الخدمة' },
-          { key: 'shiftId', label: 'الوردية' },
-          { key: 'status', label: 'الحالة' },
-          { key: 'completedAt', label: 'وقت الإنهاء' },
-        ]),
+        title,
+        columns: columns.map(([key, label]) => ({ key, label })),
       },
     });
   });

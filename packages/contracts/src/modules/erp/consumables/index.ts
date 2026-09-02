@@ -13,12 +13,18 @@ const quantity = z.string().regex(/^\d{1,13}(?:\.\d{1,3})?$/)
     return `${whole.replace(/^0+(?=\d)/, '')}.${fraction.padEnd(3, '0')}`;
   })
   .refine((value) => Number(value) > 0, 'الكمية يجب أن تكون أكبر من صفر');
+const packageSize = z.string().regex(/^\d{1,11}(?:\.\d{1,3})?$/)
+  .transform((value) => {
+    const [whole = '0', fraction = ''] = value.split('.');
+    return `${whole.replace(/^0+(?=\d)/, '')}.${fraction.padEnd(3, '0')}`;
+  })
+  .refine((value) => Number(value) > 0, 'حجم العبوة يجب أن يكون أكبر من صفر');
 
 export const consumableUnitSchema = z.enum(['ml', 'gm']);
 
 export const configureConsumableSchema = z.object({
   unit: consumableUnitSchema,
-  packageSize: quantity,
+  packageSize,
   ...branchScope,
 }).strict();
 

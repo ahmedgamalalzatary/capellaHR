@@ -14,6 +14,10 @@ describe('ERP consumables contracts', () => {
       .toEqual({ unit: 'ml', packageSize: '150.000', branchId: 2 });
     expect(() => configureConsumableSchema.parse({ unit: 'l', packageSize: '1' })).toThrow();
     expect(() => configureConsumableSchema.parse({ unit: 'gm', packageSize: '0' })).toThrow();
+    expect(() => configureConsumableSchema.parse({ unit: 'gm', packageSize: '123456789012.001' })).toThrow();
+    expect(completeServiceExecutionsSchema.parse({
+      serviceQueueEntryIds: [11], usages: [{ productId: 7, quantity: '1234567890123.001' }],
+    }).usages[0]?.quantity).toBe('1234567890123.001');
   });
 
   it('moves only positive whole package counts in either direction', () => {
