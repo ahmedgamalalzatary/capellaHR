@@ -24,8 +24,8 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { readPending } from './pending-sale-storage';
 import { PendingSaleRecovery } from './pending-sale-recovery';
+import { MultiSaleWorkspace } from './multi-sale-workspace';
 import { errorMessage } from './sale-primitives';
-import { SaleWorkspace } from './sale-workspace';
 
 export function SalesView({ bookingId }: { bookingId?: number }) {
   const auth = useSession();
@@ -139,7 +139,7 @@ export function SalesView({ bookingId }: { bookingId?: number }) {
     return (
       <section className="space-y-5">
         {branchPicker}
-        <SaleWorkspace
+        <MultiSaleWorkspace
           key={`admin:${session.data.branchId}:${session.data.id}`}
           {...(branchId === undefined ? {} : { branchId })}
           workspaceBranchId={session.data.branchId}
@@ -153,7 +153,7 @@ export function SalesView({ bookingId }: { bookingId?: number }) {
   }
 
   return (
-    <SaleWorkspace
+    <MultiSaleWorkspace
       key={`${actor.type}:${actor.type === 'cashier' ? actor.accountId : 'admin'}:${session.data.branchId}:${session.data.id}`}
       {...(branchId === undefined ? {} : { branchId })}
       workspaceBranchId={session.data.branchId}

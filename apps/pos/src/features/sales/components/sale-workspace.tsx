@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from 'react';
 
 import { PageHeader } from '@/components/layout/page-header';
@@ -64,6 +65,7 @@ import {
   type Line,
   type PendingSale,
   type PendingSaleOwner,
+  type SaleOpenIntent,
 } from './sale-primitives';
 import { SaleQueueNotices } from './sale-queue-notices';
 import { useBookingPrefill } from './use-booking-prefill';
@@ -77,6 +79,9 @@ export function SaleWorkspace({
   accountId,
   role,
   bookingId,
+  intent = { mode: 'initial' },
+  tabs,
+  onSaleIdChange,
 }: {
   branchId?: number;
   workspaceBranchId: number;
@@ -84,8 +89,19 @@ export function SaleWorkspace({
   accountId: number | null;
   role: 'admin' | 'cashier';
   bookingId?: number;
+  /** How this sale was opened; frozen for the life of the mounted sale. */
+  intent?: SaleOpenIntent;
+  /** The parked-sales bar, rendered above the sale and above the saved receipt. */
+  tabs?: ReactNode;
+  /** Reports the request key this sale writes under, which a restore or reset changes. */
+  onSaleIdChange?: (idempotencyKey: string) => void;
 }) {
   const queryClient = useQueryClient();
+  /**
+   * The sale is remounted whenever the cashier switches parked sales, so the intent
+   * it opened with is captured once and never reacts to a later render.
+   */
+  const [mountIntent] = useState(() => intent);
   const workspaceOwner = useMemo<PendingSaleOwner>(() => ({
     accountId,
     role,
@@ -128,10 +144,46 @@ export function SaleWorkspace({
    * lookup can never land on top of a newer selection.
    */
   const clientLookup = useRef(0);
+  /**
+   * True while a restore is fetching the client back by id. The draft counts as
+   * progress meanwhile, so a sale whose only content is its client is not erased
+   * by the autosave in the moment between restoring it and the lookup landing.
+   */
+  const [restoringClient, setRestoringClient] = useState(false);
   const selectClient = useCallback((next: Client | null) => {
     clientLookup.current += 1;
+    setRestoringClient(false);
     setClient(next);
   }, []);
+  /**
+   * Puts a stored draft back on screen. The client is refetched by id because the
+   * stored copy deliberately holds no personal data — only the identifiers.
+   */
+  const applyDraft = useCallback((draft: StoredSaleDraft) => {
+    setEmployee(draft.employee);
+    setActiveBookingId(draft.bookingId);
+    setSeller(draft.seller ?? null);
+    setLines(restoredLines(draft));
+    setDiscountKind(draft.discountKind);
+    setDiscountValue(draft.discountValue);
+    setTaxKind(draft.taxKind);
+    setTaxValue(draft.taxValue);
+    setPayments(draft.payments);
+    setPaymentsTouched(draft.paymentsTouched);
+    setIdempotencyKey(draft.idempotencyKey);
+    selectClient(null);
+    if (!draft.client) return;
+    const lookup = clientLookup.current;
+    setRestoringClient(true);
+    void getClient(draft.client.id, branchId)
+      .then((saved) => {
+        if (mounted.current && clientLookup.current === lookup) setClient(saved);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted.current && clientLookup.current === lookup) setRestoringClient(false);
+      });
+  }, [branchId, selectClient]);
   const [draftStorageError, setDraftStorageError] = useState(false);
   const [pendingSale, setPendingSale] = useState<PendingSale | null>(null);
   const [storageError, setStorageError] = useState(false);
@@ -140,7 +192,9 @@ export function SaleWorkspace({
   /** Printed once per saved sale, so a retry render never sends a second copy to the printer. */
   const autoPrinted = useRef<number | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
-  const [idempotencyKey, setIdempotencyKey] = useState(createUuid);
+  const [idempotencyKey, setIdempotencyKey] = useState(
+    () => (mountIntent.mode === 'resume' ? mountIntent.draft.idempotencyKey : createUuid()),
+  );
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
   const [conflictRestored, setConflictRestored] = useState(false);
   const [backgroundSyncCount, setBackgroundSyncCount] = useState(0);
@@ -151,14 +205,16 @@ export function SaleWorkspace({
   const mounted = useRef(true);
   const submitting = useRef(false);
   const hasDraftProgress = Boolean(
-    client || employee || seller || lines.length > 0 || discountValue || taxValue || paymentsTouched,
+    client || employee || seller || lines.length > 0 || discountValue || taxValue
+      || paymentsTouched || restoringClient,
   );
   const { booking, bookingEmployees } = useBookingPrefill({
     ...(bookingId === undefined ? {} : { bookingId }),
     ...(branchId === undefined ? {} : { branchId }),
     draftHydrated,
     activeBookingId,
-    offeredDraft,
+    // A resumed sale already holds the cashier's own work; a booking never overwrites it.
+    offeredDraft: offeredDraft ?? (mountIntent.mode === 'resume' ? mountIntent.draft : null),
     hasDraftProgress,
     setBookingPrefillError,
     setClient,
@@ -238,16 +294,17 @@ export function SaleWorkspace({
         return;
       }
       releaseLease = release;
-      // Offered, never applied on its own: the cashier decides, exactly as on the
-      // other counter screens.
-      setOfferedDraft(readSaleDraft(workspaceOwner));
+      // A sale the cashier picked from the parked bar is put back at once; one merely
+      // found in storage on arrival is offered, never applied on its own.
+      if (mountIntent.mode === 'resume') applyDraft(mountIntent.draft);
+      else if (mountIntent.mode === 'initial') setOfferedDraft(readSaleDraft(workspaceOwner));
       setDraftHydrated(true);
     });
     return () => {
       cancelled = true;
       releaseLease();
     };
-  }, [workspaceOwner]);
+  }, [applyDraft, mountIntent, workspaceOwner]);
 
   useOfflineSaleSync({
     draftHydrated,
@@ -256,6 +313,10 @@ export function SaleWorkspace({
     setPendingSale,
     setBackgroundSyncCount,
   });
+
+  useEffect(() => {
+    onSaleIdChange?.(idempotencyKey);
+  }, [idempotencyKey, onSaleIdChange]);
 
   const servicePricesValid = lines.every((line) => {
     if (line.itemType === 'product') return true;
@@ -284,7 +345,11 @@ export function SaleWorkspace({
   });
 
   useEffect(() => {
-    if (!draftHydrated) return;
+    /**
+     * A restore still fetching its client owns the stored record: saving now would
+     * overwrite the parked sale with a copy that has no client at all.
+     */
+    if (!draftHydrated || restoringClient) return;
     if (!hasDraftProgress) {
       removeSaleDraft(workspaceOwner, idempotencyKey);
       setDraftStorageError(false);
@@ -317,6 +382,7 @@ export function SaleWorkspace({
     lines,
     payments,
     paymentsTouched,
+    restoringClient,
     seller,
     taxKind,
     taxValue,
@@ -463,27 +529,8 @@ export function SaleWorkspace({
     const draft = item.recoveryDraft;
     if (!draft) return;
     removeSaleDraft(workspaceOwner, idempotencyKey);
-    selectClient(null);
-    // The recovery draft keeps only the client id, so the record is fetched back
-    // exactly as an offered draft does.
-    if (draft.client) {
-      const lookup = clientLookup.current;
-      void getClient(draft.client.id, branchId)
-        .then((saved) => {
-          if (mounted.current && clientLookup.current === lookup) setClient(saved);
-        })
-        .catch(() => undefined);
-    }
-    setEmployee(draft.employee);
-    setActiveBookingId(draft.bookingId);
-    setSeller(draft.seller ?? null);
-    setLines(restoredLines(draft));
-    setDiscountKind(draft.discountKind);
-    setDiscountValue(draft.discountValue);
-    setTaxKind(draft.taxKind);
-    setTaxValue(draft.taxValue);
-    setPayments(draft.payments);
-    setPaymentsTouched(draft.paymentsTouched);
+    applyDraft(draft);
+    // The rejected request is spent: the reopened sale submits under a new key.
     setIdempotencyKey(createUuid());
     setReplacesIdempotencyKey(item.input.idempotencyKey);
     setPendingSale(null);
@@ -535,35 +582,13 @@ export function SaleWorkspace({
     setIdempotencyKey(createUuid());
   };
 
-  /**
-   * Puts the offered draft back on screen. The client is refetched by id because the
-   * stored copy deliberately holds no personal data — only the identifiers.
-   */
+  /** Puts the offered draft back on screen at the cashier's request. */
   const restoreOfferedDraft = () => {
     const draft = offeredDraft;
     if (!draft) return;
     setOfferedDraft(null);
-    setEmployee(draft.employee);
-    setActiveBookingId(draft.bookingId);
-    setSeller(draft.seller ?? null);
-    setLines(restoredLines(draft));
-    setDiscountKind(draft.discountKind);
-    setDiscountValue(draft.discountValue);
-    setTaxKind(draft.taxKind);
-    setTaxValue(draft.taxValue);
-    setPayments(draft.payments);
-    setPaymentsTouched(draft.paymentsTouched);
-    setIdempotencyKey(draft.idempotencyKey);
+    applyDraft(draft);
     setDraftRestored(true);
-    selectClient(null);
-    if (draft.client) {
-      const lookup = clientLookup.current;
-      void getClient(draft.client.id, branchId)
-        .then((saved) => {
-          if (mounted.current && clientLookup.current === lookup) setClient(saved);
-        })
-        .catch(() => undefined);
-    }
   };
 
   const discardOfferedDraft = () => {
@@ -574,13 +599,16 @@ export function SaleWorkspace({
 
   if (completed) {
     return (
-      <SaleCompletedCard
-        completed={completed}
-        {...(branchId === undefined ? {} : { branchId })}
-        printError={printError}
-        onPrint={printReceipt}
-        onReset={reset}
-      />
+      <section className="space-y-5">
+        {tabs}
+        <SaleCompletedCard
+          completed={completed}
+          {...(branchId === undefined ? {} : { branchId })}
+          printError={printError}
+          onPrint={printReceipt}
+          onReset={reset}
+        />
+      </section>
     );
   }
 
@@ -590,6 +618,8 @@ export function SaleWorkspace({
         title="بيع جديد"
         description="اختر العميل والخدمات أو المنتجات والموظف ثم راجع الإجمالي المحسوب من الخادم."
       />
+
+      {tabs}
 
       <SaleDraftNotices
         offeredDraft={offeredDraft}

@@ -10,7 +10,7 @@ import type { AssignableEmployee } from '@/features/employee-assignment';
 import type { ProductSaleItem } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 
-import type { SaleDraftOwner } from '../sale-draft-storage';
+import type { SaleDraftOwner, StoredSaleDraft } from '../sale-draft-storage';
 
 export const errorMessage = (error: unknown) => (
   error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.'
@@ -63,6 +63,18 @@ export type AdjustmentKind = 'percentage' | 'fixed';
 /** Admin is a database-enforced singleton and has no public account id. */
 export type PendingSaleOwner = SaleDraftOwner;
 export type PendingSale = { owner: PendingSaleOwner; input: CompleteSaleInput };
+
+/**
+ * How the sale on screen was opened.
+ *
+ * `initial` is the counter landing on the page: a saved draft is offered, never
+ * applied behind the cashier's back. `new` and `resume` are deliberate choices from
+ * the parked-sales bar, so they take effect immediately.
+ */
+export type SaleOpenIntent =
+  | { mode: 'initial' }
+  | { mode: 'new' }
+  | { mode: 'resume'; draft: StoredSaleDraft };
 
 /**
  * Cents arithmetic on the decimal strings the API speaks. Kept exact: money never

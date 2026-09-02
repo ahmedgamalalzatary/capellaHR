@@ -40,10 +40,38 @@ export type StoredSaleDraft = Omit<SaleDraft, 'client'> & {
   client: Pick<Client, 'id' | 'branchId'> | null;
 };
 
+/** A stored draft with its timestamps: `createdAt` fixes the order of parked sales. */
+export type StoredSaleDraftRecord = {
+  draft: StoredSaleDraft;
+  createdAt: number;
+  savedAt: number;
+};
+
 const PREFIX = 'capella:sale-draft';
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1_000;
 const TAB_KEY = 'capella:sale-draft-tab';
+const CHANGE_EVENT = 'capella:sale-draft-change';
 const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Session storage fires no event for writes made by its own document, so the parked
+ * sale list is told about every change through this counter, exactly as the offline
+ * sale queue does for its own records.
+ */
+let draftsVersion = 0;
+
+const notifyDraftChange = () => {
+  draftsVersion += 1;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CHANGE_EVENT));
+};
+
+export const getSaleDraftsVersion = () => draftsVersion;
+
+export const subscribeSaleDrafts = (listener: () => void) => {
+  if (typeof window === 'undefined') return () => undefined;
+  window.addEventListener(CHANGE_EVENT, listener);
+  return () => window.removeEventListener(CHANGE_EVENT, listener);
+};
 
 const workspaceKey = (owner: SaleDraftOwner) => [
   PREFIX,
@@ -172,13 +200,18 @@ export const parseStoredSaleDraft = (value: unknown): StoredSaleDraft | null => 
   isSaleDraft(value) ? sanitizeSaleDraft(value) : null
 );
 
-const decodeStoredDraft = (stored: string): { draft: StoredSaleDraft; savedAt: number } | null => {
+const decodeStoredDraft = (stored: string): StoredSaleDraftRecord | null => {
   const parsed: unknown = JSON.parse(stored);
   if (!isRecord(parsed) || typeof parsed.savedAt !== 'number') {
     return null;
   }
   const draft = parseStoredSaleDraft(parsed.draft);
-  return draft ? { draft, savedAt: parsed.savedAt } : null;
+  if (!draft) return null;
+  return {
+    draft,
+    createdAt: typeof parsed.createdAt === 'number' ? parsed.createdAt : parsed.savedAt,
+    savedAt: parsed.savedAt,
+  };
 };
 
 const cancelExpiry = (key: string) => {
@@ -197,6 +230,7 @@ const scheduleExpiry = (key: string, savedAt: number) => {
   expiryTimers.set(key, setTimeout(() => {
     try {
       sessionStorage.removeItem(key);
+      notifyDraftChange();
     } catch {
       // A visibility/pageshow prune will retry if storage becomes available.
     } finally {
@@ -206,6 +240,7 @@ const scheduleExpiry = (key: string, savedAt: number) => {
 };
 
 const pruneExpiredDrafts = () => {
+  let removed = false;
   const legacyKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
   for (const key of legacyKeys) {
     if (key?.startsWith(`${PREFIX}:`)) localStorage.removeItem(key);
@@ -220,6 +255,7 @@ const pruneExpiredDrafts = () => {
       if (!decoded || Date.now() - decoded.savedAt >= DRAFT_TTL_MS) {
         sessionStorage.removeItem(key);
         cancelExpiry(key);
+        removed = true;
       } else {
         sessionStorage.setItem(key, JSON.stringify(decoded));
         scheduleExpiry(key, decoded.savedAt);
@@ -227,8 +263,10 @@ const pruneExpiredDrafts = () => {
     } catch {
       sessionStorage.removeItem(key);
       cancelExpiry(key);
+      removed = true;
     }
   }
+  if (removed) notifyDraftChange();
 };
 
 const enforceDraftRetention = () => {
@@ -248,6 +286,19 @@ if (typeof window !== 'undefined') {
   });
 }
 
+/**
+ * Moves a draft saved by a build that kept one draft per workspace onto its
+ * idempotency-keyed home, so parked sales and single drafts share one shape.
+ */
+const migrateLegacyDraft = (owner: SaleDraftOwner): StoredSaleDraft | null => {
+  const legacy = sessionStorage.getItem(saleDraftStorageKey(owner));
+  if (!legacy) return null;
+  const decoded = decodeStoredDraft(legacy);
+  if (!decoded) return null;
+  if (writeSaleDraft(owner, decoded.draft)) sessionStorage.removeItem(saleDraftStorageKey(owner));
+  return decoded.draft;
+};
+
 export const readSaleDraft = (owner: SaleDraftOwner): StoredSaleDraft | null => {
   if (typeof window === 'undefined') return null;
   try {
@@ -262,14 +313,65 @@ export const readSaleDraft = (owner: SaleDraftOwner): StoredSaleDraft | null => 
       }
     }
 
-    const legacy = sessionStorage.getItem(saleDraftStorageKey(owner));
-    if (!legacy) return null;
-    const decoded = decodeStoredDraft(legacy);
-    if (!decoded) return null;
-    if (writeSaleDraft(owner, decoded.draft)) sessionStorage.removeItem(saleDraftStorageKey(owner));
-    return decoded.draft;
+    return migrateLegacyDraft(owner);
   } catch {
     return null;
+  }
+};
+
+/**
+ * Every sale parked in this workspace, oldest first. The order follows the first
+ * save of each sale so the tab a cashier is typing into never moves.
+ */
+export const listSaleDrafts = (owner: SaleDraftOwner): StoredSaleDraftRecord[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    pruneExpiredDrafts();
+    migrateLegacyDraft(owner);
+    const prefix = `${workspaceKey(owner)}:`;
+    return Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index))
+      .filter((key): key is string => key?.startsWith(prefix) === true && !key.endsWith(':active'))
+      .flatMap((key) => {
+        const stored = sessionStorage.getItem(key);
+        if (!stored) return [];
+        try {
+          const decoded = decodeStoredDraft(stored);
+          // A key that disagrees with the draft it holds is not addressable; ignore it.
+          if (!decoded || key !== saleDraftStorageKey(owner, decoded.draft.idempotencyKey)) return [];
+          return [decoded];
+        } catch {
+          return [];
+        }
+      })
+      .sort((left, right) => left.createdAt - right.createdAt
+        || left.draft.idempotencyKey.localeCompare(right.draft.idempotencyKey));
+  } catch {
+    return [];
+  }
+};
+
+export const readActiveSaleDraftId = (owner: SaleDraftOwner): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return sessionStorage.getItem(activeDraftKey(owner));
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Records which parked sale is on screen, so leaving `/sales` and coming back
+ * reopens the one the cashier was last serving.
+ */
+export const setActiveSaleDraftId = (owner: SaleDraftOwner, idempotencyKey: string | null) => {
+  try {
+    const key = activeDraftKey(owner);
+    if (idempotencyKey === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, idempotencyKey);
+    notifyDraftChange();
+    return true;
+  } catch {
+    return false;
   }
 };
 
@@ -282,8 +384,22 @@ export const writeSaleDraft = (owner: SaleDraftOwner, draft: SaleDraft | StoredS
     sessionStorage.setItem(activeKey, draft.idempotencyKey);
     const key = saleDraftStorageKey(owner, draft.idempotencyKey);
     const savedAt = Date.now();
-    sessionStorage.setItem(key, JSON.stringify({ savedAt, draft: sanitizeSaleDraft(draft) }));
+    const existing = sessionStorage.getItem(key);
+    let createdAt = savedAt;
+    if (existing) {
+      try {
+        createdAt = decodeStoredDraft(existing)?.createdAt ?? savedAt;
+      } catch {
+        createdAt = savedAt;
+      }
+    }
+    sessionStorage.setItem(key, JSON.stringify({
+      createdAt,
+      savedAt,
+      draft: sanitizeSaleDraft(draft),
+    }));
     scheduleExpiry(key, savedAt);
+    notifyDraftChange();
     return true;
   } catch {
     try {
@@ -305,6 +421,7 @@ export const removeSaleDraft = (owner: SaleDraftOwner, idempotencyKey: string) =
     if (sessionStorage.getItem(activeKey) === idempotencyKey) {
       sessionStorage.removeItem(activeKey);
     }
+    notifyDraftChange();
     return true;
   } catch {
     return false;
@@ -323,4 +440,5 @@ export const clearAllSaleDrafts = () => {
     }
   }
   for (const key of expiryTimers.keys()) cancelExpiry(key);
+  notifyDraftChange();
 };

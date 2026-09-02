@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireSaleDraftTab,
   clearAllSaleDrafts,
+  listSaleDrafts,
+  readActiveSaleDraftId,
   readSaleDraft,
   removeSaleDraft,
   saleDraftStorageKey,
+  setActiveSaleDraftId,
+  subscribeSaleDrafts,
   writeSaleDraft,
   type SaleDraft,
   type SaleDraftOwner,
@@ -265,5 +269,78 @@ describe('sale draft storage', () => {
     });
 
     await expect(acquireSaleDraftTab(owner)).resolves.toEqual(expect.any(Function));
+  });
+
+  it('lists parked sales in the order they were opened, however they are edited', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-02T10:00:00.000Z'));
+    const second: SaleDraft = { ...draft, idempotencyKey: crypto.randomUUID() };
+    writeSaleDraft(owner, draft);
+    vi.setSystemTime(new Date('2026-09-02T10:05:00.000Z'));
+    writeSaleDraft(owner, second);
+    // Typing into the older sale must not push it behind the newer one.
+    vi.setSystemTime(new Date('2026-09-02T10:09:00.000Z'));
+    writeSaleDraft(owner, { ...draft, taxValue: '7.00' });
+
+    expect(listSaleDrafts(owner).map((record) => record.draft.idempotencyKey))
+      .toEqual([draft.idempotencyKey, second.idempotencyKey]);
+    vi.useRealTimers();
+  });
+
+  it('lists only the sales parked by this account in this branch and shift', () => {
+    const otherShift = { ...owner, cashierSessionId: 14 };
+    writeSaleDraft(owner, draft);
+    writeSaleDraft(otherShift, { ...draft, idempotencyKey: crypto.randomUUID() });
+
+    expect(listSaleDrafts(owner).map((record) => record.draft.idempotencyKey))
+      .toEqual([draft.idempotencyKey]);
+    expect(listSaleDrafts(otherShift)).toHaveLength(1);
+  });
+
+  it('ignores a parked record filed under a key that is not its own', () => {
+    writeSaleDraft(owner, draft);
+    const misfiled = saleDraftStorageKey(owner, crypto.randomUUID());
+    sessionStorage.setItem(
+      misfiled,
+      sessionStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))!,
+    );
+
+    expect(listSaleDrafts(owner).map((record) => record.draft.idempotencyKey))
+      .toEqual([draft.idempotencyKey]);
+  });
+
+  it('reopens the parked sale the cashier was last serving', () => {
+    const second: SaleDraft = { ...draft, idempotencyKey: crypto.randomUUID() };
+    writeSaleDraft(owner, draft);
+    writeSaleDraft(owner, second);
+    expect(readActiveSaleDraftId(owner)).toBe(second.idempotencyKey);
+
+    expect(setActiveSaleDraftId(owner, draft.idempotencyKey)).toBe(true);
+
+    expect(readActiveSaleDraftId(owner)).toBe(draft.idempotencyKey);
+    expect(readSaleDraft(owner)?.idempotencyKey).toBe(draft.idempotencyKey);
+  });
+
+  it('leaves no sale selected once the cashier starts a fresh one', () => {
+    writeSaleDraft(owner, draft);
+
+    expect(setActiveSaleDraftId(owner, null)).toBe(true);
+
+    expect(readActiveSaleDraftId(owner)).toBeNull();
+    expect(listSaleDrafts(owner)).toHaveLength(1);
+  });
+
+  it('announces every change so the parked-sale bar can follow it', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeSaleDrafts(listener);
+
+    writeSaleDraft(owner, draft);
+    expect(listener).toHaveBeenCalledTimes(1);
+    removeSaleDraft(owner, draft.idempotencyKey);
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
+    writeSaleDraft(owner, draft);
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 });
