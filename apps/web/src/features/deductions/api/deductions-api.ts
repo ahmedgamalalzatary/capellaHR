@@ -7,7 +7,7 @@ import type {
   ListAdjustmentsParams,
 } from '../../financial-adjustments/types';
 
-export type Deduction = FinancialAdjustment;
+export type Deduction = FinancialAdjustment & { reason: string | null };
 
 export function listDeductions(
   params: ListAdjustmentsParams = {},
@@ -27,7 +27,7 @@ export function createDeduction(input: CreateDeductionInput): Promise<Deduction>
   return api.post<Deduction>('/deductions', input);
 }
 
-/** The employee is immutable; only amount and payroll month may change. */
+/** The employee is immutable; amount, payroll month, and reason may change. */
 export function updateDeduction(id: number, input: UpdateDeductionInput): Promise<Deduction> {
   return api.patch<Deduction>(`/deductions/${id}`, input);
 }

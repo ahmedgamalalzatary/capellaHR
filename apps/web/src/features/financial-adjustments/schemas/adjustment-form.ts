@@ -43,12 +43,26 @@ const bonusReason = z
   .min(1, 'أدخل سبب المكافأة')
   .max(500, 'يجب ألا يزيد سبب المكافأة عن 500 حرف');
 
+const deductionReason = z
+  .string()
+  .trim()
+  .min(1, 'أدخل سبب الخصم')
+  .max(200, 'يجب ألا يزيد سبب الخصم عن 200 حرف');
+
 export const bonusAdjustmentCreateFormSchema = adjustmentCreateFormSchema.extend({
   reason: bonusReason,
 });
 
 export const bonusAdjustmentUpdateFormSchema = adjustmentUpdateFormSchema.extend({
   reason: bonusReason,
+});
+
+export const deductionAdjustmentCreateFormSchema = adjustmentCreateFormSchema.extend({
+  reason: deductionReason,
+});
+
+export const deductionAdjustmentUpdateFormSchema = adjustmentUpdateFormSchema.extend({
+  reason: deductionReason,
 });
 
 export type AdjustmentCreateFormValues = z.infer<typeof adjustmentCreateFormSchema> & {

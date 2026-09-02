@@ -5,6 +5,8 @@ import {
   adjustmentUpdateFormSchema,
   bonusAdjustmentCreateFormSchema,
   bonusAdjustmentUpdateFormSchema,
+  deductionAdjustmentCreateFormSchema,
+  deductionAdjustmentUpdateFormSchema,
 } from '../src/features/financial-adjustments/schemas/adjustment-form';
 
 describe('adjustmentCreateFormSchema', () => {
@@ -41,5 +43,20 @@ describe('bonus adjustment form schemas', () => {
     expect(bonusAdjustmentCreateFormSchema.parse({ ...create, reason: '  أداء استثنائي  ' }))
       .toEqual({ employeeId: 1, amount: '100', payrollMonth: '2026-06', reason: 'أداء استثنائي' });
     expect(adjustmentCreateFormSchema.safeParse(create).success).toBe(true);
+  });
+});
+
+describe('deduction adjustment form schemas', () => {
+  test('require, trim, and limit the reason to 200 characters', () => {
+    const create = { employeeId: '1', amount: '100', payrollMonth: '2026-06' };
+    const update = { amount: '100', payrollMonth: '2026-06' };
+
+    expect(deductionAdjustmentCreateFormSchema.safeParse(create).success).toBe(false);
+    expect(deductionAdjustmentUpdateFormSchema.safeParse(update).success).toBe(false);
+    expect(deductionAdjustmentCreateFormSchema.parse({ ...create, reason: '  Late arrival  ' }))
+      .toEqual({ employeeId: 1, amount: '100', payrollMonth: '2026-06', reason: 'Late arrival' });
+    expect(deductionAdjustmentUpdateFormSchema.safeParse({
+      ...update, reason: 'x'.repeat(201),
+    }).success).toBe(false);
   });
 });

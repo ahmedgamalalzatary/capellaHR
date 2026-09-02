@@ -20,7 +20,8 @@ const { branchId: branchIdAtCreation, assignment: assignmentAtCreation } = branc
 const fields = {
   id: deductions.id, employeeId: deductions.employeeId, employeeCode: employees.employeeCode,
   employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
-  payrollMonth: deductions.payrollMonth, amount: deductions.amount, employeeDeletedAt: employees.deletedAt,
+  payrollMonth: deductions.payrollMonth, amount: deductions.amount, reason: deductions.reason,
+  employeeDeletedAt: employees.deletedAt,
   createdAt: deductions.createdAt, updatedAt: deductions.updatedAt,
 };
 const rawFind = async (executor: Executor, id: number) => (
@@ -52,7 +53,7 @@ export const createDrizzleDeductionRepository = (
         const at = context.now();
         const inserted = await transaction.insert(deductions).values({
           employeeId: input.employeeId, payrollMonth: payrollMonthStart(input.payrollMonth),
-          amount: input.amount, createdAt: at, updatedAt: at,
+          amount: input.amount, reason: input.reason, createdAt: at, updatedAt: at,
         });
         const id = Number(inserted[0].insertId);
         const record = (await findRecord(transaction, id))!;
@@ -101,6 +102,7 @@ export const createDrizzleDeductionRepository = (
         await transaction.update(deductions).set({
           ...(input.amount === undefined ? {} : { amount: input.amount }),
           ...(input.payrollMonth === undefined ? {} : { payrollMonth: payrollMonthStart(input.payrollMonth) }),
+          reason: input.reason,
           updatedAt: context.now(),
         }).where(eq(deductions.id, id));
         const record = (await findRecord(transaction, id))!;

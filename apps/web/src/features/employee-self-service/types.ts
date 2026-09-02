@@ -36,6 +36,7 @@ export type SelfServiceAdjustment = {
   id: number;
   payrollMonth: string;
   amount: string;
+  reason?: string | null;
   createdAt: string;
   updatedAt: string;
 };

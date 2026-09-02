@@ -167,6 +167,8 @@ describe('MySQL-backed reports reading', () => {
       }
       if (reportType === 'deductions') {
         expect(result.snapshot.rows[0]?.amount).toBe('25.00');
+        expect(result.snapshot.rows[0]?.reason).toBe('Late arrival');
+        expect(result.snapshot.columns).toContainEqual({ key: 'reason', label: 'سبب الخصم' });
         expect(result.snapshot.summary.totalAmount).toBe('25.00');
       }
       if (reportType === 'advances') {

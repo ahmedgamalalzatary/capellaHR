@@ -21,6 +21,8 @@ import {
   adjustmentUpdateFormSchema,
   bonusAdjustmentCreateFormSchema,
   bonusAdjustmentUpdateFormSchema,
+  deductionAdjustmentCreateFormSchema,
+  deductionAdjustmentUpdateFormSchema,
   type AdjustmentCreateFormValues,
   type AdjustmentUpdateFormValues,
 } from '../schemas/adjustment-form';
@@ -56,12 +58,14 @@ function AdjustmentCreateForm({
   queryKeys,
   title,
   reasonLabel,
+  reasonMaxLength,
   onDone,
 }: {
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
   title: string;
   reasonLabel: string | undefined;
+  reasonMaxLength: 200 | 500 | undefined;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -76,7 +80,11 @@ function AdjustmentCreateForm({
     handleSubmit,
     formState: { errors },
   } = useForm<CreateFormInput, unknown, AdjustmentCreateFormValues>({
-    resolver: zodResolver(reasonLabel ? bonusAdjustmentCreateFormSchema : adjustmentCreateFormSchema),
+    resolver: zodResolver(
+      reasonMaxLength === 200
+        ? deductionAdjustmentCreateFormSchema
+        : reasonLabel ? bonusAdjustmentCreateFormSchema : adjustmentCreateFormSchema,
+    ),
     defaultValues: { employeeId: '', amount: '', payrollMonth: '', reason: '' },
   });
 
@@ -151,7 +159,7 @@ function AdjustmentCreateForm({
               <textarea
                 id="adjustment-reason"
                 rows={3}
-                maxLength={500}
+                maxLength={reasonMaxLength}
                 className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
                 {...register('reason')}
               />
@@ -182,6 +190,7 @@ function AdjustmentEditForm({
   record,
   title,
   reasonLabel,
+  reasonMaxLength,
   onDone,
 }: {
   api: AdjustmentApi;
@@ -189,6 +198,7 @@ function AdjustmentEditForm({
   record: FinancialAdjustment;
   title: string;
   reasonLabel: string | undefined;
+  reasonMaxLength: 200 | 500 | undefined;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -197,7 +207,11 @@ function AdjustmentEditForm({
     handleSubmit,
     formState: { errors },
   } = useForm<AdjustmentUpdateFormValues>({
-    resolver: zodResolver(reasonLabel ? bonusAdjustmentUpdateFormSchema : adjustmentUpdateFormSchema),
+    resolver: zodResolver(
+      reasonMaxLength === 200
+        ? deductionAdjustmentUpdateFormSchema
+        : reasonLabel ? bonusAdjustmentUpdateFormSchema : adjustmentUpdateFormSchema,
+    ),
     defaultValues: {
       amount: record.amount,
       payrollMonth: record.payrollMonth,
@@ -246,7 +260,7 @@ function AdjustmentEditForm({
               <textarea
                 id="adjustment-reason"
                 rows={3}
-                maxLength={500}
+                maxLength={reasonMaxLength}
                 className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
                 {...register('reason')}
               />
@@ -276,11 +290,13 @@ export function AdjustmentView({
   queryKeys,
   labels,
   reasonLabel,
+  reasonMaxLength,
 }: {
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
   labels: AdjustmentLabels;
   reasonLabel?: string;
+  reasonMaxLength?: 200 | 500;
 }) {
   const queryClient = useQueryClient();
   const formatters = useDisplayFormatters();
@@ -397,6 +413,7 @@ export function AdjustmentView({
           queryKeys={queryKeys}
           title={labels.formTitleCreate}
           reasonLabel={reasonLabel}
+          reasonMaxLength={reasonMaxLength}
           onDone={closeForm}
         />
       ) : editing ? (
@@ -407,6 +424,7 @@ export function AdjustmentView({
           record={editing}
           title={labels.formTitleEdit}
           reasonLabel={reasonLabel}
+          reasonMaxLength={reasonMaxLength}
           onDone={closeForm}
         />
       ) : null}

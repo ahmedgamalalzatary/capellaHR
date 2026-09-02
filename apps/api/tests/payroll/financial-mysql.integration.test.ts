@@ -188,7 +188,7 @@ describe('MySQL-backed salary domain', () => {
     const advanceModule = createAdvanceModule(database, { now: () => fixedNow });
     const payrollModule = createPayrollModule(database, { now: () => fixedNow, attendance });
     const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07', reason: 'سبب' });
-    const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-07' });
+    const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-07', reason: 'Late arrival' });
     const advance = await advanceModule.service.create({ employeeId, amount: '200.00', installmentCount: 2, startMonth: '2026-07' });
     await payrollModule.service.finalize(employeeId, '2026-06');
     const reassignedAt = new Date(fixedNow.getTime() + 60_000);
@@ -204,7 +204,9 @@ describe('MySQL-backed salary domain', () => {
       .resolves.toMatchObject({ total: 1, items: [{ id: bonus.id, branchId: oldBranchId }] });
     await expect(bonusModule.service.list({ branchId: newBranchId, page: 1, pageSize: 20 }))
       .resolves.toMatchObject({ total: 0, items: [] });
-    await expect(deductionModule.service.get(deduction.id)).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
+    await expect(deductionModule.service.get(deduction.id)).resolves.toMatchObject({
+      branchId: oldBranchId, branchName: 'Old branch', reason: 'Late arrival',
+    });
     await expect(advanceModule.service.get(advance.id)).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
     await expect(payrollModule.service.preview(employeeId, '2026-06')).resolves.toMatchObject({ branchId: oldBranchId, branchName: 'Old branch' });
   });
@@ -234,7 +236,7 @@ describe('MySQL-backed salary domain', () => {
     const deductionModule = createDeductionModule(database, { now: () => fixedNow });
 
     const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07', reason: 'سبب' });
-    const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-06' });
+    const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-06', reason: 'Late arrival' });
     await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-05', reason: 'سبب' }))
       .rejects.toMatchObject({ code: 'BONUS_MONTH_NOT_ELIGIBLE' });
     await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-08', reason: 'سبب' }))
@@ -242,7 +244,7 @@ describe('MySQL-backed salary domain', () => {
 
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
     await payroll.service.finalize(employeeId, '2026-06');
-    await expect(deductionModule.service.update(deduction.id, { amount: '30.00' }))
+    await expect(deductionModule.service.update(deduction.id, { amount: '30.00', reason: 'Policy violation' }))
       .rejects.toMatchObject({ code: 'DEDUCTION_PAYROLL_FINALIZED' });
 
     await database.update(employees).set({ deletedAt: fixedNow }).where(eq(employees.id, employeeId));
@@ -491,7 +493,7 @@ describe('MySQL-backed salary domain', () => {
       employeeId, amount: '100.00', payrollMonth: '2026-06', reason: 'سبب',
     });
     await createDeductionModule(database, { now: () => fixedNow }).service.create({
-      employeeId, amount: '50.00', payrollMonth: '2026-06',
+      employeeId, amount: '50.00', payrollMonth: '2026-06', reason: 'Late arrival',
     });
     await createAdvanceModule(database, { now: () => fixedNow }).service.create({
       employeeId, amount: '200.00', installmentCount: 1, startMonth: '2026-06',

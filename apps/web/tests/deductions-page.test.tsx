@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -38,6 +38,7 @@ const deduction = {
   branchName: 'فرع القاهرة',
   payrollMonth: '2026-06',
   amount: '75.00',
+  reason: 'Late arrival',
   employeeDeletedAt: null,
   createdAt: '2026-06-10T00:00:00.000Z',
   updatedAt: '2026-06-10T00:00:00.000Z',
@@ -77,6 +78,7 @@ describe('DeductionsView', () => {
     renderView();
     const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
     expect(row.textContent).toContain('75.00');
+    expect(row.textContent).toContain('Late arrival');
     expect(mocks.listDeductions).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }));
   });
 
@@ -89,14 +91,30 @@ describe('DeductionsView', () => {
     fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
     fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '75' } });
     fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText(/سبب الخصم/), { target: { value: 'Late arrival' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createDeduction).toHaveBeenCalledWith({
         employeeId: 1,
         amount: '75',
         payrollMonth: '2026-06',
+        reason: 'Late arrival',
       }),
     );
+  });
+
+  test('requires a reason and allows it to be edited', async () => {
+    mocks.updateDeduction.mockResolvedValue({ ...deduction, reason: 'Policy violation' });
+    renderView();
+    const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل' }));
+    const reason = screen.getByLabelText(/سبب الخصم/);
+    expect(reason).toHaveProperty('value', 'Late arrival');
+    fireEvent.change(reason, { target: { value: 'Policy violation' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    await waitFor(() => expect(mocks.updateDeduction).toHaveBeenCalledWith(9, {
+      amount: '75.00', payrollMonth: '2026-06', reason: 'Policy violation',
+    }));
   });
 
   test('shows the deductions empty state', async () => {

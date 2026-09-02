@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createDeductionService, type DeductionRepository } from '../../src/modules/deductions/index.js';
 
-const input = { employeeId: 3, amount: '100.00', payrollMonth: '2026-07' };
+const input = { employeeId: 3, amount: '100.00', payrollMonth: '2026-07', reason: 'Late arrival' };
 const record = { id: 1, ...input, employeeCode: 9, employeeName: 'موظف', branchId: 2, branchName: 'فرع', employeeDeletedAt: null, createdAt: new Date(), updatedAt: new Date() };
 const repo = (): DeductionRepository => ({
   create: vi.fn(async () => ({ kind: 'success' as const, record })),

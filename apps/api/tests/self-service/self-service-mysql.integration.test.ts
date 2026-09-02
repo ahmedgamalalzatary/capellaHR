@@ -126,8 +126,8 @@ describe('MySQL-backed employee self-service', () => {
     const payrollDate = `${payrollMonth}-01`;
     await bonusModule.service.create({ employeeId: owner.id, amount: '100.00', payrollMonth, reason: 'سبب' });
     await bonusModule.service.create({ employeeId: other.id, amount: '999.00', payrollMonth, reason: 'سبب آخر' });
-    await deductionModule.service.create({ employeeId: owner.id, amount: '20.00', payrollMonth });
-    await deductionModule.service.create({ employeeId: other.id, amount: '888.00', payrollMonth });
+    await deductionModule.service.create({ employeeId: owner.id, amount: '20.00', payrollMonth, reason: 'Late arrival' });
+    await deductionModule.service.create({ employeeId: other.id, amount: '888.00', payrollMonth, reason: 'Policy violation' });
     await advanceModule.service.create({ employeeId: owner.id, amount: '200.00', installmentCount: 2, startMonth: payrollMonth });
     await advanceModule.service.create({ employeeId: other.id, amount: '777.00', installmentCount: 1, startMonth: payrollMonth });
     const now = new Date();

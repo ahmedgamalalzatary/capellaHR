@@ -14,11 +14,13 @@ export function DeductionsView() {
     <AdjustmentView
       api={{
         list: listDeductions,
-        create: createDeduction,
-        update: updateDeduction,
+        create: (input) => createDeduction({ ...input, reason: input.reason ?? '' }),
+        update: (id, input) => updateDeduction(id, { ...input, reason: input.reason ?? '' }),
         remove: deleteDeduction,
       }}
       queryKeys={deductionQueryKeys}
+      reasonLabel="سبب الخصم"
+      reasonMaxLength={200}
       labels={{
         addLabel: 'إضافة خصم',
         formTitleCreate: 'خصم جديد',

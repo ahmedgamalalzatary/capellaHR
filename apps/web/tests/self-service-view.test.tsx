@@ -104,7 +104,9 @@ beforeEach(() => {
     netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
   });
   mocks.listBonuses.mockResolvedValue(pageOf([{ id: 1, payrollMonth: '2026-07', amount: '100.00', createdAt: '', updatedAt: '' }]));
-  mocks.listDeductions.mockResolvedValue(pageOf([{ id: 2, payrollMonth: '2026-07', amount: '20.00', createdAt: '', updatedAt: '' }]));
+  mocks.listDeductions.mockResolvedValue(pageOf([{
+    id: 2, payrollMonth: '2026-07', amount: '20.00', reason: 'Late arrival', createdAt: '', updatedAt: '',
+  }]));
   mocks.listAdvances.mockResolvedValue(pageOf([{
     id: 3, amount: '200.00', installmentCount: 2, startMonth: '2026-07',
     installments: [
@@ -122,6 +124,13 @@ afterEach(() => {
 });
 
 describe('SelfServiceView', () => {
+  it('shows the reason for a deduction', async () => {
+    renderView();
+    await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getAllByRole('tab')[6]!);
+    expect(await screen.findByText('Late arrival')).toBeDefined();
+  });
+
   it.each(noRetryCases)('does not retry $name queries when the application default allows retries', async ({ read, tabIndex, queryKey }) => {
     read.mockRejectedValue(new Error('request failed'));
     const { queryClient } = renderView(1);

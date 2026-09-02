@@ -36,6 +36,13 @@ describe('payroll schema', () => {
     expect(reason?.notNull).toBe(false);
   });
 
+  it('stores an optional historical reason of up to 200 characters on deduction rows', () => {
+    const reason = config(deductions).columns.find((column) => column.name === 'reason');
+    expect(reason).toBeDefined();
+    expect(reason?.notNull).toBe(false);
+    expect(reason?.getSQLType()).toBe('varchar(200)');
+  });
+
   it('supports month-first dashboard financial scans', () => {
     expect(config(bonuses).indexes.some((item) => item.config.name === 'bonuses_month_employee_idx')).toBe(true);
     expect(config(deductions).indexes.some((item) => item.config.name === 'deductions_month_employee_idx')).toBe(true);

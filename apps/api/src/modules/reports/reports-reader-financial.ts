@@ -40,7 +40,7 @@ export const readBonusesOrDeductionsReport = async (
 ): ReturnType<ReportReader['read']> => {
   const { timeZone } = deps;
   const table = reportType === 'bonuses' ? bonuses : deductions;
-  const reason = reportType === 'bonuses' ? bonuses.reason : sql<null>`null`;
+  const reason = table.reason;
   const historicalBranchId = sql<number>`coalesce(${employeeBranchAssignments.branchId}, ${employees.branchId})`;
   const assignmentAtCreation = and(
     eq(employeeBranchAssignments.employeeId, table.employeeId),
@@ -79,9 +79,8 @@ export const readBonusesOrDeductionsReport = async (
       .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where),
   ]);
   const total = aggregate[0]?.value ?? 0;
-  const rows = records.map(({ reason: rowReason, ...row }) => ({
+  const rows = records.map((row) => ({
     ...row,
-    ...(reportType === 'bonuses' ? { reason: rowReason } : {}),
     payrollMonth: row.payrollMonth.slice(0, 7),
     amount: row.amount,
     isEmployeeDeleted: Boolean(row.employeeDeletedAt),
@@ -93,7 +92,7 @@ export const readBonusesOrDeductionsReport = async (
     ['id', 'الرقم'], ['employeeId', 'رقم الموظف'], ['employeeCode', 'كود الموظف'],
     ['employeeName', 'اسم الموظف'], ['branchId', 'رقم الفرع'], ['branchName', 'اسم الفرع'],
     ['payrollMonth', 'شهر الراتب'], ['amount', 'المبلغ'],
-    ...(reportType === 'bonuses' ? [['reason', 'سبب المكافأة'] as [string, string]] : []),
+    ['reason', reportType === 'bonuses' ? 'سبب المكافأة' : 'سبب الخصم'],
     ['isEmployeeDeleted', 'موظف محذوف'],
     ['createdAt', 'تاريخ الإنشاء'], ['updatedAt', 'آخر تحديث'],
   ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt) };

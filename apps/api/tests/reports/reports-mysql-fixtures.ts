@@ -140,6 +140,7 @@ export const seed = async () => {
     employeeId: deletedEmployeeId,
     payrollMonth: '2026-07-01',
     amount: '25.00',
+    reason: 'Late arrival',
     createdAt: now,
     updatedAt: now,
   });

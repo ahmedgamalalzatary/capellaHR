@@ -239,6 +239,7 @@ export const deductions = mysqlTable('deductions', {
   employeeId: int('employee_id').notNull().references(() => employees.id),
   payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  reason: varchar('reason', { length: 200 }),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [

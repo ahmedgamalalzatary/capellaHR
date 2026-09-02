@@ -245,11 +245,13 @@ function AdjustmentSection({ kind }: { kind: 'bonuses' | 'deductions' }) {
         <thead><tr className="border-b border-line text-[12px] text-muted">
           <th className="px-4 py-3 text-start font-medium">شهر الراتب</th>
           <th className="px-4 py-3 text-start font-medium">المبلغ</th>
+          {kind === 'deductions' ? <th className="px-4 py-3 text-start font-medium">السبب</th> : null}
         </tr></thead>
         <tbody>{query.data.items.map((record) => (
           <tr key={record.id} className="border-b border-line/60 last:border-0">
             <td className="tabular px-4 py-3">{record.payrollMonth}</td>
             <td className="tabular px-4 py-3">{formatMoney(record.amount)}</td>
+            {kind === 'deductions' ? <td className="px-4 py-3">{record.reason ?? '—'}</td> : null}
           </tr>
         ))}</tbody>
       </table>

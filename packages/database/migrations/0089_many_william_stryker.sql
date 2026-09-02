@@ -1,0 +1,1 @@
+ALTER TABLE `deductions` ADD `reason` varchar(200);

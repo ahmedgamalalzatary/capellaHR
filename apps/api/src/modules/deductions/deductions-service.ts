@@ -6,7 +6,7 @@ import {
   type FinancialAdjustmentRecord,
 } from '../payroll/financial-adjustment-service.js';
 
-export type DeductionRecord = FinancialAdjustmentRecord;
+export type DeductionRecord = FinancialAdjustmentRecord & { reason: string | null };
 export type DeductionRepository = AdjustmentRepository<
   CreateDeductionInput, UpdateDeductionInput, ListDeductionsQuery, DeductionRecord
 >;
