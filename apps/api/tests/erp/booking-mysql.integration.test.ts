@@ -1,4 +1,3 @@
-import { createDatabase } from '@capella/database';
 import {
   accounts,
   branches,
@@ -10,20 +9,14 @@ import {
   erpServices,
   invoices,
 } from '@capella/database/schema';
-import { eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { createDrizzleBookingRepository } from '../../src/modules/erp/bookings/index.js';
 
-const control = createDatabase(process.env.DATABASE_URL ?? '');
-const databaseName = `capella_hr_test_bookings_${process.pid}_${Date.now()}`;
-const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
-databaseUrl.pathname = `/${databaseName}`;
-const database = createDatabase(databaseUrl.toString());
+const database = createMysqlIntegrationDatabase();
 const at = new Date('2026-08-24T08:00:00.000Z');
 let accountId = 0;
 let branchId = 0;
@@ -32,11 +25,7 @@ let employeeId = 0;
 let serviceId = 0;
 
 beforeAll(async () => {
-  if (!/^capella_hr_test_bookings_\d+_\d+$/u.test(databaseName)) throw new Error('Unsafe test database');
-  await control.execute(sql.raw(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`));
-  await migrate(database, {
-    migrationsFolder: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../packages/database/migrations'),
-  });
+  await prepareMysqlIntegrationDatabase(database);
   accountId = Number((await database.insert(accounts).values({
     username: 'booking-admin', passwordHash: 'unused', role: 'admin', createdAt: at, updatedAt: at,
   }))[0].insertId);
@@ -63,9 +52,7 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-  await control.$client.promise().end();
+  await closeMysqlIntegrationDatabase(database);
 }, 30_000);
 
 describe('MySQL-backed ERP bookings', () => {

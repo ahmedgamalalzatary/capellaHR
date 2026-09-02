@@ -1,21 +1,14 @@
-import { createDatabase } from '@capella/database';
 import { accounts, auditEvents, branches, erpExpenses } from '@capella/database/schema';
 import { eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAuditModule } from '../../src/modules/audit/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDrizzleExpenseRepository, createErpExpensesModule, type ErpAccountIdentity } from '../../src/modules/erp/index.js';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const control = createDatabase(process.env.DATABASE_URL ?? '');
-const databaseName = `capella_hr-test-erp15-${process.pid}-${Date.now()}`;
-const url = new URL(process.env.DATABASE_URL ?? '');
-url.pathname = `/${databaseName}`;
-const database = createDatabase(url.toString());
+const database = createMysqlIntegrationDatabase();
 const expenses = createErpExpensesModule(database, {
   audit: createAuditModule(database).erp,
   branches: createBranchesModule(database).erp,
@@ -32,17 +25,13 @@ const seed = async () => {
   });
 };
 beforeAll(async () => {
-  if (!/^capella_hr-test-erp15-\d+-\d+$/.test(databaseName)) throw new Error('Unsafe ERP 15 database name');
-  await control.execute(sql.raw(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`));
-  await migrate(database, { migrationsFolder: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../packages/database/migrations') });
+  await prepareMysqlIntegrationDatabase(database);
   const accountId = Number((await database.insert(accounts).values({ username: `expense-admin-${process.pid}`, passwordHash: 'test-only', role: 'admin', createdAt: new Date(), updatedAt: new Date() }))[0].insertId);
   ADMIN = { role: 'admin', accountId };
 }, 120_000);
 beforeEach(async () => { await database.delete(auditEvents).where(eq(auditEvents.module, 'erp-expenses')); });
 afterAll(async () => {
-  await database.$client.promise().end();
-  await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-  await control.$client.promise().end();
+  await closeMysqlIntegrationDatabase(database);
 }, 30_000);
 
 describe('MySQL-backed ERP expenses', () => {

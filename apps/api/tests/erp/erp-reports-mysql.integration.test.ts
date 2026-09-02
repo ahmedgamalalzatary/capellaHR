@@ -1,4 +1,3 @@
-import { createDatabase } from '@capella/database';
 import {
   accounts,
   branchCashierRoster,
@@ -17,10 +16,7 @@ import {
   serviceQueueEntries,
 } from '@capella/database/schema';
 import { erpTabReportTypes } from '@capella/contracts';
-import { eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
@@ -28,20 +24,9 @@ import { createErpReportsModule } from '../../src/modules/erp/erp-reports/index.
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 import { createErpPayrollCapability } from '../../src/modules/payroll/index.js';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const configuredDatabaseUrl = process.env.DATABASE_URL;
-if (!configuredDatabaseUrl) {
-  throw new Error('DATABASE_URL must be set for ERP reports MySQL integration tests');
-}
-const control = createDatabase(configuredDatabaseUrl);
-const databaseName = `capella_hr_test_erp19_${process.pid}_${Date.now()}`;
-const databaseUrl = new URL(configuredDatabaseUrl);
-databaseUrl.pathname = `/${databaseName}`;
-const database = createDatabase(databaseUrl.toString());
-const migrationsFolder = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../../../packages/database/migrations',
-);
+const database = createMysqlIntegrationDatabase();
 const soldAt = new Date('2026-08-09T09:00:00.000Z');
 const reversedAt = new Date('2026-09-01T09:00:00.000Z');
 const employeePinSentinel = 'ERP_REPORT_EMPLOYEE_PIN_SENTINEL';
@@ -59,13 +44,7 @@ let adminId: number;
 let originalProductName: string;
 
 beforeAll(async () => {
-  if (!/^capella_hr_test_erp19_\d+_\d+$/.test(databaseName)) {
-    throw new Error('Unsafe ERP 19 integration database name');
-  }
-  await control.execute(sql.raw(
-    `CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-  ));
-  await migrate(database, { migrationsFolder });
+  await prepareMysqlIntegrationDatabase(database);
 
   branchId = Number((await database.insert(branches).values({
     name: 'فرع تقارير ERP', nameNormalized: 'erp-reports-branch', location: 'Cairo',
@@ -198,17 +177,7 @@ beforeAll(async () => {
     .where(eq(erpServices.id, serviceId));
 }, 120_000);
 
-afterAll(async () => {
-  try {
-    await database.$client.promise().end();
-  } finally {
-    try {
-      await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-    } finally {
-      await control.$client.promise().end();
-    }
-  }
-}, 30_000);
+afterAll(async () => { await closeMysqlIntegrationDatabase(database); }, 30_000);
 
 describe('ERP reports MySQL reader', () => {
   it('reports each issued queue number with its stored invoice and service snapshots', async () => {

@@ -1,4 +1,3 @@
-import { createDatabase } from '@capella/database';
 import {
   accounts,
   auditEvents,
@@ -10,9 +9,6 @@ import {
 } from '@capella/database/schema';
 import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
@@ -22,18 +18,9 @@ import { createAuthModule } from '../../src/modules/auth/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createEmployeesModule } from '../../src/modules/employees/index.js';
 import * as sales from '../../src/modules/erp/sales/index.js';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const configuredDatabaseUrl = process.env.DATABASE_URL;
-if (!configuredDatabaseUrl) throw new Error('DATABASE_URL is required for cashier-session MySQL integration tests');
-const control = createDatabase(configuredDatabaseUrl);
-const databaseName = `capella_hr_test_cashier_sessions_${process.pid}_${Date.now()}`;
-const isolatedDatabaseUrl = new URL(configuredDatabaseUrl);
-isolatedDatabaseUrl.pathname = `/${databaseName}`;
-const database = createDatabase(isolatedDatabaseUrl.toString());
-const migrationsFolder = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../../../packages/database/migrations',
-);
+const database = createMysqlIntegrationDatabase();
 const now = new Date('2026-08-01T10:00:00.000Z');
 const created = {
   accountIds: [] as number[],
@@ -43,27 +30,10 @@ const created = {
 };
 
 beforeAll(async () => {
-  if (!/^capella_hr_test_cashier_sessions_\d+_\d+$/.test(databaseName)) {
-    throw new Error('Unsafe cashier-session integration database name');
-  }
-  await control.execute(sql.raw(
-    `CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-  ));
-  await migrate(database, { migrationsFolder });
+  await prepareMysqlIntegrationDatabase(database);
 }, 120_000);
 
-afterAll(async () => {
-  if (!/^capella_hr_test_cashier_sessions_\d+_\d+$/.test(databaseName)) return;
-  try {
-    await database.$client.promise().end();
-  } finally {
-    try {
-      await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-    } finally {
-      await control.$client.promise().end();
-    }
-  }
-}, 30_000);
+afterAll(async () => { await closeMysqlIntegrationDatabase(database); }, 30_000);
 
 afterEach(async () => {
   const sessionIds = created.branchIds.length > 0

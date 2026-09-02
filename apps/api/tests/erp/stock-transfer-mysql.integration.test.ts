@@ -1,4 +1,3 @@
-import { createDatabase } from '@capella/database';
 import {
   accounts,
   auditEvents,
@@ -14,10 +13,7 @@ import {
   invoiceLines,
   invoices,
 } from '@capella/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
@@ -28,38 +24,22 @@ import { createSaleService } from '../../src/modules/erp/sales/sale-service.js';
 import { createInvoiceNumberAllocator } from '../../src/modules/erp/sales/services/invoice-number.js';
 import { createDrizzleStockTransferRepository } from '../../src/modules/erp/transfers/index.js';
 import { createStockTransferService } from '../../src/modules/erp/transfers/index.js';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
-const isolatedDatabaseName = `capella_hr_test_transfers_${process.pid}_${Date.now()}`;
-const isolatedDatabaseUrl = new URL(process.env.DATABASE_URL ?? '');
-isolatedDatabaseUrl.pathname = `/${isolatedDatabaseName}`;
-const database = createDatabase(isolatedDatabaseUrl.toString());
+const database = createMysqlIntegrationDatabase();
 
 const at = new Date('2026-08-17T09:00:00.000Z');
 const admin = { accountId: 0, role: 'admin' as const };
 
 beforeAll(async () => {
-  if (!/^capella_hr_test_transfers_\d+_\d+$/u.test(isolatedDatabaseName)) {
-    throw new Error('Unsafe transfer integration database name');
-  }
-  await controlDatabase.execute(sql.raw(
-    `CREATE DATABASE \`${isolatedDatabaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-  ));
-  await migrate(database, {
-    migrationsFolder: path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '../../../../packages/database/migrations',
-    ),
-  });
+  await prepareMysqlIntegrationDatabase(database);
   admin.accountId = Number((await database.insert(accounts).values({
     username: 'transfer-admin', passwordHash: 'unused', role: 'admin', createdAt: at, updatedAt: at,
   }))[0].insertId);
 }, 180_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await controlDatabase.execute(sql.raw(`DROP DATABASE IF EXISTS \`${isolatedDatabaseName}\``));
-  await controlDatabase.$client.promise().end();
+  await closeMysqlIntegrationDatabase(database);
 }, 30_000);
 
 let sequence = 0;

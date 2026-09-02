@@ -1,29 +1,21 @@
-import { createDatabase } from '@capella/database';
 import { accounts, auditEvents, branches, erpProducts, erpProductStocks, erpPurchaseLines, erpPurchases, erpStockMovements } from '@capella/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createAuditModule } from '../../src/modules/audit/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createErpSuppliersModule } from '../../src/modules/erp/index.js';
 import type { CreatePurchaseInput } from '@capella/contracts';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const control = createDatabase(process.env.DATABASE_URL ?? '');
-const databaseName = `capella_hr-test-erp14-${process.pid}-${Date.now()}`;
-const url = new URL(process.env.DATABASE_URL ?? ''); url.pathname = `/${databaseName}`;
-const database = createDatabase(url.toString()); let accountId = 0;
+const database = createMysqlIntegrationDatabase(); let accountId = 0;
 
 beforeAll(async () => {
-  if (!/^capella_hr-test-erp14-\d+-\d+$/.test(databaseName)) throw new Error('Unsafe ERP 14 database name');
-  await control.execute(sql.raw(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`));
-  await migrate(database, { migrationsFolder: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../packages/database/migrations') });
+  await prepareMysqlIntegrationDatabase(database);
   const at = new Date(); accountId = Number((await database.insert(accounts).values({ username: `erp14-${process.pid}`, passwordHash: 'unused', role: 'admin', createdAt: at, updatedAt: at }))[0].insertId);
 }, 120_000);
-afterAll(async () => { await database.$client.promise().end(); await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``)); await control.$client.promise().end(); }, 30_000);
+afterAll(async () => { await closeMysqlIntegrationDatabase(database); }, 30_000);
 
 let sequence = 0;
 const fixture = async (quantity = 1) => {

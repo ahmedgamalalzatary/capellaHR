@@ -1,20 +1,13 @@
-import { createDatabase } from '@capella/database';
 import { accounts, branches, auditEvents, erpFixedAssets } from '@capella/database/schema';
-import { eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createAuditModule } from '../../src/modules/audit/index.js';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createErpFixedAssetsModule, type ErpAccountIdentity } from '../../src/modules/erp/index.js';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const control = createDatabase(process.env.DATABASE_URL ?? '');
-const databaseName = `capella_hr-test-fixed-assets-${process.pid}-${Date.now()}`;
-const url = new URL(process.env.DATABASE_URL ?? '');
-url.pathname = `/${databaseName}`;
-const database = createDatabase(url.toString());
+const database = createMysqlIntegrationDatabase();
 const module = createErpFixedAssetsModule(database, {
   audit: createAuditModule(database).erp,
   branches: createBranchesModule(database).erp,
@@ -36,11 +29,7 @@ const seedBranch = async () => {
 };
 
 beforeAll(async () => {
-  if (!/^capella_hr-test-fixed-assets-\d+-\d+$/.test(databaseName)) throw new Error('Unsafe fixed assets database name');
-  await control.execute(sql.raw(`CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`));
-  await migrate(database, {
-    migrationsFolder: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../packages/database/migrations'),
-  });
+  await prepareMysqlIntegrationDatabase(database);
   const at = new Date();
   const accountId = Number((await database.insert(accounts).values({
     username: `assets-admin-${process.pid}`, passwordHash: 'test-only', role: 'admin', createdAt: at, updatedAt: at,
@@ -51,7 +40,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
+  await closeMysqlIntegrationDatabase(database);
 });
 
 beforeEach(async () => {

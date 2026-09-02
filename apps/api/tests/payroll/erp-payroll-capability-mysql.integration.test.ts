@@ -1,4 +1,3 @@
-import { createDatabase } from '@capella/database';
 import {
   branches,
   employees,
@@ -6,10 +5,7 @@ import {
   erpPostPayrollDeductions,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
@@ -17,30 +13,14 @@ import {
   createErpPayrollCapability,
   createPayrollModule,
 } from '../../src/modules/payroll/index.js';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-const sourceUrl = process.env.DATABASE_URL;
-if (!sourceUrl) throw new Error('DATABASE_URL is required for ERP payroll capability tests');
-const control = createDatabase(sourceUrl);
-const databaseName = `capella_hr_test_erp17_payroll_${process.pid}_${Date.now()}`;
-const url = new URL(sourceUrl);
-url.pathname = `/${databaseName}`;
-const database = createDatabase(url.toString());
+const database = createMysqlIntegrationDatabase();
 
 let employeeId: number;
 
 beforeAll(async () => {
-  if (!/^capella_hr_test_erp17_payroll_\d+_\d+$/.test(databaseName)) {
-    throw new Error('Unsafe ERP 17 payroll test database name');
-  }
-  await control.execute(sql.raw(
-    `CREATE DATABASE \`${databaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-  ));
-  await migrate(database, {
-    migrationsFolder: path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '../../../../packages/database/migrations',
-    ),
-  });
+  await prepareMysqlIntegrationDatabase(database);
   const at = new Date('2026-08-01T09:00:00.000Z');
   const branchId = Number((await database.insert(branches).values({
     name: 'ERP 17', nameNormalized: 'erp 17', location: 'Cairo',
@@ -56,9 +36,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await control.execute(sql.raw(`DROP DATABASE IF EXISTS \`${databaseName}\``));
-  await control.$client.promise().end();
+  await closeMysqlIntegrationDatabase(database);
 }, 30_000);
 
 describe('ERP payroll public capability', () => {

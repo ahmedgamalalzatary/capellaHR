@@ -1,4 +1,3 @@
-import { createDatabase } from '@capella/database';
 import {
   accounts,
   auditEvents,
@@ -18,11 +17,11 @@ import {
   invoices,
 } from '@capella/database/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { ErpAssignmentError } from '../../src/modules/erp/assignment/index.js';
@@ -30,11 +29,7 @@ import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-re
 import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock/index.js';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 
-const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
-const isolatedDatabaseName = `capella_hr_test_erp9_${process.pid}_${Date.now()}`;
-const isolatedDatabaseUrl = new URL(process.env.DATABASE_URL ?? '');
-isolatedDatabaseUrl.pathname = `/${isolatedDatabaseName}`;
-const database = createDatabase(isolatedDatabaseUrl.toString());
+const database = createMysqlIntegrationDatabase();
 const erp17Migration = readFileSync(path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../../../packages/database/migrations/0056_confused_ulik.sql',
@@ -43,18 +38,7 @@ const erp17Backfill = erp17Migration.split('--> statement-breakpoint')
   .find((statement) => statement.includes('INSERT INTO `erp_commission_payroll_inputs`'))?.trim();
 if (!erp17Backfill) throw new Error('ERP 17 commission backfill statement is missing');
 beforeAll(async () => {
-  if (!/^capella_hr_test_erp9_\d+_\d+$/.test(isolatedDatabaseName)) {
-    throw new Error('Unsafe ERP 9 integration database name');
-  }
-  await controlDatabase.execute(sql.raw(
-    `CREATE DATABASE \`${isolatedDatabaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-  ));
-  await migrate(database, {
-    migrationsFolder: path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '../../../../packages/database/migrations',
-    ),
-  });
+  await prepareMysqlIntegrationDatabase(database);
   const at = new Date('2026-08-03T11:35:00.000Z');
   await database.insert(accounts).values({
     username: 'erp9-isolated-admin',
@@ -66,9 +50,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await controlDatabase.execute(sql.raw(`DROP DATABASE IF EXISTS \`${isolatedDatabaseName}\``));
-  await controlDatabase.$client.promise().end();
+  await closeMysqlIntegrationDatabase(database);
 }, 30_000);
 let sequence = 0;
 const fixture = async () => {

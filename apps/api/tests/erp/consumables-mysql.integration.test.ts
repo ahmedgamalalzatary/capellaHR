@@ -1,38 +1,27 @@
-import { createDatabase } from '@capella/database';
 import {
   accounts, branches, cashierSessions, clients, commissionLedgerEntries, employees, erpCategories,
   erpConsumableBalances, erpConsumableConfigurations, erpConsumableLedgerEntries, erpProducts, erpProductStocks,
   erpServices, erpStockMovements, invoiceLineReassignments, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
   serviceConsumptionUsages, serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
-import { migrate } from 'drizzle-orm/mysql2/migrator';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { closeMysqlIntegrationDatabase, createMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { createDrizzleConsumablesRepository } from '../../src/modules/erp/consumables/index.js';
 
-const controlDatabase = createDatabase(process.env.DATABASE_URL ?? '');
-const isolatedDatabaseName = `capella_hr_test_consumables_${process.pid}_${Date.now()}`;
-const isolatedDatabaseUrl = new URL(process.env.DATABASE_URL ?? '');
-isolatedDatabaseUrl.pathname = `/${isolatedDatabaseName}`;
-const database = createDatabase(isolatedDatabaseUrl.toString());
+const database = createMysqlIntegrationDatabase();
 const at = new Date('2026-09-01T12:00:00.000Z');
 let accountId = 0;
 
 beforeAll(async () => {
-  if (!/^capella_hr_test_consumables_\d+_\d+$/u.test(isolatedDatabaseName)) throw new Error('Unsafe consumables integration database name');
-  await controlDatabase.execute(sql.raw(`CREATE DATABASE \`${isolatedDatabaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`));
-  await migrate(database, { migrationsFolder: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../packages/database/migrations') });
+  await prepareMysqlIntegrationDatabase(database);
   accountId = Number((await database.insert(accounts).values({ username: 'consumables-admin', passwordHash: 'unused', role: 'admin', createdAt: at, updatedAt: at }))[0].insertId);
 }, 180_000);
 
 afterAll(async () => {
-  await database.$client.promise().end();
-  await controlDatabase.execute(sql.raw(`DROP DATABASE IF EXISTS \`${isolatedDatabaseName}\``));
-  await controlDatabase.$client.promise().end();
+  await closeMysqlIntegrationDatabase(database);
 }, 30_000);
 
 const fixture = async () => {
