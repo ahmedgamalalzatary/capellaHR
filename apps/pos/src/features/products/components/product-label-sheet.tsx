@@ -4,11 +4,38 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
-import { barcodeSvg } from '@/lib/barcode/render-barcode';
+import { barcodeSvgFitting } from '@/lib/barcode/render-barcode';
 import { PrintPageRule } from '@/lib/print/page-rule';
 
-/** Shared by the skip check and the sticker so the two never disagree. */
-const BARCODE_HEIGHT_MM = 9;
+/**
+ * How the sticker's height is divided.
+ *
+ * A 40x10mm label has to carry the product name, the price, the bars and the
+ * digits under them, and one centimetre is all there is. So the two text rows are
+ * given fixed millimetres and the barcode takes everything left over: enlarging a
+ * text row shortens the bars by exactly that much instead of pushing them off the
+ * roll. The font sizes are in millimetres rather than points for the same reason —
+ * at this size the row height is the constraint, so the glyphs are tied to it.
+ */
+const LABEL_PADDING_MM = 0.3;
+const TEXT_ROW_MM = 2.1;
+const TEXT_FONT_MM = 1.9;
+const DIGITS_ROW_MM = 1.7;
+const DIGITS_FONT_MM = 1.5;
+const ROW_GAP_MM = 0.15;
+/** Absorbs the sub-millimetre rounding the driver does, so no row is clipped. */
+const SLACK_MM = 0.1;
+
+const CONTENT_WIDTH_MM = LABEL_SIZE_MM.width - LABEL_PADDING_MM * 2;
+const BARCODE_HEIGHT_MM = LABEL_SIZE_MM.height
+  - LABEL_PADDING_MM * 2
+  - TEXT_ROW_MM
+  - DIGITS_ROW_MM
+  - ROW_GAP_MM * 2
+  - SLACK_MM;
+
+/** Sub-millimetre arithmetic leaves float dust that has no business in the DOM. */
+const mm = (value: number) => `${Math.round(value * 100) / 100}mm`;
 
 export interface LabelProduct {
   id: number;
@@ -55,7 +82,7 @@ export function ProductLabelSheet({ products, onPrinted }: {
   // and supplies the bars, so no product is rendered through bwip-js twice.
   const printable = products.flatMap((product) => {
     const svg = product.barcode
-      ? barcodeSvg(product.barcode, undefined, { heightMm: BARCODE_HEIGHT_MM })
+      ? barcodeSvgFitting(product.barcode, { widthMm: CONTENT_WIDTH_MM, heightMm: BARCODE_HEIGHT_MM })
       : null;
     return svg ? [{ product, svg }] : [];
   });
@@ -67,28 +94,37 @@ export function ProductLabelSheet({ products, onPrinted }: {
       {printable.map(({ product, svg }) => (
         <div
           key={product.id}
+          data-product-label
           // The break after the last sticker would feed one blank label off the roll.
-          className="flex break-after-page items-center justify-center overflow-hidden last:break-after-auto"
-          style={{ width: `${LABEL_SIZE_MM.width}mm`, height: `${LABEL_SIZE_MM.height}mm` }}
+          className="flex break-after-page flex-col items-center overflow-hidden last:break-after-auto"
+          style={{
+            width: mm(LABEL_SIZE_MM.width),
+            height: mm(LABEL_SIZE_MM.height),
+            padding: mm(LABEL_PADDING_MM),
+            gap: mm(ROW_GAP_MM),
+          }}
         >
+          {/* Right-to-left, so the name opens the row and the price closes it. */}
           <div
-            data-product-label-content
-            className="flex shrink-0 flex-col items-center justify-center gap-0.5 text-center"
-            style={{
-              width: `${LABEL_SIZE_MM.height}mm`,
-              height: `${LABEL_SIZE_MM.width}mm`,
-              transform: 'rotate(90deg)',
-            }}
+            className="flex w-full items-baseline justify-between gap-1 font-semibold leading-none"
+            style={{ height: mm(TEXT_ROW_MM), fontSize: mm(TEXT_FONT_MM) }}
           >
-            <span className="w-full truncate px-1 text-[9pt] font-semibold leading-tight">{product.name}</span>
-            <div
-              role="img"
-              aria-label={product.barcode!}
-              className="w-[34mm]"
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-            <span className="text-[7pt] tracking-wider">{product.barcode}</span>
-            <span className="text-[9pt] font-semibold">{product.sellingPrice} ج.م</span>
+            <span className="truncate">{product.name}</span>
+            <span className="tabular shrink-0">{product.sellingPrice} ج.م</span>
+          </div>
+          {/* Sized in millimetres and filled by an SVG the browser scales to it. */}
+          <div
+            role="img"
+            aria-label={product.barcode!}
+            data-product-label-bars
+            style={{ width: mm(CONTENT_WIDTH_MM), height: mm(BARCODE_HEIGHT_MM) }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+          <div
+            className="tabular w-full text-center leading-none tracking-wider"
+            style={{ height: mm(DIGITS_ROW_MM), fontSize: mm(DIGITS_FONT_MM) }}
+          >
+            {product.barcode}
           </div>
         </div>
       ))}

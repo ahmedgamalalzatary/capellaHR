@@ -294,7 +294,7 @@ export function ProductStockView() {
               : products.isError ? <EmptyState title="تعذر تحميل المنتجات" action={<Button onClick={() => void products.refetch()}>إعادة المحاولة</Button>} />
                 : !products.data?.items.length ? <EmptyState title="لا توجد منتجات" />
                   : (
-                    <DataTable>
+                    <DataTable minWidth="min-w-full">
                       <THead>
                         <TH>المنتج</TH>
                         <TH>الباركود</TH>
@@ -302,7 +302,7 @@ export function ProductStockView() {
                         <TH numeric>التكلفة</TH>
                         <TH numeric>عمولة البائع %</TH>
                         <TH numeric>الرصيد</TH>
-                        <TH>الإجراءات</TH>
+                        <TH pinned>الإجراءات</TH>
                       </THead>
                       <tbody>
                         {products.data.items.map((product) => (
@@ -320,9 +320,9 @@ export function ProductStockView() {
                             <TD numeric className="text-muted">{product.lastPurchaseCost}</TD>
                             <TD numeric className="text-muted">{product.commissionPercent ?? '0.00'}%</TD>
                             <TD numeric className="font-medium">{product.quantity}</TD>
-                            <TD>
+                            <TD pinned>
                               <RowActions>
-                                {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-subtle" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>مستهلك</Link> : null}
+                                {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-surface" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>مستهلك</Link> : null}
                                 <Button size="sm" disabled={commandPending} onClick={() => setAdjusting(product)}>تسوية</Button>
                                 {product.barcode
                                   ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => setLabelling(product)}>طباعة ملصق</Button>

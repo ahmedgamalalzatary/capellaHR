@@ -1,10 +1,10 @@
 /**
- * The sticker roll the XP-233B is loaded with. The exact roll has not been
- * confirmed with the shop yet, so this is one constant everything else derives
- * from — the print page rule, the sheet layout and the barcode height. Changing
- * the roll is a one-line edit here, not a redesign.
+ * The sticker roll the XP-233B is loaded with, confirmed with the shop: 4 cm
+ * across the roll by 1 cm of feed. This is the one constant everything else
+ * derives from — the print page rule, the sheet layout and the barcode height.
+ * Changing the roll is a one-line edit here, not a redesign.
  */
-export const LABEL_SIZE_MM = { width: 20, height: 30 } as const;
+export const LABEL_SIZE_MM = { width: 40, height: 10 } as const;
 
 /**
  * Printing goes through the printer's Windows driver rather than raw ESC/POS or

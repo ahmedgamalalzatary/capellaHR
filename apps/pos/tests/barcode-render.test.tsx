@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
-import { Barcode, barcodeSvg, symbologyFor } from '@/lib/barcode/render-barcode';
+import { Barcode, barcodeSvg, barcodeSvgFitting, symbologyFor } from '@/lib/barcode/render-barcode';
 
 describe('barcode rendering', () => {
   it('draws an EAN-13 and a Code 128 the QW2100 can read', () => {
@@ -66,5 +66,40 @@ describe('barcode rendering', () => {
 
   it('never distorts bar widths with non-proportional SVG scaling', () => {
     expect(barcodeSvg('INV-2026.08.03-14.35-17', 'code128')).not.toContain('preserveAspectRatio="none"');
+  });
+
+  describe('fitting a sticker box', () => {
+    const box = { widthMm: 39.4, heightMm: 5.2 };
+
+    /** What the browser will actually print: the viewBox scaled uniformly to fit. */
+    const printed = (value: string) => {
+      const svg = barcodeSvgFitting(value, box)!;
+      const [, wide = '1', tall = '1'] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/) ?? [];
+      const scale = Math.min(box.widthMm / Number(wide), box.heightMm / Number(tall));
+      return { widthMm: Number(wide) * scale, heightMm: Number(tall) * scale };
+    };
+
+    it.each([
+      ['2000000000114'],
+      ['ABC-1234'],
+      ['SUP-99887766554'],
+      ['INV-2026.08.03-14.35-17'],
+    ])('fills the box with %s, however long the code is', (value) => {
+      // A longer code is a wider symbol at the same height, so drawing every code at
+      // one height would leave a long supplier code as a stub across the sticker.
+      const { widthMm, heightMm } = printed(value);
+      expect(heightMm).toBeGreaterThan(box.heightMm - 0.2);
+      expect(widthMm).toBeGreaterThan(box.widthMm - 1);
+      expect(heightMm).toBeLessThanOrEqual(box.heightMm);
+      expect(widthMm).toBeLessThanOrEqual(box.widthMm);
+    });
+
+    it('keeps the scaling proportional, so no bar is widened against its neighbours', () => {
+      expect(barcodeSvgFitting('2000000000114', box)).not.toContain('preserveAspectRatio="none"');
+    });
+
+    it('has nothing to fit when the value cannot be drawn at all', () => {
+      expect(barcodeSvgFitting('', box)).toBe(null);
+    });
   });
 });

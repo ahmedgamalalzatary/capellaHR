@@ -58,6 +58,42 @@ export function barcodeSvg(
     ?? (preferred === 'ean13' ? draw(value, 'code128', heightMm) : null);
 }
 
+/** Tall enough that the probe's rounded viewBox height still gives an exact unit scale. */
+const PROBE_HEIGHT_MM = 10;
+
+const viewBoxOf = (svg: string): [number, number] | null => {
+  const [, wide, tall] = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/) ?? [];
+  return wide && tall ? [Number(wide), Number(tall)] : null;
+};
+
+/**
+ * The barcode drawn to fill a box of a given size, or null when the value cannot
+ * be drawn at all.
+ *
+ * bwip-js fixes a symbol's width in viewBox units from the value alone — a longer
+ * Code 128 is simply wider — and only its height follows the millimetres we ask
+ * for. Drawing every code at one fixed height therefore fills the sticker for a
+ * 13-digit code and leaves a short stub for a long supplier one. So the value is
+ * probed once to learn how wide it is, then redrawn at the height whose natural
+ * aspect ratio is the box's. The browser then scales it uniformly to fit, which
+ * leaves every bar in the same proportion to its neighbours as the symbology
+ * specified — a scanner reads bar widths, so stretching one axis alone would be
+ * the one thing that could make a full-size sticker unreadable.
+ */
+export function barcodeSvgFitting(
+  value: string,
+  box: { widthMm: number; heightMm: number },
+  symbology?: BarcodeSymbology,
+): string | null {
+  const probe = barcodeSvg(value, symbology, { heightMm: PROBE_HEIGHT_MM });
+  if (!probe) return null;
+  const units = viewBoxOf(probe);
+  if (!units || box.widthMm <= 0) return probe;
+  const [unitsWide, unitsTall] = units;
+  const heightMm = (unitsWide * box.heightMm * PROBE_HEIGHT_MM) / (box.widthMm * unitsTall);
+  return barcodeSvg(value, symbology, { heightMm }) ?? probe;
+}
+
 /**
  * bwip-js emits a self-contained SVG built only from the value we passed it, so
  * there is no untrusted markup here. The human-readable digits are printed
