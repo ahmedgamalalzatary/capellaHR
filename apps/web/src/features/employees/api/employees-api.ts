@@ -26,7 +26,7 @@ export interface Employee {
   /** Two-decimal EGP amount serialized as a string by the API. */
   monthlyBaseSalary: string;
   employmentStatus: 'active' | 'inactive';
-  images: Record<EmployeeImageKind, EmployeeImageMeta>;
+  images: Partial<Record<EmployeeImageKind, EmployeeImageMeta>>;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;

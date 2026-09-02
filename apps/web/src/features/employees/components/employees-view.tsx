@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Power, PowerOff, Search, Trash2, UserRound, Wallet } from 'lucide-react';
+import Image from 'next/image';
 import { useState } from 'react';
 import { useForm, type FieldError } from 'react-hook-form';
 
@@ -113,6 +114,55 @@ function ImageField({
         onChange={(event) => onSelect(event.target.files?.[0])}
       />
     </Field>
+  );
+}
+
+function SavedEmployeeImage({
+  employee,
+  kind,
+  label,
+}: {
+  employee: Employee;
+  kind: Exclude<EmployeeImageKind, 'personal'>;
+  label: string;
+}) {
+  const image = employee.images[kind];
+  if (!image) return null;
+
+  const source = `/api/v1/employees/${employee.id}/images/${kind}`;
+  return (
+    <div className="space-y-2 rounded-control border border-line p-3">
+      <p className="text-[13px] font-medium">{label}</p>
+      <a href={source} target="_blank" rel="noreferrer">
+        <Image
+          src={source}
+          alt={label}
+          width={640}
+          height={320}
+          unoptimized
+          className="h-40 w-full rounded-control border border-line object-contain"
+        />
+      </a>
+      <div className="flex gap-2">
+        <a
+          href={source}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`\u0639\u0631\u0636 ${label}`}
+          className="inline-flex h-8 items-center justify-center rounded-control border border-line bg-paper px-3 text-[13px] font-medium text-ink hover:bg-surface"
+        >
+          {'\u0639\u0631\u0636'}
+        </a>
+        <a
+          href={source}
+          download={image.originalName}
+          aria-label={`\u062a\u0646\u0632\u064a\u0644 ${label}`}
+          className="inline-flex h-8 items-center justify-center rounded-control border border-line bg-paper px-3 text-[13px] font-medium text-ink hover:bg-surface"
+        >
+          {'\u062a\u0646\u0632\u064a\u0644'}
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -317,6 +367,17 @@ function EditEmployeeForm({
               disabled={save.isPending}
             />
           </Field>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {IMAGE_FIELDS.map(({ kind, label }) => (
+              <SavedEmployeeImage
+                key={kind}
+                employee={employee}
+                kind={kind}
+                label={label}
+              />
+            ))}
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             {IMAGE_FIELDS.map(({ kind, label }) => (

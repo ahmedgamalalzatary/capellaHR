@@ -268,6 +268,23 @@ describe('EmployeesView', () => {
     );
   });
 
+  test('offers view and download actions for saved national ID images while editing', async () => {
+    renderView();
+    await screen.findByText('\u0623\u062d\u0645\u062f \u062c\u0645\u0627\u0644');
+    fireEvent.click(screen.getByRole('button', { name: '\u062a\u0639\u062f\u064a\u0644' }));
+
+    const frontPreview = screen.getByRole('img', { name: '\u0635\u0648\u0631\u0629 \u0627\u0644\u0628\u0637\u0627\u0642\u0629 (\u0648\u062c\u0647)' });
+    expect(frontPreview.getAttribute('src')).toBe('/api/v1/employees/1/images/idFront');
+
+    const viewFront = screen.getByRole('link', { name: '\u0639\u0631\u0636 \u0635\u0648\u0631\u0629 \u0627\u0644\u0628\u0637\u0627\u0642\u0629 (\u0648\u062c\u0647)' });
+    expect(viewFront.getAttribute('href')).toBe('/api/v1/employees/1/images/idFront');
+    expect(viewFront.getAttribute('target')).toBe('_blank');
+
+    const downloadBack = screen.getByRole('link', { name: '\u062a\u0646\u0632\u064a\u0644 \u0635\u0648\u0631\u0629 \u0627\u0644\u0628\u0637\u0627\u0642\u0629 (\u0638\u0647\u0631)' });
+    expect(downloadBack.getAttribute('href')).toBe('/api/v1/employees/1/images/idBack');
+    expect(downloadBack.getAttribute('download')).toBe('b.jpg');
+  });
+
   test('edits an employee without requiring a new pin or images', async () => {
     mocks.updateEmployee.mockResolvedValue(employee);
     renderView();
