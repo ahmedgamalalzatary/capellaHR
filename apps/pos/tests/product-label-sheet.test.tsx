@@ -37,15 +37,15 @@ describe('ProductLabelSheet', () => {
   it('sizes the page from the one label-size constant', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
-    expect(baseElement.querySelector('style')?.textContent).toContain('40mm 15mm');
+    expect(baseElement.querySelector('style')?.textContent).toContain('20mm 30mm');
   });
 
   it('rotates the complete sticker content 90 degrees clockwise', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const content = baseElement.querySelector<HTMLElement>('[data-product-label-content]');
-    expect(content?.style.width).toBe('15mm');
-    expect(content?.style.height).toBe('40mm');
+    expect(content?.style.width).toBe('30mm');
+    expect(content?.style.height).toBe('20mm');
     expect(content?.style.transform).toBe('rotate(90deg)');
   });
 
