@@ -295,7 +295,8 @@ const migrateLegacyDraft = (owner: SaleDraftOwner): StoredSaleDraft | null => {
   if (!legacy) return null;
   const decoded = decodeStoredDraft(legacy);
   if (!decoded) return null;
-  if (writeSaleDraft(owner, decoded.draft)) sessionStorage.removeItem(saleDraftStorageKey(owner));
+  sessionStorage.removeItem(saleDraftStorageKey(owner));
+  writeSaleDraft(owner, decoded.draft);
   return decoded.draft;
 };
 

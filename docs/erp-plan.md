@@ -167,16 +167,16 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Delivery | Hosted web app (per-customer installation) |
 | UI language | Arabic, RTL — consistent with existing `apps/web` |
 | Admin login | Seeded from `.env` (kept, becomes first Admin account — §6) |
-| Cashier accounts | Accounts with roles; employee optionally linked (§6) |
+| Cashier accounts | One branch-scoped cashier login per branch; Admin can create it and change its username and password from the POS (§6) |
 | Inventory | Full stock tracking: purchases increase, POS sales decrease, low-stock alerts |
 | Commissions | Configurable rate per service **with per-employee override**; recorded in an ERP-owned immutable ledger, projected into payroll (§8) |
 | Receipts | 80mm thermal receipt at POS **and** A4 PDF export in reports |
 | Clients | Real clients database: search by phone at POS, visit history — not free text per invoice |
 | Payment methods | Cash, Visa, InstaPay, Vodafone Cash (fixed list; adding one is a code change — accepted) |
 | Locale | Egypt: EGP single currency, `Africa/Cairo`, `ar-EG`; receipts and PDFs Arabic-only |
-| Employee assignment | **One employee per invoice that contains services** (the client's whole service visit); product-only invoices have no employee assignment. Consequence, accepted: a client served by two specialists in one visit gets two invoices |
+| Employee assignment | **One checked-in employee per service line.** Different services on the same invoice may use different employees; product lines have no performer. A completed, not-yet-refunded service line can be reassigned with a reason, immutable history, and matching commission correction |
 | Clients on invoices | **Mandatory** — every invoice references a client record; no anonymous sales |
-| Payment timing | **Always paid in full at sale.** No deposits, tabs, installments, or prepaid packages — explicitly out of scope |
+| Payment timing | Service invoices must be paid in full. **Product-only invoices may be partially paid**, keep an open balance on the same invoice, and accept additional payments later. Deposits, prepaid packages, and service credit remain out of scope |
 | Service pricing | Optional catalog price: fixed prices are locked during sale; services without a catalog price require a positive seller-entered unit price. Admins convert modes by deleting or adding the catalog price. |
 | Assignment eligibility | **Strictly checked-in employees**, no cashier override — an unchecked-in employee checks in via HR first |
 | Product commission | Configurable percentage per product; paid to the invoice seller and recorded in the same immutable commission ledger |
@@ -184,7 +184,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | POS sessions | **Exactly one open cashier session per branch at a time** — two cashiers can never be open simultaneously |
 | Login split | Employee code+PIN login exists **for attendance/self-service only**; business actions (selling, invoices, …) require an account (§6) with username + password |
 | Migrations & core | All schemas migrate on every installation regardless of edition; `audit` is always-on core — both confirmed |
-| Split payments | **Allowed** — one invoice may be paid by a mix of methods (e.g. part cash, part Visa); per-method amounts recorded, must sum to the invoice total |
+| Split payments | **Allowed** — a payment may be split across Cash, Visa, InstaPay, and Vodafone Cash. A completed product-only invoice may initially receive less than its total and later receive additional payment rows until settled |
 | Discounts | **Invoice-level only** (no line discounts), as **% or fixed amount**, applied/edited freely by the cashier, recorded with the acting account |
 | Tax | Symmetric with discount: an invoice-level **% or fixed amount** that can be activated/edited per invoice (adds where discount subtracts) |
 | Commission base | **Pre-discount sale unit price.** For open-price services this is the seller-entered price. Discounts are the shop's cost, never the employee's — invoice discounts don't touch the commission ledger |
@@ -192,11 +192,12 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Refund after payroll finalized | Becomes an HR **deduction** for the employee (submitted via public capability). Employees can **view their commission totals** |
 | Invoice numbers | `INV-YYYY.MM.DD-HH.MM-<seq>` in Cairo time; `<seq>` is a daily incrementing counter; gaps from rolled-back transactions are acceptable (numbers are never reused) |
 | E-invoice/ETA compliance | **Out of scope** — no legal/government integration |
-| Cashier sessions | Open/close recorded (**who + when only**) — no cash-drawer counting or reconciliation; drawer is trusted |
-| Voids & refunds | Performed by cashier **or** admin (no approval hierarchy), always recorded with acting account. Refund of a product line restores stock; any refund appends commission reversal entries (§8) |
+| Cashier sessions | Open/close and a printable end-of-shift report record cashier, branch, duration, sales, returns, discounts, tax, net sales, expenses, collections, credit sales, and net totals per payment method. There is still no cash-drawer counting or reconciliation; the drawer is trusted |
+| Voids & refunds | Performed by cashier **or** admin (no approval hierarchy), always recorded with acting account. For a refund, the cashier freely splits the cash payout across Cash, Visa, InstaPay, and Vodafone Cash, independently of the original tenders. Refund of a product line restores stock; any refund appends commission reversal entries (§8) |
 | Payment references | **Not recorded** — payment methods are labels only, no transaction IDs or provider reconciliation |
 | Offline behavior | **Degrade gracefully:** completed sales queue locally (browser storage) with their idempotency keys and sync when the connection returns — never a lost sale, never a duplicate (§8) |
-| Consumables | **Not tracked** — products used while performing services are invisible to stock |
+| Service queue | Every sold service unit receives a static queue number scoped to its cashier shift and service. Numbers print on the receipt and appear in pending/completed/overdue service views and reports; this is not a live serving-position board |
+| Consumables | Products can be configured as `ml`/`gm` consumables with a package size, transferred by whole package between sellable and consumable stock, and recorded when a queued service is completed. Balances, corrections, valued ledger history, usage, and completion reports are retained |
 | Stock operations | Recommended defaults (owner delegated): stock **adjustments** with reasons (count correction, wastage, damage) via stocktaking; **no** inter-branch transfers; one unit per product; **no** variants |
 | Costing | **Last purchase cost** is the cost basis |
 | Suppliers | **No returns; purchases always fully paid** — no supplier balances or credit |
@@ -214,7 +215,7 @@ These are architectural invariants, not features — the sales module is designe
 
 ### Commission ledger, not direct bonus rows
 
-Commissions are **ERP-owned** in an **immutable, append-only ledger**: one entry per service line for the invoice's assigned employee (rates vary per service; the employee is fixed per invoice — §7), snapshotting the rule and rate that applied. Refunds append **reversal entries**; nothing is ever updated or deleted. Every completed service sale or pre-finalization reversal transactionally refreshes one HR-owned payroll input containing that employee/month's current **net** commission. Its deterministic reference is `erp-commission:<month>:<employeeId>`, so retries are idempotent and open payroll previews always include the live value. Payroll finalization snapshots that value into the immutable payroll row. If a later reversal targets a month whose payroll is already finalized, ERP leaves the snapshot untouched and submits one idempotent HR deduction in the Cairo month of the reversal. Payroll never reads ERP tables; ERP calls HR-core public projection and deduction capabilities (Rule 2, §2), while the HR-owned input rows retain the traceable deterministic identity.
+Commissions are **ERP-owned** in an **immutable, append-only ledger**: one earned entry per service line for that line's assigned employee, snapshotting the rule and rate that applied. Refunds append reversal entries. A permitted post-sale employee correction appends reassignment-out and reassignment-in entries instead of erasing the original assignment. Every completed service sale or pre-finalization reversal/reassignment transactionally refreshes the affected HR-owned payroll inputs containing each employee/month's current **net** commission. Their deterministic identities make retries idempotent and keep open payroll previews current. Payroll finalization snapshots the value into the immutable payroll row. If a later refund targets a month whose payroll is already finalized, ERP leaves the snapshot untouched and submits one idempotent HR deduction in the Cairo month of the reversal. Payroll never reads or writes ERP tables directly; ERP uses HR-core public projection and deduction capabilities while the immutable ERP ledger remains the traceable source.
 
 Why not insert ordinary bonus rows at sale time: they lose refund reversibility, historical rate context, deterministic replacement under retries, and the audit path from salary back to invoice. The dedicated live input can be updated only until payroll finalization; the immutable ERP ledger remains the source of the calculated total.
 
@@ -248,7 +249,7 @@ Invoices are **facts about the past** and must never change when the catalog cha
 - Commission rule and rate used
 - Cost basis, where relevant (products)
 
-The **invoice** snapshots: the assigned employee when the invoice contains services (§7), the discount (kind: % or fixed, value, and computed amount), the tax (same shape), the resulting totals, and the per-method payment breakdown. New product-only invoices keep all employee assignment snapshot fields null; historical product-only invoices retain the employee snapshot required when they were created.
+Each service line snapshots its original assigned employee. Reads overlay any later audited reassignment as the current performer while retaining the original assignment history. The invoice also snapshots the discount (kind: % or fixed, value, and computed amount), tax (same shape), totals, and payment history. Product lines have no performer. Additional product-only partial-payment rows and refund-payment rows append later without rewriting the original sale facts.
 
 Renaming a service or changing its price affects future invoices only.
 
@@ -258,7 +259,7 @@ ERP reports are Admin-only and branch/date filtered. Screen pages and export bat
 
 Product profit is calculated as net product revenue after the invoice discount is allocated exactly across invoice lines, excluding tax, less the product line's snapshotted last-purchase-cost basis multiplied by quantity. A product reversal negates both the allocated net revenue and the corresponding snapshotted cost. This preserves historical profit when catalog names, prices, or purchase costs later change.
 
-The shared database-backed report queue renders Arabic landscape A4 PDFs for the 15 tabular reports and Arabic portrait A4 PDFs for one selected stored invoice. Invoice PDFs include snapshotted client, employee, line, payment, discount, tax, total, and acting-account facts. The Admin invoice detail exposes queue, status, retry, and download controls independently from void/refund mutation state.
+The shared database-backed report queue renders Arabic landscape A4 PDFs for the 21 tabular ERP reports and Arabic portrait A4 PDFs for one selected stored invoice. Invoice PDFs include snapshotted client, employee, line, payment, discount, tax, total, and acting-account facts. The Admin invoice detail exposes queue, status, retry, and download controls independently from void/refund mutation state.
 
 ### Cross-feature administration UX — delivered in ERP20
 
@@ -277,10 +278,10 @@ The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching 
 | `catalog` | Categories (services + expenses), services, products |
 | `suppliers` | Suppliers and purchases (purchases feed stock) |
 | `stock` | Quantities on hand, movements, low-stock alerts |
-| `sales` | POS: invoices, invoice lines, payments, invoice-level employee assignment, cashier sessions, commission ledger |
+| `sales` | POS: invoices, invoice lines, payment ledger/open balances, per-service-line employee assignment and correction, refunds, static service queue numbers, cashier sessions, and printable shift reports |
 | `expenses` | Categorized expenses |
 | `clients` | Client records (name, phone, visit history) |
-| `erp-reports` | Delivered in ERP19: 15 ERP reports plus invoice/report PDF export through the existing worker pipeline |
+| `erp-reports` | 21 tabular ERP reports plus invoice/report PDF export and browser printing through the existing worker pipeline |
 
 Plus: `apps/pos` (new Next.js frontend), the account/role model in HR core (§6), and the edition wiring (§4).
 
@@ -298,7 +299,7 @@ All owner-level questions from the original list are now **answered and locked i
 
 2. **Full Drizzle schemas** for every ERP table + the accounts/roles migration in HR core (including retiring the `admin_credentials` singleton).
 3. **Void vs refund definitions** — the *authority* is decided (§7: cashier or admin, no hierarchy); the exact semantics to draft: void = same-day full cancellation, refund = full or partial after the fact; both reverse stock (products) and append commission reversals.
-4. **POS screen flow** (owner delegated the default): search/pick client → add service/product lines → when any service is present, assign one checked-in employee → discount/tax if any → mixed payment entry → complete (one transaction) → print/reprint. Product-only sales skip employee assignment. To be drafted as wireframes with the Arabic RTL layout.
+4. **POS screen flow** (delivered): search/pick client → add service/product lines → assign a checked-in employee independently to each service line (with an optional default) → discount/tax if any → mixed payment entry → complete (one transaction) → print/reprint. Product-only sales skip employee assignment and may leave an open balance for later payments; service sales must be settled in full.
 5. **Employee commission visibility — delivered in ERP17:** employees see their own monthly earned, reversed, and net totals in HR self-service through a public capability; Admins get branch/month totals and invoice-line/reversal traceability in the POS.
 6. **Offline queue design** — the §7/§8 local-queue-with-idempotency-keys mechanism, drafted concretely (storage, replay, failure UX at the counter).
 7. **Invoice sequence implementation** — the daily counter behind `INV-YYYY.MM.DD-HH.MM-<seq>` (same singleton-sequence pattern the repo already uses for `employee_code_sequence`).

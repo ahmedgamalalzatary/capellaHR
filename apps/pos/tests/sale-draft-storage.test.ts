@@ -251,6 +251,20 @@ describe('sale draft storage', () => {
     expect(sessionStorage.getItem(saleDraftStorageKey(owner, draft.idempotencyKey))).not.toBeNull();
   });
 
+  it('removes a decoded legacy draft before announcing its migrated replacement', () => {
+    const legacyKey = saleDraftStorageKey(owner);
+    sessionStorage.setItem(legacyKey, JSON.stringify({ savedAt: Date.now(), draft }));
+    const legacyValuesAtNotification: Array<string | null> = [];
+    const unsubscribe = subscribeSaleDrafts(() => {
+      legacyValuesAtNotification.push(sessionStorage.getItem(legacyKey));
+    });
+
+    expect(readSaleDraft(owner)?.idempotencyKey).toBe(draft.idempotencyKey);
+
+    expect(legacyValuesAtNotification).toEqual([null]);
+    unsubscribe();
+  });
+
   it('fails closed for malformed or unavailable browser storage', () => {
     const malformedKey = saleDraftStorageKey(owner);
     sessionStorage.setItem(malformedKey, '{bad json');
