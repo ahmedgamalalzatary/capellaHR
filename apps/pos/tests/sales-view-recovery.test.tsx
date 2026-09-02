@@ -1,0 +1,862 @@
+import { type PublicInvoiceDto, saleFixtures } from '@capella/contracts';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
+
+import { ApiError } from '../src/lib/api/client';
+
+const mocks = vi.hoisted(() => ({
+  actor: { current: { type: 'cashier', accountId: 3 } as
+    { type: 'cashier'; accountId: number } | { type: 'admin'; accountId: number } },
+  getCurrentSession: vi.fn(),
+  getClient: vi.fn(async () => ({ id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678' })),
+  listBranches: vi.fn(),
+  listBranchCashierRoster: vi.fn(),
+  quoteSale: vi.fn(),
+  completeSale: vi.fn(),
+  synchronizeOfflineSales: vi.fn(),
+  listSellableProducts: vi.fn(),
+  listAssignableEmployees: vi.fn(),
+  clientPickerProps: vi.fn(),
+  servicePickerProps: vi.fn(),
+  serviceAvailable: { current: true },
+  getBooking: vi.fn(),
+}));
+
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({ data: { actor: mocks.actor.current } }),
+}));
+vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', () => ({
+  getCurrentCashierSession: mocks.getCurrentSession,
+  listCashierSessionBranches: mocks.listBranches,
+}));
+vi.mock('../src/features/cashier-accounts/api/branch-roster-api', () => ({
+  listBranchCashierRoster: mocks.listBranchCashierRoster,
+  replaceBranchCashierRoster: vi.fn(),
+}));
+vi.mock('../src/features/clients', () => ({
+  getClient: mocks.getClient,
+  ClientPicker: (props: { branchId?: number; selected?: unknown; onSelect: (value: unknown) => void }) => (
+    mocks.clientPickerProps(props),
+    <button onClick={() => props.onSelect({ id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678' })}>
+      اختر العميل
+    </button>
+  ),
+}));
+vi.mock('../src/features/catalog', () => ({
+  ServicePicker: (props: { branchId?: number; onSelect: (value: unknown) => void; onAvailabilityChange?: (value: boolean) => void }) => {
+    useEffect(() => { props.onAvailabilityChange?.(mocks.serviceAvailable.current); }, [props.onAvailabilityChange]);
+    return (
+    mocks.servicePickerProps(props), <>
+      <button onClick={() => props.onSelect({
+        id: 21, branchId: 2, categoryId: 1, categoryName: 'شعر', categoryIsActive: true,
+        name: 'صبغة شعر', description: null, price: '200.00', commissionPercent: '10.00',
+        isActive: true, createdAt: '', updatedAt: '',
+      })}>
+        أضف الخدمة
+      </button>
+      <button onClick={() => props.onSelect({
+        id: 22, branchId: 2, categoryId: 1, categoryName: 'شعر', categoryIsActive: true,
+        name: 'بروتين الشعر', description: null, price: null, commissionPercent: '15.00',
+        isActive: true, createdAt: '', updatedAt: '',
+      })}>
+        أضف خدمة بسعر مفتوح
+      </button>
+    </>);
+  },
+}));
+vi.mock('../src/features/products/api/products-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  listSellableProducts: mocks.listSellableProducts,
+}));
+vi.mock('../src/features/employee-assignment', () => ({
+  PresentEmployeePicker: ({ onSelect }: { onSelect: (value: unknown) => void }) => (
+    <button onClick={() => onSelect({ id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 })}>
+      اختر الموظف
+    </button>
+  ),
+  listAssignableEmployees: mocks.listAssignableEmployees,
+  employeeAssignmentQueryKeys: {
+    present: (branchId?: number) => ['erp-assignable-employees', branchId ?? 'own'],
+  },
+}));
+vi.mock('../src/features/sales/api/sales-api', () => ({
+  quoteSale: mocks.quoteSale,
+  completeSale: mocks.completeSale,
+}));
+vi.mock('../src/features/bookings', () => ({
+  getBooking: mocks.getBooking,
+  bookingQueryKeys: { detail: (id: number) => ['erp-bookings', 'detail', id, 'own'] },
+}));
+vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/features/sales/offline-sale-sync')>();
+  return {
+    ...actual,
+    synchronizeOfflineSales: (input: Parameters<typeof actual.synchronizeOfflineSales>[0]) => {
+      mocks.synchronizeOfflineSales(input);
+      return actual.synchronizeOfflineSales(input);
+    },
+  };
+});
+
+import { SalesView } from '../src/features/sales/components/sales-view';
+import { invoiceEmployees } from '../src/features/sales/components/receipt';
+import { cashierAccountQueryKeys } from '../src/features/cashier-accounts/query-keys';
+import {
+  enqueueOfflineSale,
+  markOfflineSaleFailed,
+} from '../src/features/sales/offline-sale-queue';
+
+// The saved-sale screen now prints the real receipt, so the stub must be a whole invoice.
+const invoice = saleFixtures.completedInvoice;
+
+const renderView = (bookingId?: number) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><SalesView {...(bookingId === undefined ? {} : { bookingId })} /></QueryClientProvider>);
+  return client;
+};
+
+const readStoredPending = () => {
+  const key = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+    .find((candidate) => candidate === 'capella:pending-sale'
+      || candidate?.startsWith('capella:pending-sale:')
+      || candidate?.startsWith('capella:offline-sale:v1:'));
+  return key ? localStorage.getItem(key) : null;
+};
+
+const readOfflineQueue = () => Array.from(
+  { length: localStorage.length },
+  (_, index) => localStorage.key(index),
+).filter((key): key is string => key?.startsWith('capella:offline-sale:v1:') === true)
+  .map((key) => JSON.parse(localStorage.getItem(key) ?? '{}') as {
+    state?: string;
+    input?: { idempotencyKey?: string };
+  });
+
+const buildDraft = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+  fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+  fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
+  fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+  await screen.findByText('185.00 ج.م');
+};
+
+describe('ERP service-sale view', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    mocks.actor.current = { type: 'cashier', accountId: 3 };
+    mocks.getCurrentSession.mockReset().mockResolvedValue({ id: 13, branchId: 2, openedByAccountId: 3 });
+    mocks.listBranches.mockReset().mockResolvedValue({
+      items: [{ id: 2, name: 'Main' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    mocks.listBranchCashierRoster.mockReset().mockResolvedValue([
+      { id: 9, employeeCode: 1009, fullName: 'أحمد جمال' },
+      { id: 10, employeeCode: 1010, fullName: 'منى سعيد' },
+    ]);
+    mocks.clientPickerProps.mockReset();
+    mocks.servicePickerProps.mockReset();
+    mocks.serviceAvailable.current = true;
+    mocks.quoteSale.mockReset().mockResolvedValue({
+      lines: [{ itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' }],
+      discount: { kind: 'percentage', value: '10.00', amount: '20.00' },
+      tax: { kind: 'fixed', value: '5.00', amount: '5.00' },
+      totals: { subtotal: '200.00', discountAmount: '20.00', taxAmount: '5.00', total: '185.00' },
+    });
+    mocks.completeSale.mockReset().mockResolvedValue(invoice);
+    mocks.listSellableProducts.mockReset().mockResolvedValue({
+      items: [{
+        id: 31, branchId: 2, name: 'شامبو', description: null,
+        sellingPrice: '50.00', lastPurchaseCost: '30.00', lowStockThreshold: 1,
+        isActive: true, quantity: 4, createdAt: '', updatedAt: '',
+      }],
+      meta: { page: 1, pageSize: 50, total: 1, totalPages: 1 },
+    });
+    mocks.listAssignableEmployees.mockReset().mockResolvedValue([
+      { id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 },
+      { id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 },
+    ]);
+    mocks.synchronizeOfflineSales.mockReset();
+    mocks.getBooking.mockReset();
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('replays a failed sale once across an online-offline-online connectivity flap', async () => {
+    const predecessor = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 12,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    enqueueOfflineSale({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 12 },
+      input: predecessor,
+    });
+    markOfflineSaleFailed(predecessor.idempotencyKey, new ApiError(503, {
+      code: 'UNEXPECTED_ERROR', message: 'الخادم غير متاح',
+    }));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    renderView();
+    await screen.findByRole('button', { name: 'اختر العميل' });
+    await waitFor(() => expect(mocks.clientPickerProps.mock.calls.length).toBeGreaterThan(1));
+    vi.useFakeTimers();
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    window.dispatchEvent(new Event('offline'));
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(mocks.synchronizeOfflineSales).toHaveBeenCalledTimes(1);
+    expect(mocks.synchronizeOfflineSales).toHaveBeenCalledWith(expect.objectContaining({
+      owner: expect.objectContaining({ cashierSessionId: 12 }),
+      includeFailed: true,
+    }));
+    await vi.waitFor(() => expect(mocks.completeSale).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: predecessor.idempotencyKey }),
+    ));
+  });
+
+  it('updates the pending queue label from connectivity events', async () => {
+    const input = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    enqueueOfflineSale({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input,
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    mocks.completeSale.mockImplementation(() => new Promise(() => undefined));
+    renderView();
+    await screen.findByText('بانتظار الاتصال');
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    expect(screen.getByText('بانتظار المزامنة')).toBeDefined();
+  });
+
+  it('does not submit when durable browser storage is unavailable and explains recovery', async () => {
+    renderView();
+    await buildDraft();
+    const storageWrite = vi.spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+
+    expect(await screen.findByText(/تعذر حفظ طلب البيع بأمان/)).toBeDefined();
+    expect(mocks.completeSale).not.toHaveBeenCalled();
+    storageWrite.mockRestore();
+  });
+
+  it('blocks completion until client, service, employee, and exact payment are ready', async () => {
+    renderView();
+    const submit = await screen.findByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    await buildDraft();
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('restores an in-progress workspace draft after the route remounts', async () => {
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
+
+    cleanup();
+    renderView();
+
+    // The draft is offered, not applied: the workspace stays empty until asked.
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    // The stored draft holds only the client id, so the record is fetched back.
+    await waitFor(() => expect(mocks.getClient).toHaveBeenCalledWith(5, undefined));
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    ));
+    await waitFor(() => expect((screen.getByRole('button', {
+      name: 'مراجعة وإتمام البيع + طباعة',
+    }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByText(/تم استعادة مسودة البيع/)).toBeDefined();
+  });
+
+  it('never lets a slow restored client overwrite the one just chosen', async () => {
+    let resolveClient!: (value: { id: number; branchId: number; fullName: string; phone: string }) => void;
+    mocks.getClient.mockReturnValueOnce(new Promise((resolve) => { resolveClient = resolve; }));
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
+
+    cleanup();
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+    // The cashier does not wait for the lookup and picks someone else.
+    fireEvent.click(screen.getByRole('button', { name: 'اختر العميل' }));
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    ));
+    await act(async () => {
+      resolveClient({ id: 9, branchId: 2, fullName: 'عميل قديم', phone: '01000000000' });
+    });
+
+    expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
+    );
+  });
+
+  it('drops the offered draft when the cashier chooses to ignore it', async () => {
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
+
+    cleanup();
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'تجاهل' }));
+
+    expect(screen.queryByText('صبغة شعر')).toBeNull();
+    cleanup();
+    renderView();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'استعادة' })).toBeNull());
+  });
+
+  it('keeps the server render hydration-safe when a browser draft exists', async () => {
+    renderView();
+    await buildDraft();
+    await waitFor(() => expect(Array.from(
+      { length: sessionStorage.length },
+      (_, index) => sessionStorage.key(index),
+    ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
+    cleanup();
+
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['erp-sales', 'cashier-session', null], {
+      id: 13,
+      branchId: 2,
+      openedByAccountId: 3,
+    });
+    const html = renderToString(
+      <QueryClientProvider client={queryClient}><SalesView /></QueryClientProvider>,
+    );
+
+    expect(html).not.toContain('صبغة شعر');
+    expect(html).not.toContain('تم استعادة مسودة البيع');
+  });
+
+  it('replays a durable pending request after the app reloads online', async () => {
+    const pending = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    localStorage.setItem('capella:pending-sale', JSON.stringify({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input: pending,
+    }));
+    renderView();
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(pending);
+  });
+
+  it('replays every queued request for the current workspace in creation order', async () => {
+    const first = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    const second = { ...first, idempotencyKey: '22222222-2222-4222-8222-222222222222' };
+    const owner = { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 };
+    localStorage.setItem(`capella:pending-sale:${first.idempotencyKey}`, JSON.stringify({ owner, input: first }));
+    localStorage.setItem(`capella:pending-sale:${second.idempotencyKey}`, JSON.stringify({ owner, input: second }));
+
+    renderView();
+
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(2));
+    expect(mocks.completeSale.mock.calls.map(([input]) => input.idempotencyKey)).toEqual([
+      first.idempotencyKey,
+      second.idempotencyKey,
+    ]);
+    expect(readOfflineQueue()).toEqual([]);
+  });
+
+  it('recovers the matching workspace request when another owner record sorts first', async () => {
+    const matching = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    localStorage.setItem('capella:pending-sale:00000000-0000-4000-8000-000000000000', JSON.stringify({
+      owner: { accountId: 4, role: 'cashier', branchId: 2, cashierSessionId: 12 },
+      input: { ...matching, cashierSessionId: 12, idempotencyKey: '00000000-0000-4000-8000-000000000000' },
+    }));
+    localStorage.setItem(`capella:pending-sale:${matching.idempotencyKey}`, JSON.stringify({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input: matching,
+    }));
+
+    renderView();
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(matching);
+  });
+
+  it('recovers a committed pending sale after its Cashier session has closed', async () => {
+    const pending = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    localStorage.setItem('capella:pending-sale', JSON.stringify({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input: pending,
+    }));
+    mocks.getCurrentSession.mockResolvedValue(null);
+
+    renderView();
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(pending);
+  });
+
+  it('replays every queued sale for the cashier even after the session has closed', async () => {
+    const first = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: '33333333-3333-4333-8333-333333333333',
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    const second = { ...first, idempotencyKey: '44444444-4444-4444-8444-444444444444' };
+    const owner = { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 };
+    localStorage.setItem(`capella:pending-sale:${first.idempotencyKey}`, JSON.stringify({ owner, input: first }));
+    localStorage.setItem(`capella:pending-sale:${second.idempotencyKey}`, JSON.stringify({ owner, input: second }));
+    mocks.getCurrentSession.mockResolvedValue(null);
+
+    renderView();
+
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(2));
+    expect(readOfflineQueue()).toEqual([]);
+  });
+
+  it('retries a closed-session queued sale when connectivity returns', async () => {
+    const pending = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 13,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    localStorage.setItem('capella:pending-sale', JSON.stringify({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input: pending,
+    }));
+    mocks.getCurrentSession.mockResolvedValue(null);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    renderView();
+    await screen.findByText(/استعادة نتيجة البيع المعلق/);
+    expect(mocks.completeSale).not.toHaveBeenCalled();
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
+    expect(readOfflineQueue()).toEqual([]);
+  });
+
+  it('replays an older-session queue in the background after a new session opens', async () => {
+    const pending = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 12,
+      idempotencyKey: crypto.randomUUID(),
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash', amount: '185.00' }],
+    };
+    localStorage.setItem('capella:pending-sale', JSON.stringify({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 12 },
+      input: pending,
+    }));
+
+    renderView();
+
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(pending);
+    expect(await screen.findByRole('heading', { name: 'بيع جديد' })).toBeDefined();
+    expect(screen.getByText(/تمت مزامنة بيع معلق بنجاح/)).toBeDefined();
+    expect(readOfflineQueue()).toEqual([]);
+
+    await buildDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    await screen.findByText('تم حفظ الفاتورة');
+    fireEvent.click(screen.getByRole('button', { name: 'بيع جديد' }));
+
+    expect(screen.queryByText(/تمت مزامنة بيع معلق بنجاح/)).toBeNull();
+  });
+
+  it('reopens an older-session conflict under the current session with a fresh key', async () => {
+    const oldInput = {
+      clientId: 5,
+      sellerEmployeeId: 9,
+      cashierSessionId: 12,
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+      payments: [{ method: 'cash' as const, amount: '185.00' }],
+    };
+    enqueueOfflineSale({
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 12 },
+      input: oldInput,
+      recoveryDraft: {
+        client: { id: 5, branchId: 2, fullName: 'منى أحمد', phone: '01012345678', createdAt: '', updatedAt: '' },
+        employee: { id: 8, employeeCode: 1008, fullName: 'سارة علي', branchId: 2 },
+        seller: { id: 9, employeeCode: 1009, fullName: 'أحمد جمال' },
+        lines: [{
+          service: {
+            id: 21, branchId: 2, categoryId: 1, categoryName: 'شعر', categoryIsActive: true,
+            name: 'صبغة شعر', description: null, price: '200.00', commissionPercent: '10.00',
+            isActive: true, createdAt: '', updatedAt: '',
+          },
+          quantity: 1,
+          unitPrice: '200.00',
+          itemType: 'service',
+        }],
+        discountKind: 'percentage',
+        discountValue: '',
+        taxKind: 'percentage',
+        taxValue: '',
+        payments: { cash: '185.00', visa: '', instapay: '', vodafone_cash: '' },
+        paymentsTouched: false,
+        idempotencyKey: oldInput.idempotencyKey,
+      },
+    });
+    markOfflineSaleFailed(oldInput.idempotencyKey, new ApiError(409, {
+      code: 'PRICE_CHANGED',
+      message: 'تغير السعر',
+    }));
+
+    renderView();
+    await buildDraft();
+    expect(screen.queryByRole('button', { name: 'مراجعة وتعديل البيع' })).toBeNull();
+    expect(screen.getByText('صبغة شعر')).toBeDefined();
+    cleanup();
+    sessionStorage.clear();
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'مراجعة وتعديل البيع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'اختر العميل' }));
+    await waitFor(() => expect((screen.getByRole('button', {
+      name: 'مراجعة وإتمام البيع + طباعة',
+    }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+
+    await screen.findByText('تم حفظ الفاتورة');
+    const submitted = mocks.completeSale.mock.calls[0]?.[0] as {
+      cashierSessionId: number;
+      idempotencyKey: string;
+    };
+    expect(submitted.cashierSessionId).toBe(13);
+    expect(submitted.idempotencyKey).not.toBe(oldInput.idempotencyKey);
+    expect(readOfflineQueue()).toEqual([]);
+  });
+
+  it('does not replay, clear, or block on a pending sale owned by another cashier session', async () => {
+    const stored = {
+      owner: { accountId: 4, role: 'cashier', branchId: 2, cashierSessionId: 12 },
+      input: {
+        clientId: 5,
+        sellerEmployeeId: 9,
+        cashierSessionId: 12,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+        payments: [{ method: 'cash', amount: '185.00' }],
+      },
+    };
+    localStorage.setItem('capella:pending-sale', JSON.stringify(stored));
+
+    renderView();
+
+    expect(await screen.findByRole('heading', { name: 'بيع جديد' })).toBeDefined();
+    expect(screen.queryByText(/بيع معلق.*حساب أو وردية أخرى/)).toBeNull();
+    expect(mocks.completeSale).not.toHaveBeenCalled();
+    await waitFor(() => expect(localStorage.getItem('capella:pending-sale')).toBeNull());
+    expect(readOfflineQueue()).toEqual([
+      expect.objectContaining({ input: expect.objectContaining(stored.input) }),
+    ]);
+    await buildDraft();
+    expect((screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }) as HTMLButtonElement).disabled)
+      .toBe(false);
+  });
+
+  it('replays a newer queued request saved by another tab after the active request', async () => {
+    let resolveCompletion!: (value: typeof invoice) => void;
+    mocks.completeSale.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveCompletion = resolve;
+    }));
+    renderView();
+    await buildDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
+    const replacement = {
+      owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
+      input: {
+        ...(mocks.completeSale.mock.calls[0]?.[0] as object),
+        idempotencyKey: crypto.randomUUID(),
+      },
+    };
+    localStorage.setItem('capella:pending-sale', JSON.stringify(replacement));
+
+    resolveCompletion(invoice);
+    await screen.findByText('تم حفظ الفاتورة');
+
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(2));
+    expect(mocks.completeSale.mock.calls[1]?.[0]).toEqual(expect.objectContaining(replacement.input));
+    expect(readOfflineQueue()).toEqual([]);
+  });
+
+  it('passes the Admin selected branch to client and service pickers', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    renderView();
+
+    await screen.findByRole('option', { name: 'Main' });
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: '2' } });
+
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2 })));
+    expect(mocks.servicePickerProps).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2 }));
+  });
+
+  it('keeps the branch selectable so an Admin can correct a wrong pick', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.listBranches.mockResolvedValue({
+      items: [{ id: 2, name: 'Main' }, { id: 3, name: 'Second' }],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    renderView();
+
+    await screen.findByRole('option', { name: 'Main' });
+    fireEvent.change(await screen.findByLabelText('الفرع'), { target: { value: '2' } });
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 2 }),
+    ));
+
+    // The picker is still on screen above the workspace, so the branch can change.
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+
+    await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ branchId: 3 }),
+    ));
+  });
+
+  it('offers a branch change instead of a dead end when the branch has no open shift', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.getCurrentSession.mockResolvedValue(null);
+    renderView();
+
+    await screen.findByRole('option', { name: 'Main' });
+    fireEvent.change(await screen.findByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(await screen.findByText('لا توجد وردية بيع متاحة لهذا الحساب')).toBeDefined();
+    expect(screen.getByLabelText('الفرع')).toBeDefined();
+  });
+
+  it('shows and retries an Admin branch-loading error', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.listBranches.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({
+      items: [{ id: 2, name: 'Main' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    renderView();
+
+    expect(await screen.findByText('تعذر تحميل الفروع')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+
+    expect(await screen.findByRole('option', { name: 'Main' })).toBeDefined();
+  });
+
+  it('sends each service line to the employee chosen on that line', async () => {
+    mocks.quoteSale.mockResolvedValue({
+      lines: [
+        { itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' },
+        { itemType: 'service', sourceId: 22, name: 'بروتين الشعر', quantity: 1, unitPrice: '150.00', lineTotal: '150.00' },
+      ],
+      discount: null,
+      tax: null,
+      totals: { subtotal: '350.00', discountAmount: '0.00', taxAmount: '0.00', total: '350.00' },
+    });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    // The default fills the services already waiting and every one added after.
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف خدمة بسعر مفتوح' }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    const openPrice = screen.getByLabelText('سعر بروتين الشعر') as HTMLInputElement;
+    fireEvent.change(openPrice, { target: { value: '150.00' } });
+
+    const lineEmployees = await screen.findAllByLabelText(/^موظف /);
+    expect(lineEmployees).toHaveLength(2);
+    expect((lineEmployees[0] as HTMLSelectElement).value).toBe('8');
+    expect((lineEmployees[1] as HTMLSelectElement).value).toBe('8');
+    // The second service was performed by someone else.
+    fireEvent.change(lineEmployees[1] as HTMLSelectElement, { target: { value: '11' } });
+
+    await screen.findAllByText('350.00 ج.م');
+    const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect(review).toHaveProperty('disabled', false));
+    fireEvent.click(review);
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0].lines).toEqual([
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 },
+      { itemType: 'service', serviceId: 22, quantity: 1, unitPrice: '150.00', employeeId: 11 },
+    ]);
+  });
+
+  it('drops an employee who left the branch instead of submitting their hidden id', async () => {
+    // The present list no longer carries employee 8: they checked out after the
+    // default picker put them on the line.
+    mocks.listAssignableEmployees.mockResolvedValue([
+      { id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 },
+    ]);
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    await screen.findByText('185.00 ج.م');
+
+    const lineEmployee = await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement;
+    await waitFor(() => expect(lineEmployee.value).toBe(''));
+    // Nothing is chosen on screen, so nothing may be sent as chosen either.
+    expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', true);
+
+    fireEvent.change(lineEmployee, { target: { value: '11' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', false));
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0].lines).toEqual([
+      { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 11 },
+    ]);
+  });
+
+  it('blocks the sale while any service line names no employee', async () => {
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    await screen.findByText('185.00 ج.م');
+
+    // Added before any employee was chosen, so the line still names nobody.
+    expect((await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByLabelText('موظف صبغة شعر'), { target: { value: '11' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
+      .toHaveProperty('disabled', false));
+  });
+
+  it('retries a failed Cashier-session load without reloading the page', async () => {
+    mocks.getCurrentSession.mockRejectedValueOnce(new Error('offline'));
+    renderView();
+
+    expect(await screen.findByText('تعذر تحميل وردية الكاشير')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+
+    expect(await screen.findByRole('heading', { name: 'بيع جديد' })).toBeDefined();
+    expect(mocks.getCurrentSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed quote without changing the sale draft', async () => {
+    mocks.quoteSale.mockRejectedValueOnce(new Error('offline'));
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
+
+    expect(await screen.findByText('حدث خطأ غير متوقع. حاول مرة أخرى.')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة حساب الإجمالي' }));
+
+    expect(await screen.findByText('185.00 ج.م')).toBeDefined();
+    expect(mocks.quoteSale).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets the seller remove stale service prices after a catalog price change', async () => {
+    mocks.quoteSale.mockRejectedValue(new ApiError(409, {
+      code: 'PRICE_CHANGED', message: 'تغير سعر إحدى الخدمات؛ راجع السعر وأعد المحاولة',
+    }));
+    const queryClient = renderView();
+    queryClient.setQueryData(['catalog', 'services'], { cached: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'أضف الخدمة' }));
+
+    expect(await screen.findByText('تغير سعر إحدى الخدمات؛ راجع السعر وأعد المحاولة')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إزالة الخدمات وإعادة اختيارها' }));
+
+    expect(screen.queryByText('صبغة شعر')).toBeNull();
+    expect(queryClient.getQueryState(['catalog', 'services'])?.isInvalidated).toBe(true);
+  });
+
+  it('shows feedback when an Admin has no branches', async () => {
+    mocks.actor.current = { type: 'admin', accountId: 1 };
+    mocks.listBranches.mockResolvedValue({
+      items: [],
+      meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 },
+    });
+    renderView();
+
+    expect(await screen.findByText('لا توجد فروع متاحة')).toBeDefined();
+  });
+
+  it('submits immediately from the review-and-print button without a confirmation dialog', async () => {
+    renderView();
+    await buildDraft();
+
+    fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
+
+    await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog', { name: 'تأكيد البيع' })).toBeNull();
+  });
+});
