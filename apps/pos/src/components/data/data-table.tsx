@@ -29,18 +29,6 @@ export function DataTable({
   );
 }
 
-/**
- * A column pinned to the end of the row while the rest of the table scrolls under it.
- *
- * A ledger wider than its card scrolls sideways, and the scrollbar that reveals the
- * overflow sits below the last row — so on a table taller than the screen the end
- * column could only be reached by scrolling the page to the bottom first. Pinning
- * the row actions keeps them on screen at any width; only the data columns move. The
- * cell paints its own background because the columns sliding under it would
- * otherwise show through.
- */
-const pinnedColumn = 'sticky end-0 border-s border-line/60';
-
 /** Header row wrapper: pass `TH` cells as children. */
 export function THead({ children }: { children: ReactNode }) {
   return (
@@ -60,9 +48,8 @@ export function TH({
     <th
       scope="col"
       className={cn(
-        'whitespace-nowrap px-4 py-2.5 text-[12px] font-semibold tracking-wide text-muted',
+        'whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide text-muted',
         numeric ? 'text-start' : 'text-start',
-        pinned ? `${pinnedColumn} z-20 bg-surface` : null,
         className,
       )}
       {...props}
@@ -91,9 +78,8 @@ export function TD({
   return (
     <td
       className={cn(
-        'px-4 py-3 align-middle',
+        'px-2 py-2.5 align-middle',
         numeric ? 'tabular text-start' : 'text-start',
-        pinned ? `${pinnedColumn} z-10 bg-paper group-hover:bg-surface` : null,
         className,
       )}
       {...props}

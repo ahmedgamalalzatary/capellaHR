@@ -10,29 +10,39 @@ import { PrintPageRule } from '@/lib/print/page-rule';
 /**
  * How the sticker's height is divided.
  *
- * A 40x10mm label has to carry the product name, the price, the bars and the
- * digits under them, and one centimetre is all there is. So the two text rows are
- * given fixed millimetres and the barcode takes everything left over: enlarging a
- * text row shortens the bars by exactly that much instead of pushing them off the
- * roll. The font sizes are in millimetres rather than points for the same reason —
- * at this size the row height is the constraint, so the glyphs are tied to it.
+ * A 40x10mm label has to carry the price, the brand, the product name, the bars
+ * and the digits under them, and one centimetre is all there is. So the three
+ * text rows are given fixed millimetres and the barcode takes everything left
+ * over: enlarging a text row shortens the bars by exactly that much instead of
+ * pushing them off the roll. The font sizes are in millimetres rather than
+ * points for the same reason — at this size the row height is the constraint,
+ * so the glyphs are tied to it.
  */
 const LABEL_PADDING_MM = 0.3;
-const TEXT_ROW_MM = 2.1;
-const TEXT_FONT_MM = 1.9;
-const DIGITS_ROW_MM = 1.7;
-const DIGITS_FONT_MM = 1.5;
+const TOP_ROW_MM = 1.5;
+const TOP_FONT_MM = 1.4;
+const NAME_ROW_MM = 1.4;
+const NAME_FONT_MM = 1.3;
+const DIGITS_ROW_MM = 1.3;
+const DIGITS_FONT_MM = 1.2;
+/** Extra space between the bars and the human-readable digits — a little, not a row. */
+const DIGITS_OFFSET_MM = 0.25;
 const ROW_GAP_MM = 0.15;
 /** Absorbs the sub-millimetre rounding the driver does, so no row is clipped. */
 const SLACK_MM = 0.1;
+const TEXT_ROWS = 3;
 
 const CONTENT_WIDTH_MM = LABEL_SIZE_MM.width - LABEL_PADDING_MM * 2;
 const BARCODE_HEIGHT_MM = LABEL_SIZE_MM.height
   - LABEL_PADDING_MM * 2
-  - TEXT_ROW_MM
+  - TOP_ROW_MM
+  - NAME_ROW_MM
   - DIGITS_ROW_MM
-  - ROW_GAP_MM * 2
+  - DIGITS_OFFSET_MM
+  - ROW_GAP_MM * TEXT_ROWS
   - SLACK_MM;
+
+const LABEL_BRAND = 'Capella Care';
 
 /** Sub-millimetre arithmetic leaves float dust that has no business in the DOM. */
 const mm = (value: number) => `${Math.round(value * 100) / 100}mm`;
@@ -104,13 +114,20 @@ export function ProductLabelSheet({ products, onPrinted }: {
             gap: mm(ROW_GAP_MM),
           }}
         >
-          {/* Right-to-left, so the name opens the row and the price closes it. */}
+          {/* LTR so the price stays on the left and the brand on the right. */}
           <div
+            dir="ltr"
             className="flex w-full items-baseline justify-between gap-1 font-semibold leading-none"
-            style={{ height: mm(TEXT_ROW_MM), fontSize: mm(TEXT_FONT_MM) }}
+            style={{ height: mm(TOP_ROW_MM), fontSize: mm(TOP_FONT_MM) }}
           >
-            <span className="truncate">{product.name}</span>
             <span className="tabular shrink-0">{product.sellingPrice} ج.م</span>
+            <span className="truncate">{LABEL_BRAND}</span>
+          </div>
+          <div
+            className="w-full truncate leading-none"
+            style={{ height: mm(NAME_ROW_MM), fontSize: mm(NAME_FONT_MM) }}
+          >
+            {product.name}
           </div>
           {/* Sized in millimetres and filled by an SVG the browser scales to it. */}
           <div
@@ -122,7 +139,11 @@ export function ProductLabelSheet({ products, onPrinted }: {
           />
           <div
             className="tabular w-full text-center leading-none tracking-wider"
-            style={{ height: mm(DIGITS_ROW_MM), fontSize: mm(DIGITS_FONT_MM) }}
+            style={{
+              height: mm(DIGITS_ROW_MM),
+              fontSize: mm(DIGITS_FONT_MM),
+              marginTop: mm(DIGITS_OFFSET_MM),
+            }}
           >
             {product.barcode}
           </div>

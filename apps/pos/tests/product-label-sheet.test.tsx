@@ -12,13 +12,14 @@ const product = (over: Partial<{ id: number; name: string; sellingPrice: string;
 });
 
 const sticker = (root: Element) => root.querySelector<HTMLElement>('[data-product-label]')!;
-const millimetres = (value: string) => Number.parseFloat(value);
+const millimetres = (value: string) => Number.parseFloat(value) || 0;
 
 describe('ProductLabelSheet', () => {
-  it('prints one sticker per product, carrying the name, price and code', () => {
+  it('prints one sticker per product, carrying the price, brand, name and code', () => {
     window.print = vi.fn();
     render(<ProductLabelSheet products={[product(), product({ id: 12, name: 'بلسم', barcode: '2000000000121' })]} onPrinted={vi.fn()} />);
     expect(screen.getAllByRole('img')).toHaveLength(2);
+    expect(screen.getAllByText('Capella Care')).toHaveLength(2);
     expect(screen.getByText('شامبو')).toBeTruthy();
     expect(screen.getByText('2000000000114')).toBeTruthy();
     expect(screen.getAllByText('120.00 ج.م')).toHaveLength(2);
@@ -55,7 +56,7 @@ describe('ProductLabelSheet', () => {
     expect(label.style.transform).toBe('');
   });
 
-  it('fits the name, the price, the bars and the digits inside the one centimetre it has', () => {
+  it('fits the price, the brand, the name, the bars and the digits inside the one centimetre it has', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const label = sticker(baseElement);
@@ -64,11 +65,34 @@ describe('ProductLabelSheet', () => {
     const gaps = millimetres(label.style.gap) * (rows.length - 1);
     const stacked = rows.reduce((total, row) => total + millimetres(row.style.height), 0);
 
-    expect(rows).toHaveLength(3);
-    expect(padding + gaps + stacked).toBeLessThanOrEqual(LABEL_SIZE_MM.height);
+    const digitsOffset = millimetres((rows.at(-1) as HTMLElement).style.marginTop);
+    expect(rows).toHaveLength(4);
+    expect(padding + gaps + stacked + digitsOffset).toBeLessThanOrEqual(LABEL_SIZE_MM.height);
     expect(screen.getByText('شامبو')).toBeTruthy();
+    expect(screen.getByText('Capella Care')).toBeTruthy();
     expect(screen.getByText('120.00 ج.م')).toBeTruthy();
     expect(screen.getByText('2000000000114')).toBeTruthy();
+  });
+
+  it('puts the price and brand on the first row and the name on its own truncated line', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
+    const [top, name] = [...sticker(baseElement).children] as HTMLElement[];
+
+    expect(top.textContent).toContain('120.00 ج.م');
+    expect(top.textContent).toContain('Capella Care');
+    expect(name.textContent).toBe('شامبو');
+    expect(name.className).toContain('truncate');
+  });
+
+  it('sits the barcode digits a little below the bars', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
+    const digits = [...sticker(baseElement).children].at(-1) as HTMLElement;
+    const offset = millimetres(digits.style.marginTop);
+
+    expect(offset).toBeGreaterThan(0);
+    expect(offset).toBeLessThanOrEqual(0.4);
   });
 
   it('gives the bars the full printable width and every millimetre the text rows leave', () => {
@@ -76,12 +100,12 @@ describe('ProductLabelSheet', () => {
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const label = sticker(baseElement);
     const bars = label.querySelector<HTMLElement>('[data-product-label-bars]')!;
-    const [top, , digits] = [...label.children] as HTMLElement[];
+    const [top, name, , digits] = [...label.children] as HTMLElement[];
 
     expect(millimetres(bars.style.width)).toBe(LABEL_SIZE_MM.width - millimetres(label.style.padding) * 2);
-    // Whatever is left of the label once the two text rows have been paid for.
+    // Whatever is left of the label once the three text rows have been paid for.
     expect(millimetres(bars.style.height)).toBeGreaterThan(
-      millimetres(top!.style.height) + millimetres(digits!.style.height),
+      millimetres(top!.style.height) + millimetres(name!.style.height) + millimetres(digits!.style.height),
     );
   });
 
