@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
+import { LABEL_PAGE_MM, LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
 import { Barcode, barcodeSvg, barcodeSvgFitting, symbologyFor } from '@/lib/barcode/render-barcode';
 
 describe('barcode rendering', () => {
@@ -46,8 +46,11 @@ describe('barcode rendering', () => {
     expect(screen.getByRole('img', { name: 'ABC-1234' }).querySelector('svg')).not.toBeNull();
   });
 
-  it('derives the print page rule from the one label-size constant', () => {
-    expect(LABEL_PAGE_RULE).toContain(`${LABEL_SIZE_MM.width}mm ${LABEL_SIZE_MM.height}mm`);
+  it('derives the print page rule from the one label-size constant, turned', () => {
+    // The sticker is turned a quarter turn onto the roll, so the paper is the
+    // roll's sides swapped — declaring it upright would clip the bars.
+    expect(LABEL_PAGE_RULE).toContain(`${LABEL_PAGE_MM.width}mm ${LABEL_PAGE_MM.height}mm`);
+    expect([LABEL_PAGE_MM.width, LABEL_PAGE_MM.height]).toEqual([LABEL_SIZE_MM.height, LABEL_SIZE_MM.width]);
   });
 
   it.each([

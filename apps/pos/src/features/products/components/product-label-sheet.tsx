@@ -3,7 +3,12 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
-import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
+import {
+  LABEL_PAGE_MM,
+  LABEL_PAGE_RULE,
+  LABEL_QUARTER_TURN_CW,
+  LABEL_SIZE_MM,
+} from '@/lib/barcode/label-size';
 import { barcodeSvgFitting } from '@/lib/barcode/render-barcode';
 import { PrintPageRule } from '@/lib/print/page-rule';
 
@@ -62,6 +67,11 @@ export interface LabelProduct {
  * A product with no code, or with one no 1D symbology can express, is skipped
  * rather than printed blank — a sticker carrying a name and a price but no bars
  * looks finished and is useless at the till, so the admin gives it a code first.
+ *
+ * Each sticker is composed upright and then turned a quarter turn clockwise onto
+ * a page of its own footprint, so the rows range across the roll's 4 cm and read
+ * from its edge inwards. Only the placement turns: the sticker keeps the layout
+ * it was measured for, which is what leaves the bars their full 4 cm.
  */
 export function ProductLabelSheet({ products, onPrinted }: {
   products: LabelProduct[];
@@ -104,48 +114,61 @@ export function ProductLabelSheet({ products, onPrinted }: {
       {printable.map(({ product, svg }) => (
         <div
           key={product.id}
-          data-product-label
+          data-product-label-page
           // The break after the last sticker would feed one blank label off the roll.
-          className="flex break-after-page flex-col items-center overflow-hidden last:break-after-auto"
-          style={{
-            width: mm(LABEL_SIZE_MM.width),
-            height: mm(LABEL_SIZE_MM.height),
-            padding: mm(LABEL_PADDING_MM),
-            gap: mm(ROW_GAP_MM),
-          }}
+          className="flex break-after-page items-center justify-center overflow-hidden last:break-after-auto"
+          style={{ width: mm(LABEL_PAGE_MM.width), height: mm(LABEL_PAGE_MM.height) }}
         >
-          {/* LTR so the price stays on the left and the brand on the right. */}
+          {/*
+            Turned about its own centre, which lands a 40x10 sticker's corners exactly
+            on a 10x40 page. `shrink-0` matters: the sticker is four times wider than
+            the page it sits in, and a flex item that wide is squeezed to fit unless
+            told not to — it has to keep its authored size for the turn to land.
+          */}
           <div
-            dir="ltr"
-            className="flex w-full items-baseline justify-between gap-1 font-semibold leading-none"
-            style={{ height: mm(TOP_ROW_MM), fontSize: mm(TOP_FONT_MM) }}
-          >
-            <span className="tabular shrink-0">{product.sellingPrice} ج.م</span>
-            <span className="truncate">{LABEL_BRAND}</span>
-          </div>
-          <div
-            className="w-full truncate leading-none"
-            style={{ height: mm(NAME_ROW_MM), fontSize: mm(NAME_FONT_MM) }}
-          >
-            {product.name}
-          </div>
-          {/* Sized in millimetres and filled by an SVG the browser scales to it. */}
-          <div
-            role="img"
-            aria-label={product.barcode!}
-            data-product-label-bars
-            style={{ width: mm(CONTENT_WIDTH_MM), height: mm(BARCODE_HEIGHT_MM) }}
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
-          <div
-            className="tabular w-full text-center leading-none tracking-wider"
+            data-product-label
+            className="flex shrink-0 flex-col items-center overflow-hidden"
             style={{
-              height: mm(DIGITS_ROW_MM),
-              fontSize: mm(DIGITS_FONT_MM),
-              marginTop: mm(DIGITS_OFFSET_MM),
+              width: mm(LABEL_SIZE_MM.width),
+              height: mm(LABEL_SIZE_MM.height),
+              padding: mm(LABEL_PADDING_MM),
+              gap: mm(ROW_GAP_MM),
+              transform: LABEL_QUARTER_TURN_CW,
             }}
           >
-            {product.barcode}
+            {/* LTR so the price stays on the left and the brand on the right. */}
+            <div
+              dir="ltr"
+              className="flex w-full items-baseline justify-between gap-1 font-semibold leading-none"
+              style={{ height: mm(TOP_ROW_MM), fontSize: mm(TOP_FONT_MM) }}
+            >
+              <span className="tabular shrink-0">{product.sellingPrice} ج.م</span>
+              <span className="truncate">{LABEL_BRAND}</span>
+            </div>
+            <div
+              className="w-full truncate leading-none"
+              style={{ height: mm(NAME_ROW_MM), fontSize: mm(NAME_FONT_MM) }}
+            >
+              {product.name}
+            </div>
+            {/* Sized in millimetres and filled by an SVG the browser scales to it. */}
+            <div
+              role="img"
+              aria-label={product.barcode!}
+              data-product-label-bars
+              style={{ width: mm(CONTENT_WIDTH_MM), height: mm(BARCODE_HEIGHT_MM) }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+            <div
+              className="tabular w-full text-center leading-none tracking-wider"
+              style={{
+                height: mm(DIGITS_ROW_MM),
+                fontSize: mm(DIGITS_FONT_MM),
+                marginTop: mm(DIGITS_OFFSET_MM),
+              }}
+            >
+              {product.barcode}
+            </div>
           </div>
         </div>
       ))}

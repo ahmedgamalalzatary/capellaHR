@@ -42,18 +42,27 @@ describe('ProductLabelSheet', () => {
   it('sizes the page from the one label-size constant', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
-    expect(baseElement.querySelector('style')?.textContent).toContain('40mm 10mm');
+    // The turned sticker's footprint: the roll's own sides, swapped.
+    expect(baseElement.querySelector('style')?.textContent).toContain('10mm 40mm');
   });
 
-  it('prints the sticker upright at the size of the loaded roll', () => {
+  it('composes the sticker at the size of the loaded roll and turns it a quarter turn clockwise', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const label = sticker(baseElement);
+    const page = baseElement.querySelector<HTMLElement>('[data-product-label-page]')!;
+
+    // Authored at the roll's size, so the rows keep the millimetres they were
+    // measured for and the bars keep their full 4 cm of length.
     expect(label.style.width).toBe('40mm');
     expect(label.style.height).toBe('10mm');
-    // The old sticker was authored portrait and rotated to fit; a 4cm-wide label
-    // reads straight across, and a stray rotation would print it on its side.
-    expect(label.style.transform).toBe('');
+    expect(label.style.transform).toBe('rotate(90deg)');
+    // Turned about its centre, so its corners land exactly on the page: anything
+    // other than the swapped footprint would clip the sticker or pad the roll.
+    expect(page.style.width).toBe(`${LABEL_SIZE_MM.height}mm`);
+    expect(page.style.height).toBe(`${LABEL_SIZE_MM.width}mm`);
+    // A sticker four times wider than its page is squeezed to fit unless told not to.
+    expect(label.className).toContain('shrink-0');
   });
 
   it('fits the price, the brand, the name, the bars and the digits inside the one centimetre it has', () => {
@@ -79,10 +88,10 @@ describe('ProductLabelSheet', () => {
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const [top, name] = [...sticker(baseElement).children] as HTMLElement[];
 
-    expect(top.textContent).toContain('120.00 ج.م');
-    expect(top.textContent).toContain('Capella Care');
-    expect(name.textContent).toBe('شامبو');
-    expect(name.className).toContain('truncate');
+    expect(top!.textContent).toContain('120.00 ج.م');
+    expect(top!.textContent).toContain('Capella Care');
+    expect(name!.textContent).toBe('شامبو');
+    expect(name!.className).toContain('truncate');
   });
 
   it('sits the barcode digits a little below the bars', () => {
