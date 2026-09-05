@@ -11,6 +11,8 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
 import { PageHeader } from '@/components/layout/page-header';
 import { ApiError } from '@/lib/api/client';
+import { RECEIPT_PAGE_RULE } from '@/lib/print/hardware';
+import { PrintPageRule } from '@/lib/print/page-rule';
 
 import { getCashierSessionReport, type CashierSessionReport } from '../api/cashier-sessions-api';
 import { cashierSessionQueryKeys } from '../query-keys';
@@ -39,8 +41,8 @@ const closureLabel = ({ summary }: CashierSessionReport) => {
 function ReportRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-0.5">
-      <dt>{label}</dt>
-      <dd dir="ltr" className="shrink-0 text-left font-medium tabular-nums">{value}</dd>
+      <dt className="min-w-0 break-words">{label}</dt>
+      <dd dir="ltr" className="min-w-0 break-words text-left font-medium tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -56,7 +58,7 @@ function ReportDocument({ report }: { report: CashierSessionReport }) {
       data-shift-report
       role="region"
       aria-label="تقرير نهاية الوردية"
-      className="mx-auto w-full max-w-[22rem] bg-paper px-5 py-6 text-[13px] leading-6 text-ink print:max-w-none print:px-3 print:py-0"
+      className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-[13px] leading-6 text-ink print:px-[2mm] print:py-0"
     >
       <header className="mb-3 text-center">
         <h1 className="text-lg font-bold">تقرير الوردية</h1>
@@ -114,7 +116,10 @@ function ShiftReportPrintSheet({ report, onPrinted }: { report: CashierSessionRe
   }, [onPrinted]);
 
   return createPortal(
-    <div id="print-root" className="p-0 text-ink"><ReportDocument report={report} /></div>,
+    <div id="print-root" className="p-0 text-ink">
+      <PrintPageRule rule={RECEIPT_PAGE_RULE} />
+      <ReportDocument report={report} />
+    </div>,
     document.body,
   );
 }

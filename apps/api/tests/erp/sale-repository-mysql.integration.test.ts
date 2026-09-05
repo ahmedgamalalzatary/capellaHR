@@ -244,7 +244,7 @@ describe('ERP sale repository MySQL integration', () => {
       invoiceId: open.id,
       input: {
         branchId: data.branchId, cashierSessionId: data.cashierSessionId,
-        method: 'cash' as const, amount: '70.00', operationReference: crypto.randomUUID(),
+        method: 'cash' as const, amount: '20.00', operationReference: crypto.randomUUID(),
       },
       actingAccountId: data.accountId,
       actingAccountRole: 'cashier' as const,
@@ -253,8 +253,8 @@ describe('ERP sale repository MySQL integration', () => {
     const [first, retry] = await Promise.all([
       repository.recordPayment(payment), repository.recordPayment(payment),
     ]);
-    expect(first.totals.balanceDue).toBe('0.00');
-    expect(retry.totals.balanceDue).toBe('0.00');
+    expect(first.totals).toMatchObject({ amountPaid: '50.00', balanceDue: '50.00', settlementStatus: 'open' });
+    expect(retry.totals).toEqual(first.totals);
     expect(await database.select().from(invoicePayments)
       .where(eq(invoicePayments.invoiceId, open.id))).toHaveLength(2);
     await expect(repository.findByIdempotencyKey(sale.input.idempotencyKey, {
@@ -263,6 +263,15 @@ describe('ERP sale repository MySQL integration', () => {
     await expect(repository.recordPayment({
       ...payment, input: { ...payment.input, amount: '69.00' },
     })).rejects.toEqual(expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }));
+    await expect(repository.recordPayment({
+      ...payment, input: { ...payment.input, amount: '51.00', operationReference: crypto.randomUUID() },
+    })).rejects.toEqual(expect.objectContaining({ code: 'PAYMENT_EXCEEDS_BALANCE' }));
+    const settled = await repository.recordPayment({
+      ...payment, input: { ...payment.input, amount: '50.00', operationReference: crypto.randomUUID() },
+    });
+    expect(settled.totals).toMatchObject({ amountPaid: '100.00', balanceDue: '0.00', settlementStatus: 'settled' });
+    expect(await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, open.id))).toHaveLength(3);
   });
 
   it('credits product returns against debt before paying cash back', async () => {

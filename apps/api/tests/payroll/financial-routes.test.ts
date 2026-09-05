@@ -57,8 +57,9 @@ describe('financial HTTP APIs', () => {
   });
 
   it('exposes strict CRUD for bonuses, deductions, and advances', async () => {
+    const deductions = deductionService();
     const app = createApp({
-      authService: makeAuth(), bonusService: bonusService(), deductionService: deductionService(),
+      authService: makeAuth(), bonusService: bonusService(), deductionService: deductions,
       advanceService: advanceService(),
     });
     const cookie = { Cookie: 'capella_session=x' };
@@ -69,7 +70,13 @@ describe('financial HTTP APIs', () => {
     expect((await request(app).post('/api/v1/bonuses').set(cookie)
       .send({ employeeId: 7, amount: '100', payrollMonth: '2026-07' })).status).toBe(400);
     expect((await request(app).post('/api/v1/deductions').set(cookie)
-      .send({ employeeId: 7, amount: '10', payrollMonth: '2026-07' })).status).toBe(201);
+      .send({ employeeId: 7, amount: '10', payrollMonth: '2026-07', reason: 'تأخير' })).status).toBe(201);
+    expect(deductions.create).toHaveBeenCalledWith({
+      employeeId: 7, amount: '10.00', payrollMonth: '2026-07', reason: 'تأخير',
+    });
+    expect((await request(app).post('/api/v1/deductions').set(cookie)
+      .send({ employeeId: 7, amount: '10', payrollMonth: '2026-07' })).status).toBe(400);
+    expect(deductions.create).toHaveBeenCalledTimes(1);
     expect((await request(app).post('/api/v1/advances').set(cookie)
       .send({ employeeId: 7, amount: '100', installmentCount: 1, startMonth: '2026-07' })).status).toBe(201);
     expect((await request(app).delete('/api/v1/bonuses/1').set(cookie)).status).toBe(204);
