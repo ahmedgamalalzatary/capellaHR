@@ -35,12 +35,21 @@ describe('consumables service', () => {
     const repo = repository();
     const service = createConsumablesService({ repository: repo, resolveBranchContext: context });
     await service.complete(cashier, {
-      serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '20.000' }],
+      serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '20.000' }], noConsumablesConfirmed: false,
     });
     expect(repo.complete).toHaveBeenCalledWith({
       branchId: 3, accountId: 2, accountRole: 'cashier',
       serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '20.000' }],
     });
+  });
+
+  it('refuses service completion without consumables or an explicit no-consumables confirmation', async () => {
+    const repo = repository();
+    const service = createConsumablesService({ repository: repo, resolveBranchContext: context });
+    await expect(service.complete(cashier, {
+      serviceQueueEntryIds: [11], usages: [], noConsumablesConfirmed: false,
+    })).rejects.toMatchObject({ code: 'CONSUMABLE_USAGE_DECISION_REQUIRED' });
+    expect(repo.complete).not.toHaveBeenCalled();
   });
 
   it('scopes a cashier service list to their own account while admins may inspect the branch', async () => {

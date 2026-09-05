@@ -151,6 +151,8 @@ export function CashierSessionView() {
   const actionError = errorMessage(
     openMutation.error ?? closeMutation.error ?? recoveryMutation.error,
   );
+  const unfinishedServices = closeMutation.error instanceof ApiError
+    && closeMutation.error.code === 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES';
   const ownsSession = isCashier
     && session !== null
     && session !== undefined
@@ -296,6 +298,14 @@ export function CashierSessionView() {
               {closeMutation.error ? (
                 <span role="alert" className="mt-2 block text-danger">
                   {errorMessage(closeMutation.error)}
+                  {unfinishedServices && session ? (
+                    <Link
+                      href={`/consumables?cashierSessionId=${session.id}`}
+                      className="mt-2 block w-fit rounded-control border border-danger/30 px-3 py-1.5 font-medium hover:bg-danger-soft"
+                    >
+                      إكمال خدمات العملاء
+                    </Link>
+                  ) : null}
                 </span>
               ) : null}
             </>

@@ -54,8 +54,16 @@ export const completeServiceExecutionsSchema = z.object({
   serviceQueueEntryIds: z.array(coercedMysqlIntSchema).min(1).max(100)
     .refine((ids) => new Set(ids).size === ids.length, 'تم تكرار الخدمة'),
   usages: usagesSchema,
+  noConsumablesConfirmed: z.boolean(),
   ...branchScope,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.usages.length === 0 && !value.noConsumablesConfirmed) {
+    context.addIssue({ code: 'custom', path: ['noConsumablesConfirmed'], message: 'أكد عدم استخدام مستهلكات' });
+  }
+  if (value.usages.length > 0 && value.noConsumablesConfirmed) {
+    context.addIssue({ code: 'custom', path: ['noConsumablesConfirmed'], message: 'لا يمكن تأكيد عدم الاستخدام مع إضافة مستهلكات' });
+  }
+});
 
 export const correctServiceExecutionSchema = z.object({
   reason: z.string().trim().min(1).max(1000),
@@ -71,7 +79,7 @@ export const listConsumableBalancesQuerySchema = z.object({
 }).strict();
 
 export const listConsumableServicesQuerySchema = z.object({
-  status: z.enum(['pending', 'completed', 'overdue']).optional(),
+  status: z.enum(['pending', 'completed', 'overdue', 'unfinished']).optional(),
   cashierSessionId: coercedMysqlIntSchema.optional(),
   serviceId: coercedMysqlIntSchema.optional(),
   employeeId: coercedMysqlIntSchema.optional(),

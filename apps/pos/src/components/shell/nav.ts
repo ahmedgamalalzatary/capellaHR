@@ -41,7 +41,7 @@ export const adminNavigation: NavGroup[] = [
       { href: '/invoices', label: 'الفواتير', icon: ReceiptText },
       { href: '/refunds', label: 'المرتجعات', icon: RotateCcw },
       { href: '/clients', label: 'العملاء', icon: Users },
-      { href: '/consumables', label: 'المستهلكات والخدمات', icon: PackageOpen }
+      { href: '/consumables', label: 'خدمات العملاء والمستهلكات', icon: PackageOpen }
     ],
   },
   {
@@ -98,8 +98,8 @@ export const cashierNavigation: NavGroup[] = [
     ],
   },
   {
-    label: 'المستهلكات',
-    items: [{ href: '/consumables', label: 'المستهلكات والخدمات', icon: PackageOpen }],
+    label: 'خدمات العملاء',
+    items: [{ href: '/consumables', label: 'خدمات العملاء والمستهلكات', icon: PackageOpen }],
   },
 ];
 

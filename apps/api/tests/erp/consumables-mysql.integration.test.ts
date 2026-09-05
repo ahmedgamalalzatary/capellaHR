@@ -87,11 +87,14 @@ describe('consumables MySQL inventory integration', () => {
     await database.insert(invoiceLineReassignments).values({ invoiceId, invoiceLineId: lineId, branchId: data.branchId, fromEmployeeId: employeeId, toEmployeeId: reassignedEmployeeId, reason: 'Actual performer', operationReference: crypto.randomUUID(), actingAccountId: accountId, createdAt: at });
     expect((await repository.listServices(data.branchId, { status: 'pending', employeeId: reassignedEmployeeId, page: 1, pageSize: 20 })).items)
       .toEqual(expect.arrayContaining([expect.objectContaining({ employeeId: reassignedEmployeeId, employeeName: 'Reassigned Employee' })]));
+    expect((await repository.listServices(data.branchId, { status: 'unfinished', page: 1, pageSize: 20 })).total).toBe(3);
 
     await expect(repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Too early', usages: [] }))
       .rejects.toMatchObject({ code: 'CONSUMABLE_SERVICE_NOT_COMPLETED' });
     await repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: queueIds.slice(0, 2), usages: [{ productId: data.productId, quantity: '15.000' }] });
     await repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] });
+    await expect(repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] }))
+      .rejects.toMatchObject({ code: 'CONSUMABLE_SERVICE_ALREADY_COMPLETED' });
     await repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Actual measurement', usages: [{ productId: data.productId, quantity: '5.000' }] });
 
     await database.update(erpConsumableConfigurations).set({ unit: 'gm' }).where(and(

@@ -181,7 +181,8 @@ export const createDrizzleConsumablesRepository = (
     const currentEmployeeId = sql<number | null>`coalesce((select reassignment.to_employee_id from erp_invoice_line_reassignments reassignment where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeId})`;
     const currentEmployeeName = sql<string | null>`coalesce((select employee.full_name from erp_invoice_line_reassignments reassignment inner join employees employee on employee.id = reassignment.to_employee_id where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeNameSnapshot})`;
     const filters = [eq(serviceQueueEntries.branchId, branchId)];
-    if (query.status) filters.push(eq(serviceQueueEntries.status, query.status));
+    if (query.status === 'unfinished') filters.push(inArray(serviceQueueEntries.status, ['pending', 'overdue']));
+    else if (query.status) filters.push(eq(serviceQueueEntries.status, query.status));
     if (query.cashierSessionId) filters.push(eq(serviceQueueEntries.cashierSessionId, query.cashierSessionId));
     if (query.serviceId) filters.push(eq(serviceQueueEntries.serviceId, query.serviceId));
     if (query.employeeId) filters.push(eq(currentEmployeeId, query.employeeId));

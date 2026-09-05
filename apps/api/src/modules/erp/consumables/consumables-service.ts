@@ -22,6 +22,7 @@ export type ConsumablesErrorCode =
   | 'CONSUMABLE_SERVICE_ALREADY_COMPLETED'
   | 'CONSUMABLE_SERVICE_NOT_COMPLETED'
   | 'CONSUMABLE_SERVICE_CANCELLED'
+  | 'CONSUMABLE_USAGE_DECISION_REQUIRED'
   | 'CONSUMABLE_DUPLICATE_USAGE'
   | 'CONSUMABLE_SERVICES_MUST_MATCH'
   | 'CONSUMABLE_SHIFT_CLOSED';
@@ -78,6 +79,14 @@ export const createConsumablesService = (dependencies: {
       );
     },
     async complete(actor: ErpAccountIdentity, input: CompleteServiceExecutionsInput) {
+      if ((input.usages.length === 0) === !input.noConsumablesConfirmed) {
+        throw new ConsumablesError(
+          'CONSUMABLE_USAGE_DECISION_REQUIRED',
+          input.usages.length === 0
+            ? 'أكد عدم استخدام مستهلكات قبل إكمال الخدمة'
+            : 'لا يمكن تأكيد عدم استخدام مستهلكات مع تسجيل كميات مستخدمة',
+        );
+      }
       const context = await dependencies.resolveBranchContext(actor, input.branchId);
       return dependencies.repository.complete({
         branchId: context.branchId, accountId: context.accountId, accountRole: context.accountRole,

@@ -9,6 +9,17 @@ import {
 } from '../../../../src/modules/erp/consumables/index.js';
 
 describe('ERP consumables contracts', () => {
+  it('requires explicit confirmation when completing without consumables', () => {
+    expect(completeServiceExecutionsSchema.safeParse({ serviceQueueEntryIds: [11], usages: [] }).success).toBe(false);
+    expect(completeServiceExecutionsSchema.safeParse({ serviceQueueEntryIds: [11], usages: [], noConsumablesConfirmed: true }).success).toBe(true);
+    expect(completeServiceExecutionsSchema.safeParse({
+      serviceQueueEntryIds: [11], usages: [{ productId: 7, quantity: '15' }], noConsumablesConfirmed: true,
+    }).success).toBe(false);
+  });
+
+  it('supports the combined unfinished customer-service view', () => {
+    expect(listConsumableServicesQuerySchema.safeParse({ status: 'unfinished' }).success).toBe(true);
+  });
   it('accepts only manual ml/gm package configuration', () => {
     expect(configureConsumableSchema.parse({ unit: 'ml', packageSize: '150', branchId: 2 }))
       .toEqual({ unit: 'ml', packageSize: '150.000', branchId: 2 });
@@ -16,7 +27,7 @@ describe('ERP consumables contracts', () => {
     expect(() => configureConsumableSchema.parse({ unit: 'gm', packageSize: '0' })).toThrow();
     expect(() => configureConsumableSchema.parse({ unit: 'gm', packageSize: '123456789012.001' })).toThrow();
     expect(completeServiceExecutionsSchema.parse({
-      serviceQueueEntryIds: [11], usages: [{ productId: 7, quantity: '1234567890123.001' }],
+      serviceQueueEntryIds: [11], usages: [{ productId: 7, quantity: '1234567890123.001' }], noConsumablesConfirmed: false,
     }).usages[0]?.quantity).toBe('1234567890123.001');
   });
 
@@ -32,10 +43,11 @@ describe('ERP consumables contracts', () => {
     const value = completeServiceExecutionsSchema.parse({
       serviceQueueEntryIds: [11, 12],
       usages: [{ productId: 7, quantity: '15.5' }],
+      noConsumablesConfirmed: false,
     });
     expect(value.usages).toEqual([{ productId: 7, quantity: '15.500' }]);
     expect(() => completeServiceExecutionsSchema.parse({
-      serviceQueueEntryIds: [11, 11], usages: [],
+      serviceQueueEntryIds: [11, 11], usages: [], noConsumablesConfirmed: true,
     })).toThrow();
   });
 

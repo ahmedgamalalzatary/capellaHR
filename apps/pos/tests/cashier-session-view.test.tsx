@@ -112,6 +112,19 @@ afterEach(() => {
 });
 
 describe('CashierSessionView', () => {
+  test('links a blocked shift close to its unfinished customer services', async () => {
+    mocks.getCurrentCashierSession.mockResolvedValue(session);
+    mocks.closeCashierSession.mockRejectedValue(new ApiError(409, {
+      code: 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES', message: 'توجد خدمات غير مكتملة', requestId: 'test',
+    }));
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إغلاق الوردية' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إغلاق الوردية' }));
+    const dialog = screen.getByRole('dialog');
+    const link = await within(dialog).findByRole('link', { name: 'إكمال خدمات العملاء' });
+    expect(link.getAttribute('href')).toBe('/consumables?cashierSessionId=14');
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
   test('announces cashier-session loading', async () => {
     mocks.getCurrentCashierSession.mockReturnValue(new Promise(() => undefined));
     renderView();
