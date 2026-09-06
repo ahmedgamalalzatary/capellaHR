@@ -71,6 +71,15 @@ describe('edition deployment contract', () => {
     }
   });
 
+  it('persists Turbo task results when source changes invalidate Docker layers', () => {
+    for (const dockerfile of ['dockerfile.api', 'dockerfile.web', 'dockerfile.pos']) {
+      const source = readFileSync(repositoryFile(dockerfile), 'utf8');
+      expect(source).toContain(
+        'RUN --mount=type=cache,id=capellahr-turbo,target=/app/.turbo',
+      );
+    }
+  });
+
   it('keeps browser API requests same-origin and gives both frontend servers a private API target', () => {
     const configPackage = JSON.parse(
       readFileSync(repositoryFile('packages/config/package.json'), 'utf8'),
