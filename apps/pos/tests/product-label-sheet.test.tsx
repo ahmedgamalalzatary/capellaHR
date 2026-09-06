@@ -62,7 +62,7 @@ describe('ProductLabelSheet', () => {
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const label = sticker(baseElement);
     const rows = [...label.children] as HTMLElement[];
-    const padding = millimetres(label.style.padding) * 2;
+    const padding = millimetres(label.style.paddingTop) + millimetres(label.style.paddingBottom);
     const gaps = millimetres(label.style.gap) * (rows.length - 1);
     const stacked = rows.reduce((total, row) => total + millimetres(row.style.height), 0);
 
@@ -103,11 +103,30 @@ describe('ProductLabelSheet', () => {
     const bars = label.querySelector<HTMLElement>('[data-product-label-bars]')!;
     const [top, name, , digits] = [...label.children] as HTMLElement[];
 
-    expect(millimetres(bars.style.width)).toBe(LABEL_SIZE_MM.width - millimetres(label.style.padding) * 2);
+    expect(millimetres(bars.style.width)).toBeCloseTo(
+      LABEL_SIZE_MM.width - millimetres(label.style.paddingLeft) - millimetres(label.style.paddingRight),
+    );
     // Whatever is left of the label once the three text rows have been paid for.
     expect(millimetres(bars.style.height)).toBeGreaterThan(
       millimetres(top!.style.height) + millimetres(name!.style.height) + millimetres(digits!.style.height),
     );
+  });
+
+  it('keeps label content inside a 2mm side clearance without sacrificing barcode height', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product({ sellingPrice: '500.00', name: 'oil hair mask 500 gm 15' })]} onPrinted={vi.fn()} />);
+    const label = sticker(baseElement);
+    const bars = label.querySelector<HTMLElement>('[data-product-label-bars]')!;
+    const left = millimetres(label.style.paddingLeft);
+    const right = millimetres(label.style.paddingRight);
+
+    expect(left).toBeGreaterThanOrEqual(2);
+    expect(right).toBeGreaterThanOrEqual(2);
+    expect(left + millimetres(bars.style.width)).toBeLessThanOrEqual(38);
+    expect(millimetres(bars.style.height)).toBeGreaterThanOrEqual(4.4);
+    expect(label.textContent).toContain('500.00');
+    expect(label.textContent).toContain('Capella Care');
+    expect(label.textContent).toContain('oil hair mask 500 gm 15');
   });
 
   it('does not page-break after the last sticker, which would eject a blank one', () => {

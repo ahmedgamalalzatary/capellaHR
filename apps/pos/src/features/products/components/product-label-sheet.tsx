@@ -18,7 +18,11 @@ import { PrintPageRule } from '@/lib/print/page-rule';
  * points for the same reason — at this size the row height is the constraint,
  * so the glyphs are tied to it.
  */
-const LABEL_PADDING_MM = 0.3;
+// Keep edge-aligned text away from the roll's edges: the shop's printout clips
+// the price/brand with only 0.3mm clearance. This is artwork padding, not a
+// change to the physical page or the driver's stock dimensions.
+const LABEL_SIDE_PADDING_MM = 2;
+const LABEL_VERTICAL_PADDING_MM = 0.3;
 const TOP_ROW_MM = 1.5;
 const TOP_FONT_MM = 1.4;
 const NAME_ROW_MM = 1.4;
@@ -32,9 +36,9 @@ const ROW_GAP_MM = 0.15;
 const SLACK_MM = 0.1;
 const TEXT_ROWS = 3;
 
-const CONTENT_WIDTH_MM = LABEL_SIZE_MM.width - LABEL_PADDING_MM * 2;
+const CONTENT_WIDTH_MM = LABEL_SIZE_MM.width - LABEL_SIDE_PADDING_MM * 2;
 const BARCODE_HEIGHT_MM = LABEL_SIZE_MM.height
-  - LABEL_PADDING_MM * 2
+  - LABEL_VERTICAL_PADDING_MM * 2
   - TOP_ROW_MM
   - NAME_ROW_MM
   - DIGITS_ROW_MM
@@ -110,7 +114,7 @@ export function ProductLabelSheet({ products, onPrinted }: {
           style={{
             width: mm(LABEL_SIZE_MM.width),
             height: mm(LABEL_SIZE_MM.height),
-            padding: mm(LABEL_PADDING_MM),
+            padding: `${mm(LABEL_VERTICAL_PADDING_MM)} ${mm(LABEL_SIDE_PADDING_MM)}`,
             gap: mm(ROW_GAP_MM),
           }}
         >
