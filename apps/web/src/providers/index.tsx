@@ -9,13 +9,12 @@ import { clearSessionState } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 
 export function createAppQueryClient() {
-  let queryClient: QueryClient;
   const handleError = (error: unknown) => {
     if (error instanceof ApiError && error.status === 401) {
       clearSessionState(queryClient);
     }
   };
-  queryClient = new QueryClient({
+  const queryClient = new QueryClient({
     queryCache: new QueryCache({ onError: handleError }),
     mutationCache: new MutationCache({ onError: handleError }),
     defaultOptions: {

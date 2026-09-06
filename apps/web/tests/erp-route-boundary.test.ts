@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { middleware } from '../src/middleware';
+import { proxy } from '../src/proxy';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -10,7 +10,7 @@ describe('ERP Web route boundary', () => {
     'redirects the HR-only route %s to attendance',
     (pathname) => {
       vi.stubEnv('EDITION', 'erp');
-      const response = middleware(new NextRequest(`https://attendance.example.com${pathname}`));
+      const response = proxy(new NextRequest(`https://attendance.example.com${pathname}`));
 
       expect(response.status).toBe(307);
       expect(response.headers.get('location')).toBe('https://attendance.example.com/branch-kiosk');
@@ -21,12 +21,12 @@ describe('ERP Web route boundary', () => {
     'allows the attendance-support route %s',
     (pathname) => {
       vi.stubEnv('EDITION', 'erp');
-      expect(middleware(new NextRequest(`https://attendance.example.com${pathname}`)).status).toBe(200);
+      expect(proxy(new NextRequest(`https://attendance.example.com${pathname}`)).status).toBe(200);
     },
   );
 
   it('does not restrict the full HR surface', () => {
     vi.stubEnv('EDITION', 'full');
-    expect(middleware(new NextRequest('https://hr.example.com/payroll')).status).toBe(200);
+    expect(proxy(new NextRequest('https://hr.example.com/payroll')).status).toBe(200);
   });
 });

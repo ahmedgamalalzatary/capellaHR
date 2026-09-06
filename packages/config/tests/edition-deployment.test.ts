@@ -40,12 +40,12 @@ describe('edition deployment contract', () => {
   });
 
   it('blocks direct HR-only routes from the ERP attendance surface', () => {
-    const middlewarePath = repositoryFile('apps/web/src/middleware.ts');
-    expect(existsSync(middlewarePath)).toBe(true);
-    if (!existsSync(middlewarePath)) return;
-    const middleware = readFileSync(middlewarePath, 'utf8');
+    const proxyPath = repositoryFile('apps/web/src/proxy.ts');
+    expect(existsSync(proxyPath)).toBe(true);
+    if (!existsSync(proxyPath)) return;
+    const proxy = readFileSync(proxyPath, 'utf8');
     for (const route of ['/dashboard', '/weekly-day-off', '/payroll', '/bonuses', '/deductions', '/advances', '/reports', '/self-service']) {
-      expect(middleware).toContain(`'${route}'`);
+      expect(proxy).toContain(`'${route}'`);
     }
   });
 

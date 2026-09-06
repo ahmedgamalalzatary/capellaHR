@@ -11,7 +11,7 @@ const HR_ONLY_ROUTES = [
   '/self-service',
 ] as const;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (process.env.EDITION !== 'erp') return NextResponse.next();
   const blocked = HR_ONLY_ROUTES.some((route) => (
     request.nextUrl.pathname === route || request.nextUrl.pathname.startsWith(`${route}/`)

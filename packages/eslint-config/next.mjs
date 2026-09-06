@@ -1,9 +1,16 @@
-import { FlatCompat } from '@eslint/eslintrc';
-
-// eslint-config-next still ships a legacy (eslintrc) config; adapt it to flat config.
-const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
+import nextVitals from 'eslint-config-next/core-web-vitals';
 
 export default [
   { ignores: ['.next/**', 'out/**', 'coverage/**'] },
-  ...compat.extends('next/core-web-vitals'),
+  ...nextVitals,
+  {
+    rules: {
+      // Existing patterns should be reviewed independently before enabling React Compiler rules.
+      'react-hooks/immutability': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/use-memo': 'warn',
+    },
+  },
 ];

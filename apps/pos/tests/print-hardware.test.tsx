@@ -65,7 +65,7 @@ describe('receipt paper', () => {
     expect(printRules().some((rule) => rule.includes(RECEIPT_PAGE_RULE))).toBe(true);
   });
 
-  it('prints every sales, employee, refund, and payment receipt with semibold fields', () => {
+  it('prints customer, refund, and payment receipts with semibold fields without employee copies', () => {
     render(<>
       <ReceiptBundle invoice={invoice} />
       <RefundReceipt invoice={invoice} reversal={refund} />
@@ -78,8 +78,9 @@ describe('receipt paper', () => {
     </>);
 
     const receipts = [...document.querySelectorAll<HTMLElement>('[data-receipt]')];
-    expect(receipts.length).toBeGreaterThanOrEqual(4);
+    expect(receipts).toHaveLength(3);
     expect(receipts.every((receipt) => receipt.classList.contains('font-semibold'))).toBe(true);
+    expect(document.querySelector('[data-employee-receipt]')).toBeNull();
   });
 });
 
