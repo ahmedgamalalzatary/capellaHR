@@ -40,7 +40,7 @@ const setup = (current: typeof session | null = session) => {
         gross: '0.00', returns: '0.00', total: '0.00',
         discount: '0.00', tax: '0.00', net: '0.00',
       },
-      expenses: '0.00', collectedPayments: '0.00', creditSales: '0.00',
+      expenses: '0.00', collectedPayments: '0.00', collectedPaymentLines: [], creditSales: '0.00',
     })),
     listInvoices: vi.fn(async () => []),
   };

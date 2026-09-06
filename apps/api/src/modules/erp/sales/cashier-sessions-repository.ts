@@ -239,6 +239,21 @@ export const createDrizzleCashierSessionRepository = (
       eq(invoicePayments.cashierSessionId, input.sessionId),
       eq(invoicePayments.isInitial, false),
     ));
+    const collectedPaymentLines = await database.select({
+      invoiceNumber: invoices.invoiceNumber,
+      clientId: invoices.clientId,
+      clientName: invoices.clientNameSnapshot,
+      clientPhone: invoices.clientPhoneSnapshot,
+      method: invoicePayments.method,
+      amount: invoicePayments.amount,
+      paidAt: invoicePayments.paidAt,
+    }).from(invoicePayments)
+      .innerJoin(invoices, eq(invoices.id, invoicePayments.invoiceId))
+      .where(and(
+        eq(invoicePayments.cashierSessionId, input.sessionId),
+        eq(invoicePayments.isInitial, false),
+      ))
+      .orderBy(invoicePayments.paidAt, invoicePayments.id);
 
     const gross = toCents(salesRow?.gross ?? '0.00');
     const returns = toCents(returnsRow?.gross ?? '0.00');
@@ -257,6 +272,13 @@ export const createDrizzleCashierSessionRepository = (
       },
       expenses: fromCents(toCents(expenseRow?.amount ?? '0.00')),
       collectedPayments: fromCents(toCents(collectedRow?.amount ?? '0.00')),
+      collectedPaymentLines: collectedPaymentLines.map((payment) => ({
+        invoiceNumber: payment.invoiceNumber,
+        client: { id: payment.clientId, name: payment.clientName, phone: payment.clientPhone },
+        method: payment.method,
+        amount: payment.amount,
+        paidAt: payment.paidAt,
+      })),
       creditSales: fromCents(toCents(salesRow?.creditSales ?? '0.00')),
     } satisfies CashierSessionReportAccountingRecord;
   },

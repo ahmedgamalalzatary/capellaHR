@@ -1,4 +1,4 @@
-import { type PublicInvoiceDto, saleFixtures } from '@capella/contracts';
+import { saleFixtures } from '@capella/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
@@ -102,7 +102,6 @@ vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
 });
 
 import { SalesView } from '../src/features/sales/components/sales-view';
-import { invoiceEmployees } from '../src/features/sales/components/receipt';
 import { cashierAccountQueryKeys } from '../src/features/cashier-accounts/query-keys';
 import {
   enqueueOfflineSale,
@@ -291,7 +290,7 @@ describe('ERP service-sale view', () => {
     expect(screen.getByText('تم حفظ الفاتورة')).toBeDefined();
   });
 
-  it('prints the same document the invoice page prints, employee copies included', async () => {
+  it('prints one customer invoice without employee invoices', async () => {
     vi.stubGlobal('print', vi.fn());
     renderView();
     await buildDraft();
@@ -300,8 +299,8 @@ describe('ERP service-sale view', () => {
 
     expect(document.querySelector('[data-receipt-sheet]')).not.toBeNull();
     expect(document.querySelector('[data-customer-receipt]')).not.toBeNull();
-    expect(document.querySelectorAll('[data-employee-receipt]').length)
-      .toBe(invoiceEmployees(structuredClone(invoice) as unknown as PublicInvoiceDto).length);
+    expect(document.querySelectorAll('[data-employee-receipt]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-customer-receipt]')).toHaveLength(1);
   });
 
   it('completes a product-only invoice without selecting or submitting an employee', async () => {

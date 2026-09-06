@@ -255,6 +255,19 @@ describe('ERP sale repository MySQL integration', () => {
     ]);
     expect(first.totals).toMatchObject({ amountPaid: '50.00', balanceDue: '50.00', settlementStatus: 'open' });
     expect(retry.totals).toEqual(first.totals);
+    const shiftReport = await createDrizzleCashierSessionRepository(
+      database, createErpAuditCapability(),
+    ).readReportAccounting({
+      sessionId: data.cashierSessionId,
+      branchId: data.branchId,
+      openedAt: data.at,
+      closedAt: new Date(data.at.getTime() + 120_000),
+    });
+    expect(shiftReport.collectedPaymentLines).toEqual([{
+      invoiceNumber: open.invoiceNumber,
+      client: { id: data.clientId, name: `Client ${data.marker}`, phone: data.clientPhone },
+      method: 'cash', amount: '20.00', paidAt: payment.paidAt,
+    }]);
     expect(await database.select().from(invoicePayments)
       .where(eq(invoicePayments.invoiceId, open.id))).toHaveLength(2);
     await expect(repository.findByIdempotencyKey(sale.input.idempotencyKey, {

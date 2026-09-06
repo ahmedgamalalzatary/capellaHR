@@ -321,7 +321,8 @@ describe('stored invoice receipt', () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(customerReceipt().queryByText('نقدي')).toBeNull();
+    expect(customerReceipt().getByText('نقدي')).toBeDefined();
+    expect(customerReceipt().getAllByText('185.00 ج.م').length).toBeGreaterThan(0);
     expect(customerReceipt().queryByText('المدفوع')).toBeNull();
     expect(customerReceipt().getByText('شكرًا لزيارتكم')).toBeDefined();
   });
@@ -351,7 +352,7 @@ describe('stored invoice receipt', () => {
     expect(document.querySelectorAll('[data-employee-receipt]')).toHaveLength(0);
   });
 
-  it('prints one employee copy per employee beside the customer receipt', async () => {
+  it('shows payment methods on one customer invoice without employee copies', async () => {
     const [line] = saleFixtures.completedInvoice.lines;
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
@@ -379,17 +380,10 @@ describe('stored invoice receipt', () => {
     renderView();
 
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
-    const copies = [...document.querySelectorAll('[data-employee-receipt]')];
-    expect(copies).toHaveLength(2);
-    // Each copy carries only that employee's own lines and their own share.
-    expect(within(copies[0] as HTMLElement).getByText('سارة علي')).toBeDefined();
-    expect(within(copies[0] as HTMLElement).getByText('قص شعر')).toBeDefined();
-    expect(within(copies[0] as HTMLElement).queryByText('مانيكير')).toBeNull();
-    // 400 of the 600 subtotal: 40 of the discount and 3.33 of the tax, exactly.
-    expect(within(copies[0] as HTMLElement).getByText('363.33 ج.م')).toBeDefined();
-    expect(within(copies[1] as HTMLElement).getByText('هدى محمود')).toBeDefined();
-    expect(within(copies[1] as HTMLElement).getByText('مانيكير')).toBeDefined();
-    expect(within(copies[1] as HTMLElement).getByText('181.67 ج.م')).toBeDefined();
+    expect(document.querySelectorAll('[data-employee-receipt]')).toHaveLength(0);
+    const receipt = document.querySelector('[data-customer-receipt]') as HTMLElement;
+    expect(within(receipt).getByText('نقدي')).toBeDefined();
+    expect(within(receipt).getAllByText('545.00 ج.م').length).toBeGreaterThan(0);
   });
 
   it('keeps the receipt clean of per-tender refund balances and shows immutable reversal details', async () => {

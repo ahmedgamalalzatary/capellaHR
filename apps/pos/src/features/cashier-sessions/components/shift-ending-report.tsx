@@ -17,6 +17,7 @@ import { PrintPageRule } from '@/lib/print/page-rule';
 import { getCashierSessionReport, type CashierSessionReport } from '../api/cashier-sessions-api';
 import { cashierSessionQueryKeys } from '../query-keys';
 import { formatShiftDuration } from './shift-money';
+import { paymentLabels } from '../../sales/components/invoice-format';
 
 const formatCairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short',
@@ -84,6 +85,19 @@ function ReportDocument({ report }: { report: CashierSessionReport }) {
         <ReportRow label="المصروفات" value={formatMoney(report.expenses)} />
         <ReportRow label="دفعات محصلة" value={formatMoney(report.collectedPayments)} />
         <ReportRow label="مبيعات آجل" value={formatMoney(report.creditSales)} />
+        {report.collectedPaymentLines.length ? (
+          <>
+            <Separator />
+            <dt className="mb-1 font-bold">تفاصيل دفعات الديون</dt>
+            {report.collectedPaymentLines.map((payment, index) => (
+              <div key={`${payment.invoiceNumber}-${payment.paidAt}-${index}`} className="border-b border-dashed border-ink/30 py-1.5 last:border-0">
+                <div dir="ltr" className="break-all font-mono text-[11px]">{payment.invoiceNumber}</div>
+                <div>{payment.client.name ?? payment.client.phone}</div>
+                <div>{paymentLabels[payment.method]} · {formatMoney(payment.amount)} ج.م</div>
+              </div>
+            ))}
+          </>
+        ) : null}
 
         <Separator />
         <ReportRow label="نقدي" value={formatMoney(report.netByMethod.cash)} />

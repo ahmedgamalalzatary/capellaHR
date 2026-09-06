@@ -69,6 +69,13 @@ export type CashierSessionReportAccountingRecord = {
   };
   expenses: string;
   collectedPayments: string;
+  collectedPaymentLines: Array<{
+    invoiceNumber: string;
+    client: { id: number; name: string | null; phone: string | null };
+    method: 'cash' | 'visa' | 'instapay' | 'vodafone_cash';
+    amount: string;
+    paidAt: Date;
+  }>;
   creditSales: string;
 };
 

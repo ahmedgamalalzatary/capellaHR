@@ -1,4 +1,4 @@
-import { type PublicInvoiceDto, saleFixtures } from '@capella/contracts';
+import { saleFixtures } from '@capella/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
@@ -102,7 +102,6 @@ vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
 });
 
 import { SalesView } from '../src/features/sales/components/sales-view';
-import { invoiceEmployees } from '../src/features/sales/components/receipt';
 import { cashierAccountQueryKeys } from '../src/features/cashier-accounts/query-keys';
 import {
   enqueueOfflineSale,

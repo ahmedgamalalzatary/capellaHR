@@ -906,6 +906,17 @@ export const cashierSessionReportSchema = z.object({
   }).strict(),
   expenses: signedMoneySchema,
   collectedPayments: exactMoneySchema,
+  collectedPaymentLines: z.array(z.object({
+    invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+    client: z.object({
+      id: positiveMysqlIntSchema,
+      name: z.string().min(1).max(255).nullable(),
+      phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
+    }).strict(),
+    method: paymentMethodSchema,
+    amount: positiveMoneySchema,
+    paidAt: isoDateTimeSchema,
+  }).strict()),
   creditSales: exactMoneySchema,
   netByMethod: signedShiftMoneyByMethodSchema,
 }).strict().superRefine((value, context) => {

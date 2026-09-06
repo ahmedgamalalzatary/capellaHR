@@ -41,6 +41,7 @@ const report = {
   },
   expenses: '30.00',
   collectedPayments: '20.00',
+  collectedPaymentLines: [],
   creditSales: '100.00',
   netByMethod: { cash: '350.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
 };

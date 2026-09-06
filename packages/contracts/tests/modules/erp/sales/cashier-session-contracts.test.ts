@@ -183,6 +183,11 @@ describe('ERP Cashier-session contracts', () => {
       },
       expenses: '30.00',
       collectedPayments: '20.00',
+      collectedPaymentLines: [{
+        invoiceNumber: 'INV-2026.08.01-10.30-7',
+        client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+        method: 'visa', amount: '20.00', paidAt: '2026-08-01T12:00:00.000Z',
+      }],
       creditSales: '100.00',
       netByMethod: {
         cash: '250.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',

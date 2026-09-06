@@ -28,6 +28,11 @@ const fullReport = {
     discount: '25.00', tax: '5.00', net: '530.00',
   },
   expenses: '30.00', collectedPayments: '20.00', creditSales: '100.00',
+  collectedPaymentLines: [{
+    invoiceNumber: 'INV-2026.08.01-10.30-7',
+    client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+    method: 'visa', amount: '20.00', paidAt: '2026-08-01T12:00:00.000Z',
+  }],
   netByMethod: {
     cash: '350.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',
   },
@@ -72,7 +77,9 @@ describe('ShiftEndingReport', () => {
     for (const amount of ['600.00', '50.00', '550.00', '25.00', '5.00', '530.00', '30.00', '20.00', '100.00', '350.00']) {
       expect(within(report).getAllByText(amount).length).toBeGreaterThan(0);
     }
-    expect(screen.queryByText(/INV-/)).toBeNull();
+    expect(within(report).getByText('INV-2026.08.01-10.30-7')).toBeDefined();
+    expect(within(report).getByText('منى أحمد')).toBeDefined();
+    expect(within(report).getByText('فيزا · 20.00 ج.م')).toBeDefined();
   });
 
   test('opens the browser print dialog from the report', async () => {

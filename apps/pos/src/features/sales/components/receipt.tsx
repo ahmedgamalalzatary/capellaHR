@@ -237,9 +237,6 @@ export function ReceiptBundle({ invoice }: { invoice: PublicInvoiceDto }) {
     <div data-receipt-sheet className="space-y-4">
       <PrintPageRule rule={RECEIPT_PAGE_RULE} />
       <Receipt invoice={invoice} />
-      {invoiceEmployees(invoice).map((employee) => (
-        <EmployeeReceipt key={employee.id} invoice={invoice} employee={employee} />
-      ))}
     </div>
   );
 }
@@ -341,6 +338,12 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           <span>صافي المدفوع</span>
           <span className="tabular">{invoice.totals.amountPaid} ج.م</span>
         </div>
+        {invoice.payments.map((payment, index) => (
+          <div key={`${payment.method}-${index}`} className="flex justify-between">
+            <span>{paymentLabels[payment.method]}</span>
+            <span className="tabular">{payment.amount} ج.م</span>
+          </div>
+        ))}
         {invoice.totals.creditedAmount !== '0.00' ? (
           <div className="flex justify-between">
             <span>رصيد مرتجعات</span>
