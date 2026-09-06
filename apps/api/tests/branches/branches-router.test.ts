@@ -19,14 +19,17 @@ const makeService = (): BranchService => ({
   markReferenced: vi.fn(async () => true),
 });
 
-const makeApp = (actor: 'admin' | 'employee' | null = 'admin') => {
+const makeApp = (actor: 'admin' | 'cashier' | 'employee' | null = 'admin') => {
   const app = express();
   app.use(express.json());
   const authService = {
     async authenticate() {
       if (!actor) return null;
       return {
-        id: 's', tokenHash: 'h', actorType: actor,
+        id: 's', tokenHash: 'h', actorType: actor === 'cashier' ? 'account' as const : actor,
+        accountId: actor === 'cashier' ? 8 : null,
+        accountRole: actor === 'cashier' ? 'cashier' as const : null,
+        branchId: actor === 'cashier' ? 2 : null,
         employeeId: actor === 'employee' ? 4 : null,
         expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
       };
@@ -40,6 +43,15 @@ describe('branches HTTP API', () => {
   it('requires an authenticated admin', async () => {
     expect((await request(makeApp(null)).get('/api/v1/branches')).status).toBe(401);
     expect((await request(makeApp('employee')).get('/api/v1/branches').set('Cookie', 'capella_session=x')).status).toBe(403);
+  });
+
+  it('lets a cashier list the branches available as transfer destinations', async () => {
+    const response = await request(makeApp('cashier'))
+      .get('/api/v1/branches?page=1&pageSize=20')
+      .set('Cookie', 'capella_session=x');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([expect.objectContaining({ id: 1, name: 'Cairo' })]);
   });
 
   it('creates a branch from a complete GPS reading', async () => {

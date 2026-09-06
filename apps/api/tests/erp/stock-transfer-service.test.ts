@@ -306,11 +306,12 @@ describe('ERP stock transfer service', () => {
   });
 
   it('scopes a cashier transfer history to their own branch', async () => {
-    const { service, repository } = build();
+    const list = vi.fn().mockResolvedValue({ items: [posted], total: 1 });
+    const { service } = build({ list });
 
     await expect(service.list(cashier, { page: 1, pageSize: 20 }))
       .resolves.toEqual({ items: [posted], total: 1 });
-    expect(repository.list).toHaveBeenCalledWith({ page: 1, pageSize: 20, branchId: 5 });
+    expect(list).toHaveBeenCalledWith({ page: 1, pageSize: 20, branchId: 5 });
     await expect(service.list(admin, { page: 1, pageSize: 20 }))
       .resolves.toEqual({ items: [posted], total: 1 });
   });
