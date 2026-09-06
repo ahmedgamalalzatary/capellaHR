@@ -51,7 +51,6 @@ export const adminNavigation: NavGroup[] = [
       { href: '/catalog', label: 'الكتالوج', icon: LayoutList },
       { href: '/products', label: 'المنتجات والمخزون', icon: Package },
       { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },
-      // Only an Admin moves stock between branches.
       { href: '/transfers', label: 'تحويل المنتجات', icon: ArrowLeftRight },
       { href: '/expenses', label: 'المصروفات', icon: Wallet },
       // A note about what the branch owns, for the Admin's reference only.
@@ -94,6 +93,7 @@ export const cashierNavigation: NavGroup[] = [
       { href: '/catalog', label: 'الكتالوج', icon: LayoutList },
       { href: '/products', label: 'المنتجات والمخزون', icon: Package },
       { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },
+      { href: '/transfers', label: 'تحويل المنتجات', icon: ArrowLeftRight },
       { href: '/expenses', label: 'المصروفات', icon: Wallet },
     ],
   },

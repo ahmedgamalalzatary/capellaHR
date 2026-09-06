@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   branches: vi.fn(),
   products: vi.fn(),
+  actor: { current: { type: 'admin' } as
+    | { type: 'admin' }
+    | { type: 'cashier'; accountId: number } },
+  currentSession: vi.fn(),
 }));
 
 vi.mock('../src/features/stock-transfers/api/stock-transfers-api', () => ({
@@ -17,9 +21,16 @@ vi.mock('../src/features/stock-transfers/api/stock-transfers-api', () => ({
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.branches,
+  getCurrentCashierSession: mocks.currentSession,
+  cashierSessionQueryKeys: {
+    current: () => ['cashier-sessions', 'current', 'cashier'],
+  },
 }));
 vi.mock('../src/features/products', () => ({
   listAllProducts: mocks.products,
+}));
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({ data: { actor: mocks.actor.current } }),
 }));
 import { StockTransfersView } from '../src/features/stock-transfers/components/stock-transfers-view';
 
@@ -79,6 +90,8 @@ const fillTransfer = async () => {
 };
 
 beforeEach(() => {
+  mocks.actor.current = { type: 'admin' };
+  mocks.currentSession.mockResolvedValue(null);
   mocks.branches.mockResolvedValue(page([
     { id: 2, name: 'فرع مدينة نصر' },
     { id: 3, name: 'فرع المعادي' },
@@ -96,6 +109,31 @@ afterEach(() => {
 });
 
 describe('StockTransfersView', () => {
+  it('pins a cashier to their own source branch and history', async () => {
+    mocks.actor.current = { type: 'cashier', accountId: 8 };
+    mocks.currentSession.mockResolvedValue({
+      id: 14,
+      branchId: 2,
+      branchName: 'فرع مدينة نصر',
+      openedByAccountId: 8,
+      openedByUsername: 'cashier-nasr',
+      openedAt: '2026-09-06T08:00:00.000+03:00',
+      closedAt: null,
+      closedByAccountId: null,
+      closedByUsername: null,
+      autoClosedAt: null,
+    });
+    mount();
+
+    const source = screen.getAllByRole('combobox')[0]!;
+    await waitFor(() => expect(source).toHaveProperty('value', '2'));
+    expect(source).toHaveProperty('disabled', true);
+    await waitFor(() => expect(mocks.products).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 2, isActive: true }),
+    ));
+    expect(mocks.list).toHaveBeenCalledWith({ page: 1, branchId: 2 });
+  });
+
   it('sends the products the admin chose from one branch to the other', async () => {
     mount();
     await fillTransfer();

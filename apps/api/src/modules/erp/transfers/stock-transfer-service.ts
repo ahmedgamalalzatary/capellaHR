@@ -71,7 +71,7 @@ export interface StockTransferRepository {
 }
 
 export type StockTransferErrorCode =
-  | 'TRANSFER_ADMIN_REQUIRED'
+  | 'TRANSFER_BRANCH_FORBIDDEN'
   | 'TRANSFER_BRANCH_NOT_FOUND'
   | 'TRANSFER_SHIFT_REQUIRED'
   | 'TRANSFER_COST_REQUIRED'
@@ -82,7 +82,7 @@ export type StockTransferErrorCode =
   | 'INSUFFICIENT_STOCK';
 
 const messages: Record<StockTransferErrorCode, string> = {
-  TRANSFER_ADMIN_REQUIRED: 'تحويل المنتجات بين الفروع متاح للمدير فقط',
+  TRANSFER_BRANCH_FORBIDDEN: 'لا يمكن للكاشير تحويل منتجات من فرع آخر',
   TRANSFER_BRANCH_NOT_FOUND: 'الفرع غير موجود',
   TRANSFER_SHIFT_REQUIRED: 'يجب وجود وردية مفتوحة في الفرع المُرسِل لتسجيل التحويل',
   TRANSFER_COST_REQUIRED: 'يجب تسجيل تكلفة شراء المنتج قبل تحويله',
@@ -192,7 +192,9 @@ export const createStockTransferService = (dependencies: {
       actor: ErpAccountIdentity,
       input: CreateStockTransferInput,
     ): Promise<StockTransferRecord> {
-      if (actor.role !== 'admin') throw new StockTransferError('TRANSFER_ADMIN_REQUIRED');
+      if (actor.role === 'cashier' && actor.branchId !== input.sourceBranchId) {
+        throw new StockTransferError('TRANSFER_BRANCH_FORBIDDEN');
+      }
 
       const replay = await repository.findByIdempotencyKey(input.idempotencyKey);
       if (replay) {
@@ -285,8 +287,9 @@ export const createStockTransferService = (dependencies: {
     },
 
     async list(actor: ErpAccountIdentity, query: ListStockTransfersQuery) {
-      if (actor.role !== 'admin') throw new StockTransferError('TRANSFER_ADMIN_REQUIRED');
-      return repository.list(query);
+      return repository.list(actor.role === 'cashier'
+        ? { ...query, branchId: actor.branchId }
+        : query);
     },
   };
 };

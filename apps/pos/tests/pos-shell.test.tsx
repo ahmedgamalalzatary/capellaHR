@@ -168,12 +168,14 @@ describe('PosShell', () => {
   });
 
   test('gives a cashier the same operating sections an admin has', async () => {
-    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
-    renderShell();
+    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1 } });
+    const { container } = renderShell();
 
     for (const label of ['الكتالوج', 'المنتجات والمخزون', 'الموردون والمشتريات', 'المصروفات', 'العملاء']) {
       expect(await screen.findByRole('link', { name: label })).toBeDefined();
     }
+    await waitFor(() => expect(getSessionMock).toHaveBeenCalled());
+    expect(container.querySelector('a[href="/transfers"]')).not.toBeNull();
   });
 
   test('hides the cashier-sessions oversight link from a cashier', async () => {

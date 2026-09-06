@@ -132,12 +132,22 @@ describe('ERP stock transfer service', () => {
     expect(ensureTransferClient).toHaveBeenCalledWith(5, 'فرع المعادي', now);
   });
 
-  it('refuses anyone but an admin', async () => {
+  it('lets a cashier transfer products from their own branch', async () => {
     const { service, sales } = build();
 
-    await expect(service.transfer(cashier, input)).rejects.toMatchObject({
-      code: 'TRANSFER_ADMIN_REQUIRED',
-    });
+    await expect(service.transfer(cashier, input)).resolves.toEqual(posted);
+    expect(sales.complete).toHaveBeenCalledWith(
+      cashier,
+      expect.objectContaining({ branchId: 5 }),
+      expect.objectContaining({ kind: 'branch_transfer' }),
+    );
+  });
+
+  it('does not let a cashier transfer products from another branch', async () => {
+    const { service, sales } = build();
+
+    await expect(service.transfer(cashier, { ...input, sourceBranchId: 6, destinationBranchId: 5 }))
+      .rejects.toMatchObject({ code: 'TRANSFER_BRANCH_FORBIDDEN' });
     expect(sales.complete).not.toHaveBeenCalled();
   });
 
@@ -295,15 +305,14 @@ describe('ERP stock transfer service', () => {
     });
   });
 
-  it('keeps the transfer list to admins as well', async () => {
+  it('scopes a cashier transfer history to their own branch', async () => {
     const { service, repository } = build();
 
-    await expect(service.list(cashier, { page: 1, pageSize: 20 })).rejects.toMatchObject({
-      code: 'TRANSFER_ADMIN_REQUIRED',
-    });
+    await expect(service.list(cashier, { page: 1, pageSize: 20 }))
+      .resolves.toEqual({ items: [posted], total: 1 });
+    expect(repository.list).toHaveBeenCalledWith({ page: 1, pageSize: 20, branchId: 5 });
     await expect(service.list(admin, { page: 1, pageSize: 20 }))
       .resolves.toEqual({ items: [posted], total: 1 });
-    void repository;
   });
 
   it('creates no client for a branch with no open shift', async () => {
@@ -320,7 +329,7 @@ describe('ERP stock transfer service', () => {
   });
 
   it('carries every error message in Arabic', () => {
-    expect(new StockTransferError('TRANSFER_ADMIN_REQUIRED').message).toMatch(/[؀-ۿ]/u);
+    expect(new StockTransferError('TRANSFER_BRANCH_FORBIDDEN').message).toMatch(/[؀-ۿ]/u);
     expect(new StockTransferError('TRANSFER_SHIFT_REQUIRED').message).toMatch(/[؀-ۿ]/u);
   });
 });

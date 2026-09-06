@@ -76,7 +76,7 @@ describe('ERP stock transfer routes', () => {
     const shift = await request(app).post('/api/v1/erp/stock-transfers')
       .set('Cookie', 'capella_session=admin').send(body);
 
-    service.transfer.mockRejectedValueOnce(new StockTransferError('TRANSFER_ADMIN_REQUIRED'));
+    service.transfer.mockRejectedValueOnce(new StockTransferError('TRANSFER_BRANCH_FORBIDDEN'));
     const forbidden = await request(app).post('/api/v1/erp/stock-transfers')
       .set('Cookie', 'capella_session=cashier').send(body);
 

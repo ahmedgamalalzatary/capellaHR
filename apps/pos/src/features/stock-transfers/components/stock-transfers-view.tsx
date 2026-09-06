@@ -12,7 +12,12 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
-import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { useSession } from '@/features/auth';
+import {
+  cashierSessionQueryKeys,
+  getCurrentCashierSession,
+  listCashierSessionBranches,
+} from '@/features/cashier-sessions';
 import { listAllProducts } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -48,10 +53,18 @@ const emptyLine = (): TransferLine => ({
 /**
  * Moving products between branches is internal trade: the sending branch sells
  * to the receiving one at cost, with no seller and no commission. One transfer
- * carries as many products as the admin needs to move.
+ * carries as many products as the operator needs to move.
  */
 export function StockTransfersView() {
   const queryClient = useQueryClient();
+  const actor = useSession().data?.actor;
+  const isCashier = actor?.type === 'cashier';
+  const cashierSession = useQuery({
+    queryKey: cashierSessionQueryKeys.current(),
+    queryFn: () => getCurrentCashierSession(),
+    enabled: isCashier,
+  });
+  const cashierBranchId = isCashier ? cashierSession.data?.branchId : undefined;
   const [sourceBranchId, setSourceBranchId] = useState<number>();
   const [destinationBranchId, setDestinationBranchId] = useState<number>();
   const [lines, setLines] = useState<TransferLine[]>([emptyLine()]);
@@ -61,19 +74,24 @@ export function StockTransfersView() {
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [formError, setFormError] = useState<string>();
   const [page, setPage] = useState(1);
+  const effectiveSourceBranchId = cashierBranchId ?? sourceBranchId;
 
   const branches = useQuery({
     queryKey: ['erp-stock-transfers', 'branches'],
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
   });
   const products = useQuery({
-    queryKey: ['erp-stock-transfers', 'products', sourceBranchId ?? null],
-    queryFn: () => listAllProducts({ branchId: sourceBranchId!, isActive: true }),
-    enabled: sourceBranchId !== undefined,
+    queryKey: ['erp-stock-transfers', 'products', effectiveSourceBranchId ?? null],
+    queryFn: () => listAllProducts({ branchId: effectiveSourceBranchId!, isActive: true }),
+    enabled: effectiveSourceBranchId !== undefined,
   });
   const transfers = useQuery({
-    queryKey: stockTransferQueryKeys.list({ page }),
-    queryFn: () => listStockTransfers({ page }),
+    queryKey: stockTransferQueryKeys.list({ page, branchId: cashierBranchId }),
+    queryFn: () => listStockTransfers({
+      page,
+      ...(cashierBranchId === undefined ? {} : { branchId: cashierBranchId }),
+    }),
+    enabled: actor?.type === 'admin' || cashierBranchId !== undefined,
   });
 
   const available = products.data?.items ?? [];
@@ -112,7 +130,7 @@ export function StockTransfersView() {
         ? []
         : [{ productId: line.productId, quantity: count }];
     });
-    if (sourceBranchId === undefined || destinationBranchId === undefined || !filled.length
+    if (effectiveSourceBranchId === undefined || destinationBranchId === undefined || !filled.length
       || filled.length !== lines.length) {
       setFormError('اختر الفرع المُرسِل والمستلم، ولكل بند منتجًا وكمية صحيحة');
       return;
@@ -120,7 +138,7 @@ export function StockTransfersView() {
     setFormError(undefined);
     transfer.mutate({
       idempotencyKey,
-      sourceBranchId,
+      sourceBranchId: effectiveSourceBranchId,
       destinationBranchId,
       lines: filled,
       // A note is optional; a transfer stands on its own without one.
@@ -146,8 +164,8 @@ export function StockTransfersView() {
               <Select
                 id="transfer-source"
                 aria-label="الفرع المُرسِل"
-                disabled={branches.isPending || branches.isError}
-                value={sourceBranchId ?? ''}
+                disabled={isCashier || branches.isPending || branches.isError}
+                value={effectiveSourceBranchId ?? ''}
                 onChange={(event) => {
                   const value = event.target.value ? Number(event.target.value) : undefined;
                   setSourceBranchId(value);
@@ -176,7 +194,7 @@ export function StockTransfersView() {
               >
                 <option value="">اختر الفرع</option>
                 {/* A branch never transfers to itself. */}
-                {(branches.data ?? []).filter((branch) => branch.id !== sourceBranchId)
+                {(branches.data ?? []).filter((branch) => branch.id !== effectiveSourceBranchId)
                   .map((branch) => (
                     <option key={branch.id} value={branch.id}>{branch.name}</option>
                   ))}
@@ -208,7 +226,7 @@ export function StockTransfersView() {
                       <Select
                         id={`transfer-product-${line.key}`}
                         aria-label={`المنتج ${index + 1}`}
-                        disabled={sourceBranchId === undefined || products.isPending
+                        disabled={effectiveSourceBranchId === undefined || products.isPending
                           || products.isError}
                         value={line.productId ?? ''}
                         onChange={(event) => updateLine(line.key, {
@@ -260,7 +278,7 @@ export function StockTransfersView() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={sourceBranchId === undefined || chosenIds.length >= available.length}
+              disabled={effectiveSourceBranchId === undefined || chosenIds.length >= available.length}
               onClick={() => setLines((current) => [...current, emptyLine()])}
             >
               <Plus className="size-4" aria-hidden />

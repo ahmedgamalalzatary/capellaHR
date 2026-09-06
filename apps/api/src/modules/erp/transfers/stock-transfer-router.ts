@@ -33,7 +33,7 @@ const actorFrom = (response: Response): ErpAccountIdentity => {
 };
 
 const statuses: Record<StockTransferErrorCode, number> = {
-  TRANSFER_ADMIN_REQUIRED: 403,
+  TRANSFER_BRANCH_FORBIDDEN: 403,
   TRANSFER_BRANCH_NOT_FOUND: 404,
   PRODUCT_NOT_FOUND: 404,
   TRANSFER_SHIFT_REQUIRED: 409,
