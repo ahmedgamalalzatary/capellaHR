@@ -2,4 +2,4 @@ export {
   containsArabicIndicDigits,
   isNormalizedEgyptianMobile,
   normalizeEgyptianMobile,
-} from './egyptian-mobile.js';
+} from './egyptian-mobile.ts';

@@ -4,7 +4,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../../common/index.js';
+} from '../../../common/index.ts';
 
 // MySQL VARCHAR limits count characters (code points), not UTF-16 units.
 const codePoints = (value: string) => [...value].length;

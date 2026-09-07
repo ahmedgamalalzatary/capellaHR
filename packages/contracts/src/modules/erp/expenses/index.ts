@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.js';
+import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.ts';
 
 const cairoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'التاريخ غير صالح').refine((value) => {
   const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = value.split('-').map(Number);

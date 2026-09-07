@@ -4,7 +4,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
+} from '../../common/index.ts';
 
 export const moneyAmountSchema = z.string()
   .regex(/^\d{1,10}(?:\.\d{1,2})?$/, 'المبلغ يجب أن يكون رقمًا موجبًا بحد أقصى منزلتين عشريتين')

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { coercedMysqlIntSchema } from '../../../common/index.js';
+import { coercedMysqlIntSchema } from '../../../common/index.ts';
 
 /**
  * `branchId` is never trusted as branch identity: the server resolves the

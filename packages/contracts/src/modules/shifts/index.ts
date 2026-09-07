@@ -4,7 +4,7 @@ import {
   decimalIntegerInput,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
+} from '../../common/index.ts';
 
 const databaseId = coercedMysqlIntSchema;
 

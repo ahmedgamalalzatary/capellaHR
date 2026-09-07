@@ -1,11 +1,11 @@
 import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/shared';
 import { z } from 'zod';
-import { coercedShiftDurationMinutesSchema } from '../shifts/index.js';
+import { coercedShiftDurationMinutesSchema } from '../shifts/index.ts';
 import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
+} from '../../common/index.ts';
 
 const phone = z.string().transform((value, context) => {
   if (containsArabicIndicDigits(value)) {

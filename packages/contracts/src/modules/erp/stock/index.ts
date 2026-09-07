@@ -4,7 +4,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../../common/index.js';
+} from '../../../common/index.ts';
 
 const codePoints = (value: string) => [...value].length;
 const productName = z.string().trim().min(1).refine((value) => codePoints(value) <= 255, {

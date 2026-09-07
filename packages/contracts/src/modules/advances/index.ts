@@ -4,8 +4,8 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
-import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.js';
+} from '../../common/index.ts';
+import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.ts';
 
 export const installmentCountSchema = z.number().int().min(1).max(12);
 export const advanceParamsSchema = z.object({ advanceId: coercedMysqlIntSchema });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.js';
+import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.ts';
 
 const codePoints = (value: string) => [...value].length;
 const limited = (label: string, maximum: number) => z.string().trim().min(1).refine(

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { paginationPageSchema, paginationPageSizeSchema } from '../../common/index.js';
+import { paginationPageSchema, paginationPageSizeSchema } from '../../common/index.ts';
 
 export const auditActorTypeSchema = z.enum(['admin', 'employee', 'account', 'system']);
 

@@ -4,7 +4,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../../common/index.js';
+} from '../../../common/index.ts';
 
 const codePoints = (value: string) => [...value].length;
 const optionalNote = z.string().refine((value) => codePoints(value) <= 500, 'الملاحظة طويلة جداً')

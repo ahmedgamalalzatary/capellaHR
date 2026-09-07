@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.js';
+import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.ts';
 
 /**
  * The fixed-assets register: what the branch owns and did not buy to sell —

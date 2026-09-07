@@ -4,7 +4,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../../common/index.js';
+} from '../../../common/index.ts';
 
 const branchScope = { branchId: coercedMysqlIntSchema.optional() };
 const quantity = z.string().regex(/^\d{1,13}(?:\.\d{1,3})?$/)

@@ -6,8 +6,8 @@ import {
   paginationPageSchema,
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
-} from '../../common/index.js';
-import { cairoDateSchema } from '../weekly-day-off/index.js';
+} from '../../common/index.ts';
+import { cairoDateSchema } from '../weekly-day-off/index.ts';
 
 export const attendanceEventTypeSchema = z.enum(['check_in', 'check_out']);
 export const employeeAttendanceSourceSchema = z.enum(['personal_device', 'branch_device']);

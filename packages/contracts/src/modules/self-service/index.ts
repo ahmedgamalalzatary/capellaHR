@@ -3,12 +3,12 @@ import { z } from 'zod';
 import {
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
-import { payrollMonthSchema } from '../payroll/index.js';
+} from '../../common/index.ts';
+import { payrollMonthSchema } from '../payroll/index.ts';
 import {
   cairoDateSchema,
   weeklyDayRecordStatusSchema,
-} from '../weekly-day-off/index.js';
+} from '../weekly-day-off/index.ts';
 
 export const selfServiceAttendanceListQuerySchema = z.object({
   state: z.enum(['open', 'closed']).optional(),

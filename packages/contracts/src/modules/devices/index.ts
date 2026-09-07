@@ -4,7 +4,7 @@ import {
   paginationPageSchema,
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
-} from '../../common/index.js';
+} from '../../common/index.ts';
 
 export const deviceAssignmentSchema = z.object({ assignmentType: z.enum(['employee', 'branch']), assignmentId: positiveMysqlIntSchema }).strict();
 export const pairingTokenParamsSchema = z.object({ token: z.string().min(20).max(512) });

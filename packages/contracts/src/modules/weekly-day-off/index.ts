@@ -4,7 +4,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
+} from '../../common/index.ts';
 
 const isCalendarDate = (value: string) => {
   const [year, month, day] = value.split('-').map(Number);

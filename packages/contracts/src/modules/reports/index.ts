@@ -5,8 +5,8 @@ import {
   paginationPageSchema,
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
-} from '../../common/index.js';
-import { payrollMonthSchema } from '../payroll/index.js';
+} from '../../common/index.ts';
+import { payrollMonthSchema } from '../payroll/index.ts';
 
 export const erpTabReportTypes = [
   'erp-sales',

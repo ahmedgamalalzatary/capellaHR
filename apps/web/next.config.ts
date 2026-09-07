@@ -5,8 +5,9 @@ import { assertFrontendEdition } from '@capella/config/edition';
 import { resolveApiProxyTarget } from '@capella/config/proxy';
 import type { NextConfig } from 'next';
 
-// Single source of environment truth: the repository root .env files.
-loadEnvConfig(path.resolve(__dirname, '../..'));
+// Next already cached an env load from apps/web. Reload from the workspace root
+// before checking the edition, using the same development/production mode.
+loadEnvConfig(path.resolve(__dirname, '../..'), process.env.NODE_ENV === 'development', console, true);
 const frontendEdition = assertFrontendEdition(process.env.EDITION, 'web');
 const apiProxyTarget = resolveApiProxyTarget();
 

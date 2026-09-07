@@ -4,8 +4,8 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
-import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.js';
+} from '../../common/index.ts';
+import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.ts';
 
 export const deductionParamsSchema = z.object({ deductionId: coercedMysqlIntSchema });
 export const deductionReasonSchema = z.string().trim().min(1).max(200);

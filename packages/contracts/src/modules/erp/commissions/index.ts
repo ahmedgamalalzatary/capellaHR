@@ -5,7 +5,7 @@ import {
   paginationPageSchema,
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
-} from '../../../common/index.js';
+} from '../../../common/index.ts';
 
 const payrollMonthSchema = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/);
 const moneySchema = z.string().regex(/^\d{1,12}\.\d{2}$/);

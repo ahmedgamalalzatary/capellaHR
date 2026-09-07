@@ -5,7 +5,7 @@ import {
   paginationPageSchema,
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
-} from '../../../common/index.js';
+} from '../../../common/index.ts';
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 

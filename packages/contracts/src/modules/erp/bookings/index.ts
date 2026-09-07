@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { coercedMysqlIntSchema } from '../../../common/index.js';
+import { coercedMysqlIntSchema } from '../../../common/index.ts';
 
 export const bookingStatusSchema = z.enum([
   'booked',

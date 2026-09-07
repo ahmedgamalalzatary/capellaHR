@@ -1,6 +1,6 @@
 import { containsArabicIndicDigits } from '@capella/shared';
 import { z } from 'zod';
-import { positiveMysqlIntSchema } from '../../common/index.js';
+import { positiveMysqlIntSchema } from '../../common/index.ts';
 
 const employeeLoginPhoneSchema = z.string().transform((value, context) => {
   if (containsArabicIndicDigits(value)) {

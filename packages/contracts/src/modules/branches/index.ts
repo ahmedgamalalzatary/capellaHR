@@ -3,7 +3,7 @@ import {
   coercedMysqlIntSchema,
   paginationPageSchema,
   paginationPageSizeSchema,
-} from '../../common/index.js';
+} from '../../common/index.ts';
 
 const gpsReading = {
   latitude: z.number().finite().min(-90).max(90),
