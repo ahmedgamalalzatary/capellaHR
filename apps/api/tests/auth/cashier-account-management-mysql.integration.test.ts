@@ -23,6 +23,7 @@ it('persists the complete account, preserves omitted credentials, and rolls back
   const service = createCashierAccountsService({ accounts: createDrizzleCashierAccountRepository(database), hashPassword: async (value) => `hash:${value}` });
   const created = await service.save({ mode: 'create', branchId, username: 'Till', password: 'secret', employeeIds: [employeeId] });
   expect(created.username).toBe('till');
+  expect(created.employees).toEqual([{ id: employeeId, fullName: 'Permitted seller' }]);
   expect(await database.select({ employeeId: branchCashierRoster.employeeId }).from(branchCashierRoster).where(eq(branchCashierRoster.branchId, branchId)))
     .toEqual([{ employeeId }]);
   await service.setActive(created.id, false);

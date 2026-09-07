@@ -28,8 +28,11 @@ describe('branch cashier account persistence', () => {
           from(table: unknown) {
             const builder = {
               innerJoin() { return builder; },
+              leftJoin() { return builder; },
               where() { return builder; },
               for() { return builder; },
+              orderBy() { return builder; },
+              then(resolve: (value: unknown[]) => unknown) { return Promise.resolve([]).then(resolve); },
               limit() {
                 if (table === branches) return Promise.resolve([{ id: 3 }]);
                 accountReads += 1;
@@ -109,8 +112,11 @@ describe('branch cashier account persistence', () => {
           from(table: unknown) {
             const builder = {
               innerJoin() { return builder; },
+              leftJoin() { return builder; },
               where() { return builder; },
               for() { return builder; },
+              orderBy() { return builder; },
+              then(resolve: (value: unknown[]) => unknown) { return Promise.resolve([]).then(resolve); },
               limit() {
                 if (table === branches) return Promise.resolve([{ id: 3 }]);
                 accountReads += 1;
@@ -182,8 +188,11 @@ describe('branch cashier account persistence', () => {
           from(table: unknown) {
             const builder = {
               innerJoin() { return builder; },
+              leftJoin() { return builder; },
               where() { return builder; },
               for() { return builder; },
+              orderBy() { return builder; },
+              then(resolve: (value: unknown[]) => unknown) { return Promise.resolve([]).then(resolve); },
               limit() {
                 if (table === branches) return Promise.resolve([{ id: 3 }]);
                 accountReads += 1;
@@ -240,8 +249,11 @@ describe('branch cashier account persistence', () => {
           from(table: unknown) {
             const builder = {
               innerJoin() { return builder; },
+              leftJoin() { return builder; },
               where() { return builder; },
               for() { return builder; },
+              orderBy() { return builder; },
+              then(resolve: (value: unknown[]) => unknown) { return Promise.resolve([]).then(resolve); },
               limit() {
                 if (table === branches) return Promise.resolve([{ id: 3 }]);
                 return Promise.resolve([accountRow]);

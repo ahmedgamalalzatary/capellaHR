@@ -14,8 +14,11 @@ vi.mock('../src/features/cashier-accounts/api/branch-roster-api', () => ({ listB
 vi.mock('../src/features/cashier-sessions', () => ({ listCashierSessionBranches: mocks.listCashierSessionBranches }));
 import { CashierAccountsView } from '../src/features/cashier-accounts/components/cashier-accounts-view';
 
-const account = { id: 1, username: 'nasr', role: 'cashier' as const, branchId: 3, branchName: 'فرع مدينة نصر', active: true };
-const disabled = { ...account, id: 2, username: 'maadi', branchId: 4, branchName: 'فرع المعادي', active: false };
+const account = {
+  id: 1, username: 'nasr', role: 'cashier' as const, branchId: 3, branchName: 'فرع مدينة نصر', active: true,
+  employees: [{ id: 7, fullName: 'أحمد جمال' }],
+};
+const disabled = { ...account, id: 2, username: 'maadi', branchId: 4, branchName: 'فرع المعادي', active: false, employees: [] };
 const members = [{ id: 7, employeeCode: 1007, fullName: 'أحمد جمال' }];
 const pageOf = (items: unknown[], meta: Record<string, number> = {}) => ({ items, meta: { page: 1, pageSize: 20, total: items.length, totalPages: 1, ...meta } });
 function renderView() {
@@ -64,6 +67,20 @@ describe('unified cashier account management', () => {
     const row = (await screen.findByText('nasr')).closest('tr')!;
     expect(await within(row).findByText('أحمد جمال')).toBeDefined();
     expect(within(row).getByText('نشط')).toBeDefined();
+    expect(mocks.listBranchCashierRoster).not.toHaveBeenCalled();
+  });
+  test('warns when a saved roster member is no longer an active seller before save', async () => {
+    mocks.listCashierAccounts.mockResolvedValue(pageOf([{
+      ...account,
+      employees: [{ id: 7, fullName: 'أحمد جمال' }, { id: 8, fullName: 'ليلى حسن' }],
+    }]));
+    renderView();
+    const dialog = await edit();
+    expect(within(dialog).getByText(/ليلى حسن لم تعد ضمن الموظفين النشطين/)).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({
+      mode: 'edit', accountId: 1, branchId: 3, username: 'nasr', employeeIds: [7],
+    }));
   });
   test('edits username and employees together while keeping a blank password', async () => {
     renderView();

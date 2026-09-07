@@ -13,15 +13,22 @@ function setup(options: { current?: boolean; employeeValid?: boolean; failRoster
         const rows = () => {
           if (table === branches) return [{ id: 3 }];
           if (table === employees) return options.employeeValid === false ? [] : [{ id: 7 }];
-          if (table === branchCashierRoster) return [{ id: 9, employeeId: 9 }];
+          if (table === branchCashierRoster) return [{ id: 9, fullName: 'ليلى حسن', branchId: 3 }];
           reads += 1;
           if (reads === 2) return [];
           return current || reads > 2 ? [{ id: 5, username: 'nasr', role: 'cashier', branchId: 3, branchName: 'Nasr', active: false }] : [];
         };
         const builder = {
-          innerJoin() { return builder; }, where() { return builder; }, for() { return builder; },
-          limit() { return Promise.resolve(rows()); },
-          then(resolve: (value: unknown[]) => unknown) { return Promise.resolve(rows()).then(resolve); },
+          innerJoin() { return builder; }, leftJoin() { return builder; },
+          where() { return builder; }, for() { return builder; }, orderBy() { return builder; },
+          limit() {
+            const result = Promise.resolve(rows()) as Promise<unknown[]> & { offset: () => Promise<unknown[]> };
+            result.offset = () => Promise.resolve(rows());
+            return result;
+          },
+          then(resolve: (value: unknown[]) => unknown) {
+            return Promise.resolve(table === accounts ? [{ total: 1 }] : rows()).then(resolve);
+          },
         };
         return builder;
       } };
@@ -34,9 +41,12 @@ function setup(options: { current?: boolean; employeeValid?: boolean; failRoster
       return Promise.resolve([{ insertId: 5 }]);
     } }; },
   };
-  const database = { async transaction<T>(run: (executor: typeof tx) => Promise<T>) {
-    try { return await run(tx); } catch (error) { writes.length = 0; throw error; }
-  } };
+  const database = {
+    async transaction<T>(run: (executor: typeof tx) => Promise<T>) {
+      try { return await run(tx); } catch (error) { writes.length = 0; throw error; }
+    },
+    select() { return tx.select(); },
+  };
   return { writes, repository: createDrizzleCashierAccountRepository(database as never) };
 }
 
@@ -85,5 +95,20 @@ describe('atomic cashier account management', () => {
     const { repository, writes } = setup({ failRoster: true });
     await expect(repository.upsert({ ...input, username: 'new-name' })).rejects.toThrow('roster storage failed');
     expect(writes).toEqual([]);
+  });
+  it('returns persisted roster members on the public account after save and list', async () => {
+    const { repository } = setup();
+    const saved = await repository.upsert(input);
+    expect(saved).toMatchObject({
+      kind: 'updated',
+      account: { id: 5, employees: [{ id: 9, fullName: 'ليلى حسن' }] },
+    });
+    expect(await repository.listCashiers({ page: 1, pageSize: 20 })).toEqual({
+      items: [{
+        id: 5, username: 'nasr', role: 'cashier', branchId: 3, branchName: 'Nasr', active: false,
+        employees: [{ id: 9, fullName: 'ليلى حسن' }],
+      }],
+      total: 1,
+    });
   });
 });

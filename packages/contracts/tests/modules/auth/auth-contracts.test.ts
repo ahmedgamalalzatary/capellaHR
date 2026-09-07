@@ -76,9 +76,16 @@ describe('authentication contracts', () => {
       branchId: 2,
       branchName: 'فرع مدينة نصر',
       active: true,
+      employees: [{ id: 7, fullName: 'أحمد جمال' }],
     };
 
     expect(contracts.publicCashierAccountSchema.parse(account)).toEqual(account);
+    expect(contracts.publicCashierAccountSchema.parse({ ...account, employees: [] }))
+      .toEqual({ ...account, employees: [] });
+    expect(contracts.publicCashierAccountSchema.safeParse({
+      ...account,
+      employees: undefined,
+    }).success).toBe(false);
     expect(contracts.publicCashierAccountSchema.safeParse({
       ...account,
       passwordHash: 'must-not-leak',

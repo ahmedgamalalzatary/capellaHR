@@ -9,6 +9,7 @@ const account = (overrides: Record<string, unknown> = {}) => ({
   branchId: 3,
   branchName: 'فرع مدينة نصر',
   active: true,
+  employees: [],
   ...overrides,
 });
 

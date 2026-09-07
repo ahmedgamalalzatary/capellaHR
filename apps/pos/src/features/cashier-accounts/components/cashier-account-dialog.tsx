@@ -48,7 +48,9 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
     enabled: branchId > 0,
   });
   const activeIds = new Set((employees.data ?? []).map(({ id }) => id));
-  const selected = (selection ?? roster.data?.map(({ id }) => id) ?? []).filter((id) => activeIds.has(id));
+  const assigned = account?.employees ?? roster.data?.map(({ id, fullName }) => ({ id, fullName })) ?? [];
+  const selected = (selection ?? assigned.map(({ id }) => id)).filter((id) => activeIds.has(id));
+  const dropped = assigned.filter(({ id }) => !activeIds.has(id));
   const usedBranches = new Set((accounts.data ?? []).map(({ branchId }) => branchId));
   const availableBranches = (branches.data ?? []).filter(({ id }) => !usedBranches.has(id));
   const ready = branchId > 0 && roster.isSuccess && employees.isSuccess
@@ -124,6 +126,8 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
           : branchId === 0 ? <p className="text-sm text-muted">اختر الفرع لعرض الموظفين المسموح لهم بالبيع.</p>
           : !roster.isSuccess || !employees.isSuccess ? <LoadingState label="جارٍ تحميل الموظفين…" />
           : <EmployeeMultiSelect key={branchId} employees={employees.data} selected={selected} onChange={setSelection} disabled={save.isPending} />}
+        {roster.isSuccess && employees.isSuccess && dropped.length > 0
+          ? <p className="text-xs text-muted">{dropped.map(({ fullName }) => fullName).join('، ')} لم تعد ضمن الموظفين النشطين لهذا الفرع، ولن تُحفظ في التعيين.</p> : null}
         {roster.isSuccess && employees.isSuccess && selected.length === 0 && branchId > 0
           ? <p className="text-xs text-muted">لن يتمكن أي موظف من البيع بهذا الحساب حتى تختار موظفًا.</p> : null}
         {Object.entries(errors).filter(([key]) => key !== 'username' && key !== 'password').map(([key, values]) => values?.[0] ? <FieldError key={key}>{values[0]}</FieldError> : null)}

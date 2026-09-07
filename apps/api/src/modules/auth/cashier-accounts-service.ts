@@ -19,6 +19,7 @@ export type PublicCashierAccount = {
   branchId: number;
   branchName: string;
   active: boolean;
+  employees: Array<{ id: number; fullName: string }>;
 };
 
 export class CashierAccountError extends Error {

@@ -11,7 +11,6 @@ import { FieldError } from '@/components/feedback/notice';
 import { PageHeader } from '@/components/layout/page-header';
 import { ApiError } from '@/lib/api/client';
 import { deleteCashierAccount, listCashierAccounts, setCashierAccountStatus, type CashierAccount } from '../api/cashier-accounts-api';
-import { listBranchCashierRoster } from '../api/branch-roster-api';
 import { cashierAccountQueryKeys } from '../query-keys';
 import { CashierAccountDialog } from './cashier-account-dialog';
 
@@ -28,14 +27,8 @@ const columns = [
   { key: 'actions', label: 'إجراءات' },
 ] as const;
 
-function AccountEmployees({ branchId }: { branchId: number }) {
-  const roster = useQuery({
-    queryKey: cashierAccountQueryKeys.roster(branchId),
-    queryFn: () => listBranchCashierRoster({ branchId }),
-  });
-  if (roster.isPending) return <span className="text-muted">جارٍ التحميل…</span>;
-  if (roster.isError) return <Button size="sm" variant="ghost" onClick={() => void roster.refetch()}>إعادة تحميل الموظفين</Button>;
-  const names = roster.data.map(({ fullName }) => fullName);
+function AccountEmployees({ employees }: { employees: CashierAccount['employees'] }) {
+  const names = employees.map(({ fullName }) => fullName);
   return <span className="block max-w-64 truncate text-muted" title={names.join('، ')}>{names.join('، ') || 'لا يوجد موظفون محددون'}</span>;
 }
 
@@ -114,7 +107,7 @@ export function CashierAccountsView() {
                 <TR key={account.id}>
                   <TD className="font-medium">{account.username}</TD>
                   <TD className="text-muted">{account.branchName}</TD>
-                  <TD><AccountEmployees branchId={account.branchId} /></TD>
+                  <TD><AccountEmployees employees={account.employees} /></TD>
                   <TD>
                     {account.active ? (
                       <Badge variant="success">نشط</Badge>

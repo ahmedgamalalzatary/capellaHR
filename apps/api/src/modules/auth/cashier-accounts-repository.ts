@@ -36,6 +36,36 @@ const lockCashier = async (executor: Executor, accountId: number) => {
     .where(and(eq(accounts.id, accountId), branchCashier)).for('update').limit(1);
 };
 
+const toPublic = (row: {
+  id: number;
+  username: string;
+  role: string;
+  branchId: number | null;
+  branchName: string;
+  active: boolean;
+}) => row.role === 'cashier' && row.branchId !== null
+  ? { ...row, role: 'cashier' as const, branchId: row.branchId }
+  : null;
+
+const loadEmployeesByBranch = async (executor: Executor, branchIds: number[]) => {
+  const grouped = new Map<number, Array<{ id: number; fullName: string }>>();
+  if (branchIds.length === 0) return grouped;
+  const rows = await executor.select({
+    branchId: branchCashierRoster.branchId,
+    id: branchCashierRoster.employeeId,
+    fullName: employees.fullName,
+  }).from(branchCashierRoster)
+    .leftJoin(employees, eq(employees.id, branchCashierRoster.employeeId))
+    .where(inArray(branchCashierRoster.branchId, branchIds))
+    .orderBy(branchCashierRoster.employeeId);
+  for (const row of rows) {
+    const members = grouped.get(row.branchId) ?? [];
+    members.push({ id: row.id, fullName: row.fullName?.trim() || `موظف ${row.id}` });
+    grouped.set(row.branchId, members);
+  }
+  return grouped;
+};
+
 const selectPublic = async (executor: Executor, accountId: number) => {
   const row = (await executor.select({
     id: accounts.id,
@@ -46,9 +76,10 @@ const selectPublic = async (executor: Executor, accountId: number) => {
     active: accounts.active,
   }).from(accounts).innerJoin(branches, eq(branches.id, accounts.branchId))
     .where(and(eq(accounts.id, accountId), branchCashier)).limit(1))[0];
-  return row?.role === 'cashier' && row.branchId !== null
-    ? { ...row, role: 'cashier' as const, branchId: row.branchId }
-    : null;
+  const account = row ? toPublic(row) : null;
+  if (!account) return null;
+  const employeesByBranch = await loadEmployeesByBranch(executor, [account.branchId]);
+  return { ...account, employees: employeesByBranch.get(account.branchId) ?? [] };
 };
 
 export const createDrizzleCashierAccountRepository = (
@@ -161,10 +192,19 @@ export const createDrizzleCashierAccountRepository = (
           .limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         database.select({ total: count() }).from(accounts).where(branchCashier),
       ]);
+      const publicItems = items.flatMap((row) => {
+        const account = toPublic(row);
+        return account ? [account] : [];
+      });
+      const employeesByBranch = await loadEmployeesByBranch(
+        database,
+        publicItems.map(({ branchId }) => branchId),
+      );
       return {
-        items: items.flatMap((row) => row.role === 'cashier' && row.branchId !== null
-          ? [{ ...row, role: 'cashier' as const, branchId: row.branchId }]
-          : []),
+        items: publicItems.map((item) => ({
+          ...item,
+          employees: employeesByBranch.get(item.branchId) ?? [],
+        })),
         total: totals[0]?.total ?? 0,
       };
     },

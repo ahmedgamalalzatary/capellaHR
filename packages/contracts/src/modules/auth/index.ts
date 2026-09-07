@@ -67,6 +67,11 @@ export const resetCashierPasswordSchema = z.object({
   password: z.string().min(1).max(1024),
 }).strict();
 
+export const publicCashierAccountEmployeeSchema = z.object({
+  id: positiveMysqlIntSchema,
+  fullName: z.string().min(1).max(255),
+}).strict();
+
 export const publicCashierAccountSchema = z.object({
   id: positiveMysqlIntSchema,
   username: cashierUsernameSchema,
@@ -74,6 +79,7 @@ export const publicCashierAccountSchema = z.object({
   branchId: positiveMysqlIntSchema,
   branchName: z.string().min(1).max(255),
   active: z.boolean(),
+  employees: z.array(publicCashierAccountEmployeeSchema),
 }).strict();
 
 export const accountSessionActorSchema = z.discriminatedUnion('type', [

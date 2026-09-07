@@ -2,7 +2,10 @@ import { expect, test, type Route } from '@playwright/test';
 
 test('admin creates and edits a cashier with employees in one form', async ({ page }, testInfo) => {
   const employeeOptions = [{ id: 7, fullName: 'أحمد جمال', employeeCode: 1007 }, { id: 9, fullName: 'سارة محمد', employeeCode: 1009 }];
-  const account = { id: 1, username: 'nasr', role: 'cashier', branchId: 3, branchName: 'فرع مدينة نصر', active: true };
+  const account = {
+    id: 1, username: 'nasr', role: 'cashier', branchId: 3, branchName: 'فرع مدينة نصر', active: true,
+    employees: [{ id: 7, fullName: 'أحمد جمال' }],
+  };
   let rows = [account];
   let selected = [7];
   let saved: Record<string, unknown> | undefined;
@@ -15,8 +18,9 @@ test('admin creates and edits a cashier with employees in one form', async ({ pa
     if (path === '/auth/cashier-accounts' && request.method() === 'PUT') {
       saved = request.postDataJSON() as Record<string, unknown>;
       selected = saved.employeeIds as number[];
-      if (saved.mode === 'edit') rows = [{ ...account, username: saved.username as string }];
-      else rows.push({ ...account, id: 2, branchId: 4, branchName: 'فرع المعادي', username: saved.username as string });
+      const employees = employeeOptions.filter(({ id }) => selected.includes(id)).map(({ id, fullName }) => ({ id, fullName }));
+      if (saved.mode === 'edit') rows = [{ ...account, username: saved.username as string, employees }];
+      else rows.push({ ...account, id: 2, branchId: 4, branchName: 'فرع المعادي', username: saved.username as string, employees });
       return json(route, rows.at(-1));
     }
     if (path === '/branches') return json(route, [{ id: 3, name: 'فرع مدينة نصر' }, { id: 4, name: 'فرع المعادي' }], true);

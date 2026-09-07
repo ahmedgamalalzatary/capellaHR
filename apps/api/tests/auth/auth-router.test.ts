@@ -51,38 +51,27 @@ const makeApp = () => {
   };
   const app = express();
   app.use(express.json());
+  const publicAccount = (overrides: Record<string, unknown> = {}) => ({
+    id: 21, username: 'cashier.one', role: 'cashier' as const,
+    branchId: 3, branchName: 'فرع مدينة نصر', active: true, employees: [],
+    ...overrides,
+  });
   const cashierAccounts = {
     async save(input: { branchId: number; username: string }) {
-      return { id: 21, username: input.username, role: 'cashier' as const, branchId: input.branchId, branchName: 'فرع مدينة نصر', active: false };
+      return publicAccount({ username: input.username, branchId: input.branchId, active: false });
     },
     async upsert(input: { branchId: number; username: string }) {
-      return {
-        id: 21,
-        username: input.username.toLowerCase(),
-        role: 'cashier' as const,
-        branchId: input.branchId,
-        branchName: 'فرع مدينة نصر',
-        active: true,
-      };
+      return publicAccount({ username: input.username.toLowerCase(), branchId: input.branchId });
     },
     async list() { return { items: [], total: 0 }; },
     async setActive(accountId: number, active: boolean) {
-      return {
-        id: accountId, username: 'cashier.one', role: 'cashier' as const,
-        branchId: 3, branchName: 'فرع مدينة نصر', active,
-      };
+      return publicAccount({ id: accountId, active });
     },
     async resetPassword(accountId: number) {
-      return {
-        id: accountId, username: 'cashier.one', role: 'cashier' as const,
-        branchId: 3, branchName: 'فرع مدينة نصر', active: true,
-      };
+      return publicAccount({ id: accountId });
     },
     async archive(accountId: number) {
-      return {
-        id: accountId, username: 'cashier.one', role: 'cashier' as const,
-        branchId: 3, branchName: 'فرع مدينة نصر', active: false,
-      };
+      return publicAccount({ id: accountId, active: false });
     },
   };
   app.use('/api/v1/auth', createAuthRouter(service, {
@@ -215,6 +204,7 @@ describe('authentication HTTP API', () => {
         branchId: 3,
         branchName: 'فرع مدينة نصر',
         active: true,
+        employees: [],
       },
     });
   });
