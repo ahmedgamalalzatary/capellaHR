@@ -256,7 +256,7 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
 
 export function ErpReportsView() {
   const queryClient = useQueryClient();
-  const dates = useMemo(initialDates, []);
+  const dates = useMemo(() => initialDates(), []);
   const [reportType, setReportType] = useState<ErpTabReportType>('erp-sales');
   const [branchInput, setBranchInput] = useState<number>();
   const [dateFromInput, setDateFromInput] = useState(dates.dateFrom);

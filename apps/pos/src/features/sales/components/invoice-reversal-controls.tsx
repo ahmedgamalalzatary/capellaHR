@@ -83,11 +83,11 @@ export function InvoiceReversalControls({
    * who has already been paid. So the answer outlives the dialog and is dropped only when the
    * parent hands back a refreshed invoice showing the reversal.
    */
-  const settledCommand = useRef<string | null>(null);
-  const seenReversals = useRef(invoice.reversals.length);
-  if (seenReversals.current !== invoice.reversals.length) {
-    seenReversals.current = invoice.reversals.length;
-    settledCommand.current = null;
+  const [settledCommand, setSettledCommand] = useState<string | null>(null);
+  const [seenReversals, setSeenReversals] = useState(invoice.reversals.length);
+  if (seenReversals !== invoice.reversals.length) {
+    setSeenReversals(invoice.reversals.length);
+    setSettledCommand(null);
   }
   const selectedLines = invoice.lines.flatMap((line) => {
     const quantity = Number(quantities[line.id] ?? 0);
@@ -127,11 +127,11 @@ export function InvoiceReversalControls({
    * A reversal is typed against one invoice, so the memory is keyed by that
    * invoice: the quantities and the reason survive a trip to another tab.
    */
-  const lastMode = useRef<'refund' | 'void'>('refund');
-  if (mode !== null) lastMode.current = mode;
+  const [lastMode, setLastMode] = useState<'refund' | 'void'>('refund');
+  if (mode !== null && lastMode !== mode) setLastMode(mode);
   const draft = useFormDraft(
     `reversal:${invoice.id}`,
-    { mode: mode ?? lastMode.current, quantities, reason },
+    { mode: mode ?? lastMode, quantities, reason },
     reason.trim() !== '' || Object.values(quantities).some((value) => value !== ''),
   );
   const quote = useMutation({
@@ -171,7 +171,7 @@ export function InvoiceReversalControls({
       });
     },
     onError: (cause) => {
-      if (isAlreadyRefunded(cause)) settledCommand.current = commandIdentity.current?.fingerprint ?? null;
+      if (isAlreadyRefunded(cause)) setSettledCommand(commandIdentity.current?.fingerprint ?? null);
     },
     onSuccess: (value) => {
       onUpdated(value);
@@ -210,7 +210,7 @@ export function InvoiceReversalControls({
     setMode(null);
     setQuoted(null);
     setTenderAmounts({});
-    if (settledCommand.current === null) commandIdentity.current = null;
+    if (settledCommand === null) commandIdentity.current = null;
     quote.reset();
     refund.reset();
     voidMutation.reset();
@@ -241,7 +241,7 @@ export function InvoiceReversalControls({
   const refundFingerprint = JSON.stringify({
     branchId, reason: reason.trim(), lines: selectedLines,
   });
-  const refundAlreadySettled = settledCommand.current === refundFingerprint;
+  const refundAlreadySettled = settledCommand === refundFingerprint;
   const printableReversal = refunded?.reversals.at(-1);
   const tenderMessage = quoted === null || tendersBalance
     ? null

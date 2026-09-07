@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
@@ -48,7 +48,7 @@ export function ClientForm({
   const {
     register,
     handleSubmit,
-    watch,
+    control,
     setValue,
     formState: { errors, isDirty },
   } = useForm<ClientFormFields, unknown, ClientFormValues>({
@@ -59,7 +59,11 @@ export function ClientForm({
     },
   });
 
-  const fields = watch();
+  const watched = useWatch({ control });
+  const fields = {
+    fullName: watched?.fullName ?? client?.fullName ?? '',
+    phone: watched?.phone ?? client?.phone ?? defaultPhone ?? '',
+  };
   /**
    * Only a new client is remembered. An edit already has a stored record behind it,
    * and an old draft reappearing over someone else's row would be a trap.

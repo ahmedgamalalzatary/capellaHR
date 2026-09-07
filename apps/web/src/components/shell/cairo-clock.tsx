@@ -1,19 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-
 import { useDisplayFormatters } from '@/providers/runtime-config';
+import { useTickingNow } from '@/lib/use-ticking-now';
 
 /** Live date and time rendered with the backend-provided locale and time zone. */
 export function CairoClock({ className }: { className?: string }) {
-  const [now, setNow] = useState<Date | null>(null);
+  const nowMs = useTickingNow();
+  const now = nowMs > 0 ? new Date(nowMs) : null;
   const formatters = useDisplayFormatters();
-
-  useEffect(() => {
-    setNow(new Date());
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   if (!now || !formatters) {
     return <div className={className} aria-hidden />;

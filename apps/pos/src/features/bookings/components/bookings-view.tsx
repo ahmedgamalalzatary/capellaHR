@@ -14,8 +14,10 @@ import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { Select } from '@/components/form/select';
 import { ApiError } from '@/lib/api/client';
+import { useTickingNow } from '@/lib/use-ticking-now';
 
 import { listBookingEmployeeOptions, listBookings, updateBookingServicePreference, updateBookingStatus, type BookingDto } from '../api/bookings-api';
+import { isOverdueBooked, orderBookingsForDiary } from '../order-bookings';
 import { bookingQueryKeys } from '../query-keys';
 import { BookingForm } from './booking-form';
 
@@ -79,15 +81,9 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     onSuccess: async () => cache.invalidateQueries({ queryKey: bookingQueryKeys.all }),
     onError: (cause) => setError(cause instanceof ApiError ? cause.message : 'تعذر تغيير الموظف المفضل.'),
   });
-  const overdueCount = diary.data?.filter((booking) => (
-    booking.status === 'booked' && new Date(booking.scheduledAt).getTime() < Date.now()
-  )).length ?? 0;
-  const orderedBookings = diary.data ? [
-    ...diary.data.filter((booking) => booking.status === 'booked'
-      && new Date(booking.scheduledAt).getTime() < Date.now()),
-    ...diary.data.filter((booking) => booking.status !== 'booked'
-      || new Date(booking.scheduledAt).getTime() >= Date.now()),
-  ] : [];
+  const now = useTickingNow();
+  const overdueCount = diary.data?.filter((booking) => isOverdueBooked(booking, now)).length ?? 0;
+  const orderedBookings = diary.data ? orderBookingsForDiary(diary.data, now) : [];
 
   if (session.isPending) return <LoadingState label="جارٍ تحميل دفتر المواعيد…" />;
   if (session.isError) return <EmptyState title="تعذر التحقق من الجلسة" action={<Button onClick={() => void session.refetch()}>إعادة المحاولة</Button>} />;
@@ -137,7 +133,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
             <div className="flex flex-wrap gap-2">
               {booking.status === 'booked' ? <>
                 <Button disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'arrived' })}>وصل العميل</Button>
-                {new Date(booking.scheduledAt).getTime() < Date.now() ? <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
+                {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
               </> : null}
               {booking.status === 'arrived' ? <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button> : null}
               {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}

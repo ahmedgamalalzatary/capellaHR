@@ -1,7 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button, Field, Input, Modal } from '@capella/ui';
@@ -105,22 +105,26 @@ export function ProtectedAreaGate({
   children: ReactNode;
 }) {
   const router = useRouter();
-  const [unlocked, setUnlocked] = useState(false);
-  const [ready, setReady] = useState(false);
+  const storedUnlocked = useSyncExternalStore(
+    () => () => undefined,
+    () => isProtectedAreaUnlocked(area),
+    () => false,
+  );
+  const [trackedArea, setTrackedArea] = useState(area);
+  const [localUnlocked, setLocalUnlocked] = useState(false);
+  if (trackedArea !== area) {
+    setTrackedArea(area);
+    setLocalUnlocked(false);
+  }
+  const unlocked = storedUnlocked || localUnlocked;
 
-  useEffect(() => {
-    setUnlocked(isProtectedAreaUnlocked(area));
-    setReady(true);
-  }, [area]);
-
-  if (!ready) return null;
   if (unlocked) return <>{children}</>;
 
   return (
     <ProtectedAreaUnlockDialog
       area={area}
       title="هذا القسم محمي"
-      onUnlocked={() => setUnlocked(true)}
+      onUnlocked={() => setLocalUnlocked(true)}
       onClose={() => router.replace('/dashboard')}
       closeLabel="رجوع"
     />

@@ -2,7 +2,7 @@
 
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Percent, Plus, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import {
   Badge,
@@ -134,10 +134,8 @@ export function CatalogView() {
     : tabs.filter((entry) => entry.key === 'categories' ? categories.length > 0 : services.length > 0);
 
   // Keep the selected tab valid after branch data loads or changes.
-  useEffect(() => {
-    const firstVisible = visibleTabs[0]?.key;
-    if (firstVisible && !visibleTabs.some((entry) => entry.key === tab)) setTab(firstVisible);
-  }, [tab, visibleTabs]);
+  const firstVisible = visibleTabs[0]?.key;
+  if (firstVisible && !visibleTabs.some((entry) => entry.key === tab)) setTab(firstVisible);
 
   return (
     <section className="space-y-6">

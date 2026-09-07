@@ -120,9 +120,7 @@ export function SaleWorkspace({
   const sellerOnRoster = Boolean(
     seller && roster.data?.some((member) => member.id === seller.id),
   );
-  useEffect(() => {
-    if (roster.isSuccess && seller && !sellerOnRoster) setSeller(null);
-  }, [roster.isSuccess, seller, sellerOnRoster]);
+  if (roster.isSuccess && seller && !sellerOnRoster) setSeller(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [hasServices, setHasServices] = useState(true);
   const [hasProducts, setHasProducts] = useState(true);
@@ -155,6 +153,9 @@ export function SaleWorkspace({
     setRestoringClient(false);
     setClient(next);
   }, []);
+  const [idempotencyKey, setIdempotencyKey] = useState(
+    () => (mountIntent.mode === 'resume' ? mountIntent.draft.idempotencyKey : createUuid()),
+  );
   /**
    * Puts a stored draft back on screen. The client is refetched by id because the
    * stored copy deliberately holds no personal data — only the identifiers.
@@ -192,9 +193,6 @@ export function SaleWorkspace({
   /** Printed once per saved sale, so a retry render never sends a second copy to the printer. */
   const autoPrinted = useRef<number | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
-  const [idempotencyKey, setIdempotencyKey] = useState(
-    () => (mountIntent.mode === 'resume' ? mountIntent.draft.idempotencyKey : createUuid()),
-  );
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
   const [conflictRestored, setConflictRestored] = useState(false);
   const [backgroundSyncCount, setBackgroundSyncCount] = useState(0);
@@ -278,11 +276,8 @@ export function SaleWorkspace({
     };
   }, []);
 
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
+  useEffect(() => () => {
+    mounted.current = false;
   }, []);
 
   useEffect(() => {
@@ -327,10 +322,7 @@ export function SaleWorkspace({
   const serviceLinesAssigned = lines.every((line) => line.itemType === 'product' || line.employee);
   const adjustmentsStep = hasServiceLines ? 5 : 4;
   const paymentsStep = hasServiceLines ? 6 : 5;
-
-  useEffect(() => {
-    if (!hasServiceLines && employee !== null) setEmployee(null);
-  }, [employee, hasServiceLines]);
+  if (!hasServiceLines && employee !== null) setEmployee(null);
 
   const { quoteInput, quote } = useSaleQuote({
     ...(branchId === undefined ? {} : { branchId }),
@@ -352,6 +344,7 @@ export function SaleWorkspace({
     if (!draftHydrated || restoringClient) return;
     if (!hasDraftProgress) {
       removeSaleDraft(workspaceOwner, idempotencyKey);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- parent list is notified via storage, not this setter
       setDraftStorageError(false);
       return;
     }

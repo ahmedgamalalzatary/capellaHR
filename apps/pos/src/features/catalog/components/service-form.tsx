@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
@@ -43,7 +43,7 @@ export function ServiceForm({
   const isEdit = service !== undefined;
   const hasFixedPrice = service?.price !== null && service?.price !== undefined;
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } =
+  const { register, handleSubmit, control, setValue, formState: { errors } } =
     useForm<ServiceFormInput, unknown, ServiceFormValues>({
       resolver: zodResolver(serviceFormSchema),
       defaultValues: {
@@ -55,7 +55,14 @@ export function ServiceForm({
       },
     });
 
-  const fields = watch();
+  const watched = useWatch({ control });
+  const fields = {
+    name: watched?.name ?? service?.name ?? '',
+    categoryId: watched?.categoryId ?? (service ? String(service.categoryId) : ''),
+    price: watched?.price ?? service?.price ?? '',
+    commissionPercent: watched?.commissionPercent ?? service?.commissionPercent ?? '',
+    description: watched?.description ?? service?.description ?? '',
+  };
   /** A new service only: an edit is anchored to a stored row. */
   const draft = useFormDraft(
     isEdit ? null : `service:${branchId ?? 'own'}`,

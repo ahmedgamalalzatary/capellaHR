@@ -3,7 +3,7 @@
 import { useIsMutating, useQuery } from '@tanstack/react-query';
 import { ShieldCheck, UserRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { useLogout, useSession } from '@/features/auth';
 import {
@@ -14,6 +14,8 @@ import { clearAllSaleDrafts } from '@/features/sales';
 import { hasBookingsEver } from '@/features/bookings';
 import { listCategories, listServices } from '@/features/catalog';
 import { listSellableProducts } from '@/features/products';
+
+import { useMatchMedia } from '@/lib/use-match-media';
 
 import { adminNavigation, cashierNavigation, filterCashierNavigation } from './nav';
 import { Sidebar, SIDEBAR_ID } from './sidebar';
@@ -72,19 +74,8 @@ export function PosShell({ children }: { children: ReactNode }) {
   }, [bookingsEver.data, bookingsEver.isFetched, cashierCapabilities.data, isCashier, router]);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const wideRef = useRef(false);
-
-  useEffect(() => {
-    const breakpoint = window.matchMedia('(min-width: 48rem)');
-    wideRef.current = breakpoint.matches;
-    if (breakpoint.matches) setSidebarOpen(false);
-    const onBreakpointChange = (event: MediaQueryListEvent) => {
-      wideRef.current = event.matches;
-      if (event.matches) setSidebarOpen(false);
-    };
-    breakpoint.addEventListener('change', onBreakpointChange);
-    return () => breakpoint.removeEventListener('change', onBreakpointChange);
-  }, []);
+  const isWide = useMatchMedia('(min-width: 48rem)');
+  if (isWide && sidebarOpen) setSidebarOpen(false);
 
   // The open state is only reachable through the md:hidden toggle, so this effect
   // manages the mobile drawer: move focus in, trap Tab, restore it on close.
@@ -120,14 +111,14 @@ export function PosShell({ children }: { children: ReactNode }) {
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      if (trigger?.isConnected && !wideRef.current) {
+      if (trigger?.isConnected && !isWide) {
         const style = window.getComputedStyle(trigger);
         if (!trigger.hidden && style.display !== 'none' && style.visibility !== 'hidden') {
           trigger.focus();
         }
       }
     };
-  }, [sidebarOpen]);
+  }, [isWide, sidebarOpen]);
 
   const shiftStatus = isCashier ? (
     <div

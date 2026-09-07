@@ -47,7 +47,8 @@ vi.mock('../src/features/clients', () => ({
 }));
 vi.mock('../src/features/catalog', () => ({
   ServicePicker: (props: { branchId?: number; onSelect: (value: unknown) => void; onAvailabilityChange?: (value: boolean) => void }) => {
-    useEffect(() => { props.onAvailabilityChange?.(mocks.serviceAvailable.current); }, [props.onAvailabilityChange]);
+    const { onSelect, onAvailabilityChange } = props;
+    useEffect(() => { onAvailabilityChange?.(mocks.serviceAvailable.current); }, [onAvailabilityChange]);
     return (
     mocks.servicePickerProps(props), <>
       <button onClick={() => props.onSelect({

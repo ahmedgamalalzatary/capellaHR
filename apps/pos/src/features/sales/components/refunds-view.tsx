@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { useBarcodeScanner } from '@/lib/barcode/use-barcode-scanner';
 
@@ -133,11 +133,9 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
     queryFn: () => listCashierSessionBranches(1),
     enabled: isAdmin,
   });
-  useEffect(() => {
-    if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
-      setBranchId(branches.data.items[0]!.id);
-    }
-  }, [branchId, branches.data, isAdmin]);
+  if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
+    setBranchId(branches.data.items[0]!.id);
+  }
   const invoices = useQuery({
     queryKey: salesQueryKeys.invoices(branchId, page, search),
     queryFn: () => listInvoices({
@@ -151,11 +149,10 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   const scanned = scannedNumber === null
     ? undefined
     : invoices.data?.items.find((invoice) => invoice.invoiceNumber === scannedNumber);
-  useEffect(() => {
-    if (!scanned) return;
+  if (scanned && selectedInvoiceId !== scanned.id) {
     setSelectedInvoiceId(scanned.id);
     setScannedNumber(null);
-  }, [scanned]);
+  }
   const selectedInvoice = invoices.data?.items.find((invoice) => invoice.id === selectedInvoiceId);
 
   return (

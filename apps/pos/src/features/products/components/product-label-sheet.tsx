@@ -74,7 +74,9 @@ export function ProductLabelSheet({ products, onPrinted }: {
   // The screen hands us a fresh arrow function on every render, so the callback is read
   // through a ref: the dialog opens once per mounted sheet, not once per re-render.
   const handlePrinted = useRef(onPrinted);
-  handlePrinted.current = onPrinted;
+  useEffect(() => {
+    handlePrinted.current = onPrinted;
+  }, [onPrinted]);
 
   useEffect(() => {
     const { body } = document;

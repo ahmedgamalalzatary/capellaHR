@@ -1,25 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+
+import { useMatchMedia } from '@/lib/use-match-media';
 
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 
 export function AdminShell({ title, children }: { title?: string; children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const desktopRef = useRef(false);
-
-  useEffect(() => {
-    const breakpoint = window.matchMedia('(min-width: 64rem)');
-    desktopRef.current = breakpoint.matches;
-    if (breakpoint.matches) setSidebarOpen(false);
-    const onBreakpointChange = (event: MediaQueryListEvent) => {
-      desktopRef.current = event.matches;
-      if (event.matches) setSidebarOpen(false);
-    };
-    breakpoint.addEventListener('change', onBreakpointChange);
-    return () => breakpoint.removeEventListener('change', onBreakpointChange);
-  }, []);
+  const isDesktop = useMatchMedia('(min-width: 64rem)');
+  if (isDesktop && sidebarOpen) setSidebarOpen(false);
 
   // The open state is only reachable through the lg:hidden toggle, so this
   // effect manages the mobile drawer: move focus in, trap Tab, restore on close.
@@ -55,12 +46,12 @@ export function AdminShell({ title, children }: { title?: string; children: Reac
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      if (trigger?.isConnected && !desktopRef.current) {
+      if (trigger?.isConnected && !isDesktop) {
         const style = window.getComputedStyle(trigger);
         if (!trigger.hidden && style.display !== 'none' && style.visibility !== 'hidden') trigger.focus();
       }
     };
-  }, [sidebarOpen]);
+  }, [isDesktop, sidebarOpen]);
 
   return (
     <div className="min-h-dvh">

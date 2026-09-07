@@ -54,7 +54,8 @@ vi.mock('../src/features/catalog', () => ({
     onSelect: (value: unknown) => void;
     onAvailabilityChange?: (value: boolean) => void;
   }) => {
-    useEffect(() => { props.onAvailabilityChange?.(mocks.serviceAvailable.current); }, [props.onAvailabilityChange]);
+    const { onSelect, onAvailabilityChange } = props;
+    useEffect(() => { onAvailabilityChange?.(mocks.serviceAvailable.current); }, [onAvailabilityChange]);
     return (
       <>
         <button onClick={() => props.onSelect({

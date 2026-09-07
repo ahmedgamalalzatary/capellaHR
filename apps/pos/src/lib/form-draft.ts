@@ -56,6 +56,7 @@ export function useFormDraft<T>(key: string | null, value: T, dirty: boolean): F
 
   // Serialized here so a re-rendered object literal does not count as a change.
   const serialized = dirty && key !== null ? JSON.stringify(value) : null;
+  if (serialized !== null && pending !== null) setPending(null);
 
   useEffect(() => {
     if (key === null || readFor.current !== key) return;
@@ -70,7 +71,6 @@ export function useFormDraft<T>(key: string | null, value: T, dirty: boolean): F
         return;
       }
       // Typing is an answer to the banner: the fresh work wins over the old draft.
-      setPending(null);
       owns.current = true;
       sessionStorage.setItem(storageKey(key), serialized);
     } catch {

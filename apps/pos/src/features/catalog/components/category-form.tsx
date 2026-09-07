@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
@@ -33,7 +33,7 @@ export function CategoryForm({
   const queryClient = useQueryClient();
   const isEdit = category !== undefined;
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<CategoryFormValues>({
+  const { register, handleSubmit, control, setValue, formState: { errors } } = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
     defaultValues: {
       name: category?.name ?? '',
@@ -41,7 +41,11 @@ export function CategoryForm({
     } as CategoryFormValues,
   });
 
-  const fields = watch();
+  const watched = useWatch({ control });
+  const fields = {
+    name: watched?.name ?? category?.name ?? '',
+    type: watched?.type ?? category?.type ?? 'service',
+  };
   const draft = useFormDraft(
     isEdit ? null : `category:${branchId ?? 'own'}`,
     fields,

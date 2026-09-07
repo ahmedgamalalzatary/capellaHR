@@ -35,7 +35,9 @@ export function useBarcodeScanner({
   const buffer = useRef('');
   const lastKeyAt = useRef(0);
   const handler = useRef(onScan);
-  handler.current = onScan;
+  useEffect(() => {
+    handler.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     if (!enabled) return undefined;

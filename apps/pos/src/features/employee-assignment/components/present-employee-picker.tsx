@@ -49,11 +49,9 @@ export function PresentEmployeePicker({
     selected && items && !items.some(({ id }) => id === selected.id),
   );
 
+  if (staleSelection && !staleNotice) setStaleNotice(true);
   useEffect(() => {
-    if (staleSelection) {
-      setStaleNotice(true);
-      onSelect(null);
-    }
+    if (staleSelection) onSelect(null);
   }, [staleSelection, onSelect]);
 
   return (

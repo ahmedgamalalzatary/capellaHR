@@ -51,6 +51,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
    * back so the slip the customer handed over opens itself.
    */
   const [scannedNumber, setScannedNumber] = useState<string | null>(null);
+  const [openInvoiceId, setOpenInvoiceId] = useState<number | null>(null);
   useBarcodeScanner({
     onScan: (code) => {
       setSearchDraft(code);
@@ -65,11 +66,9 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
     queryFn: () => listCashierSessionBranches(1),
     enabled: isAdmin,
   });
-  useEffect(() => {
-    if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
-      setBranchId(branches.data.items[0]!.id);
-    }
-  }, [branchId, branches.data, isAdmin]);
+  if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
+    setBranchId(branches.data.items[0]!.id);
+  }
   const invoices = useQuery({
     queryKey: salesQueryKeys.invoices(branchId, page, search),
     queryFn: () => listInvoices({
@@ -83,11 +82,14 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
   const scanned = scannedNumber === null
     ? undefined
     : invoices.data?.items.find((invoice) => invoice.invoiceNumber === scannedNumber);
-  useEffect(() => {
-    if (!scanned) return;
+  if (scanned && openInvoiceId !== scanned.id) {
+    setOpenInvoiceId(scanned.id);
     setScannedNumber(null);
-    router.push(`/invoices/${scanned.id}${branchId ? `?branchId=${branchId}` : ''}`);
-  }, [branchId, router, scanned]);
+  }
+  useEffect(() => {
+    if (openInvoiceId === null) return;
+    router.push(`/invoices/${openInvoiceId}${branchId ? `?branchId=${branchId}` : ''}`);
+  }, [branchId, openInvoiceId, router]);
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6">

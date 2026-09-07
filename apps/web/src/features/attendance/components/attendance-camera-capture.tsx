@@ -31,6 +31,7 @@ export function AttendanceCameraCapture({
   const [quality, setQuality] = useState<EmployeeFaceQuality>({ code: 'no_face', ready: false, score: 0 });
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [previewFor, setPreviewFor] = useState<Blob | undefined>(undefined);
 
   const stopCamera = () => {
     if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
@@ -61,13 +62,17 @@ export function AttendanceCameraCapture({
       setError('تعذر تشغيل الكاميرا. أعد المحاولة.');
     });
   }, [active]);
-  useEffect(() => {
-    const first = value?.[0];
-    if (!first || typeof URL.createObjectURL !== 'function') { setPreview(null); return; }
-    const url = URL.createObjectURL(first);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [value]);
+  const first = value?.[0];
+  if (first !== previewFor) {
+    if (preview) URL.revokeObjectURL(preview);
+    setPreviewFor(first);
+    setPreview(
+      first && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(first) : null,
+    );
+  }
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
 
   const assessVideo = () => {
     const video = videoRef.current;

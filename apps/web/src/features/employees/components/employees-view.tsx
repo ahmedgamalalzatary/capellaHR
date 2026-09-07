@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Power, PowerOff, Search, Trash2, UserRound, Wallet } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
-import { useForm, type FieldError } from 'react-hook-form';
+import { useForm, useWatch, type FieldError } from 'react-hook-form';
 
 import { Button, Card, CardContent, ConfirmDialog, EmptyState, Field, Input } from '@capella/ui';
 
@@ -172,7 +172,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<CreateFormInput, unknown, EmployeeCreateFormValues>({
     resolver: zodResolver(employeeCreateFormSchema),
@@ -187,6 +187,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
   });
 
   const form = { register, errors } as unknown as EmployeeFieldsApi;
+  const personalFile = (useWatch({ control, name: 'personal' }) as File | undefined) ?? null;
 
   return (
     <Card>
@@ -236,7 +237,7 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
 
           <Field label="صورة الوجه" htmlFor="employee-face-capture" required error={errors.personal?.message}>
             <EmployeeFaceCapture
-              value={(watch('personal') as File | undefined) ?? null}
+              value={personalFile}
               onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
               disabled={save.isPending}
             />
@@ -289,7 +290,7 @@ function EditEmployeeForm({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<UpdateFormInput, unknown, EmployeeUpdateFormValues>({
     resolver: zodResolver(employeeUpdateFormSchema),
@@ -314,6 +315,7 @@ function EditEmployeeForm({
   });
 
   const form = { register, errors } as unknown as EmployeeFieldsApi;
+  const personalFile = (useWatch({ control, name: 'personal' }) as File | undefined) ?? null;
 
   return (
     <Card>
@@ -362,7 +364,7 @@ function EditEmployeeForm({
 
           <Field label="استبدال صورة الوجه" htmlFor="employee-face-capture" error={errors.personal?.message}>
             <EmployeeFaceCapture
-              value={(watch('personal') as File | undefined) ?? null}
+              value={personalFile}
               onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
               disabled={save.isPending}
             />

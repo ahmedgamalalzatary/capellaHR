@@ -47,7 +47,11 @@ export function PairDeviceView({ token }: { token: string }) {
     }
   }, [router, token]);
 
-  useEffect(() => { void pair(); }, [pair]);
+  // Mount-only handshake with the pairing API. Retry is a click.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pair() reports status from the API
+    void pair();
+  }, [pair]);
 
   const retry = () => {
     started.current = false;
