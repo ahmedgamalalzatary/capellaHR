@@ -167,7 +167,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Delivery | Hosted web app (per-customer installation) |
 | UI language | Arabic, RTL — consistent with existing `apps/web` |
 | Admin login | Seeded from `.env` (kept, becomes first Admin account — §6) |
-| Cashier accounts | One branch-scoped cashier login per branch; Admin can create it and change its username and password from the POS (§6) |
+| Cashier accounts | One branch-scoped cashier login per branch. Admin uses one create/edit form for credentials and a searchable employee multi-select. Creation requires a password; editing can keep the current one and preserves disabled status. Credentials and the branch roster save atomically; assigned employees appear in the accounts table (§6) |
 | Inventory | Full stock tracking: purchases increase, POS sales decrease, low-stock alerts |
 | Commissions | Configurable rate per service **with per-employee override**; recorded in an ERP-owned immutable ledger, projected into payroll (§8) |
 | Receipts | 80mm thermal receipt at POS **and** A4 PDF export in reports |

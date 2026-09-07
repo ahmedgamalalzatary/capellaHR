@@ -3,6 +3,20 @@ import { describe, expect, it } from 'vitest';
 import * as contracts from '../../../src/modules/auth/index.js';
 
 describe('authentication contracts', () => {
+  it('requires create credentials and unique employees but permits keeping the edit password', () => {
+    const schema = Reflect.get(contracts, 'saveCashierAccountSchema');
+    expect(schema).toBeDefined();
+    const create = { mode: 'create', branchId: 3, username: ' Nasr ', password: 'secret', employeeIds: [7, 9] };
+    expect(schema.parse(create)).toEqual({ ...create, username: 'nasr' });
+    expect(schema.safeParse({ ...create, password: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...create, employeeIds: [7, 7] }).success).toBe(false);
+    expect(schema.safeParse({ ...create, employeeIds: [-1] }).success).toBe(false);
+    expect(schema.safeParse({ ...create, employeeIds: Array.from({ length: 101 }, (_, index) => index + 1) }).success).toBe(false);
+    const edit = { mode: 'edit', accountId: 5, branchId: 3, username: 'nasr', employeeIds: [] };
+    expect(schema.parse(edit)).toEqual(edit);
+    expect(schema.safeParse({ ...edit, password: '' }).success).toBe(false);
+    expect(schema.safeParse({ ...edit, active: true }).success).toBe(false);
+  });
   it('accepts the admin login payload', () => {
     const schema = Reflect.get(contracts, 'adminLoginSchema');
     expect(schema).toBeDefined();

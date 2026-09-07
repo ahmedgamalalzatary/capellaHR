@@ -1,6 +1,10 @@
+import { saveCashierAccountSchema, type SaveCashierAccountInput } from '@capella/contracts';
+
 export type CashierAccountInput = {
   username: string;
-  passwordHash: string;
+  passwordHash?: string;
+  employeeIds?: number[];
+  management?: { mode: 'create' } | { mode: 'edit'; accountId: number };
   role: 'cashier';
   branchId: number;
   employeeId: null;
@@ -31,6 +35,9 @@ export interface CashierAccountRepository {
     | { kind: 'updated'; account: PublicCashierAccount }
     | { kind: 'branch_not_found' }
     | { kind: 'username_taken' }
+    | { kind: 'branch_has_account' }
+    | { kind: 'not_found' }
+    | { kind: 'employee_not_in_branch' }
   >;
   listCashiers(query: { page: number; pageSize: number }): Promise<{
     items: PublicCashierAccount[];
@@ -75,10 +82,42 @@ export const createCashierAccountsService = (dependencies: {
     return result.account;
   };
 
+  const saveAccount = async (input: CashierAccountInput) => {
+    const result = await dependencies.accounts.upsert(input);
+    if (result.kind === 'branch_not_found') {
+      throw new CashierAccountError('BRANCH_NOT_FOUND', 'الفرع غير موجود');
+    }
+    if (result.kind === 'username_taken') {
+      throw new CashierAccountError('USERNAME_TAKEN', 'اسم المستخدم مستخدم بالفعل');
+    }
+    if (result.kind === 'branch_has_account') {
+      throw new CashierAccountError('BRANCH_HAS_ACCOUNT', 'يوجد حساب كاشير لهذا الفرع بالفعل. يمكنك تعديله من الجدول.');
+    }
+    if (result.kind === 'not_found') {
+      throw new CashierAccountError('ACCOUNT_NOT_FOUND', 'حساب الكاشير غير موجود في هذا الفرع. أعد تحميل الحسابات.');
+    }
+    if (result.kind === 'employee_not_in_branch') {
+      throw new CashierAccountError('ERP_ROSTER_EMPLOYEE_INVALID', 'أحد الموظفين غير نشط أو لا ينتمي إلى هذا الفرع');
+    }
+    return result.account;
+  };
+
   return {
+    async save(values: SaveCashierAccountInput) {
+      const input = saveCashierAccountSchema.parse(values);
+      const timestamp = (dependencies.now ?? (() => new Date()))();
+      return saveAccount({
+        username: input.username,
+        ...(input.password === undefined ? {} : { passwordHash: await dependencies.hashPassword(input.password) }),
+        role: 'cashier', branchId: input.branchId, employeeId: null,
+        employeeIds: input.employeeIds,
+        management: input.mode === 'edit' ? { mode: 'edit', accountId: input.accountId } : { mode: 'create' },
+        createdAt: timestamp, updatedAt: timestamp,
+      });
+    },
     async upsert(input: { branchId: number; username: string; password: string }) {
       const timestamp = (dependencies.now ?? (() => new Date()))();
-      const result = await dependencies.accounts.upsert({
+      return saveAccount({
         username: input.username.trim().toLowerCase(),
         passwordHash: await dependencies.hashPassword(input.password),
         role: 'cashier',
@@ -87,13 +126,6 @@ export const createCashierAccountsService = (dependencies: {
         createdAt: timestamp,
         updatedAt: timestamp,
       });
-      if (result.kind === 'branch_not_found') {
-        throw new CashierAccountError('BRANCH_NOT_FOUND', 'الفرع غير موجود');
-      }
-      if (result.kind === 'username_taken') {
-        throw new CashierAccountError('USERNAME_TAKEN', 'اسم المستخدم مستخدم بالفعل');
-      }
-      return result.account;
     },
     list(query: { page: number; pageSize: number }) {
       return dependencies.accounts.listCashiers(query);

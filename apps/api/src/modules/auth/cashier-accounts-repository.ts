@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, authSessions, branches } from '@capella/database/schema';
-import { and, count, eq, isNull, ne } from 'drizzle-orm';
+import { accounts, authSessions, branches, branchCashierRoster, employees } from '@capella/database/schema';
+import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import type { CashierAccountRepository } from './cashier-accounts-service.js';
@@ -67,6 +67,20 @@ export const createDrizzleCashierAccountRepository = (
       }).from(accounts).where(and(branchCashier, eq(accounts.branchId, input.branchId)))
         .for('update').limit(1))[0];
 
+      if (input.management?.mode === 'create' && current) return { kind: 'branch_has_account' as const };
+      if (input.management?.mode === 'edit' && current?.id !== input.management.accountId) {
+        return { kind: 'not_found' as const };
+      }
+
+      // Validate before any credential write, under the same transaction locks.
+      if (input.employeeIds?.length) {
+        const members = await tx.select({ id: employees.id }).from(employees).where(and(
+          inArray(employees.id, input.employeeIds), eq(employees.branchId, input.branchId),
+          eq(employees.employmentStatus, 'active'), isNull(employees.deletedAt),
+        )).for('update');
+        if (members.length !== input.employeeIds.length) return { kind: 'employee_not_in_branch' as const };
+      }
+
       // A retired login still stores the name it used, but no longer owns it.
       const usernameOwner = (await tx.select({ id: accounts.id }).from(accounts).where(and(
         eq(accounts.username, input.username),
@@ -76,6 +90,22 @@ export const createDrizzleCashierAccountRepository = (
       if (usernameOwner) return { kind: 'username_taken' as const };
 
       const persist = async (kind: 'created' | 'updated', accountId: number) => {
+        if (input.employeeIds !== undefined) {
+          const before = await tx.select({ id: branchCashierRoster.employeeId }).from(branchCashierRoster)
+            .where(eq(branchCashierRoster.branchId, input.branchId));
+          await tx.delete(branchCashierRoster).where(eq(branchCashierRoster.branchId, input.branchId));
+          if (input.employeeIds.length) {
+            await tx.insert(branchCashierRoster).values(input.employeeIds.map((employeeId) => ({
+              branchId: input.branchId, employeeId, createdAt: input.updatedAt,
+            })));
+          }
+          await writeAudit(tx, {
+            module: 'erp_cashier_roster', action: 'replace', entityType: 'branch_cashier_roster',
+            entityId: input.branchId, beforeState: { members: before.map(({ id }) => id) },
+            afterState: { members: input.employeeIds }, relatedIds: { branchId: input.branchId },
+            createdAt: input.updatedAt,
+          });
+        }
         const account = await selectPublic(tx, accountId);
         await writeAudit(tx, {
           module: 'auth',
@@ -94,18 +124,24 @@ export const createDrizzleCashierAccountRepository = (
         if (current) {
           await tx.update(accounts).set({
             username: input.username,
-            passwordHash: input.passwordHash,
-            active: true,
+            ...(input.passwordHash === undefined ? {} : { passwordHash: input.passwordHash }),
+            ...(input.management ? {} : { active: true }),
             updatedAt: input.updatedAt,
           }).where(eq(accounts.id, current.id));
-          await tx.update(authSessions).set({ revokedAt: input.updatedAt }).where(and(
-            eq(authSessions.accountId, current.id),
-            isNull(authSessions.revokedAt),
-          ));
+          if (!input.management || input.passwordHash !== undefined || input.username !== current.username) {
+            await tx.update(authSessions).set({ revokedAt: input.updatedAt }).where(and(
+              eq(authSessions.accountId, current.id),
+              isNull(authSessions.revokedAt),
+            ));
+          }
           return persist('updated', current.id);
         }
 
-        const inserted = await tx.insert(accounts).values(input);
+        if (input.passwordHash === undefined) throw new Error('A new cashier account requires a password');
+        const inserted = await tx.insert(accounts).values({
+          username: input.username, passwordHash: input.passwordHash, role: input.role,
+          branchId: input.branchId, employeeId: null, createdAt: input.createdAt, updatedAt: input.updatedAt,
+        });
         return persist('created', Number(inserted[0].insertId));
       } catch (error) {
         // A concurrent upsert for the same branch or username landed first; both

@@ -33,3 +33,7 @@ export const branchCashierCredentialsFormSchema = upsertBranchCashierSchema.exte
 
 export type BranchCashierCredentialsFormValues = z.infer<typeof branchCashierCredentialsFormSchema>;
 
+export const editCashierCredentialsFormSchema = branchCashierCredentialsFormSchema.extend({
+  password: passwordFormSchema.optional(),
+});
+

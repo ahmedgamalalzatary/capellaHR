@@ -30,6 +30,11 @@ const makeApp = () => {
     async beginEmployeeDeviceAuthentication() { return { challengeId: 'challenge', options: {} }; },
     async logout(token: string) { return token === 'admin-token'; },
     async authenticate(token: string) {
+      if (token === 'cashier-token') return {
+        id: 'cashier-session', tokenHash: 'hash', actorType: 'account' as const,
+        accountRole: 'cashier' as const, accountId: 21, branchId: 3, employeeId: null,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
+      };
       return token === 'admin-token'
         ? {
             id: 'session',
@@ -47,6 +52,9 @@ const makeApp = () => {
   const app = express();
   app.use(express.json());
   const cashierAccounts = {
+    async save(input: { branchId: number; username: string }) {
+      return { id: 21, username: input.username, role: 'cashier' as const, branchId: input.branchId, branchName: 'فرع مدينة نصر', active: false };
+    },
     async upsert(input: { branchId: number; username: string }) {
       return {
         id: 21,
@@ -85,6 +93,19 @@ const makeApp = () => {
 };
 
 describe('authentication HTTP API', () => {
+  it('saves the complete account through the admin-only endpoint without an edit password', async () => {
+    const payload = { mode: 'edit', accountId: 21, branchId: 3, username: ' New.Name ', employeeIds: [7] };
+    expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts').send(payload)).status).toBe(401);
+    expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts')
+      .set('Cookie', 'capella_session=cashier-token').send(payload)).status).toBe(403);
+    const response = await request(makeApp()).put('/api/v1/auth/cashier-accounts')
+      .set('Cookie', 'capella_session=admin-token').send(payload);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ username: 'new.name', active: false });
+    const invalid = await request(makeApp()).put('/api/v1/auth/cashier-accounts')
+      .set('Cookie', 'capella_session=admin-token').send({ ...payload, employeeIds: [7, 7] });
+    expect(invalid.status).toBe(400);
+  });
   it('sets an opaque protected cookie after admin login', async () => {
     const response = await request(makeApp())
       .post('/api/v1/auth/admin/login')
@@ -233,6 +254,7 @@ describe('authentication HTTP API', () => {
     }, {
       secureCookies: false,
       cashierAccounts: {
+        async save() { throw new Error('unused'); },
         async upsert() {
           throw new auth.CashierAccountError('USERNAME_TAKEN', 'Username is already in use');
         },
@@ -272,6 +294,7 @@ describe('authentication HTTP API', () => {
     }, {
       secureCookies: false,
       cashierAccounts: {
+        async save() { throw new Error('unused'); },
         async upsert() {
           throw new auth.CashierAccountError('BRANCH_NOT_FOUND', 'Branch not found');
         },

@@ -66,6 +66,28 @@ const setup = (
 };
 
 describe('branch cashier accounts', () => {
+  it('saves employees and a normalized username without hashing an omitted edit password', async () => {
+    const { service, upserts } = setup('updated');
+    const save = Reflect.get(service, 'save');
+    expect(save).toBeTypeOf('function');
+    await save({ mode: 'edit', accountId: 11, branchId: 3, username: ' Nasr ', employeeIds: [7, 9] });
+    expect(upserts).toEqual([expect.objectContaining({
+      username: 'nasr', branchId: 3, employeeIds: [7, 9],
+      management: { mode: 'edit', accountId: 11 },
+    })]);
+    expect(upserts[0]).not.toHaveProperty('passwordHash');
+  });
+
+  it('requires a password for creation and hashes a replacement password when supplied', async () => {
+    const { service, upserts } = setup();
+    const save = Reflect.get(service, 'save');
+    expect(save).toBeTypeOf('function');
+    await expect(save({ mode: 'create', branchId: 3, username: 'nasr', employeeIds: [] } as never))
+      .rejects.toThrow();
+    expect(upserts).toHaveLength(0);
+    await save({ mode: 'create', branchId: 3, username: 'nasr', password: 'secret', employeeIds: [7] });
+    expect(upserts[0]).toMatchObject({ passwordHash: 'hash:secret', employeeIds: [7], management: { mode: 'create' } });
+  });
   it('creates the single branch login with normalized credentials', async () => {
     const { service, upserts } = setup();
 

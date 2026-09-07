@@ -1,37 +1,19 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PencilLine, Trash2 } from 'lucide-react';
+import { PencilLine, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-
-import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
-
+import { Badge, Button, Card, ConfirmDialog, EmptyState } from '@capella/ui';
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { PageHeader } from '@/components/layout/page-header';
-import { Select } from '@/components/form/select';
-import { listCashierSessionBranches } from '@/features/cashier-sessions';
-
 import { ApiError } from '@/lib/api/client';
-import { fetchAllPages } from '@/lib/api/fetch-all';
-
-import { listActiveEmployeeOptions } from '../api/employee-options-api';
-import {
-  deleteCashierAccount,
-  listCashierAccounts,
-  setCashierAccountStatus,
-  upsertBranchCashier,
-  type CashierAccount,
-} from '../api/cashier-accounts-api';
-import {
-  listBranchCashierRoster,
-  replaceBranchCashierRoster,
-} from '../api/branch-roster-api';
+import { deleteCashierAccount, listCashierAccounts, setCashierAccountStatus, type CashierAccount } from '../api/cashier-accounts-api';
+import { listBranchCashierRoster } from '../api/branch-roster-api';
 import { cashierAccountQueryKeys } from '../query-keys';
-import { branchCashierCredentialsFormSchema } from '../schemas/cashier-account-schemas';
-import { EditCredentialsDialog } from './edit-credentials-dialog';
+import { CashierAccountDialog } from './cashier-account-dialog';
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -41,240 +23,20 @@ const serverErrorMessage = (error: unknown): string | null => {
 const columns = [
   { key: 'username', label: 'اسم المستخدم' },
   { key: 'branch', label: 'الفرع' },
+  { key: 'employees', label: 'الموظفون المسموح لهم بالبيع' },
   { key: 'status', label: 'الحالة' },
   { key: 'actions', label: 'إجراءات' },
 ] as const;
 
-/** One shared login per branch: this form creates it or rewrites its credentials. */
-function BranchLoginCredentialsCard() {
-  const queryClient = useQueryClient();
-  const [branchId, setBranchId] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-
-  const branches = useQuery({
-    queryKey: ['cashier-accounts', 'branches'],
-    queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
-  });
-
-  const save = useMutation({
-    mutationFn: upsertBranchCashier,
-    onSuccess: async () => {
-      setFieldErrors({});
-      await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
-    },
-    onError: (error) => {
-      if (error instanceof ApiError
-        && Object.values(error.fieldErrors).some((messages) => messages?.length)) {
-        setFieldErrors(error.fieldErrors as Record<string, string[]>);
-        return;
-      }
-      setFieldErrors({ _: [serverErrorMessage(error) ?? 'تعذر حفظ بيانات الدخول'] });
-    },
-  });
-
-  const submit = () => {
-    const parsed = branchCashierCredentialsFormSchema.safeParse({
-      branchId: branchId || undefined,
-      username,
-      password,
-    });
-    if (!parsed.success) {
-      setFieldErrors(parsed.error.flatten().fieldErrors as Record<string, string[]>);
-      return;
-    }
-    setFieldErrors({});
-    save.mutate(parsed.data);
-  };
-
-  return (
-    <Card className="shadow-card">
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <p className="text-sm font-medium">بيانات دخول الفرع</p>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="branch-login-branch">فرع بيانات الدخول</Label>
-            <Select
-              id="branch-login-branch"
-              disabled={branches.isPending || branches.isError}
-              value={branchId}
-              onChange={(event) => setBranchId(event.target.value)}
-            >
-              <option value="">اختر الفرع</option>
-              {(branches.data ?? []).map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name}</option>
-              ))}
-            </Select>
-            {fieldErrors.branchId ? <FieldError>{fieldErrors.branchId[0]}</FieldError> : null}
-            {branches.isError ? (
-              <div className="space-y-2">
-                <FieldError>{serverErrorMessage(branches.error)}</FieldError>
-                <Button variant="secondary" onClick={() => void branches.refetch()}>
-                  إعادة المحاولة
-                </Button>
-              </div>
-            ) : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="branch-login-username">اسم المستخدم</Label>
-            <Input
-              id="branch-login-username"
-              autoComplete="off"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-            />
-            {fieldErrors.username ? <FieldError>{fieldErrors.username[0]}</FieldError> : null}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="branch-login-password">كلمة المرور</Label>
-            <Input
-              id="branch-login-password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-            {fieldErrors.password ? <FieldError>{fieldErrors.password[0]}</FieldError> : null}
-          </div>
-        </div>
-        {fieldErrors._ ? <FieldError>{fieldErrors._[0]}</FieldError> : null}
-        <div className="border-t border-line/70 pt-4">
-          <Button disabled={save.isPending} onClick={submit}>حفظ بيانات الدخول</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-/** The persistent shift roster: employees who may sell under the branch login. */
-function BranchRosterCard() {
-  const queryClient = useQueryClient();
-  const [branchId, setBranchId] = useState<number | undefined>();
-  const [selected, setSelected] = useState<number[]>([]);
-
-  const branches = useQuery({
-    queryKey: ['cashier-accounts', 'branches'],
-    queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
-  });
+function AccountEmployees({ branchId }: { branchId: number }) {
   const roster = useQuery({
-    queryKey: cashierAccountQueryKeys.roster(branchId ?? 0),
-    queryFn: () => listBranchCashierRoster({ branchId: branchId! }),
-    enabled: branchId !== undefined,
+    queryKey: cashierAccountQueryKeys.roster(branchId),
+    queryFn: () => listBranchCashierRoster({ branchId }),
   });
-  const employees = useQuery({
-    queryKey: ['employees', 'options', 'active', branchId ?? null],
-    queryFn: () => fetchAllPages((page) => listActiveEmployeeOptions(page, branchId)),
-    enabled: branchId !== undefined,
-  });
-
-  // Re-seed the checkboxes whenever a fresh roster (or branch switch) arrives.
-  const activeEmployeeIds = new Set((employees.data ?? []).map(({ id }) => id));
-  const rosterKey = [
-    branchId ?? '',
-    roster.data?.map(({ id }) => id).join(',') ?? '',
-    [...activeEmployeeIds].join(','),
-  ].join(':');
-  const [syncedRosterKey, setSyncedRosterKey] = useState('');
-  if (roster.isSuccess && employees.isSuccess && rosterKey !== syncedRosterKey) {
-    setSyncedRosterKey(rosterKey);
-    setSelected(roster.data.map(({ id }) => id).filter((id) => activeEmployeeIds.has(id)));
-  }
-
-  const toggle = (employeeId: number) => {
-    setSelected((current) => (
-      current.includes(employeeId)
-        ? current.filter((id) => id !== employeeId)
-        : [...current, employeeId]
-    ));
-  };
-
-  const save = useMutation({
-    mutationFn: () => replaceBranchCashierRoster(
-      branchId!,
-      selected.filter((id) => activeEmployeeIds.has(id)),
-    ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: cashierAccountQueryKeys.roster(branchId!),
-      });
-    },
-  });
-
-  return (
-    <Card className="shadow-card">
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <p className="text-sm font-medium">وردية الفرع</p>
-        <div className="max-w-sm space-y-1.5">
-          <Label htmlFor="roster-branch">فرع الوردية</Label>
-          <Select
-            id="roster-branch"
-            disabled={branches.isPending || branches.isError}
-            value={branchId ?? ''}
-            onChange={(event) => {
-              setSelected([]);
-              setBranchId(event.target.value ? Number(event.target.value) : undefined);
-            }}
-          >
-            <option value="">اختر الفرع</option>
-            {(branches.data ?? []).map((branch) => (
-              <option key={branch.id} value={branch.id}>{branch.name}</option>
-            ))}
-          </Select>
-          {branches.isError ? (
-            <div className="space-y-2">
-              <FieldError>{serverErrorMessage(branches.error)}</FieldError>
-              <Button variant="secondary" onClick={() => void branches.refetch()}>
-                إعادة المحاولة
-              </Button>
-            </div>
-          ) : null}
-        </div>
-
-        {branchId === undefined ? null : roster.isPending || employees.isPending ? (
-          <LoadingState label="جارٍ تحميل الوردية…" align="start" className="p-0" />
-        ) : roster.isError || employees.isError ? (
-          <div className="space-y-2">
-            <FieldError>{serverErrorMessage(roster.error ?? employees.error)}</FieldError>
-            <Button
-              variant="secondary"
-              onClick={() => void (roster.isError ? roster.refetch() : employees.refetch())}
-            >
-              إعادة المحاولة
-            </Button>
-          </div>
-        ) : (employees.data ?? []).length === 0 ? (
-          <EmptyState title="لا يوجد موظفون نشطون في هذا الفرع" />
-        ) : (
-          <ul className="space-y-1">
-            {(employees.data ?? []).map((employee) => (
-              <li key={employee.id}>
-                <label className="flex cursor-pointer items-center gap-3 rounded-control border border-line px-3 py-2 text-sm hover:bg-surface">
-                  <input
-                    type="checkbox"
-                    aria-label={employee.fullName}
-                    className="size-4 accent-[color:var(--color-ink)]"
-                    disabled={save.isPending}
-                    checked={selected.includes(employee.id)}
-                    onChange={() => toggle(employee.id)}                  />
-                  {employee.fullName}
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-        {save.error ? <FieldError>{serverErrorMessage(save.error)}</FieldError> : null}
-        <div className="border-t border-line/70 pt-4">
-          <Button
-            disabled={branchId === undefined || !roster.isSuccess || !employees.isSuccess || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            حفظ وردية الفرع
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  if (roster.isPending) return <span className="text-muted">جارٍ التحميل…</span>;
+  if (roster.isError) return <Button size="sm" variant="ghost" onClick={() => void roster.refetch()}>إعادة تحميل الموظفين</Button>;
+  const names = roster.data.map(({ fullName }) => fullName);
+  return <span className="block max-w-64 truncate text-muted" title={names.join('، ')}>{names.join('، ') || 'لا يوجد موظفون محددون'}</span>;
 }
 
 export function CashierAccountsView() {
@@ -282,7 +44,8 @@ export function CashierAccountsView() {
   const [page, setPage] = useState(1);
   const [confirmDisable, setConfirmDisable] = useState<CashierAccount | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CashierAccount | null>(null);
-  const [editingCredentials, setEditingCredentials] = useState<CashierAccount | null>(null);
+  const [editingAccount, setEditingAccount] = useState<CashierAccount | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const accountsQuery = useQuery({
     queryKey: cashierAccountQueryKeys.list({ page }),
@@ -315,11 +78,9 @@ export function CashierAccountsView() {
     <section className="space-y-6">
       <PageHeader
         title="حسابات كاشير الفروع"
-        description="حساب دخول واحد لكل فرع مع وردية الموظفين الذين يبيعون من خلاله."
+        description="إدارة حساب كل فرع والموظفين المسموح لهم بالبيع من خلاله."
+        actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة حساب كاشير</Button>}
       />
-
-      <BranchLoginCredentialsCard />
-      <BranchRosterCard />
 
       {setStatus.error ? (
         <FieldError>{serverErrorMessage(setStatus.error)}</FieldError>
@@ -341,7 +102,7 @@ export function CashierAccountsView() {
         ) : items.length === 0 ? (
           <EmptyState
             title="لا توجد حسابات فروع بعد"
-            description="ابدأ بحفظ بيانات دخول أحد الفروع من الأعلى."
+            description="أضف حساب كاشير وحدد الموظفين المسموح لهم بالبيع."
           />
         ) : (
           <DataTable>
@@ -353,6 +114,7 @@ export function CashierAccountsView() {
                 <TR key={account.id}>
                   <TD className="font-medium">{account.username}</TD>
                   <TD className="text-muted">{account.branchName}</TD>
+                  <TD><AccountEmployees branchId={account.branchId} /></TD>
                   <TD>
                     {account.active ? (
                       <Badge variant="success">نشط</Badge>
@@ -379,10 +141,10 @@ export function CashierAccountsView() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setEditingCredentials(account)}
+                        onClick={() => setEditingAccount(account)}
                       >
                         <PencilLine className="size-4" aria-hidden />
-                        تعديل بيانات الدخول
+                        تعديل
                       </Button>
                       <Button
                         variant="ghost"
@@ -417,11 +179,10 @@ export function CashierAccountsView() {
         ) : null}
       </Card>
 
-      {editingCredentials ? (
-        <EditCredentialsDialog
-          branchId={editingCredentials.branchId}
-          username={editingCredentials.username}
-          onClose={() => setEditingCredentials(null)}
+      {creating || editingAccount ? (
+        <CashierAccountDialog
+          account={editingAccount}
+          onClose={() => { setCreating(false); setEditingAccount(null); }}
         />
       ) : null}
 

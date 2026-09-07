@@ -7,6 +7,7 @@ import {
   positiveMysqlIntSchema,
   resetCashierPasswordSchema,
   upsertBranchCashierSchema,
+  saveCashierAccountSchema,
 } from '@capella/contracts';
 import { Router, type CookieOptions, type ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
@@ -86,6 +87,16 @@ export const createAuthRouter = (
         const input = upsertBranchCashierSchema.parse(request.body);
         const account = await options.cashierAccounts!.upsert(input);
         response.status(201).json({ data: account });
+      },
+    );
+    router.put(
+      '/cashier-accounts',
+      middleware.authenticate,
+      middleware.requireAdmin,
+      async (request, response) => {
+        const input = saveCashierAccountSchema.parse(request.body);
+        response.status(input.mode === 'create' ? 201 : 200)
+          .json({ data: await options.cashierAccounts!.save(input) });
       },
     );
     router.get(
