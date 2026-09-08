@@ -77,7 +77,7 @@ export const createConsumablesService = (dependencies: {
       return dependencies.repository.listServices(
         context.branchId,
         query,
-        context.accountRole === 'cashier' ? context.accountId : undefined,
+        context.accountRole === 'cashier' && query.invoiceId === undefined ? context.accountId : undefined,
       );
     },
     async updateStatus(actor: ErpAccountIdentity, input: UpdateServiceExecutionStatusInput) {

@@ -52,6 +52,19 @@ describe('Modal', () => {
 
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  test('mounts the overlay on document.body so parent space-y cannot leave a 16px gap', () => {
+    render(
+      <section className="space-y-4">
+        <p>above</p>
+        <Modal title="عنوان" onClose={vi.fn()}><p>محتوى</p></Modal>
+        <p>below</p>
+      </section>,
+    );
+
+    const overlay = screen.getByRole('dialog').parentElement;
+    expect(overlay?.parentElement).toBe(document.body);
+  });
 });
 
 describe('ConfirmDialog', () => {

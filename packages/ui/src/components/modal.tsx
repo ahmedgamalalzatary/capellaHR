@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import { cn } from '../lib/cn';
 
@@ -86,9 +87,9 @@ export function Modal({
     return () => document.removeEventListener('keydown', containKeyboardFocus);
   }, [dismissOnBackdrop, onClose]);
 
-  return (
+  const overlay = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 m-0 flex items-center justify-center bg-black/40 p-4"
       onClick={dismissOnBackdrop ? onClose : undefined}
     >
       <div
@@ -108,4 +109,8 @@ export function Modal({
       </div>
     </div>
   );
+
+  // Parent stacks like `space-y-4` apply 16px sibling margin even to `fixed`
+  // overlays; portaling onto `document.body` keeps the backdrop flush with the viewport.
+  return typeof document === 'undefined' ? overlay : createPortal(overlay, document.body);
 }
