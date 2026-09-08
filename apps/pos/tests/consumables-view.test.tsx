@@ -47,6 +47,15 @@ describe('ConsumablesView', () => {
     expect(mocks.record).not.toHaveBeenCalled();
   });
 
+  it('shows the failure when a service status update is rejected', async () => {
+    mocks.status.mockRejectedValueOnce(new Error('Status update rejected'));
+    mount();
+
+    fireEvent.click((await screen.findAllByRole('button', { name: 'تمت' }))[0]!);
+
+    expect(await screen.findByText('Status update rejected')).toBeDefined();
+  });
+
   it('opens product consumable links on the stock tab with the product selected', async () => {
     window.history.replaceState({}, '', '/consumables?productId=9&branchId=3');
     mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'admin' } } });

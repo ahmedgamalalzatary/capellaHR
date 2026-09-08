@@ -18,6 +18,7 @@ import {
   invoiceReversalPayments,
   invoiceReversals,
   invoices,
+  serviceConsumptionReports,
   serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, eq } from 'drizzle-orm';
@@ -297,6 +298,9 @@ describe('ERP sale repository MySQL integration', () => {
     await database.update(cashierSessions).set({ openedAt: now })
       .where(eq(cashierSessions.id, data.cashierSessionId));
     const completed = await repository.complete(sale);
+    await database.update(serviceQueueEntries).set({
+      status: 'completed', completedAt: now, completedByAccountId: data.accountId,
+    }).where(eq(serviceQueueEntries.invoiceId, completed.id));
 
     const voided = await repository.reverse({
       type: 'void',
@@ -312,9 +316,15 @@ describe('ERP sale repository MySQL integration', () => {
     });
 
     expect(voided.status).toBe('voided');
-    expect(await database.select({ status: serviceQueueEntries.status }).from(serviceQueueEntries)
+    expect(await database.select({
+      status: serviceQueueEntries.status,
+      completedAt: serviceQueueEntries.completedAt,
+      completedByAccountId: serviceQueueEntries.completedByAccountId,
+    }).from(serviceQueueEntries)
       .where(eq(serviceQueueEntries.invoiceId, completed.id)))
-      .toEqual([expect.objectContaining({ status: 'canceled' })]);
+      .toEqual([expect.objectContaining({
+        status: 'canceled', completedAt: null, completedByAccountId: null,
+      })]);
     const reversalId = (await database.select({ id: invoiceReversals.id }).from(invoiceReversals)
       .where(eq(invoiceReversals.invoiceId, completed.id)))[0]!.id;
     expect(await database.select().from(commissionLedgerEntries)
@@ -332,6 +342,49 @@ describe('ERP sale repository MySQL integration', () => {
     ))).toEqual([expect.objectContaining({
       relatedIds: expect.objectContaining({ actingAccountId: String(data.accountId) }),
     })]);
+  });
+
+  it('keeps a completed service unchanged when its consumption report already exists', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const now = new Date();
+    const sale = operation(data, crypto.randomUUID());
+    sale.soldAt = now;
+    sale.invoiceNumber = `INV-${cairoBusinessDate(now).replaceAll('-', '.')}-14.35-${data.branchId}`;
+    await database.update(cashierSessions).set({ openedAt: now })
+      .where(eq(cashierSessions.id, data.cashierSessionId));
+    const completed = await repository.complete(sale);
+    const [queue] = await database.select().from(serviceQueueEntries)
+      .where(eq(serviceQueueEntries.invoiceId, completed.id));
+    await database.update(serviceQueueEntries).set({
+      status: 'completed', completedAt: now, completedByAccountId: data.accountId,
+    }).where(eq(serviceQueueEntries.id, queue!.id));
+    await database.insert(serviceConsumptionReports).values({
+      serviceQueueEntryId: queue!.id,
+      revision: 1,
+      isCurrent: true,
+      completionKind: 'none',
+      actingAccountId: data.accountId,
+      createdAt: now,
+    });
+
+    await repository.reverse({
+      type: 'void',
+      invoiceId: completed.id,
+      input: { branchId: data.branchId, idempotencyKey: crypto.randomUUID(), reason: 'Duplicate sale' },
+      actingAccountId: data.accountId,
+      actingAccountRole: 'cashier',
+      reversedAt: now,
+    });
+
+    expect(await database.select({
+      status: serviceQueueEntries.status,
+      completedAt: serviceQueueEntries.completedAt,
+      completedByAccountId: serviceQueueEntries.completedByAccountId,
+    }).from(serviceQueueEntries).where(eq(serviceQueueEntries.id, queue!.id)))
+      .toEqual([expect.objectContaining({
+        status: 'completed', completedAt: now, completedByAccountId: data.accountId,
+      })]);
   });
 
   it('rejects a void exactly when the Cairo business date rolls over', async () => {

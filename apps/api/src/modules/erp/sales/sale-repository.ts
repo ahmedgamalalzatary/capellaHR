@@ -17,6 +17,7 @@ import {
   invoiceReversalPayments,
   invoiceReversals,
   invoices,
+  serviceConsumptionReports,
   serviceQueueEntries,
 } from '@capella/database/schema';
 import {
@@ -29,6 +30,8 @@ import {
   isNotNull,
   isNull,
   ne,
+  notExists,
+  or,
 } from 'drizzle-orm';
 import { isDeepStrictEqual } from 'node:util';
 import { randomUUID } from 'node:crypto';
@@ -816,11 +819,23 @@ export const createDrizzleSaleRepository = (
             const queueIds = (await transaction.select({ id: serviceQueueEntries.id })
               .from(serviceQueueEntries).where(and(
                 eq(serviceQueueEntries.invoiceLineId, line.id),
-                inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'overdue']),
+                or(
+                  inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'overdue']),
+                  and(
+                    eq(serviceQueueEntries.status, 'completed'),
+                    notExists(transaction.select({ id: serviceConsumptionReports.id })
+                      .from(serviceConsumptionReports).where(and(
+                        eq(serviceConsumptionReports.serviceQueueEntryId, serviceQueueEntries.id),
+                        eq(serviceConsumptionReports.isCurrent, true),
+                      ))),
+                  ),
+                ),
               )).orderBy(desc(serviceQueueEntries.queueNumber))
               .limit(selectedByLine.get(line.id)!).for('update')).map(({ id }) => id);
             if (queueIds.length) {
-              await transaction.update(serviceQueueEntries).set({ status: 'canceled' })
+              await transaction.update(serviceQueueEntries).set({
+                status: 'canceled', completedAt: null, completedByAccountId: null,
+              })
                 .where(inArray(serviceQueueEntries.id, queueIds));
             }
           }

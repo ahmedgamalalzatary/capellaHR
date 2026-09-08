@@ -1,0 +1,2 @@
+ALTER TABLE `advances` DROP CONSTRAINT `advances_reason_nonblank`;--> statement-breakpoint
+ALTER TABLE `advances` ADD CONSTRAINT `advances_reason_nonblank` CHECK (`advances`.`reason` regexp '[^[:space:]]');

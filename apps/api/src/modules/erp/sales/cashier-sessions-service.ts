@@ -273,7 +273,8 @@ export const createCashierSessionService = (dependencies: {
         method,
         fromMoneyCents(
           toMoneyCents(summary.taken[method as keyof CashierSessionMoneyByMethod])
-          - toMoneyCents(summary.refunded[method as keyof CashierSessionMoneyByMethod]),
+          - toMoneyCents(summary.refunded[method as keyof CashierSessionMoneyByMethod])
+          - (method === 'cash' ? toMoneyCents(accounting.expenses) : BigInt(0)),
         ),
       ])) as CashierSessionMoneyByMethod;
       return { summary, ...accounting, netByMethod };

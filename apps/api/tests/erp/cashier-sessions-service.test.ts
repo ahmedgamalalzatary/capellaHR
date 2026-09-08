@@ -309,7 +309,7 @@ describe('ERP Cashier-session service', () => {
         collectedPaymentLines: [],
         creditSales: '100.00',
         netByMethod: {
-          cash: '350.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00',
+          cash: '320.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00',
         },
       });
     expect(repository.readReportAccounting).toHaveBeenCalledWith({

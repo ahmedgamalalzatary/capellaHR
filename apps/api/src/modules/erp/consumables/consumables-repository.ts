@@ -277,7 +277,7 @@ export const createDrizzleConsumablesRepository = (
         const sessionIds = [...new Set(executions.map((entry) => entry.cashierSessionId))];
         const open = await tx.select({ id: cashierSessions.id }).from(cashierSessions).where(and(
           inArray(cashierSessions.id, sessionIds), isNull(cashierSessions.closedAt), eq(cashierSessions.openedByAccountId, input.accountId),
-        ));
+        )).for('update');
         if (open.length !== sessionIds.length) return fail('CONSUMABLE_SHIFT_CLOSED', 'لا يمكن للكاشير تعديل خدمات وردية مغلقة');
       }
       const demandMultiplier = BigInt(executions.length);

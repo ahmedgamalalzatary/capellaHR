@@ -36,7 +36,7 @@ describe('payroll schema', () => {
     expect(reason?.notNull).toBe(true);
     expect(reason?.getSQLType()).toBe('varchar(200)');
     expect(checkSql(advances, 'advances_reason_nonblank'))
-      .toBe('char_length(trim(`advances`.`reason`)) > 0');
+      .toBe("`advances`.`reason` regexp '[^[:space:]]'");
   });
 
   it('stores an optional historical reason on bonus rows', () => {

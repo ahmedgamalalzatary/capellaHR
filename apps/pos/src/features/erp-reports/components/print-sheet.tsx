@@ -74,10 +74,16 @@ export function PrintSheet({ report, onPrinted }: {
           <tfoot>
             {report.summary.map((entry) => (
               <tr key={entry.label} className="font-semibold">
-                <td className="border border-line bg-surface px-2 py-1" colSpan={Math.max(1, report.columns.length - 1)}>
-                  {entry.label}
-                </td>
-                <td className="border border-line bg-surface px-2 py-1">{cellText(entry.value)}</td>
+                {report.columns.length < 2 ? (
+                  <td className="border border-line bg-surface px-2 py-1" colSpan={Math.max(1, report.columns.length)}>
+                    {entry.label}: {cellText(entry.value)}
+                  </td>
+                ) : (
+                  <>
+                    <td className="border border-line bg-surface px-2 py-1" colSpan={report.columns.length - 1}>{entry.label}</td>
+                    <td className="border border-line bg-surface px-2 py-1">{cellText(entry.value)}</td>
+                  </>
+                )}
               </tr>
             ))}
           </tfoot>
