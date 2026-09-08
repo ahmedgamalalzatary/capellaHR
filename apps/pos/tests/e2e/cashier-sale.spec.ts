@@ -57,6 +57,9 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
         commissionRule: 'service_default', commissionRate: '10.00',
         commissionAmount: '20.00', productCostBasis: null,
         refundedQuantity: 0, refundableQuantity: 1,
+        originalEmployee: { id: 18, employeeCode: 1018, name: 'سارة علي' },
+        reassignments: [],
+        queueNumbers: [1],
       },
       {
         id: 82, lineNumber: 2, itemType: 'product', sourceId: 31,
@@ -65,13 +68,19 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
         commissionRule: 'none', commissionRate: '0.00',
         commissionAmount: '0.00', productCostBasis: '25.00',
         refundedQuantity: 0, refundableQuantity: 1,
+        originalEmployee: null,
+        reassignments: [],
+        queueNumbers: [],
       },
     ],
     discount: null,
     tax: null,
+    kind: 'sale',
     totals: {
       subtotal: '250.00', discountAmount: '0.00', taxAmount: '0.00',
       total: '250.00', paymentTotal: '250.00',
+      amountPaid: '250.00', creditedAmount: '0.00', balanceDue: '0.00',
+      settlementStatus: 'settled',
     },
     payments: [{
       method: 'cash', amount: '250.00', refundedAmount: '0.00', refundableAmount: '250.00',
@@ -313,11 +322,10 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByLabel('الكاشير').selectOption('17');
   await page.getByRole('button', { name: /سارة علي/ }).click();
   await expect(page.getByText('تم سداد الإجمالي بالكامل')).toBeVisible();
-  await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
-  await page.getByRole('button', { name: 'تأكيد البيع' }).evaluate((button) => {
-    (button as HTMLButtonElement).click();
-    (button as HTMLButtonElement).click();
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'print', { value: () => undefined });
   });
+  await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
 
   await expect(page.getByRole('heading', { name: 'تم حفظ الفاتورة' })).toBeVisible();
   // Shown twice now: once in the confirmation and once on the printable receipt.
@@ -364,7 +372,6 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByRole('button', { name: /شامبو/ }).click();
   await page.getByLabel('الكاشير').selectOption('17');
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
-  await page.getByRole('button', { name: 'تأكيد البيع' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'تم بيع آخر وحدة من شامبو' })).toBeVisible();
   expect(completedSaleRequests).toBe(2);
 });

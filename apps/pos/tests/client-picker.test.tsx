@@ -56,12 +56,22 @@ afterEach(() => {
 });
 
 describe('ClientPicker', () => {
-  test('does not search until enough characters are typed', async () => {
+  test('does not search until a character is typed', async () => {
     renderPicker();
-    search('01');
 
-    expect(screen.getByText('اكتب 3 أرقام أو حروف على الأقل للبحث.')).toBeDefined();
+    expect(screen.getByText('اكتب حرفًا أو رقمًا للبحث.')).toBeDefined();
     await waitFor(() => expect(mocks.listClients).not.toHaveBeenCalled());
+
+    search('ن');
+    await waitFor(() => expect(mocks.listClients).toHaveBeenCalled());
+  });
+
+  test('always offers a new client and uses a text keyboard', () => {
+    renderPicker();
+
+    const input = screen.getByLabelText('ابحث عن العميل برقم الهاتف أو الاسم') as HTMLInputElement;
+    expect(input.inputMode).not.toBe('tel');
+    expect(screen.getByRole('button', { name: 'إضافة عميل جديد' })).toBeDefined();
   });
 
   test('selects a matching client', async () => {

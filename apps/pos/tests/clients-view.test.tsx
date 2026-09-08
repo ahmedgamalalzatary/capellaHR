@@ -54,6 +54,7 @@ function renderView() {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
   mocks.listClients.mockResolvedValue(pageOf([nada]));
   mocks.listClientBranches.mockResolvedValue(pageOf([{ id: 3, name: 'Main' }]));
@@ -108,7 +109,7 @@ describe('ClientsView', () => {
 
   test('lists clients with their name and phone', async () => {
     renderView();
-    const row = (await screen.findByText('ندى سمير')).closest('tr')!;
+    const row = (await screen.findByText('ندى سمير')).closest('li')!;
 
     expect(within(row).getByText('01001234567')).toBeDefined();
   });
@@ -118,6 +119,8 @@ describe('ClientsView', () => {
     renderView();
 
     expect(await screen.findByText('لا يوجد عملاء بعد')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة أول عميل' }));
+    expect(screen.getByRole('dialog', { name: 'إضافة عميل' })).toBeDefined();
   });
 
   test('distinguishes an empty search result from an empty database', async () => {
@@ -239,8 +242,9 @@ describe('ClientsView', () => {
   test('edits an existing client through the update endpoint', async () => {
     mocks.updateClient.mockResolvedValue({ ...nada, fullName: 'ندى سمير علي' });
     renderView();
-    const row = (await screen.findByText('ندى سمير')).closest('tr')!;
+    const row = (await screen.findByText('ندى سمير')).closest('li')!;
     fireEvent.click(within(row).getByRole('button', { name: 'تعديل' }));
+    expect(screen.getByRole('dialog', { name: 'تعديل عميل' })).toBeDefined();
 
     fireEvent.change(screen.getByLabelText(/^اسم العميل/), { target: { value: 'ندى سمير علي' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ التعديل' }));

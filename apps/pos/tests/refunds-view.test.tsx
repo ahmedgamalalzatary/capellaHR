@@ -91,6 +91,7 @@ const openInvoice = async () => {
 
 describe('refunds tab', () => {
   beforeEach(() => {
+    sessionStorage.clear();
     actor.current = 'admin';
     listBranches.mockReset().mockResolvedValue({
       items: [{ id: 2, name: 'الفرع الرئيسي' }],
@@ -508,35 +509,45 @@ describe('refunds tab', () => {
       .toBe(true);
   });
 
-  it('searches stored invoices by number or client before choosing one', async () => {
+  it('searches stored invoices live as the cashier types', async () => {
     renderView();
     await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` });
 
     fireEvent.change(screen.getByLabelText('بحث برقم الفاتورة أو العميل'), {
       target: { value: 'منى' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
 
     await waitFor(() => expect(listInvoices).toHaveBeenCalledWith(
       expect.objectContaining({ branchId: 2, search: 'منى', page: 1 }),
     ));
+    expect(screen.queryByRole('button', { name: 'بحث' })).toBeNull();
   });
 
-  it('explains that a fully reversed invoice has nothing left to refund', async () => {
-    getInvoice.mockResolvedValue({
-      ...saleFixtures.completedInvoice,
-      status: 'refunded',
-      lines: saleFixtures.completedInvoice.lines.map((line) => ({
-        ...line, refundedQuantity: 1, refundableQuantity: 0,
-      })),
-      eligibility: { canVoid: false, canRefund: false },
+  it('lists only invoices that can still be refunded', async () => {
+    listInvoices.mockResolvedValue({
+      items: [
+        historyItem,
+        { ...historyItem, id: 99, invoiceNumber: 'INV-VOID', status: 'voided' },
+        { ...historyItem, id: 98, invoiceNumber: 'INV-DONE', status: 'refunded' },
+      ],
+      meta: { page: 1, pageSize: 20, total: 3, totalPages: 1 },
     });
     renderView();
 
-    await openInvoice();
+    expect(await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` })).toBeDefined();
+    expect(screen.queryByText('INV-VOID')).toBeNull();
+    expect(screen.queryByText('INV-DONE')).toBeNull();
+  });
 
-    expect(await screen.findByText('لا يمكن استرداد أو إلغاء هذه الفاتورة.')).toBeDefined();
-    expect(screen.queryByRole('button', { name: 'استرداد' })).toBeNull();
+  it('does not offer a fully refunded invoice in the till list', async () => {
+    listInvoices.mockResolvedValue({
+      items: [{ ...historyItem, status: 'refunded' }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+    renderView();
+
+    expect(await screen.findByText('لا توجد فواتير قابلة للاسترداد')).toBeDefined();
+    expect(screen.queryByRole('button', { name: `فتح مرتجع ${invoiceNumber}` })).toBeNull();
   });
 
   it('serves a cashier the same panel without a branch filter', async () => {

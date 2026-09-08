@@ -1,9 +1,12 @@
 'use client';
 
-import { useIsMutating, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck, UserRound } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+
+import { ConfirmDialog } from '@capella/ui';
 
 import { useLogout, useSession } from '@/features/auth';
 import {
@@ -11,13 +14,10 @@ import {
   getCurrentCashierSession,
 } from '@/features/cashier-sessions';
 import { clearAllSaleDrafts } from '@/features/sales';
-import { hasBookingsEver } from '@/features/bookings';
-import { listCategories, listServices } from '@/features/catalog';
-import { listSellableProducts } from '@/features/products';
 
 import { useMatchMedia } from '@/lib/use-match-media';
 
-import { adminNavigation, cashierNavigation, filterCashierNavigation } from './nav';
+import { adminNavigation, cashierNavigation } from './nav';
 import { Sidebar, SIDEBAR_ID } from './sidebar';
 import { Topbar } from './topbar';
 
@@ -25,7 +25,7 @@ export function PosShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const session = useSession();
   const logout = useLogout();
-  const navigationLocked = useIsMutating() > 0;
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const isAdmin = session.data?.actor.type === 'admin';
   const isCashier = session.data?.actor.type === 'cashier';
   const cashierSession = useQuery({
@@ -33,45 +33,7 @@ export function PosShell({ children }: { children: ReactNode }) {
     queryFn: () => getCurrentCashierSession(),
     enabled: isCashier,
   });
-  const branchId = cashierSession.data?.branchId;
-  const bookingsEver = useQuery({
-    queryKey: ['cashier-has-bookings-ever'],
-    enabled: isCashier,
-    queryFn: () => hasBookingsEver(),
-  });
-  const cashierCapabilities = useQuery({
-    queryKey: ['cashier-navigation-capabilities', branchId],
-    enabled: isCashier && branchId !== undefined,
-    queryFn: async () => {
-      if (branchId === undefined) throw new Error('Cashier branch is unavailable');
-      const activeBranchId = branchId;
-      const [categories, services, products] = await Promise.all([
-        listCategories({ branchId: activeBranchId, isActive: true, page: 1, pageSize: 1 }),
-        listServices({ branchId: activeBranchId, isActive: true, page: 1, pageSize: 1 }),
-        listSellableProducts({ branchId: activeBranchId, page: 1, pageSize: 1 }),
-      ]);
-      const hasCatalogContent = categories.items.length > 0 || services.items.length > 0;
-      return { hasSalesContent: hasCatalogContent || products.items.length > 0, hasCatalogContent };
-    },
-  });
-  const visibleNavigation = isAdmin ? adminNavigation : filterCashierNavigation(cashierNavigation, {
-    hasSalesContent: cashierCapabilities.data?.hasSalesContent ?? true,
-    hasCatalogContent: cashierCapabilities.data?.hasCatalogContent ?? true,
-    hasBookings: bookingsEver.data === true,
-  });
-
-  useEffect(() => {
-    if (!isCashier) return;
-    const current = window.location.pathname;
-    if (current === '/bookings') {
-      if (bookingsEver.isFetched && bookingsEver.data !== true) router.replace('/');
-      return;
-    }
-    if (!cashierCapabilities.data) return;
-    const allowed = current === '/sales' ? cashierCapabilities.data.hasSalesContent
-      : current === '/catalog' ? cashierCapabilities.data.hasCatalogContent : true;
-    if (!allowed) router.replace('/');
-  }, [bookingsEver.data, bookingsEver.isFetched, cashierCapabilities.data, isCashier, router]);
+  const visibleNavigation = isAdmin ? adminNavigation : cashierNavigation;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isWide = useMatchMedia('(min-width: 48rem)');
@@ -142,6 +104,9 @@ export function PosShell({ children }: { children: ReactNode }) {
         <span className="flex items-center gap-1.5 text-muted">
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted" />
           <span className="whitespace-nowrap">لا توجد وردية مفتوحة</span>
+          <Link href="/" className="whitespace-nowrap font-medium text-ink underline">
+            فتح الوردية
+          </Link>
         </span>
       )}
     </div>
@@ -179,7 +144,6 @@ export function PosShell({ children }: { children: ReactNode }) {
       <Sidebar
         navigation={visibleNavigation}
         open={sidebarOpen}
-        locked={navigationLocked}
         {...(accountFooter ? { footer: accountFooter } : {})}
         onNavigate={() => setSidebarOpen(false)}
       />
@@ -189,13 +153,8 @@ export function PosShell({ children }: { children: ReactNode }) {
           menuOpen={sidebarOpen}
           onMenuToggle={() => setSidebarOpen((open) => !open)}
           {...(shiftStatus ? { status: shiftStatus } : {})}
-          locked={navigationLocked}
           logoutPending={logout.isPending}
-          onLogout={() => {
-            if (navigationLocked) return;
-            clearAllSaleDrafts();
-            logout.mutate(undefined, { onSuccess: () => router.replace('/login') });
-          }}
+          onLogout={() => setConfirmLogout(true)}
         />
         <main
           id="pos-content"
@@ -205,6 +164,21 @@ export function PosShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+
+      {confirmLogout ? (
+        <ConfirmDialog
+          title="تسجيل الخروج"
+          description="سيُحذف أي بيع غير مكتمل محفوظ على هذا الجهاز."
+          confirmLabel="تأكيد الخروج"
+          tone="danger"
+          pending={logout.isPending}
+          onConfirm={() => {
+            clearAllSaleDrafts();
+            logout.mutate(undefined, { onSuccess: () => router.replace('/login') });
+          }}
+          onCancel={() => setConfirmLogout(false)}
+        />
+      ) : null}
     </div>
   );
 }

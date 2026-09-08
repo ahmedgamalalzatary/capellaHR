@@ -31,6 +31,7 @@ const adminGroups: ReadonlyArray<{
       { href: '/sales', label: 'بيع جديد' },
       { href: '/bookings', label: 'دفتر المواعيد' },
       { href: '/invoices', label: 'الفواتير والإيصالات' },
+      { href: '/refunds', label: 'المرتجعات' },
       { href: '/clients', label: 'العملاء' },
     ],
   },
@@ -52,6 +53,7 @@ const adminGroups: ReadonlyArray<{
     icon: Wallet,
     links: [
       { href: '/expenses', label: 'المصروفات' },
+      { href: '/consumables', label: 'خدمات العملاء والمستهلكات' },
       { href: '/commissions', label: 'العمولات' },
       { href: '/reports', label: 'التقارير والتصدير' },
     ],

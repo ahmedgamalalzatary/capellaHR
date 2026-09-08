@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -30,18 +30,21 @@ export function ServicePicker({
   onAvailabilityChange?: (available: boolean) => void;
 }) {
   const [search, setSearch] = useState('');
-  // Whitespace-only input must read as "no filter", so the trimmed term drives
-  // both the cache key and the request.
   const trimmed = search.trim();
 
-  const servicesQuery = useQuery({
+  const servicesQuery = useInfiniteQuery({
     queryKey: catalogQueryKeys.services({ picker: true, search: trimmed, branchId }),
-    queryFn: () => listServices({
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => listServices({
       isActive: true,
+      page: pageParam,
       pageSize: 50,
       ...(branchId === undefined ? {} : { branchId }),
       ...(trimmed ? { search: trimmed } : {}),
     }),
+    getNextPageParam: (lastPage) => (
+      lastPage.meta.page < lastPage.meta.totalPages ? lastPage.meta.page + 1 : undefined
+    ),
   });
 
   const availabilityQuery = useQuery({
@@ -53,7 +56,7 @@ export function ServicePicker({
     }),
   });
 
-  const items = servicesQuery.data?.items ?? [];
+  const items = servicesQuery.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => {
     if (availabilityQuery.isSuccess) onAvailabilityChange?.(trimmed ? true : availabilityQuery.data.items.length > 0);
   }, [availabilityQuery.data?.items.length, availabilityQuery.isSuccess, onAvailabilityChange, trimmed]);
@@ -73,7 +76,7 @@ export function ServicePicker({
 
       {servicesQuery.isPending ? (
         <LoadingState label="جارٍ تحميل الخدمات…" align="start" className="p-0" />
-      ) : servicesQuery.isError ? (
+      ) : servicesQuery.isError && !servicesQuery.data ? (
         <EmptyState
           title="تعذر تحميل الخدمات"
           description={serverErrorMessage(servicesQuery.error) ?? undefined}
@@ -123,6 +126,18 @@ export function ServicePicker({
               );
             })}
           </ul>
+          {servicesQuery.hasNextPage ? (
+            <div className="border-t border-line p-3 text-center">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={servicesQuery.isFetchingNextPage}
+                onClick={() => void servicesQuery.fetchNextPage()}
+              >
+                {servicesQuery.isFetchingNextPage ? 'جارٍ تحميل المزيد…' : 'تحميل المزيد'}
+              </Button>
+            </div>
+          ) : null}
         </Card>
       )}
     </div>

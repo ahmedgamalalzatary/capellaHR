@@ -189,7 +189,6 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
 
   await page.goto('/refunds');
   await page.getByLabel('بحث برقم الفاتورة أو العميل').fill(`  ${refundInvoice.client.name}  `);
-  await page.getByRole('button', { name: 'بحث', exact: true }).click();
   await expect.poll(() => search).toBe(refundInvoice.client.name);
   await page.getByRole('button', { name: `فتح مرتجع ${refundInvoice.invoiceNumber}` }).click();
 

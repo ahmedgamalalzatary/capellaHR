@@ -16,10 +16,10 @@ import {
 import { LoadingState } from '@/components/feedback/loading-state';
 import { ApiError } from '@/lib/api/client';
 
-import { errorMessage, money, paymentMethods, StepTitle } from './sale-primitives';
+import { errorMessage, money, paymentMethods } from './sale-primitives';
 
 export function SalePaymentStep({
-  step,
+  blockers,
   hasLines,
   quotePending,
   quoteIsError,
@@ -36,7 +36,7 @@ export function SalePaymentStep({
   ready,
   onSubmit,
 }: {
-  step: number;
+  blockers: string[];
   hasLines: boolean;
   quotePending: boolean;
   quoteIsError: boolean;
@@ -55,7 +55,7 @@ export function SalePaymentStep({
 }) {
   return (
     <Card className="shadow-card">
-      <CardHeader><CardTitle><StepTitle step={step} label="الإجمالي والمدفوعات" /></CardTitle></CardHeader>
+      <CardHeader><CardTitle>الدفع</CardTitle></CardHeader>
       <CardContent className="space-y-4 p-5">
         {quotePending && hasLines ? (
           <LoadingState label="جارٍ حساب الإجمالي من الخادم…" className="justify-start p-0" />
@@ -134,6 +134,13 @@ export function SalePaymentStep({
           <p role="alert" className="text-[13px] text-danger">
             تعذر حفظ طلب البيع بأمان. تأكد من إتاحة تخزين المتصفح ثم حاول مرة أخرى.
           </p>
+        ) : null}
+        {!ready && blockers.length > 0 ? (
+          <ul aria-label="ما ينقص لإتمام البيع" className="space-y-1 text-[13px] text-warning">
+            {blockers.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         ) : null}
         <Button size="lg" className="w-full" disabled={!ready} onClick={onSubmit}>
           مراجعة وإتمام البيع + طباعة

@@ -45,7 +45,22 @@ export function LoginView() {
           ))}
         </div>
 
-        {role === 'cashier' ? <CashierLoginForm /> : <AdminLoginForm />}
+        <div
+          className={role !== 'cashier' ? 'hidden' : undefined}
+          hidden={role !== 'cashier'}
+          aria-hidden={role !== 'cashier'}
+          inert={role !== 'cashier' ? true : undefined}
+        >
+          <CashierLoginForm />
+        </div>
+        <div
+          className={role !== 'admin' ? 'hidden' : undefined}
+          hidden={role !== 'admin'}
+          aria-hidden={role !== 'admin'}
+          inert={role !== 'admin' ? true : undefined}
+        >
+          <AdminLoginForm />
+        </div>
 
         <p className="text-center text-[12px] text-muted">
           كل عملية بيع مسجّلة باسم الحساب الذي سجّل الدخول.

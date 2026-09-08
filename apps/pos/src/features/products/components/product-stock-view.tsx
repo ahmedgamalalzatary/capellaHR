@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -60,7 +60,13 @@ export function ProductStockView() {
     queryFn: () => listCatalogBranches(),
     enabled: isAdmin,
   });
-  const [selectedBranchId, setSelectedBranchId] = useState<number>();
+  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
+  const [createOpen, setCreateOpen] = useState(false);
   const branchId = isAdmin ? selectedBranchId : undefined;
   const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
   const [search, setSearch] = useState('');
@@ -94,14 +100,50 @@ export function ProductStockView() {
     page: movementPage, pageSize: 20,
   };
   const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listAllProducts(productParams), enabled: scopeReady });
+  const catalogProducts = useQuery({
+    queryKey: productQueryKeys.list({ ...(branchId === undefined ? {} : { branchId }), catalog: true }),
+    queryFn: () => listAllProducts(branchId === undefined ? {} : { branchId }),
+    enabled: scopeReady,
+  });
   const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(queryClient, 'product');
-  const clearProductForm = () => { setEditing(null); setName(''); setDescription(''); setPrice(''); setCost('0'); setCommissionPercent('0'); setThreshold('0'); setBarcode(''); };
-  const beginEdit = (product: Product) => { setEditing(product); setName(product.name); setDescription(product.description ?? ''); setPrice(product.sellingPrice); setCost(product.lastPurchaseCost); setCommissionPercent(product.commissionPercent ?? '0'); setThreshold(String(product.lowStockThreshold)); setBarcode(product.barcode ?? ''); };
+  const clearProductForm = () => {
+    setEditing(null);
+    setCreateOpen(false);
+    setName(''); setDescription(''); setPrice(''); setCost('0'); setCommissionPercent('0'); setThreshold('0'); setBarcode('');
+  };
+  const beginEdit = (product: Product) => {
+    setCreateOpen(false);
+    setAdjusting(null);
+    setEditing(product);
+    setName(product.name);
+    setDescription(product.description ?? '');
+    setPrice(product.sellingPrice);
+    setCost(product.lastPurchaseCost);
+    setCommissionPercent(product.commissionPercent ?? '0');
+    setThreshold(String(product.lowStockThreshold));
+    setBarcode(product.barcode ?? '');
+  };
+  const formOpen = createOpen || editing !== null;
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (selectedBranchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
+  }, [isAdmin, selectedBranchId]);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(undefined), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
 
   /** A new product only: editing starts from a stored row. */
   const draft = useFormDraft(
-    editing === null ? `product:${branchId ?? 'own'}` : null,
+    editing === null && createOpen ? `product:${branchId ?? 'own'}` : null,
     { name, description, price, cost, commissionPercent, threshold, barcode },
     name.trim() !== '' || description.trim() !== '' || price.trim() !== '',
   );
@@ -139,6 +181,15 @@ export function ProductStockView() {
       <PageHeader
         title="المنتجات والمخزون"
         description="إدارة الأسعار والأرصدة وحركات المخزون لكل فرع."
+        actions={scopeReady ? (
+          <Button
+            disabled={commandPending}
+            onClick={() => { setAdjusting(null); setEditing(null); setCreateOpen(true); }}
+          >
+            <Plus className="size-4" aria-hidden />
+            منتج جديد
+          </Button>
+        ) : undefined}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
@@ -162,7 +213,7 @@ export function ProductStockView() {
                   onChange={(event) => {
                     if (commandPending) return;
                     setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
-                    setEditing(null); setConfirmingToggle(null); setAdjusting(null);
+                    setEditing(null); setCreateOpen(false); setConfirmingToggle(null); setAdjusting(null);
                     setMovementProductId(undefined); setMovementPage(1);
                   }}
                 >
@@ -183,71 +234,80 @@ export function ProductStockView() {
         </Card>
       ) : (
         <>
-          <Card className="shadow-card">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <SectionHeading
-                title={editing ? `تعديل ${editing.name}` : 'إضافة منتج'}
-                description="السعر والتكلفة بالجنيه؛ حد المخزون المنخفض يشغّل التنبيه في القائمة."
-              />
-              {draft.pending ? (
-                <DraftNotice
-                  onRestore={() => {
-                    const stored = draft.restore();
-                    if (!stored) return;
-                    setName(stored.name);
-                    setDescription(stored.description);
-                    setPrice(stored.price);
-                    setCost(stored.cost);
-                    setCommissionPercent(stored.commissionPercent ?? '0');
-                    setThreshold(stored.threshold);
-                    setBarcode(stored.barcode ?? '');
-                  }}
-                  onDiscard={draft.discard}
-                />
-              ) : null}
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="product-name">اسم المنتج</Label>
-                  <Input id="product-name" aria-label="اسم المنتج" placeholder="اسم المنتج" disabled={commandPending} value={name} onChange={(event) => setName(event.target.value)} />
+          {formOpen ? (
+            <Modal
+              title={editing ? `تعديل ${editing.name}` : 'إضافة منتج'}
+              className="max-h-[90dvh] max-w-2xl overflow-y-auto"
+              onClose={() => { if (!commandPending) clearProductForm(); }}
+            >
+              <div className="space-y-4">
+                <p className="text-[13px] text-muted">السعر والتكلفة بالجنيه؛ حد المخزون المنخفض يشغّل التنبيه في القائمة.</p>
+                {draft.pending ? (
+                  <DraftNotice
+                    onRestore={() => {
+                      const stored = draft.restore();
+                      if (!stored) return;
+                      setName(stored.name);
+                      setDescription(stored.description);
+                      setPrice(stored.price);
+                      setCost(stored.cost);
+                      setCommissionPercent(stored.commissionPercent ?? '0');
+                      setThreshold(stored.threshold);
+                      setBarcode(stored.barcode ?? '');
+                    }}
+                    onDiscard={draft.discard}
+                  />
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-name">اسم المنتج</Label>
+                    <Input id="product-name" aria-label="اسم المنتج" placeholder="اسم المنتج" disabled={commandPending} value={name} onChange={(event) => setName(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-description">وصف المنتج</Label>
+                    <Input id="product-description" aria-label="وصف المنتج" placeholder="الوصف (اختياري)" disabled={commandPending} value={description} onChange={(event) => setDescription(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-price">سعر البيع</Label>
+                    <Input id="product-price" aria-label="سعر البيع" className="text-start" placeholder="سعر البيع" disabled={commandPending} value={price} onChange={(event) => setPrice(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-cost">آخر تكلفة شراء</Label>
+                    <Input id="product-cost" aria-label="آخر تكلفة شراء" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-commission">عمولة البائع %</Label>
+                    <Input id="product-commission" aria-label="عمولة البائع %" type="number" min="0" max="100" step="0.01" className="text-start" disabled={commandPending} value={commissionPercent} onChange={(event) => setCommissionPercent(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-barcode">الباركود</Label>
+                    <Input id="product-barcode" aria-label="الباركود" className="text-start" placeholder="امسح باركود العلبة أو اتركه فارغًا" disabled={commandPending} value={barcode} onChange={(event) => setBarcode(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product-threshold">حد المخزون المنخفض</Label>
+                    <Input id="product-threshold" aria-label="حد المخزون المنخفض" type="number" min="0" className="text-start" disabled={commandPending} value={threshold} onChange={(event) => setThreshold(event.target.value)} />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="product-description">وصف المنتج</Label>
-                  <Input id="product-description" aria-label="وصف المنتج" placeholder="الوصف (اختياري)" disabled={commandPending} value={description} onChange={(event) => setDescription(event.target.value)} />
+                <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                  <Button disabled={!name.trim() || !price || commandPending} onClick={() => { if (!commandPending) save.mutate(); }}>
+                    {editing ? 'حفظ التعديل' : 'إضافة منتج'}
+                  </Button>
+                  <Button variant="ghost" disabled={commandPending} onClick={clearProductForm}>إلغاء</Button>
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="product-price">سعر البيع</Label>
-                  <Input id="product-price" aria-label="سعر البيع" className="text-start" placeholder="سعر البيع" disabled={commandPending} value={price} onChange={(event) => setPrice(event.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="product-cost">آخر تكلفة شراء</Label>
-                  <Input id="product-cost" aria-label="آخر تكلفة شراء" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
-                  <Label htmlFor="product-commission">عمولة البائع %</Label>
-                  <Input id="product-commission" aria-label="عمولة البائع %" type="number" min="0" max="100" step="0.01" className="text-start" disabled={commandPending} value={commissionPercent} onChange={(event) => setCommissionPercent(event.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="product-barcode">الباركود</Label>
-                  <Input id="product-barcode" aria-label="الباركود" className="text-start" placeholder="امسح باركود العلبة أو اتركه فارغًا" disabled={commandPending} value={barcode} onChange={(event) => setBarcode(event.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="product-threshold">حد المخزون المنخفض</Label>
-                  <Input id="product-threshold" aria-label="حد المخزون المنخفض" type="number" min="0" className="text-start" disabled={commandPending} value={threshold} onChange={(event) => setThreshold(event.target.value)} />
-                </div>
+                {save.isError ? <FieldError>{errorText(save.error)}</FieldError> : null}
               </div>
-              <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
-                <Button disabled={!name.trim() || !price || commandPending} onClick={() => { if (!commandPending) save.mutate(); }}>
-                  {editing ? 'حفظ التعديل' : 'إضافة منتج'}
-                </Button>
-                {editing ? <Button variant="ghost" disabled={commandPending} onClick={clearProductForm}>إلغاء</Button> : null}
-              </div>
-              {save.isError ? <FieldError>{errorText(save.error)}</FieldError> : null}
-            </CardContent>
-          </Card>
+            </Modal>
+          ) : null}
 
           {adjusting ? (
-            <Card className="shadow-card">
-              <CardContent className="space-y-4 p-4 sm:p-5">
-                <SectionHeading title={`تسوية مخزون ${adjusting.name}`} description="الرصيد الحالي يتغير فورًا وتُسجَّل الحركة في السجل." />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <Modal
+              title={`تسوية مخزون ${adjusting.name}`}
+              className="max-h-[90dvh] max-w-lg overflow-y-auto"
+              onClose={() => { if (!commandPending) setAdjusting(null); }}
+            >
+              <div className="space-y-4">
+                <p className="text-[13px] text-muted">الرصيد الحالي يتغير فورًا وتُسجَّل الحركة في السجل.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label htmlFor="adjust-delta">تغيير الكمية</Label>
                     <Input id="adjust-delta" aria-label="تغيير الكمية" type="number" className="text-start" disabled={commandPending} value={delta} onChange={(event) => setDelta(event.target.value)} />
@@ -260,7 +320,7 @@ export function ProductStockView() {
                       <option value="damage">تالف</option>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1.5 sm:col-span-2">
                     <Label htmlFor="adjust-note">ملاحظة التسوية</Label>
                     <Input id="adjust-note" aria-label="ملاحظة التسوية" placeholder="ملاحظة" disabled={commandPending} value={note} onChange={(event) => setNote(event.target.value)} />
                   </div>
@@ -270,8 +330,8 @@ export function ProductStockView() {
                   <Button variant="ghost" disabled={commandPending} onClick={() => setAdjusting(null)}>إلغاء</Button>
                 </div>
                 {adjust.isError ? <FieldError>{errorText(adjust.error)}</FieldError> : null}
-              </CardContent>
-            </Card>
+              </div>
+            </Modal>
           ) : null}
 
           <Card className="overflow-hidden shadow-card">
@@ -284,6 +344,7 @@ export function ProductStockView() {
                 variant={lowStock ? 'primary' : 'secondary'}
                 size="sm"
                 aria-pressed={lowStock}
+                aria-label="عرض المنتجات منخفضة المخزون فقط"
                 onClick={() => setLowStock((value) => !value)}
               >
                 المخزون المنخفض
@@ -292,7 +353,20 @@ export function ProductStockView() {
 
             {products.isPending ? <LoadingState label="جارٍ تحميل المنتجات…" className="py-16" />
               : products.isError ? <EmptyState title="تعذر تحميل المنتجات" action={<Button onClick={() => void products.refetch()}>إعادة المحاولة</Button>} />
-                : !products.data?.items.length ? <EmptyState title="لا توجد منتجات" />
+                : !products.data?.items.length ? (
+                  <EmptyState
+                    title={lowStock || search.trim() ? 'لا توجد منتجات مطابقة' : 'لا توجد منتجات'}
+                    description={lowStock ? 'لا يوجد منتج تحت حد المخزون المنخفض.' : search.trim() ? 'جرّب بحثًا آخر.' : 'أضف أول منتج لهذا الفرع.'}
+                    action={
+                      !lowStock && !search.trim() ? (
+                        <Button size="sm" disabled={commandPending} onClick={() => setCreateOpen(true)}>
+                          <Plus className="size-4" aria-hidden />
+                          إضافة أول منتج
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                )
                   : (
                     <DataTable minWidth="min-w-full">
                       <THead>
@@ -322,8 +396,8 @@ export function ProductStockView() {
                             <TD numeric className="font-medium">{product.quantity}</TD>
                             <TD pinned>
                               <RowActions>
-                                {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-surface" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>مستهلك</Link> : null}
-                                <Button size="sm" disabled={commandPending} onClick={() => setAdjusting(product)}>تسوية</Button>
+                                {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-surface" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>ربط كمستهلك</Link> : null}
+                                <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjusting(product); }}>تسوية</Button>
                                 {product.barcode
                                   ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => setLabelling(product)}>طباعة ملصق</Button>
                                   : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}
@@ -373,7 +447,7 @@ export function ProductStockView() {
                 onChange={(event) => { setMovementProductId(event.target.value ? Number(event.target.value) : undefined); setMovementPage(1); }}
               >
                 <option value="">كل المنتجات</option>
-                {products.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                {(catalogProducts.data?.items ?? products.data?.items ?? []).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
               </Select>
             </div>
 

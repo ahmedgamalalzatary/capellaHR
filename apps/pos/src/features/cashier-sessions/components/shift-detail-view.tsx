@@ -58,6 +58,14 @@ export function ShiftDetailView({ sessionId }: { sessionId: number }) {
       <PageHeader
         title="تفاصيل الوردية"
         description="حركة الوردية ومبيعاتها كما سُجلت وقت حدوثها."
+        actions={
+          <Link
+            href="/cashier-sessions"
+            className="inline-flex h-9 items-center rounded-control border border-line px-4 text-sm font-medium hover:bg-surface"
+          >
+            العودة إلى السجل
+          </Link>
+        }
       />
 
       {detail.isPending ? (

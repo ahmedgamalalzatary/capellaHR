@@ -18,7 +18,7 @@ import { ProductPicker, type ProductSaleItem } from '@/features/products';
 import type { AssignableEmployee } from '@/features/employee-assignment';
 
 import { LineEmployeeSelect } from './line-employee-select';
-import { StepTitle, type Line } from './sale-primitives';
+import { type Line } from './sale-primitives';
 
 export function SaleBasketStep({
   branchId,
@@ -41,7 +41,7 @@ export function SaleBasketStep({
 }) {
   return (
     <Card className="shadow-card">
-      <CardHeader><CardTitle><StepTitle step={3} label={hasServices && hasProducts ? 'الخدمات والمنتجات' : hasServices ? 'الخدمات' : 'المنتجات'} /></CardTitle></CardHeader>
+      <CardHeader><CardTitle>{hasServices && hasProducts ? 'الخدمات والمنتجات' : hasServices ? 'الخدمات' : 'المنتجات'}</CardTitle></CardHeader>
       <CardContent className="space-y-5 p-5">
         <div className={hasServices && hasProducts ? 'grid gap-4 md:grid-cols-2' : 'grid gap-4'}>
           {!hasServices && !hasProducts ? <EmptyState title="لا توجد خدمات أو منتجات متاحة" /> : null}
@@ -83,7 +83,7 @@ export function SaleBasketStep({
             {lines.map((line) => (
               <li
                 key={`${line.itemType ?? 'service'}:${line.service.id}`}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line bg-surface/50 p-3"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-control border border-line bg-surface/50 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,12rem)_auto]"
               >
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{line.service.name}</span>

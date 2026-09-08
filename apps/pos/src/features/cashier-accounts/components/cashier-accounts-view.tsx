@@ -96,6 +96,7 @@ export function CashierAccountsView() {
           <EmptyState
             title="لا توجد حسابات فروع بعد"
             description="أضف حساب كاشير وحدد الموظفين المسموح لهم بالبيع."
+            action={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة أول حساب</Button>}
           />
         ) : (
           <DataTable>

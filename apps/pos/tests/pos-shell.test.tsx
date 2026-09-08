@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { PosShell } from '../src/components/shell/pos-shell';
-import { cashierNavigation, filterCashierNavigation } from '../src/components/shell/nav';
 
 const { replaceMock, getSessionMock, logoutMock, getCurrentSessionMock, hasBookingsEverMock, pathname } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
@@ -71,33 +70,15 @@ beforeEach(() => {
 });
 
 describe('PosShell', () => {
-  test('hides bookings from a cashier with no open shift when the branch has never booked', async () => {
-    getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 9 } });
-    renderShell();
-    expect(await screen.findByRole('link', { name: 'الوردية' })).toBeDefined();
-    await waitFor(() => expect(hasBookingsEverMock).toHaveBeenCalled());
-    expect(screen.queryByRole('link', { name: 'دفتر المواعيد' })).toBeNull();
-  });
-
-  test('shows bookings to a cashier with no open shift when the branch has booking history', async () => {
-    hasBookingsEverMock.mockResolvedValue(true);
+  test('keeps bookings, sales, and catalog on the cashier rail even when empty', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 9 } });
     renderShell();
     expect(await screen.findByRole('link', { name: 'دفتر المواعيد' })).toHaveProperty(
       'href',
       expect.stringContaining('/bookings'),
     );
-  });
-
-  test('filters only empty cashier workflows and removes empty groups', () => {
-    const result = filterCashierNavigation(cashierNavigation, {
-      hasSalesContent: false,
-      hasBookings: false,
-      hasCatalogContent: false,
-    });
-    expect(result.flatMap((group) => group.items).map((item) => item.href)).not.toContain('/sales');
-    expect(result.flatMap((group) => group.items).map((item) => item.href)).not.toContain('/bookings');
-    expect(result.flatMap((group) => group.items).map((item) => item.href)).not.toContain('/catalog');
+    expect(screen.getByRole('link', { name: 'بيع جديد' })).toBeDefined();
+    expect(screen.getByRole('link', { name: 'الكتالوج' })).toBeDefined();
   });
   test('renders the children content', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
@@ -261,28 +242,27 @@ describe('PosShell', () => {
     expect(sessionState.parentElement?.textContent).toContain('الفرع الرئيسي');
   });
 
-  test('logs out and redirects to /login', async () => {
+  test('asks before logout and only then clears drafts and redirects', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     logoutMock.mockResolvedValue(undefined);
     localStorage.setItem('capella:sale-draft:admin:admin:2:13:key', '{}');
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'تسجيل الخروج' }));
+    expect(logoutMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الخروج' }));
     await waitFor(() => expect(logoutMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/login'));
     expect(localStorage.getItem('capella:sale-draft:admin:admin:2:13:key')).toBeNull();
   });
 
-  test('prevents shell navigation and logout while a command is pending', async () => {
+  test('keeps the rail usable while a command is pending', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell(<PendingCommand />);
 
     const destination = await screen.findByRole('link', { name: 'الكتالوج' });
     fireEvent.click(await screen.findByRole('button', { name: 'ابدأ الحفظ' }));
 
-    await waitFor(() => expect(destination.getAttribute('aria-disabled')).toBe('true'));
-    const navigation = new MouseEvent('click', { bubbles: true, cancelable: true });
-    expect(destination.dispatchEvent(navigation)).toBe(false);
-    expect(screen.getByRole('button', { name: 'تسجيل الخروج' })).toHaveProperty('disabled', true);
-    expect(logoutMock).not.toHaveBeenCalled();
+    expect(destination.getAttribute('aria-disabled')).not.toBe('true');
+    expect(screen.getByRole('button', { name: 'تسجيل الخروج' })).toHaveProperty('disabled', false);
   });
 });

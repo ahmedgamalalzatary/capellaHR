@@ -51,10 +51,6 @@ export function SaleTabs({
   onNew: () => void;
   onRequestClose: (tab: SaleTab) => void;
 }) {
-  // Nothing is parked, so there is nothing to switch to and nothing to park beside:
-  // the bar appears with the first sale the cashier actually starts.
-  if (!tabs.some((tab) => !tab.isNew)) return null;
-
   const atCapacity = tabs.length >= MAX_OPEN_SALES;
   // A sale with nothing in it is already the empty slot another sale would open into.
   const activeIsEmpty = tabs.some((tab) => tab.id === activeId && tab.isNew);
@@ -96,7 +92,7 @@ export function SaleTabs({
                   type="button"
                   aria-label={`حذف البيع ${position}`}
                   onClick={() => onRequestClose(tab)}
-                  className="flex size-6 items-center justify-center rounded-full text-muted hover:bg-danger-soft hover:text-danger"
+                  className="flex size-11 items-center justify-center rounded-full text-muted hover:bg-danger-soft hover:text-danger"
                 >
                   <X className="size-3.5" aria-hidden />
                 </button>

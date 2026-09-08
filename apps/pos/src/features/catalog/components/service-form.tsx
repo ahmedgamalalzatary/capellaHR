@@ -4,7 +4,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 
-import { Button, Card, CardContent, Field, Input } from '@capella/ui';
+import { Button, Card, CardContent, ConfirmDialog, Field, Input } from '@capella/ui';
+import { useState } from 'react';
+import { Textarea } from '@/components/form/textarea';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Select } from '@/components/form/select';
@@ -42,6 +44,7 @@ export function ServiceForm({
   const queryClient = useQueryClient();
   const isEdit = service !== undefined;
   const hasFixedPrice = service?.price !== null && service?.price !== undefined;
+  const [confirmDeletePrice, setConfirmDeletePrice] = useState(false);
 
   const { register, handleSubmit, control, setValue, formState: { errors } } =
     useForm<ServiceFormInput, unknown, ServiceFormValues>({
@@ -100,6 +103,7 @@ export function ServiceForm({
   const deletePrice = useMutation({
     mutationFn: () => updateService(service!.id, { price: null, ...branchScope }),
     onSuccess: async (saved) => {
+      setConfirmDeletePrice(false);
       await invalidateErpCaches(queryClient, 'catalog');
       onDone?.(saved);
     },
@@ -115,6 +119,7 @@ export function ServiceForm({
     ?? serverErrorMessage(deletePrice.error);
 
   return (
+    <>
     <Card className="shadow-card">
       <CardContent className="space-y-4 p-4 sm:p-5">
         <form noValidate className="space-y-4" onSubmit={handleSubmit((values) => save.mutate(values))}>
@@ -165,7 +170,7 @@ export function ServiceForm({
                   size="sm"
                   className="mt-2"
                   disabled={pending}
-                  onClick={() => deletePrice.mutate()}
+                  onClick={() => setConfirmDeletePrice(true)}
                 >
                   حذف السعر الثابت
                 </Button>
@@ -184,7 +189,7 @@ export function ServiceForm({
             </Field>
           </div>
           <Field label="الوصف" htmlFor="service-description">
-            <Input id="service-description" autoComplete="off" disabled={pending} {...register('description')} />
+            <Textarea id="service-description" autoComplete="off" disabled={pending} {...register('description')} />
           </Field>
 
           {formError ? <p role="alert" className="text-[13px] text-danger">{formError}</p> : null}
@@ -200,5 +205,17 @@ export function ServiceForm({
         </form>
       </CardContent>
     </Card>
+    {confirmDeletePrice ? (
+      <ConfirmDialog
+        title="حذف السعر الثابت"
+        description="سيُسعَّر هذا الخدمة عند البيع بعد حذف السعر الثابت."
+        confirmLabel="تأكيد حذف السعر"
+        tone="danger"
+        pending={deletePrice.isPending}
+        onConfirm={() => deletePrice.mutate()}
+        onCancel={() => setConfirmDeletePrice(false)}
+      />
+    ) : null}
+    </>
   );
 }

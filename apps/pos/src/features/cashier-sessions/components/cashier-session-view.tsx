@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Clock3, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   Badge,
@@ -77,9 +77,20 @@ export function CashierSessionView() {
   const actor = authQuery.data?.actor;
   const isAdmin = actor?.type === 'admin';
   const isCashier = actor?.type === 'cashier';
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>();
+  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) ? parsed : undefined;
+  });
   const [confirmClose, setConfirmClose] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (selectedBranchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
+    else sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
+  }, [isAdmin, selectedBranchId]);
 
   const branchesQuery = useQuery({
     queryKey: cashierSessionQueryKeys.branches,

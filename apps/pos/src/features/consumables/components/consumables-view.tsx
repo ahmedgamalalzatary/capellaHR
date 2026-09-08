@@ -108,6 +108,7 @@ export function ConsumablesView() {
   const [branchId, setBranchId] = useState<number | undefined>(() => { const value = Number(search?.get('branchId')); return value > 0 ? value : undefined; });
   const [tab, setTab] = useState<Tab>(() => search?.has('productId') ? 'stock' : 'status');
   const [selected, setSelected] = useState<number[]>([]);
+  const [selectionHint, setSelectionHint] = useState<string>();
   const cashierSessionId = Number(search?.get('cashierSessionId')) || undefined;
   const productId = Number(search?.get('productId')) || undefined;
   const ready = session.isSuccess && (!isAdmin || branchId !== undefined); const params = branchId === undefined ? {} : { branchId };
@@ -123,13 +124,21 @@ export function ConsumablesView() {
   });
   const changeTab = (next: Tab) => { setTab(next); setSelected([]); };
   const toggle = (item: ConsumableServiceExecution) => setSelected((current) => {
-    if (current.includes(item.id)) return current.filter((id) => id !== item.id);
+    if (current.includes(item.id)) {
+      setSelectionHint(undefined);
+      return current.filter((id) => id !== item.id);
+    }
     const selectedServiceId = services.data?.find((candidate) => current.includes(candidate.id))?.serviceId;
-    return selectedServiceId === undefined || selectedServiceId === item.serviceId ? [...current, item.id] : current;
+    if (selectedServiceId !== undefined && selectedServiceId !== item.serviceId) {
+      setSelectionHint('يمكن تسجيل استهلاك خدمة واحدة في كل مرة. أزل الاختيار الحالي أولًا.');
+      return current;
+    }
+    setSelectionHint(undefined);
+    return [...current, item.id];
   });
   return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description="تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة." />
     {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setSelected([]); }}><option value="">اختر الفرع</option>{branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select></CardContent></Card> : null}
     <div role="tablist" aria-label="خدمات العملاء والمستهلكات" className="flex gap-1 overflow-x-auto border-b border-line"><TabButton active={tab === 'status'} onClick={() => changeTab('status')}><Clock3 className="size-4" />حالة الخدمات</TabButton><TabButton active={tab === 'consumables'} onClick={() => changeTab('consumables')}><CheckCircle2 className="size-4" />تسجيل المستهلكات</TabButton><TabButton active={tab === 'stock'} onClick={() => changeTab('stock')}><PackageOpen className="size-4" />مخزون المستهلكات</TabButton></div>
-    {!ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data ?? []} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} onStatus={(item, status) => statusMutation.mutate({ item, status })} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}{tab === 'consumables' && selected.length ? <CompletionPanel selected={selected} balances={balances.data ?? []} branchId={branchId} onCompleted={async () => { setSelected([]); await refresh(); }} /> : null}</CardContent></Card>}
+    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data ?? []} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} onStatus={(item, status) => statusMutation.mutate({ item, status })} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}{tab === 'consumables' && selected.length ? <CompletionPanel selected={selected} balances={balances.data ?? []} branchId={branchId} onCompleted={async () => { setSelected([]); await refresh(); }} /> : null}</CardContent></Card>}
   </section>;
 }

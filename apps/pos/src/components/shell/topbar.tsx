@@ -65,7 +65,7 @@ export function Topbar({
           onClick={onLogout}
         >
           <LogOut className="size-4" aria-hidden />
-          <span className="hidden lg:inline">تسجيل الخروج</span>
+          <span className="hidden sm:inline">تسجيل الخروج</span>
         </Button>
       </div>
     </header>

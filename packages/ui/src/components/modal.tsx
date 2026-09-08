@@ -76,6 +76,7 @@ export function Modal({
         }
       }
       if (event.key === 'Escape') {
+        if (event.defaultPrevented) return;
         event.stopPropagation();
         if (dismissOnBackdrop) onClose();
       }
@@ -97,7 +98,7 @@ export function Modal({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          'w-full max-w-md rounded-card border border-line bg-paper p-4 shadow-lg outline-none',
+          'max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-card border border-line bg-paper p-4 shadow-lg outline-none',
           className,
         )}
         onClick={(event) => event.stopPropagation()}

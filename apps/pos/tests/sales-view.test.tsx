@@ -203,6 +203,16 @@ describe('ERP service-sale view', () => {
     expect(screen.getByRole('status', { name: 'جارٍ تحميل وردية الكاشير…' })).toBeDefined();
   });
 
+  it('names what is missing while Complete stays disabled', async () => {
+    renderView();
+    const blockers = await screen.findByRole('list', { name: 'ما ينقص لإتمام البيع' });
+    expect(within(blockers).getByText('اختر العميل')).toBeDefined();
+    expect(within(blockers).getByText('اختر الكاشير')).toBeDefined();
+    expect(within(blockers).getByText('أضف خدمة أو منتجًا')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }) as HTMLButtonElement).disabled)
+      .toBe(true);
+  });
+
   it('prefills an arrived booking and carries it into the sale command', async () => {
     mocks.getBooking.mockResolvedValue({
       id: 22, branchId: 2,

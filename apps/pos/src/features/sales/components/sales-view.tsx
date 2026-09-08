@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import Link from 'next/link';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import {
   Button,
@@ -31,7 +32,20 @@ export function SalesView({ bookingId }: { bookingId?: number }) {
   const auth = useSession();
   const actor = auth.data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [selectedBranchId, setSelectedBranchId] = useState<number>();
+  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
+
+  useEffect(() => {
+    if (selectedBranchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
+  }, [selectedBranchId]);
 
   const branches = useQuery({
     queryKey: ['erp-sales', 'branches'],
@@ -131,6 +145,14 @@ export function SalesView({ bookingId }: { bookingId?: number }) {
         description={isAdmin
           ? 'اختر فرعًا آخر، أو افتح وردية هذا الفرع من الصفحة الرئيسية.'
           : 'افتح ورديتك من الصفحة الرئيسية قبل إتمام أي عملية بيع.'}
+        action={
+          <Link
+            href="/"
+            className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper"
+          >
+            فتح الوردية
+          </Link>
+        }
       />,
     );
   }

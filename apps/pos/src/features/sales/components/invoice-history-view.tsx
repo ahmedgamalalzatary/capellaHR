@@ -42,10 +42,16 @@ const statusTones = {
 export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: number }) {
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [branchId, setBranchId] = useState<number | undefined>(initialBranchId);
+  const [branchId, setBranchId] = useState<number | undefined>(() => {
+    if (initialBranchId !== undefined) return initialBranchId;
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
-  const [search, setSearch] = useState<string | undefined>();
+  const search = searchDraft.trim() || undefined;
   /**
    * The number read off a scanned receipt, held until the matching invoice comes
    * back so the slip the customer handed over opens itself.
@@ -55,7 +61,6 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
   useBarcodeScanner({
     onScan: (code) => {
       setSearchDraft(code);
-      setSearch(code);
       setPage(1);
       setScannedNumber(code);
     },
@@ -69,6 +74,14 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
   if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
     setBranchId(branches.data.items[0]!.id);
   }
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (branchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
+  }, [branchId, isAdmin]);
   const invoices = useQuery({
     queryKey: salesQueryKeys.invoices(branchId, page, search),
     queryFn: () => listInvoices({
@@ -100,28 +113,21 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
 
       <Card className="shadow-card">
         <CardContent className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 md:items-end">
-          <form
-            className="flex items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSearch(searchDraft.trim() || undefined);
-              setPage(1);
-            }}
-          >
-            <div className="grow space-y-1.5">
-              <Label htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
-                <Input
-                  className="grow ps-9"
-                  id="invoice-search"
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                />
-              </div>
+          <div className="grow space-y-1.5">
+            <Label htmlFor="invoice-search">بحث برقم الفاتورة أو العميل</Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+              <Input
+                className="grow ps-9"
+                id="invoice-search"
+                value={searchDraft}
+                onChange={(event) => {
+                  setSearchDraft(event.target.value);
+                  setPage(1);
+                }}
+              />
             </div>
-            <Button type="submit">بحث</Button>
-          </form>
+          </div>
 
           {isAdmin ? (
             <div className="space-y-1.5">
@@ -165,6 +171,11 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
           </Button>
         </Notice>
       ) : null}
+      {isAdmin && branchId === undefined && (branches.data?.items.length ?? 0) > 1 ? (
+        <Card className="shadow-card">
+          <EmptyState title="اختر فرعًا لعرض فواتيره" />
+        </Card>
+      ) : null}
       {invoices.data?.items.length === 0 ? (
         <Card className="shadow-card">
           <EmptyState title="لا توجد فواتير" description="ستظهر الفواتير المكتملة هنا." />
@@ -174,16 +185,18 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
       <ul className="space-y-2">
         {invoices.data?.items.map((invoice) => (
           <li key={invoice.id}>
+            <Link
+              className="block rounded-card outline-offset-2"
+              aria-label={invoice.invoiceNumber}
+              href={`/invoices/${invoice.id}${branchId ? `?branchId=${branchId}` : ''}`}
+            >
             <Card className="shadow-card transition-shadow hover:shadow-raised">
               <CardContent className="grid gap-2 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      className="font-mono font-semibold text-ink underline underline-offset-4"
-                      href={`/invoices/${invoice.id}${branchId ? `?branchId=${branchId}` : ''}`}
-                    >
+                    <span className="font-mono font-semibold text-ink underline underline-offset-4">
                       {invoice.invoiceNumber}
-                    </Link>
+                    </span>
                     <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
                   </div>
                   <p className="truncate text-sm text-ink">
@@ -202,6 +215,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                 </div>
               </CardContent>
             </Card>
+            </Link>
           </li>
         ))}
       </ul>

@@ -5,6 +5,8 @@ import { Printer } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import Link from 'next/link';
+
 import { Button } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
@@ -148,7 +150,18 @@ export function ShiftEndingReport({ sessionId }: { sessionId: number }) {
   return (
     <section className="mx-auto w-full max-w-3xl space-y-5">
       <div data-print-controls className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader title="تقرير نهاية الوردية" description="ملخص كامل لحركة الوردية وإجمالياتها." />
+        <PageHeader
+          title="تقرير نهاية الوردية"
+          description="ملخص كامل لحركة الوردية وإجمالياتها."
+          actions={
+            <Link
+              href="/cashier-sessions"
+              className="inline-flex h-9 items-center rounded-control border border-line px-4 text-sm font-medium hover:bg-surface"
+            >
+              العودة إلى السجل
+            </Link>
+          }
+        />
         {report.data ? (
           <Button onClick={() => setPrinting(true)}>
             <Printer className="size-4" aria-hidden />

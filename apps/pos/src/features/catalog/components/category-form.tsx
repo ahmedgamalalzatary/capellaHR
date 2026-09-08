@@ -7,7 +7,6 @@ import { useForm, useWatch } from 'react-hook-form';
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
-import { Select } from '@/components/form/select';
 import { useFormDraft } from '@/lib/form-draft';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
@@ -90,15 +89,7 @@ export function CategoryForm({
             <Field label="اسم التصنيف" htmlFor="category-name" required>
               <Input id="category-name" autoComplete="off" disabled={save.isPending} {...register('name')} />
             </Field>
-            <Field label="النوع" htmlFor="category-type" required>
-              <Select
-                id="category-type"
-                disabled={isEdit || save.isPending}
-                {...register('type')}
-              >
-                <option value="service">خدمات</option>
-              </Select>
-            </Field>
+
           </div>
 
           {formError ? <p role="alert" className="text-[13px] text-danger">{formError}</p> : null}
