@@ -27,6 +27,8 @@ describe('ErpHomeView', () => {
     render(<ErpHomeView />);
 
     expect(screen.getByRole('link', { name: 'الأصول الثابتة' }).getAttribute('href')).toBe('/fixed-assets');
+    expect(screen.getByRole('link', { name: 'المرتجعات' }).getAttribute('href')).toBe('/refunds');
+    expect(screen.getByRole('link', { name: 'خدمات العملاء والمستهلكات' }).getAttribute('href')).toBe('/consumables');
   });
 
   it('keeps the workspace hidden while the actor is unresolved', () => {

@@ -67,7 +67,13 @@ export function SuppliersPurchasesView() {
    */
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
-  const [selectedBranchId, setSelectedBranchId] = useState<number>();
+  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
   const branchId = isAdmin ? selectedBranchId : undefined;
   const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
   const [supplierName, setSupplierName] = useState('');
@@ -131,7 +137,12 @@ export function SuppliersPurchasesView() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: supplierQueryKeys.all });
   const refreshPurchase = () => invalidateErpCaches(queryClient, 'purchase');
   const clearSupplier = () => {
-    setEditing(null); setSupplierName(''); setPhone(''); setNotes('');
+    setEditing(null); setSupplierFormOpen(false); setSupplierName(''); setPhone(''); setNotes('');
+  };
+  const openNewSupplier = () => {
+    setEditing(null);
+    setSupplierName(''); setPhone(''); setNotes('');
+    setSupplierFormOpen(true);
   };
   const resetDraft = () => {
     setSupplierId(''); setCorrectionOf(undefined); setLines([blankLine(lineKey)]);
@@ -140,8 +151,23 @@ export function SuppliersPurchasesView() {
     setLineKey((value) => value + 1);
   };
   /** Two separate workbenches on one screen, so each keeps its own memory. */
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (selectedBranchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
+  }, [isAdmin, selectedBranchId]);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(undefined), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
+
   const supplierDraft = useFormDraft(
-    editing === null ? `supplier:${branchId ?? 'own'}` : null,
+    editing === null && supplierFormOpen ? `supplier:${branchId ?? 'own'}` : null,
     { supplierName, phone, notes },
     supplierName.trim() !== '' || phone.trim() !== '' || notes.trim() !== '',
   );
@@ -249,10 +275,16 @@ export function SuppliersPurchasesView() {
         title="الموردون والمشتريات"
         description="ترحيل مشتريات مدفوعة بالكامل إلى المخزون مع سجل غير قابل للتعديل."
         actions={scopeReady ? (
-          <Button disabled={commandPending} onClick={() => setPurchasePanelOpen(true)}>
-            <Plus className="size-4" aria-hidden />
-            إضافة فاتورة مشتريات
-          </Button>
+          <>
+            <Button variant="secondary" disabled={commandPending} onClick={openNewSupplier}>
+              <Plus className="size-4" aria-hidden />
+              مورد جديد
+            </Button>
+            <Button disabled={commandPending} onClick={() => setPurchasePanelOpen(true)}>
+              <Plus className="size-4" aria-hidden />
+              إضافة فاتورة مشتريات
+            </Button>
+          </>
         ) : undefined}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
@@ -293,45 +325,56 @@ export function SuppliersPurchasesView() {
         </Card>
       ) : (
         <>
+          {supplierFormOpen || editing ? (
+            <Modal
+              title={editing ? `تعديل ${editing.name}` : 'إضافة مورد'}
+              className="max-h-[90dvh] max-w-lg overflow-y-auto"
+              onClose={() => { if (!commandPending) clearSupplier(); }}
+            >
+              <div className="space-y-4">
+                {supplierDraft.pending ? (
+                  <DraftNotice
+                    onRestore={() => {
+                      const stored = supplierDraft.restore();
+                      if (!stored) return;
+                      setSupplierName(stored.supplierName);
+                      setPhone(stored.phone);
+                      setNotes(stored.notes);
+                    }}
+                    onDiscard={supplierDraft.discard}
+                  />
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="supplier-name">اسم المورد</Label>
+                    <Input id="supplier-name" aria-label="اسم المورد" placeholder="اسم المورد" disabled={commandPending} value={supplierName} onChange={(event) => setSupplierName(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="supplier-phone">هاتف المورد</Label>
+                    <Input id="supplier-phone" aria-label="هاتف المورد" placeholder="الهاتف (اختياري)" className="text-start" disabled={commandPending} value={phone} onChange={(event) => setPhone(event.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="supplier-notes">ملاحظات المورد</Label>
+                    <Input id="supplier-notes" aria-label="ملاحظات المورد" placeholder="ملاحظات" disabled={commandPending} value={notes} onChange={(event) => setNotes(event.target.value)} />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                  <Button disabled={!supplierName.trim() || commandPending} onClick={() => { if (!commandPending) saveSupplier.mutate(); }}>
+                    {editing ? 'حفظ المورد' : 'إضافة المورد'}
+                  </Button>
+                  <Button variant="ghost" disabled={commandPending} onClick={clearSupplier}>إلغاء</Button>
+                </div>
+                {saveSupplier.isError ? <FieldError>{errorText(saveSupplier.error)}</FieldError> : null}
+              </div>
+            </Modal>
+          ) : null}
+
           <Card className="overflow-hidden shadow-card">
-            <CardContent className="space-y-4 p-4 sm:p-5">
+            <CardContent className="p-4 sm:p-5">
               <SectionHeading
                 title="إدارة الموردين"
                 description="المورد الموقوف يبقى في السجل ولا يظهر في مشتريات جديدة."
               />
-              {supplierDraft.pending ? (
-                <DraftNotice
-                  onRestore={() => {
-                    const stored = supplierDraft.restore();
-                    if (!stored) return;
-                    setSupplierName(stored.supplierName);
-                    setPhone(stored.phone);
-                    setNotes(stored.notes);
-                  }}
-                  onDiscard={supplierDraft.discard}
-                />
-              ) : null}
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="supplier-name">اسم المورد</Label>
-                  <Input id="supplier-name" aria-label="اسم المورد" placeholder="اسم المورد" disabled={commandPending} value={supplierName} onChange={(event) => setSupplierName(event.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="supplier-phone">هاتف المورد</Label>
-                  <Input id="supplier-phone" aria-label="هاتف المورد" placeholder="الهاتف (اختياري)" className="text-start" disabled={commandPending} value={phone} onChange={(event) => setPhone(event.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="supplier-notes">ملاحظات المورد</Label>
-                  <Input id="supplier-notes" aria-label="ملاحظات المورد" placeholder="ملاحظات" disabled={commandPending} value={notes} onChange={(event) => setNotes(event.target.value)} />
-                </div>
-                <div className="flex items-end gap-2">
-                  <Button disabled={!supplierName.trim() || commandPending} onClick={() => { if (!commandPending) saveSupplier.mutate(); }}>
-                    {editing ? 'حفظ المورد' : 'إضافة المورد'}
-                  </Button>
-                  {editing ? <Button variant="ghost" disabled={commandPending} onClick={clearSupplier}>إلغاء</Button> : null}
-                </div>
-              </div>
-              {saveSupplier.isError ? <FieldError>{errorText(saveSupplier.error)}</FieldError> : null}
               {toggleSupplier.isError ? <FieldError>{errorText(toggleSupplier.error)}</FieldError> : null}
             </CardContent>
 
@@ -340,7 +383,15 @@ export function SuppliersPurchasesView() {
             ) : suppliers.isPending ? (
               <LoadingState label="جارٍ تحميل الموردين…" className="py-16" />
             ) : !suppliers.data.items.length ? (
-              <EmptyState title="لا يوجد موردون بعد" />
+              <EmptyState
+                title="لا يوجد موردون بعد"
+                action={
+                  <Button size="sm" disabled={commandPending} onClick={openNewSupplier}>
+                    <Plus className="size-4" aria-hidden />
+                    إضافة أول مورد
+                  </Button>
+                }
+              />
             ) : (
               <DataTable className="border-t border-line/70">
                 <THead>
@@ -361,7 +412,7 @@ export function SuppliersPurchasesView() {
                       </TD>
                       <TD>
                         <RowActions>
-                          <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => { setEditing(supplier); setSupplierName(supplier.name); setPhone(supplier.phone ?? ''); setNotes(supplier.notes ?? ''); }}>تعديل</Button>
+                          <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => { setSupplierFormOpen(true); setEditing(supplier); setSupplierName(supplier.name); setPhone(supplier.phone ?? ''); setNotes(supplier.notes ?? ''); }}>تعديل</Button>
                           <Button size="sm" variant="ghost" disabled={commandPending} onClick={() => supplier.isActive ? setConfirmingToggle(supplier) : toggleSupplier.mutate(supplier)}>
                             {supplier.isActive ? 'إيقاف' : 'تفعيل'}
                           </Button>
@@ -376,8 +427,7 @@ export function SuppliersPurchasesView() {
 
           {purchasePanelOpen && typeof document !== 'undefined' ? createPortal(
             <div
-              className="fixed inset-0 z-50 flex h-dvh justify-end bg-black/40"
-              onClick={closePurchasePanel}
+              className="fixed inset-0 z-40 flex h-dvh justify-end bg-black/40"
             >
               <aside
                 role="dialog"
@@ -427,15 +477,21 @@ export function SuppliersPurchasesView() {
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="purchase-supplier">المورد للمشتريات</Label>
-                        <Select
-                          id="purchase-supplier"
-                          value={supplierId}
-                          disabled={commandPending}
-                          onChange={(event) => { if (commandPending) return; setIdempotencyKey(createUuid()); setSupplierId(event.target.value); }}
-                        >
-                          <option value="">اختر المورد</option>
-                          {activeSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-                        </Select>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <Select
+                            id="purchase-supplier"
+                            className="min-w-0 flex-1"
+                            value={supplierId}
+                            disabled={commandPending}
+                            onChange={(event) => { if (commandPending) return; setIdempotencyKey(createUuid()); setSupplierId(event.target.value); }}
+                          >
+                            <option value="">اختر المورد</option>
+                            {activeSuppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                          </Select>
+                          <Button variant="secondary" size="sm" disabled={commandPending} onClick={openNewSupplier}>
+                            مورد جديد
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="space-y-3">

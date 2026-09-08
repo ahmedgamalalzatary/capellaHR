@@ -2,10 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarPlus, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
@@ -35,16 +35,42 @@ const clientName = (booking: BookingDto) => (
 const statusLabel = {
   booked: 'محجوز', arrived: 'وصل', converted: 'تم البيع', cancelled: 'ملغي', no_show: 'لم يحضر',
 } as const;
+const statusTone = {
+  booked: 'warning',
+  arrived: 'success',
+  converted: 'success',
+  cancelled: 'danger',
+  no_show: 'danger',
+} as const;
+
+const cairoToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+const dayHeading = (value: string) => new Intl.DateTimeFormat('ar-EG', {
+  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+}).format(new Date(`${value}T00:00:00Z`));
 
 export function BookingsView({ initialDate }: { initialDate: string }) {
-  const router = useRouter();
   const cache = useQueryClient();
   const session = useSession();
   const actor = session.data?.actor;
   const [date, setDate] = useState(initialDate);
   const [creating, setCreating] = useState(false);
-  const [adminBranchId, setAdminBranchId] = useState<number>();
+  const [adminBranchId, setAdminBranchId] = useState<number>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
   const [error, setError] = useState<string>();
+  const [confirming, setConfirming] = useState<{ id: number; next: 'cancelled' | 'no_show' } | null>(null);
+
+  useEffect(() => {
+    if (actor?.type !== 'admin') return;
+    if (adminBranchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(adminBranchId));
+  }, [adminBranchId, actor?.type]);
   const branchId = actor?.type === 'admin' ? adminBranchId : undefined;
   const branches = useQuery({
     queryKey: ['booking-branches'],
@@ -65,9 +91,8 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     mutationFn: ({ id, next }: { id: number; next: 'arrived' | 'booked' | 'cancelled' | 'no_show' }) => (
       updateBookingStatus(id, { status: next, ...(branchId === undefined ? {} : { branchId }) })
     ),
-    onSuccess: async (_booking, command) => {
+    onSuccess: async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
-      if (command.next === 'arrived') router.push(`/sales?bookingId=${command.id}`);
     },
     onError: (cause) => setError(cause instanceof ApiError ? cause.message : 'تعذر تحديث الحجز.'),
   });
@@ -102,7 +127,12 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       <Button variant="secondary" aria-label="اليوم السابق" onClick={() => setDate(moveDate(date, -1))}>
         <ChevronRight className="size-4" />
       </Button>
-      <h2 className="tabular text-lg font-semibold">{date}</h2>
+      <div className="min-w-0 text-center">
+        <h2 className="text-lg font-semibold">{dayHeading(date)}</h2>
+        <Button variant="ghost" size="sm" className="mt-1" onClick={() => setDate(cairoToday())}>
+          اليوم
+        </Button>
+      </div>
       <Button variant="secondary" aria-label="اليوم التالي" onClick={() => setDate(moveDate(date, 1))}>
         <ChevronLeft className="size-4" />
       </Button>
@@ -118,7 +148,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             <p className="tabular w-20 text-xl font-semibold">{time(booking.scheduledAt)}</p>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{clientName(booking)}</h3><Badge>{statusLabel[booking.status]}</Badge></div>
+              <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{clientName(booking)}</h3><Badge variant={statusTone[booking.status]}>{statusLabel[booking.status]}</Badge></div>
               <p className="text-sm text-muted">{booking.services.map(({ serviceName }) => serviceName).join('، ')}</p>
               {booking.services.some(({ preferredEmployee }) => preferredEmployee) ? <p className="text-sm text-muted">مع {booking.services.map(({ preferredEmployee }) => preferredEmployee?.name).filter(Boolean).join('، ')}</p> : null}
               {(booking.status === 'booked' || booking.status === 'arrived') ? booking.services.map((service) => <label key={service.serviceId} className="mt-2 flex items-center gap-2 text-sm">
@@ -133,15 +163,38 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
             <div className="flex flex-wrap gap-2">
               {booking.status === 'booked' ? <>
                 <Button disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'arrived' })}>وصل العميل</Button>
-                {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
+                {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
               </> : null}
-              {booking.status === 'arrived' ? <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button> : null}
-              {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}
+              {booking.status === 'arrived' ? <>
+                <Link
+                  href={`/sales?bookingId=${booking.id}`}
+                  className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper"
+                >
+                  بدء البيع
+                </Link>
+                <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button>
+              </> : null}
+              {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}
             </div>
           </CardContent>
         </Card></div>)}</div>}
     {creating ? <BookingForm {...(branchId === undefined ? {} : { branchId })} onClose={() => setCreating(false)} onSaved={async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
     }} /> : null}
+    {confirming ? (
+      <ConfirmDialog
+        title={confirming.next === 'cancelled' ? 'إلغاء الموعد' : 'تسجيل عدم الحضور'}
+        description={confirming.next === 'cancelled'
+          ? 'سيُلغى هذا الموعد ولن يظهر كحجز قائم.'
+          : 'سيُسجَّل أن العميل لم يحضر.'}
+        confirmLabel={confirming.next === 'cancelled' ? 'تأكيد الإلغاء' : 'تأكيد عدم الحضور'}
+        tone="danger"
+        pending={status.isPending}
+        onConfirm={() => {
+          status.mutate(confirming, { onSettled: () => setConfirming(null) });
+        }}
+        onCancel={() => setConfirming(null)}
+      />
+    ) : null}
   </section>;
 }

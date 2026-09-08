@@ -7,9 +7,9 @@ import { Select } from '@/components/form/select';
 
 import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 
-import { errorMessage, StepTitle } from './sale-primitives';
+import { errorMessage } from './sale-primitives';
 
-/** Step 2: which cashier on the branch roster is ringing the sale up. */
+/** Which cashier on the branch roster is ringing the sale up. */
 export function SaleCashierStep({
   seller,
   setSeller,
@@ -28,7 +28,7 @@ export function SaleCashierStep({
 }) {
   return (
     <Card className="shadow-card">
-      <CardHeader><CardTitle><StepTitle step={2} label="الكاشير" /></CardTitle></CardHeader>
+      <CardHeader><CardTitle>الكاشير</CardTitle></CardHeader>
       <CardContent className="p-5">
         <div className="space-y-1.5">
           <Label htmlFor="sale-seller">الكاشير</Label>

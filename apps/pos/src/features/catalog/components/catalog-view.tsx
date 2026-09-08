@@ -2,7 +2,6 @@
 
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Percent, Plus, Search } from 'lucide-react';
-import { useState } from 'react';
 
 import {
   Badge,
@@ -13,8 +12,10 @@ import {
   EmptyState,
   Input,
   Label,
+  Modal,
   cn,
 } from '@capella/ui';
+import { useEffect, useState } from 'react';
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { LoadingState } from '@/components/feedback/loading-state';
@@ -60,7 +61,12 @@ export function CatalogView() {
   const commandPending = useIsMutating() > 0;
   const isAdmin = session.data?.actor.type === 'admin';
 
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>();
+  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
   const [tab, setTab] = useState<Tab>('categories');
   const [categorySearch, setCategorySearch] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
@@ -128,14 +134,22 @@ export function CatalogView() {
 
   const categories = categoriesQuery.data ?? [];
   const services = servicesQuery.data ?? [];
-  const hasActiveSearch = trimmedCategorySearch.length > 0 || trimmedServiceSearch.length > 0;
-  const visibleTabs = isAdmin || hasActiveSearch || !categoriesQuery.isSuccess || !servicesQuery.isSuccess
-    ? tabs
-    : tabs.filter((entry) => entry.key === 'categories' ? categories.length > 0 : services.length > 0);
+  const visibleTabs = tabs;
 
-  // Keep the selected tab valid after branch data loads or changes.
-  const firstVisible = visibleTabs[0]?.key;
-  if (firstVisible && !visibleTabs.some((entry) => entry.key === tab)) setTab(firstVisible);
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (selectedBranchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
+  }, [isAdmin, selectedBranchId]);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(undefined), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
 
   return (
     <section className="space-y-6">
@@ -209,19 +223,23 @@ export function CatalogView() {
           {tab === 'categories' ? (
             <div className="space-y-4">
               {creatingCategory ? (
-                <CategoryForm
-                  {...branchScope}
-                  onDone={() => { setCreatingCategory(false); setSuccessMessage('تم حفظ التصنيف.'); }}
-                  onCancel={() => setCreatingCategory(false)}
-                />
+                <Modal title="إضافة تصنيف" className="max-h-[90dvh] overflow-y-auto" onClose={() => !commandPending && setCreatingCategory(false)}>
+                  <CategoryForm
+                    {...branchScope}
+                    onDone={() => { setCreatingCategory(false); setSuccessMessage('تم حفظ التصنيف.'); }}
+                    onCancel={() => setCreatingCategory(false)}
+                  />
+                </Modal>
               ) : null}
               {editingCategory ? (
-                <CategoryForm
-                  category={editingCategory}
-                  {...branchScope}
-                  onDone={() => { setEditingCategory(null); setSuccessMessage('تم حفظ التصنيف.'); }}
-                  onCancel={() => setEditingCategory(null)}
-                />
+                <Modal title="تعديل تصنيف" className="max-h-[90dvh] overflow-y-auto" onClose={() => !commandPending && setEditingCategory(null)}>
+                  <CategoryForm
+                    category={editingCategory}
+                    {...branchScope}
+                    onDone={() => { setEditingCategory(null); setSuccessMessage('تم حفظ التصنيف.'); }}
+                    onCancel={() => setEditingCategory(null)}
+                  />
+                </Modal>
               ) : null}
 
               <Card className="overflow-hidden shadow-card">
@@ -269,6 +287,14 @@ export function CatalogView() {
                   <EmptyState
                     title={trimmedCategorySearch ? 'لا يوجد تصنيف مطابق' : 'لا توجد تصنيفات بعد'}
                     description={trimmedCategorySearch ? 'جرب اسمًا آخر.' : 'ابدأ بإضافة أول تصنيف.'}
+                    action={
+                      trimmedCategorySearch ? undefined : (
+                        <Button size="sm" disabled={commandPending} onClick={() => { setCreatingCategory(true); setEditingCategory(null); }}>
+                          <Plus className="size-4" aria-hidden />
+                          إضافة أول تصنيف
+                        </Button>
+                      )
+                    }
                   />
                 ) : (
                   <DataTable>
@@ -360,7 +386,7 @@ export function CatalogView() {
                   description={
                     removeCategory.isError
                       ? serverErrorMessage(removeCategory.error)
-                      : 'لا يمكن حذف تصنيف استُخدم من قبل؛ يمكن إيقافه بدلًا من ذلك.'
+                      : 'سيُحذف التصنيف إن لم يكن مرتبطًا بخدمات. التصنيف المستخدَم يُوقَف بدل الحذف.'
                   }
                   confirmLabel="تأكيد الحذف"
                   tone="danger"
@@ -377,21 +403,25 @@ export function CatalogView() {
           ) : (
             <div className="space-y-4">
               {creatingService ? (
-                <ServiceForm
-                  categories={categories}
-                  {...branchScope}
-                  onDone={() => { setCreatingService(false); setSuccessMessage('تم حفظ الخدمة.'); }}
-                  onCancel={() => setCreatingService(false)}
-                />
+                <Modal title="إضافة خدمة" className="max-h-[90dvh] overflow-y-auto" onClose={() => !commandPending && setCreatingService(false)}>
+                  <ServiceForm
+                    categories={categories}
+                    {...branchScope}
+                    onDone={() => { setCreatingService(false); setSuccessMessage('تم حفظ الخدمة.'); }}
+                    onCancel={() => setCreatingService(false)}
+                  />
+                </Modal>
               ) : null}
               {editingService ? (
-                <ServiceForm
-                  service={editingService}
-                  categories={categories}
-                  {...branchScope}
-                  onDone={() => { setEditingService(null); setSuccessMessage('تم حفظ الخدمة.'); }}
-                  onCancel={() => setEditingService(null)}
-                />
+                <Modal title="تعديل خدمة" className="max-h-[90dvh] overflow-y-auto" onClose={() => !commandPending && setEditingService(null)}>
+                  <ServiceForm
+                    service={editingService}
+                    categories={categories}
+                    {...branchScope}
+                    onDone={() => { setEditingService(null); setSuccessMessage('تم حفظ الخدمة.'); }}
+                    onCancel={() => setEditingService(null)}
+                  />
+                </Modal>
               ) : null}
 
               <Card className="shadow-card">
@@ -438,7 +468,23 @@ export function CatalogView() {
                 ) : services.length === 0 ? (
                   <EmptyState
                     title={trimmedServiceSearch ? 'لا توجد خدمة مطابقة' : 'لا توجد خدمات بعد'}
-                    description={trimmedServiceSearch ? 'جرب اسمًا آخر.' : 'ابدأ بإضافة أول خدمة.'}
+                    description={
+                      trimmedServiceSearch
+                        ? 'جرب اسمًا آخر.'
+                        : categories.length === 0
+                          ? 'أضف تصنيفًا قبل إضافة خدمة.'
+                          : 'ابدأ بإضافة أول خدمة.'
+                    }
+                    action={
+                      trimmedServiceSearch ? undefined : categories.length === 0 ? (
+                        <Button size="sm" onClick={() => setTab('categories')}>أضف تصنيفًا أولًا</Button>
+                      ) : (
+                        <Button size="sm" disabled={commandPending} onClick={() => { setCreatingService(true); setEditingService(null); }}>
+                          <Plus className="size-4" aria-hidden />
+                          إضافة أول خدمة
+                        </Button>
+                      )
+                    }
                   />
                 ) : (
                   <DataTable>

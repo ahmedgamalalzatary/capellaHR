@@ -48,7 +48,7 @@ test('admin creates and edits a cashier with employees in one form', async ({ pa
   await page.getByRole('button', { name: 'إضافة حساب كاشير' }).click();
   await dialog.getByLabel('الفرع').selectOption('4');
   await dialog.getByLabel('اسم المستخدم').fill('maadi');
-  await dialog.getByLabel('كلمة المرور', { exact: true }).fill('secret');
+  await dialog.locator('#cashier-password').fill('secret');
   await dialog.getByRole('button', { name: 'حفظ الحساب' }).click();
   await expect(dialog).toHaveCount(0);
   expect(saved).toMatchObject({ mode: 'create', branchId: 4, username: 'maadi', password: 'secret', employeeIds: [7, 9] });

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -254,19 +254,15 @@ export function FixedAssetsView() {
           </Card>
 
           {deleting ? (
-            <Card className="shadow-card">
-              <CardContent className="space-y-3 p-4 sm:p-5">
-                <SectionHeading
-                  title={`حذف ${deleting.name}`}
-                  description="سيُحذف السطر نهائيًا من السجل ولا يمكن استرجاعه."
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="danger" disabled={commandPending} onClick={() => remove.mutate()}>تأكيد الحذف</Button>
-                  <Button variant="ghost" disabled={commandPending} onClick={() => { setDeleting(null); remove.reset(); }}>إلغاء</Button>
-                </div>
-                {remove.isError ? <FieldError>{errorText(remove.error)}</FieldError> : null}
-              </CardContent>
-            </Card>
+            <ConfirmDialog
+              title={`حذف ${deleting.name}`}
+              description={remove.isError ? errorText(remove.error) : 'سيُحذف السطر نهائيًا من السجل ولا يمكن استرجاعه.'}
+              confirmLabel="تأكيد الحذف"
+              tone="danger"
+              pending={commandPending}
+              onConfirm={() => remove.mutate()}
+              onCancel={() => { if (!commandPending) { setDeleting(null); remove.reset(); } }}
+            />
           ) : null}
 
           <Card className="overflow-hidden shadow-card">

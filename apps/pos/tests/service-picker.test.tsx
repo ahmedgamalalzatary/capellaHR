@@ -134,6 +134,24 @@ describe('ServicePicker', () => {
     expect(await screen.findByText('صبغة')).toBeDefined();
   });
 
+  test('loads the next page of services when more exist', async () => {
+    mocks.listServices.mockImplementation(async (params: { page?: number }) => {
+      if (params.page === 2) {
+        return {
+          items: [{ ...colouring, id: 6, name: 'قص' }],
+          meta: { page: 2, pageSize: 50, total: 51, totalPages: 2 },
+        };
+      }
+      return {
+        items: [colouring],
+        meta: { page: 1, pageSize: 50, total: 51, totalPages: 2 },
+      };
+    });
+    renderPicker();
+    fireEvent.click(await screen.findByRole('button', { name: 'تحميل المزيد' }));
+    expect(await screen.findByText('قص')).toBeDefined();
+  });
+
   test('hands the chosen service back with its exact price', async () => {
     const onSelect = vi.fn();
     renderPicker(onSelect);

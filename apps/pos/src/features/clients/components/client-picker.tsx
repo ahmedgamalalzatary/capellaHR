@@ -18,8 +18,8 @@ const serverErrorMessage = (error: unknown): string | null => {
   return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
-/** Below this the query stays idle, so one or two digits do not list the branch. */
-const MIN_SEARCH_LENGTH = 3;
+/** One character is enough; the till should not wait for a full phone number. */
+const MIN_SEARCH_LENGTH = 1;
 
 /**
  * Selects the mandatory client for a sale: search by phone or name, pick a
@@ -85,11 +85,17 @@ export function ClientPicker({
           aria-label="ابحث عن العميل برقم الهاتف أو الاسم"
           placeholder="رقم الهاتف أو الاسم"
           className="ps-9"
-          inputMode="tel"
           value={search}
           onChange={(event) => { setSearch(event.target.value); setCreating(false); }}
         />
       </div>
+
+      {!creating ? (
+        <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
+          <UserPlus className="size-4" aria-hidden />
+          إضافة عميل جديد
+        </Button>
+      ) : null}
 
       {creating ? (
         <ClientForm
@@ -102,7 +108,7 @@ export function ClientPicker({
 
       {!enabled ? (
         <p className="px-1 text-[13px] text-muted">
-          اكتب 3 أرقام أو حروف على الأقل للبحث.
+          اكتب حرفًا أو رقمًا للبحث.
         </p>
       ) : clientsQuery.isPending ? (
         <p className="px-1 text-[13px] text-muted">جارٍ البحث…</p>
@@ -120,14 +126,6 @@ export function ClientPicker({
         <EmptyState
           title="لا يوجد عميل بهذا الرقم"
           description="لا يمكن إتمام بيع بدون عميل، أضف العميل الآن."
-          action={
-            !creating ? (
-              <Button size="sm" onClick={() => setCreating(true)}>
-                <UserPlus className="size-4" aria-hidden />
-                إضافة عميل جديد
-              </Button>
-            ) : undefined
-          }
         />
       ) : (
         <Card className="scroll-thin max-h-72 overflow-y-auto shadow-card">

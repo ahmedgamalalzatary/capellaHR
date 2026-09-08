@@ -225,7 +225,6 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
   await page.getByLabel('ابحث عن العميل برقم الهاتف أو الاسم').fill('منى');
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
-  await page.getByRole('button', { name: 'تأكيد البيع' }).click();
 
   await expect(page.getByRole('heading', { name: 'تم حفظ الفاتورة' })).toBeVisible();
   expect(attempts.size).toBe(2);

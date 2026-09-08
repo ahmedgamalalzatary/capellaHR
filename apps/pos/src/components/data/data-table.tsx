@@ -50,6 +50,7 @@ export function TH({
       className={cn(
         'whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide text-muted',
         numeric ? 'text-start' : 'text-start',
+        pinned && 'sticky end-0 z-10 bg-surface/95',
         className,
       )}
       {...props}
@@ -80,6 +81,7 @@ export function TD({
       className={cn(
         'px-2 py-2.5 align-middle',
         numeric ? 'tabular text-start' : 'text-start',
+        pinned && 'sticky end-0 z-10 bg-paper group-hover:bg-surface/95',
         className,
       )}
       {...props}

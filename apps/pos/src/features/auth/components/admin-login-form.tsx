@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { Button, Card, CardContent, Field, Input } from '@capella/ui';
@@ -16,6 +17,7 @@ import { adminLoginFormSchema, type AdminLoginFormValues } from '../schemas/logi
 export function AdminLoginForm() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -62,13 +64,22 @@ export function AdminLoginForm() {
           </Field>
 
           <Field label="كلمة المرور" htmlFor="admin-password" required>
-            <Input
-              id="admin-password"
-              type="password"
-              autoComplete="current-password"
-              aria-invalid={errors.password ? true : undefined}
-              {...register('password')}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="admin-password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                aria-invalid={errors.password ? true : undefined}
+                {...register('password')}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? 'إخفاء' : 'إظهار'}
+              </Button>
+            </div>
           </Field>
 
           {formError ? (

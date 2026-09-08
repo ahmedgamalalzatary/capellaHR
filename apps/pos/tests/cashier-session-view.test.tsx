@@ -77,6 +77,7 @@ function renderView() {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.getSession.mockResolvedValue({
     actor: { type: 'cashier', accountId: 8, employeeId: 7 },

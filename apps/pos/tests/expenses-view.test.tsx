@@ -25,7 +25,7 @@ import { ExpensesView } from '../src/features/expenses';
 import { ApiError } from '../src/lib/api/client';
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-beforeEach(() => { actor.current = 'admin'; });
+beforeEach(() => { actor.current = 'admin'; sessionStorage.clear(); });
 const mount = () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={queryClient}><ExpensesView /></QueryClientProvider>);

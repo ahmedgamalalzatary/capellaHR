@@ -86,6 +86,7 @@ const pickBranch = async () => {
 const openServicesTab = () => fireEvent.click(screen.getByRole('tab', { name: 'الخدمات' }));
 
 beforeEach(() => {
+    sessionStorage.clear();
   mocks.getSession.mockResolvedValue({ actor: { type: 'admin', accountId: 1 } });
   mocks.listCatalogBranches.mockResolvedValue(pageOf([{ id: 3, name: 'الفرع الرئيسي' }]));
   mocks.listCategories.mockResolvedValue(pageOf([hairCategory]));
@@ -177,6 +178,8 @@ describe('CatalogView categories', () => {
     await pickBranch();
 
     expect(await screen.findByText('لا توجد تصنيفات بعد')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة أول تصنيف' }));
+    expect(screen.getByRole('dialog', { name: 'إضافة تصنيف' })).toBeDefined();
   });
 
   test('distinguishes an empty search result from an empty catalog', async () => {
@@ -352,6 +355,19 @@ describe('CatalogView services', () => {
     openServicesTab();
 
     expect(await screen.findByText('لا توجد خدمات بعد')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة أول خدمة' }));
+    expect(screen.getByRole('dialog', { name: 'إضافة خدمة' })).toBeDefined();
+  });
+
+  test('sends an empty service list to categories when none exist', async () => {
+    mocks.listCategories.mockResolvedValue(pageOf([]));
+    mocks.listServices.mockResolvedValue(pageOf([]));
+    renderView();
+    await pickBranch();
+    openServicesTab();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'أضف تصنيفًا أولًا' }));
+    expect(screen.getByRole('tab', { name: 'التصنيفات' }).getAttribute('aria-selected')).toBe('true');
   });
 
   test('surfaces the Arabic error when services fail to load', async () => {
@@ -415,6 +431,7 @@ describe('CatalogView services', () => {
 
     expect(screen.getByLabelText(/^السعر/)).toHaveProperty('disabled', true);
     fireEvent.click(screen.getByRole('button', { name: 'حذف السعر الثابت' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد حذف السعر' }));
 
     await waitFor(() => expect(mocks.updateService).toHaveBeenCalledWith(5, {
       price: null,

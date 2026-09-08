@@ -2,11 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Pencil, Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
-
-import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
+import { Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Select } from '@/components/form/select';
@@ -24,16 +22,15 @@ const serverErrorMessage = (error: unknown): string | null => {
   return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
-const columns = [
-  { key: 'name', label: 'اسم العميل' },
-  { key: 'phone', label: 'رقم الهاتف' },
-  { key: 'actions', label: 'إجراءات' },
-] as const;
-
 export function ClientsView() {
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
-  const [selectedBranchId, setSelectedBranchId] = useState<number>();
+  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -66,6 +63,17 @@ export function ClientsView() {
   const items = clientsQuery.data?.items ?? [];
   const meta = clientsQuery.data?.meta;
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (selectedBranchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
+  }, [isAdmin, selectedBranchId]);
+
+  const openCreate = () => { setCreateOpen(true); setEditing(null); };
+
   return (
     <section className="space-y-6">
       <PageHeader
@@ -75,7 +83,7 @@ export function ClientsView() {
           <Button
             size="sm"
             disabled={!scopeReady || formPending}
-            onClick={() => { setCreateOpen(true); setEditing(null); }}
+            onClick={openCreate}
           >
             <Plus className="size-4" aria-hidden />
             إضافة عميل
@@ -122,17 +130,21 @@ export function ClientsView() {
       ) : null}
 
       {createOpen ? (
-        <ClientForm {...branchScope} onDone={() => setCreateOpen(false)} onCancel={() => setCreateOpen(false)} onPendingChange={setFormPending} />
+        <Modal title="إضافة عميل" className="max-h-[90dvh] overflow-y-auto" onClose={() => !formPending && setCreateOpen(false)}>
+          <ClientForm {...branchScope} onDone={() => setCreateOpen(false)} onCancel={() => setCreateOpen(false)} onPendingChange={setFormPending} />
+        </Modal>
       ) : null}
 
       {editing ? (
-        <ClientForm
-          client={editing}
-          {...branchScope}
-          onDone={() => setEditing(null)}
-          onCancel={() => setEditing(null)}
-          onPendingChange={setFormPending}
-        />
+        <Modal title="تعديل عميل" className="max-h-[90dvh] overflow-y-auto" onClose={() => !formPending && setEditing(null)}>
+          <ClientForm
+            client={editing}
+            {...branchScope}
+            onDone={() => setEditing(null)}
+            onCancel={() => setEditing(null)}
+            onPendingChange={setFormPending}
+          />
+        </Modal>
       ) : null}
 
       <Card className="overflow-hidden shadow-card">
@@ -171,34 +183,34 @@ export function ClientsView() {
           <EmptyState
             title={trimmedSearch ? 'لا يوجد عميل مطابق' : 'لا يوجد عملاء بعد'}
             description={trimmedSearch ? 'جرب رقمًا أو اسمًا آخر.' : 'ابدأ بإضافة أول عميل.'}
+            action={
+              trimmedSearch ? undefined : (
+                <Button size="sm" disabled={formPending} onClick={openCreate}>
+                  <Plus className="size-4" aria-hidden />
+                  إضافة أول عميل
+                </Button>
+              )
+            }
           />
         ) : (
-          <DataTable>
-            <THead>
-              {columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
-            </THead>
-            <tbody>
-              {items.map((client) => (
-                <TR key={client.id}>
-                  <TD className="font-medium">{client.fullName ?? <span className="text-muted">بدون اسم</span>}</TD>
-                  <TD className="tabular text-muted">{client.phone ?? '—'}</TD>
-                  <TD>
-                    <RowActions>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={formPending}
-                        onClick={() => { setEditing(client); setCreateOpen(false); }}
-                      >
-                        <Pencil className="size-4" aria-hidden />
-                        تعديل
-                      </Button>
-                    </RowActions>
-                  </TD>
-                </TR>
-              ))}
-            </tbody>
-          </DataTable>
+          <ul className="divide-y divide-line/70">
+            {items.map((client) => (
+              <li key={client.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                <div className="min-w-0">
+                  <p className="font-medium">{client.fullName ?? <span className="text-muted">بدون اسم</span>}</p>
+                  <p className="tabular text-[13px] text-muted">{client.phone ?? '—'}</p>
+                </div>
+                <Button
+                  variant="secondary"
+                  disabled={formPending}
+                  onClick={() => { setEditing(client); setCreateOpen(false); }}
+                >
+                  <Pencil className="size-4" aria-hidden />
+                  تعديل
+                </Button>
+              </li>
+            ))}
+          </ul>
         )}
 
         {meta && meta.totalPages > 1 ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
@@ -40,7 +40,12 @@ export function ExpensesView() {
    */
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [branchId, setBranchId] = useState<number>();
+  const [branchId, setBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) ? parsed : undefined;
+  });
   const [name, setName] = useState('');
   const [amount, setAmount] = useState(''); const [expenseDate, setExpenseDate] = useState(todayInCairo()); const [description, setDescription] = useState('');
   const [search, setSearch] = useState(''); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState(''); const [status, setStatus] = useState<'' | 'active' | 'corrected'>(''); const [page, setPage] = useState(1);
@@ -65,6 +70,16 @@ export function ExpensesView() {
     // retires the stored copy.
     name !== '' || amount !== '' || description !== '',
   );
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (branchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
+    else sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
+  }, [isAdmin, branchId]);
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(undefined), 4000);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
   const canSubmit = scopeReady && name.trim() && amount && expenseDate;
   const commandPending = create.isPending || correction.isPending;
   const amountLabel = correcting ? 'المبلغ الصحيح' : 'المبلغ';

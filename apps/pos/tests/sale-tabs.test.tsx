@@ -232,17 +232,13 @@ describe('sales parked side by side at one till', () => {
     vi.restoreAllMocks();
   });
 
-  it('stays out of the way until there is a sale worth parking', async () => {
+  it('keeps the parked-sale bar on the till even before the first ticket', async () => {
     renderView();
-    const pickClient = await screen.findByRole('button', { name: 'اختر العميل' });
-    expect(screen.queryByRole('button', { name: 'بيع آخر' })).toBeNull();
-
-    fireEvent.click(pickClient);
-
     expect(await screen.findByRole('button', { name: 'بيع آخر' })).toBeDefined();
+    expect(screen.getByRole('navigation', { name: 'المبيعات المفتوحة' })).toBeDefined();
   });
 
-  it('sends no parked-sale bar to a counter that has parked nothing', () => {
+  it('renders the parked-sale bar even when nothing is parked yet', () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(['erp-sales', 'cashier-session', null], {
       id: 13, branchId: 2, openedByAccountId: 3,
@@ -252,7 +248,7 @@ describe('sales parked side by side at one till', () => {
       <QueryClientProvider client={queryClient}><SalesView /></QueryClientProvider>,
     );
 
-    expect(html).not.toContain('بيع آخر');
+    expect(html).toContain('بيع آخر');
   });
 
   it('parks the sale in progress and opens an empty one beside it', async () => {

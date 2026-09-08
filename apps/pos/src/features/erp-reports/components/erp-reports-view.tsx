@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, FileText, Printer, RotateCcw, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   erpTabReportTypes,
@@ -264,7 +264,12 @@ export function ErpReportsView() {
   const queryClient = useQueryClient();
   const dates = useMemo(() => initialDates(), []);
   const [reportType, setReportType] = useState<ErpTabReportType>('erp-sales');
-  const [branchInput, setBranchInput] = useState<number>();
+  const [branchInput, setBranchInput] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) ? parsed : undefined;
+  });
   const [dateFromInput, setDateFromInput] = useState(dates.dateFrom);
   const [dateToInput, setDateToInput] = useState(dates.dateTo);
   const [searchInput, setSearchInput] = useState('');
@@ -277,6 +282,10 @@ export function ErpReportsView() {
     queryKey: ['erp-reports', 'branches'],
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
   });
+  useEffect(() => {
+    if (branchInput === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
+    else sessionStorage.setItem('capella:pos-admin-branch', String(branchInput));
+  }, [branchInput]);
   const params = { ...filters, page, pageSize: 20 };
   const report = useQuery({
     queryKey: erpReportQueryKeys.view(reportType, params),
@@ -319,17 +328,29 @@ export function ErpReportsView() {
         description="عرض التقارير المالية والتشغيلية وإدارة ملفات PDF."
       />
 
-      <div role="group" aria-label="أنواع تقارير ERP" className="flex flex-wrap gap-1.5">
-        {erpTabReportTypes.map((type) => (
-          <Button
-            key={type}
-            size="sm"
-            variant={type === reportType ? 'primary' : 'secondary'}
-            aria-pressed={type === reportType}
-            onClick={() => { setReportType(type); setPage(1); setSelectedIds(new Set()); }}
-          >
-            {tabLabels[type]}
-          </Button>
+      <div role="group" aria-label="أنواع تقارير ERP" className="space-y-3">
+        {([
+          ['مبيعات', ['erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products', 'erp-employees', 'erp-commissions', 'erp-discounts', 'erp-taxes']],
+          ['عكس وقيود', ['erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases']],
+          ['مخزون وأرباح', ['erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables']],
+          ['أرضية الصالون', ['erp-service-queue', 'erp-service-completions', 'erp-consumable-usage', 'erp-consumable-ledger', 'erp-service-exceptions']],
+        ] as const).map(([group, types]) => (
+          <fieldset key={group} className="space-y-1.5">
+            <legend className="text-[12px] font-medium text-muted">{group}</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {types.map((type) => (
+                <Button
+                  key={type}
+                  size="sm"
+                  variant={type === reportType ? 'primary' : 'secondary'}
+                  aria-pressed={type === reportType}
+                  onClick={() => { setReportType(type); setPage(1); setSelectedIds(new Set()); }}
+                >
+                  {tabLabels[type]}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
         ))}
       </div>
 

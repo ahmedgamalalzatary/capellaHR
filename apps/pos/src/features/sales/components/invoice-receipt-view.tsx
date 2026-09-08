@@ -175,13 +175,15 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">تعذر إكمال تصدير PDF. حاول مرة أخرى.</p>
       : null}
     {printError ? <p role="alert" data-print-controls className="mx-auto w-full max-w-2xl rounded-control border border-danger/20 bg-danger-soft p-3 text-[13px] text-danger">{printError}</p> : null}
-    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} /></CardContent></Card>
     {query.data.totals.settlementStatus === 'open' ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div>
             <p className="text-sm font-medium">رصيد مستحق على العميل</p>
             <p className="text-xl font-semibold tabular">{query.data.totals.balanceDue} ج.م</p>
+            {!currentCashierSession.data ? (
+              <p className="mt-1 text-[13px] text-warning">افتح وردية لتسجيل دفعة</p>
+            ) : null}
           </div>
           <Button
             disabled={!currentCashierSession.data}
@@ -244,9 +246,10 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         }}
       />
     )}
-    <InvoiceReversalControls invoice={query.data} showRefundAction={false} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
+    <InvoiceReversalControls invoice={query.data} showRefundAction {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
       void invalidateErpCaches(queryClient, 'reversal');
     }} />
+    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} /></CardContent></Card>
   </section>;
 }

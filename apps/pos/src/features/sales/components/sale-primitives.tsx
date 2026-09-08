@@ -1,6 +1,6 @@
 /**
- * The small shared pieces of the sale flow: error text, payment methods, the
- * numbered step marker, the basket line shape, and exact cents arithmetic.
+ * The small shared pieces of the sale flow: error text, payment methods,
+ * checkout blockers, the basket line shape, and exact cents arithmetic.
  * One module because each part is a handful of lines and they always travel together.
  */
 import type { CompleteSaleInput, PaymentMethod } from '@capella/contracts';
@@ -23,19 +23,37 @@ export const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
   { method: 'vodafone_cash', label: 'فودافون كاش' },
 ];
 
-/** Numbered step marker shared by the five sale panels. */
-export function StepTitle({ step, label }: { step: number; label: string }) {
-  return (
-    <span className="flex items-center gap-2">
-      <span
-        aria-hidden
-        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-paper"
-      >
-        {step}
-      </span>
-      {label}
-    </span>
-  );
+export type SaleCheckoutState = {
+  hasClient: boolean;
+  sellerOnRoster: boolean;
+  hasLines: boolean;
+  serviceLinesAssigned: boolean;
+  servicePricesValid: boolean;
+  quoteReady: boolean;
+  remaining: bigint | null;
+  hasServiceLines: boolean;
+};
+
+/** Why Complete is disabled. Empty means the till can post. */
+export function saleCheckoutBlockers(state: SaleCheckoutState): string[] {
+  const blockers: string[] = [];
+  if (!state.hasClient) blockers.push('اختر العميل');
+  if (!state.sellerOnRoster) blockers.push('اختر الكاشير');
+  if (!state.hasLines) blockers.push('أضف خدمة أو منتجًا');
+  if (state.hasLines && !state.servicePricesValid) {
+    blockers.push('أدخل سعرًا صالحًا لكل خدمة مفتوحة السعر');
+  }
+  if (state.hasLines && !state.serviceLinesAssigned) blockers.push('عيّن موظفًا لكل خدمة');
+  if (state.hasLines && state.servicePricesValid && !state.quoteReady) {
+    blockers.push('انتظر حساب الإجمالي');
+  }
+  if (state.remaining !== null && state.remaining < BigInt(0)) {
+    blockers.push('المدفوع أكبر من الإجمالي');
+  }
+  if (state.hasServiceLines && state.remaining !== null && state.remaining > BigInt(0)) {
+    blockers.push('سدد إجمالي الخدمات بالكامل');
+  }
+  return blockers;
 }
 
 export type Line = {

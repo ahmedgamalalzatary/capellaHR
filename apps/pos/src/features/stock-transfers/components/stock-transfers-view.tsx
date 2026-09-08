@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
@@ -10,6 +10,7 @@ import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
+import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
@@ -65,7 +66,12 @@ export function StockTransfersView() {
     enabled: isCashier,
   });
   const cashierBranchId = isCashier ? cashierSession.data?.branchId : undefined;
-  const [sourceBranchId, setSourceBranchId] = useState<number>();
+  const [sourceBranchId, setSourceBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) ? parsed : undefined;
+  });
   const [destinationBranchId, setDestinationBranchId] = useState<number>();
   const [lines, setLines] = useState<TransferLine[]>([emptyLine()]);
   const [note, setNote] = useState('');
@@ -73,8 +79,19 @@ export function StockTransfersView() {
   // must land on the transfer already posted rather than move the stock again.
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [formError, setFormError] = useState<string>();
+  const [successMessage, setSuccessMessage] = useState<string>();
   const [page, setPage] = useState(1);
   const effectiveSourceBranchId = cashierBranchId ?? sourceBranchId;
+  useEffect(() => {
+    if (isCashier) return;
+    if (sourceBranchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
+    else sessionStorage.setItem('capella:pos-admin-branch', String(sourceBranchId));
+  }, [isCashier, sourceBranchId]);
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(undefined), 4000);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
 
   const branches = useQuery({
     queryKey: ['erp-stock-transfers', 'branches'],
@@ -119,6 +136,7 @@ export function StockTransfersView() {
       setNote('');
       setIdempotencyKey(crypto.randomUUID());
       setFormError(undefined);
+      setSuccessMessage('تم تنفيذ التحويل.');
       await queryClient.invalidateQueries({ queryKey: stockTransferQueryKeys.all });
     },
   });
@@ -155,6 +173,7 @@ export function StockTransfersView() {
         title="تحويل المنتجات بين الفروع"
         description="تجارة داخلية: تنتقل المنتجات بسعر التكلفة كبيع من الفرع المُرسِل إلى الفرع المستلم، دون بائع ودون عمولة."
       />
+      {successMessage ? <SuccessState message={successMessage} /> : null}
 
       <Card className="shadow-card">
         <CardContent className="space-y-4 p-4 sm:p-5">

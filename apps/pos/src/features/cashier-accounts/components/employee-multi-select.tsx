@@ -23,6 +23,7 @@ export function EmployeeMultiSelect({ employees, selected, onChange, disabled }:
       if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
     }} onKeyDown={(event) => {
       if (event.key === 'Escape' && open) {
+        event.preventDefault();
         event.stopPropagation();
         setOpen(false);
         trigger.current?.focus();

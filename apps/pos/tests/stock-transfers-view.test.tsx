@@ -90,6 +90,7 @@ const fillTransfer = async () => {
 };
 
 beforeEach(() => {
+  sessionStorage.clear();
   mocks.actor.current = { type: 'admin' };
   mocks.currentSession.mockResolvedValue(null);
   mocks.branches.mockResolvedValue(page([

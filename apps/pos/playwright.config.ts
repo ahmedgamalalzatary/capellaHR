@@ -18,6 +18,9 @@ export default defineConfig({
     baseURL,
     trace: 'retain-on-failure',
     ...devices['Desktop Chrome'],
+    ...(process.env.PLAYWRIGHT_CHANNEL
+      ? { channel: process.env.PLAYWRIGHT_CHANNEL as 'chrome' | 'msedge' | 'chromium' }
+      : {}),
   },
   projects: [
     { name: 'wide-pos', use: { viewport: { width: 1280, height: 800 } } },

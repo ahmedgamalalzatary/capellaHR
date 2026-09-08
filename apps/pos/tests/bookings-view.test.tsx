@@ -64,11 +64,35 @@ describe('appointment book', () => {
     expect(mocks.list).toHaveBeenCalledWith({ date: '2026-08-25' });
   });
 
-  it('claims arrival before opening the prefilled sale', async () => {
+  it('marks arrival in place and offers an explicit start-sale action', async () => {
+    mocks.updateStatus.mockImplementation(async () => {
+      mocks.list.mockResolvedValue([{ ...booking, status: 'arrived' }]);
+      return { ...booking, status: 'arrived' };
+    });
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'وصل العميل' }));
     await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith(9, { status: 'arrived' }));
-    expect(mocks.push).toHaveBeenCalledWith('/sales?bookingId=9');
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(await screen.findByRole('link', { name: 'بدء البيع' })).toHaveProperty(
+      'href',
+      expect.stringContaining('/sales?bookingId=9'),
+    );
+  });
+
+  it('asks before cancelling an appointment', async () => {
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إلغاء' }));
+    expect(mocks.updateStatus).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith(9, { status: 'cancelled' }));
+  });
+
+  it('jumps the diary to today', async () => {
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: 'اليوم التالي' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'اليوم', exact: true }));
+    const cairoToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ date: cairoToday }));
   });
 
   it('moves between diary days', async () => {

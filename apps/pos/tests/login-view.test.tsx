@@ -26,14 +26,14 @@ describe('LoginView', () => {
   test('defaults to the cashier login form', () => {
     renderView();
     expect(screen.getByLabelText(/اسم المستخدم/)).toBeDefined();
-    expect(screen.queryByLabelText(/البريد الإلكتروني/)).toBeNull();
+    expect(document.getElementById('admin-email')?.closest('[hidden]')).toBeTruthy();
   });
 
   test('switches to the admin login form when the admin button is selected', () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
     expect(screen.getByLabelText(/البريد الإلكتروني/)).toBeDefined();
-    expect(screen.queryByLabelText(/اسم المستخدم/)).toBeNull();
+    expect(document.getElementById('cashier-username')?.closest('[hidden]')).toBeTruthy();
   });
 
   test('switches back to the cashier login form when the cashier button is selected', () => {
@@ -41,5 +41,13 @@ describe('LoginView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
     fireEvent.click(screen.getByRole('button', { name: 'كاشير' }));
     expect(screen.getByLabelText(/اسم المستخدم/)).toBeDefined();
+  });
+
+  test('keeps typed cashier credentials when switching roles and back', () => {
+    renderView();
+    fireEvent.change(screen.getByLabelText(/اسم المستخدم/), { target: { value: 'cashier.one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'كاشير' }));
+    expect((screen.getByLabelText(/اسم المستخدم/) as HTMLInputElement).value).toBe('cashier.one');
   });
 });

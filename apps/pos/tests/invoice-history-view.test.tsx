@@ -57,6 +57,7 @@ const renderView = (initialBranchId?: number) => {
 describe('invoice history', () => {
   afterEach(cleanup);
   beforeEach(() => {
+    sessionStorage.clear();
     mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
     mocks.listInvoices.mockReset().mockResolvedValue({
       items: [item], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
@@ -95,22 +96,37 @@ describe('invoice history', () => {
     expect(await screen.findByText(new RegExp(`${item.client.name}.*بدون موظف`))).toBeDefined();
   });
 
-  it('searches invoices by trimmed invoice or client text', async () => {
+  it('searches invoices live as the cashier types', async () => {
     renderView();
     await screen.findByRole('link', { name: item.invoiceNumber });
 
-    const searchInput = screen.getByLabelText('بحث برقم الفاتورة أو العميل');
-    expect(searchInput.classList.contains('grow')).toBe(true);
-    expect(screen.getByText('بحث برقم الفاتورة أو العميل').classList.contains('grow')).toBe(false);
-
-    fireEvent.change(searchInput, {
+    fireEvent.change(screen.getByLabelText('بحث برقم الفاتورة أو العميل'), {
       target: { value: '  منى  ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
 
     await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
       page: 1, pageSize: 20, search: 'منى',
     }));
+    expect(screen.queryByRole('button', { name: 'بحث' })).toBeNull();
+  });
+
+  it('makes the whole invoice row the receipt link', async () => {
+    renderView();
+    const link = await screen.findByRole('link', { name: item.invoiceNumber });
+    expect(link.getAttribute('href')).toBe('/invoices/44');
+    expect(link.textContent).toContain(item.client.name);
+  });
+
+  it('asks the admin to pick a branch before listing invoices', async () => {
+    mocks.actor.current = { type: 'admin' };
+    mocks.listBranches.mockResolvedValue({
+      items: [{ id: 2, name: 'الفرع الرئيسي' }, { id: 3, name: 'فرع آخر' }],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    renderView();
+
+    expect(await screen.findByText('اختر فرعًا لعرض فواتيره')).toBeDefined();
+    expect(mocks.listInvoices).not.toHaveBeenCalled();
   });
 
   it('requires an Admin branch and carries it into receipt links', async () => {

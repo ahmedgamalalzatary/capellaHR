@@ -59,6 +59,7 @@ import {
   errorMessage,
   paymentMethods,
   restoredLines,
+  saleCheckoutBlockers,
   toCents,
   validServiceUnitPrice,
   type AdjustmentKind,
@@ -324,8 +325,6 @@ export function SaleWorkspace({
   const hasServiceLines = lines.some((line) => line.itemType !== 'product');
   /** Every service must name the employee who performed it before the sale posts. */
   const serviceLinesAssigned = lines.every((line) => line.itemType === 'product' || line.employee);
-  const adjustmentsStep = hasServiceLines ? 5 : 4;
-  const paymentsStep = hasServiceLines ? 6 : 5;
   if (!hasServiceLines && employee !== null) setEmployee(null);
 
   const { quoteInput, quote } = useSaleQuote({
@@ -446,13 +445,17 @@ export function SaleWorkspace({
   }, BigInt(0));
   const totalCents = quote.data ? toCents(quote.data.totals.total) : null;
   const remaining = paidCents === null || totalCents === null ? null : totalCents - paidCents;
-  const ready = Boolean(
-    client && sellerOnRoster && serviceLinesAssigned && lines.length > 0
-      && servicePricesValid && quote.data && !quote.isFetching
-      && remaining !== null && remaining >= BigInt(0)
-      && (!hasServiceLines || remaining === BigInt(0))
-      && !completion.isPending && !pendingSale,
-  );
+  const blockers = saleCheckoutBlockers({
+    hasClient: Boolean(client),
+    sellerOnRoster,
+    hasLines: lines.length > 0,
+    serviceLinesAssigned,
+    servicePricesValid,
+    quoteReady: Boolean(quote.data) && !quote.isFetching,
+    remaining,
+    hasServiceLines,
+  });
+  const ready = blockers.length === 0 && !completion.isPending && !pendingSale;
 
   const makeInput = (): CompleteSaleInput | null => {
     if (!client || !seller || !sellerOnRoster || !serviceLinesAssigned
@@ -611,12 +614,12 @@ export function SaleWorkspace({
 
   return (
     <section className="space-y-5">
+      {tabs}
+
       <PageHeader
         title="بيع جديد"
-        description="اختر العميل والخدمات أو المنتجات والموظف ثم راجع الإجمالي المحسوب من الخادم."
+        description="ابحث عن العميل، أضف البنود، ثم ادفع."
       />
-
-      {tabs}
 
       <SaleDraftNotices
         offeredDraft={offeredDraft}
@@ -660,7 +663,7 @@ export function SaleWorkspace({
         className="m-0 min-w-0 border-0 p-0"
       >
         <legend className="sr-only">تفاصيل البيع</legend>
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
+        <div className="grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
           <div className="min-w-0 space-y-4">
             <SaleClientStep
               {...(branchId === undefined ? {} : { branchId })}
@@ -668,11 +671,14 @@ export function SaleWorkspace({
               selectClient={selectClient}
             />
 
-            <SaleCashierStep
-              seller={seller}
-              setSeller={setSeller}
-              roster={roster}
-            />
+            {hasServices && (hasServiceLines || lines.length === 0) ? (
+              <SaleDefaultEmployeeStep
+                {...(branchId === undefined ? {} : { branchId })}
+                employee={employee}
+                setEmployee={setEmployee}
+                setLines={setLines}
+              />
+            ) : null}
 
             <SaleBasketStep
               {...(branchId === undefined ? {} : { branchId })}
@@ -684,22 +690,16 @@ export function SaleWorkspace({
               onServicesAvailability={setHasServices}
               onProductsAvailability={setHasProducts}
             />
-
-            {hasServiceLines ? (
-              <SaleDefaultEmployeeStep
-                {...(branchId === undefined ? {} : { branchId })}
-                employee={employee}
-                setEmployee={setEmployee}
-                setLines={setLines}
-              />
-            ) : null}
           </div>
 
-          {/* The summary follows the cart on a wide till, but it must scroll on its
-              own so the submit button is never pinned below the fold. */}
-          <div className="scroll-thin min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
+          <div className="scroll-thin min-w-0 space-y-4 md:sticky md:top-20 md:max-h-[calc(100dvh-6rem)] md:overflow-y-auto">
+            <SaleCashierStep
+              seller={seller}
+              setSeller={setSeller}
+              roster={roster}
+            />
+
             <SaleAdjustmentsStep
-              step={adjustmentsStep}
               discountKind={discountKind}
               discountValue={discountValue}
               onDiscountKind={setDiscountKind}
@@ -711,7 +711,7 @@ export function SaleWorkspace({
             />
 
             <SalePaymentStep
-              step={paymentsStep}
+              blockers={blockers}
               hasLines={lines.length > 0}
               quotePending={quote.isPending}
               quoteIsError={quote.isError}

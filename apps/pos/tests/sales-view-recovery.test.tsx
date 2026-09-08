@@ -695,6 +695,7 @@ describe('ERP service-sale view', () => {
 
     expect(await screen.findByText('لا توجد وردية بيع متاحة لهذا الحساب')).toBeDefined();
     expect(screen.getByLabelText('الفرع')).toBeDefined();
+    expect(screen.getByRole('link', { name: 'فتح الوردية' }).getAttribute('href')).toBe('/');
   });
 
   it('shows and retries an Admin branch-loading error', async () => {

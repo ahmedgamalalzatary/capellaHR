@@ -3,9 +3,9 @@
 import type { PaymentMethod, PublicInvoiceDto, RefundQuote } from '@capella/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
-import { Button, Input, Modal } from '@capella/ui';
+import { Button, Input, Modal, cn } from '@capella/ui';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Textarea } from '@/components/form/textarea';
@@ -45,17 +45,54 @@ const proposeTenders = (quote: RefundQuote) => {
   return proposal;
 };
 
+function ReversalFormShell({
+  title,
+  embedded,
+  pending,
+  onClose,
+  className,
+  children,
+}: {
+  title: string;
+  embedded: boolean;
+  pending: boolean;
+  onClose: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (embedded) {
+    return (
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Modal
+      title={title}
+      className={cn('max-h-[90dvh] overflow-y-auto', className)}
+      dismissOnBackdrop={!pending}
+      onClose={onClose}
+    >
+      {children}
+    </Modal>
+  );
+}
+
 export function InvoiceReversalControls({
   invoice,
   branchId,
   onUpdated,
   showRefundAction = true,
+  embedForms = false,
 }: {
   invoice: PublicInvoiceDto;
   branchId?: number;
   onUpdated(invoice: PublicInvoiceDto): void;
-  /** The refunds tab owns refunding; the receipt page keeps void and history only. */
   showRefundAction?: boolean;
+  /** When already inside a till dialog, keep qty/reason in that same panel. */
+  embedForms?: boolean;
 }) {
   const [mode, setMode] = useState<'refund' | 'void' | null>(null);
   const [reason, setReason] = useState('');
@@ -344,10 +381,11 @@ export function InvoiceReversalControls({
       ) : null}
 
       {mode === 'refund' ? (
-        <Modal
+        <ReversalFormShell
           title="استرداد جزئي أو كامل"
+          embedded={embedForms}
+          pending={reversalPending}
           className="max-w-lg"
-          dismissOnBackdrop={!reversalPending}
           onClose={() => close()}
         >
           <div className="space-y-2">
@@ -452,14 +490,15 @@ export function InvoiceReversalControls({
               {refund.isPending ? 'جارٍ الاسترداد…' : 'تأكيد الاسترداد'}
             </Button>
           </div>
-        </Modal>
+        </ReversalFormShell>
       ) : null}
 
       {mode === 'void' ? (
-        <Modal
+        <ReversalFormShell
           title="إلغاء الفاتورة بالكامل"
+          embedded={embedForms}
+          pending={reversalPending}
           className="max-w-lg"
-          dismissOnBackdrop={!reversalPending}
           onClose={() => close()}
         >
           <p className="text-[13px] text-muted">سيتم عكس كل البنود والمدفوعات والمخزون والعمولة.</p>
@@ -487,7 +526,7 @@ export function InvoiceReversalControls({
               {voidMutation.isPending ? 'جارٍ الإلغاء…' : 'تأكيد الإلغاء'}
             </Button>
           </div>
-        </Modal>
+        </ReversalFormShell>
       ) : null}
 
       {/* Only the note reaches the paper; the print stylesheet hides everything else. */}
@@ -498,7 +537,7 @@ export function InvoiceReversalControls({
       ) : null}
 
       {printPrompt && printableReversal ? (
-        <Modal title="طباعة إيصال الاسترداد" onClose={() => setPrintPrompt(false)}>
+        <Modal title="طباعة إيصال الاسترداد" className="max-h-[90dvh] overflow-y-auto" onClose={() => setPrintPrompt(false)}>
           <p className="text-sm">
             تم تنفيذ الاسترداد بمبلغ{' '}
             <span className="tabular font-semibold">{printableReversal.totals.total} ج.م</span>.

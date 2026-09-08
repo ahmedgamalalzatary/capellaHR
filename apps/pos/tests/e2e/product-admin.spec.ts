@@ -74,6 +74,7 @@ test('Admin creates, edits, and adjusts a branch product', async ({ page }) => {
 
   await page.goto('/products');
   await page.getByLabel('الفرع').selectOption('3');
+  await page.getByRole('button', { name: 'منتج جديد' }).first().click();
   await page.getByLabel('اسم المنتج').fill('شامبو');
   await page.getByLabel('وصف المنتج').fill('للشعر الجاف');
   await page.getByLabel('سعر البيع').fill('50');

@@ -1,19 +1,9 @@
 import type { Metadata } from 'next';
-
-import { PageHeader } from '@/components/layout/page-header';
-import { ServicePicker } from '@/features/catalog';
+import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = { title: 'الخدمات' };
 
-/**
- * Counter-side browsing of the sellable catalog. An Admin belongs to no branch,
- * so this page is the Cashier's view; Admins manage the catalog under /catalog.
- */
+/** Leftover cashier browse page: the live catalog lives under /catalog. */
 export default function ServicesPage() {
-  return (
-    <section className="space-y-6">
-      <PageHeader title="الخدمات" description="تصفّح الخدمات المتاحة للبيع وأسعارها الثابتة." />
-      <ServicePicker />
-    </section>
-  );
+  redirect('/catalog');
 }

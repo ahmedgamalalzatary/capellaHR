@@ -1,10 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { CommissionSummary } from '@capella/contracts';
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -96,7 +96,12 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
 }
 
 export function CommissionsView() {
-  const [branchId, setBranchId] = useState<number>();
+  const [branchId, setBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) ? parsed : undefined;
+  });
   const [month, setMonth] = useState(currentCairoMonth);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<CommissionSummary | null>(null);
@@ -105,6 +110,10 @@ export function CommissionsView() {
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
   });
   const filters = { branchId, month, page, pageSize: 20 };
+  useEffect(() => {
+    if (branchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
+    else sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
+  }, [branchId]);
   const commissions = useQuery({
     queryKey: commissionQueryKeys.list(filters),
     queryFn: () => listCommissions({ branchId: branchId!, month, page, pageSize: 20 }),
@@ -199,7 +208,13 @@ export function CommissionsView() {
                 )}
 
       {selected && branchId !== undefined ? (
-        <CommissionTrace summary={selected} branchId={branchId} month={month} onClose={() => setSelected(null)} />
+        <Modal
+          title={`تفاصيل عمولة ${selected.employeeName}`}
+          className="max-w-3xl"
+          onClose={() => setSelected(null)}
+        >
+          <CommissionTrace summary={selected} branchId={branchId} month={month} onClose={() => setSelected(null)} />
+        </Modal>
       ) : null}
     </section>
   );

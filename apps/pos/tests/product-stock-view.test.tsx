@@ -65,6 +65,7 @@ describe('ProductStockView', () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'منتج جديد' }));
     fireEvent.change(screen.getByLabelText('اسم المنتج'), { target: { value: 'زيت شعر' } });
     fireEvent.change(screen.getByLabelText('عمولة البائع %'), { target: { value: '17.5' } });
     cleanup();
@@ -72,23 +73,19 @@ describe('ProductStockView', () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'منتج جديد' }));
     fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
 
     expect((screen.getByLabelText('عمولة البائع %') as HTMLInputElement).value).toBe('17.5');
   });
-  it('opens the stock adjustment panel above the products table, not below it', async () => {
+  it('opens stock adjustment in a dialog over the products table', async () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     await screen.findAllByText('شامبو');
 
     fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
-    const heading = await screen.findByText('تسوية مخزون شامبو');
-    const panel = heading.closest('div.shadow-card')!;
-    const productsTable = screen.getAllByRole('table')
-      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'الإجراءات' }))!;
-
-    expect(productsTable.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'تسوية مخزون شامبو' })).toBeDefined();
   });
 
   it('lines every movement cell up under its own header', async () => {
@@ -178,8 +175,8 @@ describe('ProductStockView', () => {
     expect(screen.getByRole('button', { name: 'إلغاء' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByLabelText('الفرع').hasAttribute('disabled')).toBe(true);
     expect(screen.getByLabelText('تغيير الكمية').hasAttribute('disabled')).toBe(true);
-    expect(screen.getByLabelText('اسم المنتج')).toHaveProperty('disabled', true);
-    expect(screen.getByRole('button', { name: 'إضافة منتج' })).toHaveProperty('disabled', true);
+    expect(screen.queryByLabelText('اسم المنتج')).toBeNull();
+    expect(screen.getByRole('button', { name: 'منتج جديد' })).toHaveProperty('disabled', true);
   });
 
   it('requires confirmation before deactivating a product', async () => {
@@ -258,6 +255,7 @@ describe('ProductStockView', () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'منتج جديد' }));
     await screen.findByLabelText('اسم المنتج');
 
     fireEvent.change(screen.getByLabelText('اسم المنتج'), { target: { value: 'بلسم' } });

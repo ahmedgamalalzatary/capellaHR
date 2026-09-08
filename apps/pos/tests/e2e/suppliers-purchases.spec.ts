@@ -21,7 +21,7 @@ test('Admin manages a supplier, posts exact purchase stock facts, and cancels on
     if (path === '/erp/suppliers/purchases/9/cancel') { const payload = request.postDataJSON() as Record<string, unknown>; cancelPayload = payload; productQuantity = 5; purchase = { ...purchase, status: 'cancelled', cancellationReason: String(payload.reason), lines: (purchase?.lines as Array<Record<string, unknown>>).map((line) => ({ ...line, cancellationBalanceAfter: 5 })) }; return json(route, purchase); }
     return route.fulfill({ status: 404, headers, contentType: 'application/json', body: '{}' });
   });
-  await page.goto('/suppliers'); await page.getByLabel('الفرع').selectOption('2'); await page.getByLabel('اسم المورد').fill('مورد النيل'); await page.getByRole('button', { name: 'إضافة المورد' }).click(); await expect(page.getByRole('cell', { name: 'مورد النيل' })).toBeVisible();
+  await page.goto('/suppliers'); await page.getByLabel('الفرع').selectOption('2'); await page.getByRole('button', { name: 'مورد جديد' }).click(); await page.getByLabel('اسم المورد').fill('مورد النيل'); await page.getByRole('button', { name: 'إضافة المورد' }).click(); await expect(page.getByRole('cell', { name: 'مورد النيل' })).toBeVisible();
   await page.getByRole('button', { name: 'تعديل' }).click(); await page.getByLabel('اسم المورد').fill('مورد النيل المحدث'); await page.getByRole('button', { name: 'حفظ المورد' }).click(); await expect(page.getByRole('cell', { name: 'مورد النيل المحدث' })).toBeVisible();
   await page.getByRole('button', { name: 'إيقاف' }).click(); await page.getByRole('button', { name: 'تأكيد إيقاف المورد' }).click(); await expect(page.getByRole('cell', { name: 'متوقف' })).toBeVisible(); await page.getByRole('button', { name: 'تفعيل' }).click(); await expect(page.getByRole('cell', { name: 'نشط' })).toBeVisible();
   await expect.poll(() => supplierUpdates).toEqual([
@@ -29,6 +29,7 @@ test('Admin manages a supplier, posts exact purchase stock facts, and cancels on
     { branchId: 2, isActive: false },
     { branchId: 2, isActive: true },
   ]);
+  await page.getByRole('button', { name: 'إضافة فاتورة مشتريات' }).click();
   await page.getByLabel('المورد للمشتريات').selectOption('3'); await page.getByRole('combobox', { name: 'المنتج', exact: true }).selectOption('4'); await page.getByLabel('الكمية', { exact: true }).fill('2'); await page.getByLabel('تكلفة الوحدة', { exact: true }).fill('12.50'); await expect(page.getByText('الإجمالي: 25.00 ج.م')).toBeVisible(); await page.getByRole('button', { name: 'ترحيل المشتريات' }).click();
   await expect.poll(() => postPayload).toMatchObject({ branchId: 2, idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/), supplierId: 3, lines: [{ productId: 4, quantity: 2, unitCost: '12.50' }] }); await expect(page.getByRole('cell', { name: 'مُرحّلة' })).toBeVisible(); await expect(page.getByText(/الرصيد بعد الترحيل: 7(?![\d.])/)).toBeVisible();
   await page.getByRole('link', { name: 'المنتجات والمخزون' }).click(); await expect(page).toHaveURL(/\/products$/); await page.getByLabel('الفرع').selectOption('2'); const productRow = page.getByRole('row').filter({ hasText: 'شامبو' }); await expect(productRow.getByRole('cell', { name: '7', exact: true })).toBeVisible();

@@ -2,13 +2,12 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useBarcodeScanner } from '@/lib/barcode/use-barcode-scanner';
 
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 
-import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
@@ -62,7 +61,7 @@ function ReversalDialog({
   });
 
   return (
-    <Modal title={`مرتجع الفاتورة ${invoiceNumber}`} className="max-w-xl" onClose={onClose}>
+    <Modal title={`مرتجع الفاتورة ${invoiceNumber}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={onClose}>
       {invoice.isPending ? (
         <LoadingState label="جارٍ تحميل الفاتورة…" align="start" className="p-0" />
       ) : null}
@@ -90,6 +89,7 @@ function ReversalDialog({
           )}
           <InvoiceReversalControls
             invoice={invoice.data}
+            embedForms
             {...(branchId === undefined ? {} : { branchId })}
             onUpdated={(updated) => {
               queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), updated);
@@ -105,13 +105,23 @@ function ReversalDialog({
   );
 }
 
+const stillRefundable = (status: keyof typeof statusLabels) => (
+  status === 'completed' || status === 'partially_refunded'
+);
+
 export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [branchId, setBranchId] = useState<number | undefined>(initialBranchId);
+  const [branchId, setBranchId] = useState<number | undefined>(() => {
+    if (initialBranchId !== undefined) return initialBranchId;
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
-  const [search, setSearch] = useState<string | undefined>();
+  const search = searchDraft.trim() || undefined;
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | undefined>();
   /**
    * The number read off a scanned receipt, held until the matching invoice comes
@@ -122,7 +132,6 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   useBarcodeScanner({
     onScan: (code) => {
       setSearchDraft(code);
-      setSearch(code);
       setPage(1);
       setSelectedInvoiceId(undefined);
       setScannedNumber(code);
@@ -136,6 +145,14 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
     setBranchId(branches.data.items[0]!.id);
   }
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (branchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
+  }, [branchId, isAdmin]);
   const invoices = useQuery({
     queryKey: salesQueryKeys.invoices(branchId, page, search),
     queryFn: () => listInvoices({
@@ -153,7 +170,8 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
     setSelectedInvoiceId(scanned.id);
     setScannedNumber(null);
   }
-  const selectedInvoice = invoices.data?.items.find((invoice) => invoice.id === selectedInvoiceId);
+  const refundableItems = (invoices.data?.items ?? []).filter((invoice) => stillRefundable(invoice.status));
+  const selectedInvoice = refundableItems.find((invoice) => invoice.id === selectedInvoiceId);
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6">
@@ -164,29 +182,22 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
 
       <Card className="shadow-card">
         <CardContent className="grid gap-3 p-4 sm:p-5 md:grid-cols-2 md:items-end">
-          <form
-            className="flex items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSearch(searchDraft.trim() || undefined);
-              setPage(1);
-              setSelectedInvoiceId(undefined);
-            }}
-          >
-            <div className="grow space-y-1.5">
-              <Label htmlFor="refund-invoice-search">بحث برقم الفاتورة أو العميل</Label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
-                <Input
-                  className="grow ps-9"
-                  id="refund-invoice-search"
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                />
-              </div>
+          <div className="grow space-y-1.5">
+            <Label htmlFor="refund-invoice-search">بحث برقم الفاتورة أو العميل</Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+              <Input
+                className="grow ps-9"
+                id="refund-invoice-search"
+                value={searchDraft}
+                onChange={(event) => {
+                  setSearchDraft(event.target.value);
+                  setPage(1);
+                  setSelectedInvoiceId(undefined);
+                }}
+              />
             </div>
-            <Button type="submit">بحث</Button>
-          </form>
+          </div>
 
           {isAdmin ? (
             <div className="space-y-1.5">
@@ -228,65 +239,50 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
           </Button>
         </Notice>
       ) : null}
-      {invoices.data?.items.length === 0 ? (
+      {isAdmin && branchId === undefined && (branches.data?.items.length ?? 0) > 1 ? (
         <Card className="shadow-card">
-          <EmptyState title="لا توجد فواتير" description="ستظهر الفواتير القابلة للاسترداد هنا." />
+          <EmptyState title="اختر فرعًا لعرض فواتيره" />
+        </Card>
+      ) : null}
+      {invoices.data && refundableItems.length === 0 ? (
+        <Card className="shadow-card">
+          <EmptyState title="لا توجد فواتير قابلة للاسترداد" description="الفواتير المكتملة أو المستردة جزئيًا تظهر هنا." />
         </Card>
       ) : null}
 
-      {invoices.data?.items.length ? (
-        <Card className="overflow-hidden shadow-card">
-          <DataTable>
-            <THead>
-              <TH>الفاتورة</TH>
-              <TH>العميل</TH>
-              <TH>التاريخ</TH>
-              <TH numeric>الإجمالي</TH>
-              <TH>الحالة</TH>
-              <TH><span className="sr-only">إجراءات</span></TH>
-            </THead>
-            <tbody>
-              {invoices.data.items.map((invoice) => (
-                <TR key={invoice.id}>
-                  <TD>
-                    <span className="font-mono font-semibold text-ink">
-                      {invoice.invoiceNumber}
-                    </span>
-                  </TD>
-                  <TD>
-                    <span className="text-ink">{invoiceClientLabel(invoice.client)}</span>
-                    <span className="block text-[13px] text-muted">
+      {refundableItems.length ? (
+        <ul className="space-y-2">
+          {refundableItems.map((invoice) => (
+            <li key={invoice.id}>
+              <Card className="shadow-card transition-shadow hover:shadow-raised">
+                <CardContent className="grid gap-2 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono font-semibold text-ink">{invoice.invoiceNumber}</span>
+                      <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
+                    </div>
+                    <p className="truncate text-sm text-ink">
+                      {invoiceClientLabel(invoice.client)} ·{' '}
                       {invoice.employees.map(({ name }) => name).join(' - ') || 'بدون موظف'}
-                    </span>
-                  </TD>
-                  <TD>
-                    <time className="text-[13px] text-muted" dateTime={invoice.soldAt}>
+                    </p>
+                    <time className="block text-[13px] text-muted" dateTime={invoice.soldAt}>
                       {formatCairoDateTime(invoice.soldAt)}
                     </time>
-                  </TD>
-                  <TD numeric>
-                    <strong className="font-semibold text-ink">{invoice.total} ج.م</strong>
-                  </TD>
-                  <TD>
-                    <Badge variant={statusTones[invoice.status]}>{statusLabels[invoice.status]}</Badge>
-                  </TD>
-                  <TD>
-                    <RowActions>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        aria-label={`فتح مرتجع ${invoice.invoiceNumber}`}
-                        onClick={() => setSelectedInvoiceId(invoice.id)}
-                      >
-                        مرتجع
-                      </Button>
-                    </RowActions>
-                  </TD>
-                </TR>
-              ))}
-            </tbody>
-          </DataTable>
-        </Card>
+                  </div>
+                  <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                    <strong className="tabular text-lg font-semibold text-ink">{invoice.total} ج.م</strong>
+                    <Button
+                      aria-label={`فتح مرتجع ${invoice.invoiceNumber}`}
+                      onClick={() => setSelectedInvoiceId(invoice.id)}
+                    >
+                      مرتجع
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {selectedInvoice ? (

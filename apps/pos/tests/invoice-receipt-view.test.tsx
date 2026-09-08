@@ -357,7 +357,7 @@ describe('stored invoice receipt', () => {
     expect(customerReceipt().getByText('شكرًا لزيارتكم')).toBeDefined();
   });
 
-  it('leaves refunding to the refunds tab and keeps the receipt page void-only', async () => {
+  it('lets the cashier refund or void from the receipt', async () => {
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
       eligibility: { canVoid: true, canRefund: true },
@@ -365,8 +365,30 @@ describe('stored invoice receipt', () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(screen.queryByRole('button', { name: 'استرداد' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'استرداد' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'إلغاء الفاتورة' })).toBeDefined();
+  });
+
+  it('explains why recording a payment is blocked without an open shift', async () => {
+    getCurrentCashierSession.mockResolvedValue(null);
+    const productLine = {
+      ...saleFixtures.completedInvoice.lines[0], itemType: 'product' as const,
+      sourceId: 31, employee: null, originalEmployee: null, reassignments: [],
+      commissionRule: 'none' as const, commissionRate: '0.00', commissionAmount: '0.00',
+      productCostBasis: '50.00',
+    };
+    getInvoice.mockResolvedValue({
+      ...saleFixtures.completedInvoice,
+      lines: [productLine],
+      totals: {
+        ...saleFixtures.completedInvoice.totals,
+        paymentTotal: '50.00', amountPaid: '50.00', creditedAmount: '0.00',
+        balanceDue: '135.00', settlementStatus: 'open' as const,
+      },
+    });
+    renderView();
+    expect(await screen.findByRole('button', { name: 'تسجيل دفعة' })).toHaveProperty('disabled', true);
+    expect(screen.getByText('افتح وردية لتسجيل دفعة')).toBeDefined();
   });
 
   it('labels a product-only receipt as having no assigned employee', async () => {

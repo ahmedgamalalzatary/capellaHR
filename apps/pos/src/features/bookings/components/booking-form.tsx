@@ -73,7 +73,7 @@ export function BookingForm({ branchId, onClose, onSaved }: {
   if (saved) return <Modal title="تذكرة الموعد" onClose={onClose}>
     <div className="space-y-4"><BookingTicket booking={saved} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button onClick={() => window.print()}>طباعة التذكرة</Button></div></div>
   </Modal>;
-  return <Modal title="حجز موعد جديد" onClose={onClose} className="max-w-2xl">
+  return <Modal title="حجز موعد جديد" onClose={onClose} className="max-h-[90dvh] max-w-2xl overflow-y-auto">
     <div className="space-y-4">
       <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
       <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setServices((current) => current.some(({ id }) => id === service.id) ? current : [...current, service])} />
