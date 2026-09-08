@@ -1,10 +1,11 @@
 import type {
-  CompleteServiceExecutionsInput,
   ConfigureConsumableInput,
   CorrectServiceExecutionInput,
   ListConsumableBalancesQuery,
   ListConsumableServicesQuery,
+  RecordServiceConsumptionsInput,
   TransferConsumableStockInput,
+  UpdateServiceExecutionStatusInput,
 } from '@capella/contracts';
 
 import type { ErpBranchContextResolver } from '../branch-context.js';
@@ -39,7 +40,8 @@ export interface ConsumablesRepository {
   transfer(input: { productId: number; branchId: number; direction: 'reserve' | 'return'; packages: number; note?: string; accountId: number }): Promise<unknown>;
   listBalances(branchId: number, query: ListConsumableBalancesQuery): Promise<{ items: unknown[]; total: number }>;
   listServices(branchId: number, query: ListConsumableServicesQuery, openedByAccountId?: number): Promise<{ items: unknown[]; total: number }>;
-  complete(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryIds: number[]; usages: Array<{ productId: number; quantity: string }> }): Promise<unknown>;
+  updateStatus(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryIds: number[]; status: 'pending' | 'in_progress' | 'completed' }): Promise<unknown>;
+  record(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryIds: number[]; usages: Array<{ productId: number; quantity: string }> }): Promise<unknown>;
   correct(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryId: number; reason: string; usages: Array<{ productId: number; quantity: string }> }): Promise<unknown>;
 }
 
@@ -78,7 +80,14 @@ export const createConsumablesService = (dependencies: {
         context.accountRole === 'cashier' ? context.accountId : undefined,
       );
     },
-    async complete(actor: ErpAccountIdentity, input: CompleteServiceExecutionsInput) {
+    async updateStatus(actor: ErpAccountIdentity, input: UpdateServiceExecutionStatusInput) {
+      const context = await dependencies.resolveBranchContext(actor, input.branchId);
+      return dependencies.repository.updateStatus({
+        branchId: context.branchId, accountId: context.accountId, accountRole: context.accountRole,
+        serviceQueueEntryIds: input.serviceQueueEntryIds, status: input.status,
+      });
+    },
+    async record(actor: ErpAccountIdentity, input: RecordServiceConsumptionsInput) {
       if ((input.usages.length === 0) === !input.noConsumablesConfirmed) {
         throw new ConsumablesError(
           'CONSUMABLE_USAGE_DECISION_REQUIRED',
@@ -88,7 +97,7 @@ export const createConsumablesService = (dependencies: {
         );
       }
       const context = await dependencies.resolveBranchContext(actor, input.branchId);
-      return dependencies.repository.complete({
+      return dependencies.repository.record({
         branchId: context.branchId, accountId: context.accountId, accountRole: context.accountRole,
         serviceQueueEntryIds: input.serviceQueueEntryIds, usages: input.usages,
       });

@@ -556,27 +556,28 @@ const serviceQueueFacts = (filters: ReportFilters) => sql`
 `;
 
 const serviceCompletionFacts = (filters: ReportFilters) => sql`
-  SELECT report.id id, report.created_at eventDate, branch.name branchName,
+  SELECT queue.id id, queue.completed_at eventDate, branch.name branchName,
     queue.cashier_session_id shiftId, line.item_name_snapshot serviceName,
     queue.queue_number queueNumber, invoice.invoice_number invoiceNumber,
     invoice.client_name_snapshot clientName, ${sql.raw(currentQueueEmployeeName)} employeeName,
-    report.completion_kind completionKind,
+    COALESCE(report.completion_kind, 'unrecorded') completionKind,
     COALESCE(GROUP_CONCAT(CONCAT(product.name, ' ', consumption_usage.quantity, ' ', consumption_usage.unit)
       ORDER BY product.name SEPARATOR '، '), '') consumables,
     COALESCE(SUM(consumption_usage.total_cost), 0) totalCost
-  FROM erp_service_consumption_reports report
-  INNER JOIN erp_service_queue_entries queue ON queue.id = report.service_queue_entry_id
+  FROM erp_service_queue_entries queue
+  LEFT JOIN erp_service_consumption_reports report
+    ON report.service_queue_entry_id = queue.id AND report.is_current = true
   INNER JOIN erp_invoices invoice ON invoice.id = queue.invoice_id AND invoice.branch_id = queue.branch_id
   INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id AND line.invoice_id = queue.invoice_id
   INNER JOIN branches branch ON branch.id = queue.branch_id
   LEFT JOIN erp_service_consumption_usages consumption_usage ON consumption_usage.report_id = report.id
   LEFT JOIN erp_products product ON product.id = consumption_usage.product_id
   ${condition([
-    sql`report.is_current = true`, ...branchFilter(filters, 'queue.branch_id'),
-    ...timestampFilter(filters, 'report.created_at'),
+    sql`queue.status = 'completed'`, ...branchFilter(filters, 'queue.branch_id'),
+    ...timestampFilter(filters, 'queue.completed_at'),
     ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', currentQueueEmployeeName, 'product.name']),
   ])}
-  GROUP BY report.id, report.created_at, branch.name, queue.cashier_session_id,
+  GROUP BY queue.id, queue.completed_at, branch.name, queue.cashier_session_id,
     line.item_name_snapshot, queue.queue_number, invoice.invoice_number,
     invoice.client_name_snapshot, employeeName, report.completion_kind
 `;
@@ -753,10 +754,10 @@ const currentQueueEmployeeName = `COALESCE((
   LIMIT 1
 ), line.employee_name_snapshot)`;
 const serviceStatusLabels: Record<string, string> = {
-  pending: 'قيد الانتظار', completed: 'مكتملة', overdue: 'متأخرة',
+  pending: 'لم تبدأ', in_progress: 'قيد التنفيذ', completed: 'مكتملة', overdue: 'متأخرة',
 };
 const completionKindLabels: Record<string, string> = {
-  consumables: 'بمستهلكات', none: 'بدون مستهلكات',
+  consumables: 'بمستهلكات', none: 'بدون مستهلكات', unrecorded: 'لم تسجل المستهلكات',
 };
 const consumableEntryLabels: Record<string, string> = {
   reserve: 'تحويل إلى المستهلكات', return: 'إرجاع إلى مخزون البيع', consume: 'استهلاك خدمة',

@@ -91,9 +91,13 @@ describe('consumables MySQL inventory integration', () => {
 
     await expect(repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Too early', usages: [] }))
       .rejects.toMatchObject({ code: 'CONSUMABLE_SERVICE_NOT_COMPLETED' });
-    await repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: queueIds.slice(0, 2), usages: [{ productId: data.productId, quantity: '15.000' }] });
-    await repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] });
-    await expect(repository.complete({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] }))
+    await repository.updateStatus({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: queueIds, status: 'completed' });
+    expect(await database.select().from(serviceConsumptionReports)).toHaveLength(0);
+    expect((await repository.listServices(data.branchId, { status: 'completed', page: 1, pageSize: 20 })).items)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ consumptionRecorded: false })]));
+    await repository.record({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: queueIds.slice(0, 2), usages: [{ productId: data.productId, quantity: '15.000' }] });
+    await repository.record({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] });
+    await expect(repository.record({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryIds: [queueIds[2]!], usages: [] }))
       .rejects.toMatchObject({ code: 'CONSUMABLE_SERVICE_ALREADY_COMPLETED' });
     await repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Actual measurement', usages: [{ productId: data.productId, quantity: '5.000' }] });
 

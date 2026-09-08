@@ -50,7 +50,7 @@ const usagesSchema = z.array(usageSchema).max(100).superRefine((items, context) 
   });
 });
 
-export const completeServiceExecutionsSchema = z.object({
+export const recordServiceConsumptionsSchema = z.object({
   serviceQueueEntryIds: z.array(coercedMysqlIntSchema).min(1).max(100)
     .refine((ids) => new Set(ids).size === ids.length, 'تم تكرار الخدمة'),
   usages: usagesSchema,
@@ -64,6 +64,13 @@ export const completeServiceExecutionsSchema = z.object({
     context.addIssue({ code: 'custom', path: ['noConsumablesConfirmed'], message: 'لا يمكن تأكيد عدم الاستخدام مع إضافة مستهلكات' });
   }
 });
+
+export const updateServiceExecutionStatusSchema = z.object({
+  serviceQueueEntryIds: z.array(coercedMysqlIntSchema).min(1).max(100)
+    .refine((ids) => new Set(ids).size === ids.length, 'ØªÙ… ØªÙƒØ±Ø§Ø± Ø§Ù„Ø®Ø¯Ù…Ø©'),
+  status: z.enum(['pending', 'in_progress', 'completed']),
+  ...branchScope,
+}).strict();
 
 export const correctServiceExecutionSchema = z.object({
   reason: z.string().trim().min(1).max(1000),
@@ -79,8 +86,10 @@ export const listConsumableBalancesQuerySchema = z.object({
 }).strict();
 
 export const listConsumableServicesQuerySchema = z.object({
-  status: z.enum(['pending', 'completed', 'overdue', 'unfinished']).optional(),
+  status: z.enum(['pending', 'in_progress', 'completed', 'overdue', 'unfinished', 'operational']).optional(),
+  consumptionStatus: z.enum(['recorded', 'unrecorded']).optional(),
   cashierSessionId: coercedMysqlIntSchema.optional(),
+  invoiceId: coercedMysqlIntSchema.optional(),
   serviceId: coercedMysqlIntSchema.optional(),
   employeeId: coercedMysqlIntSchema.optional(),
   search: z.string().trim().min(1).max(255).optional(),
@@ -91,7 +100,8 @@ export const listConsumableServicesQuerySchema = z.object({
 
 export type ConfigureConsumableInput = z.infer<typeof configureConsumableSchema>;
 export type TransferConsumableStockInput = z.infer<typeof transferConsumableStockSchema>;
-export type CompleteServiceExecutionsInput = z.infer<typeof completeServiceExecutionsSchema>;
+export type RecordServiceConsumptionsInput = z.infer<typeof recordServiceConsumptionsSchema>;
+export type UpdateServiceExecutionStatusInput = z.infer<typeof updateServiceExecutionStatusSchema>;
 export type CorrectServiceExecutionInput = z.infer<typeof correctServiceExecutionSchema>;
 export type ListConsumableBalancesQuery = z.infer<typeof listConsumableBalancesQuerySchema>;
 export type ListConsumableServicesQuery = z.infer<typeof listConsumableServicesQuerySchema>;

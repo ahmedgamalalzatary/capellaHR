@@ -816,7 +816,7 @@ export const createDrizzleSaleRepository = (
             const queueIds = (await transaction.select({ id: serviceQueueEntries.id })
               .from(serviceQueueEntries).where(and(
                 eq(serviceQueueEntries.invoiceLineId, line.id),
-                inArray(serviceQueueEntries.status, ['pending', 'overdue']),
+                inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'overdue']),
               )).orderBy(desc(serviceQueueEntries.queueNumber))
               .limit(selectedByLine.get(line.id)!).for('update')).map(({ id }) => id);
             if (queueIds.length) {

@@ -180,22 +180,27 @@ export const createDrizzleConsumablesRepository = (
   async listServices(branchId, query, openedByAccountId) {
     const currentEmployeeId = sql<number | null>`coalesce((select reassignment.to_employee_id from erp_invoice_line_reassignments reassignment where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeId})`;
     const currentEmployeeName = sql<string | null>`coalesce((select employee.full_name from erp_invoice_line_reassignments reassignment inner join employees employee on employee.id = reassignment.to_employee_id where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeNameSnapshot})`;
+    const consumptionRecorded = sql<number>`exists (select 1 from erp_service_consumption_reports report where report.service_queue_entry_id = ${serviceQueueEntries.id} and report.is_current = true)`;
     const filters = [eq(serviceQueueEntries.branchId, branchId)];
-    if (query.status === 'unfinished') filters.push(inArray(serviceQueueEntries.status, ['pending', 'overdue']));
+    if (query.status === 'unfinished') filters.push(inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'overdue']));
+    else if (query.status === 'operational') filters.push(inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'completed', 'overdue']));
     else if (query.status) filters.push(eq(serviceQueueEntries.status, query.status));
     if (query.cashierSessionId) filters.push(eq(serviceQueueEntries.cashierSessionId, query.cashierSessionId));
+    if (query.invoiceId) filters.push(eq(serviceQueueEntries.invoiceId, query.invoiceId));
     if (query.serviceId) filters.push(eq(serviceQueueEntries.serviceId, query.serviceId));
     if (query.employeeId) filters.push(eq(currentEmployeeId, query.employeeId));
+    if (query.consumptionStatus === 'recorded') filters.push(consumptionRecorded);
+    if (query.consumptionStatus === 'unrecorded') filters.push(sql`not ${consumptionRecorded}`);
     if (openedByAccountId !== undefined) filters.push(eq(cashierSessions.openedByAccountId, openedByAccountId));
     if (query.search) filters.push(or(like(invoices.invoiceNumber, `%${query.search}%`), like(invoices.clientNameSnapshot, `%${query.search}%`))!);
     const where = and(...filters);
-    const items = await database.select({
+    const rows = await database.select({
       id: serviceQueueEntries.id, status: serviceQueueEntries.status, queueNumber: serviceQueueEntries.queueNumber,
       cashierSessionId: serviceQueueEntries.cashierSessionId, invoiceId: invoices.id, invoiceNumber: invoices.invoiceNumber,
       clientName: invoices.clientNameSnapshot, clientPhone: invoices.clientPhoneSnapshot,
       serviceId: erpServices.id, serviceName: erpServices.name, employeeId: currentEmployeeId,
       employeeName: currentEmployeeName, createdAt: serviceQueueEntries.createdAt,
-      completedAt: serviceQueueEntries.completedAt,
+      completedAt: serviceQueueEntries.completedAt, consumptionRecorded,
     }).from(serviceQueueEntries)
       .innerJoin(invoices, eq(invoices.id, serviceQueueEntries.invoiceId))
       .innerJoin(invoiceLines, eq(invoiceLines.id, serviceQueueEntries.invoiceLineId))
@@ -207,10 +212,51 @@ export const createDrizzleConsumablesRepository = (
       .innerJoin(invoices, eq(invoices.id, serviceQueueEntries.invoiceId))
       .innerJoin(invoiceLines, eq(invoiceLines.id, serviceQueueEntries.invoiceLineId))
       .innerJoin(cashierSessions, eq(cashierSessions.id, serviceQueueEntries.cashierSessionId)).where(where);
-    return { items, total: totals[0]?.value ?? 0 };
+    return {
+      items: rows.map((row) => ({ ...row, consumptionRecorded: Boolean(row.consumptionRecorded) })),
+      total: totals[0]?.value ?? 0,
+    };
   },
 
-  complete(input) {
+  updateStatus(input) {
+    return database.transaction(async (tx) => {
+      const at = now();
+      const executions = await tx.select().from(serviceQueueEntries).where(and(
+        inArray(serviceQueueEntries.id, input.serviceQueueEntryIds),
+        eq(serviceQueueEntries.branchId, input.branchId),
+      )).for('update');
+      if (executions.length !== input.serviceQueueEntryIds.length) {
+        return fail('CONSUMABLE_SERVICE_NOT_FOUND', 'إحدى الخدمات غير موجودة');
+      }
+      if (executions.some((entry) => entry.status === 'completed')) {
+        return fail('CONSUMABLE_SERVICE_ALREADY_COMPLETED', 'إحدى الخدمات مكتملة بالفعل');
+      }
+      if (executions.some((entry) => entry.status === 'canceled')) {
+        return fail('CONSUMABLE_SERVICE_CANCELLED', 'إحدى الخدمات ملغاة');
+      }
+      if (input.accountRole === 'cashier') {
+        const sessionIds = [...new Set(executions.map((entry) => entry.cashierSessionId))];
+        const open = await tx.select({ id: cashierSessions.id }).from(cashierSessions).where(and(
+          inArray(cashierSessions.id, sessionIds),
+          isNull(cashierSessions.closedAt),
+          eq(cashierSessions.openedByAccountId, input.accountId),
+        ));
+        if (open.length !== sessionIds.length) {
+          return fail('CONSUMABLE_SHIFT_CLOSED', 'لا يمكن للكاشير تعديل خدمات وردية مغلقة');
+        }
+      }
+      await tx.update(serviceQueueEntries).set(input.status === 'completed'
+        ? { status: input.status, completedAt: at, completedByAccountId: input.accountId }
+        : { status: input.status, completedAt: null, completedByAccountId: null })
+        .where(inArray(serviceQueueEntries.id, input.serviceQueueEntryIds));
+      return input.serviceQueueEntryIds.map((serviceQueueEntryId) => ({
+        serviceQueueEntryId,
+        status: input.status,
+      }));
+    });
+  },
+
+  record(input) {
     return database.transaction(async (tx) => {
       const at = now();
       const executions = await tx.select().from(serviceQueueEntries).where(and(
@@ -218,8 +264,14 @@ export const createDrizzleConsumablesRepository = (
       )).for('update');
       if (executions.length !== input.serviceQueueEntryIds.length) return fail('CONSUMABLE_SERVICE_NOT_FOUND', 'إحدى الخدمات غير موجودة');
       if (new Set(executions.map((entry) => entry.serviceId)).size !== 1) return fail('CONSUMABLE_SERVICES_MUST_MATCH', 'الإدخال الجماعي متاح للخدمات المتطابقة فقط');
-      if (executions.some((entry) => entry.status === 'completed')) return fail('CONSUMABLE_SERVICE_ALREADY_COMPLETED', 'إحدى الخدمات مكتملة بالفعل');
+      if (executions.some((entry) => entry.status !== 'completed')) return fail('CONSUMABLE_SERVICE_NOT_COMPLETED', 'يجب إكمال الخدمة قبل تسجيل المستهلكات');
       if (executions.some((entry) => entry.status === 'canceled')) return fail('CONSUMABLE_SERVICE_CANCELLED', 'إحدى الخدمات ملغاة');
+      const existingReports = await tx.select({ id: serviceConsumptionReports.id })
+        .from(serviceConsumptionReports).where(and(
+          inArray(serviceConsumptionReports.serviceQueueEntryId, input.serviceQueueEntryIds),
+          eq(serviceConsumptionReports.isCurrent, true),
+        )).for('update');
+      if (existingReports.length) return fail('CONSUMABLE_SERVICE_ALREADY_COMPLETED', 'تم تسجيل مستهلكات إحدى الخدمات بالفعل');
       if (new Set(input.usages.map((usage) => usage.productId)).size !== input.usages.length) return fail('CONSUMABLE_DUPLICATE_USAGE', 'تم تكرار أحد المستهلكات');
       if (input.accountRole === 'cashier') {
         const sessionIds = [...new Set(executions.map((entry) => entry.cashierSessionId))];
@@ -264,7 +316,6 @@ export const createDrizzleConsumablesRepository = (
           await tx.update(erpConsumableBalances).set({ quantity: fromMilli(next), updatedAt: at }).where(and(eq(erpConsumableBalances.productId, usage.productId), eq(erpConsumableBalances.branchId, input.branchId)));
           state.current = next;
         }
-        await tx.update(serviceQueueEntries).set({ status: 'completed', completedAt: at, completedByAccountId: input.accountId }).where(eq(serviceQueueEntries.id, execution.id));
         results.push({ serviceQueueEntryId: execution.id, reportId });
       }
       return results;

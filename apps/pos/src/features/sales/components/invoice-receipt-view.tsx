@@ -26,12 +26,14 @@ import { InvoiceReversalControls } from './invoice-reversal-controls';
 import { ReceiptBundle } from './receipt';
 import { ReassignEmployeeDialog } from './reassign-employee-dialog';
 import { RecordPaymentDialog } from './record-payment-dialog';
+import { ServiceStatusDialog } from './service-status-dialog';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
   const [exportId, setExportId] = useState<number>();
   const [reassignLineId, setReassignLineId] = useState<number | null>(null);
+  const [serviceStatusOpen, setServiceStatusOpen] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const queryClient = useQueryClient();
   const session = useSession();
@@ -194,7 +196,10 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       && query.data.lines.some((line) => line.itemType === 'service') ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
         <CardContent className="space-y-2 p-4">
-          <p className="text-sm font-medium">تصحيح موظف الخدمة</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">تصحيح موظف الخدمة</p>
+            <Button variant="secondary" size="sm" onClick={() => setServiceStatusOpen(true)}>حالة الخدمة</Button>
+          </div>
           {query.data.lines.filter((line) => line.itemType === 'service').map((line) => (
             <div key={line.id} className="flex items-center justify-between gap-3 border-t border-line pt-2">
               <span className="text-sm">{line.name} — {line.employee?.name}</span>
@@ -219,6 +224,13 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         }}
       />
     )}
+    {serviceStatusOpen ? (
+      <ServiceStatusDialog
+        invoiceId={query.data.id}
+        {...(branchId === undefined ? {} : { branchId })}
+        onClose={() => setServiceStatusOpen(false)}
+      />
+    ) : null}
     {!recordingPayment || !currentCashierSession.data ? null : (
       <RecordPaymentDialog
         invoice={query.data}

@@ -21,6 +21,10 @@ describe('ERP report row localization', () => {
     })).toEqual({ status: 'مكتملة', completionKind: 'بدون مستهلكات' });
     expect(localizeErpReportRow('erp-service-exceptions', { status: 'overdue' }))
       .toEqual({ status: 'متأخرة' });
+    expect(localizeErpReportRow('erp-service-completions', { completionKind: 'unrecorded' }))
+      .toEqual({ completionKind: 'لم تسجل المستهلكات' });
+    expect(localizeErpReportRow('erp-service-queue', { status: 'in_progress' }))
+      .toEqual({ status: 'قيد التنفيذ' });
   });
 
   it('localizes consumables ledger entry types', () => {

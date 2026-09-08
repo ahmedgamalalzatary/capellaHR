@@ -1,8 +1,25 @@
 import { createDatabase } from '@capella/database';
+import { migrate } from 'drizzle-orm/mysql2/migrator';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export default function setup() {
+const migrationsFolder = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../packages/database/migrations',
+);
+
+export default async function setup() {
+  const sourceUrl = process.env.DATABASE_URL;
+  if (sourceUrl) {
+    const database = createDatabase(sourceUrl);
+    try {
+      await migrate(database, { migrationsFolder });
+    } finally {
+      await database.$client.promise().end();
+    }
+  }
+
   return async () => {
-    const sourceUrl = process.env.DATABASE_URL;
     const sharedUrl = process.env.CAPELLA_MYSQL_INTEGRATION_DATABASE_URL;
     if (!sourceUrl || !sharedUrl) return;
 

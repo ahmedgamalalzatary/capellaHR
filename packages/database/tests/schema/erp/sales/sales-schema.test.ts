@@ -177,6 +177,9 @@ describe('ERP sales persistence foundation', () => {
     expect(getTableConfig(entries).checks.map((entry) => entry.name)).toContain(
       'erp_service_queue_completion_consistent',
     );
+    expect(salesSchema.serviceQueueStatuses).toEqual([
+      'pending', 'in_progress', 'completed', 'overdue', 'canceled',
+    ]);
   });
 
   it('preserves every service consumption report revision and its actual usages', () => {

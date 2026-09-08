@@ -3,13 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  balances: vi.fn(), services: vi.fn(), complete: vi.fn(), session: vi.fn(),
+  balances: vi.fn(), services: vi.fn(), status: vi.fn(), record: vi.fn(), session: vi.fn(),
   branches: vi.fn(), products: vi.fn(),
 }));
 vi.mock('../src/features/consumables/api/consumables-api', () => ({
   listConsumableBalances: mocks.balances,
   listConsumableServices: mocks.services,
-  completeServiceExecutions: mocks.complete,
+  updateServiceExecutionStatus: mocks.status,
+  recordServiceConsumptions: mocks.record,
   configureConsumable: vi.fn(), transferConsumableStock: vi.fn(), correctServiceExecution: vi.fn(),
 }));
 vi.mock('../src/features/auth', () => ({ useSession: mocks.session }));
@@ -31,11 +32,21 @@ beforeEach(() => {
     { id: 11, status: 'pending', queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1', clientName: 'عميل', employeeName: 'موظف' },
     { id: 12, status: 'pending', queueNumber: 2, serviceName: 'قص شعر', invoiceNumber: 'INV-1', clientName: 'عميل', employeeName: 'موظف' },
   ]));
-  mocks.complete.mockResolvedValue([]);
+  mocks.status.mockResolvedValue([]);
+  mocks.record.mockResolvedValue([]);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('ConsumablesView', () => {
+  it('marks a sold service done without asking for consumables', async () => {
+    mount();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'تمت' }))[0]!);
+    await waitFor(() => expect(mocks.status).toHaveBeenCalledWith({
+      serviceQueueEntryIds: [11], status: 'completed',
+    }));
+    expect(mocks.record).not.toHaveBeenCalled();
+  });
+
   it('opens product consumable links on the stock tab with the product selected', async () => {
     window.history.replaceState({}, '', '/consumables?productId=9&branchId=3');
     mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'admin' } } });
@@ -44,57 +55,64 @@ describe('ConsumablesView', () => {
     expect(stockTab.getAttribute('aria-selected')).toBe('true');
     await waitFor(() => expect((screen.getByLabelText('منتج إعداد المستهلك') as HTMLSelectElement).value).toBe('9'));
   });
-  it('opens on unfinished customer services and exposes separate completed and stock tabs', async () => {
+  it('opens on service status and exposes separate consumables and stock tabs', async () => {
     mount();
     await screen.findAllByText('INV-1');
-    expect(mocks.services).toHaveBeenCalledWith(expect.objectContaining({ status: 'unfinished' }));
-    expect(screen.getByRole('tab', { name: /الخدمات المعلقة/ })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'الخدمات المكتملة' })).toBeDefined();
+    expect(mocks.services).toHaveBeenCalledWith(expect.objectContaining({ status: 'operational' }));
+    expect(screen.getByRole('tab', { name: 'حالة الخدمات' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'تسجيل المستهلكات' })).toBeDefined();
     expect(screen.getByRole('tab', { name: 'مخزون المستهلكات' })).toBeDefined();
   });
 
-  it('requires an explicit no-consumables choice before completing without usage', async () => {
+  it('requires an explicit no-consumables choice before recording no usage', async () => {
+    mocks.services.mockResolvedValue(page([{ id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1' }]));
     mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
-    const completeButton = screen.getByRole('button', { name: 'إكمال الخدمات المحددة' });
+    const completeButton = screen.getByRole('button', { name: 'حفظ المستهلكات' });
     expect(completeButton.hasAttribute('disabled')).toBe(true);
     fireEvent.click(screen.getByRole('checkbox', { name: 'لم تُستخدم مستهلكات' }));
     expect(completeButton.hasAttribute('disabled')).toBe(false);
     fireEvent.click(completeButton);
-    await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith({
+    await waitFor(() => expect(mocks.record).toHaveBeenCalledWith({
       serviceQueueEntryIds: [11], usages: [], noConsumablesConfirmed: true,
     }));
   });
 
-  it('bulk-completes selected individual services with the same actual quantity', async () => {
+  it('records selected completed services with the same actual quantity', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' },
+      { id: 12, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 2, serviceName: 'One', invoiceNumber: 'INV-2' },
+    ]));
     mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     const checks = await screen.findAllByRole('checkbox');
     fireEvent.click(checks[0]!);
     fireEvent.click(checks[1]!);
     fireEvent.change(screen.getByLabelText('المستهلك 1'), { target: { value: '9' } });
     fireEvent.change(screen.getByLabelText('كمية المستهلك'), { target: { value: '15' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إكمال الخدمات المحددة' }));
-    await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith({
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ المستهلكات' }));
+    await waitFor(() => expect(mocks.record).toHaveBeenCalledWith({
       serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '15' }], noConsumablesConfirmed: false,
     }));
     await waitFor(() => {
       expect(mocks.balances).toHaveBeenCalledTimes(2);
-      expect(mocks.services).toHaveBeenCalledTimes(2);
+      expect(mocks.services.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
     expect(screen.queryByLabelText('المستهلك 1')).toBeNull();
     expect(screen.queryByLabelText('كمية المستهلك')).toBeNull();
   });
 
-  it('shows completed services without correction or completion actions', async () => {
+  it('shows completed services with their consumables state', async () => {
     mocks.services.mockResolvedValue(page([{
       id: 21, status: 'completed', queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-2',
-      clientName: 'عميل', employeeName: 'موظف', completedAt: '2026-09-05T12:00:00.000Z',
+      clientName: 'عميل', employeeName: 'موظف', completedAt: '2026-09-05T12:00:00.000Z', consumptionRecorded: true,
     }]));
     mount();
     await screen.findByText('INV-2');
-    fireEvent.click(screen.getByRole('tab', { name: 'الخدمات المكتملة' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'تسجيل المستهلكات' }));
     await waitFor(() => expect(mocks.services).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'completed' })));
-    expect(screen.queryByRole('button', { name: /تصحيح|إكمال الخدمات/ })).toBeNull();
+    expect(await screen.findByText('مسجلة')).toBeDefined();
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
   });
 
@@ -121,16 +139,17 @@ describe('ConsumablesView', () => {
 
   it('blocks incomplete usage rows and mixed-service selections', async () => {
     mocks.services.mockResolvedValue(page([
-      { id: 11, serviceId: 5, status: 'pending', queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' },
-      { id: 12, serviceId: 6, status: 'pending', queueNumber: 2, serviceName: 'Two', invoiceNumber: 'INV-2' },
+      { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' },
+      { id: 12, serviceId: 6, status: 'completed', consumptionRecorded: false, queueNumber: 2, serviceName: 'Two', invoiceNumber: 'INV-2' },
     ]));
     mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     const checks = await screen.findAllByRole('checkbox');
     fireEvent.click(checks[0]!);
     fireEvent.click(checks[1]!);
     expect((checks[1] as HTMLInputElement).checked).toBe(false);
     fireEvent.change(screen.getAllByRole('combobox').at(-1)!, { target: { value: '9' } });
     fireEvent.click(screen.getAllByRole('button').at(-1)!);
-    await waitFor(() => expect(mocks.complete).not.toHaveBeenCalled());
+    await waitFor(() => expect(mocks.record).not.toHaveBeenCalled());
   });
 });

@@ -223,6 +223,8 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
  * One immutable queue ticket for every unit of a sold service. Numbering starts
  * again for each service when a new cashier shift opens.
  */
+export const serviceQueueStatuses = ['pending', 'in_progress', 'completed', 'overdue', 'canceled'] as const;
+
 export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
   id: int('id').autoincrement().primaryKey(),
   invoiceId: int('invoice_id').notNull(),
@@ -231,7 +233,7 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
   cashierSessionId: int('cashier_session_id').notNull(),
   serviceId: int('service_id').notNull(),
   queueNumber: int('queue_number').notNull(),
-  status: mysqlEnum('status', ['pending', 'completed', 'overdue', 'canceled']).notNull().default('pending'),
+  status: mysqlEnum('status', serviceQueueStatuses).notNull().default('pending'),
   completedAt: timestamp('completed_at', { mode: 'date', fsp: 3 }),
   completedByAccountId: int('completed_by_account_id').references(() => accounts.id),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -260,7 +262,7 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
   check('erp_service_queue_number_positive', sql`${table.queueNumber} > 0`),
   check(
     'erp_service_queue_completion_consistent',
-    sql`(${table.status} in ('pending', 'overdue', 'canceled') and ${table.completedAt} is null and ${table.completedByAccountId} is null) or (${table.status} = 'completed' and ${table.completedAt} is not null and ${table.completedByAccountId} is not null)`,
+    sql`(${table.status} in ('pending', 'in_progress', 'overdue', 'canceled') and ${table.completedAt} is null and ${table.completedByAccountId} is null) or (${table.status} = 'completed' and ${table.completedAt} is not null and ${table.completedByAccountId} is not null)`,
   ),
 ]);
 

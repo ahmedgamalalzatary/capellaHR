@@ -382,7 +382,7 @@ export const createDrizzleCashierSessionRepository = (
       const unfinished = await transaction.select({ value: sql<number>`count(*)` })
         .from(serviceQueueEntries).where(and(
           eq(serviceQueueEntries.cashierSessionId, current.id),
-          inArray(serviceQueueEntries.status, ['pending', 'overdue']),
+          inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'overdue']),
         ));
       const unfinishedCount = Number(unfinished[0]?.value ?? 0);
       if (unfinishedCount > 0) return { kind: 'unfinished_services' as const, count: unfinishedCount };
@@ -441,7 +441,7 @@ export const createDrizzleCashierSessionRepository = (
         ));
         await transaction.update(serviceQueueEntries).set({ status: 'overdue' }).where(and(
           eq(serviceQueueEntries.cashierSessionId, current.id),
-          eq(serviceQueueEntries.status, 'pending'),
+          inArray(serviceQueueEntries.status, ['pending', 'in_progress']),
         ));
         // The till is signed out with the shift; whoever comes next logs in again.
         await transaction.update(authSessions).set({ revokedAt: closedAt }).where(and(
@@ -484,7 +484,7 @@ export const createDrizzleCashierSessionRepository = (
       ));
       await transaction.update(serviceQueueEntries).set({ status: 'overdue' }).where(and(
         eq(serviceQueueEntries.cashierSessionId, current.id),
-        eq(serviceQueueEntries.status, 'pending'),
+        inArray(serviceQueueEntries.status, ['pending', 'in_progress']),
       ));
       const session = (await findById(transaction, current.id))!;
       await audit.record(transaction, {

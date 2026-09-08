@@ -10,6 +10,8 @@ const refundInvoice = vi.hoisted(() => vi.fn());
 const voidInvoice = vi.hoisted(() => vi.fn());
 const reassignInvoiceLine = vi.hoisted(() => vi.fn());
 const recordInvoicePayment = vi.hoisted(() => vi.fn());
+const listConsumableServices = vi.hoisted(() => vi.fn());
+const updateServiceExecutionStatus = vi.hoisted(() => vi.fn());
 const getCurrentCashierSession = vi.hoisted(() => vi.fn());
 const listAssignableEmployees = vi.hoisted(() => vi.fn());
 const reportExports = vi.hoisted(() => ({
@@ -29,6 +31,10 @@ vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   getCurrentCashierSession,
+}));
+vi.mock('../src/features/consumables/api/consumables-api', () => ({
+  listConsumableServices,
+  updateServiceExecutionStatus,
 }));
 vi.mock('../src/features/employee-assignment/api/assignable-employees-api', () => ({
   listAssignableEmployees,
@@ -106,6 +112,16 @@ describe('stored invoice receipt', () => {
     });
     getCurrentCashierSession.mockReset().mockResolvedValue({ id: 14, branchId: 2 });
     recordInvoicePayment.mockReset();
+    listConsumableServices.mockReset().mockResolvedValue({
+      items: [{
+        id: 71, invoiceId: 44, serviceId: 9, status: 'pending', consumptionRecorded: false,
+        queueNumber: 1, serviceName: 'صبغة شعر', invoiceNumber: '44', clientName: 'عميلة',
+        clientPhone: null, employeeId: 3, employeeName: 'منى', cashierSessionId: 14,
+        createdAt: '2026-08-03T10:00:00.000Z', completedAt: null,
+      }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    updateServiceExecutionStatus.mockReset().mockResolvedValue([]);
     reportExports.actor.current = 'admin';
     const job = {
       id: 91, reportType: 'erp-invoice', status: 'queued', filters: { branchId: 2 },
@@ -215,6 +231,20 @@ describe('stored invoice receipt', () => {
     }));
     expect(await screen.findAllByText('هدى محمود')).not.toHaveLength(0);
     expect(screen.getAllByText(/مُسند أصلاً إلى/).length).toBeGreaterThan(0);
+  });
+
+  it('updates a sold service status from a popup beside employee correction', async () => {
+    renderView();
+    await screen.findByText('تصحيح موظف الخدمة');
+    fireEvent.click(screen.getByRole('button', { name: 'حالة الخدمة' }));
+    expect(await screen.findByRole('heading', { name: 'حالة خدمات الفاتورة' })).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: 'قيد التنفيذ' }));
+    await waitFor(() => expect(updateServiceExecutionStatus).toHaveBeenCalledWith({
+      branchId: 2, serviceQueueEntryIds: [71], status: 'in_progress',
+    }));
+    expect(listConsumableServices).toHaveBeenCalledWith(expect.objectContaining({
+      branchId: 2, invoiceId: 44,
+    }));
   });
 
   it('falls back to the authorizing account for legacy invoices without a seller', async () => {

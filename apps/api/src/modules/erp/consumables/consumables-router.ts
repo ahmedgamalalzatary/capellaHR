@@ -1,11 +1,12 @@
 import {
-  completeServiceExecutionsSchema,
   configureConsumableSchema,
   correctServiceExecutionSchema,
   listConsumableBalancesQuerySchema,
   listConsumableServicesQuerySchema,
   productIdParamsSchema,
+  recordServiceConsumptionsSchema,
   transferConsumableStockSchema,
+  updateServiceExecutionStatusSchema,
 } from '@capella/contracts';
 import { Router, type Response } from 'express';
 import { z, ZodError } from 'zod';
@@ -42,7 +43,8 @@ export const createConsumablesRouter = (service: ConsumablesService) => {
   router.put('/products/:id/configuration', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); response.json({ data: await service.configure(actorFrom(response), id, configureConsumableSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
   router.post('/products/:id/transfers', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); response.json({ data: await service.transfer(actorFrom(response), id, transferConsumableStockSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
   router.get('/services', async (request, response) => { try { const query = listConsumableServicesQuerySchema.parse(request.query); const result = await service.listServices(actorFrom(response), query); response.json({ data: result.items, meta: meta(query, result.total) }); } catch (cause) { handle(cause, response); } });
-  router.post('/services/complete', async (request, response) => { try { response.json({ data: await service.complete(actorFrom(response), completeServiceExecutionsSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
+  router.patch('/services/status', async (request, response) => { try { response.json({ data: await service.updateStatus(actorFrom(response), updateServiceExecutionStatusSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
+  router.post('/services/consumptions', async (request, response) => { try { response.json({ data: await service.record(actorFrom(response), recordServiceConsumptionsSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
   router.put('/services/:id', async (request, response) => { try { const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params); response.json({ data: await service.correct(actorFrom(response), id, correctServiceExecutionSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
   return router;
 };

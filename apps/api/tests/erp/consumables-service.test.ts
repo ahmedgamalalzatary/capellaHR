@@ -16,7 +16,8 @@ const repository = () => ({
   transfer: vi.fn().mockResolvedValue({ productId: 9, sellableQuantity: 8, consumableQuantity: '300.000' }),
   listBalances: vi.fn().mockResolvedValue({ items: [], total: 0 }),
   listServices: vi.fn().mockResolvedValue({ items: [], total: 0 }),
-  complete: vi.fn().mockResolvedValue([]),
+  updateStatus: vi.fn().mockResolvedValue([]),
+  record: vi.fn().mockResolvedValue([]),
   correct: vi.fn().mockResolvedValue({ id: 11 }),
 });
 
@@ -31,25 +32,25 @@ describe('consumables service', () => {
       .rejects.toMatchObject({ code: 'CONSUMABLES_ADMIN_REQUIRED' });
   });
 
-  it('lets a cashier complete services only through their branch context', async () => {
+  it('lets a cashier update service status without recording consumables', async () => {
     const repo = repository();
     const service = createConsumablesService({ repository: repo, resolveBranchContext: context });
-    await service.complete(cashier, {
-      serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '20.000' }], noConsumablesConfirmed: false,
+    await service.updateStatus(cashier, {
+      serviceQueueEntryIds: [11, 12], status: 'completed',
     });
-    expect(repo.complete).toHaveBeenCalledWith({
+    expect(repo.updateStatus).toHaveBeenCalledWith({
       branchId: 3, accountId: 2, accountRole: 'cashier',
-      serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '20.000' }],
+      serviceQueueEntryIds: [11, 12], status: 'completed',
     });
   });
 
-  it('refuses service completion without consumables or an explicit no-consumables confirmation', async () => {
+  it('requires a consumables decision only when recording consumption', async () => {
     const repo = repository();
     const service = createConsumablesService({ repository: repo, resolveBranchContext: context });
-    await expect(service.complete(cashier, {
+    await expect(service.record(cashier, {
       serviceQueueEntryIds: [11], usages: [], noConsumablesConfirmed: false,
     })).rejects.toMatchObject({ code: 'CONSUMABLE_USAGE_DECISION_REQUIRED' });
-    expect(repo.complete).not.toHaveBeenCalled();
+    expect(repo.record).not.toHaveBeenCalled();
   });
 
   it('scopes a cashier service list to their own account while admins may inspect the branch', async () => {
