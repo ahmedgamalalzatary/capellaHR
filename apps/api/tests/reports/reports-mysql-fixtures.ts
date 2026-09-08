@@ -147,6 +147,7 @@ export const seed = async () => {
   const advanceId = Number((await database.insert(advances).values({
     employeeId,
     amount: '80.00',
+    reason: 'Personal need',
     installmentCount: 2,
     startMonth: '2026-07-01',
     createdAt: now,

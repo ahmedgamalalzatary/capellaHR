@@ -255,6 +255,7 @@ export const advances = mysqlTable('advances', {
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
   installmentCount: int('installment_count').notNull(),
   startMonth: date('start_month', { mode: 'string' }).notNull(),
+  reason: varchar('reason', { length: 200 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [

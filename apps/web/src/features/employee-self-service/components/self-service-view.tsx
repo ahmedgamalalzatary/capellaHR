@@ -278,6 +278,7 @@ function AdvancesSection() {
         <div><p className="text-[12px] text-muted">إجمالي السلفة</p><p className="tabular mt-1 font-semibold">{formatMoney(advance.amount)}</p></div>
         <Badge variant="neutral">{advance.installmentCount} أقساط</Badge>
       </div>
+      <p className="border-b border-line py-3 text-sm">{advance.reason}</p>
       <ul className="divide-y divide-line/60">{advance.installments.map((installment) => (
         <li key={installment.ordinal} className="flex items-center justify-between gap-3 py-3 text-sm">
           <span>قسط {installment.ordinal}</span>

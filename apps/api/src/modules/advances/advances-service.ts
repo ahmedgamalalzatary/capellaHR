@@ -14,6 +14,7 @@ export type AdvanceRecord = {
   amount: string;
   installmentCount: number;
   startMonth: string;
+  reason: string;
   employeeDeletedAt: Date | null;
   installments: AdvanceInstallmentRecord[];
   createdAt: Date;

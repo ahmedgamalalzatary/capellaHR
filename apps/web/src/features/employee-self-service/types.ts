@@ -44,6 +44,7 @@ export type SelfServiceAdjustment = {
 export type SelfServiceAdvance = {
   id: number;
   amount: string;
+  reason: string;
   installmentCount: number;
   startMonth: string;
   installments: Array<{ ordinal: number; payrollMonth: string; amount: string }>;

@@ -37,6 +37,7 @@ const fields = {
   id: advances.id, employeeId: advances.employeeId, employeeCode: employees.employeeCode,
   employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
   amount: advances.amount, installmentCount: advances.installmentCount, startMonth: advances.startMonth,
+  reason: advances.reason,
   employeeDeletedAt: employees.deletedAt, createdAt: advances.createdAt, updatedAt: advances.updatedAt,
 };
 const rawFind = async (executor: Executor, id: number) => (
@@ -139,7 +140,7 @@ export const createDrizzleAdvanceRepository = (
         const at = context.now();
         const inserted = await transaction.insert(advances).values({
           employeeId: input.employeeId, amount: input.amount, installmentCount: input.installmentCount,
-          startMonth: payrollMonthStart(input.startMonth), createdAt: at, updatedAt: at,
+          startMonth: payrollMonthStart(input.startMonth), reason: input.reason, createdAt: at, updatedAt: at,
         });
         const id = Number(inserted[0].insertId);
         await insertSchedule(transaction, id, input.employeeId, schedule, at);
@@ -197,6 +198,7 @@ export const createDrizzleAdvanceRepository = (
         await transaction.delete(advanceInstallments).where(eq(advanceInstallments.advanceId, id));
         await transaction.update(advances).set({
           amount, installmentCount, startMonth: payrollMonthStart(startMonth), updatedAt: at,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
         }).where(eq(advances.id, id));
         await insertSchedule(transaction, id, employee.id, schedule, at);
         const record = (await findRecord(transaction, id))!;

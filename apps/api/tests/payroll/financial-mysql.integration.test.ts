@@ -189,7 +189,7 @@ describe('MySQL-backed salary domain', () => {
     const payrollModule = createPayrollModule(database, { now: () => fixedNow, attendance });
     const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07', reason: 'سبب' });
     const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-07', reason: 'Late arrival' });
-    const advance = await advanceModule.service.create({ employeeId, amount: '200.00', installmentCount: 2, startMonth: '2026-07' });
+    const advance = await advanceModule.service.create({ employeeId, amount: '200.00', installmentCount: 2, startMonth: '2026-07', reason: 'سبب' });
     await payrollModule.service.finalize(employeeId, '2026-06');
     const reassignedAt = new Date(fixedNow.getTime() + 60_000);
     await database.update(employeeBranchAssignments).set({ effectiveTo: reassignedAt })
@@ -260,10 +260,10 @@ describe('MySQL-backed salary domain', () => {
     const employeeId = await createEmployee(branchId, 1);
     const advanceModule = createAdvanceModule(database, { now: () => fixedNow });
     await expect(advanceModule.service.create({
-      employeeId, amount: '1.00', installmentCount: 1, startMonth: '2026-05',
+      employeeId, amount: '1.00', installmentCount: 1, startMonth: '2026-05', reason: 'سبب',
     })).rejects.toMatchObject({ code: 'ADVANCE_MONTH_NOT_ELIGIBLE' });
     const created = await advanceModule.service.create({
-      employeeId, amount: '100.00', installmentCount: 3, startMonth: '2026-07',
+      employeeId, amount: '100.00', installmentCount: 3, startMonth: '2026-07', reason: 'سبب',
     });
     expect(created.installments.map(({ payrollMonth, amount }) => ({ payrollMonth, amount }))).toEqual([
       { payrollMonth: '2026-07', amount: '33.33' },
@@ -300,11 +300,11 @@ describe('MySQL-backed salary domain', () => {
     ));
 
     await expect(advanceModule.service.create({
-      employeeId, amount: '90.00', installmentCount: 2, startMonth: '2026-05',
+      employeeId, amount: '90.00', installmentCount: 2, startMonth: '2026-05', reason: 'سبب',
     })).rejects.toMatchObject({ code: 'ADVANCE_PAYROLL_FINALIZED' });
 
     const editable = await advanceModule.service.create({
-      employeeId, amount: '90.00', installmentCount: 1, startMonth: '2026-07',
+      employeeId, amount: '90.00', installmentCount: 1, startMonth: '2026-07', reason: 'سبب',
     });
     await expect(advanceModule.service.update(editable.id, {
       installmentCount: 2, startMonth: '2026-06',
@@ -320,7 +320,7 @@ describe('MySQL-backed salary domain', () => {
     const employeeId = await createEmployee(branchId, 1);
     const advanceModule = createAdvanceModule(database, { now: () => fixedNow });
     const created = await advanceModule.service.create({
-      employeeId, amount: '100.00', installmentCount: 3, startMonth: '2026-06',
+      employeeId, amount: '100.00', installmentCount: 3, startMonth: '2026-06', reason: 'سبب',
     });
     await createPayrollModule(database, { now: () => fixedNow, attendance }).service
       .finalize(employeeId, '2026-06');
@@ -349,7 +349,7 @@ describe('MySQL-backed salary domain', () => {
     const augustNow = new Date('2026-08-16T10:00:00.000Z');
     const advanceModule = createAdvanceModule(database, { now: () => augustNow });
     const created = await advanceModule.service.create({
-      employeeId, amount: '2000.00', installmentCount: 4, startMonth: '2026-07',
+      employeeId, amount: '2000.00', installmentCount: 4, startMonth: '2026-07', reason: 'سبب',
     });
     const payroll = createPayrollModule(database, { now: () => augustNow, attendance });
     await payroll.service.finalize(employeeId, '2026-06');
@@ -420,7 +420,7 @@ describe('MySQL-backed salary domain', () => {
     const deletionInstant = new Date('2026-07-31T20:59:00.000Z');
     const advanceModule = createAdvanceModule(database, { now: () => afterCairoMonthBoundary });
     const created = await advanceModule.service.create({
-      employeeId, amount: '100.00', installmentCount: 2, startMonth: '2026-07',
+      employeeId, amount: '100.00', installmentCount: 2, startMonth: '2026-07', reason: 'سبب',
     });
     const employeeModule = createEmployeesModule(
       database,
@@ -446,7 +446,7 @@ describe('MySQL-backed salary domain', () => {
     const deletionInstant = new Date('2026-07-31T12:00:00.000Z');
     const advanceModule = createAdvanceModule(database, { now: () => augustNow });
     const created = await advanceModule.service.create({
-      employeeId, amount: '100.00', installmentCount: 2, startMonth: '2026-08',
+      employeeId, amount: '100.00', installmentCount: 2, startMonth: '2026-08', reason: 'سبب',
     });
     const payroll = createPayrollModule(database, { now: () => augustNow, attendance });
     await payroll.service.finalize(employeeId, '2026-06');
@@ -473,7 +473,7 @@ describe('MySQL-backed salary domain', () => {
     const ownerId = await createEmployee(branchId, 1);
     const otherEmployeeId = await createEmployee(branchId, 2);
     const created = await createAdvanceModule(database, { now: () => fixedNow }).service.create({
-      employeeId: ownerId, amount: '10.00', installmentCount: 1, startMonth: '2026-07',
+      employeeId: ownerId, amount: '10.00', installmentCount: 1, startMonth: '2026-07', reason: 'سبب',
     });
 
     await expect(database.insert(advanceInstallments).values({
@@ -496,7 +496,7 @@ describe('MySQL-backed salary domain', () => {
       employeeId, amount: '50.00', payrollMonth: '2026-06', reason: 'Late arrival',
     });
     await createAdvanceModule(database, { now: () => fixedNow }).service.create({
-      employeeId, amount: '200.00', installmentCount: 1, startMonth: '2026-06',
+      employeeId, amount: '200.00', installmentCount: 1, startMonth: '2026-06', reason: 'سبب',
     });
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
 

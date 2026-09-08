@@ -9,6 +9,7 @@ import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.ts';
 
 export const installmentCountSchema = z.number().int().min(1).max(12);
 export const advanceParamsSchema = z.object({ advanceId: coercedMysqlIntSchema });
+export const advanceReasonSchema = z.string().trim().min(1).max(200);
 const validateSchedule = (
   value: {
     amount?: string | undefined;
@@ -37,6 +38,7 @@ const advanceFieldsSchema = z.object({
   amount: moneyAmountSchema,
   installmentCount: installmentCountSchema,
   startMonth: payrollMonthSchema,
+  reason: advanceReasonSchema,
 }).strict();
 export const createAdvanceSchema = advanceFieldsSchema.superRefine(validateSchedule);
 export const updateAdvanceSchema = advanceFieldsSchema.omit({ employeeId: true })

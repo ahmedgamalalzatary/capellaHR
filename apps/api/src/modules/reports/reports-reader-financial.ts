@@ -135,6 +135,7 @@ export const readAdvancesReport = async (
     branchId: historicalBranchId,
     branchName: branches.name,
     amount: advances.amount,
+    reason: advances.reason,
     installmentCount: advances.installmentCount,
     startMonth: advances.startMonth,
     employeeDeletedAt: employees.deletedAt,
@@ -178,7 +179,8 @@ export const readAdvancesReport = async (
   return { kind: 'success', total, snapshot: snapshot(reportType, columns(
     ['id', 'الرقم'], ['employeeId', 'رقم الموظف'], ['employeeCode', 'كود الموظف'],
     ['employeeName', 'اسم الموظف'], ['branchId', 'رقم الفرع'], ['branchName', 'اسم الفرع'],
-    ['amount', 'المبلغ'], ['installmentCount', 'عدد الأقساط'], ['startMonth', 'شهر البداية'],
+    ['amount', 'المبلغ'], ['reason', 'سبب السلفة'],
+    ['installmentCount', 'عدد الأقساط'], ['startMonth', 'شهر البداية'],
     ['installmentSchedule', 'جدول الأقساط'], ['isEmployeeDeleted', 'موظف محذوف'],
     ['createdAt', 'تاريخ الإنشاء'], ['updatedAt', 'آخر تحديث'],
   ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt) };

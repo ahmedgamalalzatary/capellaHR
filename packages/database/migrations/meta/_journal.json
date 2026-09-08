@@ -638,6 +638,13 @@
       "when": 1788591603695,
       "tag": "0090_product_partial_payment_settlement",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "5",
+      "when": 1788853775935,
+      "tag": "0091_shocking_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

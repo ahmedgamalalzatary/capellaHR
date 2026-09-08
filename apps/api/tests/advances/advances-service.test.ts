@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createAdvanceService, type AdvanceRepository } from '../../src/modules/advances/index.js';
 
-const input = { employeeId: 3, amount: '100.00', installmentCount: 3, startMonth: '2026-07' };
+const input = {
+  employeeId: 3, amount: '100.00', installmentCount: 3,
+  startMonth: '2026-07', reason: 'احتياج شخصي',
+};
 const record = { id: 1, ...input, employeeCode: 9, employeeName: 'موظف', branchId: 2, branchName: 'فرع', employeeDeletedAt: null, installments: [], createdAt: new Date(), updatedAt: new Date() };
 const repo = (): AdvanceRepository => ({
   create: vi.fn(async () => ({ kind: 'success' as const, record })),

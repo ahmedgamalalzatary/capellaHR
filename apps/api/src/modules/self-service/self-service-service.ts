@@ -73,6 +73,7 @@ const projectBonus = (record: BonusRecord) => ({
 const projectAdvance = (record: AdvanceRecord) => ({
   id: record.id,
   amount: record.amount,
+  reason: record.reason,
   installmentCount: record.installmentCount,
   startMonth: record.startMonth,
   installments: record.installments.map((installment) => ({

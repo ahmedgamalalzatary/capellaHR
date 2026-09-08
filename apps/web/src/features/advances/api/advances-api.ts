@@ -18,6 +18,7 @@ export interface Advance {
   branchId: number;
   branchName: string;
   amount: string;
+  reason: string;
   installmentCount: number;
   startMonth: string;
   employeeDeletedAt: string | null;

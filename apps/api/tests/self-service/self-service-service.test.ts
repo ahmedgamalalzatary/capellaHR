@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { AdvanceRecord } from '../../src/modules/advances/index.js';
 import { createSelfServiceService } from '../../src/modules/self-service/index.js';
 
 const employee = {
@@ -80,7 +81,7 @@ const makeDependencies = () => ({
   },
   bonuses: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   deductions: { list: vi.fn(async () => ({ items: [], total: 0 })) },
-  advances: { list: vi.fn(async () => ({ items: [], total: 0 })) },
+  advances: { list: vi.fn(async () => ({ items: [] as AdvanceRecord[], total: 0 })) },
   commissions: { getMonthlySummary: vi.fn(async () => ({
     employeeId: 7, employeeCode: 42, employeeName: employee.fullName,
     payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
@@ -156,6 +157,24 @@ describe('employee self-service service', () => {
     });
     expect(dependencies.deductions.list).toHaveBeenCalledWith({ employeeId: 7, page: 1, pageSize: 20 });
     expect(dependencies.advances.list).toHaveBeenCalledWith({ employeeId: 7, page: 1, pageSize: 20 });
+  });
+
+  it('includes the reason in an employee advance history item', async () => {
+    const dependencies = makeDependencies();
+    vi.mocked(dependencies.advances.list).mockResolvedValue({
+      items: [{
+        id: 3, employeeId: 7, employeeCode: 42, employeeName: 'Employee',
+        branchId: 2, branchName: 'Branch', amount: '200.00', reason: 'Personal need',
+        installmentCount: 1, startMonth: '2026-07', employeeDeletedAt: null,
+        installments: [{ id: 31, ordinal: 1, payrollMonth: '2026-07', amount: '200.00' }],
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-01T00:00:00.000Z'),
+      }],
+      total: 1,
+    });
+
+    await expect(createSelfServiceService(dependencies).listAdvances(7, { page: 1, pageSize: 20 }))
+      .resolves.toMatchObject({ items: [{ reason: 'Personal need' }] });
   });
 
   it('reads a payroll month only for the authenticated employee and removes company identity fields', async () => {

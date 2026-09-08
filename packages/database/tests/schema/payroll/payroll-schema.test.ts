@@ -30,6 +30,13 @@ const checkSql = (table: Parameters<typeof getTableConfig>[0], name: string) => 
 };
 
 describe('payroll schema', () => {
+  it('stores a required advance reason of up to 200 characters', () => {
+    const reason = config(advances).columns.find((column) => column.name === 'reason');
+    expect(reason).toBeDefined();
+    expect(reason?.notNull).toBe(true);
+    expect(reason?.getSQLType()).toBe('varchar(200)');
+  });
+
   it('stores an optional historical reason on bonus rows', () => {
     const reason = config(bonuses).columns.find((column) => column.name === 'reason');
     expect(reason).toBeDefined();

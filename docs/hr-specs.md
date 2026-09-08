@@ -627,7 +627,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - No pending, paid, cancelled, or other disbursement status exists.
 - An advance is a fixed EGP amount with two decimal places and must be greater than EGP 0.00.
 - The admin assigns one employee, full amount, installment count, and starting payroll month.
-- Advances have no reason, title, or description.
+- Every advance has a required reason of up to 200 characters.
 - Advances are created one employee at a time; bulk creation is excluded.
 - An employee may have multiple active advances with installments in the same month.
 - Payroll sums all installments belonging to an employee-month.

@@ -26,6 +26,7 @@ const installmentCount = requiredNumber('اختر عدد الأقساط').pipe(
 );
 
 const startMonth = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, FORM_MESSAGES.required);
+const reason = z.string().trim().min(1, FORM_MESSAGES.required).max(200, 'السبب يجب ألا يتجاوز 200 حرف');
 
 /** Every installment must stay a positive cent amount after equal division. */
 const requirePositiveInstallments = (
@@ -49,12 +50,13 @@ export const advanceCreateFormSchema = z
     amount,
     installmentCount,
     startMonth,
+    reason,
   })
   .superRefine(requirePositiveInstallments);
 
 /** The employee is immutable after creation; the schedule may be regenerated. */
 export const advanceUpdateFormSchema = z
-  .object({ amount, installmentCount, startMonth })
+  .object({ amount, installmentCount, startMonth, reason })
   .superRefine(requirePositiveInstallments);
 
 export type AdvanceCreateFormValues = z.infer<typeof advanceCreateFormSchema>;

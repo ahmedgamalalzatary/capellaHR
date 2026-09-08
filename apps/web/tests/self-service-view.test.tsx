@@ -108,7 +108,7 @@ beforeEach(() => {
     id: 2, payrollMonth: '2026-07', amount: '20.00', reason: 'Late arrival', createdAt: '', updatedAt: '',
   }]));
   mocks.listAdvances.mockResolvedValue(pageOf([{
-    id: 3, amount: '200.00', installmentCount: 2, startMonth: '2026-07',
+    id: 3, amount: '200.00', installmentCount: 2, startMonth: '2026-07', reason: 'احتياج شخصي',
     installments: [
       { ordinal: 1, payrollMonth: '2026-07', amount: '100.00' },
       { ordinal: 2, payrollMonth: '2026-08', amount: '100.00' },
@@ -124,6 +124,13 @@ afterEach(() => {
 });
 
 describe('SelfServiceView', () => {
+  it('shows the reason for an advance', async () => {
+    renderView();
+    await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getAllByRole('tab')[7]!);
+    expect(await screen.findByText('احتياج شخصي')).toBeDefined();
+  });
+
   it('shows the reason for a deduction', async () => {
     renderView();
     await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledTimes(1));

@@ -39,6 +39,7 @@ const advance = {
   branchId: 3,
   branchName: 'فرع القاهرة',
   amount: '1000.00',
+  reason: 'احتياج شخصي',
   installmentCount: 3,
   startMonth: '2026-07',
   employeeDeletedAt: null,
@@ -97,6 +98,7 @@ describe('AdvancesView', () => {
     const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
     expect(within(row).getByText('1001')).toBeDefined();
     expect(within(row).getByText(/1000\.00/)).toBeDefined();
+    expect(within(row).getByText('احتياج شخصي')).toBeDefined();
     expect(within(row).getByText('3 أقساط')).toBeDefined();
     expect(within(row).getByText('2026-07')).toBeDefined();
   });
@@ -120,6 +122,7 @@ describe('AdvancesView', () => {
     fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '1000' } });
     fireEvent.change(screen.getByLabelText(/عدد الأقساط/), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText(/شهر البداية/), { target: { value: '2026-07' } });
+    fireEvent.change(screen.getByLabelText(/سبب السلفة/), { target: { value: 'احتياج شخصي' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createAdvance).toHaveBeenCalledWith({
@@ -127,6 +130,7 @@ describe('AdvancesView', () => {
         amount: '1000',
         installmentCount: 3,
         startMonth: '2026-07',
+        reason: 'احتياج شخصي',
       }),
     );
   });
@@ -146,6 +150,7 @@ describe('AdvancesView', () => {
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
     expect(screen.queryByLabelText(/الموظف/)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/سبب السلفة/), { target: { value: 'علاج' } });
     fireEvent.change(screen.getByLabelText(/عدد الأقساط/), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
@@ -153,6 +158,7 @@ describe('AdvancesView', () => {
         amount: '1000.00',
         installmentCount: 2,
         startMonth: '2026-07',
+        reason: 'علاج',
       }),
     );
   });

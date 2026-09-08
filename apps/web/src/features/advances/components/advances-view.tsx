@@ -31,13 +31,14 @@ import {
 } from '../schemas/advance-form';
 import { advanceQueryKeys } from '../query-keys';
 
-const ADVANCE_COLUMN_COUNT = 7;
+const ADVANCE_COLUMN_COUNT = 8;
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
   if (error instanceof ApiError) {
     return (
       error.fieldErrors.amount?.[0]
+      ?? error.fieldErrors.reason?.[0]
       ?? error.fieldErrors.installmentCount?.[0]
       ?? error.fieldErrors.startMonth?.[0]
       ?? error.fieldErrors.employeeId?.[0]
@@ -55,7 +56,7 @@ function ScheduleFields({
   errors,
 }: {
   register: ReturnType<typeof useForm<UpdateFormInput, unknown, AdvanceUpdateFormValues>>['register'];
-  errors: Partial<Record<'amount' | 'installmentCount' | 'startMonth', { message?: string }>>;
+  errors: Partial<Record<'amount' | 'installmentCount' | 'startMonth' | 'reason', { message?: string }>>;
 }) {
   return (
     <>
@@ -91,6 +92,9 @@ function ScheduleFields({
       >
         <Input id="advance-start-month" type="month" {...register('startMonth')} />
       </Field>
+      <Field label="سبب السلفة" htmlFor="advance-reason" required error={errors.reason?.message}>
+        <Input id="advance-reason" maxLength={200} {...register('reason')} />
+      </Field>
     </>
   );
 }
@@ -109,7 +113,7 @@ function AdvanceCreateForm({ onDone }: { onDone: () => void }) {
     formState: { errors },
   } = useForm<CreateFormInput, unknown, AdvanceCreateFormValues>({
     resolver: zodResolver(advanceCreateFormSchema),
-    defaultValues: { employeeId: '', amount: '', installmentCount: 1, startMonth: '' },
+    defaultValues: { employeeId: '', amount: '', installmentCount: 1, startMonth: '', reason: '' },
   });
 
   const save = useMutation({
@@ -197,6 +201,7 @@ function AdvanceEditForm({ advance, onDone }: { advance: Advance; onDone: () => 
       amount: advance.amount,
       installmentCount: advance.installmentCount,
       startMonth: advance.startMonth,
+      reason: advance.reason,
     },
   });
 
@@ -414,6 +419,7 @@ export function AdvancesView() {
                   <th className="px-4 py-2.5 text-start font-medium">الموظف</th>
                   <th className="hidden px-4 py-2.5 text-start font-medium md:table-cell">الفرع</th>
                   <th className="px-4 py-2.5 text-start font-medium">المبلغ</th>
+                  <th className="px-4 py-2.5 text-start font-medium">السبب</th>
                   <th className="px-4 py-2.5 text-start font-medium">الأقساط</th>
                   <th className="px-4 py-2.5 text-start font-medium">شهر البداية</th>
                   <th className="px-4 py-2.5 text-start font-medium">إجراءات</th>
@@ -438,6 +444,7 @@ export function AdvancesView() {
                       <td className="px-4 py-3">
                         <span className="tabular">{formatMoney(advance.amount)}</span>
                       </td>
+                      <td className="max-w-64 px-4 py-3">{advance.reason}</td>
                       <td className="px-4 py-3">
                         {advance.installmentCount === 1
                           ? 'قسط واحد'

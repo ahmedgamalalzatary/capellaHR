@@ -29,6 +29,7 @@ const deductionService = (): DeductionService => bonusService();
 const advance = {
   id: 1, employeeId: 7, employeeCode: 10, employeeName: 'موظف', branchId: 2,
   branchName: 'فرع', amount: '100.00', installmentCount: 1, startMonth: '2026-07',
+  reason: 'احتياج شخصي',
   employeeDeletedAt: null, installments: [{ id: 1, ordinal: 1, payrollMonth: '2026-07', amount: '100.00' }],
   createdAt: new Date(), updatedAt: new Date(),
 };
@@ -78,7 +79,9 @@ describe('financial HTTP APIs', () => {
       .send({ employeeId: 7, amount: '10', payrollMonth: '2026-07' })).status).toBe(400);
     expect(deductions.create).toHaveBeenCalledTimes(1);
     expect((await request(app).post('/api/v1/advances').set(cookie)
-      .send({ employeeId: 7, amount: '100', installmentCount: 1, startMonth: '2026-07' })).status).toBe(201);
+      .send({ employeeId: 7, amount: '100', installmentCount: 1, startMonth: '2026-07', reason: 'احتياج شخصي' })).status).toBe(201);
+    expect((await request(app).post('/api/v1/advances').set(cookie)
+      .send({ employeeId: 7, amount: '100', installmentCount: 1, startMonth: '2026-07' })).status).toBe(400);
     expect((await request(app).delete('/api/v1/bonuses/1').set(cookie)).status).toBe(204);
     expect((await request(app).patch('/api/v1/advances/1').set(cookie).send({ employeeId: 8 })).status).toBe(400);
   });
