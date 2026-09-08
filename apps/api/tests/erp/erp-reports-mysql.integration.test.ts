@@ -243,6 +243,21 @@ describe('ERP reports MySQL reader', () => {
     expect(productOnlyInvoiceId).toBeGreaterThan(0);
   });
 
+  it('limits ERP rows and their totals to the selected report row identifiers', async () => {
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-sales', { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' },
+      { mode: 'selected', ids: [invoiceId] }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+
+    expect(result).toMatchObject({
+      kind: 'success', total: 1,
+      snapshot: {
+        rows: [expect.objectContaining({ id: invoiceId, invoiceNumber: 'INV.2026.08.09.0001' })],
+        summary: { totalRecords: 1 },
+      },
+    });
+  });
+
   it('keeps internal trade out of the money reports it would distort', async () => {
     const reader = createErpReportsModule(database).reader;
     const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };
@@ -321,7 +336,13 @@ describe('ERP reports MySQL reader', () => {
 
     expect(result).toMatchObject({
       kind: 'success', total: 1,
-      snapshot: { summary: { totalRecords: 1, totalCommission: '30.00' } },
+      snapshot: {
+        rows: [expect.objectContaining({
+          id: employeeId, serviceCount: 1, earnedAmount: '30.00',
+          reversedAmount: '0.00', netAmount: '30.00',
+        })],
+        summary: { totalRecords: 1, totalServices: '1', totalCommission: '30.00' },
+      },
     });
   });
 

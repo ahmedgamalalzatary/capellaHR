@@ -4,7 +4,12 @@ import { constants, inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
 import { renderReportPdf, renderReportPdfToStream } from '../src/index.js';
-import { formatCairoTimestamp, formatInvoiceSoldAt, reportSummaryLabel } from '../src/report-pdf.js';
+import {
+  formatCairoTimestamp,
+  formatInvoiceSoldAt,
+  reportSummaryLabel,
+  reportSummaryRows,
+} from '../src/report-pdf.js';
 
 const snapshot: ReportSnapshot = {
   reportType: 'employees',
@@ -141,6 +146,13 @@ describe('Arabic report PDF renderer', () => {
       expect(reportSummaryLabel(key)).not.toBe(key);
       expect(reportSummaryLabel(key)).toMatch(/[\u0600-\u06ff]/u);
     }
+  });
+
+  it('turns every report total into its own dedicated table row', () => {
+    expect(reportSummaryRows({ totalRecords: 3, totalSales: '450.00' })).toEqual([
+      { label: 'إجمالي السجلات', value: '3' },
+      { label: 'إجمالي المبيعات', value: '450.00' },
+    ]);
   });
 
   it('creates a non-empty PDF from an immutable report snapshot', async () => {

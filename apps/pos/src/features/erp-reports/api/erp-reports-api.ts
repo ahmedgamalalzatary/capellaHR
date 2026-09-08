@@ -32,7 +32,12 @@ export interface ErpReportExport {
   updatedAt: string;
 }
 
-export interface ViewErpReportParams extends ReportFilters { page?: number; pageSize?: number }
+export interface ViewErpReportParams extends ReportFilters {
+  page?: number;
+  pageSize?: number;
+  selection?: ReportSelection['mode'];
+  selectedIds?: string;
+}
 
 const queryString = (params: Record<string, string | number | undefined>) => {
   const query = new URLSearchParams();

@@ -76,6 +76,30 @@ describe('ERP report reader', () => {
     expect(result).toMatchObject({ kind: 'success', total: 3, rowCount: 3 });
   });
 
+  it('publishes employee-scoped commission columns', async () => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+
+    const result = await createErpReportReader(repository).read(
+      'erp-commissions', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+
+    expect(result).toMatchObject({
+      kind: 'success',
+      snapshot: { columns: [
+        { key: 'id', label: 'المعرف' },
+        { key: 'employeeCode', label: 'كود الموظف' },
+        { key: 'employeeName', label: 'الموظف' },
+        { key: 'serviceCount', label: 'عدد الخدمات' },
+        { key: 'earnedAmount', label: 'العمولات المكتسبة' },
+        { key: 'reversedAmount', label: 'العمولات المعكوسة' },
+        { key: 'netAmount', label: 'صافي المستحق' },
+      ] },
+    });
+  });
+
   it.each([
     ['erp-service-queue', 'تقرير أرقام أدوار الخدمات', [
       ['id', 'المعرف'], ['eventDate', 'وقت الإصدار'], ['branchName', 'الفرع'], ['shiftId', 'الوردية'],

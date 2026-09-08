@@ -62,7 +62,14 @@ const normalizeIds = (value: unknown) => {
   return [...new Set(entries.map((item) => typeof item === 'string' && /^\d+$/.test(item.trim())
     ? Number(item.trim()) : item))];
 };
-const idListSchema = z.preprocess(normalizeIds, z.array(positiveMysqlIntSchema).min(1).max(10_000));
+const reportRowIdSchema = z.union([
+  positiveMysqlIntSchema,
+  z.string().trim().min(1).max(100).regex(/^[a-z][a-z0-9-]*-\d+(?:-\d+)?$/),
+]);
+const idListSchema = z.preprocess(
+  normalizeIds,
+  z.array(reportRowIdSchema).min(1).max(10_000),
+);
 
 const reportFilterShape = {
   search: z.string().trim().min(1).max(255).optional(),
@@ -147,19 +154,22 @@ const validateSelectionCompatibility = (
   selection: z.infer<typeof reportSelectionSchema>,
   context: z.RefinementCtx,
 ) => {
-  if (erpTabReportTypeSet.has(reportType) && selection.mode !== 'all') {
-    context.addIssue({
-      code: 'custom',
-      path: ['selection'],
-      message: 'تقارير ERP الجدولية تدعم تصدير كل النتائج المطابقة فقط',
-    });
-  }
   if (reportType === 'erp-invoice'
-    && (selection.mode !== 'selected' || selection.ids.length !== 1)) {
+    && (selection.mode !== 'selected' || selection.ids.length !== 1
+      || typeof selection.ids[0] !== 'number')) {
     context.addIssue({
       code: 'custom',
       path: ['selection'],
       message: 'يجب اختيار فاتورة واحدة لتصديرها',
+    });
+  }
+  if (!erpTabReportTypeSet.has(reportType) && reportType !== 'erp-invoice'
+    && selection.mode === 'selected'
+    && selection.ids.some((id) => typeof id !== 'number')) {
+    context.addIssue({
+      code: 'custom',
+      path: ['selection', 'ids'],
+      message: 'معرفات السجلات المحددة يجب أن تكون أرقامًا',
     });
   }
 };

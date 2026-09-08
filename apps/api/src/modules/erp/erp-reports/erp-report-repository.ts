@@ -305,11 +305,12 @@ const employeeFacts = (filters: ReportFilters) => sql`
 `;
 
 const commissionFacts = (filters: ReportFilters) => sql`
-  SELECT ledger.id id, ledger.created_at eventDate, branch.name branchName,
-    invoice.invoice_number invoiceNumber, line.employee_name_snapshot employeeName,
-    line.item_name_snapshot serviceName, ledger.entry_type eventType,
-    ledger.commission_rate_snapshot commissionRate, ledger.base_amount baseAmount,
-    ledger.amount amount
+  SELECT ledger.employee_id id, MAX(line.employee_code_snapshot) employeeCode,
+    MAX(line.employee_name_snapshot) employeeName,
+    COUNT(DISTINCT CASE WHEN ledger.entry_type = 'earned' THEN ledger.invoice_line_id END) serviceCount,
+    COALESCE(SUM(CASE WHEN ledger.entry_type = 'earned' THEN ledger.amount ELSE 0 END), 0) earnedAmount,
+    COALESCE(-SUM(CASE WHEN ledger.entry_type = 'reversal' THEN ledger.amount ELSE 0 END), 0) reversedAmount,
+    COALESCE(SUM(ledger.amount), 0) netAmount
   FROM erp_commission_ledger_entries ledger
   INNER JOIN erp_invoices invoice ON invoice.id = ledger.invoice_id
   INNER JOIN erp_invoice_lines line
@@ -327,6 +328,7 @@ const commissionFacts = (filters: ReportFilters) => sql`
       'invoice.invoice_number', 'line.employee_name_snapshot', 'line.item_name_snapshot',
     ]),
   ])}
+  GROUP BY ledger.employee_id
 `;
 
 const adjustmentFacts = (filters: ReportFilters, kind: 'discount' | 'tax') => {
@@ -655,7 +657,8 @@ const factsFor = (
   filters: ReportFilters,
   selection: ReportSelection,
 ): SQL => {
-  switch (reportType) {
+  const facts = (() => {
+    switch (reportType) {
     case 'erp-sales': return salesFacts(filters);
     case 'erp-payment-methods': return paymentFacts(filters);
     case 'erp-services': return serviceFacts(filters);
@@ -677,8 +680,14 @@ const factsFor = (
     case 'erp-consumable-usage': return consumableUsageFacts(filters);
     case 'erp-consumable-ledger': return consumableLedgerFacts(filters);
     case 'erp-service-exceptions': return serviceExceptionFacts(filters);
-    case 'erp-invoice': return invoiceFacts(filters, selection);
-  }
+      case 'erp-invoice': return invoiceFacts(filters, selection);
+    }
+  })();
+  if (selection.mode === 'all' || reportType === 'erp-invoice') return facts;
+  return sql`SELECT * FROM (${facts}) selectable_facts
+    WHERE CAST(selectable_facts.id AS CHAR) IN (${sql.join(
+      selection.ids.map((id) => sql`${String(id)}`), sql`, `,
+    )})`;
 };
 
 const sum = (column: string, alias: string) => sql.raw(
@@ -692,7 +701,7 @@ const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-products': return sql`COUNT(*) totalRecords, ${sum('quantity', 'totalQuantity')}, ${sum('amount', 'totalRevenue')}`;
     case 'erp-payment-methods': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetPayments')}`;
     case 'erp-employees': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
-    case 'erp-commissions': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalCommission')}`;
+    case 'erp-commissions': return sql`COUNT(*) totalRecords, ${sum('serviceCount', 'totalServices')}, ${sum('netAmount', 'totalCommission')}`;
     case 'erp-discounts': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalDiscount')}`;
     case 'erp-taxes': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalTax')}`;
     case 'erp-refunds': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalRefunds')}`;
@@ -858,6 +867,8 @@ const reportRows = async (
 ) => {
   const order = reportType === 'erp-invoice'
     ? sql` ORDER BY lineNumber ASC, id ASC`
+    : reportType === 'erp-commissions'
+      ? sql` ORDER BY employeeName ASC, id ASC`
     : sql` ORDER BY eventDate DESC, id DESC`;
   const limit = pagination
     ? sql` LIMIT ${pagination.pageSize} OFFSET ${(pagination.page - 1) * pagination.pageSize}`

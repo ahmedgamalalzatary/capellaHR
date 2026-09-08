@@ -70,17 +70,19 @@ export function PrintSheet({ report, onPrinted }: {
             </tr>
           ))}
         </tbody>
+        {report.summary.length ? (
+          <tfoot>
+            {report.summary.map((entry) => (
+              <tr key={entry.label} className="font-semibold">
+                <td className="border border-line bg-surface px-2 py-1" colSpan={Math.max(1, report.columns.length - 1)}>
+                  {entry.label}
+                </td>
+                <td className="border border-line bg-surface px-2 py-1">{cellText(entry.value)}</td>
+              </tr>
+            ))}
+          </tfoot>
+        ) : null}
       </table>
-      {report.summary.length ? (
-        <ul className="mt-4 flex flex-wrap gap-2 text-[11px]">
-          {report.summary.map((entry) => (
-            <li key={entry.label} className="border border-line px-3 py-1.5">
-              {entry.label}
-              <strong className="block text-sm">{cellText(entry.value)}</strong>
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </div>,
     document.body,
   );

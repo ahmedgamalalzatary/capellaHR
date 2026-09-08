@@ -54,7 +54,7 @@ describe('report contracts', () => {
     ]);
   });
 
-  it('accepts branch and date filters for ERP reports and requires invoice selection', () => {
+  it('accepts branch, date, and row selection for ERP reports and requires invoice selection', () => {
     expect(createReportExportSchema.parse({
       reportType: 'erp-profit',
       filters: { branchId: 2, dateFrom: '2026-08-01', dateTo: '2026-08-31' },
@@ -70,10 +70,15 @@ describe('report contracts', () => {
       filters: { branchId: 2 },
       selection: { mode: 'selected', ids: [41] },
     }).selection).toEqual({ mode: 'selected', ids: [41] });
-    expect(createReportExportSchema.safeParse({
+    expect(createReportExportSchema.parse({
       reportType: 'erp-profit',
       filters: { branchId: 2 },
-      selection: { mode: 'selected', ids: [41] },
+      selection: { mode: 'selected', ids: ['sale-41', 'refund-9'] },
+    }).selection).toEqual({ mode: 'selected', ids: ['sale-41', 'refund-9'] });
+    expect(createReportExportSchema.safeParse({
+      reportType: 'employees',
+      filters: {},
+      selection: { mode: 'selected', ids: ['sale-41'] },
     }).success).toBe(false);
   });
 

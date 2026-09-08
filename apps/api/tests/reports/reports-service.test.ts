@@ -140,15 +140,17 @@ describe('reports service', () => {
       .rejects.toMatchObject({ code: 'REPORT_SOURCE_UNAVAILABLE' });
   });
 
-  it('rejects selected-row views for ERP tabular reports before reading data', async () => {
+  it('passes selected-row views through to ERP tabular report readers', async () => {
     const reader = createReader();
     const read = vi.spyOn(reader, 'read');
     const service = createReportService(reader, createRepository(), createStore(), () => now);
 
     await expect(service.view('erp-sales', {
       selection: 'selected', selectedIds: [7], page: 1, pageSize: 20,
-    })).rejects.toBeDefined();
-    expect(read).not.toHaveBeenCalled();
+    })).resolves.toMatchObject({ kind: 'success' });
+    expect(read).toHaveBeenCalledWith(
+      'erp-sales', {}, { mode: 'selected', ids: [7] }, { page: 1, pageSize: 20 }, now,
+    );
   });
 
   it('queues only an available report with immutable filters and selection', async () => {

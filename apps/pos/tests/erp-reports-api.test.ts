@@ -28,6 +28,16 @@ describe('ERP reports API', () => {
     );
   });
 
+  it('serializes selected report row identifiers for printing', async () => {
+    mocks.getWithMeta.mockResolvedValue({ data: {}, meta: {} });
+    await viewErpReport('erp-profit', {
+      selection: 'selected', selectedIds: 'sale-41,refund-9', page: 1, pageSize: 100,
+    });
+    expect(mocks.getWithMeta).toHaveBeenCalledWith(
+      '/reports/erp-profit?selection=selected&selectedIds=sale-41%2Crefund-9&page=1&pageSize=100',
+    );
+  });
+
   it('uses the shared durable export lifecycle endpoints', async () => {
     const input = {
       reportType: 'erp-sales' as const,

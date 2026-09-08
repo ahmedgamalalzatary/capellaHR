@@ -86,10 +86,9 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
   'erp-commissions': {
     title: 'تقرير العمولات',
     columns: [
-      ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['invoiceNumber', 'رقم الفاتورة'], ['employeeName', 'الموظف'], ['serviceName', 'الخدمة'],
-      ['eventType', 'نوع الحركة'], ['commissionRate', 'النسبة'], ['baseAmount', 'أساس العمولة'],
-      ['amount', 'العمولة'],
+      ['id', 'المعرف'], ['employeeCode', 'كود الموظف'], ['employeeName', 'الموظف'],
+      ['serviceCount', 'عدد الخدمات'], ['earnedAmount', 'العمولات المكتسبة'],
+      ['reversedAmount', 'العمولات المعكوسة'], ['netAmount', 'صافي المستحق'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-discounts': {

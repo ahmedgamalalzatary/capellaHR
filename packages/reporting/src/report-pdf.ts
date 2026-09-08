@@ -54,6 +54,7 @@ const summaryLabels: Record<string, string> = {
   netQuantityChange: 'صافي تغير المخزون',
   totalCost: 'إجمالي التكلفة',
   totalProfit: 'إجمالي الربح',
+  totalServices: 'إجمالي الخدمات',
 };
 
 export const reportSummaryLabel = (key: string) => summaryLabels[key] ?? key;
@@ -63,6 +64,13 @@ const display = (value: ReportCell): string => {
   if (typeof value === 'boolean') return value ? '\u0646\u0639\u0645' : '\u0644\u0627';
   return String(value);
 };
+
+export const reportSummaryRows = (summary: ReportSnapshot['summary']) => (
+  Object.entries(summary).map(([key, value]) => ({
+    label: reportSummaryLabel(key),
+    value: display(value),
+  }))
+);
 
 export const formatCairoTimestamp = (value: string): string => new Intl.DateTimeFormat('ar-EG-u-nu-latn', {
   timeZone: 'Africa/Cairo',
@@ -257,20 +265,6 @@ const drawBandHeading = (
     y += 17;
   }
 
-  if (bandNumber === 1 && Object.keys(snapshot.summary).length) {
-    document.font('NotoSansArabic-Regular').fontSize(8);
-    const summary = Object.entries(snapshot.summary)
-      .map(([key, value]) => `${reportSummaryLabel(key)}: ${display(value)}`)
-      .join('  |  ');
-    const lines = wrapText(document, summary, tableWidth - 12);
-    const height = Math.max(26, lines.length * 12 + 12);
-    document.save().fillColor('#f9fafb').rect(PAGE_MARGIN, y, tableWidth, height).fill().restore();
-    document.save().strokeColor('#d1d5db').lineWidth(0.5).rect(PAGE_MARGIN, y, tableWidth, height).stroke().restore();
-    document.fillColor('#111827');
-    lines.forEach((line, index) => drawText(document, line, PAGE_MARGIN + 6, y + 6 + index * 12, tableWidth - 12));
-    y += height + 10;
-  }
-
   return y;
 };
 
@@ -336,11 +330,31 @@ const renderBand = (
   };
   return (async () => {
     for await (const batch of rows()) batch.forEach(drawRow);
-    if (hasRows) return;
-    const height = 34;
-    document.save().strokeColor('#9ca3af').lineWidth(0.5).rect(PAGE_MARGIN, y, tableWidth, height).stroke().restore();
-    document.fillColor('#6b7280').font('NotoSansArabic-Regular').fontSize(8);
-    drawText(document, '\u0644\u0627 \u062a\u0648\u062c\u062f \u0633\u062c\u0644\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629', PAGE_MARGIN, y + 11, tableWidth, 'center');
+    if (!hasRows) {
+      const height = 34;
+      document.save().strokeColor('#9ca3af').lineWidth(0.5).rect(PAGE_MARGIN, y, tableWidth, height).stroke().restore();
+      document.fillColor('#6b7280').font('NotoSansArabic-Regular').fontSize(8);
+      drawText(document, '\u0644\u0627 \u062a\u0648\u062c\u062f \u0633\u062c\u0644\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629', PAGE_MARGIN, y + 11, tableWidth, 'center');
+      y += height;
+    }
+    if (bandNumber !== 1) return;
+    const summaryRowHeight = 22;
+    const valueWidth = tableWidth / 4;
+    for (const entry of reportSummaryRows(snapshot.summary)) {
+      if (y + summaryRowHeight > bottom) {
+        addPage();
+        y = PAGE_MARGIN;
+      }
+      document.save().fillColor('#f3f4f6').rect(PAGE_MARGIN, y, tableWidth, summaryRowHeight).fill().restore();
+      document.save().strokeColor('#9ca3af').lineWidth(0.5)
+        .rect(PAGE_MARGIN, y, tableWidth - valueWidth, summaryRowHeight).stroke()
+        .rect(PAGE_MARGIN + tableWidth - valueWidth, y, valueWidth, summaryRowHeight).stroke()
+        .restore();
+      document.fillColor('#111827').font('NotoSansArabic-Bold').fontSize(8);
+      drawText(document, entry.label, PAGE_MARGIN + CELL_PADDING, y + 6, tableWidth - valueWidth - CELL_PADDING * 2);
+      drawText(document, entry.value, PAGE_MARGIN + tableWidth - valueWidth + CELL_PADDING, y + 6, valueWidth - CELL_PADDING * 2);
+      y += summaryRowHeight;
+    }
   })();
 };
 

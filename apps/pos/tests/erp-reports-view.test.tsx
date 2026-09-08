@@ -30,7 +30,7 @@ const snapshot = {
     { key: 'clientName', label: 'العميل' },
     { key: 'total', label: 'الإجمالي' },
   ],
-  rows: [{ invoiceNumber: 'INV.2026.08.09.0001', clientName: 'عميل التقرير', total: '230.00' }],
+  rows: [{ id: 41, invoiceNumber: 'INV.2026.08.09.0001', clientName: 'عميل التقرير', total: '230.00' }],
   summary: { totalRecords: 21, totalSales: '4830.00' },
 };
 const failedExport = {
@@ -141,6 +141,32 @@ describe('ErpReportsView', () => {
     }));
     fireEvent.click(await screen.findByRole('button', { name: 'إعادة محاولة التصدير' }));
     await waitFor(() => expect(mocks.retry).toHaveBeenCalledWith(9, expect.anything()));
+  });
+
+  it('exports only selected report rows and clears selection when its scope changes', async () => {
+    mount();
+    await screen.findByText('INV.2026.08.09.0001');
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 41' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير المحدد (1)' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      reportType: 'erp-sales', selection: { mode: 'selected', ids: [41] },
+    })));
+    await screen.findByRole('button', { name: 'تصدير PDF' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'تقرير طرق الدفع' }));
+    expect(screen.getByRole('button', { name: 'تصدير PDF' })).toBeDefined();
+  });
+
+  it('renders report totals as dedicated table rows', async () => {
+    mount();
+    await screen.findByText('INV.2026.08.09.0001');
+
+    const totals = screen.getByTestId('report-totals');
+    expect(within(totals).getByText('إجمالي السجلات')).toBeDefined();
+    expect(within(totals).getByText('21')).toBeDefined();
+    expect(within(totals).getByText('إجمالي المبيعات')).toBeDefined();
+    expect(within(totals).getByText('4830.00')).toBeDefined();
   });
 
   it('renders a safe fallback badge for an unknown future export status', async () => {

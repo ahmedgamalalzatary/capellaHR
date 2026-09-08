@@ -69,6 +69,7 @@ const summaryLabels: Record<string, string> = {
   totalVoids: 'إجمالي الإلغاءات', totalNetExpenses: 'صافي المصروفات',
   totalNetPurchases: 'صافي المشتريات', netQuantityChange: 'صافي تغير المخزون',
   totalCost: 'إجمالي التكلفة', totalProfit: 'إجمالي الربح',
+  totalServices: 'إجمالي الخدمات',
 };
 
 const cairoDate = (value: Date) => {
@@ -112,11 +113,16 @@ const statusBadge = (status: ErpReportExport['status']): ExportStatusBadge => (
 
 /** Every row behind the export, not just the page the screen happens to show. */
 const collectReportRows = async (record: ErpReportExport) => {
-  const first = await viewErpReport(record.reportType, { ...record.filters, page: 1, pageSize: 100 });
+  const selection = record.selection.mode === 'selected'
+    ? { selection: 'selected' as const, selectedIds: record.selection.ids.join(',') }
+    : {};
+  const first = await viewErpReport(record.reportType, {
+    ...record.filters, ...selection, page: 1, pageSize: 100,
+  });
   const rows = [...first.snapshot.rows];
   for (let page = 2; page <= first.meta.totalPages; page += 1) {
     rows.push(...(await viewErpReport(
-      record.reportType, { ...record.filters, page, pageSize: 100 },
+      record.reportType, { ...record.filters, ...selection, page, pageSize: 100 },
     )).snapshot.rows);
   }
   return { snapshot: first.snapshot, rows };
@@ -266,6 +272,7 @@ export function ErpReportsView() {
     dateFrom: dates.dateFrom, dateTo: dates.dateTo,
   });
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string | number>>(new Set());
   const branches = useQuery({
     queryKey: ['erp-reports', 'branches'],
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
@@ -277,11 +284,14 @@ export function ErpReportsView() {
   });
   const createExport = useMutation({
     mutationFn: () => createErpReportExport({
-      reportType, filters, selection: { mode: 'all' },
+      reportType, filters, selection: selectedIds.size
+        ? { mode: 'selected', ids: [...selectedIds] }
+        : { mode: 'all' },
     }),
-    onSuccess: () => queryClient.invalidateQueries({
-      queryKey: erpReportQueryKeys.exports(reportType),
-    }),
+    onSuccess: async () => {
+      setSelectedIds(new Set());
+      await queryClient.invalidateQueries({ queryKey: erpReportQueryKeys.exports(reportType) });
+    },
   });
   const applyFilters = () => {
     setFilters({
@@ -291,9 +301,16 @@ export function ErpReportsView() {
       ...(searchInput.trim() ? { search: searchInput.trim() } : {}),
     });
     setPage(1);
+    setSelectedIds(new Set());
   };
   const snapshot = report.data?.snapshot;
   const meta = report.data?.meta;
+  const toggleSelected = (id: string | number) => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
 
   return (
     <section className="space-y-6">
@@ -309,7 +326,7 @@ export function ErpReportsView() {
             size="sm"
             variant={type === reportType ? 'primary' : 'secondary'}
             aria-pressed={type === reportType}
-            onClick={() => { setReportType(type); setPage(1); }}
+            onClick={() => { setReportType(type); setPage(1); setSelectedIds(new Set()); }}
           >
             {tabLabels[type]}
           </Button>
@@ -352,7 +369,9 @@ export function ErpReportsView() {
           actions={(
             <Button size="sm" disabled={createExport.isPending} onClick={() => createExport.mutate()}>
               <Download className="size-4" aria-hidden />
-              {createExport.isPending ? 'جارٍ وضع التصدير في الانتظار…' : 'تصدير PDF'}
+              {createExport.isPending
+                ? 'جارٍ وضع التصدير في الانتظار…'
+                : selectedIds.size ? `تصدير المحدد (${selectedIds.size})` : 'تصدير PDF'}
             </Button>
           )}
         />
@@ -365,19 +384,43 @@ export function ErpReportsView() {
                 : (
                   <DataTable>
                     <THead>
+                      <TH>تحديد</TH>
                       {snapshot.columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
                     </THead>
                     <tbody>
-                      {snapshot.rows.map((row, index) => (
-                        <TR key={String(row.id ?? index)}>
+                      {snapshot.rows.map((row, index) => {
+                        const rowId = typeof row.id === 'string' || typeof row.id === 'number'
+                          ? row.id
+                          : null;
+                        return <TR key={String(row.id ?? index)}>
+                          <TD>
+                            {rowId !== null ? (
+                              <input
+                                type="checkbox"
+                                aria-label={`تحديد الصف ${rowId}`}
+                                checked={selectedIds.has(rowId)}
+                                onChange={() => toggleSelected(rowId)}
+                              />
+                            ) : null}
+                          </TD>
                           {snapshot.columns.map((column) => (
                             <TD key={column.key} className="whitespace-nowrap">
                               {displayCell(row[column.key] ?? null)}
                             </TD>
                           ))}
-                        </TR>
-                      ))}
+                        </TR>;
+                      })}
                     </tbody>
+                    <tfoot data-testid="report-totals">
+                      {Object.entries(snapshot.summary).map(([key, value]) => (
+                        <tr key={key} className="border-t border-line bg-surface/60 font-semibold">
+                          <td className="px-3 py-2" colSpan={Math.max(1, snapshot.columns.length)}>
+                            {summaryLabels[key] ?? key}
+                          </td>
+                          <td className="tabular whitespace-nowrap px-3 py-2">{displayCell(value)}</td>
+                        </tr>
+                      ))}
+                    </tfoot>
                   </DataTable>
                 )}
           {meta && meta.totalPages > 1 ? (
@@ -397,16 +440,6 @@ export function ErpReportsView() {
           ) : null}
         </Card>
 
-        {snapshot && Object.keys(snapshot.summary).length ? (
-          <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(snapshot.summary).map(([key, value]) => (
-              <div key={key} className="rounded-card border border-line bg-paper p-3 shadow-card">
-                <dt className="text-[12px] text-muted">{summaryLabels[key] ?? key}</dt>
-                <dd className="tabular mt-1 text-base font-semibold text-ink">{displayCell(value)}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
       </div>
 
       <ExportHistory key={reportType} reportType={reportType} />
