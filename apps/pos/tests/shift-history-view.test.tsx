@@ -38,7 +38,8 @@ const shift = {
   refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
   takenTotal: '500.00',
   refundedTotal: '50.00',
-  net: '450.00',
+  expenses: '30.00',
+  net: '420.00',
 };
 
 const pageOf = (items: unknown[], page = 1, total = items.length) => ({
@@ -78,7 +79,8 @@ describe('ShiftHistoryView', () => {
 
     const row = await screen.findByRole('listitem');
     expect(within(row).getByText('8 س 0 د')).toBeDefined();
-    expect(within(row).getByText('450.00 ج.م')).toBeDefined();
+    expect(within(row).getByText('مصروفات: 30.00 ج.م')).toBeDefined();
+    expect(within(row).getByText('الصافي: 420.00 ج.م')).toBeDefined();
     expect(within(row).getByRole('link', { name: /تفاصيل الوردية/ }).getAttribute('href'))
       .toBe('/cashier-sessions/14');
     expect(within(row).getByRole('link', { name: 'تقرير نهاية الوردية' }).getAttribute('href'))

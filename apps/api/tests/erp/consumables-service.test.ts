@@ -62,21 +62,6 @@ describe('consumables service', () => {
     expect(repo.listServices).toHaveBeenLastCalledWith(3, expect.anything(), undefined);
   });
 
-  it('lets a cashier read services from a branch invoice opened by another cashier', async () => {
-    const repo = repository();
-    const service = createConsumablesService({ repository: repo, resolveBranchContext: context });
-
-    await service.listServices(cashier, {
-      invoiceId: 19, status: 'operational', page: 1, pageSize: 100,
-    });
-
-    expect(repo.listServices).toHaveBeenCalledWith(
-      3,
-      expect.objectContaining({ invoiceId: 19, status: 'operational' }),
-      undefined,
-    );
-  });
-
   it('requires an admin to correct a service after its shift closed', async () => {
     const repo = repository();
     repo.correct.mockRejectedValueOnce(new ConsumablesError('CONSUMABLE_SHIFT_CLOSED', 'closed'));

@@ -11,7 +11,7 @@ import {
   invoices,
   serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/mysql-core';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -94,16 +94,19 @@ const sumMethods = (money: CashierSessionMoneyByMethod) => paymentMethods
  * invoices raised in it: an invoice paid in instalments spends its money across
  * however many shifts took the instalments.
  */
-const moneyBySession = async (executor: Executor, sessionIds: number[]) => {
+const moneyBySession = async (executor: Executor, sessions: CashierSessionRecord[]) => {
+  const sessionIds = sessions.map(({ id }) => id);
   const taken = new Map<number, CashierSessionMoneyByMethod>();
   const refunded = new Map<number, CashierSessionMoneyByMethod>();
   const saleCounts = new Map<number, number>();
-  if (sessionIds.length === 0) return { taken, refunded, saleCounts };
+  const expenses = new Map<number, bigint>();
+  if (sessionIds.length === 0) return { taken, refunded, saleCounts, expenses };
 
   for (const id of sessionIds) {
     taken.set(id, noMoney());
     refunded.set(id, noMoney());
     saleCounts.set(id, 0);
+    expenses.set(id, BigInt(0));
   }
 
   const takenRows = await executor.select({
@@ -139,7 +142,27 @@ const moneyBySession = async (executor: Executor, sessionIds: number[]) => {
     .groupBy(invoices.cashierSessionId);
   for (const row of saleRows) saleCounts.set(row.sessionId, Number(row.count));
 
-  return { taken, refunded, saleCounts };
+  const expenseRows = await executor.select({
+    branchId: erpExpenses.branchId,
+    amount: erpExpenses.amount,
+    kind: erpExpenses.kind,
+    createdAt: erpExpenses.createdAt,
+  }).from(erpExpenses).where(or(...sessions.map((session) => and(
+    eq(erpExpenses.branchId, session.branchId),
+    gte(erpExpenses.createdAt, session.openedAt),
+    ...(session.closedAt ? [lte(erpExpenses.createdAt, session.closedAt)] : []),
+  ))));
+  for (const row of expenseRows) {
+    const session = sessions.find((candidate) => candidate.branchId === row.branchId
+      && row.createdAt >= candidate.openedAt
+      && (candidate.closedAt === null || row.createdAt <= candidate.closedAt));
+    if (session) {
+      const amount = toCents(row.amount) * (row.kind === 'reversal' ? BigInt(-1) : BigInt(1));
+      expenses.set(session.id, expenses.get(session.id)! + amount);
+    }
+  }
+
+  return { taken, refunded, saleCounts, expenses };
 };
 
 const withMoney = (
@@ -150,6 +173,7 @@ const withMoney = (
   const refunded = money.refunded.get(session.id) ?? noMoney();
   const takenTotal = sumMethods(taken);
   const refundedTotal = sumMethods(refunded);
+  const expenses = money.expenses.get(session.id) ?? BigInt(0);
   return {
     ...session,
     saleCount: money.saleCounts.get(session.id) ?? 0,
@@ -157,7 +181,8 @@ const withMoney = (
     refunded,
     takenTotal: fromCents(takenTotal),
     refundedTotal: fromCents(refundedTotal),
-    net: fromCents(takenTotal - refundedTotal),
+    expenses: fromCents(expenses),
+    net: fromCents(takenTotal - refundedTotal - expenses),
   };
 });
 
@@ -190,14 +215,14 @@ export const createDrizzleCashierSessionRepository = (
       .limit(input.pageSize).offset((input.page - 1) * input.pageSize);
     const [counted] = await database.select({ total: sql<number>`count(*)` })
       .from(cashierSessions).where(scope);
-    const money = await moneyBySession(database, rows.map(({ id }) => id));
+    const money = await moneyBySession(database, rows);
     return { items: withMoney(rows, money), total: Number(counted?.total ?? 0) };
   },
 
   async findMoneyById(sessionId) {
     const session = await findById(database, sessionId);
     if (!session) return null;
-    return withMoney([session], await moneyBySession(database, [sessionId]))[0]!;
+    return withMoney([session], await moneyBySession(database, [session]))[0]!;
   },
 
   async readReportAccounting(input) {

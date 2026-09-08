@@ -29,7 +29,7 @@ export function ServiceStatusDialog({
   const services = useQuery({
     queryKey: ['invoice-service-statuses', invoiceId, branchId ?? null],
     queryFn: () => fetchAllPages((page) => listConsumableServices({
-      ...params, status: 'operational', page, pageSize: 100,
+      ...params, page, pageSize: 100,
     })),
   });
   const mutation = useMutation({
@@ -54,7 +54,9 @@ export function ServiceStatusDialog({
             <p className="text-sm font-medium">{item.serviceName}</p>
             <p className="text-xs text-muted">الدور {item.queueNumber}{item.employeeName ? ` — ${item.employeeName}` : ''}</p>
           </div>
-          {item.status === 'completed' ? <Badge variant="success">تمت</Badge> : <div className="flex flex-wrap gap-1">
+          {item.status === 'completed' ? <Badge variant="success">تمت</Badge> : item.status === 'canceled' ? (
+            <Badge variant="danger">ملغاة</Badge>
+          ) : <div className="flex flex-wrap gap-1">
             <Button size="sm" variant={item.status === 'pending' ? 'secondary' : 'ghost'} disabled={mutation.isPending} onClick={() => mutation.mutate({ item, status: 'pending' })}>لم تبدأ</Button>
             <Button size="sm" variant={item.status === 'in_progress' ? 'secondary' : 'ghost'} disabled={mutation.isPending} onClick={() => mutation.mutate({ item, status: 'in_progress' })}>قيد التنفيذ</Button>
             <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate({ item, status: 'completed' })}>تمت</Button>

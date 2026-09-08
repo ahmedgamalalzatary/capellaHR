@@ -30,11 +30,12 @@ const summary = {
   refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
   takenTotal: '400.00',
   refundedTotal: '50.00',
+  expenses: '0.00',
   net: '350.00',
 };
 
 const report = {
-  summary,
+  summary: { ...summary, expenses: '30.00', net: '320.00' },
   sales: {
     gross: '500.00', returns: '50.00', total: '450.00',
     discount: '25.00', tax: '5.00', net: '430.00',
@@ -43,7 +44,7 @@ const report = {
   collectedPayments: '20.00',
   collectedPaymentLines: [],
   creditSales: '100.00',
-  netByMethod: { cash: '350.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+  netByMethod: { cash: '320.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
 };
 
 const setup = () => {

@@ -31,6 +31,7 @@ const detail = {
     refunded: { cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
     takenTotal: '185.00',
     refundedTotal: '0.00',
+    expenses: '0.00',
     net: '185.00',
   },
   invoices: [{

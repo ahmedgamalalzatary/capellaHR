@@ -57,7 +57,8 @@ const summary = {
   refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
   takenTotal: '500.00',
   refundedTotal: '50.00',
-  net: '450.00',
+  expenses: '30.00',
+  net: '420.00',
 };
 
 const pageOf = (items: unknown[]) => ({
@@ -372,7 +373,8 @@ describe('CashierSessionView', () => {
     renderView();
 
     const totals = await screen.findByRole('region', { name: 'حركة الوردية' });
-    expect(within(totals).getByText('450.00 ج.م')).toBeDefined();
+    expect(within(totals).getByText('30.00 ج.م')).toBeDefined();
+    expect(within(totals).getByText('420.00 ج.م')).toBeDefined();
     expect(within(totals).getByText('2')).toBeDefined();
     // Both directions are visible per method, because a till can hand back money
     // on a method it never took in.

@@ -873,6 +873,7 @@ export const cashierSessionSummarySchema = cashierSessionSchema.extend({
   refunded: shiftMoneyByMethodSchema,
   takenTotal: exactMoneySchema,
   refundedTotal: exactMoneySchema,
+  expenses: signedMoneySchema,
   net: signedMoneySchema,
 }).strict().superRefine((value, context) => {
   const check = (path: string, expected: bigint, actual: string) => {
@@ -882,7 +883,7 @@ export const cashierSessionSummarySchema = cashierSessionSchema.extend({
   };
   check('takenTotal', sumMethods(value.taken), value.takenTotal);
   check('refundedTotal', sumMethods(value.refunded), value.refundedTotal);
-  if (toCents(value.takenTotal) - toCents(value.refundedTotal) !== signedToCents(value.net)) {
+  if (toCents(value.takenTotal) - toCents(value.refundedTotal) - signedToCents(value.expenses) !== signedToCents(value.net)) {
     context.addIssue({ code: 'custom', path: ['net'], message: 'إجمالي الوردية غير متسق' });
   }
 });
@@ -933,6 +934,9 @@ export const cashierSessionReportSchema = z.object({
     .reduce((total, amount) => total + signedToCents(amount), BigInt(0));
   if (methodNet !== signedToCents(value.summary.net)) {
     context.addIssue({ code: 'custom', path: ['netByMethod'], message: 'صافي وسائل الدفع غير متسق' });
+  }
+  if (signedToCents(value.expenses) !== signedToCents(value.summary.expenses)) {
+    context.addIssue({ code: 'custom', path: ['expenses'], message: 'مصروفات الوردية غير متسقة' });
   }
 });
 

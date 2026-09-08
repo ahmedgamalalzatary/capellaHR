@@ -8,6 +8,7 @@ import {
   commissionLedgerEntries,
   employees,
   erpCommissionPayrollInputs,
+  erpExpenses,
   erpPostPayrollDeductions,
   erpCategories,
   erpProducts,
@@ -197,6 +198,29 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('deducts branch expenses made during a shift from its cash and total net', async () => {
+    const data = await fixture();
+    const sales = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const shifts = createDrizzleCashierSessionRepository(database, createErpAuditCapability());
+    await sales.complete(operation(data, crypto.randomUUID()));
+    await database.insert(erpExpenses).values({
+      branchId: data.branchId,
+      name: 'Shift supplies',
+      amount: '30.00',
+      expenseDate: '2026-08-03',
+      description: '',
+      actingAccountId: data.accountId,
+      createdAt: new Date(data.at.getTime() + 60_000),
+    });
+
+    expect(await shifts.findMoneyById(data.cashierSessionId)).toMatchObject({
+      expenses: '30.00',
+      takenTotal: '185.00',
+      refundedTotal: '0.00',
+      net: '155.00',
+    });
+  });
+
   it('allocates consecutive queue numbers per service and resets them with the cashier shift', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
@@ -418,6 +442,7 @@ describe('ERP sale repository MySQL integration', () => {
       refunded: { cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
       takenTotal: '370.00',
       refundedTotal: '0.00',
+      expenses: '0.00',
       net: '370.00',
     });
 
@@ -428,6 +453,7 @@ describe('ERP sale repository MySQL integration', () => {
       refunded: { cash: '0.00', visa: '185.00', instapay: '0.00', vodafone_cash: '0.00' },
       takenTotal: '0.00',
       refundedTotal: '185.00',
+      expenses: '0.00',
       net: '-185.00',
     });
 

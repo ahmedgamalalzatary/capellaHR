@@ -86,6 +86,7 @@ describe('ERP Cashier-session contracts', () => {
       refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
       takenTotal: '400.00',
       refundedTotal: '50.00',
+      expenses: '0.00',
       net: '350.00',
     };
 
@@ -131,6 +132,7 @@ describe('ERP Cashier-session contracts', () => {
         refunded: { cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
         takenTotal: '185.00',
         refundedTotal: '0.00',
+        expenses: '0.00',
         net: '185.00',
       },
       invoices: [{
@@ -171,7 +173,8 @@ describe('ERP Cashier-session contracts', () => {
         refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
         takenTotal: '400.00',
         refundedTotal: '50.00',
-        net: '350.00',
+        expenses: '30.00',
+        net: '320.00',
       },
       sales: {
         gross: '500.00',
@@ -190,7 +193,7 @@ describe('ERP Cashier-session contracts', () => {
       }],
       creditSales: '100.00',
       netByMethod: {
-        cash: '250.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',
+        cash: '220.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',
       },
     };
 

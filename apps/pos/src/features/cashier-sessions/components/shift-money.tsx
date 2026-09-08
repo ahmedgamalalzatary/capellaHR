@@ -39,13 +39,18 @@ function Figure({ label, value, tone }: { label: string; value: string; tone?: '
 export function ShiftMoney({ summary }: { summary: CashierSessionSummary }) {
   return (
     <section aria-label="حركة الوردية" className="space-y-3">
-      <dl className="grid gap-2 sm:grid-cols-4">
+      <dl className="grid gap-2 sm:grid-cols-5">
         <Figure label="عدد المبيعات" value={String(summary.saleCount)} />
         <Figure label="المحصّل" value={formatShiftMoney(summary.takenTotal)} />
         <Figure
           label="المسترد"
           value={formatShiftMoney(summary.refundedTotal)}
           {...(summary.refundedTotal === '0.00' ? {} : { tone: 'danger' as const })}
+        />
+        <Figure
+          label="المصروفات"
+          value={formatShiftMoney(summary.expenses)}
+          {...(summary.expenses === '0.00' ? {} : { tone: 'danger' as const })}
         />
         <Figure label="الصافي" value={formatShiftMoney(summary.net)} />
       </dl>

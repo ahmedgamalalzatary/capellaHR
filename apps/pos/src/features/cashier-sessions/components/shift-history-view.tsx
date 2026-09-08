@@ -135,9 +135,12 @@ export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: numbe
                     {formatCairoDateTime(shift.openedAt)}
                   </time>
                 </div>
-                <strong className="tabular text-lg font-semibold text-ink sm:text-start">
-                  {formatShiftMoney(shift.net)}
-                </strong>
+                <div className="space-y-1 sm:text-start">
+                  <p className="tabular text-sm text-danger">مصروفات: {formatShiftMoney(shift.expenses)}</p>
+                  <strong className="block tabular text-lg font-semibold text-ink">
+                    الصافي: {formatShiftMoney(shift.net)}
+                  </strong>
+                </div>
               </CardContent>
             </Card>
           </li>

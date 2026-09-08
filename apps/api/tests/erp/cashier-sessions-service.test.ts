@@ -25,7 +25,8 @@ const money = {
   refunded: { ...noMoney, cash: '50.00' },
   takenTotal: '400.00',
   refundedTotal: '50.00',
-  net: '350.00',
+  expenses: '30.00',
+  net: '320.00',
 };
 
 const setup = () => {
@@ -215,7 +216,7 @@ describe('ERP Cashier-session service', () => {
 
     // Open at 08:00, read at 09:30: an hour and a half so far.
     await expect(service.summary({ role: 'admin', accountId: 1 }, 14))
-      .resolves.toMatchObject({ durationMinutes: 90, net: '350.00' });
+      .resolves.toMatchObject({ durationMinutes: 90, expenses: '30.00', net: '320.00' });
 
     repository.findMoneyById.mockResolvedValue({
       ...money,
@@ -283,7 +284,7 @@ describe('ERP Cashier-session service', () => {
     repository.listInvoices.mockResolvedValue([invoice]);
 
     await expect(service.detail({ role: 'admin', accountId: 1 }, 14)).resolves.toEqual({
-      summary: expect.objectContaining({ id: 14, net: '350.00' }),
+      summary: expect.objectContaining({ id: 14, expenses: '30.00', net: '320.00' }),
       invoices: [invoice],
     });
     expect(repository.listInvoices).toHaveBeenCalledWith(14);
@@ -302,7 +303,7 @@ describe('ERP Cashier-session service', () => {
 
     await expect(service.report({ role: 'cashier', accountId: 8, branchId: 3 }, 14))
       .resolves.toMatchObject({
-        summary: { id: 14, net: '350.00' },
+        summary: { id: 14, expenses: '30.00', net: '320.00' },
         sales: { gross: '500.00', returns: '50.00', net: '430.00' },
         expenses: '30.00',
         collectedPayments: '20.00',

@@ -18,7 +18,7 @@ const summary = {
   closedByUsername: 'cashier.one', autoClosedAt: null, durationMinutes: 480, saleCount: 2,
   taken: { cash: '400.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00' },
   refunded: { cash: '50.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
-  takenTotal: '500.00', refundedTotal: '50.00', net: '450.00',
+  takenTotal: '500.00', refundedTotal: '50.00', expenses: '30.00', net: '420.00',
 };
 
 const fullReport = {

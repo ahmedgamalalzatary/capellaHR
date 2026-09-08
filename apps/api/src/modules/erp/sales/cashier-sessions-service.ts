@@ -50,6 +50,7 @@ export type CashierSessionMoneyRecord = CashierSessionRecord & {
   refunded: CashierSessionMoneyByMethod;
   takenTotal: string;
   refundedTotal: string;
+  expenses: string;
   net: string;
 };
 
@@ -274,7 +275,7 @@ export const createCashierSessionService = (dependencies: {
         fromMoneyCents(
           toMoneyCents(summary.taken[method as keyof CashierSessionMoneyByMethod])
           - toMoneyCents(summary.refunded[method as keyof CashierSessionMoneyByMethod])
-          - (method === 'cash' ? toMoneyCents(accounting.expenses) : BigInt(0)),
+          - (method === 'cash' ? toMoneyCents(summary.expenses) : BigInt(0)),
         ),
       ])) as CashierSessionMoneyByMethod;
       return { summary, ...accounting, netByMethod };
