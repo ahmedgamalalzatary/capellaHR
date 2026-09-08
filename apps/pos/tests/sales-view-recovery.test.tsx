@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useEffect } from 'react';
+import { StrictMode, useEffect } from 'react';
 
 import { ApiError } from '../src/lib/api/client';
 
@@ -112,9 +112,10 @@ import {
 // The saved-sale screen now prints the real receipt, so the stub must be a whole invoice.
 const invoice = saleFixtures.completedInvoice;
 
-const renderView = (bookingId?: number) => {
+const renderView = (bookingId?: number, strict = false) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><SalesView {...(bookingId === undefined ? {} : { bookingId })} /></QueryClientProvider>);
+  const view = <QueryClientProvider client={client}><SalesView {...(bookingId === undefined ? {} : { bookingId })} /></QueryClientProvider>;
+  render(strict ? <StrictMode>{view}</StrictMode> : view);
   return client;
 };
 
@@ -275,7 +276,7 @@ describe('ERP service-sale view', () => {
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
   });
 
-  it('restores an in-progress workspace draft after the route remounts', async () => {
+  it('restores the saved client after a StrictMode effect cycle', async () => {
     renderView();
     await buildDraft();
     await waitFor(() => expect(Array.from(
@@ -284,7 +285,7 @@ describe('ERP service-sale view', () => {
     ).some((key) => key?.startsWith('capella:sale-draft:') && !key.endsWith(':active'))).toBe(true));
 
     cleanup();
-    renderView();
+    renderView(undefined, true);
 
     // The draft is offered, not applied: the workspace stays empty until asked.
     fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));

@@ -30,11 +30,13 @@ const checkSql = (table: Parameters<typeof getTableConfig>[0], name: string) => 
 };
 
 describe('payroll schema', () => {
-  it('stores a required advance reason of up to 200 characters', () => {
+  it('allows nonblank advance reasons while rejecting empty and whitespace-only values', () => {
     const reason = config(advances).columns.find((column) => column.name === 'reason');
     expect(reason).toBeDefined();
     expect(reason?.notNull).toBe(true);
     expect(reason?.getSQLType()).toBe('varchar(200)');
+    expect(checkSql(advances, 'advances_reason_nonblank'))
+      .toBe('char_length(trim(`advances`.`reason`)) > 0');
   });
 
   it('stores an optional historical reason on bonus rows', () => {

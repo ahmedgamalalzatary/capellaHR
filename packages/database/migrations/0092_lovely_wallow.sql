@@ -1,0 +1,1 @@
+ALTER TABLE `advances` ADD CONSTRAINT `advances_reason_nonblank` CHECK (char_length(trim(`advances`.`reason`)) > 0);

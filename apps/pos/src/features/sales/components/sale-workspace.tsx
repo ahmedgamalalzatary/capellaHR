@@ -201,6 +201,14 @@ export function SaleWorkspace({
   const [discardError, setDiscardError] = useState(false);
   const didReplayOnMount = useRef(false);
   const mounted = useRef(true);
+  useEffect(() => {
+    // React intentionally re-runs effects in StrictMode; reset this lifecycle guard on each run.
+    // eslint-disable-next-line react-hooks/immutability
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const submitting = useRef(false);
   const hasDraftProgress = Boolean(
     client || employee || seller || lines.length > 0 || discountValue || taxValue
@@ -274,10 +282,6 @@ export function SaleWorkspace({
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
     };
-  }, []);
-
-  useEffect(() => () => {
-    mounted.current = false;
   }, []);
 
   useEffect(() => {

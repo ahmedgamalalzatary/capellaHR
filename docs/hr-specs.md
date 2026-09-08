@@ -647,7 +647,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 - Before any installment is included in finalized payroll, the admin may edit or delete the advance.
 - The assigned employee is immutable and an advance can never be transferred.
-- Before lock, the admin may edit full amount, installment count, and starting month.
+- Before lock, the admin may edit full amount, installment count, starting month, and reason.
 - Editing regenerates the complete installment schedule.
 - Create, edit, schedule-regeneration, and delete actions remain in audit history.
 - Once any installment is finalized, the entire advance and every remaining installment become permanently read-only.

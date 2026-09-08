@@ -264,6 +264,7 @@ export const advances = mysqlTable('advances', {
   check('advances_amount_positive', sql`${table.amount} > 0`),
   check('advances_installment_count_range', sql`${table.installmentCount} between 1 and 12`),
   check('advances_month_first_day', sql`dayofmonth(${table.startMonth}) = 1`),
+  check('advances_reason_nonblank', sql`char_length(trim(${table.reason})) > 0`),
 ]);
 
 export const advanceInstallments = mysqlTable('advance_installments', {
