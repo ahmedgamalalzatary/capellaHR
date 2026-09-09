@@ -11,7 +11,7 @@ import {
   invoices,
   serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/mysql-core';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -150,12 +150,12 @@ const moneyBySession = async (executor: Executor, sessions: CashierSessionRecord
   }).from(erpExpenses).where(or(...sessions.map((session) => and(
     eq(erpExpenses.branchId, session.branchId),
     gte(erpExpenses.createdAt, session.openedAt),
-    ...(session.closedAt ? [lte(erpExpenses.createdAt, session.closedAt)] : []),
+    ...(session.closedAt ? [lt(erpExpenses.createdAt, session.closedAt)] : []),
   ))));
   for (const row of expenseRows) {
     const session = sessions.find((candidate) => candidate.branchId === row.branchId
       && row.createdAt >= candidate.openedAt
-      && (candidate.closedAt === null || row.createdAt <= candidate.closedAt));
+      && (candidate.closedAt === null || row.createdAt < candidate.closedAt));
     if (session) {
       const amount = toCents(row.amount) * (row.kind === 'reversal' ? BigInt(-1) : BigInt(1));
       expenses.set(session.id, expenses.get(session.id)! + amount);
@@ -254,8 +254,8 @@ export const createDrizzleCashierSessionRepository = (
       end), 0)`,
     }).from(erpExpenses).where(and(
       eq(erpExpenses.branchId, input.branchId),
-      sql`${erpExpenses.createdAt} >= ${input.openedAt}`,
-      sql`${erpExpenses.createdAt} <= ${input.closedAt}`,
+      gte(erpExpenses.createdAt, input.openedAt),
+      lt(erpExpenses.createdAt, input.closedAt),
     ));
 
     const [collectedRow] = await database.select({

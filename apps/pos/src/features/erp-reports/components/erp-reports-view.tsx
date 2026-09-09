@@ -43,7 +43,6 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-employees': 'تقرير الموظفين',
   'erp-commissions': 'تقرير العمولات',
   'erp-discounts': 'تقرير الخصومات',
-  'erp-taxes': 'تقرير الضرائب',
   'erp-refunds': 'تقرير المرتجعات',
   'erp-voids': 'تقرير الإلغاءات',
   'erp-expenses': 'تقرير المصروفات',
@@ -51,7 +50,7 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-stock': 'تقرير المخزون',
   'erp-profit': 'تقرير الأرباح',
   'erp-client-history': 'تقرير سجل العملاء',
-  'erp-receivables': 'تقرير أرصدة العملاء',
+  'erp-receivables': 'الدفعات الجزئية',
   'erp-service-queue': 'تقرير أرقام أدوار الخدمات',
   'erp-service-completions': 'تقارير إنهاء الخدمات',
   'erp-consumable-usage': 'استخدام المستهلكات',
@@ -85,10 +84,28 @@ const initialDates = () => {
   return { dateFrom: `${today.slice(0, 7)}-01`, dateTo: today };
 };
 
+const extraHiddenOnScreen: Partial<Record<ErpTabReportType, readonly string[]>> = {
+  'erp-sales': ['clientPhone', 'authorizedBy', 'saleKind'],
+  'erp-products': ['eventType'],
+  'erp-employees': ['employeeCode'],
+  'erp-commissions': ['employeeCode'],
+  'erp-client-history': ['clientPhone'],
+};
+
+const screenColumns = (
+  reportType: ErpTabReportType,
+  columns: Array<{ key: string; label: string }>,
+) => {
+  const hidden = new Set(['id', 'invoiceNumber', ...(extraHiddenOnScreen[reportType] ?? [])]);
+  return columns.filter((column) => !hidden.has(column.key));
+};
+
 const displayCell = (value: ReportCell) => {
   if (value === null) return '—';
   if (typeof value === 'boolean') return value ? 'نعم' : 'لا';
-  return String(value);
+  const text = String(value);
+  const dateOnly = text.match(/^(\d{4}-\d{2}-\d{2})[ T]\d/);
+  return dateOnly?.[1] ?? text;
 };
 
 const errorMessage = (error: unknown) => error instanceof Error
@@ -330,7 +347,7 @@ export function ErpReportsView() {
 
       <div role="group" aria-label="أنواع تقارير ERP" className="space-y-3">
         {([
-          ['مبيعات', ['erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products', 'erp-employees', 'erp-commissions', 'erp-discounts', 'erp-taxes']],
+          ['مبيعات', ['erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products', 'erp-employees', 'erp-commissions', 'erp-discounts']],
           ['عكس وقيود', ['erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases']],
           ['مخزون وأرباح', ['erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables']],
           ['أرضية الصالون', ['erp-service-queue', 'erp-service-completions', 'erp-consumable-usage', 'erp-consumable-ledger', 'erp-service-exceptions']],
@@ -402,11 +419,13 @@ export function ErpReportsView() {
           {report.isPending ? <LoadingState label="جارٍ تحميل التقرير…" className="py-16" />
             : report.isError ? <EmptyState title="تعذر تحميل التقرير" description={errorMessage(report.error)} action={<Button onClick={() => void report.refetch()}>إعادة المحاولة</Button>} />
               : !snapshot?.rows.length ? <EmptyState title="لا توجد سجلات مطابقة" />
-                : (
+                : (() => {
+                  const columns = screenColumns(reportType, snapshot.columns);
+                  return (
                   <DataTable>
                     <THead>
                       <TH>تحديد</TH>
-                      {snapshot.columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
+                      {columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
                     </THead>
                     <tbody>
                       {snapshot.rows.map((row, index) => {
@@ -424,7 +443,7 @@ export function ErpReportsView() {
                               />
                             ) : null}
                           </TD>
-                          {snapshot.columns.map((column) => (
+                          {columns.map((column) => (
                             <TD key={column.key} className="whitespace-nowrap">
                               {displayCell(row[column.key] ?? null)}
                             </TD>
@@ -435,7 +454,7 @@ export function ErpReportsView() {
                     <tfoot data-testid="report-totals">
                       {Object.entries(snapshot.summary).map(([key, value]) => (
                         <tr key={key} className="border-t border-line bg-surface/60 font-semibold">
-                          <td className="px-3 py-2" colSpan={Math.max(1, snapshot.columns.length)}>
+                          <td className="px-3 py-2" colSpan={Math.max(1, columns.length)}>
                             {summaryLabels[key] ?? key}
                           </td>
                           <td className="tabular whitespace-nowrap px-3 py-2">{displayCell(value)}</td>
@@ -443,7 +462,8 @@ export function ErpReportsView() {
                       ))}
                     </tfoot>
                   </DataTable>
-                )}
+                  );
+                })()}
           {meta && meta.totalPages > 1 ? (
             <Pagination
               summary={(

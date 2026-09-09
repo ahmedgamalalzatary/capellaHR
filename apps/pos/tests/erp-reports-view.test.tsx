@@ -26,11 +26,25 @@ const snapshot = {
   title: 'تقرير المبيعات',
   generatedAt: '2026-08-09T12:00:00.000Z',
   columns: [
+    { key: 'id', label: 'المعرف' },
     { key: 'invoiceNumber', label: 'رقم الفاتورة' },
+    { key: 'businessDate', label: 'تاريخ البيع' },
     { key: 'clientName', label: 'العميل' },
+    { key: 'clientPhone', label: 'الهاتف' },
+    { key: 'authorizedBy', label: 'المصرح' },
+    { key: 'saleKind', label: 'النوع' },
     { key: 'total', label: 'الإجمالي' },
   ],
-  rows: [{ id: 41, invoiceNumber: 'INV.2026.08.09.0001', clientName: 'عميل التقرير', total: '230.00' }],
+  rows: [{
+    id: 41,
+    invoiceNumber: 'INV.2026.08.09.0001',
+    businessDate: '2026-09-09 08:03:54.315',
+    clientName: 'عميل التقرير',
+    clientPhone: '01000000000',
+    authorizedBy: 'مدير',
+    saleKind: 'بيع',
+    total: '230.00',
+  }],
   summary: { totalRecords: 21, totalSales: '4830.00' },
 };
 const failedExport = {
@@ -108,8 +122,10 @@ describe('ErpReportsView', () => {
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
     const selector = await screen.findByRole('group', { name: 'أنواع تقارير ERP' });
-    expect(within(selector).getAllByRole('button')).toHaveLength(21);
-    expect(within(selector).getByRole('button', { name: 'تقرير أرصدة العملاء' })).toBeDefined();
+    expect(within(selector).getAllByRole('button')).toHaveLength(20);
+    expect(within(selector).queryByRole('button', { name: 'تقرير الضرائب' })).toBeNull();
+    expect(within(selector).getByRole('button', { name: 'الدفعات الجزئية' })).toBeDefined();
+    expect(within(selector).queryByRole('button', { name: 'تقرير أرصدة العملاء' })).toBeNull();
     expect(within(selector).getByRole('button', { name: 'تقرير أرقام أدوار الخدمات' })).toBeDefined();
     await screen.findByRole('option', { name: 'الفرع الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
@@ -122,8 +138,13 @@ describe('ErpReportsView', () => {
       branchId: 2, dateFrom: '2026-08-01', dateTo: '2026-08-31',
       search: 'عميل التقرير', page: 1, pageSize: 20,
     }));
-    const row = (await screen.findByText('INV.2026.08.09.0001')).closest('tr')!;
+    const row = (await screen.findByText('عميل التقرير')).closest('tr')!;
     expect(within(row).getByText('230.00')).toBeDefined();
+    expect(within(row).getByText('2026-09-09')).toBeDefined();
+    expect(within(row).queryByText('INV.2026.08.09.0001')).toBeNull();
+    expect(within(row).queryByText('01000000000')).toBeNull();
+    expect(within(row).queryByText('مدير')).toBeNull();
+    expect(within(row).queryByText('بيع')).toBeNull();
     expect(screen.getByText('4830.00')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
     await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
@@ -133,7 +154,7 @@ describe('ErpReportsView', () => {
 
   it('creates filtered exports and retries failed jobs through the shared lifecycle', async () => {
     mount();
-    await screen.findByText('INV.2026.08.09.0001');
+    await screen.findByText('عميل التقرير');
     fireEvent.click(screen.getByRole('button', { name: 'تصدير PDF' }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledWith({
       reportType: 'erp-sales',
@@ -146,7 +167,7 @@ describe('ErpReportsView', () => {
 
   it('exports only selected report rows and clears selection when its scope changes', async () => {
     mount();
-    await screen.findByText('INV.2026.08.09.0001');
+    await screen.findByText('عميل التقرير');
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 41' }));
     fireEvent.click(screen.getByRole('button', { name: 'تصدير المحدد (1)' }));
@@ -161,7 +182,7 @@ describe('ErpReportsView', () => {
 
   it('renders report totals as dedicated table rows', async () => {
     mount();
-    await screen.findByText('INV.2026.08.09.0001');
+    await screen.findByText('عميل التقرير');
 
     const totals = screen.getByTestId('report-totals');
     expect(within(totals).getByText('إجمالي السجلات')).toBeDefined();
@@ -237,6 +258,7 @@ describe('ErpReportsView', () => {
     const sheet = document.querySelector('#print-root')!;
     expect(sheet.textContent).toContain('تقرير المبيعات');
     expect(sheet.textContent).toContain('INV.2026.08.09.0001');
+    expect(sheet.textContent).toContain('2026-09-09 08:03:54.315');
     expect(sheet.textContent).toContain('إجمالي المبيعات');
     // The app is stood down for the duration, so only the sheet reaches paper.
     expect(document.body.classList.contains('printing-report')).toBe(true);

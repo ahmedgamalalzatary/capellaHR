@@ -37,7 +37,7 @@ import {
 import { cashierSessionQueryKeys } from '../query-keys';
 import { RecoveryCloseDialog } from './recovery-close-dialog';
 import { ShiftHistoryView } from './shift-history-view';
-import { ShiftMoney } from './shift-money';
+import { cashLeftInDrawer, formatShiftMoney, ShiftMoney } from './shift-money';
 
 const formatCairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'Africa/Cairo',
@@ -248,7 +248,20 @@ export function CashierSessionView() {
               </SessionFact>
             </dl>
 
-            {summaryQuery.data ? <ShiftMoney summary={summaryQuery.data} /> : null}
+            {summaryQuery.data ? (
+              <>
+                <section
+                  aria-label="المتبقي في الدرج"
+                  className="rounded-control border border-ink bg-ink px-4 py-4 text-paper"
+                >
+                  <p className="text-[12px] text-paper/70">المتبقي في الدرج</p>
+                  <p className="mt-1 tabular text-2xl font-semibold tracking-tight">
+                    {formatShiftMoney(cashLeftInDrawer(summaryQuery.data))}
+                  </p>
+                </section>
+                <ShiftMoney summary={summaryQuery.data} />
+              </>
+            ) : null}
 
             {isCashier && !ownsSession ? (
               <Notice tone="warning">الوردية مفتوحة بواسطة كاشير آخر</Notice>

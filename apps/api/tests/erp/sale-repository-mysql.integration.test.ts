@@ -221,6 +221,47 @@ describe('ERP sale repository MySQL integration', () => {
     });
   });
 
+  it('assigns an expense at a session handoff to exactly one shift', async () => {
+    const data = await fixture();
+    const shifts = createDrizzleCashierSessionRepository(database, createErpAuditCapability());
+    const handoff = new Date(data.at.getTime() + 60_000);
+    await shifts.close({
+      branchId: data.branchId,
+      closedByAccountId: data.accountId,
+      closedAt: handoff,
+    });
+    const next = await shifts.open({
+      branchId: data.branchId,
+      openedByAccountId: data.accountId,
+      openedAt: handoff,
+    });
+    if (next.kind !== 'success') throw new Error('expected the next session to open');
+    await database.insert(erpExpenses).values({
+      branchId: data.branchId,
+      name: 'Handoff expense',
+      amount: '30.00',
+      expenseDate: '2026-08-03',
+      description: '',
+      actingAccountId: data.accountId,
+      createdAt: handoff,
+    });
+
+    expect(await shifts.findMoneyById(data.cashierSessionId)).toMatchObject({ expenses: '0.00' });
+    expect(await shifts.findMoneyById(next.session.id)).toMatchObject({ expenses: '30.00' });
+    expect(await shifts.readReportAccounting({
+      sessionId: data.cashierSessionId,
+      branchId: data.branchId,
+      openedAt: data.at,
+      closedAt: handoff,
+    })).toMatchObject({ expenses: '0.00' });
+    expect(await shifts.readReportAccounting({
+      sessionId: next.session.id,
+      branchId: data.branchId,
+      openedAt: handoff,
+      closedAt: new Date(handoff.getTime() + 60_000),
+    })).toMatchObject({ expenses: '30.00' });
+  });
+
   it('allocates consecutive queue numbers per service and resets them with the cashier shift', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());

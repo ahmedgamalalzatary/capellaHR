@@ -14,4 +14,13 @@ describe('ERP reports migration', () => {
     expect(migration).toContain('erp-invoice');
     expect(migration).toContain('ALTER TABLE `report_exports`');
   });
+
+  it('drops the taxes report type from the durable export queue', () => {
+    const name = readdirSync(migrationsDirectory).find((entry) => /^0095_.*\.sql$/.test(entry));
+    expect(name).toBeDefined();
+    const migration = readFileSync(`${migrationsDirectory}/${name!}`, 'utf8');
+    expect(migration).toContain("DELETE FROM `report_exports` WHERE `report_type` = 'erp-taxes'");
+    expect(migration).toContain('ALTER TABLE `report_exports`');
+    expect(migration).not.toMatch(/enum\([^)]*'erp-taxes'/);
+  });
 });

@@ -36,7 +36,6 @@ describe('report contracts', () => {
       'erp-employees',
       'erp-commissions',
       'erp-discounts',
-      'erp-taxes',
       'erp-refunds',
       'erp-voids',
       'erp-expenses',

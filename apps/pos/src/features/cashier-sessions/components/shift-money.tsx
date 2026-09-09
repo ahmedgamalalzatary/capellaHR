@@ -20,6 +20,24 @@ export const formatShiftDuration = (minutes: number) => (
 
 export const formatShiftMoney = (value: string) => `${value} ج.م`;
 
+const toCents = (value: string) => {
+  const negative = value.startsWith('-');
+  const [whole = '0', fraction = '00'] = (negative ? value.slice(1) : value).split('.');
+  const cents = BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, '0').slice(0, 2));
+  return negative ? -cents : cents;
+};
+
+const fromCents = (value: bigint) => {
+  const negative = value < BigInt(0);
+  const absolute = negative ? -value : value;
+  return `${negative ? '-' : ''}${absolute / BigInt(100)}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`;
+};
+
+/** Cash still in the till: cash taken, minus cash handed back, minus expenses. */
+export const cashLeftInDrawer = (summary: CashierSessionSummary) => fromCents(
+  toCents(summary.taken.cash) - toCents(summary.refunded.cash) - toCents(summary.expenses),
+);
+
 function Figure({ label, value, tone }: { label: string; value: string; tone?: 'danger' }) {
   return (
     <div className="rounded-control border border-line bg-surface/60 px-3 py-2.5">

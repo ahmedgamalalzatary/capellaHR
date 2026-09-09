@@ -99,14 +99,6 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['adjustmentKind', 'نوع الخصم'], ['adjustmentValue', 'قيمة الخصم'], ['amount', 'المبلغ'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
-  'erp-taxes': {
-    title: 'تقرير الضرائب',
-    columns: [
-      ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['invoiceNumber', 'رقم الفاتورة'], ['eventType', 'نوع الحركة'],
-      ['adjustmentKind', 'نوع الضريبة'], ['adjustmentValue', 'قيمة الضريبة'], ['amount', 'المبلغ'],
-    ].map(([key, label]) => ({ key: key!, label: label! })),
-  },
   'erp-refunds': {
     title: 'تقرير المرتجعات',
     columns: [

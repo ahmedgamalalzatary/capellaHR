@@ -153,6 +153,14 @@ describe('CashierSessionView', () => {
     expect(startSale.getAttribute('href')).toBe('/sales');
   });
 
+  test('shows cash left in the drawer from takings minus refunds and expenses', async () => {
+    mocks.getCurrentCashierSession.mockResolvedValue(session);
+    renderView();
+
+    const drawer = await screen.findByRole('region', { name: 'المتبقي في الدرج' });
+    expect(within(drawer).getByText('320.00 ج.م')).toBeDefined();
+  });
+
   test('opens a session when the Cashier branch has no active session', async () => {
     renderView();
 

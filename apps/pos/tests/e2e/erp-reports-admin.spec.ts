@@ -44,10 +44,14 @@ test('Admin filters, pages, exports, and retries an ERP report', async ({ page }
         columns: [
           { key: 'invoiceNumber', label: 'رقم الفاتورة' },
           { key: 'clientName', label: 'العميل' },
+          { key: 'branchName', label: 'الفرع' },
           { key: 'total', label: 'الإجمالي' },
         ],
         rows: [{
-          invoiceNumber: `INV-REPORT-${reportPage}`, clientName: 'عميل تاريخي', total: '230.00',
+          invoiceNumber: `INV-REPORT-${reportPage}`,
+          clientName: 'عميل تاريخي',
+          branchName: `فرع الصفحة ${reportPage}`,
+          total: '230.00',
         }],
         summary: { totalRecords: 21, totalSales: '4830.00' },
       }, { page: reportPage, pageSize: 20, total: 21, totalPages: 2 });
@@ -67,16 +71,16 @@ test('Admin filters, pages, exports, and retries an ERP report', async ({ page }
   });
 
   await page.goto('/reports');
-  await expect(page.getByRole('group', { name: 'أنواع تقارير ERP' }).getByRole('button')).toHaveCount(21);
+  await expect(page.getByRole('group', { name: 'أنواع تقارير ERP' }).getByRole('button')).toHaveCount(20);
   await page.getByLabel('الفرع').selectOption('2');
   await page.getByLabel('من تاريخ').fill('2026-08-01');
   await page.getByLabel('إلى تاريخ').fill('2026-08-31');
   await page.getByLabel('بحث').fill('عميل تاريخي');
   await page.getByRole('button', { name: 'تطبيق الفلاتر' }).click();
-  await expect(page.getByText('INV-REPORT-1')).toBeVisible();
+  await expect(page.getByText('فرع الصفحة 1')).toBeVisible();
   await expect(page.getByText('4830.00')).toBeVisible();
   await page.getByRole('button', { name: 'التالي' }).first().click();
-  await expect(page.getByText('INV-REPORT-2')).toBeVisible();
+  await expect(page.getByText('فرع الصفحة 2')).toBeVisible();
   await page.getByRole('button', { name: 'تصدير PDF' }).click();
   await expect.poll(() => created).toMatchObject({
     reportType: 'erp-sales',

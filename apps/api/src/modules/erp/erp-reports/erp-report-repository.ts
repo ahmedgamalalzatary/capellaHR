@@ -666,7 +666,6 @@ const factsFor = (
     case 'erp-employees': return employeeFacts(filters);
     case 'erp-commissions': return commissionFacts(filters);
     case 'erp-discounts': return adjustmentFacts(filters, 'discount');
-    case 'erp-taxes': return adjustmentFacts(filters, 'tax');
     case 'erp-refunds': return reversalFacts(filters, 'refund');
     case 'erp-voids': return reversalFacts(filters, 'void');
     case 'erp-expenses': return expenseFacts(filters);
@@ -703,7 +702,6 @@ const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-employees': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
     case 'erp-commissions': return sql`COUNT(*) totalRecords, ${sum('serviceCount', 'totalServices')}, ${sum('netAmount', 'totalCommission')}`;
     case 'erp-discounts': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalDiscount')}`;
-    case 'erp-taxes': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalTax')}`;
     case 'erp-refunds': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalRefunds')}`;
     case 'erp-voids': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalVoids')}`;
     case 'erp-expenses': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetExpenses')}`;
