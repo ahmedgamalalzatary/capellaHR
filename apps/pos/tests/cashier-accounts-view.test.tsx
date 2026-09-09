@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from '../src/lib/api/client';
 
@@ -109,6 +109,7 @@ describe('unified cashier account management', () => {
 
     fireEvent.blur(checkbox, { relatedTarget: saveButton });
 
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)); });
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
     fireEvent.click(saveButton);
     await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual(

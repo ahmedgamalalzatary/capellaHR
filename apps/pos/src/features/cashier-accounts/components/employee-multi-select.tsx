@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown, Search } from 'lucide-react';
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Input, Label } from '@capella/ui';
 import type { EmployeeOption } from '../api/employee-options-api';
 
@@ -12,21 +12,24 @@ export function EmployeeMultiSelect({ employees, selected, onChange, disabled }:
   disabled: boolean;
 }) {
   const id = useId();
+  const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const names = employees.filter(({ id }) => selected.includes(id)).map(({ fullName }) => fullName);
   const filtered = employees.filter(({ fullName }) => fullName.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
 
+  useEffect(() => {
+    if (!open) return;
+    const closeAfterOutsideClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('click', closeAfterOutsideClick);
+    return () => document.removeEventListener('click', closeAfterOutsideClick);
+  }, [open]);
+
   return (
-    <div className="space-y-1.5" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) {
-        // Keep the options in the document until the destination receives its
-        // click. Closing synchronously moves controls below this dropdown and
-        // can make a Save click miss its button entirely.
-        window.setTimeout(() => setOpen(false), 0);
-      }
-    }} onKeyDown={(event) => {
+    <div ref={root} className="space-y-1.5" onKeyDown={(event) => {
       if (event.key === 'Escape' && open) {
         event.preventDefault();
         event.stopPropagation();
