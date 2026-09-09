@@ -20,7 +20,12 @@ export function EmployeeMultiSelect({ employees, selected, onChange, disabled }:
 
   return (
     <div className="space-y-1.5" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        // Keep the options in the document until the destination receives its
+        // click. Closing synchronously moves controls below this dropdown and
+        // can make a Save click miss its button entirely.
+        window.setTimeout(() => setOpen(false), 0);
+      }
     }} onKeyDown={(event) => {
       if (event.key === 'Escape' && open) {
         event.preventDefault();

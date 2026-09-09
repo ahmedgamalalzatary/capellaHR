@@ -98,6 +98,23 @@ describe('unified cashier account management', () => {
     await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'new.name', employeeIds: [7, 9] }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
+  test('keeps the employee dropdown in place until a save-button click completes', async () => {
+    renderView();
+    const dialog = await edit();
+    const trigger = within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ });
+    fireEvent.click(trigger);
+    const checkbox = within(dialog).getByRole('checkbox', { name: 'سارة محمد' });
+    fireEvent.click(checkbox);
+    const saveButton = within(dialog).getByRole('button', { name: 'حفظ التغييرات' });
+
+    fireEvent.blur(checkbox, { relatedTarget: saveButton });
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ employeeIds: [7, 9] }),
+    ));
+  });
   test('creates credentials and selected employees in a single save', async () => {
     renderView();
     const dialog = await create();
