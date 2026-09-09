@@ -23,7 +23,7 @@ export function SaleAdjustmentsStep({
   onTaxValue: (value: string) => void;
 }) {
   return (
-    <details className="rounded-card border border-line bg-paper shadow-card">
+    <details open className="rounded-card border border-line bg-paper shadow-card">
       <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-ink">
         خصم / ضريبة
       </summary>

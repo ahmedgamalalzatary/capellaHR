@@ -1,6 +1,7 @@
 'use client';
 
 import type { PaymentMethod, SaleQuote } from '@capella/contracts';
+import { useState } from 'react';
 
 import {
   Button,
@@ -14,6 +15,7 @@ import {
 } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { Select } from '@/components/form/select';
 import { ApiError } from '@/lib/api/client';
 
 import { errorMessage, money, paymentMethods } from './sale-primitives';
@@ -53,6 +55,8 @@ export function SalePaymentStep({
   ready: boolean;
   onSubmit: () => void;
 }) {
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cash');
+  const entered = paymentMethods.filter(({ method }) => payments[method]);
   return (
     <Card className="shadow-card">
       <CardHeader><CardTitle>الدفع</CardTitle></CardHeader>
@@ -98,19 +102,43 @@ export function SalePaymentStep({
             </div>
           </dl>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {paymentMethods.map(({ method, label }) => (
-            <div key={method} className="space-y-1.5">
-              <Label htmlFor={`payment-${method}`}>{label}</Label>
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-1.5">
+              <Label htmlFor="sale-payment-method">طريقة الدفع</Label>
+              <Select
+                id="sale-payment-method"
+                aria-label="طريقة الدفع"
+                value={selectedMethod}
+                onChange={(event) => setSelectedMethod(event.target.value as PaymentMethod)}
+              >
+                {paymentMethods.map(({ method, label }) => (
+                  <option key={method} value={method}>{label}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sale-payment-amount">المبلغ</Label>
               <Input
-                id={`payment-${method}`}
+                id="sale-payment-amount"
+                aria-label="المبلغ"
                 inputMode="decimal"
                 className="text-start"
-                value={payments[method]}
-                onChange={(event) => onPaymentChange(method, event.target.value)}
+                value={payments[selectedMethod]}
+                onChange={(event) => onPaymentChange(selectedMethod, event.target.value)}
               />
             </div>
-          ))}
+          </div>
+          {entered.length > 0 ? (
+            <ul aria-label="المدفوعات المسجلة" className="space-y-1 text-sm">
+              {entered.map(({ method, label }) => (
+                <li key={method} className="flex items-center justify-between gap-3 rounded-control border border-line px-3 py-2">
+                  <span>{label}</span>
+                  <span className="tabular">{payments[method]} ج.م</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
         {remaining !== null ? (
           <p

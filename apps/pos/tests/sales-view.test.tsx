@@ -140,7 +140,7 @@ const buildDraft = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
   fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
-  await screen.findByText('185.00 ج.م');
+  await screen.findByText('تم سداد الإجمالي بالكامل');
 };
 
 describe('ERP service-sale view', () => {
@@ -362,7 +362,7 @@ describe('ERP service-sale view', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(await screen.findByRole('button', { name: /شامبو/ }));
     fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
-    fireEvent.change(await screen.findByLabelText('نقدي'), { target: { value: '20.00' } });
+    fireEvent.change(await screen.findByLabelText('المبلغ'), { target: { value: '20.00' } });
     const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
     await waitFor(() => expect(review).toHaveProperty('disabled', false));
     fireEvent.click(review);
@@ -378,7 +378,7 @@ describe('ERP service-sale view', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
     fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
-    await screen.findByText('185.00 ج.م');
+    await screen.findByText('تم سداد الإجمالي بالكامل');
 
     const seller = await screen.findByLabelText('الكاشير') as HTMLSelectElement;
     expect(within(seller).getByText('أحمد جمال')).toBeDefined();
@@ -563,7 +563,7 @@ describe('ERP service-sale view', () => {
       .toBe(true);
     const frozenInputs = screen.getByRole('group', { name: 'تفاصيل البيع' });
     expect(frozenInputs.hasAttribute('disabled')).toBe(true);
-    expect(screen.getByLabelText('نقدي').matches(':disabled')).toBe(true);
+    expect(screen.getByLabelText('المبلغ').matches(':disabled')).toBe(true);
     expect(screen.getByRole('button', { name: 'اختر العميل' }).matches(':disabled')).toBe(true);
   });
 

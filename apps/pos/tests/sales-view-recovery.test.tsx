@@ -141,7 +141,7 @@ const buildDraft = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
   fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
-  await screen.findByText('185.00 ج.م');
+  await screen.findByText('تم سداد الإجمالي بالكامل');
 };
 
 describe('ERP service-sale view', () => {
@@ -764,7 +764,7 @@ describe('ERP service-sale view', () => {
     fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
     fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
     fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
-    await screen.findByText('185.00 ج.م');
+    await screen.findByText('تم سداد الإجمالي بالكامل');
 
     const lineEmployee = await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement;
     await waitFor(() => expect(lineEmployee.value).toBe(''));
@@ -788,7 +788,7 @@ describe('ERP service-sale view', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
     fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
-    await screen.findByText('185.00 ج.م');
+    await screen.findByText('تم سداد الإجمالي بالكامل');
 
     // Added before any employee was chosen, so the line still names nobody.
     expect((await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement).value).toBe('');
@@ -822,7 +822,7 @@ describe('ERP service-sale view', () => {
     expect(await screen.findByText('حدث خطأ غير متوقع. حاول مرة أخرى.')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'إعادة حساب الإجمالي' }));
 
-    expect(await screen.findByText('185.00 ج.م')).toBeDefined();
+    expect(await screen.findByText('تم سداد الإجمالي بالكامل')).toBeDefined();
     expect(mocks.quoteSale).toHaveBeenCalledTimes(2);
   });
 
