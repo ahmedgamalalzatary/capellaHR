@@ -61,6 +61,19 @@ describe('ProductStockView', () => {
     expect(within(productsTable).getByRole('cell', { name: '3.00%' })).toBeDefined();
   });
 
+  it('sizes the products table to its content instead of stretching columns across the card', async () => {
+    // A stretched table hands the spare width to the first column, so المنتج
+    // ends up far wider than any product name; a content-width table cannot.
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    const productsTable = await screen.findByRole('table');
+    expect(productsTable.className).toContain('w-auto');
+    expect(productsTable.className).toContain('min-w-max');
+    expect(productsTable.className).not.toContain('w-full');
+  });
+
   it('restores the product commission percentage from a saved draft', async () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });

@@ -368,7 +368,9 @@ export function ProductStockView() {
                   />
                 )
                   : (
-                    <DataTable minWidth="min-w-full">
+                    // Content-width: a stretched table hands the spare width to the
+                    // product column, leaving it far wider than any name it holds.
+                    <DataTable minWidth="w-auto min-w-max">
                       <THead>
                         <TH>المنتج</TH>
                         <TH>الباركود</TH>

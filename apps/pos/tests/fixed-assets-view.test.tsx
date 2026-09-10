@@ -44,6 +44,26 @@ const chooseBranch = async () => {
 };
 
 describe('FixedAssetsView', () => {
+  it('applies the branch chosen on another page without asking again', async () => {
+    // Every other POS page remembers the admin's branch in session storage;
+    // landing here must pick up that choice instead of showing the prompt.
+    sessionStorage.setItem('capella:pos-admin-branch', '2');
+    mocks.list.mockResolvedValue(page([asset]));
+    mount();
+
+    expect(await screen.findByText('كرسي انتظار')).toBeDefined();
+    expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2 }));
+    expect((screen.getByLabelText('الفرع') as HTMLSelectElement).value).toBe('2');
+  });
+
+  it('remembers the chosen branch so other pages apply it too', async () => {
+    mocks.list.mockResolvedValue(page([]));
+    mount();
+    await chooseBranch();
+
+    expect(sessionStorage.getItem('capella:pos-admin-branch')).toBe('2');
+  });
+
   it('asks for a branch before showing any register', async () => {
     mocks.list.mockResolvedValue(page([]));
     mount();

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
 
@@ -61,7 +61,14 @@ const emptyForm = {
  */
 export function FixedAssetsView() {
   const client = useQueryClient();
-  const [branchId, setBranchId] = useState<number>();
+  // The branch chosen on any other POS page carries over, and a change here
+  // carries over to them, through the shared session-storage key.
+  const [branchId, setBranchId] = useState<number | undefined>(() => {
+    if (typeof sessionStorage === 'undefined') return undefined;
+    const stored = sessionStorage.getItem('capella:pos-admin-branch');
+    const parsed = stored ? Number(stored) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  });
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState<FixedAsset | null>(null);
   const [deleting, setDeleting] = useState<FixedAsset | null>(null);
@@ -86,6 +93,14 @@ export function FixedAssetsView() {
     enabled: scopeReady,
   });
   const refresh = () => client.invalidateQueries({ queryKey: fixedAssetQueryKeys.all });
+
+  useEffect(() => {
+    if (branchId === undefined) {
+      sessionStorage.removeItem('capella:pos-admin-branch');
+      return;
+    }
+    sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
+  }, [branchId]);
 
   const set = (field: keyof typeof emptyForm) => (value: string) => setForm((current) => ({ ...current, [field]: value }));
   const clearForm = () => { setEditing(null); setForm(emptyForm); create.reset(); edit.reset(); };
