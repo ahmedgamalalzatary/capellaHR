@@ -93,6 +93,27 @@ afterEach(() => {
 });
 
 describe('AdvancesView', () => {
+  test('opens the create form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة سلفة' }));
+    const dialog = await screen.findByRole('dialog', { name: 'سلفة جديدة' });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/الموظف/)).toBeDefined();
+  });
+
+  test('opens the edit form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل سلفة/ });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/عدد الأقساط/)).toBeDefined();
+  });
+
   test('lists advances with amount, installment count, and start month', async () => {
     renderView();
     const row = (await screen.findByText('أحمد جمال')).closest('tr')!;

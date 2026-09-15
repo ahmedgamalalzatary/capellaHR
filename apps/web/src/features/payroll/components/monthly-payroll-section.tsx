@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BadgeCheck, ChevronDown, Search, UserRound, Wallet } from 'lucide-react';
 import { Fragment, useState } from 'react';
 
-import { Button, Card, EmptyState, Input, SmartPagination } from '@capella/ui';
+import { Button, Card, ConfirmDialog, EmptyState, Input, SmartPagination } from '@capella/ui';
 
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -70,8 +70,13 @@ export function MonthlyPayrollSection() {
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [confirmFinalizeId, setConfirmFinalizeId] = useState<number | null>(null);
+  /**
+   * Row identity is the employee, not `record.id`: the API returns open
+   * previews with `id: 0`, so keying on `id` expands (and finalizes) every
+   * open row at once. The month is fixed per list, so employeeId is unique.
+   */
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<number | null>(null);
+  const [confirmFinalizeEmployeeId, setConfirmFinalizeEmployeeId] = useState<number | null>(null);
   const [confirmBranchFinalize, setConfirmBranchFinalize] = useState(false);
 
   const payrollQuery = useQuery({
@@ -96,7 +101,7 @@ export function MonthlyPayrollSection() {
   const finalizeOne = useMutation({
     mutationFn: (record: PayrollRecord) =>
       finalizePayroll(record.employeeId, record.payrollMonth),
-    onSettled: () => setConfirmFinalizeId(null),
+    onSettled: () => setConfirmFinalizeEmployeeId(null),
     onSuccess: async () => { await invalidate(); notifySuccess('تم اعتماد الراتب.'); },
     onError: (error: unknown) => notifyError(error, 'تعذر اعتماد الراتب.'),
   });
@@ -110,6 +115,7 @@ export function MonthlyPayrollSection() {
   const mutationError = finalizeOne.error ?? finalizeBranch.error;
   const items = payrollQuery.data?.items ?? [];
   const meta = payrollQuery.data?.meta;
+  const finalizeTarget = items.find((record) => record.employeeId === confirmFinalizeEmployeeId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -124,7 +130,7 @@ export function MonthlyPayrollSection() {
             onChange={(event) => {
               if (!event.target.value) return;
               setPage(1);
-              setExpandedId(null);
+              setExpandedEmployeeId(null);
               setConfirmBranchFinalize(false);
               setMonth(event.target.value);
             }}
@@ -157,7 +163,7 @@ export function MonthlyPayrollSection() {
           value={branchFilter ?? ''}
           onChange={(event) => {
             setPage(1);
-            setExpandedId(null);
+            setExpandedEmployeeId(null);
             setConfirmBranchFinalize(false);
             setBranchFilter(event.target.value === '' ? null : Number(event.target.value));
           }}
@@ -171,28 +177,20 @@ export function MonthlyPayrollSection() {
         </select>
         {branchFilter !== null ? (
           confirmBranchFinalize ? (
-            <>
-              <span className="text-[13px] text-muted">
-                اعتماد نهائي لرواتب {selectedBranch?.name ?? 'الفرع المحدد'} لشهر{' '}
-                <span className="tabular">{month}</span>؟
-              </span>
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={finalizeBranch.isPending}
-                onClick={() => finalizeBranch.mutate(branchFilter)}
-              >
-                تأكيد اعتماد الفرع
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={finalizeBranch.isPending}
-                onClick={() => setConfirmBranchFinalize(false)}
-              >
-                إلغاء
-              </Button>
-            </>
+            <ConfirmDialog
+              title="اعتماد رواتب الفرع"
+              description={
+                <>
+                  اعتماد نهائي لرواتب {selectedBranch?.name ?? 'الفرع المحدد'} لشهر{' '}
+                  <span className="tabular">{month}</span>؟
+                </>
+              }
+              confirmLabel="تأكيد اعتماد الفرع"
+              tone="danger"
+              pending={finalizeBranch.isPending}
+              onConfirm={() => finalizeBranch.mutate(branchFilter)}
+              onCancel={() => setConfirmBranchFinalize(false)}
+            />
           ) : (
             <Button
               variant="secondary"
@@ -215,6 +213,24 @@ export function MonthlyPayrollSection() {
         <p role="alert" className="text-[13px] text-danger">
           {serverErrorMessage(mutationError)}
         </p>
+      ) : null}
+
+      {finalizeTarget ? (
+        <ConfirmDialog
+          title={`اعتماد راتب ${finalizeTarget.employeeName}`}
+          description={
+            <>
+              اعتماد نهائي لراتب {finalizeTarget.employeeName} لشهر{' '}
+              <span className="tabular">{finalizeTarget.payrollMonth}</span>؟ لا يمكن التراجع عن
+              الاعتماد.
+            </>
+          }
+          confirmLabel="تأكيد الاعتماد"
+          tone="danger"
+          pending={finalizeOne.isPending}
+          onConfirm={() => finalizeOne.mutate(finalizeTarget)}
+          onCancel={() => setConfirmFinalizeEmployeeId(null)}
+        />
       ) : null}
 
       <Card>
@@ -250,7 +266,7 @@ export function MonthlyPayrollSection() {
               </thead>
               <tbody>
                 {items.map((record) => (
-                  <Fragment key={record.id}>
+                  <Fragment key={record.employeeId}>
                     <tr className="border-b border-line/60 last:border-b-0">
                       <td className="px-4 py-3">
                         <span className="tabular">{record.employeeCode}</span>
@@ -287,8 +303,8 @@ export function MonthlyPayrollSection() {
                             variant="ghost"
                             size="sm"
                             onClick={() =>
-                              setExpandedId((current) =>
-                                current === record.id ? null : record.id,
+                              setExpandedEmployeeId((current) =>
+                                current === record.employeeId ? null : record.employeeId,
                               )
                             }
                           >
@@ -296,40 +312,19 @@ export function MonthlyPayrollSection() {
                             التفاصيل
                           </Button>
                           {record.status === 'open' ? (
-                            confirmFinalizeId === record.id ? (
-                              <>
-                                <Button
-                                  variant="danger"
-                                  size="sm"
-                                  disabled={finalizeOne.isPending}
-                                  onClick={() => finalizeOne.mutate(record)}
-                                >
-                                  تأكيد الاعتماد
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  disabled={finalizeOne.isPending}
-                                  onClick={() => setConfirmFinalizeId(null)}
-                                >
-                                  إلغاء
-                                </Button>
-                              </>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setConfirmFinalizeId(record.id)}
-                              >
-                                <BadgeCheck className="size-4" aria-hidden />
-                                اعتماد
-                              </Button>
-                            )
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setConfirmFinalizeEmployeeId(record.employeeId)}
+                            >
+                              <BadgeCheck className="size-4" aria-hidden />
+                              اعتماد
+                            </Button>
                           ) : null}
                         </span>
                       </td>
                     </tr>
-                    {expandedId === record.id ? <PayrollBreakdownRow record={record} /> : null}
+                    {expandedEmployeeId === record.employeeId ? <PayrollBreakdownRow record={record} /> : null}
                   </Fragment>
                 ))}
               </tbody>
@@ -342,10 +337,10 @@ export function MonthlyPayrollSection() {
         <SmartPagination
           page={meta.page}
           totalPages={meta.totalPages}
-          onPage={(next) => {
-            setExpandedId(null);
-            setPage(next);
-          }}
+            onPage={(next) => {
+              setExpandedEmployeeId(null);
+              setPage(next);
+            }}
           summary={
             <>
               صفحة <span className="tabular">{meta.page}</span> من{' '}

@@ -6,7 +6,7 @@ import { ListOrdered, Pencil, Plus, Search, Trash2, UserRound } from 'lucide-rea
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Badge, Button, Card, EmptyState, Field, Input, Label, MonthPicker, SmartPagination } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Label, Modal, MonthPicker, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -128,67 +128,64 @@ function AdvanceCreateForm({ onDone }: { onDone: () => void }) {
   });
 
   return (
-    <Card>
-      <form
-        noValidate
-        onSubmit={handleSubmit((values) => save.mutate(values))}
-        className="space-y-3 p-4"
-      >
-        <p className="text-[13px] font-medium">سلفة جديدة</p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="الموظف" htmlFor="advance-employee" required error={errors.employeeId?.message}>
-            <div className="space-y-1">
-              <select
-                id="advance-employee"
-                disabled={employeesQuery.isPending || employeesQuery.isError}
-                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
-                {...register('employeeId')}
-              >
-                <option value="">
-                  {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'اختر الموظف'}
+    <form
+      noValidate
+      onSubmit={handleSubmit((values) => save.mutate(values))}
+      className="space-y-3"
+    >
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="الموظف" htmlFor="advance-employee" required error={errors.employeeId?.message}>
+          <div className="space-y-1">
+            <select
+              id="advance-employee"
+              disabled={employeesQuery.isPending || employeesQuery.isError}
+              className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
+              {...register('employeeId')}
+            >
+              <option value="">
+                {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'اختر الموظف'}
+              </option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.employeeCode} — {employee.fullName}
                 </option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.employeeCode} — {employee.fullName}
-                  </option>
-                ))}
-              </select>
-              {employeesQuery.isError ? (
-                <div className="flex items-center gap-2 text-[12px] text-danger">
-                  <span>تعذر تحميل الموظفين</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void employeesQuery.refetch()}
-                  >
-                    إعادة المحاولة
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </Field>
-          <ScheduleFields register={register} errors={errors} />
-        </div>
-        <p className="text-[13px] text-muted">
-          تُقسم السلفة بالتساوي على أقساط شهرية متتالية، ويوضع باقي التقريب في القسط الأخير.
-          تعتبر السلفة مصروفة فور إنشائها وتُقفل بالكامل بمجرد اعتماد أي قسط منها.
+              ))}
+            </select>
+            {employeesQuery.isError ? (
+              <div className="flex items-center gap-2 text-[12px] text-danger">
+                <span>تعذر تحميل الموظفين</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void employeesQuery.refetch()}
+                >
+                  إعادة المحاولة
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </Field>
+        <ScheduleFields register={register} errors={errors} />
+      </div>
+      <p className="text-[13px] text-muted">
+        تُقسم السلفة بالتساوي على أقساط شهرية متتالية، ويوضع باقي التقريب في القسط الأخير.
+        تعتبر السلفة مصروفة فور إنشائها وتُقفل بالكامل بمجرد اعتماد أي قسط منها.
+      </p>
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
         </p>
-        {save.error ? (
-          <p role="alert" className="text-[13px] text-danger">
-            {serverErrorMessage(save.error)}
-          </p>
-        ) : null}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={save.isPending}>
-            {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
-            إلغاء
-          </Button>
-        </div>
-      </form>
-    </Card>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -219,34 +216,31 @@ function AdvanceEditForm({ advance, onDone }: { advance: Advance; onDone: () => 
   });
 
   return (
-    <Card>
-      <form
-        noValidate
-        onSubmit={handleSubmit((values) => save.mutate(values))}
-        className="space-y-3 p-4"
-      >
-        <p className="text-[13px] font-medium">تعديل سلفة {advance.employeeName}</p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <ScheduleFields register={register} errors={errors} />
-        </div>
-        <p className="text-[13px] text-muted">
-          يعيد التعديل إنشاء جدول الأقساط بالكامل، ولا يمكن التعديل أو الحذف بعد اعتماد أي قسط.
+    <form
+      noValidate
+      onSubmit={handleSubmit((values) => save.mutate(values))}
+      className="space-y-3"
+    >
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <ScheduleFields register={register} errors={errors} />
+      </div>
+      <p className="text-[13px] text-muted">
+        يعيد التعديل إنشاء جدول الأقساط بالكامل، ولا يمكن التعديل أو الحذف بعد اعتماد أي قسط.
+      </p>
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
         </p>
-        {save.error ? (
-          <p role="alert" className="text-[13px] text-danger">
-            {serverErrorMessage(save.error)}
-          </p>
-        ) : null}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={save.isPending}>
-            {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
-            إلغاء
-          </Button>
-        </div>
-      </form>
-    </Card>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -394,9 +388,13 @@ export function AdvancesView() {
       </div>
 
       {creating ? (
-        <AdvanceCreateForm onDone={closeForm} />
+        <Modal title="سلفة جديدة" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <AdvanceCreateForm onDone={closeForm} />
+        </Modal>
       ) : editing ? (
-        <AdvanceEditForm key={editing.id} advance={editing} onDone={closeForm} />
+        <Modal title={`تعديل سلفة ${editing.employeeName}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <AdvanceEditForm key={editing.id} advance={editing} onDone={closeForm} />
+        </Modal>
       ) : null}
 
       {removal.error ? (

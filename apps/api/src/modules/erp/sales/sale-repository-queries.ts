@@ -58,6 +58,7 @@ export const createSaleRepositoryQueries = (
     const where = and(
       eq(invoices.branchId, branchId),
       ne(invoices.status, 'draft'),
+      query.clientId === undefined ? undefined : eq(invoices.clientId, query.clientId),
       escapedSearch ? or(
         like(invoices.invoiceNumber, `%${escapedSearch}%`),
         like(invoices.clientNameSnapshot, `%${escapedSearch}%`),

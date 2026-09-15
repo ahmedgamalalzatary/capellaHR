@@ -162,4 +162,44 @@ describe('ConsumablesView', () => {
     fireEvent.click(screen.getAllByRole('button').at(-1)!);
     await waitFor(() => expect(mocks.record).not.toHaveBeenCalled());
   });
+
+  it('opens the consumables completion panel in a dialog instead of inline', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1' },
+    ]));
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    const dialog = await screen.findByRole('dialog', { name: 'تسجيل مستهلكات 1 خدمة' });
+    expect(dialog).toBeDefined();
+  });
+
+  it('opens the consumable stock setup in a dialog instead of inline', async () => {
+    mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'admin' } } });
+    sessionStorage.setItem('capella:pos-admin-branch', '3');
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'مخزون المستهلكات' }));
+    await screen.findByText('أرصدة المستهلكات');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('منتج إعداد المستهلك')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إعداد منتج كمستهلك' }));
+    const dialog = await screen.findByRole('dialog', { name: 'إعداد منتج كمستهلك' });
+    expect(dialog).toBeDefined();
+  });
+
+  it('ignores generic close requests while consumables are being recorded', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1' },
+    ]));
+    mocks.record.mockReturnValue(new Promise(() => undefined));
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'لم تُستخدم مستهلكات' }));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ المستهلكات' }));
+    await waitFor(() => expect(mocks.record).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'تسجيل مستهلكات 1 خدمة' })).toBeDefined();
+  });
 });

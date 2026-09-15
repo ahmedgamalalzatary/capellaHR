@@ -6,7 +6,7 @@ import { Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Badge, Button, Card, EmptyState, Field, Input, Label, MonthPicker, SmartPagination } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Label, Modal, MonthPicker, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -57,14 +57,12 @@ type CreateFormInput = import('zod').input<typeof adjustmentCreateFormSchema> & 
 function AdjustmentCreateForm({
   api,
   queryKeys,
-  title,
   reasonLabel,
   reasonMaxLength,
   onDone,
 }: {
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
-  title: string;
   reasonLabel: string | undefined;
   reasonMaxLength: 200 | 500 | undefined;
   onDone: () => void;
@@ -100,90 +98,87 @@ function AdjustmentCreateForm({
   });
 
   return (
-    <Card>
-      <form
-        noValidate
-        onSubmit={handleSubmit((values) => save.mutate(values))}
-        className="space-y-3 p-4"
-      >
-        <p className="text-[13px] font-medium">{title}</p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="الموظف" htmlFor="adjustment-employee" required error={errors.employeeId?.message}>
-            <div className="space-y-1">
-              <select
-                id="adjustment-employee"
-                disabled={employeesQuery.isPending || employeesQuery.isError}
-                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
-                {...register('employeeId')}
-              >
-                <option value="">
-                  {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'اختر الموظف'}
+    <form
+      noValidate
+      onSubmit={handleSubmit((values) => save.mutate(values))}
+      className="space-y-3"
+    >
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="الموظف" htmlFor="adjustment-employee" required error={errors.employeeId?.message}>
+          <div className="space-y-1">
+            <select
+              id="adjustment-employee"
+              disabled={employeesQuery.isPending || employeesQuery.isError}
+              className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
+              {...register('employeeId')}
+            >
+              <option value="">
+                {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'اختر الموظف'}
+              </option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.employeeCode} — {employee.fullName}
                 </option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.employeeCode} — {employee.fullName}
-                  </option>
-                ))}
-              </select>
-              {employeesQuery.isError ? (
-                <div className="flex items-center gap-2 text-[12px] text-danger">
-                  <span>تعذر تحميل الموظفين</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void employeesQuery.refetch()}
-                  >
-                    إعادة المحاولة
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </Field>
-          <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
-            <Input
-              id="adjustment-amount"
-              inputMode="decimal"
-              className="tabular"
-              {...register('amount')}
+              ))}
+            </select>
+            {employeesQuery.isError ? (
+              <div className="flex items-center gap-2 text-[12px] text-danger">
+                <span>تعذر تحميل الموظفين</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void employeesQuery.refetch()}
+                >
+                  إعادة المحاولة
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </Field>
+        <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
+          <Input
+            id="adjustment-amount"
+            inputMode="decimal"
+            className="tabular"
+            {...register('amount')}
+          />
+        </Field>
+        <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
+          <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
+        </Field>
+        {reasonLabel ? (
+          <Field
+            label={reasonLabel}
+            htmlFor="adjustment-reason"
+            required
+            error={errors.reason?.message}
+            className="sm:col-span-2 lg:col-span-3"
+          >
+            <textarea
+              id="adjustment-reason"
+              rows={3}
+              maxLength={reasonMaxLength}
+              className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
+              {...register('reason')}
             />
           </Field>
-          <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
-            <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
-          </Field>
-          {reasonLabel ? (
-            <Field
-              label={reasonLabel}
-              htmlFor="adjustment-reason"
-              required
-              error={errors.reason?.message}
-              className="sm:col-span-2 lg:col-span-3"
-            >
-              <textarea
-                id="adjustment-reason"
-                rows={3}
-                maxLength={reasonMaxLength}
-                className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
-                {...register('reason')}
-              />
-            </Field>
-          ) : null}
-        </div>
-        {save.error ? (
-          <p role="alert" className="text-[13px] text-danger">
-            {serverErrorMessage(save.error)}
-          </p>
         ) : null}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={save.isPending}>
-            {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
-            إلغاء
-          </Button>
-        </div>
-      </form>
-    </Card>
+      </div>
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
+        </p>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -191,7 +186,6 @@ function AdjustmentEditForm({
   api,
   queryKeys,
   record,
-  title,
   reasonLabel,
   reasonMaxLength,
   onDone,
@@ -199,7 +193,6 @@ function AdjustmentEditForm({
   api: AdjustmentApi;
   queryKeys: AdjustmentQueryKeys;
   record: FinancialAdjustment;
-  title: string;
   reasonLabel: string | undefined;
   reasonMaxLength: 200 | 500 | undefined;
   onDone: () => void;
@@ -233,60 +226,55 @@ function AdjustmentEditForm({
   });
 
   return (
-    <Card>
-      <form
-        noValidate
-        onSubmit={handleSubmit((values) => save.mutate(values))}
-        className="space-y-3 p-4"
-      >
-        <p className="text-[13px] font-medium">
-          {title} — {record.employeeName}
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
-            <Input
-              id="adjustment-amount"
-              inputMode="decimal"
-              className="tabular"
-              {...register('amount')}
+    <form
+      noValidate
+      onSubmit={handleSubmit((values) => save.mutate(values))}
+      className="space-y-3"
+    >
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
+          <Input
+            id="adjustment-amount"
+            inputMode="decimal"
+            className="tabular"
+            {...register('amount')}
+          />
+        </Field>
+        <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
+          <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
+        </Field>
+        {reasonLabel ? (
+          <Field
+            label={reasonLabel}
+            htmlFor="adjustment-reason"
+            required
+            error={errors.reason?.message}
+            className="sm:col-span-2 lg:col-span-3"
+          >
+            <textarea
+              id="adjustment-reason"
+              rows={3}
+              maxLength={reasonMaxLength}
+              className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
+              {...register('reason')}
             />
           </Field>
-          <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
-            <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
-          </Field>
-          {reasonLabel ? (
-            <Field
-              label={reasonLabel}
-              htmlFor="adjustment-reason"
-              required
-              error={errors.reason?.message}
-              className="sm:col-span-2 lg:col-span-3"
-            >
-              <textarea
-                id="adjustment-reason"
-                rows={3}
-                maxLength={reasonMaxLength}
-                className="w-full resize-y rounded-control border border-line bg-paper px-3 py-2 text-sm text-ink aria-invalid:border-danger"
-                {...register('reason')}
-              />
-            </Field>
-          ) : null}
-        </div>
-        {save.error ? (
-          <p role="alert" className="text-[13px] text-danger">
-            {serverErrorMessage(save.error)}
-          </p>
         ) : null}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={save.isPending}>
-            {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
-            إلغاء
-          </Button>
-        </div>
-      </form>
-    </Card>
+      </div>
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
+        </p>
+      ) : null}
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ'}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" disabled={save.isPending} onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -421,25 +409,27 @@ export function AdjustmentView({
       </div>
 
       {creating ? (
-        <AdjustmentCreateForm
-          api={api}
-          queryKeys={queryKeys}
-          title={labels.formTitleCreate}
-          reasonLabel={reasonLabel}
-          reasonMaxLength={reasonMaxLength}
-          onDone={closeForm}
-        />
+        <Modal title={labels.formTitleCreate} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <AdjustmentCreateForm
+            api={api}
+            queryKeys={queryKeys}
+            reasonLabel={reasonLabel}
+            reasonMaxLength={reasonMaxLength}
+            onDone={closeForm}
+          />
+        </Modal>
       ) : editing ? (
-        <AdjustmentEditForm
-          key={editing.id}
-          api={api}
-          queryKeys={queryKeys}
-          record={editing}
-          title={labels.formTitleEdit}
-          reasonLabel={reasonLabel}
-          reasonMaxLength={reasonMaxLength}
-          onDone={closeForm}
-        />
+        <Modal title={`${labels.formTitleEdit} — ${editing.employeeName}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <AdjustmentEditForm
+            key={editing.id}
+            api={api}
+            queryKeys={queryKeys}
+            record={editing}
+            reasonLabel={reasonLabel}
+            reasonMaxLength={reasonMaxLength}
+            onDone={closeForm}
+          />
+        </Modal>
       ) : null}
 
       {removal.error ? (

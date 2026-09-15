@@ -5,7 +5,7 @@ import { Copy, History, Link2, Plus, Smartphone, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Fragment, useEffect, useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -84,7 +84,7 @@ function PairingQr({ link }: { link: string }) {
   );
 }
 
-function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: () => void }) {
+function PairingCard({ options, onDone, onPairingCreated }: { options: AssignmentOptions; onDone: () => void; onPairingCreated: () => void }) {
   const [assignmentType, setAssignmentType] = useState<DeviceAssignmentType>('employee');
   const [assignmentId, setAssignmentId] = useState('');
   const [pairing, setPairing] = useState<PairingRequest | null>(null);
@@ -93,7 +93,7 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
   const create = useMutation({
     mutationFn: (input: { assignmentType: DeviceAssignmentType; assignmentId: number }) =>
       createPairing(input),
-    onSuccess: (created) => { setPairing(created); notifySuccess('تم إنشاء رابط الربط.'); },
+    onSuccess: (created) => { setPairing(created); onPairingCreated(); notifySuccess('تم إنشاء رابط الربط.'); },
     onError: (error: unknown) => notifyError(error),
   });
 
@@ -123,9 +123,8 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
   };
 
   return (
-    <Card>
-      <CardContent className="space-y-4 py-5">
-        {pairingLink ? (
+    <>
+      {pairingLink ? (
           <div className="space-y-4">
             <p className="text-sm font-medium">
               افتح هذا الرابط على الهاتف المطلوب ربطه. الرابط صالح لاستخدام واحد فقط ولن يُعرض مرة أخرى.
@@ -219,8 +218,7 @@ function PairingCard({ options, onDone }: { options: AssignmentOptions; onDone: 
             </div>
           </form>
         )}
-      </CardContent>
-    </Card>
+    </>
   );
 }
 
@@ -263,6 +261,7 @@ export function DevicesView() {
   const [typeFilter, setTypeFilter] = useState<DeviceAssignmentType | ''>('');
   const [page, setPage] = useState(1);
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [pairingCreated, setPairingCreated] = useState(false);
   const [confirmRevokeId, setConfirmRevokeId] = useState<number | null>(null);
   const [historyId, setHistoryId] = useState<number | null>(null);
 
@@ -347,13 +346,17 @@ export function DevicesView() {
           </select>
         </div>
 
-        <Button size="sm" onClick={() => setPairingOpen(true)}>
+        <Button size="sm" onClick={() => { setPairingCreated(false); setPairingOpen(true); }}>
           <Plus className="size-4" aria-hidden />
           ربط جهاز جديد
         </Button>
       </div>
 
-      {pairingOpen ? <PairingCard options={options} onDone={() => setPairingOpen(false)} /> : null}
+      {pairingOpen ? (
+        <Modal title="ربط جهاز جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!pairingCreated) setPairingOpen(false); }}>
+          <PairingCard options={options} onPairingCreated={() => setPairingCreated(true)} onDone={() => { setPairingCreated(false); setPairingOpen(false); }} />
+        </Modal>
+      ) : null}
 
       {revocation.error ? (
         <p role="alert" className="text-[13px] text-danger">

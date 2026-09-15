@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), correct: vi.fn(), list: vi.fn(), branches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }], meta: { totalPages: 1 } })) }));
@@ -33,6 +33,16 @@ const mount = () => {
 };
 
 describe('ExpensesView', () => {
+  it('places the add button next to the page header', async () => {
+    mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    actor.current = 'cashier';
+    mount();
+
+    await screen.findByRole('button', { name: 'تسجيل مصروف جديد' });
+    const header = screen.getByRole('heading', { name: 'المصروفات' }).closest('div')!.parentElement!;
+    expect(within(header).getByRole('button', { name: 'تسجيل مصروف جديد' })).toBeDefined();
+  });
+
   it('finds an expense by its name or notes in the history filter', async () => {
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     actor.current = 'cashier';
@@ -50,6 +60,7 @@ describe('ExpensesView', () => {
     mocks.list.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 1 } });
     actor.current = 'cashier';
     mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'تسجيل مصروف جديد' }));
     fireEvent.change(await screen.findByLabelText('المبلغ'), { target: { value: '125.50' } });
     fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'مستلزمات' } });
 
@@ -57,6 +68,7 @@ describe('ExpensesView', () => {
     cleanup();
     mount();
 
+    fireEvent.click(await screen.findByRole('button', { name: 'تسجيل مصروف جديد' }));
     fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
     expect((screen.getByLabelText('المبلغ') as HTMLInputElement).value).toBe('125.50');
     expect((screen.getByLabelText('الوصف') as HTMLInputElement).value).toBe('مستلزمات');
@@ -79,6 +91,7 @@ describe('ExpensesView', () => {
     queryClient.setQueryData(['erp-reports', 'existing'], {});
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل مصروف جديد' }));
     fireEvent.change(screen.getByLabelText('اسم المصروف'), { target: { value: 'كهرباء' } });
     fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '125.50' } });
     fireEvent.change(screen.getByLabelText('تاريخ المصروف'), { target: { value: '2026-08-05' } });
@@ -122,6 +135,36 @@ describe('ExpensesView', () => {
     expect(screen.getByLabelText('المبلغ الصحيح').hasAttribute('disabled')).toBe(true);
   });
 
+  it('ignores generic close requests while creating an expense', async () => {
+    mocks.list.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 1 } });
+    mocks.create.mockReturnValue(new Promise(() => undefined));
+    actor.current = 'cashier';
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'تسجيل مصروف جديد' }));
+    fireEvent.change(screen.getByLabelText('اسم المصروف'), { target: { value: 'كهرباء' } });
+    fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل المصروف' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'تسجيل مصروف جديد' })).toBeDefined();
+  });
+
+  it('ignores generic close requests while correcting an expense', async () => {
+    mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mocks.correct.mockReturnValue(new Promise(() => undefined));
+    actor.current = 'cashier';
+    mount();
+    await screen.findByText('كهرباء');
+    fireEvent.click(screen.getByRole('button', { name: 'تصحيح' }));
+    fireEvent.change(screen.getByLabelText('سبب التصحيح'), { target: { value: 'قيمة خاطئة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد التصحيح' }));
+    await waitFor(() => expect(mocks.correct).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'تصحيح مصروف #10' })).toBeDefined();
+  });
+
   it('allows an active correction replacement to be corrected again', async () => {
     mocks.list.mockResolvedValue({ items: [{ ...expense, id: 12, supersedesId: 10 }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     mount(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
@@ -132,8 +175,12 @@ describe('ExpensesView', () => {
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     mount(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } }); await screen.findByText('كهرباء');
     fireEvent.click(screen.getByRole('button', { name: 'تصحيح' })); fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('المبلغ')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل مصروف جديد' }));
     expect((screen.getByLabelText('المبلغ') as HTMLInputElement).value).toBe(''); expect((screen.getByLabelText('الوصف') as HTMLInputElement).value).toBe('');
     fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '20' } }); fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'draft' } }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '' } }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل مصروف جديد' }));
     expect((screen.getByLabelText('المبلغ') as HTMLInputElement).value).toBe(''); expect((screen.getByLabelText('الوصف') as HTMLInputElement).value).toBe('');
   });
 
@@ -141,6 +188,7 @@ describe('ExpensesView', () => {
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     mocks.create.mockRejectedValue(new ApiError(500, { code: 'CREATE_FAILED', message: 'فشل الإنشاء' }));
     mount(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } }); await screen.findByText('كهرباء');
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل مصروف جديد' }));
     fireEvent.change(screen.getByLabelText('اسم المصروف'), { target: { value: 'كهرباء' } }); fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '10' } }); fireEvent.change(screen.getByLabelText('الوصف'), { target: { value: 'x' } }); fireEvent.click(screen.getByRole('button', { name: 'تسجيل المصروف' }));
     expect(await screen.findByText('فشل الإنشاء')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'تصحيح' }));
@@ -162,6 +210,7 @@ describe('ExpensesView', () => {
     // The server pins a cashier to the branch of their own account, so there is nothing to pick.
     expect(screen.queryByLabelText('الفرع')).toBeNull();
     expect(mocks.branches).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'تسجيل مصروف جديد' }));
     fireEvent.change(screen.getByLabelText('اسم المصروف'), { target: { value: 'كهرباء' } });
     fireEvent.change(screen.getByLabelText('المبلغ'), { target: { value: '125.50' } });
     fireEvent.change(screen.getByLabelText('تاريخ المصروف'), { target: { value: '2026-08-05' } });
@@ -194,5 +243,29 @@ describe('ExpensesView', () => {
     mount();
     fireEvent.click(await screen.findByRole('button', { name: 'إعادة المحاولة' }));
     expect(await screen.findByRole('option', { name: 'الرئيسي' })).toBeTruthy();
+  });
+
+  it('opens the expense create form in a dialog instead of inline', async () => {
+    mocks.list.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 1 } });
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'تسجيل مصروف جديد' })).toBeDefined());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('اسم المصروف')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل مصروف جديد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تسجيل مصروف جديد' });
+    expect(dialog).toBeDefined();
+  });
+
+  it('opens the expense correction form in a dialog', async () => {
+    mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByText('كهرباء');
+    fireEvent.click(screen.getByRole('button', { name: 'تصحيح' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تصحيح مصروف #10' });
+    expect(dialog).toBeDefined();
   });
 });

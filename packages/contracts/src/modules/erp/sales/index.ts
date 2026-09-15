@@ -666,6 +666,7 @@ export const invoiceHistoryQuerySchema = z.object({
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
   branchId: coercedMysqlIntSchema.optional(),
+  clientId: coercedMysqlIntSchema.optional(),
   search: z.string().trim().min(1).max(255).optional(),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']).optional(),
   settlementStatus: z.enum(['settled', 'open']).optional(),

@@ -101,6 +101,41 @@ describe('BranchesView', () => {
     });
   });
 
+  test('opens the create form in a dialog instead of inline', async () => {
+    listBranchesMock.mockResolvedValue(page([cairo]));
+    renderView();
+    await waitFor(() => expect(screen.getByText('فرع القاهرة')).toBeDefined());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة فرع' }));
+    const dialog = await screen.findByRole('dialog', { name: 'فرع جديد' });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/اسم الفرع/)).toBeDefined();
+  });
+
+  test('opens the edit form in a dialog instead of inline', async () => {
+    listBranchesMock.mockResolvedValue(page([cairo]));
+    renderView();
+    await waitFor(() => expect(screen.getByText('فرع القاهرة')).toBeDefined());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(within(screen.getByText('فرع القاهرة').closest('tr')!).getByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل الفرع/ });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/اسم الفرع/)).toBeDefined();
+  });
+
+  test('asks for delete confirmation in a dialog', async () => {
+    listBranchesMock.mockResolvedValue(page([cairo]));
+    deleteBranchMock.mockResolvedValue(undefined);
+    renderView();
+    await waitFor(() => expect(screen.getByText('فرع القاهرة')).toBeDefined());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'حذف' }));
+    const dialog = await screen.findByRole('dialog', { name: 'حذف الفرع' });
+    expect(within(dialog).getByRole('button', { name: 'تأكيد الحذف' })).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الحذف' }));
+    await waitFor(() => expect(deleteBranchMock.mock.calls[0]?.[0]).toBe(1));
+  });
+
   test('creates a branch from the new-branch form', async () => {
     listBranchesMock.mockResolvedValue(page([]));
     createBranchMock.mockResolvedValue({ ...cairo, id: 2 });

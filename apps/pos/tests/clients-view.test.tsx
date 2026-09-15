@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   updateClient: vi.fn(),
   findClientByPhone: vi.fn(),
+  listClientDebtInvoices: vi.fn(),
 }));
 
 vi.mock('../src/features/auth', () => ({
@@ -25,6 +26,7 @@ vi.mock('../src/features/clients/api/clients-api', async (importOriginal) => ({
   createClient: mocks.createClient,
   updateClient: mocks.updateClient,
   findClientByPhone: mocks.findClientByPhone,
+  listClientDebtInvoices: mocks.listClientDebtInvoices,
 }));
 
 import { ClientsView } from '../src/features/clients/components/clients-view';
@@ -34,6 +36,7 @@ const nada = {
   branchId: 3,
   fullName: 'ندى سمير',
   phone: '01001234567',
+  balanceDue: '125.50',
   createdAt: '2026-08-01T09:00:00.000Z',
   updatedAt: '2026-08-01T09:00:00.000Z',
 };
@@ -58,6 +61,18 @@ beforeEach(() => {
   mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
   mocks.listClients.mockResolvedValue(pageOf([nada]));
   mocks.listClientBranches.mockResolvedValue(pageOf([{ id: 3, name: 'Main' }]));
+  mocks.listClientDebtInvoices.mockResolvedValue(pageOf([{
+    id: 91,
+    invoiceNumber: 'INV-2026.09.15-12.00-1',
+    status: 'completed',
+    total: '200.00',
+    amountPaid: '74.50',
+    balanceDue: '125.50',
+    settlementStatus: 'open',
+    client: { id: 1, name: 'ندى سمير', phone: '01001234567' },
+    employees: [],
+    soldAt: '2026-09-15T09:00:00.000Z',
+  }]));
 });
 
 afterEach(() => {
@@ -107,11 +122,26 @@ describe('ClientsView', () => {
     expect(mocks.listClientBranches).toHaveBeenCalledTimes(2);
   });
 
-  test('lists clients with their name and phone', async () => {
+  test('lists clients with their name, phone, and outstanding invoice balance', async () => {
     renderView();
     const row = (await screen.findByText('ندى سمير')).closest('li')!;
 
     expect(within(row).getByText('01001234567')).toBeDefined();
+    expect(within(row).getByText('مستحق 125.50 ج.م')).toBeDefined();
+  });
+
+  test('opens the selected client unpaid invoices from the debt badge', async () => {
+    renderView();
+    const row = (await screen.findByText('ندى سمير')).closest('li')!;
+
+    fireEvent.click(within(row).getByRole('button', { name: 'عرض الفواتير غير المسددة لندى سمير' }));
+
+    expect(await screen.findByRole('dialog', { name: 'فواتير ندى سمير غير المسددة' })).toBeDefined();
+    expect(await screen.findByText('INV-2026.09.15-12.00-1')).toBeDefined();
+    expect(screen.getByText('المتبقي 125.50 ج.م')).toBeDefined();
+    expect(screen.getByRole('link', { name: /INV-2026\.09\.15-12\.00-1/ }).getAttribute('href'))
+      .toBe('/invoices/91');
+    expect(mocks.listClientDebtInvoices).toHaveBeenCalledWith(1, undefined);
   });
 
   test('shows an Arabic empty state when no client exists yet', async () => {
@@ -138,6 +168,20 @@ describe('ClientsView', () => {
 
     await waitFor(() => {
       expect(mocks.listClients.mock.calls.at(-1)?.[0]).toMatchObject({ search: 'ندى', page: 1 });
+    });
+  });
+
+  test('filters clients by whether they have an outstanding balance', async () => {
+    renderView();
+    await screen.findByText('ندى سمير');
+
+    fireEvent.change(screen.getByLabelText('حالة المديونية'), { target: { value: 'with_debt' } });
+
+    await waitFor(() => {
+      expect(mocks.listClients.mock.calls.at(-1)?.[0]).toMatchObject({
+        debtStatus: 'with_debt',
+        page: 1,
+      });
     });
   });
 

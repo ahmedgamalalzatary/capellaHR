@@ -82,6 +82,16 @@ describe('DeductionsView', () => {
     expect(mocks.listDeductions).toHaveBeenCalledWith(expect.objectContaining({ page: 1 }));
   });
 
+  test('opens the create form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة خصم' }));
+    const dialog = await screen.findByRole('dialog', { name: 'خصم جديد' });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/الموظف/)).toBeDefined();
+  });
+
   test('creates a deduction through the deductions endpoint', async () => {
     mocks.createDeduction.mockResolvedValue(deduction);
     renderView();

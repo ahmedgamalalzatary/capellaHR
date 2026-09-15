@@ -32,7 +32,7 @@ const repository = (overrides: Partial<ClientRepository> = {}): ClientRepository
   create: vi.fn(async (input: Parameters<ClientRepository['create']>[0]) => record(input)),
   findById: vi.fn(async () => record()),
   findByPhone: vi.fn(async () => null),
-  list: vi.fn(async () => ({ items: [record()], total: 1 })),
+  list: vi.fn(async () => ({ items: [{ ...record(), balanceDue: '0.00' }], total: 1 })),
   update: vi.fn(async () => record()),
   ...overrides,
 });

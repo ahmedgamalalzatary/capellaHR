@@ -145,14 +145,52 @@ describe('PayrollView', () => {
     expect(screen.getByText('الترحيل السالب السابق')).toBeDefined();
   });
 
-  test('finalizes an open employee-month only after an inline confirmation', async () => {
+  test('expands only the clicked open row when previews share id 0', async () => {
+    // The API returns open previews with id 0; row identity must come from employeeId.
+    const first = { ...payroll, id: 0, employeeId: 1, employeeName: 'أحمد جمال' };
+    const second = { ...payroll, id: 0, employeeId: 2, employeeCode: 1002, employeeName: 'منى علي' };
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([first, second]));
+    renderView();
+    await screen.findByText('منى علي');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'التفاصيل' }));
+    expect(screen.getAllByText('الراتب الأساسي')).toHaveLength(1);
+  });
+
+  test('finalizes the clicked open row when previews share id 0', async () => {
+    mocks.finalizePayroll.mockResolvedValue({ ...payroll, status: 'finalized' });
+    const first = { ...payroll, id: 0, employeeId: 1, employeeName: 'أحمد جمال' };
+    const second = { ...payroll, id: 0, employeeId: 2, employeeCode: 1002, employeeName: 'منى علي' };
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([first, second]));
+    renderView();
+    await screen.findByText('منى علي');
+    fireEvent.click(within(rowOf('منى علي')).getByRole('button', { name: 'اعتماد' }));
+    expect(await screen.findByRole('dialog', { name: 'اعتماد راتب منى علي' })).toBeDefined();
+  });
+
+  test('finalizes an open employee-month from a dialog instead of inline', async () => {
     mocks.finalizePayroll.mockResolvedValue({ ...payroll, status: 'finalized' });
     renderView();
     await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    const dialog = await screen.findByRole('dialog', { name: /اعتماد راتب/ });
     expect(mocks.finalizePayroll).not.toHaveBeenCalled();
-    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تأكيد الاعتماد' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الاعتماد' }));
     await waitFor(() => expect(mocks.finalizePayroll).toHaveBeenCalledWith(1, '2026-06'));
+  });
+
+  test('finalizes a whole branch month from a dialog instead of inline', async () => {
+    mocks.finalizeBranchPayroll.mockResolvedValue([]);
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
+    const dialog = await screen.findByRole('dialog', { name: 'اعتماد رواتب الفرع' });
+    expect(mocks.finalizeBranchPayroll).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد اعتماد الفرع' }));
+    await waitFor(() => expect(mocks.finalizeBranchPayroll).toHaveBeenCalledWith(3, '2026-06'));
   });
 
   test('a finalized row offers no finalize action', async () => {
@@ -231,7 +269,8 @@ describe('PayrollView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
-    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تأكيد الاعتماد' }));
+    const dialog = await screen.findByRole('dialog', { name: /اعتماد راتب/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الاعتماد' }));
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
       'يجب اعتماد الشهور الأقدم أولًا',

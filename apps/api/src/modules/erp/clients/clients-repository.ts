@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
-import { clients } from '@capella/database/schema';
-import { and, asc, count, eq, or, sql } from 'drizzle-orm';
+import { clients, invoices } from '@capella/database/schema';
+import { and, asc, count, eq, exists, getTableColumns, gt, ne, notExists, or, sql } from 'drizzle-orm';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import type { ClientRepository } from './clients-service.js';
@@ -47,14 +47,41 @@ export const createDrizzleClientRepository = (
     // Search text is matched literally with locate(), never interpolated into a
     // LIKE pattern, so `%` and `_` typed at the counter stay ordinary characters.
     const scope = eq(clients.branchId, branchId);
-    const where = query.search
+    const identityScope = query.search
       ? and(scope, or(
           sql`locate(${query.search}, ${clients.fullName}) > 0`,
           sql`locate(${query.search}, ${clients.phone}) > 0`,
         ))
       : scope;
+    const owingInvoice = database.select({ value: sql`1` })
+      .from(invoices)
+      .where(and(
+        eq(invoices.clientId, clients.id),
+        eq(invoices.kind, 'sale'),
+        ne(invoices.status, 'draft'),
+        gt(invoices.balanceDue, '0'),
+      ))
+      .limit(1);
+    const debtScope = query.debtStatus === 'with_debt'
+      ? exists(owingInvoice)
+      : query.debtStatus === 'without_debt'
+        ? notExists(owingInvoice)
+        : undefined;
+    const where = and(identityScope, debtScope);
 
-    const items = await database.select().from(clients).where(where)
+    const items = await database.select({
+      ...getTableColumns(clients),
+      balanceDue: sql<string>`cast(coalesce(sum(case
+        when ${invoices.kind} = 'sale'
+          and ${invoices.status} <> 'draft'
+          and ${invoices.balanceDue} > 0
+          then ${invoices.balanceDue}
+        else 0
+      end), 0) as char)`,
+    }).from(clients)
+      .leftJoin(invoices, eq(invoices.clientId, clients.id))
+      .where(where)
+      .groupBy(clients.id)
       .orderBy(asc(clients.fullName), asc(clients.id))
       .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const totals = await database.select({ value: count() }).from(clients).where(where);

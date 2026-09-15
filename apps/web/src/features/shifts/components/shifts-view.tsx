@@ -6,7 +6,7 @@ import { Clock, Pencil, Search, UserRound } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Button, Card, CardContent, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
+import { Button, Card, EmptyState, Field, Input, Modal, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -42,7 +42,7 @@ const serverErrorMessage = (error: unknown): string | null => {
   return 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
-function ShiftEditorRow({
+function ShiftEditorForm({
   assignment,
   onDone,
 }: {
@@ -71,64 +71,56 @@ function ShiftEditorRow({
   });
 
   return (
-    <tr className="border-b border-line/60 bg-ink/[0.02] last:border-b-0">
-      <td colSpan={shiftColumns.length} className="px-4 py-4">
-        <form
-          noValidate
-          onSubmit={handleSubmit((values) => save.mutate(values))}
-          className="space-y-3"
+    <form
+      noValidate
+      onSubmit={handleSubmit((values) => save.mutate(values))}
+      className="space-y-3"
+    >
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="ساعات" htmlFor="shift-hours" required error={errors.hours?.message}>
+          <Input
+            id="shift-hours"
+            inputMode="numeric"
+            className="tabular"
+            {...register('hours')}
+          />
+        </Field>
+        <Field label="دقائق" htmlFor="shift-minutes" required error={errors.minutes?.message}>
+          <Input
+            id="shift-minutes"
+            inputMode="numeric"
+            className="tabular"
+            {...register('minutes')}
+          />
+        </Field>
+      </div>
+
+      <p className="text-[13px] text-muted">
+        الحد الأدنى دقيقة واحدة والحد الأقصى 12 ساعة. يبدأ تطبيق المدة الجديدة من تسجيل الحضور
+        التالي للموظف، وتحتفظ أي جلسة حضور مفتوحة بالمدة المسجلة عند تسجيل حضورها.
+      </p>
+
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
+        </p>
+      ) : null}
+
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الوردية'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={save.isPending}
+          onClick={onDone}
         >
-          <p className="text-[13px] font-medium">
-            مدة وردية {assignment.employeeName}
-          </p>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="ساعات" htmlFor="shift-hours" required error={errors.hours?.message}>
-              <Input
-                id="shift-hours"
-                inputMode="numeric"
-                className="tabular"
-                {...register('hours')}
-              />
-            </Field>
-            <Field label="دقائق" htmlFor="shift-minutes" required error={errors.minutes?.message}>
-              <Input
-                id="shift-minutes"
-                inputMode="numeric"
-                className="tabular"
-                {...register('minutes')}
-              />
-            </Field>
-          </div>
-
-          <p className="text-[13px] text-muted">
-            الحد الأدنى دقيقة واحدة والحد الأقصى 12 ساعة. يبدأ تطبيق المدة الجديدة من تسجيل الحضور
-            التالي للموظف، وتحتفظ أي جلسة حضور مفتوحة بالمدة المسجلة عند تسجيل حضورها.
-          </p>
-
-          {save.error ? (
-            <p role="alert" className="text-[13px] text-danger">
-              {serverErrorMessage(save.error)}
-            </p>
-          ) : null}
-
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={save.isPending}>
-              {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الوردية'}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={save.isPending}
-              onClick={onDone}
-            >
-              إلغاء
-            </Button>
-          </div>
-        </form>
-      </td>
-    </tr>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -157,6 +149,7 @@ export function ShiftsView() {
 
   const items = shiftsQuery.data?.items ?? [];
   const meta = shiftsQuery.data?.meta;
+  const editing = items.find((assignment) => assignment.employeeId === editingId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -215,6 +208,16 @@ export function ShiftsView() {
           </select>
         )}
       </div>
+
+      {editing ? (
+        <Modal title={`تعديل وردية ${editing.employeeName}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => setEditingId(null)}>
+          <ShiftEditorForm
+            key={editing.employeeId}
+            assignment={editing}
+            onDone={() => setEditingId(null)}
+          />
+        </Modal>
+      ) : null}
 
       <Card>
         {shiftsQuery.isPending ? (
@@ -287,13 +290,6 @@ export function ShiftsView() {
                         </Button>
                       </td>
                     </tr>
-                    {editingId === assignment.employeeId ? (
-                      <ShiftEditorRow
-                        key={assignment.employeeId}
-                        assignment={assignment}
-                        onDone={() => setEditingId(null)}
-                      />
-                    ) : null}
                   </Fragment>
                 ))}
               </tbody>

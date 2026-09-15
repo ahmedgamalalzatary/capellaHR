@@ -1,3 +1,5 @@
+import type { InvoiceHistoryItem } from '@capella/contracts';
+
 import { api } from '@/lib/api/client';
 
 export interface Client {
@@ -9,10 +11,15 @@ export interface Client {
   createdAt: string;
   updatedAt: string;
 }
+export interface ClientListItem extends Client {
+  /** Sum of this client's finalized sale balances. */
+  balanceDue: string;
+}
 export interface ClientBranch { id: number; name: string }
 
 export interface ListClientsParams {
   search?: string;
+  debtStatus?: 'with_debt' | 'without_debt';
   page?: number;
   pageSize?: number;
   /** Admins act on a named branch; a cashier's branch comes from their account. */
@@ -29,7 +36,20 @@ const queryString = (params: Record<string, string | number | undefined>) => {
 };
 
 export function listClients(params: ListClientsParams = {}) {
-  return api.getPage<Client>(`/erp/clients${queryString({ ...params })}`);
+  return api.getPage<ClientListItem>(`/erp/clients${queryString({ ...params })}`);
+}
+
+export function listClientDebtInvoices(clientId: number, branchId?: number) {
+  const fetchPage = (page: number) => api.getPage<InvoiceHistoryItem>(`/erp/sales${queryString({
+    clientId, branchId, settlementStatus: 'open', orderBy: 'soldAt', orderDir: 'desc', page, pageSize: 100,
+  })}`);
+  return fetchPage(1).then(async (first) => {
+    const items = [...first.items];
+    for (let page = 2; page <= first.meta.totalPages; page += 1) {
+      items.push(...(await fetchPage(page)).items);
+    }
+    return { ...first, items };
+  });
 }
 
 export function listClientBranches(page = 1) {

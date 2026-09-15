@@ -743,9 +743,9 @@ describe('ERP complete-sale contracts', () => {
 
   it('publishes branch-scoped paged invoice history and detail parameters', () => {
     expect(invoiceHistoryQuerySchema.parse({
-      page: '2', pageSize: '10', branchId: '3', search: '  01012345678  ',
+      page: '2', pageSize: '10', branchId: '3', clientId: '42', search: '  01012345678  ',
     })).toEqual({
-      page: 2, pageSize: 10, branchId: 3, search: '01012345678',
+      page: 2, pageSize: 10, branchId: 3, clientId: 42, search: '01012345678',
       orderBy: 'soldAt', orderDir: 'desc',
     });
     expect(invoiceParamsSchema.parse({ invoiceId: '44' })).toEqual({ invoiceId: 44 });

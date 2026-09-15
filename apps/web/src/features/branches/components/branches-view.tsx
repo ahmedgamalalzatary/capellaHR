@@ -6,7 +6,7 @@ import { LocateFixed, MapPin, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Badge, Button, Card, CardContent, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
+import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Input, Modal, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -81,62 +81,58 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
   };
 
   return (
-    <Card>
-      <CardContent className="py-5">
-        <form
-          noValidate
-          onSubmit={handleSubmit((values) => save.mutate(values))}
-          className="space-y-4"
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="اسم الفرع" htmlFor="branch-name" required error={errors.name?.message}>
-              <Input id="branch-name" {...register('name')} />
-            </Field>
-            <Field label="الموقع" htmlFor="branch-location" required error={errors.location?.message}>
-              <Input id="branch-location" {...register('location')} />
-            </Field>
-          </div>
+    <form
+      noValidate
+      onSubmit={handleSubmit((values) => save.mutate(values))}
+      className="space-y-4"
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="اسم الفرع" htmlFor="branch-name" required error={errors.name?.message}>
+          <Input id="branch-name" {...register('name')} />
+        </Field>
+        <Field label="الموقع" htmlFor="branch-location" required error={errors.location?.message}>
+          <Input id="branch-location" {...register('location')} />
+        </Field>
+      </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="خط العرض" htmlFor="branch-latitude" required error={errors.latitude?.message}>
-              <Input id="branch-latitude" inputMode="decimal" className="tabular" {...register('latitude')} />
-            </Field>
-            <Field label="خط الطول" htmlFor="branch-longitude" required error={errors.longitude?.message}>
-              <Input id="branch-longitude" inputMode="decimal" className="tabular" {...register('longitude')} />
-            </Field>
-            <Field label="دقة التحديد (متر)" htmlFor="branch-accuracy" required error={errors.gpsAccuracyMeters?.message}>
-              <Input id="branch-accuracy" inputMode="decimal" className="tabular" {...register('gpsAccuracyMeters')} />
-            </Field>
-            <Field label="نطاق الحضور (متر)" htmlFor="branch-radius" required error={errors.attendanceRadiusMeters?.message}>
-              <Input id="branch-radius" inputMode="decimal" className="tabular" {...register('attendanceRadiusMeters')} />
-            </Field>
-          </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="خط العرض" htmlFor="branch-latitude" required error={errors.latitude?.message}>
+          <Input id="branch-latitude" inputMode="decimal" className="tabular" {...register('latitude')} />
+        </Field>
+        <Field label="خط الطول" htmlFor="branch-longitude" required error={errors.longitude?.message}>
+          <Input id="branch-longitude" inputMode="decimal" className="tabular" {...register('longitude')} />
+        </Field>
+        <Field label="دقة التحديد (متر)" htmlFor="branch-accuracy" required error={errors.gpsAccuracyMeters?.message}>
+          <Input id="branch-accuracy" inputMode="decimal" className="tabular" {...register('gpsAccuracyMeters')} />
+        </Field>
+        <Field label="نطاق الحضور (متر)" htmlFor="branch-radius" required error={errors.attendanceRadiusMeters?.message}>
+          <Input id="branch-radius" inputMode="decimal" className="tabular" {...register('attendanceRadiusMeters')} />
+        </Field>
+      </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={captureLocation}>
-              <LocateFixed className="size-4" aria-hidden />
-              التقاط الموقع الحالي
-            </Button>
-            {gpsError ? <p className="text-[13px] text-warning">{gpsError}</p> : null}
-          </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="secondary" size="sm" onClick={captureLocation}>
+          <LocateFixed className="size-4" aria-hidden />
+          التقاط الموقع الحالي
+        </Button>
+        {gpsError ? <p className="text-[13px] text-warning">{gpsError}</p> : null}
+      </div>
 
-          {save.error ? (
-            <p role="alert" className="text-[13px] text-danger">
-              {serverErrorMessage(save.error)}
-            </p>
-          ) : null}
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
+        </p>
+      ) : null}
 
-          <div className="flex gap-2">
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الفرع'}
-            </Button>
-            <Button type="button" variant="ghost" onClick={onDone}>
-              إلغاء
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الفرع'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -209,8 +205,26 @@ export function BranchesView() {
         </Button>
       </div>
 
-      {creating || editing ? (
-        <BranchForm key={editing?.id ?? 'create'} branch={editing} onDone={closeForm} />
+      {creating ? (
+        <Modal title="فرع جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <BranchForm key="create" branch={null} onDone={closeForm} />
+        </Modal>
+      ) : editing ? (
+        <Modal title={`تعديل الفرع — ${editing.name}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <BranchForm key={editing.id} branch={editing} onDone={closeForm} />
+        </Modal>
+      ) : null}
+
+      {confirmDeleteId !== null ? (
+        <ConfirmDialog
+          title="حذف الفرع"
+          description={`سيتم حذف الفرع "${items.find((branch) => branch.id === confirmDeleteId)?.name ?? ''}" نهائيًا. لا يمكن التراجع عن الحذف.`}
+          confirmLabel="تأكيد الحذف"
+          tone="danger"
+          pending={removal.isPending}
+          onConfirm={() => removal.mutate(confirmDeleteId)}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
       ) : null}
 
       {removal.error ? (
@@ -281,21 +295,7 @@ export function BranchesView() {
                           <Pencil className="size-4" aria-hidden />
                           تعديل
                         </Button>
-                        {confirmDeleteId === branch.id ? (
-                          <>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={removal.isPending}
-                              onClick={() => removal.mutate(branch.id)}
-                            >
-                              تأكيد الحذف
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
-                              إلغاء
-                            </Button>
-                          </>
-                        ) : branch.hasEverBeenReferenced ? (
+                        {branch.hasEverBeenReferenced ? (
                           <Badge variant="neutral">مُستخدم</Badge>
                         ) : (
                           <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(branch.id)}>

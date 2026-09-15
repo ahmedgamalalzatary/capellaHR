@@ -34,6 +34,11 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
+  test('does not advertise the removed settings module', () => {
+    renderShell();
+    expect(screen.queryByRole('link', { name: 'الإعدادات' })).toBeNull();
+  });
+
   test('does not render an empty page heading when no shell title is provided', () => {
     renderShell();
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -47,6 +47,7 @@ export function ExpensesView() {
   const [amount, setAmount] = useState(''); const [expenseDate, setExpenseDate] = useState(todayInCairo()); const [description, setDescription] = useState('');
   const [search, setSearch] = useState(''); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState(''); const [status, setStatus] = useState<'' | 'active' | 'corrected'>(''); const [page, setPage] = useState(1);
   const [correcting, setCorrecting] = useState<Expense | null>(null); const [reason, setReason] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>();
   const branches = useQuery({ queryKey: ['expense-branches'], queryFn: () => fetchAllPages((branchesPage) => listCatalogBranches(branchesPage)), enabled: isAdmin });
   /** An admin works one chosen branch at a time; a cashier waits only for the session to resolve. */
@@ -55,10 +56,11 @@ export function ExpensesView() {
   const params = { ...branchScope, ...(search.trim() ? { search: search.trim() } : {}), ...(fromDate ? { fromDate } : {}), ...(toDate ? { toDate } : {}), ...(status ? { status } : {}), page, pageSize: 20 };
   const expenses = useQuery({ queryKey: expenseQueryKeys.list(params), queryFn: () => listExpenses(params), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(client, 'expense');
-  const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, name: name.trim(), amount, expenseDate, description }), onSuccess: async () => { setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تسجيل المصروف.'); notifySuccess('تم تسجيل المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
+  const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, name: name.trim(), amount, expenseDate, description }), onSuccess: async () => { setName(''); setAmount(''); setDescription(''); setCreateOpen(false); setSuccessMessage('تم تسجيل المصروف.'); notifySuccess('تم تسجيل المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
   const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, name: name.trim(), amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); notifySuccess('تم تصحيح المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
-  const clearDraft = () => { setCorrecting(null); setName(''); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
-  const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setName(expense.name); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
+  const clearDraft = () => { setCorrecting(null); setCreateOpen(false); setName(''); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
+  const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCreateOpen(false); setCorrecting(expense); setName(expense.name); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
+  const openCreate = () => { create.reset(); correction.reset(); setCorrecting(null); setReason(''); setCreateOpen(true); };
   /** Only a new expense is remembered; a correction is started from a stored row. */
   const draft = useFormDraft(
     correcting === null ? `expense:${branchId ?? 'own'}` : null,
@@ -81,6 +83,7 @@ export function ExpensesView() {
       <PageHeader
         title="المصروفات"
         description="سجل مصروفات الفروع وتصحيحها دون تغيير أو حذف التاريخ الأصلي."
+        actions={<Button disabled={!scopeReady} onClick={openCreate}>تسجيل مصروف جديد</Button>}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
@@ -126,14 +129,9 @@ export function ExpensesView() {
         </Card>
       ) : (
         <>
-          <Card className="shadow-card">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <SectionHeading
-                title={correcting ? `تصحيح مصروف #${correcting.id}` : 'تسجيل مصروف جديد'}
-                description={correcting
-                  ? 'يُسجَّل التصحيح كقيد جديد؛ القيد الأصلي يبقى في السجل.'
-                  : 'الاسم والمبلغ والتاريخ مطلوبة لكل مصروف؛ الوصف اختياري.'}
-              />
+          {createOpen ? (
+            <Modal title="تسجيل مصروف جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!create.isPending) setCreateOpen(false); }}>
+              <p className="text-[13px] text-muted">الاسم والمبلغ والتاريخ مطلوبة لكل مصروف؛ الوصف اختياري.</p>
               {draft.pending ? (
                 <DraftNotice
                   onRestore={() => {
@@ -153,6 +151,39 @@ export function ExpensesView() {
                   <Input id="expense-name" aria-label="اسم المصروف" disabled={commandPending} value={name} onChange={(event) => setName(event.target.value)} />
                 </div>
                 <div className="space-y-1.5">
+                  <Label htmlFor="expense-amount">المبلغ</Label>
+                  <Input id="expense-amount" aria-label="المبلغ" inputMode="decimal" className="text-start" disabled={commandPending} value={amount} onChange={(event) => setAmount(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-date">تاريخ المصروف</Label>
+                  <Input id="expense-date" aria-label="تاريخ المصروف" type="date" disabled={commandPending} value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-description">الوصف</Label>
+                  <Input id="expense-description" aria-label="الوصف" disabled={commandPending} value={description} onChange={(event) => setDescription(event.target.value)} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                <Button disabled={!canSubmit || create.isPending} onClick={() => create.mutate()}>تسجيل المصروف</Button>
+                <Button variant="ghost" disabled={create.isPending} onClick={clearDraft}>إلغاء</Button>
+              </div>
+
+              {create.isError ? (
+                <FieldError>{errorText(create.error)}</FieldError>
+              ) : null}
+            </Modal>
+          ) : null}
+
+          {correcting ? (
+            <Modal title={`تصحيح مصروف #${correcting.id}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!correction.isPending) clearDraft(); }}>
+              <p className="text-[13px] text-muted">يُسجَّل التصحيح كقيد جديد؛ القيد الأصلي يبقى في السجل.</p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="expense-name">اسم المصروف</Label>
+                  <Input id="expense-name" aria-label="اسم المصروف" disabled={commandPending} value={name} onChange={(event) => setName(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="expense-amount">{amountLabel}</Label>
                   <Input id="expense-amount" aria-label={amountLabel} inputMode="decimal" className="text-start" disabled={commandPending} value={amount} onChange={(event) => setAmount(event.target.value)} />
                 </div>
@@ -164,30 +195,22 @@ export function ExpensesView() {
                   <Label htmlFor="expense-description">الوصف</Label>
                   <Input id="expense-description" aria-label="الوصف" disabled={commandPending} value={description} onChange={(event) => setDescription(event.target.value)} />
                 </div>
-                {correcting ? (
-                  <div className="space-y-1.5 sm:col-span-2 xl:col-span-4">
-                    <Label htmlFor="expense-reason">سبب التصحيح</Label>
-                    <Input id="expense-reason" aria-label="سبب التصحيح" disabled={commandPending} value={reason} onChange={(event) => setReason(event.target.value)} />
-                  </div>
-                ) : null}
+                <div className="space-y-1.5 sm:col-span-2 xl:col-span-4">
+                  <Label htmlFor="expense-reason">سبب التصحيح</Label>
+                  <Input id="expense-reason" aria-label="سبب التصحيح" disabled={commandPending} value={reason} onChange={(event) => setReason(event.target.value)} />
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
-                {correcting ? (
-                  <>
-                    <Button disabled={!canSubmit || !reason.trim() || correction.isPending} onClick={() => correction.mutate()}>تأكيد التصحيح</Button>
-                    <Button variant="ghost" disabled={correction.isPending} onClick={clearDraft}>إلغاء</Button>
-                  </>
-                ) : (
-                  <Button disabled={!canSubmit || create.isPending} onClick={() => create.mutate()}>تسجيل المصروف</Button>
-                )}
+                <Button disabled={!canSubmit || !reason.trim() || correction.isPending} onClick={() => correction.mutate()}>تأكيد التصحيح</Button>
+                <Button variant="ghost" disabled={correction.isPending} onClick={clearDraft}>إلغاء</Button>
               </div>
 
-              {(correcting ? correction.isError : create.isError) ? (
-                <FieldError>{errorText(correcting ? correction.error : create.error)}</FieldError>
+              {correction.isError ? (
+                <FieldError>{errorText(correction.error)}</FieldError>
               ) : null}
-            </CardContent>
-          </Card>
+            </Modal>
+          ) : null}
 
           <Card className="shadow-card">
             <CardContent className="space-y-4 p-4 sm:p-5">

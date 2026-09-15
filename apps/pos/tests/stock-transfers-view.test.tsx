@@ -72,10 +72,19 @@ function mount() {
   );
 }
 
-const sourceOptionsReady = () => waitFor(() => {
-  const source = screen.getByLabelText('الفرع المُرسِل');
-  expect(within(source).getByRole('option', { name: 'فرع مدينة نصر' })).toBeDefined();
-});
+const openTransferDialog = async () => {
+  if (!screen.queryByLabelText('الفرع المُرسِل')) {
+    fireEvent.click(await screen.findByRole('button', { name: 'تحويل جديد' }));
+  }
+};
+
+const sourceOptionsReady = async () => {
+  await openTransferDialog();
+  await waitFor(() => {
+    const source = screen.getByLabelText('الفرع المُرسِل');
+    expect(within(source).getByRole('option', { name: 'فرع مدينة نصر' })).toBeDefined();
+  });
+};
 
 const fillTransfer = async () => {
   await sourceOptionsReady();
@@ -110,6 +119,14 @@ afterEach(() => {
 });
 
 describe('StockTransfersView', () => {
+  it('places the add button next to the page header', async () => {
+    mount();
+
+    await screen.findByRole('button', { name: 'تحويل جديد' });
+    const header = screen.getByRole('heading', { name: 'تحويل المنتجات بين الفروع' }).closest('div')!.parentElement!;
+    expect(within(header).getByRole('button', { name: 'تحويل جديد' })).toBeDefined();
+  });
+
   it('pins a cashier to their own source branch and history', async () => {
     mocks.actor.current = { type: 'cashier', accountId: 8 };
     mocks.currentSession.mockResolvedValue({
@@ -126,6 +143,7 @@ describe('StockTransfersView', () => {
     });
     mount();
 
+    await openTransferDialog();
     const source = screen.getAllByRole('combobox')[0]!;
     await waitFor(() => expect(source).toHaveProperty('value', '2'));
     expect(source).toHaveProperty('disabled', true);
@@ -258,5 +276,15 @@ describe('StockTransfersView', () => {
 
     expect(mocks.create).not.toHaveBeenCalled();
     expect(await screen.findByText(/اختر الفرع المُرسِل والمستلم/)).toBeDefined();
+  });
+
+  it('opens the transfer form in a dialog instead of inline', async () => {
+    mount();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'تحويل جديد' })).toBeDefined());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('الفرع المُرسِل')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تحويل جديد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تحويل جديد' });
+    expect(dialog).toBeDefined();
   });
 });

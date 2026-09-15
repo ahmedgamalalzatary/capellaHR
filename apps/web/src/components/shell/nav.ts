@@ -12,7 +12,6 @@ import {
   Building2,
   FileText,
   ScrollText,
-  Settings,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -63,7 +62,6 @@ export const ADMIN_NAV: NavGroup[] = [
       { href: '/branches', label: 'الفروع', icon: Building2 },
       { href: '/reports', label: 'التقارير', icon: FileText },
       { href: '/audit', label: 'سجل المراجعة', icon: ScrollText },
-      { href: '/settings', label: 'الإعدادات', icon: Settings },
     ],
   },
 ];

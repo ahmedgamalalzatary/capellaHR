@@ -81,6 +81,12 @@ describe('client contracts', () => {
     expect(listClientsQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 });
   });
 
+  it('accepts only supported client debt filters', () => {
+    expect(listClientsQuerySchema.parse({ debtStatus: 'with_debt' }).debtStatus).toBe('with_debt');
+    expect(listClientsQuerySchema.parse({ debtStatus: 'without_debt' }).debtStatus).toBe('without_debt');
+    expect(listClientsQuerySchema.safeParse({ debtStatus: 'unknown' }).success).toBe(false);
+  });
+
   it('caps coerced client ids at the signed 32-bit INT range', () => {
     expect(clientIdParamsSchema.parse({ id: '2147483647' })).toEqual({ id: 2147483647 });
     expect(clientIdParamsSchema.safeParse({ id: '2147483648' }).success).toBe(false);

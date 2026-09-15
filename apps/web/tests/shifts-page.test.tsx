@@ -129,6 +129,16 @@ describe('ShiftsView', () => {
     expect(await screen.findByRole('combobox')).toBeDefined();
   });
 
+  test('opens the editor in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل وردية/ });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/ساعات/)).toBeDefined();
+  });
+
   test('edits one employee duration and sends whole minutes', async () => {
     mocks.updateShiftAssignment.mockResolvedValue({ ...ahmed, durationMinutes: 570 });
     renderView();

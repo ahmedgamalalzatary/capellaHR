@@ -81,6 +81,7 @@ export function CashierSessionView() {
   const isCashier = actor?.type === 'cashier';
   const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const branchesQuery = useQuery({
@@ -107,10 +108,11 @@ export function CashierSessionView() {
 
   const openMutation = useMutation({
     mutationFn: openCashierSession,
-    onSuccess: (openedSession) => { queryClient.setQueryData(currentKey, openedSession); notifySuccess('تم فتح الوردية.'); },
+    onSuccess: (openedSession) => { setConfirmOpen(false); queryClient.setQueryData(currentKey, openedSession); notifySuccess('تم فتح الوردية.'); },
     onError: async (error: unknown) => {
       if (error instanceof ApiError && error.code === 'ERP_CASHIER_SESSION_ALREADY_OPEN') {
         await currentQuery.refetch();
+        setConfirmOpen(false);
       } else notifyError(error, 'تعذر فتح الوردية.');
     },
   });
@@ -180,6 +182,7 @@ export function CashierSessionView() {
               disabled={branchesQuery.isPending || branchesQuery.isError}
               onChange={(event) => {
                 setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
+                setConfirmOpen(false);
                 openMutation.reset();
                 closeMutation.reset();
                 recoveryMutation.reset();
@@ -289,7 +292,7 @@ export function CashierSessionView() {
             title="لا توجد وردية مفتوحة"
             description={isCashier ? 'افتح ورديتك قبل بدء عمليات البيع.' : 'لا توجد وردية مفتوحة لهذا الفرع.'}
             action={isCashier ? (
-              <Button disabled={openMutation.isPending} onClick={() => openMutation.mutate()}>
+              <Button disabled={openMutation.isPending} onClick={() => setConfirmOpen(true)}>
                 فتح الوردية
               </Button>
             ) : undefined}
@@ -305,6 +308,26 @@ export function CashierSessionView() {
           {...(isAdmin && selectedBranchId !== undefined ? { branchId: selectedBranchId } : {})}
         />
       )}
+
+      {confirmOpen ? (
+        <ConfirmDialog
+          title="فتح الوردية"
+          description={(
+            <>
+              <span>سيتم فتح وردية جديدة لاستقبال المبيعات.</span>
+              {openMutation.error ? (
+                <span role="alert" className="mt-2 block text-danger">
+                  {errorMessage(openMutation.error)}
+                </span>
+              ) : null}
+            </>
+          )}
+          confirmLabel="تأكيد فتح الوردية"
+          pending={openMutation.isPending}
+          onConfirm={() => openMutation.mutate()}
+          onCancel={() => { if (!openMutation.isPending) { openMutation.reset(); setConfirmOpen(false); } }}
+        />
+      ) : null}
 
       {confirmClose ? (
         <ConfirmDialog

@@ -2,9 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Pencil, Plus, Search } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
-import { Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Select } from '@/components/form/select';
@@ -14,7 +15,7 @@ import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 
-import { listClientBranches, listClients, type Client } from '../api/clients-api';
+import { listClientBranches, listClientDebtInvoices, listClients, type Client } from '../api/clients-api';
 import { clientQueryKeys } from '../query-keys';
 import { ClientForm } from './client-form';
 
@@ -23,14 +24,76 @@ const serverErrorMessage = (error: unknown): string | null => {
   return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 };
 
+const invoiceDate = new Intl.DateTimeFormat('ar-EG', {
+  timeZone: 'Africa/Cairo',
+  dateStyle: 'medium',
+});
+
+function ClientDebtInvoices({
+  client,
+  branchId,
+  onClose,
+}: {
+  client: Client & { balanceDue: string };
+  branchId?: number;
+  onClose: () => void;
+}) {
+  const invoices = useQuery({
+    queryKey: clientQueryKeys.debtInvoices(client.id, branchId),
+    queryFn: () => listClientDebtInvoices(client.id, branchId),
+  });
+  const name = client.fullName ?? client.phone ?? `#${client.id}`;
+
+  return (
+    <Modal title={`فواتير ${name} غير المسددة`} className="max-h-[90dvh] overflow-y-auto" onClose={onClose}>
+      {invoices.isPending ? (
+        <LoadingState label="جارٍ تحميل الفواتير غير المسددة…" className="py-12" />
+      ) : invoices.isError ? (
+        <EmptyState
+          title="تعذر تحميل الفواتير غير المسددة"
+          description={serverErrorMessage(invoices.error) ?? undefined}
+          action={<Button variant="secondary" onClick={() => void invoices.refetch()}>إعادة المحاولة</Button>}
+        />
+      ) : invoices.data.items.length === 0 ? (
+        <EmptyState title="لا توجد فواتير غير مسددة" />
+      ) : (
+        <div className="space-y-2">
+          {invoices.data.items.map((invoice) => (
+            <Link
+              key={invoice.id}
+              href={`/invoices/${invoice.id}${branchId === undefined ? '' : `?branchId=${branchId}`}`}
+              className="block rounded-control border border-line p-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="tabular font-medium">{invoice.invoiceNumber}</p>
+                  <time className="text-[13px] text-muted" dateTime={invoice.soldAt}>
+                    {invoiceDate.format(new Date(invoice.soldAt))}
+                  </time>
+                </div>
+                <p className="tabular font-semibold text-warning">المتبقي {invoice.balanceDue} ج.م</p>
+              </div>
+              <p className="tabular mt-2 text-[13px] text-muted">
+                الإجمالي {invoice.total} ج.م · المدفوع {invoice.amountPaid} ج.م
+              </p>
+            </Link>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export function ClientsView() {
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
   const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [debtStatus, setDebtStatus] = useState<'' | 'with_debt' | 'without_debt'>('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
+  const [debtClient, setDebtClient] = useState<(Client & { balanceDue: string }) | null>(null);
   const [formPending, setFormPending] = useState(false);
 
   // Whitespace-only input must read as "no filter", so the trimmed term drives
@@ -47,11 +110,12 @@ export function ClientsView() {
   });
 
   const clientsQuery = useQuery({
-    queryKey: clientQueryKeys.list({ page, search: trimmedSearch, branchId }),
+    queryKey: clientQueryKeys.list({ page, search: trimmedSearch, debtStatus, branchId }),
     queryFn: () => listClients({
       page,
       ...branchScope,
       ...(trimmedSearch ? { search: trimmedSearch } : {}),
+      ...(debtStatus ? { debtStatus } : {}),
     }),
     enabled: scopeReady,
   });
@@ -134,9 +198,17 @@ export function ClientsView() {
         </Modal>
       ) : null}
 
+      {debtClient ? (
+        <ClientDebtInvoices
+          client={debtClient}
+          {...(branchId === undefined ? {} : { branchId })}
+          onClose={() => setDebtClient(null)}
+        />
+      ) : null}
+
       <Card className="overflow-hidden shadow-card">
-        <div className="border-b border-line/70 p-3 sm:p-4">
-          <div className="relative w-full max-w-sm">
+        <div className="flex flex-wrap gap-3 border-b border-line/70 p-3 sm:p-4">
+          <div className="relative min-w-64 flex-1">
             <Search
               className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted"
               aria-hidden
@@ -149,6 +221,23 @@ export function ClientsView() {
               disabled={!scopeReady}
               onChange={(event) => { setSearch(event.target.value); setPage(1); }}
             />
+          </div>
+          <div className="w-full sm:w-52">
+            <Label htmlFor="client-debt-status" className="sr-only">حالة المديونية</Label>
+            <Select
+              id="client-debt-status"
+              aria-label="حالة المديونية"
+              value={debtStatus}
+              disabled={!scopeReady}
+              onChange={(event) => {
+                setDebtStatus(event.target.value as typeof debtStatus);
+                setPage(1);
+              }}
+            >
+              <option value="">كل العملاء</option>
+              <option value="with_debt">عليهم مستحقات</option>
+              <option value="without_debt">بدون مستحقات</option>
+            </Select>
           </div>
         </div>
 
@@ -168,10 +257,10 @@ export function ClientsView() {
           />
         ) : items.length === 0 ? (
           <EmptyState
-            title={trimmedSearch ? 'لا يوجد عميل مطابق' : 'لا يوجد عملاء بعد'}
-            description={trimmedSearch ? 'جرب رقمًا أو اسمًا آخر.' : 'ابدأ بإضافة أول عميل.'}
+            title={trimmedSearch || debtStatus ? 'لا يوجد عميل مطابق' : 'لا يوجد عملاء بعد'}
+            description={trimmedSearch || debtStatus ? 'غيّر البحث أو حالة المديونية.' : 'ابدأ بإضافة أول عميل.'}
             action={
-              trimmedSearch ? undefined : (
+              trimmedSearch || debtStatus ? undefined : (
                 <Button size="sm" disabled={formPending} onClick={openCreate}>
                   <Plus className="size-4" aria-hidden />
                   إضافة أول عميل
@@ -186,6 +275,20 @@ export function ClientsView() {
                 <div className="min-w-0">
                   <p className="font-medium">{client.fullName ?? <span className="text-muted">بدون اسم</span>}</p>
                   <p className="tabular text-[13px] text-muted">{client.phone ?? '—'}</p>
+                  {Number(client.balanceDue) > 0 ? (
+                    <button
+                      type="button"
+                      aria-label={`عرض الفواتير غير المسددة ل${client.fullName ?? client.phone ?? `لعميل ${client.id}`}`}
+                      className="block rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                      onClick={() => setDebtClient(client)}
+                    >
+                      <Badge variant="warning" className="mt-1.5 tabular cursor-pointer hover:opacity-80">
+                        مستحق {client.balanceDue} ج.م
+                      </Badge>
+                    </button>
+                  ) : (
+                    <Badge variant="neutral" className="mt-1.5 tabular">مستحق {client.balanceDue} ج.م</Badge>
+                  )}
                 </div>
                 <Button
                   variant="secondary"

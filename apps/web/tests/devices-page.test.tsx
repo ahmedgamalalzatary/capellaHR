@@ -121,6 +121,16 @@ describe('DevicesView', () => {
     });
   });
 
+  test('opens the pairing form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'ربط جهاز جديد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'ربط جهاز جديد' });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/نوع التعيين/)).toBeDefined();
+  });
+
   test('creates an employee pairing and shows the single-use link and QR code', async () => {
     mocks.createPairing.mockResolvedValue({ id: 11, pairingToken: 'tok-abc123' });
     renderView();
@@ -170,6 +180,19 @@ describe('DevicesView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء طلب الربط' }));
     await waitFor(() => expect(mocks.cancelPairing).toHaveBeenCalledTimes(1));
     expect(mocks.cancelPairing.mock.calls[0]?.[0]).toBe(11);
+  });
+
+  test('ignores generic close requests after a pairing request is created', async () => {
+    mocks.createPairing.mockResolvedValue({ id: 11, pairingToken: 'tok-abc123' });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'ربط جهاز جديد' }));
+    fireEvent.change(screen.getByLabelText(/^التعيين/), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء طلب الربط' }));
+    await screen.findByLabelText('رابط الربط');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'ربط جهاز جديد' })).toBeDefined();
   });
 
   test('revokes an active device only after confirmation', async () => {

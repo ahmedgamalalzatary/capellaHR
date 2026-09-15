@@ -76,6 +76,7 @@ export const clientIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
  */
 export const listClientsQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
+  debtStatus: z.enum(['with_debt', 'without_debt']).optional(),
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
   ...branchScope,

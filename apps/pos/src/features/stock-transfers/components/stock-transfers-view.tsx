@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { Button, Card, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -74,6 +74,7 @@ export function StockTransfersView() {
   const [note, setNote] = useState('');
   // One key for this draft, not one per click: a retry after a lost response
   // must land on the transfer already posted rather than move the stock again.
+  const [formOpen, setFormOpen] = useState(false);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [formError, setFormError] = useState<string>();
   const [successMessage, setSuccessMessage] = useState<string>();
@@ -128,6 +129,7 @@ export function StockTransfersView() {
       setNote('');
       setIdempotencyKey(crypto.randomUUID());
       setFormError(undefined);
+      setFormOpen(false);
       setSuccessMessage('تم تنفيذ التحويل.');
       notifySuccess('تم تنفيذ التحويل.');
       await queryClient.invalidateQueries({ queryKey: stockTransferQueryKeys.all });
@@ -166,11 +168,12 @@ export function StockTransfersView() {
       <PageHeader
         title="تحويل المنتجات بين الفروع"
         description="تجارة داخلية: تنتقل المنتجات بسعر التكلفة كبيع من الفرع المُرسِل إلى الفرع المستلم، دون بائع ودون عمولة."
+        actions={<Button onClick={() => setFormOpen(true)}>تحويل جديد</Button>}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
-      <Card className="shadow-card">
-        <CardContent className="space-y-4 p-4 sm:p-5">
+      {formOpen ? (
+        <Modal title="تحويل جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => setFormOpen(false)}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="transfer-source">الفرع المُرسِل</Label>
@@ -309,14 +312,15 @@ export function StockTransfersView() {
               the failure has to be said rather than left as an empty list. */}
           {products.isError ? <FieldError>{errorMessage(products.error)}</FieldError> : null}
 
-          <div className="border-t border-line/70 pt-4">
+          <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
             <Button disabled={transfer.isPending} onClick={submit}>
               <ArrowLeftRight className="size-4" aria-hidden />
               تنفيذ التحويل
             </Button>
+            <Button variant="ghost" disabled={transfer.isPending} onClick={() => setFormOpen(false)}>إلغاء</Button>
           </div>
-        </CardContent>
-      </Card>
+        </Modal>
+      ) : null}
 
       <div className="space-y-3">
         <SectionHeading title="التحويلات السابقة" />

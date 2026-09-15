@@ -7,7 +7,7 @@ import Image from 'next/image';
 import { useState } from 'react';
 import { useForm, useWatch, type FieldError } from 'react-hook-form';
 
-import { Button, Card, CardContent, ConfirmDialog, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
+import { Button, Card, ConfirmDialog, EmptyState, Field, Input, Modal, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -193,89 +193,85 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
   const personalFile = (useWatch({ control, name: 'personal' }) as File | undefined) ?? null;
 
   return (
-    <Card>
-      <CardContent className="py-5">
-        <form noValidate onSubmit={handleSubmit((values) => save.mutate(values))} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField form={form} name="fullName" label="الاسم الكامل" />
-            <Field label="الفرع" htmlFor="employee-branchId" required error={errors.branchId?.message}>
-              <select
-                id="employee-branchId"
-                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
-                defaultValue=""
-                {...register('branchId')}
-              >
-                <option value="" disabled>
-                  اختر الفرع…
-                </option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField form={form} name="personalPhone" label="الهاتف الشخصي" />
-            <TextField form={form} name="whatsappPhone" label="هاتف واتساب" />
-            <TextField form={form} name="pin" label="الرقم السري (PIN)" type="password" />
-            <TextField form={form} name="age" label="العمر" />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field
-              label="العنوان"
-              htmlFor="employee-address"
-              required
-              error={errors.address?.message}
-              className="sm:col-span-2"
-            >
-              <Input id="employee-address" {...register('address')} />
-            </Field>
-            <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
-            <TextField form={form} name="monthlyBaseSalary" label="الراتب الأساسي (جنيه)" />
-          </div>
-
-          <Field label="صورة الوجه" htmlFor="employee-face-capture" required error={errors.personal?.message}>
-            <EmployeeFaceCapture
-              value={personalFile}
-              onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
-              disabled={save.isPending}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            {IMAGE_FIELDS.map(({ kind, label }) => (
-              <ImageField
-                key={kind}
-                kind={kind}
-                label={label}
-                required={false}
-                error={errors[kind]?.message}
-                onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
-              />
+    <form noValidate onSubmit={handleSubmit((values) => save.mutate(values))} className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField form={form} name="fullName" label="الاسم الكامل" />
+        <Field label="الفرع" htmlFor="employee-branchId" required error={errors.branchId?.message}>
+          <select
+            id="employee-branchId"
+            className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
+            defaultValue=""
+            {...register('branchId')}
+          >
+            <option value="" disabled>
+              اختر الفرع…
+            </option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name}
+              </option>
             ))}
-          </div>
+          </select>
+        </Field>
+      </div>
 
-          {save.error ? (
-            <p role="alert" className="text-[13px] text-danger">
-              {serverErrorMessage(save.error)}
-            </p>
-          ) : null}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <TextField form={form} name="personalPhone" label="الهاتف الشخصي" />
+        <TextField form={form} name="whatsappPhone" label="هاتف واتساب" />
+        <TextField form={form} name="pin" label="الرقم السري (PIN)" type="password" />
+        <TextField form={form} name="age" label="العمر" />
+      </div>
 
-          <div className="flex gap-2">
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الموظف'}
-            </Button>
-            <Button type="button" variant="ghost" onClick={onDone}>
-              إلغاء
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field
+          label="العنوان"
+          htmlFor="employee-address"
+          required
+          error={errors.address?.message}
+          className="sm:col-span-2"
+        >
+          <Input id="employee-address" {...register('address')} />
+        </Field>
+        <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
+        <TextField form={form} name="monthlyBaseSalary" label="الراتب الأساسي (جنيه)" />
+      </div>
+
+      <Field label="صورة الوجه" htmlFor="employee-face-capture" required error={errors.personal?.message}>
+        <EmployeeFaceCapture
+          value={personalFile}
+          onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
+          disabled={save.isPending}
+        />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {IMAGE_FIELDS.map(({ kind, label }) => (
+          <ImageField
+            key={kind}
+            kind={kind}
+            label={label}
+            required={false}
+            error={errors[kind]?.message}
+            onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
+          />
+        ))}
+      </div>
+
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
+        </p>
+      ) : null}
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الموظف'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -323,99 +319,95 @@ function EditEmployeeForm({
   const personalFile = (useWatch({ control, name: 'personal' }) as File | undefined) ?? null;
 
   return (
-    <Card>
-      <CardContent className="py-5">
-        <form noValidate onSubmit={handleSubmit((values) => save.mutate(values))} className="space-y-4">
-          <p className="text-[13px] text-muted">
-            كود الموظف <span className="tabular">{employee.employeeCode}</span>
-            {' '}— الكود والراتب الأساسي غير قابلين للتعديل
-          </p>
+    <form noValidate onSubmit={handleSubmit((values) => save.mutate(values))} className="space-y-4">
+      <p className="text-[13px] text-muted">
+        كود الموظف <span className="tabular">{employee.employeeCode}</span>
+        {' '}— الكود والراتب الأساسي غير قابلين للتعديل
+      </p>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField form={form} name="fullName" label="الاسم الكامل" />
-            <Field label="الفرع" htmlFor="employee-edit-branchId" required error={errors.branchId?.message}>
-              <select
-                id="employee-edit-branchId"
-                className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
-                {...register('branchId')}
-              >
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>{branch.name}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="العنوان" htmlFor="employee-address" required error={errors.address?.message}>
-            <Input id="employee-address" {...register('address')} />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField form={form} name="personalPhone" label="الهاتف الشخصي" />
-            <TextField form={form} name="whatsappPhone" label="هاتف واتساب" />
-            <Field
-              label="رقم سري جديد (اختياري)"
-              htmlFor="employee-pin"
-              error={errors.pin?.message}
-            >
-              <Input id="employee-pin" type="password" className="tabular" {...register('pin')} />
-            </Field>
-            <TextField form={form} name="age" label="العمر" />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
-          </div>
-
-          <Field label="استبدال صورة الوجه" htmlFor="employee-face-capture" error={errors.personal?.message}>
-            <EmployeeFaceCapture
-              value={personalFile}
-              onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
-              disabled={save.isPending}
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            {IMAGE_FIELDS.map(({ kind, label }) => (
-              <SavedEmployeeImage
-                key={kind}
-                employee={employee}
-                kind={kind}
-                label={label}
-              />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField form={form} name="fullName" label="الاسم الكامل" />
+        <Field label="الفرع" htmlFor="employee-edit-branchId" required error={errors.branchId?.message}>
+          <select
+            id="employee-edit-branchId"
+            className="h-9 w-full rounded-control border border-line bg-paper px-3 text-sm"
+            {...register('branchId')}
+          >
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>{branch.name}</option>
             ))}
-          </div>
+          </select>
+        </Field>
+      </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            {IMAGE_FIELDS.map(({ kind, label }) => (
-              <ImageField
-                key={kind}
-                kind={kind}
-                label={`${label} (استبدال اختياري)`}
-                required={false}
-                error={errors[kind]?.message}
-                onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
-              />
-            ))}
-          </div>
+      <Field label="العنوان" htmlFor="employee-address" required error={errors.address?.message}>
+        <Input id="employee-address" {...register('address')} />
+      </Field>
 
-          {save.error ? (
-            <p role="alert" className="text-[13px] text-danger">
-              {serverErrorMessage(save.error)}
-            </p>
-          ) : null}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <TextField form={form} name="personalPhone" label="الهاتف الشخصي" />
+        <TextField form={form} name="whatsappPhone" label="هاتف واتساب" />
+        <Field
+          label="رقم سري جديد"
+          htmlFor="employee-pin"
+          error={errors.pin?.message}
+        >
+          <Input id="employee-pin" type="password" className="tabular" {...register('pin')} />
+        </Field>
+        <TextField form={form} name="age" label="العمر" />
+      </div>
 
-          <div className="flex gap-2">
-            <Button type="submit" disabled={save.isPending}>
-              {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الموظف'}
-            </Button>
-            <Button type="button" variant="ghost" onClick={onDone}>
-              إلغاء
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
+      </div>
+
+      <Field label="استبدال صورة الوجه" htmlFor="employee-face-capture" error={errors.personal?.message}>
+        <EmployeeFaceCapture
+          value={personalFile}
+          onChange={(file) => setValue('personal', file as File, { shouldValidate: true })}
+          disabled={save.isPending}
+        />
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {IMAGE_FIELDS.map(({ kind, label }) => (
+          <SavedEmployeeImage
+            key={kind}
+            employee={employee}
+            kind={kind}
+            label={label}
+          />
+        ))}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {IMAGE_FIELDS.map(({ kind, label }) => (
+          <ImageField
+            key={kind}
+            kind={kind}
+            label={`${label} (استبدال اختياري)`}
+            required={false}
+            error={errors[kind]?.message}
+            onSelect={(file) => setValue(kind, file as File, { shouldValidate: true })}
+          />
+        ))}
+      </div>
+
+      {save.error ? (
+        <p role="alert" className="text-[13px] text-danger">
+          {serverErrorMessage(save.error)}
+        </p>
+      ) : null}
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={save.isPending}>
+          {save.isPending ? 'جارٍ الحفظ…' : 'حفظ الموظف'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          إلغاء
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -577,14 +569,19 @@ export function EmployeesView() {
         </div>
       ) : null}
 
-      {creating ? <CreateEmployeeForm branches={branches} onDone={closeForm} /> : null}
-      {editing ? (
-        <EditEmployeeForm
-          key={editing.id}
-          employee={editing}
-          branches={branches}
-          onDone={closeForm}
-        />
+      {creating ? (
+        <Modal title="موظف جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <CreateEmployeeForm branches={branches} onDone={closeForm} />
+        </Modal>
+      ) : editing ? (
+        <Modal title={`تعديل الموظف — ${editing.fullName}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={closeForm}>
+          <EditEmployeeForm
+            key={editing.id}
+            employee={editing}
+            branches={branches}
+            onDone={closeForm}
+          />
+        </Modal>
       ) : null}
 
       {removal.error || employmentStateError ? (

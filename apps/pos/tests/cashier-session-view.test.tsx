@@ -114,6 +114,14 @@ afterEach(() => {
 });
 
 describe('CashierSessionView', () => {
+  test('opens the shift open form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByRole('button', { name: 'فتح الوردية' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'فتح الوردية' }));
+    const dialog = await screen.findByRole('dialog', { name: 'فتح الوردية' });
+    expect(dialog).toBeDefined();
+  });
   test('links a blocked shift close to its unfinished customer services', async () => {
     mocks.getCurrentCashierSession.mockResolvedValue(session);
     mocks.closeCashierSession.mockRejectedValue(new ApiError(409, {
@@ -165,6 +173,7 @@ describe('CashierSessionView', () => {
     renderView();
 
     fireEvent.click(await screen.findByRole('button', { name: 'فتح الوردية' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'تأكيد فتح الوردية' }));
     await waitFor(() => expect(mocks.openCashierSession).toHaveBeenCalledTimes(1));
   });
 
@@ -235,6 +244,22 @@ describe('CashierSessionView', () => {
       .toContain('تعذر إغلاق الوردية');
   });
 
+  test('clears a failed open request when its dialog is cancelled', async () => {
+    mocks.openCashierSession.mockRejectedValue(new ApiError(500, {
+      code: 'UNEXPECTED_ERROR', message: 'تعذر فتح الوردية',
+    }));
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح الوردية' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد فتح الوردية' }));
+    const dialog = screen.getByRole('dialog', { name: 'فتح الوردية' });
+    expect(await within(dialog).findByRole('alert')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }));
+    fireEvent.click(screen.getByRole('button', { name: 'فتح الوردية' }));
+
+    expect(within(screen.getByRole('dialog', { name: 'فتح الوردية' })).queryByRole('alert')).toBeNull();
+  });
+
   test('shows active ownership and blocks another Cashier from closing it', async () => {
     mocks.getCurrentCashierSession.mockResolvedValue({
       ...session,
@@ -263,6 +288,7 @@ describe('CashierSessionView', () => {
     renderView();
 
     fireEvent.click(await screen.findByRole('button', { name: 'فتح الوردية' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'تأكيد فتح الوردية' }));
     expect((await screen.findByRole('alert')).textContent).toContain(
       'توجد وردية كاشير مفتوحة بالفعل لهذا الفرع',
     );

@@ -125,6 +125,26 @@ describe('BonusesView', () => {
     }
   });
 
+  test('opens the create form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/الموظف/)).toBeDefined();
+  });
+
+  test('opens the edit form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل المكافأة/ });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/المبلغ/)).toBeDefined();
+  });
+
   test('creates a bonus for an employee and month', async () => {
     mocks.createBonus.mockResolvedValue(bonus);
     renderView();

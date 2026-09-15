@@ -12,13 +12,18 @@ export type ClientRecord = {
   updatedAt: Date;
 };
 
+export type ClientListRecord = ClientRecord & {
+  /** Derived from the client's open invoices; never stored independently. */
+  balanceDue: string;
+};
+
 export type ClientWrite = { branchId: number; fullName: string | null; phone: string | null };
 
 export interface ClientRepository {
   create(input: ClientWrite): Promise<ClientRecord>;
   findById(id: number): Promise<ClientRecord | null>;
   findByPhone(branchId: number, phone: string): Promise<ClientRecord | null>;
-  list(branchId: number, query: ListClientsQuery): Promise<{ items: ClientRecord[]; total: number }>;
+  list(branchId: number, query: ListClientsQuery): Promise<{ items: ClientListRecord[]; total: number }>;
   update(
     id: number,
     branchId: number,

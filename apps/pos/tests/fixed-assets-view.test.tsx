@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +44,16 @@ const chooseBranch = async () => {
 };
 
 describe('FixedAssetsView', () => {
+  it('places the add button next to the page header', async () => {
+    sessionStorage.setItem('capella:pos-admin-branch', '2');
+    mocks.list.mockResolvedValue(page([asset]));
+    mount();
+
+    await screen.findByRole('button', { name: 'إضافة أصل' });
+    const header = screen.getByRole('heading', { name: 'الأصول الثابتة' }).closest('div')!.parentElement!;
+    expect(within(header).getByRole('button', { name: 'إضافة أصل' })).toBeDefined();
+  });
+
   it('applies the branch chosen on another page without asking again', async () => {
     // Every other POS page remembers the admin's branch in session storage;
     // landing here must pick up that choice instead of showing the prompt.
@@ -97,6 +107,7 @@ describe('FixedAssetsView', () => {
     mount();
     await chooseBranch();
 
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة أصل' }));
     fireEvent.change(await screen.findByLabelText('اسم الأصل'), { target: { value: '  مرآة  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
 
@@ -108,6 +119,7 @@ describe('FixedAssetsView', () => {
     mount();
     await chooseBranch();
 
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة أصل' }));
     expect((await screen.findByRole('button', { name: 'إضافة' })).hasAttribute('disabled')).toBe(true);
   });
 
@@ -148,5 +160,53 @@ describe('FixedAssetsView', () => {
     fireEvent.change(screen.getByLabelText('بحث'), { target: { value: '  كرسي  ' } });
 
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ search: 'كرسي' })));
+  });
+
+  it('opens the asset create form in a dialog instead of inline', async () => {
+    mocks.list.mockResolvedValue(page([]));
+    mount();
+    await chooseBranch();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'إضافة أصل' })).toBeDefined());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('اسم الأصل')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة أصل' }));
+    const dialog = await screen.findByRole('dialog', { name: 'إضافة أصل' });
+    expect(dialog).toBeDefined();
+  });
+
+  it('opens the asset edit form in a dialog', async () => {
+    mocks.list.mockResolvedValue(page([asset]));
+    mount();
+    await chooseBranch();
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعديل كرسي انتظار' });
+    expect(dialog).toBeDefined();
+  });
+
+  it('ignores generic close requests while creating an asset', async () => {
+    sessionStorage.setItem('capella:pos-admin-branch', '2');
+    mocks.list.mockResolvedValue(page([]));
+    mocks.create.mockReturnValue(new Promise(() => undefined));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'إضافة أصل' }));
+    fireEvent.change(screen.getByLabelText('اسم الأصل'), { target: { value: 'مرآة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'إضافة أصل' })).toBeDefined();
+  });
+
+  it('ignores generic close requests while updating an asset', async () => {
+    sessionStorage.setItem('capella:pos-admin-branch', '2');
+    mocks.list.mockResolvedValue(page([asset]));
+    mocks.update.mockReturnValue(new Promise(() => undefined));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'تعديل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التعديل' }));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'تعديل كرسي انتظار' })).toBeDefined();
   });
 });

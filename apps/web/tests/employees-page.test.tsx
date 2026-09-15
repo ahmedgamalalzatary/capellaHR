@@ -135,6 +135,26 @@ describe('EmployeesView', () => {
     });
   });
 
+  test('opens the create form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة موظف' }));
+    const dialog = await screen.findByRole('dialog', { name: 'موظف جديد' });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/الاسم الكامل/)).toBeDefined();
+  });
+
+  test('opens the edit form in a dialog instead of inline', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل الموظف/ });
+    expect(dialog.className.split(/\s+/)).toContain('max-w-xl');
+    expect(within(dialog).getByLabelText(/الاسم الكامل/)).toBeDefined();
+  });
+
   test('creates an employee with normalized fields and the three images', async () => {
     mocks.createEmployee.mockResolvedValue({ ...employee, id: 2 });
     renderView();

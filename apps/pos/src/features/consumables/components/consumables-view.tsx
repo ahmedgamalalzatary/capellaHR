@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock3, PackageOpen } from 'lucide-react';
 import { type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label, SortableTH, type SortState } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal, SortableTH, type SortState } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { LoadingState } from '@/components/feedback/loading-state';
@@ -49,8 +49,8 @@ function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPendin
   </TR>)}</tbody></DataTable>;
 }
 
-function CompletionPanel({ selected, balances, branchId, onCompleted }: {
-  selected: number[]; balances: ConsumableBalance[]; branchId: number | undefined; onCompleted: () => Promise<void>;
+function CompletionPanel({ selected, balances, branchId, onCompleted, onClose }: {
+  selected: number[]; balances: ConsumableBalance[]; branchId: number | undefined; onCompleted: () => Promise<void>; onClose: () => void;
 }) {
   const [usages, rawSetUsages] = useState<Usage[]>(emptyUsages);
   const [noConsumables, setNoConsumables] = useState(false);
@@ -76,8 +76,8 @@ function CompletionPanel({ selected, balances, branchId, onCompleted }: {
     onSuccess: async () => { rawSetUsages(emptyUsages()); setNoConsumables(false); notifySuccess('تم حفظ المستهلكات.'); await onCompleted(); },
     onError: (error: unknown) => notifyError(error),
   });
-  return <div className="space-y-4 border-t border-line p-4">
-    <div><SectionHeading title={`تسجيل مستهلكات ${selected.length} خدمة`} /><p className="mt-1 text-sm text-muted">سجّل الكمية المستخدمة لكل خدمة محددة. يمكن جمع الخدمات المتطابقة فقط.</p></div>
+  return <Modal title={`تسجيل مستهلكات ${selected.length} خدمة`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!complete.isPending) onClose(); }}>
+    <p className="text-sm text-muted">سجّل الكمية المستخدمة لكل خدمة محددة. يمكن جمع الخدمات المتطابقة فقط.</p>
     <label className="flex w-fit items-center gap-2 rounded-control border border-line px-3 py-2 text-sm"><input type="checkbox" checked={noConsumables} onChange={(event) => { setNoConsumables(event.target.checked); if (event.target.checked) rawSetUsages(emptyUsages()); }} />لم تُستخدم مستهلكات</label>
     {!noConsumables ? <div className="space-y-2">{usages.map((usage, index) => <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_10rem_auto]" key={index}>
       <Select aria-label={`المستهلك ${index + 1}`} value={usage.productId} onChange={(event) => setUsages((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, productId: event.target.value ? Number(event.target.value) : '' } : row))}><option value="">اختر المستهلك</option>{balances.map((item) => <option key={item.productId} value={item.productId}>{item.productName} ({item.consumableQuantity} {item.unit})</option>)}</Select>
@@ -86,19 +86,24 @@ function CompletionPanel({ selected, balances, branchId, onCompleted }: {
     </div>)}<Button variant="secondary" onClick={() => setUsages((rows) => [...rows, { productId: '', quantity: '' }])}>إضافة مستهلك</Button></div> : <Notice tone="info">سيُحفظ أن الخدمة اكتملت دون استهلاك منتجات.</Notice>}
     {validationError && !noConsumables ? <FieldError>{validationError}</FieldError> : null}
     {complete.isError ? <FieldError>{errorText(complete.error)}</FieldError> : null}
-    <Button disabled={!selected.length || (!noConsumables && !hasUsage) || complete.isPending} onClick={() => complete.mutate()}>حفظ المستهلكات</Button>
-  </div>;
+    <div className="flex flex-wrap gap-2">
+      <Button disabled={!selected.length || (!noConsumables && !hasUsage) || complete.isPending} onClick={() => complete.mutate()}>حفظ المستهلكات</Button>
+      <Button variant="ghost" disabled={complete.isPending} onClick={onClose}>إلغاء</Button>
+    </div>
+  </Modal>;
 }
 
 function StockPanel({ branchId, balances, refresh, isAdmin, initialProductId }: { branchId: number | undefined; balances: ConsumableBalance[]; refresh: () => Promise<void>; isAdmin: boolean; initialProductId?: number }) {
   const [configProductId, setConfigProductId] = useState<number | ''>(initialProductId ?? '');
+  const [configOpen, setConfigOpen] = useState(initialProductId !== undefined);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [unit, setUnit] = useState<'ml' | 'gm'>('ml'); const [packageSize, setPackageSize] = useState('');
   const [transferProductId, setTransferProductId] = useState<number | ''>(''); const [direction, setDirection] = useState<'reserve' | 'return'>('reserve'); const [packages, setPackages] = useState('1');
   const params = branchId === undefined ? {} : { branchId };
   const products = useQuery({ queryKey: ['consumables-products', branchId], queryFn: () => listAllProducts(params), enabled: isAdmin });
-  const configure = useMutation({ mutationFn: () => configureConsumable(Number(configProductId), { ...params, unit, packageSize }), onSuccess: async () => { notifySuccess('تم حفظ إعداد المستهلك.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
-  const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages) }), onSuccess: async () => { notifySuccess('تم تنفيذ التحويل.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
-  const pending = configure.isPending || transfer.isPending; const failed = configure.error ?? transfer.error;
+  const configure = useMutation({ mutationFn: () => configureConsumable(Number(configProductId), { ...params, unit, packageSize }), onSuccess: async () => { setConfigOpen(false); notifySuccess('تم حفظ إعداد المستهلك.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
+  const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages) }), onSuccess: async () => { setTransferOpen(false); notifySuccess('تم تنفيذ التحويل.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
+  const pending = configure.isPending || transfer.isPending;
   const [sort, setSort] = useState<SortState | null>(null);
   const ordered = useMemo(() => {
     if (!sort) return balances;
@@ -112,9 +117,32 @@ function StockPanel({ branchId, balances, refresh, isAdmin, initialProductId }: 
       }
     });
   }, [balances, sort]);
-  return <div className="space-y-5">{isAdmin ? <><div className="grid gap-4 lg:grid-cols-2"><Card><CardContent className="space-y-3 p-4"><SectionHeading title="إعداد منتج كمستهلك" /><Select aria-label="منتج إعداد المستهلك" value={configProductId} onChange={(event) => setConfigProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المنتج</option>{products.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select><div className="flex gap-2"><Select aria-label="وحدة المستهلك" value={unit} onChange={(event) => setUnit(event.target.value as 'ml' | 'gm')}><option value="ml">ml</option><option value="gm">gm</option></Select><Input aria-label="حجم العبوة" type="number" min="0.001" step="0.001" value={packageSize} onChange={(event) => setPackageSize(event.target.value)} /></div><Button disabled={!configProductId || !Number(packageSize) || pending} onClick={() => configure.mutate()}>حفظ الإعداد</Button></CardContent></Card>
-    <Card><CardContent className="space-y-3 p-4"><SectionHeading title="تحويل عبوات كاملة" /><Select aria-label="منتج التحويل" value={transferProductId} onChange={(event) => setTransferProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المستهلك</option>{balances.map((item) => <option key={item.productId} value={item.productId}>{item.productName}</option>)}</Select><div className="flex gap-2"><Select aria-label="اتجاه التحويل" value={direction} onChange={(event) => setDirection(event.target.value as 'reserve' | 'return')}><option value="reserve">حجز من مخزون البيع</option><option value="return">إرجاع لمخزون البيع</option></Select><Input aria-label="عدد العبوات" type="number" min="1" step="1" value={packages} onChange={(event) => setPackages(event.target.value)} /></div><Button disabled={!transferProductId || !Number(packages) || pending} onClick={() => transfer.mutate()}>تنفيذ التحويل</Button></CardContent></Card></div>
-    {failed ? <FieldError>{errorText(failed)}</FieldError> : null}</> : null}
+  return <div className="space-y-5">{isAdmin ? <>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="secondary" onClick={() => setConfigOpen(true)}>إعداد منتج كمستهلك</Button>
+      <Button variant="secondary" onClick={() => setTransferOpen(true)}>تحويل عبوات كاملة</Button>
+    </div>
+    {configOpen ? (
+      <Modal title="إعداد منتج كمستهلك" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!pending) setConfigOpen(false); }}>
+        <Select aria-label="منتج إعداد المستهلك" value={configProductId} onChange={(event) => setConfigProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المنتج</option>{products.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select><div className="flex gap-2"><Select aria-label="وحدة المستهلك" value={unit} onChange={(event) => setUnit(event.target.value as 'ml' | 'gm')}><option value="ml">ml</option><option value="gm">gm</option></Select><Input aria-label="حجم العبوة" type="number" min="0.001" step="0.001" value={packageSize} onChange={(event) => setPackageSize(event.target.value)} /></div>
+        {configure.error ? <FieldError>{errorText(configure.error)}</FieldError> : null}
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={!configProductId || !Number(packageSize) || pending} onClick={() => configure.mutate()}>حفظ الإعداد</Button>
+          <Button variant="ghost" disabled={pending} onClick={() => setConfigOpen(false)}>إلغاء</Button>
+        </div>
+      </Modal>
+    ) : null}
+    {transferOpen ? (
+      <Modal title="تحويل عبوات كاملة" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!pending) setTransferOpen(false); }}>
+        <Select aria-label="منتج التحويل" value={transferProductId} onChange={(event) => setTransferProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المستهلك</option>{balances.map((item) => <option key={item.productId} value={item.productId}>{item.productName}</option>)}</Select><div className="flex gap-2"><Select aria-label="اتجاه التحويل" value={direction} onChange={(event) => setDirection(event.target.value as 'reserve' | 'return')}><option value="reserve">حجز من مخزون البيع</option><option value="return">إرجاع لمخزون البيع</option></Select><Input aria-label="عدد العبوات" type="number" min="1" step="1" value={packages} onChange={(event) => setPackages(event.target.value)} /></div>
+        {transfer.error ? <FieldError>{errorText(transfer.error)}</FieldError> : null}
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={!transferProductId || !Number(packages) || pending} onClick={() => transfer.mutate()}>تنفيذ التحويل</Button>
+          <Button variant="ghost" disabled={pending} onClick={() => setTransferOpen(false)}>إلغاء</Button>
+        </div>
+      </Modal>
+    ) : null}
+  </> : null}
     <Card><CardContent className="p-4"><SectionHeading title="أرصدة المستهلكات" /><DataTable><THead><SortableTH label="المنتج" sortKey="product" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="مخزون البيع" sortKey="sellable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="رصيد المستهلك" sortKey="consumable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><TH>حجم العبوة</TH></THead><tbody>{ordered.map((item) => <TR key={item.productId}><TD>{item.productName}</TD><TD>{item.sellableQuantity}</TD><TD>{item.consumableQuantity} {item.unit}</TD><TD>{item.packageSize} {item.unit}</TD></TR>)}</tbody></DataTable></CardContent></Card></div>;
 }
 
@@ -164,6 +192,7 @@ export function ConsumablesView() {
   return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description="تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة." />
     {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" disabled={branches.isPending || branches.isError} value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setSelected([]); }}><option value="">اختر الفرع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select>{branches.isError ? <FieldError>تعذر تحميل الفروع. <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></FieldError> : null}</CardContent></Card> : null}
     <div role="tablist" aria-label="خدمات العملاء والمستهلكات" className="flex gap-1 overflow-x-auto border-b border-line"><TabButton active={tab === 'status'} onClick={() => changeTab('status')}><Clock3 className="size-4" />حالة الخدمات</TabButton><TabButton active={tab === 'consumables'} onClick={() => changeTab('consumables')}><CheckCircle2 className="size-4" />تسجيل المستهلكات</TabButton><TabButton active={tab === 'stock'} onClick={() => changeTab('stock')}><PackageOpen className="size-4" />مخزون المستهلكات</TabButton></div>
-    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data ?? []} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} onStatus={(item, status) => statusMutation.mutate({ item, status })} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}{tab === 'consumables' && selected.length ? <CompletionPanel selected={selected} balances={balances.data ?? []} branchId={branchId} onCompleted={async () => { setSelected([]); await refresh(); }} /> : null}</CardContent></Card>}
+    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data ?? []} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} onStatus={(item, status) => statusMutation.mutate({ item, status })} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
+    {tab === 'consumables' && selected.length && ready ? <CompletionPanel selected={selected} balances={balances.data ?? []} branchId={branchId} onCompleted={async () => { setSelected([]); await refresh(); }} onClose={() => setSelected([])} /> : null}
   </section>;
 }

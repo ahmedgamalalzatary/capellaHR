@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -11,7 +11,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
-import { PageHeader, SectionHeading } from '@/components/layout/page-header';
+import { PageHeader } from '@/components/layout/page-header';
 import { listCatalogBranches } from '@/features/catalog';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
@@ -68,6 +68,7 @@ export function FixedAssetsView() {
   const { branchId, setBranchId } = useAdminBranch();
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState<FixedAsset | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [deleting, setDeleting] = useState<FixedAsset | null>(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -92,7 +93,7 @@ export function FixedAssetsView() {
   const refresh = () => client.invalidateQueries({ queryKey: fixedAssetQueryKeys.all });
 
   const set = (field: keyof typeof emptyForm) => (value: string) => setForm((current) => ({ ...current, [field]: value }));
-  const clearForm = () => { setEditing(null); setForm(emptyForm); create.reset(); edit.reset(); };
+  const clearForm = () => { setEditing(null); setCreateOpen(false); setForm(emptyForm); create.reset(); edit.reset(); };
   /** An untouched field is left out entirely, so it stays unwritten rather than becoming a zero. */
   const payload = () => ({
     ...(branchId === undefined ? {} : { branchId }),
@@ -107,7 +108,7 @@ export function FixedAssetsView() {
 
   const create = useMutation({
     mutationFn: () => createFixedAsset(payload()),
-    onSuccess: async () => { setForm(emptyForm); setSuccessMessage('تمت إضافة الأصل.'); notifySuccess('تمت إضافة الأصل.'); await refresh(); },
+    onSuccess: async () => { setForm(emptyForm); setCreateOpen(false); setSuccessMessage('تمت إضافة الأصل.'); notifySuccess('تمت إضافة الأصل.'); await refresh(); },
     onError: (error: unknown) => notifyError(error),
   });
   const edit = useMutation({
@@ -123,6 +124,7 @@ export function FixedAssetsView() {
 
   const beginEdit = (asset: FixedAsset) => {
     create.reset(); edit.reset();
+    setCreateOpen(false);
     setEditing(asset);
     setForm({
       name: asset.name,
@@ -135,6 +137,13 @@ export function FixedAssetsView() {
     });
   };
 
+  const openCreate = () => {
+    create.reset(); edit.reset();
+    setEditing(null);
+    setForm(emptyForm);
+    setCreateOpen(true);
+  };
+
   const commandPending = create.isPending || edit.isPending || remove.isPending;
   const canSubmit = scopeReady && form.name.trim().length > 0 && !commandPending;
 
@@ -143,6 +152,7 @@ export function FixedAssetsView() {
       <PageHeader
         title="الأصول الثابتة"
         description="سجل ما يملكه الفرع من كراسي وأجهزة ومعدات. سجل للاطلاع فقط، لا يؤثر على المبيعات أو المخزون."
+        actions={<Button disabled={!scopeReady} onClick={openCreate}>إضافة أصل</Button>}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
@@ -185,12 +195,9 @@ export function FixedAssetsView() {
         </Card>
       ) : (
         <>
-          <Card className="shadow-card">
-            <CardContent className="space-y-4 p-4 sm:p-5">
-              <SectionHeading
-                title={editing ? `تعديل ${editing.name}` : 'إضافة أصل'}
-                description="الاسم وحده مطلوب؛ اكتب ما تريد تذكره واترك الباقي فارغًا."
-              />
+          {createOpen ? (
+            <Modal title="إضافة أصل" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!create.isPending) clearForm(); }}>
+              <p className="text-[13px] text-muted">الاسم وحده مطلوب؛ اكتب ما تريد تذكره واترك الباقي فارغًا.</p>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="asset-name">اسم الأصل</Label>
@@ -228,21 +235,65 @@ export function FixedAssetsView() {
               </div>
 
               <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
-                {editing ? (
-                  <>
-                    <Button disabled={!canSubmit} onClick={() => edit.mutate()}>حفظ التعديل</Button>
-                    <Button variant="ghost" disabled={commandPending} onClick={clearForm}>إلغاء</Button>
-                  </>
-                ) : (
-                  <Button disabled={!canSubmit} onClick={() => create.mutate()}>إضافة</Button>
-                )}
+                <Button disabled={!canSubmit} onClick={() => create.mutate()}>إضافة</Button>
+                <Button variant="ghost" disabled={commandPending} onClick={clearForm}>إلغاء</Button>
               </div>
 
-              {(editing ? edit.isError : create.isError) ? (
-                <FieldError>{errorText(editing ? edit.error : create.error)}</FieldError>
+              {create.isError ? (
+                <FieldError>{errorText(create.error)}</FieldError>
               ) : null}
-            </CardContent>
-          </Card>
+            </Modal>
+          ) : null}
+
+          {editing ? (
+            <Modal title={`تعديل ${editing.name}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!edit.isPending) clearForm(); }}>
+              <p className="text-[13px] text-muted">الاسم وحده مطلوب؛ اكتب ما تريد تذكره واترك الباقي فارغًا.</p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="asset-name">اسم الأصل</Label>
+                  <Input id="asset-name" aria-label="اسم الأصل" disabled={commandPending} value={form.name} onChange={(event) => set('name')(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="asset-quantity">الكمية</Label>
+                  <Input id="asset-quantity" aria-label="الكمية" type="number" min="1" className="text-start" disabled={commandPending} value={form.quantity} onChange={(event) => set('quantity')(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="asset-price">سعر القطعة</Label>
+                  <Input id="asset-price" aria-label="سعر القطعة" inputMode="decimal" className="text-start" disabled={commandPending} value={form.unitPrice} onChange={(event) => set('unitPrice')(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="asset-location">المكان</Label>
+                  <Input id="asset-location" aria-label="المكان" disabled={commandPending} value={form.location} onChange={(event) => set('location')(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="asset-purchased">تاريخ الشراء</Label>
+                  <Input id="asset-purchased" aria-label="تاريخ الشراء" type="date" disabled={commandPending} value={form.purchasedOn} onChange={(event) => set('purchasedOn')(event.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="asset-condition">الحالة</Label>
+                  <Select id="asset-condition" aria-label="الحالة" disabled={commandPending} value={form.condition} onChange={(event) => set('condition')(event.target.value)}>
+                    <option value="">غير محددة</option>
+                    <option value="good">جيدة</option>
+                    <option value="needs_repair">تحتاج صيانة</option>
+                    <option value="broken">تالفة</option>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="asset-note">ملاحظة</Label>
+                  <Input id="asset-note" aria-label="ملاحظة" disabled={commandPending} value={form.note} onChange={(event) => set('note')(event.target.value)} />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                <Button disabled={!canSubmit} onClick={() => edit.mutate()}>حفظ التعديل</Button>
+                <Button variant="ghost" disabled={commandPending} onClick={clearForm}>إلغاء</Button>
+              </div>
+
+              {edit.isError ? (
+                <FieldError>{errorText(edit.error)}</FieldError>
+              ) : null}
+            </Modal>
+          ) : null}
 
           <Card className="shadow-card">
             <CardContent className="space-y-4 p-4 sm:p-5">

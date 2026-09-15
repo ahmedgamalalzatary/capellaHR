@@ -14,7 +14,7 @@ export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNaviga
         ...group,
         items: group.items.filter((item) => [
           '/employees', '/devices', '/shifts', '/attendance',
-          '/branches', '/audit', '/settings',
+          '/branches', '/audit',
         ].includes(item.href)),
       })).filter((group) => group.items.length > 0)
     : ADMIN_NAV;
