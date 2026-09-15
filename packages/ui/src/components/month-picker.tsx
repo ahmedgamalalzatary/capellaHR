@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from './button';
 import { AR_MONTH_NAMES, formatMonthValue, parseMonthValue } from '../lib/months';
@@ -39,6 +39,23 @@ export function MonthPicker({
 }: MonthPickerProps) {
   const [open, setOpen] = useState(false);
   const [shownYear, setShownYear] = useState(() => parseMonthValue(value)?.year ?? new Date().getFullYear());
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [open]);
 
   const pick = (month: number) => {
     onChange(`${shownYear}-${pad2(month)}`);
@@ -50,7 +67,7 @@ export function MonthPicker({
   };
 
   return (
-    <div className={cn('relative', className)}>
+    <div ref={containerRef} className={cn('relative', className)}>
       <Button
         id={id}
         type="button"

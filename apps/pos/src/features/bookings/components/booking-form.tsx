@@ -39,6 +39,11 @@ export const cairoDateTimeToIso = (value: string) => {
   return candidates.sort((left, right) => left.getTime() - right.getTime())[0]?.toISOString() ?? null;
 };
 
+export const mapBookingSaveError = (error: unknown): unknown =>
+  error instanceof Error && error.message === 'Invalid Cairo local time'
+    ? new Error('الوقت المحلي غير صالح.')
+    : error;
+
 export function BookingForm({ branchId, onClose, onSaved }: {
   branchId?: number;
   onClose: () => void;
@@ -70,7 +75,7 @@ export function BookingForm({ branchId, onClose, onSaved }: {
       });
     },
     onSuccess: async (booking) => { setSaved(booking); notifySuccess('تم إنشاء الحجز.'); await onSaved(); },
-    onError: (error: unknown) => notifyError(error, 'تعذر حفظ الحجز.'),
+    onError: (error: unknown) => notifyError(mapBookingSaveError(error), 'تعذر حفظ الحجز.'),
   });
   if (saved) return <Modal title="تذكرة الموعد" onClose={onClose}>
     <div className="space-y-4"><BookingTicket booking={saved} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button onClick={() => window.print()}>طباعة التذكرة</Button></div></div>

@@ -9,7 +9,7 @@ Scope: `apps/web/src` (admin HR) + `apps/pos/src` (POS/ERP). All `page.tsx` are 
 
 ---
 
-## 1. Global problems — all `[SHARED/GLOBAL]`: fix in every page listed, not per-page close
+## 1. Global problems — historical baseline (initial diagnose; current status lives in §5, the authoritative tracker)
 
 ### 1.1 [SHARED] Pagination — CONFIRMED (all pages, Prev/Next 1-by-1 only)
 
@@ -126,7 +126,7 @@ Branch-state reference (all use key `capella:pos-admin-branch` except consumable
 
 ---
 
-## 3. Per-page fix list — `[SHARED]` rollout status per page (each bullet = apply the shared primitive there; not a separate single fix)
+## 3. Per-page fix list — historical baseline (SmartPagination / notify / `useAdminBranch` rollouts are complete per §5; bullets below list only the still-open gaps: sort, Dialog parity, search fill, debts)
 
 ### Web (`apps/web`)
 
@@ -188,18 +188,18 @@ Recommended start: Phase 0 items 1 (pager) + 3 (`useAdminBranch`), then Phase 1.
 
 ---
 
-## 5. Work tracker (checklist) — `[SHARED]` items close only when all pages done; `[SINGLE]` items close per file
+## 5. Work tracker (checklist) — authoritative source of truth; `[SHARED]` items close only when all pages done; `[SINGLE]` items close per file
 
 ### Verified rollout checklist (2026-09-15)
 
 - [x] All paginated POS and Web lists use smart pagination (page numbers + jump-to-page). Screens whose data is intentionally unpaginated—dashboard snapshots, bookings day diary, sales workspace, and fetch-all lists—are N/A.
 - [x] All POS and Web mutation pages provide Sonner feedback through the shared `notify` helpers. Login forms remain inline by design, and the shared attendance kiosk intentionally avoids per-check-in toasts.
 - [x] All POS branch-aware pages use `apps/pos/src/hooks/use-admin-branch.ts`; `capella:pos-admin-branch` is referenced nowhere else under `apps/pos/src`.
-- [x] All Web month filters use the calendar-style `MonthPicker`; no native `input[type="month"]` remains under `apps/web/src`.
+- [x] Bonuses/deductions (`adjustment-view.tsx`) + advances (`advances-view.tsx`) list filters use the calendar-style `MonthPicker`. Remaining native `input[type="month"]` under `apps/web/src` are open work (payroll `monthly-payroll-section.tsx`, reports month range `reports-view.tsx`, self-service selectors) or creation-form inputs that stay native by design.
 
 ### Phase 0 — Combined infra `[SHARED]`
 
-- [x] 0.1 `SmartPagination` in `packages/ui` + extend `pos/.../pagination.tsx`, replace all call sites in 1.1 (infra done; call-site migration per page below)
+- [x] 0.1 `SmartPagination` in `packages/ui` + extend `pos/.../pagination.tsx` (infra + all call-site migrations complete; §1/§3 pager entries are historical baseline)
 - [x] 0.2 `notify` helper web+pos (`src/lib/notify.ts`, TDD 4/4 each) + mutation-page rollout complete (documented login/kiosk exceptions)
 - [x] 0.3 `useAdminBranch()` hook (POS `src/hooks/use-admin-branch.ts`, TDD 7/7) + all branch-aware POS pages migrated
 - [x] 0.4 `SortableTH` + `getNextSort` (`packages/ui`, TDD 4/4) — wire per table; proven on consumables stock balances
