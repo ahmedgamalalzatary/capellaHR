@@ -1,8 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeftRight, Check, ChevronsUpDown, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button, Card, EmptyState, Input, Label, Modal } from '@capella/ui';
 
@@ -19,7 +19,7 @@ import {
   getCurrentCashierSession,
   listCashierSessionBranches,
 } from '@/features/cashier-sessions';
-import { listAllProducts } from '@/features/products';
+import { listAllProducts, type Product } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -52,6 +52,90 @@ type TransferLine = { key: string; productId: number | undefined; quantity: stri
 const emptyLine = (): TransferLine => ({
   key: crypto.randomUUID(), productId: undefined, quantity: '1',
 });
+
+function ProductCombobox({ id, label, products, value, disabled, onChange }: {
+  id: string;
+  label: string;
+  products: Product[];
+  value: number | undefined;
+  disabled: boolean;
+  onChange: (productId: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const root = useRef<HTMLDivElement>(null);
+  const selectedProduct = products.find((product) => product.id === value);
+  const normalizedSearch = search.trim().toLocaleLowerCase('ar');
+  const matches = normalizedSearch
+    ? products.filter((product) => product.name.toLocaleLowerCase('ar').includes(normalizedSearch)
+      || product.barcode?.toLocaleLowerCase('ar').includes(normalizedSearch))
+    : products;
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOutside);
+    return () => document.removeEventListener('mousedown', closeOutside);
+  }, [open]);
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        id={id}
+        type="button"
+        role="combobox"
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={`${id}-options`}
+        disabled={disabled}
+        className="flex h-9 w-full items-center justify-between gap-2 rounded-control border border-line bg-paper px-3 text-sm text-ink disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
+        onClick={() => { setSearch(''); setOpen((current) => !current); }}
+      >
+        <span className={selectedProduct ? 'truncate' : 'truncate text-muted'}>
+          {selectedProduct?.name ?? 'اختر المنتج'}
+        </span>
+        <ChevronsUpDown className="size-4 shrink-0 text-muted" aria-hidden />
+      </button>
+      {open ? (
+        <div className="absolute inset-x-0 top-full z-30 mt-1 rounded-control border border-line bg-paper p-2 shadow-lg">
+          <div className="relative">
+            <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+            <Input
+              type="search"
+              autoFocus
+              aria-label={`بحث عن ${label}`}
+              placeholder="اسم المنتج أو الباركود"
+              className="ps-9"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }}
+            />
+          </div>
+          <ul id={`${id}-options`} role="listbox" className="scroll-thin mt-2 max-h-56 overflow-y-auto">
+            {matches.map((product) => (
+              <li key={product.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={product.id === value}
+                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-sm hover:bg-surface"
+                  onClick={() => { onChange(product.id); setOpen(false); setSearch(''); }}
+                >
+                  <Check className={`size-4 shrink-0 ${product.id === value ? 'opacity-100' : 'opacity-0'}`} aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{product.name}</span>
+                  <span className="shrink-0 text-xs text-muted">متاح {product.quantity}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!matches.length ? <p className="px-3 py-4 text-center text-sm text-muted">لا توجد منتجات مطابقة</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Moving products between branches is internal trade: the sending branch sells
@@ -239,28 +323,17 @@ export function StockTransfersView() {
                       <Label htmlFor={`transfer-product-${line.key}`}>
                         {`المنتج ${index + 1}`}
                       </Label>
-                      <Select
+                      <ProductCombobox
                         id={`transfer-product-${line.key}`}
-                        aria-label={`المنتج ${index + 1}`}
+                        label={`المنتج ${index + 1}`}
                         disabled={effectiveSourceBranchId === undefined || products.isPending
                           || products.isError}
-                        value={line.productId ?? ''}
-                        onChange={(event) => updateLine(line.key, {
-                          productId: event.target.value ? Number(event.target.value) : undefined,
-                        })}
-                      >
-                        <option value="">اختر المنتج</option>
-                        {available
-                          // A product may appear once per transfer.
-                          .filter((entry) => (
-                            entry.id === line.productId || !chosenIds.includes(entry.id)
-                          ))
-                          .map((entry) => (
-                            <option key={entry.id} value={entry.id}>
-                              {`${entry.name} (متاح ${entry.quantity})`}
-                            </option>
-                          ))}
-                      </Select>
+                        value={line.productId}
+                        products={available.filter((entry) => (
+                          entry.id === line.productId || !chosenIds.includes(entry.id)
+                        ))}
+                        onChange={(productId) => updateLine(line.key, { productId })}
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor={`transfer-quantity-${line.key}`}>
@@ -295,7 +368,7 @@ export function StockTransfersView() {
               variant="secondary"
               size="sm"
               disabled={effectiveSourceBranchId === undefined || chosenIds.length >= available.length}
-              onClick={() => setLines((current) => [...current, emptyLine()])}
+              onClick={() => setLines((current) => [emptyLine(), ...current])}
             >
               <Plus className="size-4" aria-hidden />
               إضافة منتج

@@ -55,7 +55,7 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
         : query.isError ? <EmptyState title="تعذر تحميل تفاصيل العمولة" action={<Button onClick={() => void query.refetch()}>إعادة المحاولة</Button>} />
           : !query.data.entries.length ? <EmptyState title="لا توجد قيود تفصيلية" />
             : (
-              <DataTable className="border-t border-line/70">
+              <DataTable className="scroll-thin max-h-[65dvh] overflow-y-auto border-t border-line/70">
                 <THead>
                   <TH>النوع</TH>
                   <TH>الفاتورة</TH>
@@ -204,7 +204,7 @@ export function CommissionsView() {
       {selected && branchId !== undefined ? (
         <Modal
           title={`تفاصيل عمولة ${selected.employeeName}`}
-          className="max-w-3xl"
+          className="max-w-[calc(100vw-2rem)] sm:max-w-6xl"
           onClose={() => setSelected(null)}
         >
           <CommissionTrace summary={selected} branchId={branchId} month={month} onClose={() => setSelected(null)} />

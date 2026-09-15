@@ -91,10 +91,11 @@ const fillTransfer = async () => {
   fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
   await waitFor(() => {
     const product = screen.getByLabelText('المنتج 1');
-    expect(within(product).getByRole('option', { name: 'شامبو الأرغان (متاح 10)' })).toBeDefined();
+    expect(product).not.toHaveProperty('disabled', true);
   });
   fireEvent.change(screen.getByLabelText('الفرع المستلم'), { target: { value: '3' } });
-  fireEvent.change(screen.getByLabelText('المنتج 1'), { target: { value: '7' } });
+  fireEvent.click(screen.getByLabelText('المنتج 1'));
+  fireEvent.click(screen.getByRole('option', { name: /شامبو الأرغان/ }));
   fireEvent.change(screen.getByLabelText('الكمية 1'), { target: { value: '4' } });
 };
 
@@ -191,8 +192,9 @@ describe('StockTransfersView', () => {
     await fillTransfer();
 
     fireEvent.click(screen.getByRole('button', { name: 'إضافة منتج' }));
-    fireEvent.change(screen.getByLabelText('المنتج 2'), { target: { value: '8' } });
-    fireEvent.change(screen.getByLabelText('الكمية 2'), { target: { value: '2' } });
+    fireEvent.click(screen.getByLabelText('المنتج 1'));
+    fireEvent.click(screen.getByRole('option', { name: /بلسم/ }));
+    fireEvent.change(screen.getByLabelText('الكمية 1'), { target: { value: '2' } });
     // 4 × 30.00 plus 2 × 12.50 on one transfer.
     expect((await screen.findByText(/إجمالي تكلفة التحويل/)).textContent).toContain('145.00');
 
@@ -200,9 +202,50 @@ describe('StockTransfersView', () => {
 
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
     expect(mocks.create.mock.calls[0]![0].lines).toEqual([
-      { productId: 7, quantity: 4 },
       { productId: 8, quantity: 2 },
+      { productId: 7, quantity: 4 },
     ]);
+  });
+
+  it('searches products by name or barcode before selecting one', async () => {
+    mocks.products.mockResolvedValue(page([
+      { id: 7, name: 'شامبو الأرغان', barcode: '62210001', quantity: 10, lastPurchaseCost: '30.00', isActive: true },
+      { id: 8, name: 'بلسم', barcode: '62210002', quantity: 9, lastPurchaseCost: '12.50', isActive: true },
+    ]));
+    mount();
+    await sourceOptionsReady();
+    fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
+
+    const picker = await screen.findByRole('combobox', { name: 'المنتج 1' });
+    await waitFor(() => expect(picker).not.toHaveProperty('disabled', true));
+    fireEvent.click(picker);
+    const search = screen.getByRole('searchbox', { name: 'بحث عن المنتج 1' });
+    fireEvent.change(search, { target: { value: '62210002' } });
+
+    expect(screen.queryByRole('option', { name: /شامبو الأرغان/ })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: /بلسم/ }));
+    expect(picker.textContent).toContain('بلسم');
+  });
+
+  it('adds each new product row above the existing rows', async () => {
+    mocks.products.mockResolvedValue(page([
+      { id: 7, name: 'شامبو الأرغان', barcode: null, quantity: 10, lastPurchaseCost: '30.00', isActive: true },
+      { id: 8, name: 'بلسم', barcode: null, quantity: 9, lastPurchaseCost: '12.50', isActive: true },
+    ]));
+    mount();
+    await sourceOptionsReady();
+    fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
+    await waitFor(() => expect(screen.getByLabelText('المنتج 1')).not.toHaveProperty('disabled', true));
+    fireEvent.click(screen.getByLabelText('المنتج 1'));
+    fireEvent.click(screen.getByRole('option', { name: /شامبو الأرغان/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة منتج' }));
+
+    const productFields = screen.getAllByRole('combobox', { name: /المنتج \d+/ });
+    expect(productFields.map((field) => field.getAttribute('aria-label'))).toEqual([
+      'المنتج 1', 'المنتج 2',
+    ]);
+    expect(productFields[0]?.textContent).toContain('اختر المنتج');
+    expect(productFields[1]?.textContent).toContain('شامبو الأرغان');
   });
 
   it('does not offer the same product twice and can drop a line', async () => {
@@ -214,11 +257,12 @@ describe('StockTransfersView', () => {
     await fillTransfer();
     fireEvent.click(screen.getByRole('button', { name: 'إضافة منتج' }));
 
-    const second = screen.getByLabelText('المنتج 2');
-    expect(within(second).queryByRole('option', { name: 'شامبو الأرغان (متاح 10)' })).toBeNull();
+    const first = screen.getByLabelText('المنتج 1');
+    fireEvent.click(first);
+    expect(screen.queryByRole('option', { name: /شامبو الأرغان/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'حذف البند 2' }));
-    expect(screen.queryByLabelText('المنتج 2')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'حذف البند 1' }));
+    expect(screen.getAllByRole('combobox', { name: /المنتج \d+/ })).toHaveLength(1);
   });
 
   it('offers only the sending branch products and refuses its own branch as destination', async () => {

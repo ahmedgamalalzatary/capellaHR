@@ -148,6 +148,19 @@ describe('CommissionsView', () => {
     expect(screen.getByText('#41')).toBeDefined();
   });
 
+  it('uses the available viewport width and scrolls long commission details', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
+
+    const dialog = await screen.findByRole('dialog', { name: /تفاصيل عمولة سارة أحمد/ });
+    expect(dialog.className).toContain('max-w-6xl');
+    const table = await within(dialog).findByRole('table');
+    expect(table.parentElement?.className).toContain('overflow-y-auto');
+  });
+
   it('loads every branch page and offers retry when totals fail', async () => {
     mocks.branches.mockImplementation(async (page = 1) => ({
       items: page === 1 ? [{ id: 2, name: 'الرئيسي' }] : [{ id: 3, name: 'فرع ثانٍ' }],
