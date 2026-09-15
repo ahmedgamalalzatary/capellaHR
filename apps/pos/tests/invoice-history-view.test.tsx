@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   actor: { current: { type: 'cashier', accountId: 3, employeeId: 9 } as { type: string; accountId?: number; employeeId?: number } },
   listInvoices: vi.fn(),
   listBranches: vi.fn(),
+  listEmployeeOptions: vi.fn(),
 }));
 
 const push = vi.hoisted(() => vi.fn());
@@ -16,6 +17,9 @@ vi.mock('../src/features/cashier-sessions', () => ({ listCashierSessionBranches:
 vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listInvoices: mocks.listInvoices,
+}));
+vi.mock('../src/features/cashier-accounts/api/employee-options-api', () => ({
+  listActiveEmployeeOptions: mocks.listEmployeeOptions,
 }));
 
 import { InvoiceHistoryView } from '../src/features/sales/components/invoice-history-view';
@@ -66,6 +70,10 @@ describe('invoice history', () => {
       items: [{ id: 2, name: 'الفرع الرئيسي' }],
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
     });
+    mocks.listEmployeeOptions.mockReset().mockResolvedValue({
+      items: [{ id: 8, fullName: 'سارة علي' }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
   });
 
   it('announces invoice loading', () => {
@@ -81,8 +89,10 @@ describe('invoice history', () => {
     expect(link.getAttribute('href')).toBe('/invoices/44');
     // Every employee behind the sale is named, not just the first.
     expect(screen.getByText(new RegExp(`${item.client.name}.*سارة علي.*هدى محمود`))).toBeDefined();
-    expect(screen.getByText('مكتملة')).toBeDefined();
-    expect(mocks.listInvoices).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
+    expect(screen.getByText('مكتملة', { selector: 'span' })).toBeDefined();
+    expect(mocks.listInvoices).toHaveBeenCalledWith({
+      page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc',
+    });
   });
 
   it('labels product-only invoices as having no assigned employee', async () => {
@@ -105,7 +115,7 @@ describe('invoice history', () => {
     });
 
     await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
-      page: 1, pageSize: 20, search: 'منى',
+      page: 1, pageSize: 20, search: 'منى', orderBy: 'soldAt', orderDir: 'desc',
     }));
     expect(screen.queryByRole('button', { name: 'بحث' })).toBeNull();
   });
@@ -136,7 +146,7 @@ describe('invoice history', () => {
     fireEvent.change(branch, { target: { value: '2' } });
 
     await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
-      branchId: 2, page: 1, pageSize: 20,
+      branchId: 2, page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc',
     }));
     expect((await screen.findByRole('link', { name: item.invoiceNumber })).getAttribute('href'))
       .toBe('/invoices/44?branchId=2');
@@ -146,11 +156,70 @@ describe('invoice history', () => {
     mocks.actor.current = { type: 'admin' };
     renderView(2);
 
-    const branch = await screen.findByRole('combobox') as HTMLSelectElement;
+    const branch = await screen.findByLabelText('الفرع') as HTMLSelectElement;
     await waitFor(() => expect(branch.value).toBe('2'));
     await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
-      branchId: 2, page: 1, pageSize: 20,
+      branchId: 2, page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc',
     }));
+  });
+
+  it('filters invoices by status and settlement', async () => {
+    renderView();
+    await screen.findByRole('link', { name: item.invoiceNumber });
+
+    fireEvent.change(screen.getByLabelText('الحالة'), { target: { value: 'completed' } });
+    fireEvent.change(screen.getByLabelText('التسوية'), { target: { value: 'open' } });
+
+    await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
+      page: 1, pageSize: 20, status: 'completed', settlementStatus: 'open',
+      orderBy: 'soldAt', orderDir: 'desc',
+    }));
+  });
+
+  it('filters by date range and employee, and sorts the history', async () => {
+    mocks.actor.current = { type: 'admin' };
+    renderView(2);
+    await screen.findByRole('link', { name: item.invoiceNumber });
+
+    fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-08-01' } });
+    fireEvent.change(screen.getByLabelText('إلى تاريخ'), { target: { value: '2026-08-31' } });
+    fireEvent.change(await screen.findByLabelText('الموظف'), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText('الترتيب'), { target: { value: 'total' } });
+    fireEvent.change(screen.getByLabelText('الاتجاه'), { target: { value: 'asc' } });
+
+    await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
+      branchId: 2, page: 1, pageSize: 20,
+      fromDate: '2026-08-01', toDate: '2026-08-31', employeeId: 8,
+      orderBy: 'total', orderDir: 'asc',
+    }));
+    expect(mocks.listEmployeeOptions).toHaveBeenCalledWith(1, 2);
+  });
+
+  it('clears the branch-scoped employee filter when the Admin switches branches', async () => {
+    mocks.actor.current = { type: 'admin' };
+    mocks.listBranches.mockResolvedValue({
+      items: [{ id: 2, name: 'الفرع الرئيسي' }, { id: 3, name: 'فرع آخر' }],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    renderView();
+    await screen.findByRole('option', { name: 'الفرع الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByRole('option', { name: 'سارة علي' });
+    fireEvent.change(screen.getByLabelText('الموظف'), { target: { value: '8' } });
+    await waitFor(() => expect(mocks.listInvoices).toHaveBeenCalledWith({
+      branchId: 2, page: 1, pageSize: 20, employeeId: 8, orderBy: 'soldAt', orderDir: 'desc',
+    }));
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+
+    await waitFor(() => {
+      const last = mocks.listInvoices.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(last?.branchId).toBe(3);
+      expect(last).not.toHaveProperty('employeeId');
+    });
+    await waitFor(() => expect(
+      (screen.getByLabelText('الموظف') as HTMLSelectElement).value,
+    ).toBe(''));
   });
 
   it('shows a retryable Admin branch-loading failure', async () => {

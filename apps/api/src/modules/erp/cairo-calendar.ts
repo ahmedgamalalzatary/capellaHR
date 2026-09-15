@@ -31,6 +31,13 @@ export const startOfCairoDate = (value: string) => {
   return new Date(low);
 };
 
+export const nextDay = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
+};
+
 export const nextMonth = (month: string) => {
   const [year, monthNumber] = month.split('-').map(Number) as [number, number];
   return monthNumber === 12

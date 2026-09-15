@@ -2,6 +2,7 @@ import {
   clientIdParamsSchema,
   clientVisitHistoryQuerySchema,
   completeSaleSchema,
+  invoiceBranchQuerySchema,
   invoiceHistoryQuerySchema,
   invoiceParamsSchema,
   invoiceLineParamsSchema,
@@ -194,7 +195,7 @@ export const createErpSalesRouter = (service: SaleService) => {
   router.get('/:invoiceId', async (request, response, next) => {
     try {
       const { invoiceId } = invoiceParamsSchema.parse({ invoiceId: request.params.invoiceId });
-      const { branchId } = invoiceHistoryQuerySchema.pick({ branchId: true }).parse(request.query);
+      const { branchId } = invoiceBranchQuerySchema.parse(request.query);
       response.json({ data: await service.getInvoice(actorFrom(response), invoiceId, branchId) });
     } catch (error) {
       handleError(error, response, next);

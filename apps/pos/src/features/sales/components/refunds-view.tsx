@@ -20,6 +20,10 @@ import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { getInvoice, listInvoices } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
+import {
+  defaultInvoiceHistoryFilters,
+  InvoiceHistoryFilters,
+} from './invoice-history-filters';
 import { invoiceClientLabel } from '@/lib/client-label';
 
 import { formatCairoDateTime, responseMessage } from './invoice-format';
@@ -119,6 +123,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
   const search = searchDraft.trim() || undefined;
+  const [filters, setFilters] = useState(defaultInvoiceHistoryFilters);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | undefined>();
   /**
    * The number read off a scanned receipt, held until the matching invoice comes
@@ -147,10 +152,17 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
     if (initialBranchId !== undefined) setBranchId(initialBranchId);
   }, [initialBranchId, setBranchId]);
   const invoices = useQuery({
-    queryKey: salesQueryKeys.invoices(branchId, page, search),
+    queryKey: salesQueryKeys.invoices(branchId, page, search, filters),
     queryFn: () => listInvoices({
       ...(branchId ? { branchId } : {}),
       ...(search ? { search } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.settlementStatus ? { settlementStatus: filters.settlementStatus } : {}),
+      ...(filters.fromDate ? { fromDate: filters.fromDate } : {}),
+      ...(filters.toDate ? { toDate: filters.toDate } : {}),
+      ...(filters.employeeId === undefined ? {} : { employeeId: filters.employeeId }),
+      orderBy: filters.orderBy,
+      orderDir: filters.orderDir,
       page,
       pageSize: 20,
     }),
@@ -210,6 +222,17 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
               </Select>
             </div>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card">
+        <CardContent className="p-4 sm:p-5">
+          <InvoiceHistoryFilters
+            idPrefix="refund"
+            values={filters}
+            onChange={(next) => { setFilters(next); setPage(1); setSelectedInvoiceId(undefined); }}
+            branchId={branchId}
+          />
         </CardContent>
       </Card>
 

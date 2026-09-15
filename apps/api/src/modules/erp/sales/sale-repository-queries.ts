@@ -1,6 +1,11 @@
 import { type createDatabase } from '@capella/database';
-import { clients, invoices } from '@capella/database/schema';
-import { and, count, desc, eq, like, ne, or } from 'drizzle-orm';
+import {
+  clients, invoiceLineReassignments, invoiceLines, invoices,
+} from '@capella/database/schema';
+import {
+  and, asc, count, desc, eq, exists, gte, like, lt, ne, or,
+} from 'drizzle-orm';
+import { nextDay, startOfCairoDate } from '../cairo-calendar.js';
 import { hydrateInvoice } from './sale-repository-read.js';
 import { SaleError, type SaleRepository } from './sale-service.js';
 
@@ -58,7 +63,32 @@ export const createSaleRepositoryQueries = (
         like(invoices.clientNameSnapshot, `%${escapedSearch}%`),
         like(invoices.clientPhoneSnapshot, `%${escapedSearch}%`),
       ) : undefined,
+      query.status === undefined ? undefined : eq(invoices.status, query.status),
+      query.settlementStatus === undefined ? undefined : eq(invoices.settlementStatus, query.settlementStatus),
+      query.fromDate === undefined ? undefined : gte(invoices.soldAt, startOfCairoDate(query.fromDate)),
+      query.toDate === undefined ? undefined : lt(invoices.soldAt, startOfCairoDate(nextDay(query.toDate))),
+      // Lines name the performing employee; a reassignment moves the work, so
+      // either the current line employee or a reassignment target matches.
+      query.employeeId === undefined ? undefined : or(
+        exists(database.select({ id: invoiceLines.id }).from(invoiceLines).where(and(
+          eq(invoiceLines.invoiceId, invoices.id),
+          eq(invoiceLines.employeeId, query.employeeId),
+        ))),
+        exists(database.select({ id: invoiceLineReassignments.id }).from(invoiceLineReassignments).where(and(
+          eq(invoiceLineReassignments.invoiceId, invoices.id),
+          eq(invoiceLineReassignments.toEmployeeId, query.employeeId),
+        ))),
+      ),
     );
+    const orderColumn = {
+      soldAt: invoices.soldAt,
+      total: invoices.total,
+      balanceDue: invoices.balanceDue,
+      invoiceNumber: invoices.invoiceNumber,
+    }[query.orderBy];
+    const orderBy = query.orderDir === 'asc'
+      ? [asc(orderColumn), asc(invoices.id)]
+      : [desc(orderColumn), desc(invoices.id)];
     const [{ total = 0 } = { total: 0 }] = await database.select({ total: count() })
       .from(invoices).where(where);
     const rows = await database.select({
@@ -73,7 +103,7 @@ export const createSaleRepositoryQueries = (
       clientName: invoices.clientNameSnapshot,
       clientPhone: invoices.clientPhoneSnapshot,
       soldAt: invoices.soldAt,
-    }).from(invoices).where(where).orderBy(desc(invoices.soldAt), desc(invoices.id))
+    }).from(invoices).where(where).orderBy(...orderBy)
       .limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const employeesByInvoice = await listInvoiceEmployees(rows.map(({ id }) => id));
     return {

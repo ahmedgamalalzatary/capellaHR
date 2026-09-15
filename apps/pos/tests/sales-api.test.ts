@@ -25,8 +25,18 @@ describe('sales API', () => {
   });
 
   it('serializes stored invoice history and detail reads without posting a sale', async () => {
-    await listInvoices({ branchId: 2, page: 3, pageSize: 10 });
-    expect(mocks.getPage).toHaveBeenCalledWith('/erp/sales?branchId=2&page=3&pageSize=10');
+    await listInvoices({ branchId: 2, page: 3, pageSize: 10, orderBy: 'soldAt', orderDir: 'desc' });
+    expect(mocks.getPage).toHaveBeenCalledWith('/erp/sales?branchId=2&page=3&pageSize=10&orderBy=soldAt&orderDir=desc');
+
+    await listInvoices({
+      branchId: 2, page: 1, pageSize: 20, status: 'completed', settlementStatus: 'open',
+      fromDate: '2026-08-01', toDate: '2026-08-31', employeeId: 8,
+      orderBy: 'total', orderDir: 'asc',
+    });
+    expect(mocks.getPage).toHaveBeenCalledWith(
+      '/erp/sales?branchId=2&page=1&pageSize=20&status=completed&settlementStatus=open'
+      + '&fromDate=2026-08-01&toDate=2026-08-31&employeeId=8&orderBy=total&orderDir=asc',
+    );
 
     await getInvoice(44, 2);
     expect(mocks.get).toHaveBeenCalledWith('/erp/sales/44?branchId=2');

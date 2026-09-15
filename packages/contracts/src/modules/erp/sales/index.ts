@@ -655,15 +655,35 @@ export const clientVisitHistoryQuerySchema = z.object({
   branchId: coercedMysqlIntSchema.optional(),
 }).strict();
 
+const cairoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'التاريخ غير صالح').refine((value) => {
+  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = value.split('-').map(Number);
+  if (year < 1000 || year > 9999) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}, 'التاريخ غير صالح');
+
 export const invoiceHistoryQuerySchema = z.object({
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
   branchId: coercedMysqlIntSchema.optional(),
   search: z.string().trim().min(1).max(255).optional(),
-}).strict();
+  status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']).optional(),
+  settlementStatus: z.enum(['settled', 'open']).optional(),
+  fromDate: cairoDateSchema.optional(),
+  toDate: cairoDateSchema.optional(),
+  employeeId: coercedMysqlIntSchema.optional(),
+  orderBy: z.enum(['soldAt', 'total', 'balanceDue', 'invoiceNumber']).default('soldAt'),
+  orderDir: z.enum(['asc', 'desc']).default('desc'),
+}).strict().refine((value) => !value.fromDate || !value.toDate || value.fromDate <= value.toDate, {
+  path: ['toDate'], message: 'نهاية الفترة يجب ألا تسبق بدايتها',
+});
 
 export const invoiceParamsSchema = z.object({
   invoiceId: coercedMysqlIntSchema,
+}).strict();
+
+export const invoiceBranchQuerySchema = z.object({
+  branchId: coercedMysqlIntSchema.optional(),
 }).strict();
 
 /**

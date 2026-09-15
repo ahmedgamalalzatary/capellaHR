@@ -493,7 +493,7 @@ describe('ERP sale repository MySQL integration', () => {
     expect(await database.select().from(erpCommissionPayrollInputs).where(
       eq(erpCommissionPayrollInputs.employeeId, data.sellerEmployeeId),
     )).toEqual([expect.objectContaining({ amount: '10.00' })]);
-    await expect(repository.listInvoices(data.branchId, { page: 1, pageSize: 20 }))
+    await expect(repository.listInvoices(data.branchId, { page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc' }))
       .resolves.toMatchObject({
         items: expect.arrayContaining([
           expect.objectContaining({ id: result.id, employees: [{ id: data.sellerEmployeeId, name: expect.any(String) }] }),

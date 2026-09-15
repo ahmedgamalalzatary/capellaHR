@@ -500,10 +500,10 @@ describe('ERP sale service', () => {
 
   it('lists and reads stored invoices only through the resolved branch', async () => {
     const { service, listInvoices, findInvoiceById } = setup();
-    await service.listInvoices(actor, { page: 2, pageSize: 10 });
+    await service.listInvoices(actor, { page: 2, pageSize: 10, orderBy: 'soldAt', orderDir: 'desc' });
     await expect(service.getInvoice(actor, 44, undefined)).resolves.toEqual(invoice);
 
-    expect(listInvoices).toHaveBeenCalledWith(2, { page: 2, pageSize: 10 });
+    expect(listInvoices).toHaveBeenCalledWith(2, { page: 2, pageSize: 10, orderBy: 'soldAt', orderDir: 'desc' });
     expect(findInvoiceById).toHaveBeenCalledWith(2, 44);
   });
 

@@ -6,11 +6,15 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   updateStatus: vi.fn(),
   push: vi.fn(),
+  listBranches: vi.fn(),
   session: { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() } as any,
 }));
 
 vi.mock('../src/features/auth', () => ({
   useSession: () => mocks.session,
+}));
+vi.mock('../src/features/cashier-sessions', () => ({
+  listCashierSessionBranches: mocks.listBranches,
 }));
 vi.mock('../src/features/bookings/api/bookings-api', () => ({
   listBookings: mocks.list,
@@ -52,6 +56,10 @@ describe('appointment book', () => {
   beforeEach(() => {
     mocks.list.mockReset().mockResolvedValue([booking]);
     mocks.updateStatus.mockReset().mockResolvedValue({ ...booking, status: 'arrived' });
+    mocks.listBranches.mockReset().mockResolvedValue({
+      items: [{ id: 2, name: 'الفرع الرئيسي' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
     mocks.push.mockReset();
     mocks.session = { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() };
   });
@@ -99,6 +107,38 @@ describe('appointment book', () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'اليوم التالي' }));
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ date: '2026-08-26' }));
+  });
+
+  it('jumps to a picked calendar day', async () => {
+    renderView();
+    const picker = await screen.findByLabelText('اختر اليوم');
+    expect(picker).toHaveProperty('value', '2026-08-25');
+
+    fireEvent.change(picker, { target: { value: '2026-09-02' } });
+
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ date: '2026-09-02' }));
+  });
+
+  it('disables the admin branch selector while branches load', async () => {
+    mocks.session = { data: { actor: { type: 'admin', accountId: 1 } }, isPending: false, isError: false, refetch: vi.fn() };
+    mocks.listBranches.mockReturnValue(new Promise(() => undefined));
+    renderView();
+
+    expect(await screen.findByLabelText('الفرع')).toHaveProperty('disabled', true);
+  });
+
+  it('retries branch loading when it fails', async () => {
+    mocks.session = { data: { actor: { type: 'admin', accountId: 1 } }, isPending: false, isError: false, refetch: vi.fn() };
+    mocks.listBranches.mockRejectedValueOnce(new Error('network'));
+    renderView();
+
+    expect((await screen.findByText('تعذر تحميل الفروع.')).textContent).toBeDefined();
+    mocks.listBranches.mockResolvedValueOnce({
+      items: [{ id: 2, name: 'الفرع الرئيسي' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await screen.findByRole('option', { name: 'الفرع الرئيسي' })).toBeDefined();
   });
 
   it('shows a retry when session verification fails', () => {

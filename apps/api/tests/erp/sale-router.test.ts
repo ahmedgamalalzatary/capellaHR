@@ -156,7 +156,9 @@ describe('ERP sales router', () => {
     const { app, listInvoices, getInvoice } = setup();
     const history = await request(app).get('/erp/sales?page=2&pageSize=10&branchId=3');
     expect(history.status).toBe(200);
-    expect(listInvoices).toHaveBeenCalledWith(actor, { page: 2, pageSize: 10, branchId: 3 });
+    expect(listInvoices).toHaveBeenCalledWith(actor, {
+      page: 2, pageSize: 10, branchId: 3, orderBy: 'soldAt', orderDir: 'desc',
+    });
     expect(history.body.meta).toEqual({ page: 2, pageSize: 10, total: 0, totalPages: 0 });
 
     const detail = await request(app).get('/erp/sales/44?branchId=3');

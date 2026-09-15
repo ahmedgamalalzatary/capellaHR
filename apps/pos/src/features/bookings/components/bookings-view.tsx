@@ -5,7 +5,7 @@ import { CalendarPlus, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
@@ -116,10 +116,23 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       description="مواعيد الفرع يومًا بيوم."
       actions={<Button disabled={actor?.type === 'admin' && branchId === undefined} onClick={() => setCreating(true)}><CalendarPlus className="size-4" />حجز جديد</Button>}
     />
-    {actor?.type === 'admin' ? <Select aria-label="الفرع" value={branchId ?? ''} onChange={(event) => setAdminBranchId(event.target.value ? Number(event.target.value) : undefined)}>
+    {actor?.type === 'admin' ? <Select
+      aria-label="الفرع"
+      disabled={branches.isPending || branches.isError}
+      value={branchId ?? ''}
+      onChange={(event) => setAdminBranchId(event.target.value ? Number(event.target.value) : undefined)}
+    >
       <option value="">اختر الفرع</option>
       {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
     </Select> : null}
+    {actor?.type === 'admin' && branches.isError ? (
+      <Notice tone="danger" role="alert">
+        <p>تعذر تحميل الفروع.</p>
+        <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>
+          إعادة المحاولة
+        </Button>
+      </Notice>
+    ) : null}
     {error ? <Notice tone="danger">{error}</Notice> : null}
     <Card className="shadow-card"><CardContent className="flex items-center justify-between gap-3 p-4">
       <Button variant="secondary" aria-label="اليوم السابق" onClick={() => setDate(moveDate(date, -1))}>
@@ -127,9 +140,19 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       </Button>
       <div className="min-w-0 text-center">
         <h2 className="text-lg font-semibold">{dayHeading(date)}</h2>
-        <Button variant="ghost" size="sm" className="mt-1" onClick={() => setDate(cairoToday())}>
-          اليوم
-        </Button>
+        <div className="mt-1 flex items-center justify-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setDate(cairoToday())}>
+            اليوم
+          </Button>
+          <Input
+            id="booking-day"
+            aria-label="اختر اليوم"
+            type="date"
+            value={date}
+            onChange={(event) => { if (event.target.value) setDate(event.target.value); }}
+            className="w-40"
+          />
+        </div>
       </div>
       <Button variant="secondary" aria-label="اليوم التالي" onClick={() => setDate(moveDate(date, 1))}>
         <ChevronLeft className="size-4" />

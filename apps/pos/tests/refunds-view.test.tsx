@@ -9,6 +9,7 @@ const quoteRefund = vi.hoisted(() => vi.fn());
 const refundInvoice = vi.hoisted(() => vi.fn());
 const voidInvoice = vi.hoisted(() => vi.fn());
 const listBranches = vi.hoisted(() => vi.fn());
+const listEmployeeOptions = vi.hoisted(() => vi.fn());
 const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
 
 vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
@@ -28,6 +29,9 @@ vi.mock('../src/features/auth', () => ({
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: listBranches,
+}));
+vi.mock('../src/features/cashier-accounts/api/employee-options-api', () => ({
+  listActiveEmployeeOptions: listEmployeeOptions,
 }));
 
 import { RefundsView } from '../src/features/sales/components/refunds-view';
@@ -99,6 +103,10 @@ describe('refunds tab', () => {
     });
     listInvoices.mockReset().mockResolvedValue({
       items: [historyItem],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+    listEmployeeOptions.mockReset().mockResolvedValue({
+      items: [{ id: 8, fullName: 'سارة علي' }],
       meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
     });
     getInvoice.mockReset().mockResolvedValue({
@@ -626,6 +634,23 @@ describe('refunds tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
     await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(2));
     expect(refundInvoice.mock.calls[1]![1].idempotencyKey).toBe(originalKey);
+  });
+
+  it('filters refundable invoices by settlement and employee, and sorts them', async () => {
+    renderView();
+    await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` });
+
+    fireEvent.change(screen.getByLabelText('التسوية'), { target: { value: 'settled' } });
+    fireEvent.change(await screen.findByLabelText('الموظف'), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText('الترتيب'), { target: { value: 'total' } });
+
+    await waitFor(() => expect(listInvoices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: 2, page: 1, settlementStatus: 'settled', employeeId: 8,
+        orderBy: 'total', orderDir: 'desc',
+      }),
+    ));
+    expect(listEmployeeOptions).toHaveBeenCalledWith(1, 2);
   });
 
   it('opens the invoice whose receipt was scanned at the counter', async () => {

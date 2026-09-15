@@ -744,9 +744,31 @@ describe('ERP complete-sale contracts', () => {
   it('publishes branch-scoped paged invoice history and detail parameters', () => {
     expect(invoiceHistoryQuerySchema.parse({
       page: '2', pageSize: '10', branchId: '3', search: '  01012345678  ',
-    })).toEqual({ page: 2, pageSize: 10, branchId: 3, search: '01012345678' });
+    })).toEqual({
+      page: 2, pageSize: 10, branchId: 3, search: '01012345678',
+      orderBy: 'soldAt', orderDir: 'desc',
+    });
     expect(invoiceParamsSchema.parse({ invoiceId: '44' })).toEqual({ invoiceId: 44 });
     expect(invoiceParamsSchema.safeParse({ invoiceId: '0' }).success).toBe(false);
+  });
+
+  it('filters invoice history by status, settlement, dates, and employee with sortable columns', () => {
+    expect(invoiceHistoryQuerySchema.parse({
+      status: 'completed', settlementStatus: 'open',
+      fromDate: '2026-08-01', toDate: '2026-08-31', employeeId: '8',
+      orderBy: 'total', orderDir: 'asc',
+    })).toEqual({
+      page: 1, pageSize: 20,
+      status: 'completed', settlementStatus: 'open',
+      fromDate: '2026-08-01', toDate: '2026-08-31', employeeId: 8,
+      orderBy: 'total', orderDir: 'asc',
+    });
+    expect(invoiceHistoryQuerySchema.safeParse({ status: 'draft' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ settlementStatus: 'paid' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ fromDate: '2026-09-01', toDate: '2026-08-01' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ fromDate: 'not-a-date' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ orderBy: 'client' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ orderDir: 'sideways' }).success).toBe(false);
   });
 
   it('publishes receipt-safe stored invoice history summaries', () => {

@@ -126,7 +126,7 @@ Branch-state reference (all use key `capella:pos-admin-branch` except consumable
 
 ---
 
-## 3. Per-page fix list — historical baseline (SmartPagination / notify / `useAdminBranch` rollouts are complete per §5; bullets below list only the still-open gaps: sort, Dialog parity, search fill, debts)
+## 3. Per-page fix list — historical baseline (captured before the Phase 0/1 rollout; pager/notify/branch/calendar/invoice-filter entries below are done per §5 — §5 is authoritative for what is still open: sort, Dialog parity, search fill, debts)
 
 ### Web (`apps/web`)
 
@@ -143,8 +143,8 @@ Branch-state reference (all use key `capella:pos-admin-branch` except consumable
 
 ### POS (`apps/pos`)
 
-- bookings: +calendar picker; branch loading/error states; search/filter/sort; toast.
-- invoices/refunds: +status/settlement/date/employee filters + sort; shared pager upgrade; toast. (Refunds scaffold mirrors invoices.)
+- bookings: search/filter/sort. (calendar picker + branch loading/error + toast done per §5 1.3/1.5/0.2)
+- invoices/refunds: done per §5 1.4 (status/settlement/date/employee filters + sort, pager, toast); remaining debt work tracked in the clients/suppliers bullet + §5 3.1.
 - consumables: shared branch hook; search/filter/sort; Dialog panels; toast.
 - commissions: search/sort; branch loading; toast.
 - clients/suppliers: +debt columns/tabs inside existing pages (no new page; cashier + admin visible); missing search (suppliers-history)/sort; toast.
@@ -208,9 +208,9 @@ Recommended start: Phase 0 items 1 (pager) + 3 (`useAdminBranch`), then Phase 1.
 
 - [x] 1.1 Visible month+branch labels + toast + SmartPagination (`adjustment-view.tsx` bonuses/deductions, `advances-view.tsx`)
 - [x] 1.2 Consumables → shared branch hook (+ toast, + stock sort, + branch error/retry)
-- [ ] 1.3 Bookings calendar picker
-- [ ] 1.4 Invoices filters/sort (+ apply template to refunds)
-- [ ] 1.5 Runtime verify: payroll details expand + branch-names display
+- [x] 1.3 Bookings calendar picker (`bookings-view.tsx` diary nav `Input type="date"` + prev/next/today kept)
+- [x] 1.4 Invoices filters/sort + refunds template (contract `InvoiceHistoryQuery` + backend Cairo-date/EXISTS/`orderBy` + shared `InvoiceHistoryFilters` in both views; employee options admin-with-branch only, no new endpoint)
+- [x] 1.5 Runtime verify: payroll details expand (code correct, single `expandedId`, no change) + branch-names display (bookings admin select now disabled-while-loading with error/retry, matching invoices/refunds)
 
 ### Phase 2 — Parity rollout `[SHARED]`
 
