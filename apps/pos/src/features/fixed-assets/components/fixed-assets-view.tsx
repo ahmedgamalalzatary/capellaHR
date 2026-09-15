@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label } from '@capella/ui';
 
@@ -13,7 +13,9 @@ import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { listCatalogBranches } from '@/features/catalog';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import {
@@ -62,13 +64,8 @@ const emptyForm = {
 export function FixedAssetsView() {
   const client = useQueryClient();
   // The branch chosen on any other POS page carries over, and a change here
-  // carries over to them, through the shared session-storage key.
-  const [branchId, setBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  // carries over to them, through the shared admin-branch hook.
+  const { branchId, setBranchId } = useAdminBranch();
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState<FixedAsset | null>(null);
   const [deleting, setDeleting] = useState<FixedAsset | null>(null);
@@ -94,14 +91,6 @@ export function FixedAssetsView() {
   });
   const refresh = () => client.invalidateQueries({ queryKey: fixedAssetQueryKeys.all });
 
-  useEffect(() => {
-    if (branchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
-  }, [branchId]);
-
   const set = (field: keyof typeof emptyForm) => (value: string) => setForm((current) => ({ ...current, [field]: value }));
   const clearForm = () => { setEditing(null); setForm(emptyForm); create.reset(); edit.reset(); };
   /** An untouched field is left out entirely, so it stays unwritten rather than becoming a zero. */
@@ -118,15 +107,18 @@ export function FixedAssetsView() {
 
   const create = useMutation({
     mutationFn: () => createFixedAsset(payload()),
-    onSuccess: async () => { setForm(emptyForm); setSuccessMessage('تمت إضافة الأصل.'); await refresh(); },
+    onSuccess: async () => { setForm(emptyForm); setSuccessMessage('تمت إضافة الأصل.'); notifySuccess('تمت إضافة الأصل.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const edit = useMutation({
     mutationFn: () => updateFixedAsset(editing!.id, payload()),
-    onSuccess: async () => { clearForm(); setSuccessMessage('تم حفظ التعديل.'); await refresh(); },
+    onSuccess: async () => { clearForm(); setSuccessMessage('تم حفظ التعديل.'); notifySuccess('تم حفظ التعديل.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const remove = useMutation({
     mutationFn: () => deleteFixedAsset(deleting!.id, branchId),
-    onSuccess: async () => { setDeleting(null); setSuccessMessage('تم حذف الأصل.'); await refresh(); },
+    onSuccess: async () => { setDeleting(null); setSuccessMessage('تم حذف الأصل.'); notifySuccess('تم حذف الأصل.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const beginEdit = (asset: FixedAsset) => {
@@ -332,6 +324,9 @@ export function FixedAssetsView() {
                         nextDisabled={page >= (assets.data.meta.totalPages || 1)}
                         onPrevious={() => setPage((value) => value - 1)}
                         onNext={() => setPage((value) => value + 1)}
+                        page={page}
+                        totalPages={assets.data.meta.totalPages}
+                        onPage={setPage}
                       />
                     </>
                   )}

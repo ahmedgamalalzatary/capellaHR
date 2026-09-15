@@ -4,6 +4,7 @@ import { Button, Modal } from '@capella/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   getEmployeeSettlement,
@@ -61,8 +62,10 @@ export function EmployeeSettlementPanel({ employee, onClose }: EmployeeSettlemen
   const settle = useMutation({
     mutationFn: (debtId: number) => settleEmployeeDebt(employee.id, debtId),
     onSuccess: async () => {
+      notifySuccess('تم تسجيل السداد.');
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.debts(employee.id) });
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const debts = debtsQuery.data ?? [];

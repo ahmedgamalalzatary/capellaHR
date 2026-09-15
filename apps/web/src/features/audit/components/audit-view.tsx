@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, RotateCcw, Search } from 'lucide-react';
 import { Fragment, useState } from 'react';
 
 import type { AuditActorType, AuditEventDto } from '@capella/contracts';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input } from '@capella/ui';
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { useDisplayFormatters } from '@/providers/runtime-config';
@@ -421,30 +421,17 @@ export function AuditView() {
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من{' '}
-            <span className="tabular">{meta.totalPages}</span>
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من{' '}
+              <span className="tabular">{meta.totalPages}</span>
+            </>
+          }
+        />
       ) : null}
     </div>
   );

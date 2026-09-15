@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import {
   Button,
@@ -21,6 +21,7 @@ import {
   getCurrentCashierSession,
   listCashierSessionBranches,
 } from '@/features/cashier-sessions';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { readPending } from './pending-sale-storage';
@@ -32,20 +33,7 @@ export function SalesView({ bookingId }: { bookingId?: number }) {
   const auth = useSession();
   const actor = auth.data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
-
-  useEffect(() => {
-    if (selectedBranchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
-  }, [selectedBranchId]);
+  const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
 
   const branches = useQuery({
     queryKey: ['erp-sales', 'branches'],

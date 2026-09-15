@@ -18,7 +18,9 @@ import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 
 import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
 
@@ -60,12 +62,7 @@ export function ProductStockView() {
     queryFn: () => listCatalogBranches(),
     enabled: isAdmin,
   });
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [createOpen, setCreateOpen] = useState(false);
   const branchId = isAdmin ? selectedBranchId : undefined;
   const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
@@ -127,15 +124,6 @@ export function ProductStockView() {
   const formOpen = createOpen || editing !== null;
 
   useEffect(() => {
-    if (!isAdmin) return;
-    if (selectedBranchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
-  }, [isAdmin, selectedBranchId]);
-
-  useEffect(() => {
     if (!successMessage) return;
     const timer = window.setTimeout(() => setSuccessMessage(undefined), 4_000);
     return () => window.clearTimeout(timer);
@@ -152,18 +140,21 @@ export function ProductStockView() {
     mutationFn: () => editing
       ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, commissionPercent, lowStockThreshold: Number(threshold), barcode })
       : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, commissionPercent, lowStockThreshold: Number(threshold), barcode }),
-    onSuccess: async () => { clearProductForm(); setSuccessMessage('تم حفظ المنتج.'); await refresh(); },
+    onSuccess: async () => { clearProductForm(); setSuccessMessage('تم حفظ المنتج.'); notifySuccess('تم حفظ المنتج.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const toggle = useMutation({
     mutationFn: (product: Product) => updateProduct(
       product.id,
       { branchId, isActive: !product.isActive },
     ),
-    onSuccess: async (_saved, product) => { setConfirmingToggle(null); setSuccessMessage(product.isActive ? 'تم إيقاف المنتج.' : 'تم تفعيل المنتج.'); await refresh(); },
+    onSuccess: async (_saved, product) => { setConfirmingToggle(null); setSuccessMessage(product.isActive ? 'تم إيقاف المنتج.' : 'تم تفعيل المنتج.'); notifySuccess(product.isActive ? 'تم إيقاف المنتج.' : 'تم تفعيل المنتج.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const adjust = useMutation({
     mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta: Number(delta), reason, ...(note.trim() ? { note: note.trim() } : {}) }),
-    onSuccess: async () => { setAdjusting(null); setDelta(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); await refresh(); },
+    onSuccess: async () => { setAdjusting(null); setDelta(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); notifySuccess('تم حفظ تسوية المخزون.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   /**
    * A product whose box already carries a supplier code keeps it and gets no
@@ -172,7 +163,8 @@ export function ProductStockView() {
    */
   const generate = useMutation({
     mutationFn: (product: Product) => generateProductBarcode(product.id, branchId === undefined ? {} : { branchId }),
-    onSuccess: async () => { setSuccessMessage('تم توليد الباركود.'); await refresh(); },
+    onSuccess: async () => { setSuccessMessage('تم توليد الباركود.'); notifySuccess('تم توليد الباركود.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const commandPending = save.isPending || toggle.isPending || adjust.isPending || generate.isPending;
 
@@ -492,6 +484,9 @@ export function ProductStockView() {
                       nextDisabled={movementPage >= (movements.data.totalPages || 1)}
                       onPrevious={() => setMovementPage((page) => page - 1)}
                       onNext={() => setMovementPage((page) => page + 1)}
+                      page={movementPage}
+                      totalPages={movements.data.totalPages}
+                      onPage={setMovementPage}
                     />
                   </>
                 ) : <EmptyState title="لا توجد حركات بعد" />}

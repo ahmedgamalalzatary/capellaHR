@@ -10,6 +10,7 @@ import { Select } from '@/components/form/select';
 import { ClientPicker, type Client } from '@/features/clients';
 import { ServicePicker, type ServiceListItem } from '@/features/catalog';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { createBooking, listBookingEmployeeOptions } from '../api/bookings-api';
 import type { BookingDto } from '../api/bookings-api';
@@ -68,7 +69,8 @@ export function BookingForm({ branchId, onClose, onSaved }: {
         ...(note.trim() ? { note: note.trim() } : {}),
       });
     },
-    onSuccess: async (booking) => { setSaved(booking); await onSaved(); },
+    onSuccess: async (booking) => { setSaved(booking); notifySuccess('تم إنشاء الحجز.'); await onSaved(); },
+    onError: (error: unknown) => notifyError(error, 'تعذر حفظ الحجز.'),
   });
   if (saved) return <Modal title="تذكرة الموعد" onClose={onClose}>
     <div className="space-y-4"><BookingTicket booking={saved} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button onClick={() => window.print()}>طباعة التذكرة</Button></div></div>

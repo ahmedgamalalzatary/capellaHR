@@ -24,8 +24,10 @@ import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   deleteCategory,
@@ -61,12 +63,7 @@ export function CatalogView() {
   const commandPending = useIsMutating() > 0;
   const isAdmin = session.data?.actor.type === 'admin';
 
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [tab, setTab] = useState<Tab>('categories');
   const [categorySearch, setCategorySearch] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
@@ -118,32 +115,26 @@ export function CatalogView() {
   const toggleCategory = useMutation({
     mutationFn: (category: Category) =>
       updateCategory(category.id, { isActive: !category.isActive, ...branchScope }),
-    onSuccess: async (_saved, category) => { setConfirmingCategory(null); setSuccessMessage(category.isActive ? 'تم إيقاف التصنيف.' : 'تم تفعيل التصنيف.'); await invalidate(); },
+    onSuccess: async (_saved, category) => { setConfirmingCategory(null); setSuccessMessage(category.isActive ? 'تم إيقاف التصنيف.' : 'تم تفعيل التصنيف.'); notifySuccess(category.isActive ? 'تم إيقاف التصنيف.' : 'تم تفعيل التصنيف.'); await invalidate(); },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const removeCategory = useMutation({
     mutationFn: (category: Category) => deleteCategory(category.id, branchId),
-    onSuccess: async () => { setDeletingCategory(null); setSuccessMessage('تم حذف التصنيف.'); await invalidate(); },
+    onSuccess: async () => { setDeletingCategory(null); setSuccessMessage('تم حذف التصنيف.'); notifySuccess('تم حذف التصنيف.'); await invalidate(); },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const toggleService = useMutation({
     mutationFn: (service: ServiceListItem) =>
       updateService(service.id, { isActive: !service.isActive, ...branchScope }),
-    onSuccess: async (_saved, service) => { setConfirmingService(null); setSuccessMessage(service.isActive ? 'تم إيقاف الخدمة.' : 'تم تفعيل الخدمة.'); await invalidate(); },
+    onSuccess: async (_saved, service) => { setConfirmingService(null); setSuccessMessage(service.isActive ? 'تم إيقاف الخدمة.' : 'تم تفعيل الخدمة.'); notifySuccess(service.isActive ? 'تم إيقاف الخدمة.' : 'تم تفعيل الخدمة.'); await invalidate(); },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const categories = categoriesQuery.data ?? [];
   const services = servicesQuery.data ?? [];
   const visibleTabs = tabs;
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (selectedBranchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
-  }, [isAdmin, selectedBranchId]);
 
   useEffect(() => {
     if (!successMessage) return;

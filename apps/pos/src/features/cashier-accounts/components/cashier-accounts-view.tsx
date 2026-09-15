@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { PageHeader } from '@/components/layout/page-header';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { deleteCashierAccount, listCashierAccounts, setCashierAccountStatus, type CashierAccount } from '../api/cashier-accounts-api';
 import { cashierAccountQueryKeys } from '../query-keys';
 import { CashierAccountDialog } from './cashier-account-dialog';
@@ -54,7 +55,9 @@ export function CashierAccountsView() {
     onSuccess: async () => {
       setConfirmDisable(null);
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
+      notifySuccess('تم تحديث حالة الحساب.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const remove = useMutation({
@@ -64,7 +67,9 @@ export function CashierAccountsView() {
       // Emptying a later page would otherwise refetch it and read as "no accounts".
       if (items.length === 1 && page > 1) setPage(page - 1);
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
+      notifySuccess('تم حذف الحساب.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   return (
@@ -169,6 +174,9 @@ export function CashierAccountsView() {
             nextDisabled={meta.page >= meta.totalPages}
             onPrevious={() => setPage((current) => Math.max(1, current - 1))}
             onNext={() => setPage((current) => current + 1)}
+            page={meta.page}
+            totalPages={meta.totalPages}
+            onPage={setPage}
           />
         ) : null}
       </Card>

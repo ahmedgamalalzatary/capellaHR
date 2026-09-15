@@ -19,7 +19,9 @@ import { FieldError } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   createErpReportExport,
@@ -159,10 +161,15 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
   const invalidate = () => queryClient.invalidateQueries({
     queryKey: erpReportQueryKeys.exports(reportType),
   });
-  const retry = useMutation({ mutationFn: retryErpReportExport, onSuccess: invalidate });
+  const retry = useMutation({
+    mutationFn: retryErpReportExport,
+    onSuccess: async () => { await invalidate(); notifySuccess('تتم إعادة تجهيز الملف.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر إعادة تجهيز الملف.'),
+  });
   const removeFile = useMutation({
     mutationFn: deleteErpReportExportFile,
-    onSuccess: async () => { setConfirmDelete(undefined); await invalidate(); },
+    onSuccess: async () => { setConfirmDelete(undefined); await invalidate(); notifySuccess('تم حذف الملف.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر حذف الملف.'),
   });
   const download = useMutation({
     mutationFn: (record: ErpReportExport) => downloadErpReportExport(record.id),
@@ -175,23 +182,28 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
       anchor.click();
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      notifySuccess('تم تنزيل الملف.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر تنزيل الملف.'),
   });
   const [sheet, setSheet] = useState<PrintableReport>();
   const print = useMutation({
     mutationFn: async (record: ErpReportExport) => ({
       report: await collectReportRows(record), record,
     }),
-    onSuccess: ({ report, record }) => setSheet({
-      title: tabLabels[record.reportType as ErpTabReportType] ?? report.snapshot.title,
-      subtitle: [
-        record.filters.dateFrom, record.filters.dateTo,
-      ].filter(Boolean).join(' — ') || 'كل الفترات',
-      columns: report.snapshot.columns,
-      rows: report.rows,
-      summary: Object.entries(report.snapshot.summary)
-        .map(([key, value]) => ({ label: summaryLabels[key] ?? key, value })),
-    }),
+    onSuccess: ({ report, record }) => {
+      setSheet({
+        title: tabLabels[record.reportType as ErpTabReportType] ?? report.snapshot.title,
+        subtitle: [
+          record.filters.dateFrom, record.filters.dateTo,
+        ].filter(Boolean).join(' — ') || 'كل الفترات',
+        columns: report.snapshot.columns,
+        rows: report.rows,
+        summary: Object.entries(report.snapshot.summary)
+          .map(([key, value]) => ({ label: summaryLabels[key] ?? key, value })),
+      });
+    },
+    onError: (error: unknown) => notifyError(error, 'تعذر تجهيز الطباعة.'),
   });
   const actionError = retry.error ?? removeFile.error ?? download.error ?? print.error;
   const items = query.data?.items ?? [];
@@ -258,6 +270,9 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
             nextDisabled={page >= meta.totalPages}
             onPrevious={() => setPage((value) => value - 1)}
             onNext={() => setPage((value) => value + 1)}
+            page={page}
+            totalPages={meta.totalPages}
+            onPage={setPage}
           />
         ) : null}
       </Card>
@@ -281,12 +296,7 @@ export function ErpReportsView() {
   const queryClient = useQueryClient();
   const dates = useMemo(() => initialDates(), []);
   const [reportType, setReportType] = useState<ErpTabReportType>('erp-sales');
-  const [branchInput, setBranchInput] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) ? parsed : undefined;
-  });
+  const { branchId: branchInput, setBranchId: setBranchInput } = useAdminBranch();
   const [dateFromInput, setDateFromInput] = useState(dates.dateFrom);
   const [dateToInput, setDateToInput] = useState(dates.dateTo);
   const [searchInput, setSearchInput] = useState('');
@@ -299,10 +309,6 @@ export function ErpReportsView() {
     queryKey: ['erp-reports', 'branches'],
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
   });
-  useEffect(() => {
-    if (branchInput === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
-    else sessionStorage.setItem('capella:pos-admin-branch', String(branchInput));
-  }, [branchInput]);
   const params = { ...filters, page, pageSize: 20 };
   const report = useQuery({
     queryKey: erpReportQueryKeys.view(reportType, params),
@@ -317,7 +323,9 @@ export function ErpReportsView() {
     onSuccess: async () => {
       setSelectedIds(new Set());
       await queryClient.invalidateQueries({ queryKey: erpReportQueryKeys.exports(reportType) });
+      notifySuccess('بدأ تجهيز ملف التصدير.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر بدء التصدير.'),
   });
   const applyFilters = () => {
     setFilters({
@@ -477,6 +485,9 @@ export function ErpReportsView() {
               nextDisabled={page >= meta.totalPages}
               onPrevious={() => setPage((value) => value - 1)}
               onNext={() => setPage((value) => value + 1)}
+              page={page}
+              totalPages={meta.totalPages}
+              onPage={setPage}
             />
           ) : null}
         </Card>

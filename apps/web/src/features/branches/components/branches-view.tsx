@@ -6,9 +6,10 @@ import { LocateFixed, MapPin, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Badge, Button, Card, CardContent, EmptyState, Field, Input } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   createBranch,
@@ -56,8 +57,10 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
       branch ? updateBranch(branch.id, values) : createBranch(values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: branchQueryKeys.all });
+      notifySuccess(branch ? 'تم حفظ التعديل بنجاح.' : 'تمت إضافة الفرع بنجاح.');
       onDone();
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const captureLocation = () => {
@@ -156,7 +159,9 @@ export function BranchesView() {
     onSuccess: async () => {
       setConfirmDeleteId(null);
       await queryClient.invalidateQueries({ queryKey: branchQueryKeys.all });
+      notifySuccess('تم حذف الفرع.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const closeForm = () => {
@@ -309,31 +314,18 @@ export function BranchesView() {
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> فرع
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> فرع
+            </>
+          }
+        />
       ) : null}
     </div>
   );

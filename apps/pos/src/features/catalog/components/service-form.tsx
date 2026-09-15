@@ -12,6 +12,7 @@ import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Select } from '@/components/form/select';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   createService,
@@ -96,8 +97,10 @@ export function ServiceForm({
     onSuccess: async (saved) => {
       draft.clear();
       await invalidateErpCaches(queryClient, 'catalog');
+      notifySuccess(isEdit ? 'تم حفظ التعديل بنجاح.' : 'تمت إضافة الخدمة بنجاح.');
       onDone?.(saved);
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const deletePrice = useMutation({
@@ -105,8 +108,10 @@ export function ServiceForm({
     onSuccess: async (saved) => {
       setConfirmDeletePrice(false);
       await invalidateErpCaches(queryClient, 'catalog');
+      notifySuccess('تم حذف السعر.');
       onDone?.(saved);
     },
+    onError: (error: unknown) => notifyError(error),
   });
   const pending = save.isPending || deletePrice.isPending;
 

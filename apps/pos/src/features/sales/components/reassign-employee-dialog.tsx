@@ -10,6 +10,7 @@ import { Textarea } from '@/components/form/textarea';
 import { PresentEmployeePicker } from '@/features/employee-assignment';
 import type { AssignableEmployee } from '@/features/employee-assignment';
 import { createUuid } from '@/lib/uuid';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { reassignInvoiceLine } from '../api/sales-api';
 import { responseMessage } from './invoice-format';
@@ -41,8 +42,10 @@ export function ReassignEmployeeDialog({
     }),
     onSuccess: (updated) => {
       onUpdated(updated);
+      notifySuccess('تم تغيير موظف الخدمة.');
       onClose();
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر تغيير موظف الخدمة.'),
   });
   const valid = employee !== null && employee.id !== line.employee?.id && reason.trim() !== '';
 

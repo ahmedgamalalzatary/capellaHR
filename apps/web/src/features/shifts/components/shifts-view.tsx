@@ -6,10 +6,11 @@ import { Clock, Pencil, Search, UserRound } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Button, Card, CardContent, EmptyState, Field, Input } from '@capella/ui';
+import { Button, Card, CardContent, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { formatDuration } from '@/lib/utils/format';
 
 import { listBranches } from '../../branches/api/branches-api';
@@ -63,8 +64,10 @@ function ShiftEditorRow({
     mutationFn: (values: ShiftFormValues) => updateShiftAssignment(assignment.employeeId, values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: shiftQueryKeys.all });
+      notifySuccess('تم حفظ مدة الوردية.');
       onDone();
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   return (
@@ -300,37 +303,21 @@ export function ShiftsView() {
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> موظف
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => {
-                setEditingId(null);
-                setPage((current) => Math.max(1, current - 1));
-              }}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => {
-                setEditingId(null);
-                setPage((current) => current + 1);
-              }}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={(next) => {
+            setEditingId(null);
+            setPage(next);
+          }}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> موظف
+            </>
+          }
+        />
       ) : null}
     </div>
   );

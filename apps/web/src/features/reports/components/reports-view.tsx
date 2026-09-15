@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileDown, Search } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, Card, EmptyState, Input } from '@capella/ui';
+import { Button, Card, EmptyState, Input, SmartPagination } from '@capella/ui';
 
 import type {
   CreateReportExportInput,
@@ -13,6 +13,7 @@ import type {
 } from '@capella/contracts';
 
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
@@ -92,7 +93,9 @@ export function ReportsView() {
     onSuccess: async () => {
       setSelectedIds(new Set());
       await queryClient.invalidateQueries({ queryKey: reportQueryKeys.exports() });
+      notifySuccess('بدأ تجهيز ملف التصدير.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر بدء التصدير.'),
   });
 
   const snapshot = reportQuery.data?.snapshot;
@@ -358,32 +361,19 @@ export function ReportsView() {
       ) : null}
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من{' '}
-            <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> سجل
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من{' '}
+              <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> سجل
+            </>
+          }
+        />
       ) : null}
 
       <ExportsHistory />

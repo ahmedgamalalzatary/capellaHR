@@ -100,22 +100,36 @@ describe('CommissionsView', () => {
   it('does not load commissions until a month is selected', async () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
-    fireEvent.change(screen.getByLabelText('شهر العمولة'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'شهر العمولة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'مسح الشهر' }));
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 
     expect(screen.getByText('اختر شهرًا لعرض العمولات')).toBeDefined();
     expect(mocks.list).not.toHaveBeenCalled();
   });
 
+  it('offers a twelve-month calendar grid instead of a text field', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    expect(document.querySelector('input[type="month"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'شهر العمولة' }));
+    for (const name of ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']) {
+      expect(screen.getByRole('button', { name })).toBeDefined();
+    }
+  });
+
   it('shows monthly employee totals and invoice-line reversal traceability', async () => {
     mount();
-    fireEvent.change(screen.getByLabelText('شهر العمولة'), { target: { value: '2026-08' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'شهر العمولة' }));
+    const year = within(screen.getByRole('dialog')).getByText(/^\d{4}$/).textContent!;
+    fireEvent.click(screen.getByRole('button', { name: 'أغسطس' }));
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 
+    const targetMonth = `${year}-08`;
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({
       branchId: 2,
-      month: '2026-08',
+      month: targetMonth,
       page: 1,
     })));
     const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
@@ -125,7 +139,7 @@ describe('CommissionsView', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
 
-    await waitFor(() => expect(mocks.detail).toHaveBeenCalledWith(7, '2026-08', 2));
+    await waitFor(() => expect(mocks.detail).toHaveBeenCalledWith(7, targetMonth, 2));
     expect(await screen.findAllByText('INV-2026.08.03-14.35-17')).toHaveLength(2);
     expect(screen.getAllByText('صبغة شعر')).toHaveLength(2);
     expect(screen.getAllByText('بند #1')).toHaveLength(2);

@@ -220,16 +220,43 @@ describe('AdvancesView', () => {
     expect(await screen.findByText('لا توجد سلف')).toBeDefined();
   });
 
-  test('filters by month, branch, and search', async () => {
+  test('filters by month via the calendar picker, plus branch and search', async () => {
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.change(screen.getByLabelText('تصفية حسب الشهر'), { target: { value: '2026-08' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    const year = within(screen.getByRole('dialog')).getByText(/^\d{4}$/).textContent!;
+    fireEvent.click(screen.getByRole('button', { name: 'أغسطس' }));
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'أحمد' } });
     fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
     await waitFor(() => {
       expect(mocks.listAdvances).toHaveBeenLastCalledWith(
-        expect.objectContaining({ payrollMonth: '2026-08', branchId: 3, search: 'أحمد', page: 1 }),
+        expect.objectContaining({ payrollMonth: `${year}-08`, branchId: 3, search: 'أحمد', page: 1 }),
+      );
+    });
+  });
+
+  test('month picker offers a twelve-month calendar grid instead of a text field', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(document.querySelector('input[type="month"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    for (const name of ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']) {
+      expect(screen.getByRole('button', { name })).toBeDefined();
+    }
+  });
+
+  test('clearing the month picker resets the month filter', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    fireEvent.click(screen.getByRole('button', { name: 'أغسطس' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    fireEvent.click(screen.getByRole('button', { name: 'مسح الشهر' }));
+    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
+    await waitFor(() => {
+      expect(mocks.listAdvances).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ payrollMonth: expect.anything() }),
       );
     });
   });

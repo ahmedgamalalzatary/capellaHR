@@ -99,18 +99,30 @@ describe('BonusesView', () => {
     expect(within(rowOf('منى علي')).getByText('—')).toBeDefined();
   });
 
-  test('filters by month, branch, and search', async () => {
+  test('filters by month via the calendar picker, plus branch and search', async () => {
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.change(screen.getByLabelText('تصفية حسب الشهر'), { target: { value: '2026-05' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    const year = within(screen.getByRole('dialog')).getByText(/^\d{4}$/).textContent!;
+    fireEvent.click(screen.getByRole('button', { name: 'مايو' }));
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'أحمد' } });
     fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
     await waitFor(() => {
       expect(mocks.listBonuses).toHaveBeenLastCalledWith(
-        expect.objectContaining({ payrollMonth: '2026-05', branchId: 3, search: 'أحمد', page: 1 }),
+        expect.objectContaining({ payrollMonth: `${year}-05`, branchId: 3, search: 'أحمد', page: 1 }),
       );
     });
+  });
+
+  test('month picker offers a twelve-month calendar grid instead of a text field', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(document.querySelector('input[type="month"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    for (const name of ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']) {
+      expect(screen.getByRole('button', { name })).toBeDefined();
+    }
   });
 
   test('creates a bonus for an employee and month', async () => {

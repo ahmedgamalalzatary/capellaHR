@@ -10,6 +10,7 @@ import { Button, Input, Modal, cn } from '@capella/ui';
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Textarea } from '@/components/form/textarea';
 import { useFormDraft } from '@/lib/form-draft';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { createUuid } from '@/lib/uuid';
 
 import { quoteRefund, refundInvoice, voidInvoice } from '../api/sales-api';
@@ -179,6 +180,7 @@ export function InvoiceReversalControls({
       setQuoted(value);
       setTenderAmounts(proposeTenders(value));
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر حساب الاسترداد.'),
   });
   const isAlreadyRefunded = (error: unknown) => (
     typeof error === 'object' && error !== null
@@ -207,13 +209,17 @@ export function InvoiceReversalControls({
         }),
       });
     },
-    onError: (cause) => {
-      if (isAlreadyRefunded(cause)) setSettledCommand(commandIdentity.current?.fingerprint ?? null);
+    onError: (cause: unknown) => {
+      if (isAlreadyRefunded(cause)) {
+        setSettledCommand(commandIdentity.current?.fingerprint ?? null);
+        notifySuccess(alreadyRefundedMessage);
+      } else notifyError(cause, 'تعذر تنفيذ الاسترداد.');
     },
     onSuccess: (value) => {
       onUpdated(value);
       close(true);
       setPrintError(null);
+      notifySuccess('تم تنفيذ الاسترداد.');
       if (value.reversals.length) {
         setRefunded(value);
         setPrintPrompt(true);
@@ -231,7 +237,8 @@ export function InvoiceReversalControls({
         idempotencyKey: idempotencyKeyFor(payload),
       });
     },
-    onSuccess: (value) => { onUpdated(value); close(true); },
+    onSuccess: (value) => { onUpdated(value); close(true); notifySuccess('تم إلغاء الفاتورة.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر إلغاء الفاتورة.'),
   });
   const reversalPending = refund.isPending || voidMutation.isPending;
   function close(requestSettled = false) {

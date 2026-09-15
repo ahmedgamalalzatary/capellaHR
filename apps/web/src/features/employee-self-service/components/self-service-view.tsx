@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, LogOut, MapPin, WalletCards } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useState } from 'react';
 
-import { Badge, Button, Card, EmptyState, Input } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, Input, SmartPagination } from '@capella/ui';
 
 import { SESSION_QUERY_KEY, useLogout } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
@@ -80,13 +80,16 @@ const useExitOnUnauthorized = (error: unknown) => {
 };
 
 const Pagination = ({ meta, onPage }: { meta: PageMeta; onPage: (page: number) => void }) => meta.totalPages > 1 ? (
-  <div className="flex items-center justify-between gap-3 text-sm">
-    <p className="text-muted">صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span></p>
-    <div className="flex gap-2">
-      <Button variant="secondary" size="sm" disabled={meta.page <= 1} onClick={() => onPage(meta.page - 1)}>السابق</Button>
-      <Button variant="secondary" size="sm" disabled={meta.page >= meta.totalPages} onClick={() => onPage(meta.page + 1)}>التالي</Button>
-    </div>
-  </div>
+  <SmartPagination
+    page={meta.page}
+    totalPages={meta.totalPages}
+    onPage={onPage}
+    summary={(
+      <>
+        صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
+      </>
+    )}
+  />
 ) : null;
 
 function OverviewSection() {

@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { useSession } from '@/features/auth';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 
 import { listCashierSessionBranches, listCashierSessions } from '../api/cashier-sessions-api';
 import { cashierSessionQueryKeys } from '../query-keys';
@@ -30,7 +31,7 @@ const formatCairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', 
 export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: number } = {}) {
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [ownBranchId, setOwnBranchId] = useState<number | undefined>();
+  const { branchId: ownBranchId, setBranchId: setOwnBranchId } = useAdminBranch();
   const branchId = fixedBranchId ?? ownBranchId;
   const [page, setPage] = useState(1);
 
@@ -161,6 +162,9 @@ export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: numbe
             className="border-t-0"
             onPrevious={() => setPage((value) => value - 1)}
             onNext={() => setPage((value) => value + 1)}
+            page={page}
+            totalPages={shifts.data.meta.totalPages}
+            onPage={setPage}
           />
         </Card>
       ) : null}

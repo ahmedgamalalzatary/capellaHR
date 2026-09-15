@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarOff, RotateCcw, ShieldAlert, UserRound } from 'lucide-react';
 import { useState } from 'react';
 
-import { Button, Card, EmptyState, Input } from '@capella/ui';
+import { Button, Card, EmptyState, Input, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { formatDuration } from '@/lib/utils/format';
 
@@ -80,7 +81,9 @@ export function WeeklyDayOffView() {
     onSuccess: async () => {
       setPage(1);
       await queryClient.invalidateQueries({ queryKey: weeklyDayOffQueryKeys.all });
+      notifySuccess('تم تحديث يوم الراحة.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const permission = useMutation({
@@ -90,7 +93,9 @@ export function WeeklyDayOffView() {
         : clearWeeklyDayRecordWithoutPermission(record.id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: weeklyDayOffQueryKeys.all });
+      notifySuccess('تم تحديث حالة الغياب.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
   const actionPending = transition.isPending || permission.isPending;
 
@@ -335,32 +340,19 @@ export function WeeklyDayOffView() {
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من{' '}
-            <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> سجل
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من{' '}
+              <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> سجل
+            </>
+          }
+        />
       ) : null}
     </div>
   );

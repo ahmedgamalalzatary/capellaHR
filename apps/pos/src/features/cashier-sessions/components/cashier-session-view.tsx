@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Clock3, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import {
   Badge,
@@ -23,7 +23,9 @@ import { FieldError, Notice } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import {
@@ -77,20 +79,9 @@ export function CashierSessionView() {
   const actor = authQuery.data?.actor;
   const isAdmin = actor?.type === 'admin';
   const isCashier = actor?.type === 'cashier';
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) ? parsed : undefined;
-  });
+  const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [confirmClose, setConfirmClose] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (selectedBranchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
-    else sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
-  }, [isAdmin, selectedBranchId]);
 
   const branchesQuery = useQuery({
     queryKey: cashierSessionQueryKeys.branches,
@@ -116,11 +107,11 @@ export function CashierSessionView() {
 
   const openMutation = useMutation({
     mutationFn: openCashierSession,
-    onSuccess: (openedSession) => queryClient.setQueryData(currentKey, openedSession),
-    onError: async (error) => {
+    onSuccess: (openedSession) => { queryClient.setQueryData(currentKey, openedSession); notifySuccess('تم فتح الوردية.'); },
+    onError: async (error: unknown) => {
       if (error instanceof ApiError && error.code === 'ERP_CASHIER_SESSION_ALREADY_OPEN') {
         await currentQuery.refetch();
-      }
+      } else notifyError(error, 'تعذر فتح الوردية.');
     },
   });
 
@@ -129,16 +120,17 @@ export function CashierSessionView() {
     onSuccess: (closedSession) => {
       setConfirmClose(false);
       queryClient.setQueryData(currentKey, null);
+      notifySuccess('تم إغلاق الوردية.');
       router.push(`/cashier-sessions/${closedSession.id}/report`);
     },
-    onError: async (error) => {
+    onError: async (error: unknown) => {
       if (error instanceof ApiError && (
         error.code === 'ERP_CASHIER_SESSION_NOT_OPEN'
         || error.code === 'ERP_CASHIER_SESSION_NOT_OWNER'
       )) {
         await currentQuery.refetch();
         setConfirmClose(false);
-      }
+      } else notifyError(error, 'تعذر إغلاق الوردية.');
     },
   });
 
@@ -149,12 +141,13 @@ export function CashierSessionView() {
     onSuccess: () => {
       setRecoveryOpen(false);
       queryClient.setQueryData(currentKey, null);
+      notifySuccess('تم إغلاق الوردية.');
     },
-    onError: async (error) => {
+    onError: async (error: unknown) => {
       if (error instanceof ApiError && error.code === 'ERP_CASHIER_SESSION_ALREADY_CLOSED') {
         await currentQuery.refetch();
         setRecoveryOpen(false);
-      }
+      } else notifyError(error, 'تعذر إغلاق الوردية.');
     },
   });
 

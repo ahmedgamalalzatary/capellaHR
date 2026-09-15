@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Pencil, Plus, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 import { Pagination } from '@/components/data/pagination';
@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 
 import { listClientBranches, listClients, type Client } from '../api/clients-api';
 import { clientQueryKeys } from '../query-keys';
@@ -25,12 +26,7 @@ const serverErrorMessage = (error: unknown): string | null => {
 export function ClientsView() {
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -62,15 +58,6 @@ export function ClientsView() {
 
   const items = clientsQuery.data?.items ?? [];
   const meta = clientsQuery.data?.meta;
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (selectedBranchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
-  }, [isAdmin, selectedBranchId]);
 
   const openCreate = () => { setCreateOpen(true); setEditing(null); };
 
@@ -226,6 +213,9 @@ export function ClientsView() {
             nextDisabled={meta.page >= meta.totalPages}
             onPrevious={() => setPage((current) => Math.max(1, current - 1))}
             onNext={() => setPage((current) => current + 1)}
+            page={meta.page}
+            totalPages={meta.totalPages}
+            onPage={setPage}
           />
         ) : null}
       </Card>

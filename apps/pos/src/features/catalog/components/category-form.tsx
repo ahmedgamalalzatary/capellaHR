@@ -9,6 +9,7 @@ import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { useFormDraft } from '@/lib/form-draft';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { createCategory, updateCategory, type Category } from '../api/catalog-api';
 import { categoryFormSchema, type CategoryFormValues } from '../schemas/catalog-schemas';
@@ -64,8 +65,10 @@ export function CategoryForm({
       // the next time someone opens the form.
       draft.clear();
       await invalidateErpCaches(queryClient, 'catalog');
+      notifySuccess(isEdit ? 'تم حفظ التعديل بنجاح.' : 'تمت إضافة التصنيف بنجاح.');
       onDone?.(saved);
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const formError = errors.name?.message ?? errors.type?.message ?? serverErrorMessage(save.error);

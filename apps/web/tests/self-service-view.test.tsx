@@ -241,6 +241,20 @@ describe('SelfServiceView', () => {
     await waitFor(() => expect(mocks.listBonuses).toHaveBeenLastCalledWith({ page: 2 }));
   });
 
+  it('exposes SmartPagination numbers + jump-to-page on long own-record histories', async () => {
+    mocks.listBonuses.mockResolvedValue({
+      items: [{ id: 1, payrollMonth: '2026-07', amount: '100.00', createdAt: '', updatedAt: '' }],
+      meta: { page: 1, pageSize: 20, total: 60, totalPages: 3 },
+    });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('tab', { name: 'المكافآت' }));
+    await screen.findByText(/100\.00/);
+
+    expect(await screen.findByRole('button', { name: 'الصفحة 3' })).toBeDefined();
+    expect(screen.getByLabelText('انتقال إلى صفحة')).toBeDefined();
+  });
+
   it('loads a selected payroll month and explains unavailable open calculations', async () => {
     mocks.getPayrollMonth.mockRejectedValue(new ApiError(503, {
       code: 'PAYROLL_ATTENDANCE_UNAVAILABLE',

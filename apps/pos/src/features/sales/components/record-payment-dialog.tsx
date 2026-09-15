@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Button, Input, Label, Modal } from '@capella/ui';
 
 import { createUuid } from '@/lib/uuid';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { recordInvoicePayment } from '../api/sales-api';
 import { responseMessage } from './invoice-format';
@@ -56,7 +57,9 @@ export function RecordPaymentDialog({
     onSuccess: (updated) => {
       onUpdated(updated);
       setUpdatedInvoice(updated);
+      notifySuccess('تم تسجيل الدفعة.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر تسجيل الدفعة.'),
   });
 
   if (updatedInvoice) return <Modal title="إيصال دفعة" onClose={onClose}>

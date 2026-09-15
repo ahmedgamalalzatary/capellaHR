@@ -7,10 +7,11 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
-import { Badge, Button, Card, EmptyState, Field, Input } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { formatDuration } from '@/lib/utils/format';
 import { useDisplayFormatters } from '@/providers/runtime-config';
 import {
@@ -83,13 +84,16 @@ function QueryState({
 function Pagination({ meta, onPage }: { meta: { page: number; total: number; totalPages: number } | undefined; onPage: (page: number) => void }) {
   if (!meta || meta.totalPages <= 1) return null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-      <p className="text-muted">صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span> — <span className="tabular">{meta.total}</span> سجل</p>
-      <div className="flex gap-2">
-        <Button variant="secondary" size="sm" disabled={meta.page <= 1} onClick={() => onPage(meta.page - 1)}>السابق</Button>
-        <Button variant="secondary" size="sm" disabled={meta.page >= meta.totalPages} onClick={() => onPage(meta.page + 1)}>التالي</Button>
-      </div>
-    </div>
+    <SmartPagination
+      page={meta.page}
+      totalPages={meta.totalPages}
+      onPage={onPage}
+      summary={
+        <>
+          صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span> — <span className="tabular">{meta.total}</span> سجل
+        </>
+      }
+    />
   );
 }
 
@@ -155,8 +159,10 @@ function SessionSection() {
       setEditing(null);
       setCorrectedAt('');
       setCorrectionValidationError(null);
+      notifySuccess('تم حفظ التصحيح.');
       await invalidateAttendanceDependents(queryClient);
     },
+    onError: (error: unknown) => notifyError(error),
   });
   const dateTime = (value: string) => formatters?.formatDateTime(value) ?? fallbackDateTime.format(new Date(value));
   const update = (next: Partial<AttendanceSessionFilters>) => setFilters((current) => ({ ...current, ...next, page: 1 }));
@@ -209,8 +215,10 @@ function DeniedSection() {
     mutationFn: ({ id, action }: { id: number; action: 'approve' | 'dismiss' }) => action === 'approve' ? approveDeniedAttempt(id) : dismissDeniedAttempt(id),
     onSuccess: async () => {
       setFilters((current) => ({ ...current, page: 1 }));
+      notifySuccess('تم حفظ المراجعة.');
       await invalidateAttendanceDependents(queryClient);
     },
+    onError: (error: unknown) => notifyError(error),
   });
   const dateTime = (value: string) => formatters?.formatDateTime(value) ?? fallbackDateTime.format(new Date(value));
   const update = (next: Partial<AttendanceDeniedFilters>) => setFilters((current) => ({ ...current, ...next, page: 1 }));
@@ -243,8 +251,10 @@ function ManualSection() {
     mutationFn: () => { const iso = cairoLocalDateTimeToIso(occurredAt); if (!iso || !employeeId) throw new Error('FORM_INVALID'); return manualAttendance(eventType, { employeeId: Number(employeeId), occurredAt: iso }); },
     onSuccess: async (value) => {
       setSuccess(`${eventType === 'check_in' ? 'تم تسجيل الحضور' : 'تم تسجيل الانصراف'} للموظف ${value.employeeName}`);
+      notifySuccess('تم التسجيل اليدوي.');
       await invalidateAttendanceDependents(queryClient);
     },
+    onError: (error: unknown) => notifyError(error),
   });
   return <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
     <Card className="p-5"><div className="mb-5 flex gap-2" role="tablist" aria-label="نوع التسجيل اليدوي"><Button id="manual-tab-check-in" role="tab" aria-selected={eventType === 'check_in'} aria-controls="manual-event-form" tabIndex={eventType === 'check_in' ? 0 : -1} variant={eventType === 'check_in' ? 'primary' : 'secondary'} onKeyDown={(event) => handleRtlTabKey(event, 0, attendanceEventTypes, (next) => { setEventType(next); setSuccess(null); })} onClick={() => { setEventType('check_in'); setSuccess(null); }}><UserCheck className="size-4" aria-hidden />تسجيل حضور</Button><Button id="manual-tab-check-out" role="tab" aria-selected={eventType === 'check_out'} aria-controls="manual-event-form" tabIndex={eventType === 'check_out' ? 0 : -1} variant={eventType === 'check_out' ? 'primary' : 'secondary'} onKeyDown={(event) => handleRtlTabKey(event, 1, attendanceEventTypes, (next) => { setEventType(next); setSuccess(null); })} onClick={() => { setEventType('check_out'); setSuccess(null); }}><UserRoundX className="size-4" aria-hidden />تسجيل انصراف</Button></div>

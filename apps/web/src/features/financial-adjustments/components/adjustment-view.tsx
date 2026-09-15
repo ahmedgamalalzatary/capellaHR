@@ -6,10 +6,11 @@ import { Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { Badge, Button, Card, EmptyState, Field, Input } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, Field, Input, Label, MonthPicker, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { useDisplayFormatters } from '@/providers/runtime-config';
 
 import { listBranches } from '../../branches/api/branches-api';
@@ -92,8 +93,10 @@ function AdjustmentCreateForm({
     mutationFn: (values: AdjustmentCreateFormValues) => api.create(values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.all });
+      notifySuccess('تمت الإضافة بنجاح.');
       onDone();
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   return (
@@ -223,8 +226,10 @@ function AdjustmentEditForm({
     mutationFn: (values: AdjustmentUpdateFormValues) => api.update(record.id, values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.all });
+      notifySuccess('تم حفظ التعديل بنجاح.');
       onDone();
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   return (
@@ -333,7 +338,9 @@ export function AdjustmentView({
     onSuccess: async () => {
       setConfirmDeleteId(null);
       await queryClient.invalidateQueries({ queryKey: queryKeys.all });
+      notifySuccess('تم الحذف بنجاح.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const closeForm = () => {
@@ -368,32 +375,38 @@ export function AdjustmentView({
             بحث
           </Button>
         </form>
-        <select
-          aria-label="تصفية حسب الفرع"
-          className="h-9 rounded-control border border-line bg-paper px-3 text-sm"
-          value={branchFilter ?? ''}
-          onChange={(event) => {
-            setPage(1);
-            setBranchFilter(event.target.value === '' ? null : Number(event.target.value));
-          }}
-        >
-          <option value="">كل الفروع</option>
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
-        <Input
-          type="month"
-          aria-label="تصفية حسب الشهر"
-          className="w-44"
-          value={monthFilter}
-          onChange={(event) => {
-            setPage(1);
-            setMonthFilter(event.target.value);
-          }}
-        />
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="adjustment-branch-filter">الفرع</Label>
+          <select
+            id="adjustment-branch-filter"
+            aria-label="تصفية حسب الفرع"
+            className="h-9 rounded-control border border-line bg-paper px-3 text-sm"
+            value={branchFilter ?? ''}
+            onChange={(event) => {
+              setPage(1);
+              setBranchFilter(event.target.value === '' ? null : Number(event.target.value));
+            }}
+          >
+            <option value="">كل الفروع</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="adjustment-month-filter">شهر الاستحقاق</Label>
+          <MonthPicker
+            id="adjustment-month-filter"
+            filterLabel="تصفية حسب الشهر"
+            value={monthFilter}
+            onChange={(next) => {
+              setPage(1);
+              setMonthFilter(next);
+            }}
+          />
+        </div>
         <Button
           size="sm"
           className="ms-auto"
@@ -546,32 +559,19 @@ export function AdjustmentView({
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من{' '}
-            <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> {labels.totalNoun}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من{' '}
+              <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> {labels.totalNoun}
+            </>
+          }
+        />
       ) : null}
     </div>
   );

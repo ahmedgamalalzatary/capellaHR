@@ -9,6 +9,7 @@ import { Button, Card, CardContent, Field, Input } from '@capella/ui';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
 
@@ -87,8 +88,10 @@ export function ClientForm({
     onSuccess: async (saved) => {
       draft.clear();
       await invalidateErpCaches(queryClient, 'client');
+      notifySuccess(isEdit ? 'تم حفظ التعديل بنجاح.' : 'تمت إضافة العميل بنجاح.');
       onDone?.(saved);
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const formError = errors.fullName?.message ?? errors.phone?.message ?? serverErrorMessage(save.error);

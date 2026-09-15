@@ -24,6 +24,7 @@ import { getClient, type Client } from '@/features/clients';
 import { type AssignableEmployee } from '@/features/employee-assignment';
 import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 import { ApiError } from '@/lib/api/client';
+import { notifySuccess } from '@/lib/notify';
 import { createUuid } from '@/lib/uuid';
 
 import { completeSale } from '../api/sales-api';
@@ -413,6 +414,7 @@ export function SaleWorkspace({
       setReplacesIdempotencyKey(null);
       setCompleted(invoice);
       setPrintError(null);
+      notifySuccess('تم حفظ البيع.');
       void invalidateErpCaches(queryClient, 'sale');
     },
     onError: (error, input) => {

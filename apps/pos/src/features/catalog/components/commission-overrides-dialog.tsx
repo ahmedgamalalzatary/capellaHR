@@ -12,6 +12,7 @@ import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   listCatalogEmployeeOptions,
@@ -70,13 +71,16 @@ export function CommissionOverridesDialog({
       await invalidate();
       reset({ employeeId: '', commissionPercent: '' });
       setSuccessMessage('تم حفظ نسبة العمولة.');
+      notifySuccess('تم حفظ نسبة العمولة.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const remove = useMutation({
     mutationFn: (employeeId: number) =>
       removeCommissionOverride(service.id, employeeId, branchId),
-    onSuccess: async () => { await invalidate(); setSuccessMessage('تمت إزالة نسبة العمولة.'); },
+    onSuccess: async () => { await invalidate(); setSuccessMessage('تمت إزالة نسبة العمولة.'); notifySuccess('تمت إزالة نسبة العمولة.'); },
+    onError: (error: unknown) => notifyError(error),
   });
   const overridePending = save.isPending || remove.isPending;
 

@@ -23,6 +23,7 @@ const page = (items: unknown[], currentPage = 1, totalPages = 1) => ({ items, me
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><ConsumablesView /></QueryClientProvider>);
 
 beforeEach(() => {
+  sessionStorage.clear();
   window.history.replaceState({}, '', '/consumables');
   mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'cashier', branchId: 3 } } });
   mocks.branches.mockResolvedValue(page([{ id: 3, name: 'الفرع الرئيسي' }]));

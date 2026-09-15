@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { Badge, Button, Card, EmptyState } from '@capella/ui';
+import { Badge, Button, Card, EmptyState, SmartPagination } from '@capella/ui';
 
 import { useDisplayFormatters } from '@/providers/runtime-config';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import {
   deleteReportExportFile,
@@ -40,13 +41,19 @@ export function ExportsHistory() {
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: reportQueryKeys.exports() });
-  const retry = useMutation({ mutationFn: (id: number) => retryReportExport(id), onSuccess: invalidate });
+  const retry = useMutation({
+    mutationFn: (id: number) => retryReportExport(id),
+    onSuccess: async () => { await invalidate(); notifySuccess('تتم إعادة تجهيز الملف.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر إعادة تجهيز الملف.'),
+  });
   const removeFile = useMutation({
     mutationFn: (id: number) => deleteReportExportFile(id),
     onSuccess: async () => {
       setConfirmDeleteId(null);
       await invalidate();
+      notifySuccess('تم حذف الملف.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر حذف الملف.'),
   });
   const download = useMutation({
     mutationFn: (record: ReportExport) => downloadReportExport(record.id),
@@ -60,7 +67,9 @@ export function ExportsHistory() {
       anchor.remove();
       // Revoking synchronously can cancel the download before it starts.
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      notifySuccess('تم تنزيل الملف.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر تنزيل الملف.'),
   });
 
   const actionError = retry.error ?? removeFile.error ?? download.error;
@@ -176,30 +185,17 @@ export function ExportsHistory() {
         )}
       </Card>
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من{' '}
-            <span className="tabular">{meta.totalPages}</span>
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من{' '}
+              <span className="tabular">{meta.totalPages}</span>
+            </>
+          }
+        />
       ) : null}
     </div>
   );

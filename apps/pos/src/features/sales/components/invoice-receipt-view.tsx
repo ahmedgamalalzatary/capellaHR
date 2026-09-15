@@ -28,6 +28,7 @@ import { ReassignEmployeeDialog } from './reassign-employee-dialog';
 import { RecordPaymentDialog } from './record-payment-dialog';
 import { ServiceStatusDialog } from './service-status-dialog';
 import { invalidateErpCaches } from '@/lib/erp-cache';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
@@ -85,13 +86,18 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       filters: branchId === undefined ? {} : { branchId },
       selection: { mode: 'selected', ids: [invoiceId] },
     }),
-    onSuccess: (record) => setExportId(record.id),
+    onSuccess: (record) => { setExportId(record.id); notifySuccess('بدأ تجهيز ملف الفاتورة.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر تجهيز ملف الفاتورة.'),
   });
   const retryExport = useMutation({
     mutationFn: () => retryErpReportExport(activeExportId!),
-    onSuccess: (record) => queryClient.setQueryData(
-      ['erp-reports', 'export', record.id], record,
-    ),
+    onSuccess: (record) => {
+      queryClient.setQueryData(
+        ['erp-reports', 'export', record.id], record,
+      );
+      notifySuccess('تتم إعادة تجهيز الملف.');
+    },
+    onError: (error: unknown) => notifyError(error, 'تعذر إعادة تجهيز الملف.'),
   });
   const downloadExport = useMutation({
     mutationFn: () => downloadErpReportExport(activeExportId!),
@@ -104,7 +110,9 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       anchor.click();
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      notifySuccess('تم تنزيل الملف.');
     },
+    onError: (error: unknown) => notifyError(error, 'تعذر تنزيل الملف.'),
   });
 
   if (!Number.isInteger(invoiceId) || invoiceId < 1 || !validBranch) {

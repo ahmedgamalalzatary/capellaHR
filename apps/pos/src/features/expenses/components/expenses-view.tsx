@@ -15,7 +15,9 @@ import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
@@ -40,12 +42,7 @@ export function ExpensesView() {
    */
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [branchId, setBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) ? parsed : undefined;
-  });
+  const { branchId, setBranchId } = useAdminBranch();
   const [name, setName] = useState('');
   const [amount, setAmount] = useState(''); const [expenseDate, setExpenseDate] = useState(todayInCairo()); const [description, setDescription] = useState('');
   const [search, setSearch] = useState(''); const [fromDate, setFromDate] = useState(''); const [toDate, setToDate] = useState(''); const [status, setStatus] = useState<'' | 'active' | 'corrected'>(''); const [page, setPage] = useState(1);
@@ -58,8 +55,8 @@ export function ExpensesView() {
   const params = { ...branchScope, ...(search.trim() ? { search: search.trim() } : {}), ...(fromDate ? { fromDate } : {}), ...(toDate ? { toDate } : {}), ...(status ? { status } : {}), page, pageSize: 20 };
   const expenses = useQuery({ queryKey: expenseQueryKeys.list(params), queryFn: () => listExpenses(params), enabled: scopeReady });
   const refresh = () => invalidateErpCaches(client, 'expense');
-  const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, name: name.trim(), amount, expenseDate, description }), onSuccess: async () => { setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تسجيل المصروف.'); await refresh(); } });
-  const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, name: name.trim(), amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); await refresh(); } });
+  const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, name: name.trim(), amount, expenseDate, description }), onSuccess: async () => { setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تسجيل المصروف.'); notifySuccess('تم تسجيل المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
+  const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, name: name.trim(), amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); notifySuccess('تم تصحيح المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
   const clearDraft = () => { setCorrecting(null); setName(''); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
   const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCorrecting(expense); setName(expense.name); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
   /** Only a new expense is remembered; a correction is started from a stored row. */
@@ -70,11 +67,6 @@ export function ExpensesView() {
     // retires the stored copy.
     name !== '' || amount !== '' || description !== '',
   );
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (branchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
-    else sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
-  }, [isAdmin, branchId]);
   useEffect(() => {
     if (!successMessage) return;
     const timer = window.setTimeout(() => setSuccessMessage(undefined), 4000);
@@ -273,6 +265,9 @@ export function ExpensesView() {
                         nextDisabled={page >= (expenses.data.meta.totalPages || 1)}
                         onPrevious={() => setPage((value) => value - 1)}
                         onNext={() => setPage((value) => value + 1)}
+                        page={page}
+                        totalPages={expenses.data.meta.totalPages}
+                        onPage={setPage}
                       />
                     </>
                   )}

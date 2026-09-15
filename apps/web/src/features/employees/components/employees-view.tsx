@@ -7,9 +7,10 @@ import Image from 'next/image';
 import { useState } from 'react';
 import { useForm, useWatch, type FieldError } from 'react-hook-form';
 
-import { Button, Card, CardContent, ConfirmDialog, EmptyState, Field, Input } from '@capella/ui';
+import { Button, Card, CardContent, ConfirmDialog, EmptyState, Field, Input, SmartPagination } from '@capella/ui';
 
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { DeactivationDialog, type EmployeeDeparture } from './deactivation-dialog';
@@ -182,8 +183,10 @@ function CreateEmployeeForm({ branches, onDone }: { branches: BranchOption[]; on
     mutationFn: (values: EmployeeCreateFormValues) => createEmployee(values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+      notifySuccess('تمت إضافة الموظف بنجاح.');
       onDone();
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const form = { register, errors } as unknown as EmployeeFieldsApi;
@@ -310,8 +313,10 @@ function EditEmployeeForm({
     mutationFn: (values: EmployeeUpdateFormValues) => updateEmployee(employee.id, values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+      notifySuccess('تم حفظ التعديل بنجاح.');
       onDone();
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const form = { register, errors } as unknown as EmployeeFieldsApi;
@@ -448,7 +453,9 @@ export function EmployeesView() {
     onSuccess: async () => {
       setConfirmDeleteId(null);
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+      notifySuccess('تم حذف الموظف.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
   // Deactivation is a guided decision, so the preview is loaded first and the dialog drives the
   // rest; reactivation has nothing to decide and applies straight away.
@@ -460,7 +467,9 @@ export function EmployeesView() {
     mutationFn: (employee: Employee) => activateEmployee(employee.id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+      notifySuccess('تمت إعادة تفعيل الموظف.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const startDeactivation = useMutation({
@@ -469,6 +478,7 @@ export function EmployeesView() {
       preview: await previewEmployeeDeactivation(employee.id),
     }),
     onSuccess: setDeactivating,
+    onError: (error: unknown) => notifyError(error),
   });
 
   const deactivation = useMutation({
@@ -482,7 +492,9 @@ export function EmployeesView() {
     onSuccess: async () => {
       setDeactivating(null);
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+      notifySuccess('تم إيقاف الموظف.');
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const employmentStateError = reactivation.error
@@ -731,31 +743,18 @@ export function EmployeesView() {
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> موظف
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={setPage}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> موظف
+            </>
+          }
+        />
       ) : null}
     </div>
   );

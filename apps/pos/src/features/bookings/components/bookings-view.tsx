@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarPlus, ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState } from '@capella/ui';
 
@@ -13,7 +13,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { Select } from '@/components/form/select';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { useTickingNow } from '@/lib/use-ticking-now';
 
 import { listBookingEmployeeOptions, listBookings, updateBookingServicePreference, updateBookingStatus, type BookingDto } from '../api/bookings-api';
@@ -54,23 +56,10 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const actor = session.data?.actor;
   const [date, setDate] = useState(initialDate);
   const [creating, setCreating] = useState(false);
-  const [adminBranchId, setAdminBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  const { branchId: adminBranchId, setBranchId: setAdminBranchId } = useAdminBranch();
   const [error, setError] = useState<string>();
   const [confirming, setConfirming] = useState<{ id: number; next: 'cancelled' | 'no_show' } | null>(null);
 
-  useEffect(() => {
-    if (actor?.type !== 'admin') return;
-    if (adminBranchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(adminBranchId));
-  }, [adminBranchId, actor?.type]);
   const branchId = actor?.type === 'admin' ? adminBranchId : undefined;
   const branches = useQuery({
     queryKey: ['booking-branches'],
@@ -93,8 +82,13 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     ),
     onSuccess: async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      notifySuccess('تم تحديث حالة الحجز.');
     },
-    onError: (cause) => setError(cause instanceof ApiError ? cause.message : 'تعذر تحديث الحجز.'),
+    onError: (cause: unknown) => {
+      const message = cause instanceof ApiError ? cause.message : 'تعذر تحديث الحجز.';
+      setError(message);
+      notifyError(cause, message);
+    },
   });
   const preference = useMutation({
     mutationFn: ({ bookingId, serviceId, employeeId }: {
@@ -103,8 +97,12 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       preferredEmployeeId: employeeId,
       ...(branchId === undefined ? {} : { branchId }),
     }),
-    onSuccess: async () => cache.invalidateQueries({ queryKey: bookingQueryKeys.all }),
-    onError: (cause) => setError(cause instanceof ApiError ? cause.message : 'تعذر تغيير الموظف المفضل.'),
+    onSuccess: async () => { await cache.invalidateQueries({ queryKey: bookingQueryKeys.all }); notifySuccess('تم حفظ الموظف المفضل.'); },
+    onError: (cause: unknown) => {
+      const message = cause instanceof ApiError ? cause.message : 'تعذر تغيير الموظف المفضل.';
+      setError(message);
+      notifyError(cause, message);
+    },
   });
   const now = useTickingNow();
   const overdueCount = diary.data?.filter((booking) => isOverdueBooked(booking, now)).length ?? 0;

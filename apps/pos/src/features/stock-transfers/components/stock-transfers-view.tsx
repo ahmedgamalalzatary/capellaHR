@@ -21,6 +21,8 @@ import {
 } from '@/features/cashier-sessions';
 import { listAllProducts } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { createStockTransfer, listStockTransfers } from '../api/stock-transfers-api';
@@ -66,12 +68,7 @@ export function StockTransfersView() {
     enabled: isCashier,
   });
   const cashierBranchId = isCashier ? cashierSession.data?.branchId : undefined;
-  const [sourceBranchId, setSourceBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) ? parsed : undefined;
-  });
+  const { branchId: sourceBranchId, setBranchId: setSourceBranchId } = useAdminBranch();
   const [destinationBranchId, setDestinationBranchId] = useState<number>();
   const [lines, setLines] = useState<TransferLine[]>([emptyLine()]);
   const [note, setNote] = useState('');
@@ -82,11 +79,6 @@ export function StockTransfersView() {
   const [successMessage, setSuccessMessage] = useState<string>();
   const [page, setPage] = useState(1);
   const effectiveSourceBranchId = cashierBranchId ?? sourceBranchId;
-  useEffect(() => {
-    if (isCashier) return;
-    if (sourceBranchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
-    else sessionStorage.setItem('capella:pos-admin-branch', String(sourceBranchId));
-  }, [isCashier, sourceBranchId]);
   useEffect(() => {
     if (!successMessage) return;
     const timer = window.setTimeout(() => setSuccessMessage(undefined), 4000);
@@ -137,8 +129,10 @@ export function StockTransfersView() {
       setIdempotencyKey(crypto.randomUUID());
       setFormError(undefined);
       setSuccessMessage('تم تنفيذ التحويل.');
+      notifySuccess('تم تنفيذ التحويل.');
       await queryClient.invalidateQueries({ queryKey: stockTransferQueryKeys.all });
     },
+    onError: (error: unknown) => notifyError(error),
   });
 
   const submit = () => {
@@ -374,6 +368,9 @@ export function StockTransfersView() {
               nextDisabled={page >= meta.totalPages}
               onPrevious={() => setPage((value) => Math.max(1, value - 1))}
               onNext={() => setPage((value) => value + 1)}
+              page={page}
+              totalPages={meta.totalPages}
+              onPage={setPage}
             />
           ) : null}
         </Card>

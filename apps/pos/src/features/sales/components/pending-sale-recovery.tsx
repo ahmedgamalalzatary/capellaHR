@@ -15,6 +15,7 @@ import {
 
 import { LoadingState } from '@/components/feedback/loading-state';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { completeSale } from '../api/sales-api';
 import { listOfflineSales } from '../offline-sale-queue';
@@ -42,6 +43,8 @@ export function PendingSaleRecovery({ pending }: { pending: PendingSale }) {
         message: queued?.failure?.message ?? 'تعذر تأكيد نتيجة البيع المعلق',
       });
     },
+    onSuccess: () => notifySuccess('تم تأكيد البيع المعلق.'),
+    onError: (error: unknown) => notifyError(error, 'تعذر تأكيد البيع المعلق.'),
   });
   const recoverPending = recovery.mutate;
   const recoveryPending = recovery.isPending;

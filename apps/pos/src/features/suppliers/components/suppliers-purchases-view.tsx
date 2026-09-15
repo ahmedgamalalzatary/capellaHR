@@ -17,8 +17,10 @@ import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { listAllProducts, productQueryKeys } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
 import { createUuid } from '@/lib/uuid';
@@ -67,12 +69,7 @@ export function SuppliersPurchasesView() {
    */
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
-  const [selectedBranchId, setSelectedBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [supplierFormOpen, setSupplierFormOpen] = useState(false);
   const branchId = isAdmin ? selectedBranchId : undefined;
   const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
@@ -150,16 +147,6 @@ export function SuppliersPurchasesView() {
     setIdempotencyKey(createUuid());
     setLineKey((value) => value + 1);
   };
-  /** Two separate workbenches on one screen, so each keeps its own memory. */
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (selectedBranchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(selectedBranchId));
-  }, [isAdmin, selectedBranchId]);
-
   useEffect(() => {
     if (!successMessage) return;
     const timer = window.setTimeout(() => setSuccessMessage(undefined), 4_000);
@@ -212,7 +199,8 @@ export function SuppliersPurchasesView() {
           ...branchScope, name: supplierName,
           ...(phone.trim() ? { phone: phone.trim() } : {}), notes,
         }),
-    onSuccess: async () => { supplierDraft.clear(); clearSupplier(); setSuccessMessage('تم حفظ المورد.'); await refresh(); },
+    onSuccess: async () => { supplierDraft.clear(); clearSupplier(); setSuccessMessage('تم حفظ المورد.'); notifySuccess('تم حفظ المورد.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const toggleSupplier = useMutation({
     mutationFn: (supplier: Supplier) => updateSupplier(
@@ -225,8 +213,10 @@ export function SuppliersPurchasesView() {
         resetDraft();
       }
       setSuccessMessage(supplier.isActive ? 'تم إيقاف المورد.' : 'تم تفعيل المورد.');
+      notifySuccess(supplier.isActive ? 'تم إيقاف المورد.' : 'تم تفعيل المورد.');
       await refresh();
     },
+    onError: (error: unknown) => notifyError(error),
   });
   const post = useMutation({
     mutationFn: () => postPurchase({
@@ -236,11 +226,13 @@ export function SuppliersPurchasesView() {
       })),
       ...(correctionOf === undefined ? {} : { correctsPurchaseId: correctionOf }),
     }),
-    onSuccess: async () => { purchaseDraft.clear(); resetDraft(); setPurchasePanelOpen(false); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
+    onSuccess: async () => { purchaseDraft.clear(); resetDraft(); setPurchasePanelOpen(false); setSuccessMessage('تم ترحيل المشتريات إلى المخزون.'); notifySuccess('تم ترحيل المشتريات إلى المخزون.'); await refreshPurchase(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const cancel = useMutation({
     mutationFn: () => cancelPurchase(cancelling!.id, { ...branchScope, reason }),
-    onSuccess: async () => { closeCancellation(); setSuccessMessage('تم إلغاء المشتريات وعكس أثر المخزون.'); await refreshPurchase(); },
+    onSuccess: async () => { closeCancellation(); setSuccessMessage('تم إلغاء المشتريات وعكس أثر المخزون.'); notifySuccess('تم إلغاء المشتريات وعكس أثر المخزون.'); await refreshPurchase(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const validLines = lines.length > 0 && lines.every((line) => (
     Number(line.productId) && quantityValue(line.quantity) !== null && cents(line.unitCost) > BigInt(0)
@@ -660,6 +652,9 @@ export function SuppliersPurchasesView() {
                   nextDisabled={page >= purchases.data.meta.totalPages}
                   onPrevious={() => setPage((value) => value - 1)}
                   onNext={() => setPage((value) => value + 1)}
+                  page={page}
+                  totalPages={purchases.data.meta.totalPages}
+                  onPage={setPage}
                 />
               </>
             )}

@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BadgeCheck, ChevronDown, Search, UserRound, Wallet } from 'lucide-react';
 import { Fragment, useState } from 'react';
 
-import { Button, Card, EmptyState, Input } from '@capella/ui';
+import { Button, Card, EmptyState, Input, SmartPagination } from '@capella/ui';
 
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { formatDuration } from '@/lib/utils/format';
 import { useDisplayFormatters } from '@/providers/runtime-config';
 
@@ -96,12 +97,14 @@ export function MonthlyPayrollSection() {
     mutationFn: (record: PayrollRecord) =>
       finalizePayroll(record.employeeId, record.payrollMonth),
     onSettled: () => setConfirmFinalizeId(null),
-    onSuccess: invalidate,
+    onSuccess: async () => { await invalidate(); notifySuccess('تم اعتماد الراتب.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر اعتماد الراتب.'),
   });
   const finalizeBranch = useMutation({
     mutationFn: (branchId: number) => finalizeBranchPayroll(branchId, month),
     onSettled: () => setConfirmBranchFinalize(false),
-    onSuccess: invalidate,
+    onSuccess: async () => { await invalidate(); notifySuccess('تم اعتماد رواتب الفرع.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر اعتماد رواتب الفرع.'),
   });
 
   const mutationError = finalizeOne.error ?? finalizeBranch.error;
@@ -336,38 +339,22 @@ export function MonthlyPayrollSection() {
       </Card>
 
       {meta && meta.totalPages > 1 ? (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted">
-            صفحة <span className="tabular">{meta.page}</span> من{' '}
-            <span className="tabular">{meta.totalPages}</span>
-            {' — '}
-            <span className="tabular">{meta.total}</span> راتب
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page <= 1}
-              onClick={() => {
-                setExpandedId(null);
-                setPage((current) => Math.max(1, current - 1));
-              }}
-            >
-              السابق
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={meta.page >= meta.totalPages}
-              onClick={() => {
-                setExpandedId(null);
-                setPage((current) => current + 1);
-              }}
-            >
-              التالي
-            </Button>
-          </div>
-        </div>
+        <SmartPagination
+          page={meta.page}
+          totalPages={meta.totalPages}
+          onPage={(next) => {
+            setExpandedId(null);
+            setPage(next);
+          }}
+          summary={
+            <>
+              صفحة <span className="tabular">{meta.page}</span> من{' '}
+              <span className="tabular">{meta.totalPages}</span>
+              {' — '}
+              <span className="tabular">{meta.total}</span> راتب
+            </>
+          }
+        />
       ) : null}
     </div>
   );

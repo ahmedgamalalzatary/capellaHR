@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock3, PackageOpen } from 'lucide-react';
-import { type ReactNode, type SetStateAction, useState } from 'react';
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
+import { type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, SortableTH, type SortState } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { LoadingState } from '@/components/feedback/loading-state';
@@ -12,6 +12,8 @@ import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { listAllProducts } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
@@ -71,7 +73,8 @@ function CompletionPanel({ selected, balances, branchId, onCompleted }: {
       ...(branchId === undefined ? {} : { branchId }), serviceQueueEntryIds: selected,
       usages: noConsumables ? [] : validUsages, noConsumablesConfirmed: noConsumables,
     }),
-    onSuccess: async () => { rawSetUsages(emptyUsages()); setNoConsumables(false); await onCompleted(); },
+    onSuccess: async () => { rawSetUsages(emptyUsages()); setNoConsumables(false); notifySuccess('تم حفظ المستهلكات.'); await onCompleted(); },
+    onError: (error: unknown) => notifyError(error),
   });
   return <div className="space-y-4 border-t border-line p-4">
     <div><SectionHeading title={`تسجيل مستهلكات ${selected.length} خدمة`} /><p className="mt-1 text-sm text-muted">سجّل الكمية المستخدمة لكل خدمة محددة. يمكن جمع الخدمات المتطابقة فقط.</p></div>
@@ -93,26 +96,47 @@ function StockPanel({ branchId, balances, refresh, isAdmin, initialProductId }: 
   const [transferProductId, setTransferProductId] = useState<number | ''>(''); const [direction, setDirection] = useState<'reserve' | 'return'>('reserve'); const [packages, setPackages] = useState('1');
   const params = branchId === undefined ? {} : { branchId };
   const products = useQuery({ queryKey: ['consumables-products', branchId], queryFn: () => listAllProducts(params), enabled: isAdmin });
-  const configure = useMutation({ mutationFn: () => configureConsumable(Number(configProductId), { ...params, unit, packageSize }), onSuccess: refresh });
-  const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages) }), onSuccess: refresh });
+  const configure = useMutation({ mutationFn: () => configureConsumable(Number(configProductId), { ...params, unit, packageSize }), onSuccess: async () => { notifySuccess('تم حفظ إعداد المستهلك.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
+  const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages) }), onSuccess: async () => { notifySuccess('تم تنفيذ التحويل.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
   const pending = configure.isPending || transfer.isPending; const failed = configure.error ?? transfer.error;
+  const [sort, setSort] = useState<SortState | null>(null);
+  const ordered = useMemo(() => {
+    if (!sort) return balances;
+    const dir = sort.direction === 'asc' ? 1 : -1;
+    return [...balances].sort((a, b) => {
+      switch (sort.key) {
+        case 'product': return a.productName.localeCompare(b.productName, 'ar') * dir;
+        case 'sellable': return (Number(a.sellableQuantity) - Number(b.sellableQuantity)) * dir;
+        case 'consumable': return (Number(a.consumableQuantity) - Number(b.consumableQuantity)) * dir;
+        default: return 0;
+      }
+    });
+  }, [balances, sort]);
   return <div className="space-y-5">{isAdmin ? <><div className="grid gap-4 lg:grid-cols-2"><Card><CardContent className="space-y-3 p-4"><SectionHeading title="إعداد منتج كمستهلك" /><Select aria-label="منتج إعداد المستهلك" value={configProductId} onChange={(event) => setConfigProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المنتج</option>{products.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</Select><div className="flex gap-2"><Select aria-label="وحدة المستهلك" value={unit} onChange={(event) => setUnit(event.target.value as 'ml' | 'gm')}><option value="ml">ml</option><option value="gm">gm</option></Select><Input aria-label="حجم العبوة" type="number" min="0.001" step="0.001" value={packageSize} onChange={(event) => setPackageSize(event.target.value)} /></div><Button disabled={!configProductId || !Number(packageSize) || pending} onClick={() => configure.mutate()}>حفظ الإعداد</Button></CardContent></Card>
     <Card><CardContent className="space-y-3 p-4"><SectionHeading title="تحويل عبوات كاملة" /><Select aria-label="منتج التحويل" value={transferProductId} onChange={(event) => setTransferProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المستهلك</option>{balances.map((item) => <option key={item.productId} value={item.productId}>{item.productName}</option>)}</Select><div className="flex gap-2"><Select aria-label="اتجاه التحويل" value={direction} onChange={(event) => setDirection(event.target.value as 'reserve' | 'return')}><option value="reserve">حجز من مخزون البيع</option><option value="return">إرجاع لمخزون البيع</option></Select><Input aria-label="عدد العبوات" type="number" min="1" step="1" value={packages} onChange={(event) => setPackages(event.target.value)} /></div><Button disabled={!transferProductId || !Number(packages) || pending} onClick={() => transfer.mutate()}>تنفيذ التحويل</Button></CardContent></Card></div>
     {failed ? <FieldError>{errorText(failed)}</FieldError> : null}</> : null}
-    <Card><CardContent className="p-4"><SectionHeading title="أرصدة المستهلكات" /><DataTable><THead><TH>المنتج</TH><TH>مخزون البيع</TH><TH>رصيد المستهلك</TH><TH>حجم العبوة</TH></THead><tbody>{balances.map((item) => <TR key={item.productId}><TD>{item.productName}</TD><TD>{item.sellableQuantity}</TD><TD>{item.consumableQuantity} {item.unit}</TD><TD>{item.packageSize} {item.unit}</TD></TR>)}</tbody></DataTable></CardContent></Card></div>;
+    <Card><CardContent className="p-4"><SectionHeading title="أرصدة المستهلكات" /><DataTable><THead><SortableTH label="المنتج" sortKey="product" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="مخزون البيع" sortKey="sellable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="رصيد المستهلك" sortKey="consumable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><TH>حجم العبوة</TH></THead><tbody>{ordered.map((item) => <TR key={item.productId}><TD>{item.productName}</TD><TD>{item.sellableQuantity}</TD><TD>{item.consumableQuantity} {item.unit}</TD><TD>{item.packageSize} {item.unit}</TD></TR>)}</tbody></DataTable></CardContent></Card></div>;
 }
 
 export function ConsumablesView() {
-  const cache = useQueryClient(); const session = useSession(); const isAdmin = session.data?.actor.type === 'admin';
+  const cache = useQueryClient(); const session = useSession(); const { branchId, setBranchId, isAdmin } = useAdminBranch();
   const search = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search);
-  const [branchId, setBranchId] = useState<number | undefined>(() => { const value = Number(search?.get('branchId')); return value > 0 ? value : undefined; });
+  // Deep links (e.g. product label → ?productId=&branchId=) adopt their branch once, then shared state takes over.
+  useEffect(() => {
+    const urlBranch = Number(search?.get('branchId'));
+    if (urlBranch > 0) setBranchId(urlBranch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [tab, setTab] = useState<Tab>(() => search?.has('productId') ? 'stock' : 'status');
   const [selected, setSelected] = useState<number[]>([]);
   const [selectionHint, setSelectionHint] = useState<string>();
   const cashierSessionId = Number(search?.get('cashierSessionId')) || undefined;
   const productId = Number(search?.get('productId')) || undefined;
-  const ready = session.isSuccess && (!isAdmin || branchId !== undefined); const params = branchId === undefined ? {} : { branchId };
-  const branches = useQuery({ queryKey: ['consumables-branches'], queryFn: () => listCatalogBranches(), enabled: isAdmin });
+  const ready = session.isSuccess && (!isAdmin || branchId !== undefined);
+  // Cashiers are server-pinned to their session branch: never send a stored
+  // admin branch on their queries or mutations.
+  const params = !isAdmin || branchId === undefined ? {} : { branchId };
+  const branches = useQuery({ queryKey: ['consumables-branches'], queryFn: () => fetchAllPages((page) => listCatalogBranches(page)), enabled: isAdmin });
   const balances = useQuery({ queryKey: ['consumables-balances', branchId], queryFn: () => fetchAllPages((page) => listConsumableBalances({ ...params, page, pageSize: 100 })), enabled: ready });
   const services = useQuery({ queryKey: ['consumables-services', branchId, tab, cashierSessionId], queryFn: () => fetchAllPages((page) => listConsumableServices({ ...params, ...(cashierSessionId ? { cashierSessionId } : {}), status: tab === 'consumables' ? 'completed' : 'operational', page, pageSize: 100 })), enabled: ready && tab !== 'stock' });
   const refresh = async () => { await Promise.all([cache.invalidateQueries({ queryKey: ['consumables-balances'] }), cache.invalidateQueries({ queryKey: ['consumables-services'] })]); };
@@ -120,7 +144,8 @@ export function ConsumablesView() {
     mutationFn: ({ item, status }: { item: ConsumableServiceExecution; status: 'pending' | 'in_progress' | 'completed' }) => updateServiceExecutionStatus({
       ...params, serviceQueueEntryIds: [item.id], status,
     }),
-    onSuccess: refresh,
+    onSuccess: async () => { notifySuccess('تم تحديث حالة الخدمة.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
   });
   const changeTab = (next: Tab) => { setTab(next); setSelected([]); };
   const toggle = (item: ConsumableServiceExecution) => setSelected((current) => {
@@ -137,7 +162,7 @@ export function ConsumablesView() {
     return [...current, item.id];
   });
   return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description="تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة." />
-    {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setSelected([]); }}><option value="">اختر الفرع</option>{branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select></CardContent></Card> : null}
+    {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" disabled={branches.isPending || branches.isError} value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setSelected([]); }}><option value="">اختر الفرع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select>{branches.isError ? <FieldError>تعذر تحميل الفروع. <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></FieldError> : null}</CardContent></Card> : null}
     <div role="tablist" aria-label="خدمات العملاء والمستهلكات" className="flex gap-1 overflow-x-auto border-b border-line"><TabButton active={tab === 'status'} onClick={() => changeTab('status')}><Clock3 className="size-4" />حالة الخدمات</TabButton><TabButton active={tab === 'consumables'} onClick={() => changeTab('consumables')}><CheckCircle2 className="size-4" />تسجيل المستهلكات</TabButton><TabButton active={tab === 'stock'} onClick={() => changeTab('stock')}><PackageOpen className="size-4" />مخزون المستهلكات</TabButton></div>
     {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data ?? []} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} onStatus={(item, status) => statusMutation.mutate({ item, status })} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}{tab === 'consumables' && selected.length ? <CompletionPanel selected={selected} balances={balances.data ?? []} branchId={branchId} onCompleted={async () => { setSelected([]); await refresh(); }} /> : null}</CardContent></Card>}
   </section>;

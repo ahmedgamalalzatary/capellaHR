@@ -15,6 +15,7 @@ import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
 import { getInvoice, listInvoices } from '../api/sales-api';
@@ -112,13 +113,9 @@ const stillRefundable = (status: keyof typeof statusLabels) => (
 export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   const actor = useSession().data?.actor;
   const isAdmin = actor?.type === 'admin';
-  const [branchId, setBranchId] = useState<number | undefined>(() => {
-    if (initialBranchId !== undefined) return initialBranchId;
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-  });
+  const { branchId: storedBranchId, setBranchId } = useAdminBranch();
+  /** A ?branchId= link (receipt back-navigation) wins for any role; otherwise the shared branch. */
+  const branchId = initialBranchId ?? storedBranchId;
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState('');
   const search = searchDraft.trim() || undefined;
@@ -145,14 +142,10 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
     setBranchId(branches.data.items[0]!.id);
   }
+  /** A ?branchId= link (receipt back-navigation) seeds the shared admin branch. */
   useEffect(() => {
-    if (!isAdmin) return;
-    if (branchId === undefined) {
-      sessionStorage.removeItem('capella:pos-admin-branch');
-      return;
-    }
-    sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
-  }, [branchId, isAdmin]);
+    if (initialBranchId !== undefined) setBranchId(initialBranchId);
+  }, [initialBranchId, setBranchId]);
   const invoices = useQuery({
     queryKey: salesQueryKeys.invoices(branchId, page, search),
     queryFn: () => listInvoices({
@@ -308,6 +301,9 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
             className="border-t-0"
             onPrevious={() => { setPage((value) => value - 1); setSelectedInvoiceId(undefined); }}
             onNext={() => { setPage((value) => value + 1); setSelectedInvoiceId(undefined); }}
+            page={page}
+            totalPages={invoices.data.meta.totalPages}
+            onPage={(next) => { setPage(next); setSelectedInvoiceId(undefined); }}
           />
         </Card>
       ) : null}

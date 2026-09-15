@@ -1,10 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type { CommissionSummary } from '@capella/contracts';
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Label, Modal, MonthPicker } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { getCommissionDetail, listCommissions } from '../api/commissions-api';
@@ -96,12 +97,7 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
 }
 
 export function CommissionsView() {
-  const [branchId, setBranchId] = useState<number | undefined>(() => {
-    if (typeof sessionStorage === 'undefined') return undefined;
-    const stored = sessionStorage.getItem('capella:pos-admin-branch');
-    const parsed = stored ? Number(stored) : NaN;
-    return Number.isInteger(parsed) ? parsed : undefined;
-  });
+  const { branchId, setBranchId } = useAdminBranch();
   const [month, setMonth] = useState(currentCairoMonth);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<CommissionSummary | null>(null);
@@ -110,10 +106,6 @@ export function CommissionsView() {
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
   });
   const filters = { branchId, month, page, pageSize: 20 };
-  useEffect(() => {
-    if (branchId === undefined) sessionStorage.removeItem('capella:pos-admin-branch');
-    else sessionStorage.setItem('capella:pos-admin-branch', String(branchId));
-  }, [branchId]);
   const commissions = useQuery({
     queryKey: commissionQueryKeys.list(filters),
     queryFn: () => listCommissions({ branchId: branchId!, month, page, pageSize: 20 }),
@@ -153,12 +145,11 @@ export function CommissionsView() {
             )}
           <div className="space-y-1.5">
             <Label htmlFor="commissions-month">شهر العمولة</Label>
-            <Input
+            <MonthPicker
               id="commissions-month"
-              aria-label="شهر العمولة"
-              type="month"
+              filterLabel="شهر العمولة"
               value={month}
-              onChange={(event) => { setMonth(event.target.value); setPage(1); setSelected(null); }}
+              onChange={(next) => { setMonth(next); setPage(1); setSelected(null); }}
             />
           </div>
         </CardContent>
@@ -203,6 +194,9 @@ export function CommissionsView() {
                       nextDisabled={page >= (commissions.data.meta.totalPages || 1)}
                       onPrevious={() => { setPage((value) => value - 1); setSelected(null); }}
                       onNext={() => { setPage((value) => value + 1); setSelected(null); }}
+                      page={page}
+                      totalPages={commissions.data.meta.totalPages}
+                      onPage={(next) => { setPage(next); setSelected(null); }}
                     />
                   </Card>
                 )}

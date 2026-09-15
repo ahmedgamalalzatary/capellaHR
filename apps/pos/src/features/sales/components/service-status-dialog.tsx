@@ -6,6 +6,7 @@ import { Badge, Button, EmptyState, Modal } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import {
   listConsumableServices,
   updateServiceExecutionStatus,
@@ -38,7 +39,8 @@ export function ServiceStatusDialog({
       serviceQueueEntryIds: [item.id],
       status,
     }),
-    onSuccess: () => services.refetch(),
+    onSuccess: () => { services.refetch(); notifySuccess('تم تحديث حالة الخدمة.'); },
+    onError: (error: unknown) => notifyError(error, 'تعذر تحديث حالة الخدمة.'),
   });
 
   return <Modal title="حالة خدمات الفاتورة" className="max-w-2xl" onClose={onClose}>

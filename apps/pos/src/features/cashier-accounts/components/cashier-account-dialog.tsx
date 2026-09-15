@@ -9,6 +9,7 @@ import { FieldError } from '@/components/feedback/notice';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { ApiError } from '@/lib/api/client';
+import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { listActiveEmployeeOptions } from '../api/employee-options-api';
 import { listBranchCashierRoster } from '../api/branch-roster-api';
@@ -60,14 +61,16 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
     mutationFn: saveCashierAccount,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
+      notifySuccess(account ? 'تم حفظ حساب الكاشير.' : 'تم إنشاء حساب الكاشير.');
       onClose();
     },
-    onError: (error) => {
+    onError: (error: unknown) => {
       if (error instanceof ApiError && Object.values(error.fieldErrors).some((values) => values?.length)) {
         setErrors(error.fieldErrors);
       } else {
         setErrors({ _: [message(error)] });
       }
+      notifyError(error);
     },
   });
 
