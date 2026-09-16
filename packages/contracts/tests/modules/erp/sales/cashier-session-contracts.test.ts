@@ -150,6 +150,14 @@ describe('ERP Cashier-session contracts', () => {
     };
 
     expect(contracts.cashierSessionDetailSchema.parse(detail)).toEqual(detail);
+    expect(contracts.cashierSessionDetailSchema.safeParse({
+      ...detail,
+      invoices: [{
+        ...detail.invoices[0],
+        total: '0.00',
+        takenInShift: '0.00',
+      }],
+    }).success).toBe(true);
     expect(contracts.cashierSessionDetailSchema.safeParse({ ...detail, invoices: [] }).success)
       .toBe(true);
   });

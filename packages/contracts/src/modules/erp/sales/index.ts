@@ -233,7 +233,7 @@ export const refundQuoteSchema = z.object({
 });
 
 export const paymentBreakdownSchema = z.object({
-  total: positiveMoneySchema,
+  total: exactMoneySchema,
   payments: z.array(paymentSchema),
   allowPartialPayment: z.boolean().optional(),
   allowRepeatedMethods: z.boolean().optional(),
@@ -271,9 +271,6 @@ export const completeSaleSchema = z.object({
   tax: adjustmentSchema.optional(),
   payments: z.array(paymentSchema).max(paymentMethodSchema.options.length),
 }).strict().superRefine((value, context) => {
-  if (value.lines.some((line) => line.itemType === 'service') && value.payments.length === 0) {
-    context.addIssue({ code: 'custom', path: ['payments'], message: 'فواتير الخدمات يجب سدادها بالكامل' });
-  }
   const seen = new Set<string>();
   value.payments.forEach((payment, index) => {
     if (seen.has(payment.method)) {
@@ -298,7 +295,7 @@ export const invoiceTotalsSchema = z.object({
   subtotal: positiveMoneySchema,
   discountAmount: exactMoneySchema,
   taxAmount: exactMoneySchema,
-  total: positiveMoneySchema,
+  total: exactMoneySchema,
   paymentTotal: exactMoneySchema,
   amountPaid: exactMoneySchema,
   creditedAmount: exactMoneySchema,
@@ -352,7 +349,7 @@ const saleQuoteTotalsSchema = z.object({
   subtotal: positiveMoneySchema,
   discountAmount: exactMoneySchema,
   taxAmount: exactMoneySchema,
-  total: positiveMoneySchema,
+  total: exactMoneySchema,
 }).strict().superRefine((value, context) => {
   const expected = toCents(value.subtotal) - toCents(value.discountAmount)
     + toCents(value.taxAmount);
@@ -708,7 +705,7 @@ export const invoiceHistoryItemSchema = z.object({
   id: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
-  total: positiveMoneySchema,
+  total: exactMoneySchema,
   amountPaid: exactMoneySchema,
   balanceDue: exactMoneySchema,
   settlementStatus: z.enum(['settled', 'open']),
@@ -727,7 +724,7 @@ export const clientVisitSummarySchema = z.object({
   id: positiveMysqlIntSchema,
   invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
-  total: positiveMoneySchema,
+  total: exactMoneySchema,
   employees: invoiceEmployeesSchema,
   soldAt: isoDateTimeSchema,
 }).strict();
@@ -970,7 +967,7 @@ export const cashierSessionInvoiceSchema = z.object({
     name: z.string().min(1).max(255).nullable(),
     phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
   }).strict(),
-  total: positiveMoneySchema,
+  total: exactMoneySchema,
   /**
    * What this shift took and handed back on this invoice, which is not the
    * invoice total once an invoice can be paid across two shifts.

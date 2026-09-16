@@ -126,11 +126,31 @@ describe('ERP sale calculations', () => {
     })).toThrowError(new MoneyCalculationError('DISCOUNT_EXCEEDS_SUBTOTAL'));
   });
 
-  it('rejects a zero or negative final total', () => {
-    expect(() => calculateSaleTotals({
+  it('allows a 100% discount that settles to a zero total with no payment', () => {
+    expect(calculateSaleTotals({
+      lineTotals: ['20.00'],
+      discount: { kind: 'percentage', value: '100.00' },
+      payments: [],
+    })).toEqual({
+      subtotal: '20.00',
+      discountAmount: '20.00',
+      taxAmount: '0.00',
+      total: '0.00',
+      paymentTotal: '0.00',
+    });
+  });
+
+  it('settles a full fixed discount to a zero total with no payment', () => {
+    expect(calculateSaleTotals({
       lineTotals: ['20.00'],
       discount: { kind: 'fixed', value: '20.00' },
       payments: [],
-    })).toThrowError(new MoneyCalculationError('TOTAL_NOT_POSITIVE'));
+    })).toEqual({
+      subtotal: '20.00',
+      discountAmount: '20.00',
+      taxAmount: '0.00',
+      total: '0.00',
+      paymentTotal: '0.00',
+    });
   });
 });

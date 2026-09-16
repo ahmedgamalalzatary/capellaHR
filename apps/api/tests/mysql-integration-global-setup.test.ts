@@ -12,6 +12,25 @@ afterEach(() => {
 });
 
 describe('MySQL integration global setup', () => {
+  it('remains a no-op when no database URL is configured', async () => {
+    delete process.env.DATABASE_URL;
+
+    const teardown = await setup();
+    await teardown();
+
+    expect(mocks.createDatabase).not.toHaveBeenCalled();
+    expect(mocks.migrate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-test database before creating or migrating it', async () => {
+    process.env.DATABASE_URL = 'mysql://root:pass@localhost/capella_hr';
+
+    await expect(setup()).rejects.toThrow('MySQL integration database must use a test database');
+
+    expect(mocks.createDatabase).not.toHaveBeenCalled();
+    expect(mocks.migrate).not.toHaveBeenCalled();
+  });
+
   it('migrates the configured test database without replacing or dropping it', async () => {
     const end = vi.fn();
     const database = { $client: { promise: () => ({ end }) } };

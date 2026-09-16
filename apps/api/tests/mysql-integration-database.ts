@@ -2,12 +2,33 @@ import { createDatabase } from '@capella/database';
 
 type Database = ReturnType<typeof createDatabase>;
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error('MySQL integration database URL is required');
+const testDatabasePathname = /^\/capella_hr-test(?:-[\w-]+)?$/;
 
-export const createMysqlIntegrationDatabase = () => createDatabase(databaseUrl);
+export const assertMysqlIntegrationDatabaseUrl = (databaseUrl: string) => {
+  let pathname: string;
+  try {
+    pathname = new URL(databaseUrl).pathname;
+  } catch {
+    throw new Error('MySQL integration database URL is invalid');
+  }
+  if (!testDatabasePathname.test(pathname)) {
+    throw new Error('MySQL integration database must use a test database');
+  }
+};
+
+const requireMysqlIntegrationDatabaseUrl = () => {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('MySQL integration database URL is required');
+  assertMysqlIntegrationDatabaseUrl(databaseUrl);
+  return databaseUrl;
+};
+
+export const createMysqlIntegrationDatabase = () => (
+  createDatabase(requireMysqlIntegrationDatabaseUrl())
+);
 
 export const resetMysqlIntegrationDatabase = async (database: Database) => {
+  requireMysqlIntegrationDatabaseUrl();
   const connection = await database.$client.promise().getConnection();
   try {
     const [result] = await connection.query('SHOW FULL TABLES WHERE Table_type = \'BASE TABLE\'');

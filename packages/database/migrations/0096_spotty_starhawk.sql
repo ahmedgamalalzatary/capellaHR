@@ -1,0 +1,2 @@
+ALTER TABLE `erp_invoices` DROP CONSTRAINT `erp_invoices_totals_consistent`;--> statement-breakpoint
+ALTER TABLE `erp_invoices` ADD CONSTRAINT `erp_invoices_totals_consistent` CHECK (`erp_invoices`.`total` = `erp_invoices`.`subtotal` - `erp_invoices`.`discount_amount` + `erp_invoices`.`tax_amount` and `erp_invoices`.`total` >= 0);

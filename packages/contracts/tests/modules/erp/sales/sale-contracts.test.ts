@@ -67,14 +67,14 @@ describe('ERP complete-sale contracts', () => {
     });
     expect(parsed.bookingId).toBe(22);
   });
-  it('allows zero or short payment only for product-only sale commands', () => {
+  it('allows empty payments on sale commands; full payment for services is enforced at completion', () => {
     const productOnly = {
       ...validDraft,
       lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
       payments: [],
     };
     expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
-    expect(completeSaleSchema.safeParse({ ...validDraft, payments: [] }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({ ...validDraft, payments: [] }).success).toBe(true);
   });
 
   it('validates idempotent later invoice payments', () => {
@@ -739,6 +739,14 @@ describe('ERP complete-sale contracts', () => {
       employees: [{ id: 8, name: 'سارة علي' }, { id: 8, name: 'سارة علي' }],
       soldAt: '2026-08-03T11:35:00.000Z',
     }).success).toBe(false);
+    expect(clientVisitSummarySchema.safeParse({
+      id: 45,
+      invoiceNumber: 'INV-2026.08.03-14.35-18',
+      status: 'completed',
+      total: '0.00',
+      employees: [{ id: 8, name: 'سارة علي' }],
+      soldAt: '2026-08-03T11:36:00.000Z',
+    }).success).toBe(true);
   });
 
   it('publishes branch-scoped paged invoice history and detail parameters', () => {
@@ -782,6 +790,16 @@ describe('ERP complete-sale contracts', () => {
       employees: [{ id: 8, name: 'سارة علي' }, { id: 11, name: 'هدى محمود' }],
       soldAt: '2026-08-03T11:35:00.000Z',
     }).success).toBe(true);
+    expect(invoiceHistoryItemSchema.safeParse({
+      id: 45,
+      invoiceNumber: 'INV-2026.08.03-14.35-18',
+      status: 'completed',
+      total: '0.00',
+      amountPaid: '0.00', balanceDue: '0.00', settlementStatus: 'settled',
+      client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      employees: [{ id: 8, name: 'سارة علي' }],
+      soldAt: '2026-08-03T11:36:00.000Z',
+    }).success).toBe(true);
   });
 
   it('keeps a phone-only client identifiable in the stored history summary', () => {
@@ -805,5 +823,24 @@ describe('ERP complete-sale contracts', () => {
       ...saleFixtures.completedInvoice,
       client: { ...saleFixtures.completedInvoice.client, name: null, phone: null },
     }).success).toBe(false);
+  });
+
+  it('allows a 100% discount that settles to a zero total with no payment', () => {
+    expect(invoiceTotalsSchema.safeParse({
+      subtotal: '200.00', discountAmount: '200.00', taxAmount: '0.00',
+      total: '0.00', paymentTotal: '0.00', amountPaid: '0.00',
+      creditedAmount: '0.00', balanceDue: '0.00', settlementStatus: 'settled',
+    }).success).toBe(true);
+    expect(paymentBreakdownSchema.safeParse({ total: '0.00', payments: [] }).success).toBe(true);
+    expect(saleQuoteSchema.safeParse({
+      lines: [{
+        itemType: 'service' as const, sourceId: 21, name: 'صبغة شعر', quantity: 1,
+        unitPrice: '200.00', lineTotal: '200.00',
+      }],
+      discount: { kind: 'percentage' as const, value: '100.00', amount: '200.00' },
+      tax: null,
+      totals: { subtotal: '200.00', discountAmount: '200.00', taxAmount: '0.00', total: '0.00' },
+    }).success).toBe(true);
+    expect(completeSaleSchema.safeParse({ ...validDraft, payments: [] }).success).toBe(true);
   });
 });

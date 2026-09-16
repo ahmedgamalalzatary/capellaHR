@@ -150,7 +150,7 @@ export const calculateSaleTotals = (input: {
     throw new MoneyCalculationError('DISCOUNT_EXCEEDS_SUBTOTAL');
   }
   const totalCents = subtotalCents - discountCents + toCents(taxAmount);
-  if (totalCents <= 0n) throw new MoneyCalculationError('TOTAL_NOT_POSITIVE');
+  if (totalCents < 0n) throw new MoneyCalculationError('TOTAL_NOT_POSITIVE');
   assertStoredMoney(totalCents);
   const paymentTotalCents = assertStoredMoney(input.payments.reduce(
     (sum, payment) => sum + toCents(payment.amount),

@@ -115,7 +115,7 @@ export const invoices = mysqlTable('erp_invoices', {
   check('erp_invoices_subtotal_positive', sql`${table.subtotal} > 0`),
   check(
     'erp_invoices_totals_consistent',
-    sql`${table.total} = ${table.subtotal} - ${table.discountAmount} + ${table.taxAmount} and ${table.total} > 0`,
+    sql`${table.total} = ${table.subtotal} - ${table.discountAmount} + ${table.taxAmount} and ${table.total} >= 0`,
   ),
   check(
     'erp_invoices_amount_paid_valid',
