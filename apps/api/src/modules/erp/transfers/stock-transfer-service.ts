@@ -104,8 +104,6 @@ const toCents = (value: string) => {
   const [whole = '0', fraction = ''] = value.split('.');
   return BigInt(`${whole}${fraction.padEnd(2, '0').slice(0, 2)}`);
 };
-const fromCents = (value: bigint) => `${value / 100n}.${(value % 100n).toString().padStart(2, '0')}`;
-
 /**
  * The sale re-reads and locks what we checked a moment earlier, so its failures
  * are ordinary outcomes of a busy till, not server faults. Each maps onto the
@@ -225,11 +223,6 @@ export const createStockTransferService = (dependencies: {
           unitCost: product.unitCost,
         };
       });
-      const total = lines.reduce(
-        (sum, line) => sum + toCents(line.unitCost) * BigInt(line.quantity),
-        0n,
-      );
-
       const at = now();
       const transferDate = cairoDate(at);
       const session = await repository.findOpenSession(source.id);
@@ -248,7 +241,8 @@ export const createStockTransferService = (dependencies: {
             productId: line.productId,
             quantity: line.quantity,
           })),
-          payments: [{ method: 'cash' as const, amount: fromCents(total) }],
+          // Internal trade carries value but no customer payment enters a till.
+          payments: [],
         }, {
           pricing: 'cost',
           kind: 'branch_transfer',

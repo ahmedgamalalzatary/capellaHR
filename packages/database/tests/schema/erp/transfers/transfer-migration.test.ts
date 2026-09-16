@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 const directory = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
 const name = readdirSync(directory).find((entry) => /^0064_.*\.sql$/u.test(entry));
+const settlementName = readdirSync(directory)
+  .find((entry) => /^0097_transfer_internal_settlement\.sql$/u.test(entry));
 
 describe('ERP stock transfer migration', () => {
   it('creates the transfer tables with their immutability guards', () => {
@@ -29,5 +31,17 @@ describe('ERP stock transfer migration', () => {
     expect(migration).toContain("'transfer_in'");
     expect(migration).toContain('erp_stock_movements_reason_source_consistent');
     expect(migration).toContain('erp_stock_movements_direction_consistent');
+  });
+
+  it('moves existing transfers off the cash ledger and prevents new transfer payments', () => {
+    expect(settlementName).toBeTruthy();
+    const migration = readFileSync(`${directory}/${settlementName!}`, 'utf8');
+
+    expect(migration).toContain('DROP TRIGGER IF EXISTS `erp_invoice_payments_validate_delete`');
+    expect(migration).toContain('DROP TRIGGER IF EXISTS `erp_invoice_payments_validate_insert`');
+    expect(migration).toContain("WHERE invoice.kind = 'branch_transfer'");
+    expect(migration).toContain('`credited_amount` = `total`');
+    expect(migration).toContain("IF invoice_kind = 'branch_transfer'");
+    expect(migration).toContain('Branch transfers do not accept payments');
   });
 });

@@ -114,7 +114,11 @@ const moneyBySession = async (executor: Executor, sessions: CashierSessionRecord
     method: invoicePayments.method,
     amount: sql<string>`sum(${invoicePayments.amount})`,
   }).from(invoicePayments)
-    .where(inArray(invoicePayments.cashierSessionId, sessionIds))
+    .innerJoin(invoices, eq(invoices.id, invoicePayments.invoiceId))
+    .where(and(
+      inArray(invoicePayments.cashierSessionId, sessionIds),
+      eq(invoices.kind, 'sale'),
+    ))
     .groupBy(invoicePayments.cashierSessionId, invoicePayments.method);
   for (const row of takenRows) taken.get(row.sessionId)![row.method] = row.amount;
 
@@ -138,7 +142,10 @@ const moneyBySession = async (executor: Executor, sessions: CashierSessionRecord
     sessionId: invoices.cashierSessionId,
     count: sql<number>`count(*)`,
   }).from(invoices)
-    .where(inArray(invoices.cashierSessionId, sessionIds))
+    .where(and(
+      inArray(invoices.cashierSessionId, sessionIds),
+      eq(invoices.kind, 'sale'),
+    ))
     .groupBy(invoices.cashierSessionId);
   for (const row of saleRows) saleCounts.set(row.sessionId, Number(row.count));
 
@@ -236,7 +243,10 @@ export const createDrizzleCashierSessionRepository = (
           where p.invoice_id = ${invoices.id} and p.is_initial = true
         ), 0)
       ), 0)`,
-    }).from(invoices).where(eq(invoices.cashierSessionId, input.sessionId));
+    }).from(invoices).where(and(
+      eq(invoices.cashierSessionId, input.sessionId),
+      eq(invoices.kind, 'sale'),
+    ));
 
     const [returnsRow] = await database.select({
       gross: sql<string>`coalesce(sum(${invoiceReversals.grossAmount}), 0)`,
@@ -260,10 +270,13 @@ export const createDrizzleCashierSessionRepository = (
 
     const [collectedRow] = await database.select({
       amount: sql<string>`coalesce(sum(${invoicePayments.amount}), 0)`,
-    }).from(invoicePayments).where(and(
-      eq(invoicePayments.cashierSessionId, input.sessionId),
-      eq(invoicePayments.isInitial, false),
-    ));
+    }).from(invoicePayments)
+      .innerJoin(invoices, eq(invoices.id, invoicePayments.invoiceId))
+      .where(and(
+        eq(invoicePayments.cashierSessionId, input.sessionId),
+        eq(invoicePayments.isInitial, false),
+        eq(invoices.kind, 'sale'),
+      ));
     const collectedPaymentLines = await database.select({
       invoiceNumber: invoices.invoiceNumber,
       clientId: invoices.clientId,
@@ -277,6 +290,7 @@ export const createDrizzleCashierSessionRepository = (
       .where(and(
         eq(invoicePayments.cashierSessionId, input.sessionId),
         eq(invoicePayments.isInitial, false),
+        eq(invoices.kind, 'sale'),
       ))
       .orderBy(invoicePayments.paidAt, invoicePayments.id);
 
@@ -336,7 +350,9 @@ export const createDrizzleCashierSessionRepository = (
       soldAt: invoices.soldAt,
       takenInShift,
       refundedInShift,
-    }).from(invoices).where(sql`(
+    }).from(invoices).where(and(
+      eq(invoices.kind, 'sale'),
+      sql`(
       ${invoices.cashierSessionId} = ${sessionId}
       or exists (
         select 1 from erp_invoice_payments p
@@ -347,7 +363,8 @@ export const createDrizzleCashierSessionRepository = (
         where r.invoice_id = ${invoices.id} and r.status = 'finalized'
           and r.cashier_session_id = ${sessionId}
       )
-    )`).orderBy(desc(invoices.soldAt), desc(invoices.id));
+    )`,
+    )).orderBy(desc(invoices.soldAt), desc(invoices.id));
 
     return rows.map((row): CashierSessionInvoiceRecord => ({
       id: row.id,

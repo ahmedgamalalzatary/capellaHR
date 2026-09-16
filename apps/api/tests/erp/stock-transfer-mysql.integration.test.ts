@@ -11,6 +11,7 @@ import {
   erpStockTransferLines,
   erpStockTransfers,
   invoiceLines,
+  invoicePayments,
   invoices,
 } from '@capella/database/schema';
 import { and, eq } from 'drizzle-orm';
@@ -18,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { createErpBranchContextResolver } from '../../src/modules/erp/branch-context.js';
+import { createDrizzleCashierSessionRepository } from '../../src/modules/erp/sales/cashier-sessions-repository.js';
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
 import { createSaleService } from '../../src/modules/erp/sales/sale-service.js';
@@ -66,10 +68,10 @@ const fixture = async (options: { cost?: string; quantity?: number } = {}) => {
   await database.insert(erpProductStocks).values({
     productId, branchId: sourceBranchId, quantity: options.quantity ?? 10, updatedAt: at,
   });
-  await database.insert(cashierSessions).values({
+  const sessionId = Number((await database.insert(cashierSessions).values({
     branchId: sourceBranchId, openedByAccountId: admin.accountId, openedAt: at,
-  });
-  return { sourceBranchId, destinationBranchId, productId };
+  }))[0].insertId);
+  return { sourceBranchId, destinationBranchId, productId, sessionId };
 };
 
 const service = () => {
@@ -114,8 +116,15 @@ describe('ERP stock transfer MySQL integration', () => {
     const invoice = (await database.select().from(invoices)
       .where(eq(invoices.id, transfer.invoiceId)).limit(1))[0]!;
     expect(invoice).toMatchObject({
-      branchId: data.sourceBranchId, status: 'completed', total: '120.00',
+      branchId: data.sourceBranchId,
+      status: 'completed',
+      total: '120.00',
+      amountPaid: '0.00',
+      creditedAmount: '120.00',
+      settlementStatus: 'settled',
     });
+    expect(await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, invoice.id))).toHaveLength(0);
     const line = (await database.select().from(invoiceLines)
       .where(eq(invoiceLines.invoiceId, invoice.id)).limit(1))[0]!;
     expect(line).toMatchObject({ unitPrice: '30.00', quantity: 4, lineTotal: '120.00' });
@@ -157,6 +166,34 @@ describe('ERP stock transfer MySQL integration', () => {
     ]));
     expect((await database.select().from(auditEvents)
       .where(eq(auditEvents.module, 'erp-stock-transfers'))).length).toBe(1);
+
+    const shifts = createDrizzleCashierSessionRepository(database, createErpAuditCapability());
+    await expect(shifts.findMoneyById(data.sessionId)).resolves.toMatchObject({
+      saleCount: 0,
+      taken: { cash: '0.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+      takenTotal: '0.00',
+      net: '0.00',
+    });
+    await expect(shifts.listInvoices(data.sessionId)).resolves.toEqual([]);
+    await shifts.close({
+      branchId: data.sourceBranchId,
+      closedByAccountId: admin.accountId,
+      closedAt: new Date(at.getTime() + 60_000),
+    });
+    await expect(shifts.readReportAccounting({
+      sessionId: data.sessionId,
+      branchId: data.sourceBranchId,
+      openedAt: at,
+      closedAt: new Date(at.getTime() + 60_000),
+    })).resolves.toMatchObject({
+      sales: {
+        gross: '0.00', returns: '0.00', total: '0.00',
+        discount: '0.00', tax: '0.00', net: '0.00',
+      },
+      collectedPayments: '0.00',
+      collectedPaymentLines: [],
+      creditSales: '0.00',
+    });
   });
 
   it('adds to the product the receiving branch already keeps, without retouching its price', async () => {

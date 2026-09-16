@@ -123,8 +123,8 @@ describe('ERP stock transfer service', () => {
       cashierSessionId: 77,
       idempotencyKey: input.idempotencyKey,
       lines: [{ itemType: 'product', productId: 7, quantity: 2 }],
-      // 2 × 30.00 at cost, settled in full so the invoice balances.
-      payments: [{ method: 'cash', amount: '60.00' }],
+      // Internal trade settles without pretending cash entered the drawer.
+      payments: [],
     });
     expect(options).toMatchObject({ pricing: 'cost' });
     // Nobody sells internal trade, so no employee is named and none is paid.
@@ -182,8 +182,7 @@ describe('ERP stock transfer service', () => {
         { itemType: 'product', productId: 7, quantity: 2 },
         { itemType: 'product', productId: 8, quantity: 4 },
       ],
-      // 2 × 30.00 plus 4 × 12.50.
-      payments: [{ method: 'cash', amount: '110.00' }],
+      payments: [],
     });
   });
 

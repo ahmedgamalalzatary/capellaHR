@@ -152,8 +152,8 @@ beforeAll(async () => {
       cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'product', productId, quantity: 1 }],
-      // At the product's 30.00 cost, not its 50.00 shelf price.
-      payments: [{ method: 'cash', amount: '30.00' }],
+      // At the product's 30.00 cost, without pretending internal trade is cash.
+      payments: [],
     },
     actingAccountId: adminId,
     actingAccountRole: 'admin',

@@ -277,8 +277,10 @@ export const createDrizzleSaleRepository = (
             taxValue: input.tax?.value ?? null,
             taxAmount: totals.taxAmount,
             total: totals.total,
-            amountPaid: totals.paymentTotal,
-            settlementStatus: totals.paymentTotal === totals.total ? 'settled' : 'open',
+            amountPaid: operation.kind === 'branch_transfer' ? '0.00' : totals.paymentTotal,
+            creditedAmount: operation.kind === 'branch_transfer' ? totals.total : '0.00',
+            settlementStatus: operation.kind === 'branch_transfer'
+              || totals.paymentTotal === totals.total ? 'settled' : 'open',
             soldAt: operation.soldAt,
             createdAt: operation.soldAt,
           });
@@ -354,8 +356,10 @@ export const createDrizzleSaleRepository = (
           const amountPaid = input.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n);
           await transaction.update(invoices).set({
             status: 'completed',
-            amountPaid: signedMoney(amountPaid),
-            settlementStatus: amountPaid === toCents(totals.total) ? 'settled' : 'open',
+            amountPaid: operation.kind === 'branch_transfer' ? '0.00' : signedMoney(amountPaid),
+            creditedAmount: operation.kind === 'branch_transfer' ? totals.total : '0.00',
+            settlementStatus: operation.kind === 'branch_transfer'
+              || amountPaid === toCents(totals.total) ? 'settled' : 'open',
           })
             .where(eq(invoices.id, invoiceId));
           for (const employeeId of projectedEmployeeIds) {

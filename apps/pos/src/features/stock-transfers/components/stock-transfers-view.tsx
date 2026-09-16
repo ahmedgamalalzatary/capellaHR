@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Check, ChevronsUpDown, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Button, Card, EmptyState, Input, Label, Modal } from '@capella/ui';
+import { Button, Badge, Card, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -37,10 +37,12 @@ const columns = [
   { key: 'date', label: 'التاريخ' },
   { key: 'from', label: 'من فرع' },
   { key: 'to', label: 'إلى فرع' },
-  { key: 'items', label: 'المنتجات' },
   { key: 'total', label: 'التكلفة' },
   { key: 'invoice', label: 'الفاتورة' },
+  { key: 'items', label: 'المنتجات' },
 ] as const;
+
+const TRANSFER_PREVIEW_LIMIT = 2;
 
 const toCents = (value: string) => {
   const [whole = '0', fraction = ''] = value.split('.');
@@ -163,6 +165,7 @@ export function StockTransfersView() {
   const [formError, setFormError] = useState<string>();
   const [successMessage, setSuccessMessage] = useState<string>();
   const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const effectiveSourceBranchId = cashierBranchId ?? sourceBranchId;
   useEffect(() => {
     if (!successMessage) return;
@@ -246,6 +249,7 @@ export function StockTransfersView() {
 
   const items = transfers.data?.items ?? [];
   const meta = transfers.data?.meta;
+  const selected = items.find((record) => record.id === selectedId) ?? null;
 
   return (
     <section className="space-y-6">
@@ -418,18 +422,35 @@ export function StockTransfersView() {
                 {columns.map((column) => <TH key={column.key}>{column.label}</TH>)}
               </THead>
               <tbody>
-                {items.map((record) => (
-                  <TR key={record.id}>
-                    <TD className="tabular">{record.transferDate}</TD>
-                    <TD>{record.sourceBranchName}</TD>
-                    <TD>{record.destinationBranchName}</TD>
-                    <TD className="text-muted">
-                      {record.lines.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}
-                    </TD>
-                    <TD className="tabular">{record.totalCost}</TD>
-                    <TD className="tabular text-muted">{record.invoiceNumber}</TD>
-                  </TR>
-                ))}
+                {items.map((record) => {
+                  const visible = record.lines.slice(0, TRANSFER_PREVIEW_LIMIT);
+                  const remaining = record.lines.length - visible.length;
+                  return (
+                    <TR
+                      key={record.id}
+                      className="cursor-pointer"
+                      tabIndex={0}
+                      aria-label={`تفاصيل التحويل ${record.invoiceNumber}`}
+                      onClick={() => setSelectedId(record.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedId(record.id);
+                        }
+                      }}
+                    >
+                      <TD className="tabular">{record.transferDate}</TD>
+                      <TD>{record.sourceBranchName}</TD>
+                      <TD>{record.destinationBranchName}</TD>
+                      <TD className="tabular">{record.totalCost}</TD>
+                      <TD className="tabular text-muted">{record.invoiceNumber}</TD>
+                      <TD className="max-w-64 truncate text-muted" title={record.lines.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}>
+                        {visible.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}
+                        {remaining > 0 ? <Badge variant="neutral" className="ms-2">+{remaining} أخرى</Badge> : null}
+                      </TD>
+                    </TR>
+                  );
+                })}
               </tbody>
             </DataTable>
           )}
@@ -452,6 +473,71 @@ export function StockTransfersView() {
           ) : null}
         </Card>
       </div>
+
+      {selected ? (
+        <Modal
+          title={`تفاصيل التحويل ${selected.invoiceNumber}`}
+          className="max-h-[90dvh] max-w-2xl overflow-y-auto"
+          onClose={() => setSelectedId(null)}
+        >
+          <div className="rounded-control border border-line bg-surface/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
+                <span className="truncate">{selected.sourceBranchName}</span>
+                <ArrowLeftRight className="size-4 shrink-0 text-muted" aria-hidden />
+                <span className="truncate">{selected.destinationBranchName}</span>
+              </div>
+              <Badge variant="neutral">{selected.transferDate}</Badge>
+            </div>
+            <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">الفاتورة</dt>
+                <dd className="tabular font-medium">{selected.invoiceNumber}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">التكلفة الإجمالية</dt>
+                <dd className="tabular font-semibold">{selected.totalCost}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">الملاحظة</dt>
+                <dd className="font-medium">{selected.note ?? '—'}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted">تاريخ الإنشاء</dt>
+                <dd className="tabular text-muted">{selected.createdAt}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">المنتجات ({selected.lines.length})</p>
+            <Card className="overflow-hidden">
+              <DataTable>
+                <THead>
+                  <TH>المنتج</TH>
+                  <TH>الكمية</TH>
+                  <TH>سعر الوحدة</TH>
+                  <TH>الإجمالي</TH>
+                </THead>
+                <tbody>
+                  {selected.lines.map((line) => (
+                    <TR key={`${line.sourceProductId}-${line.destinationProductId}`}>
+                      <TD className="font-medium">{line.productName}</TD>
+                      <TD className="tabular">× {line.quantity}</TD>
+                      <TD className="tabular text-muted">{line.unitCost}</TD>
+                      <TD className="tabular font-semibold">{line.lineTotal}</TD>
+                    </TR>
+                  ))}
+                </tbody>
+              </DataTable>
+            </Card>
+          </div>
+
+          <div className="flex justify-end border-t border-line/70 pt-3">
+            <Button variant="ghost" onClick={() => setSelectedId(null)}>إغلاق</Button>
+          </div>
+        </Modal>
+      ) : null}
     </section>
   );
 }

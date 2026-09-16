@@ -331,4 +331,59 @@ describe('StockTransfersView', () => {
     const dialog = await screen.findByRole('dialog', { name: 'تحويل جديد' });
     expect(dialog).toBeDefined();
   });
+
+  it('puts the products column last in the transfers table', async () => {
+    mount();
+
+    const headers = await screen.findAllByRole('columnheader');
+    const labels = headers.map((header) => header.textContent?.trim());
+    expect(labels).toEqual(['التاريخ', 'من فرع', 'إلى فرع', 'التكلفة', 'الفاتورة', 'المنتجات']);
+  });
+
+  it('shows only a preview of the products in the row', async () => {
+    mocks.list.mockResolvedValue(page([{
+      ...transfer,
+      lines: [
+        { sourceProductId: 1, destinationProductId: 11, productName: 'منتج أول', quantity: 1, unitCost: '10.00', lineTotal: '10.00' },
+        { sourceProductId: 2, destinationProductId: 12, productName: 'منتج ثان', quantity: 2, unitCost: '20.00', lineTotal: '40.00' },
+        { sourceProductId: 3, destinationProductId: 13, productName: 'منتج ثالث', quantity: 3, unitCost: '30.00', lineTotal: '90.00' },
+      ],
+    }]));
+    mount();
+
+    const row = (await screen.findByText('INV.2026.08.17.0001')).closest('tr')!;
+    expect(row.textContent).toContain('منتج أول');
+    expect(row.textContent).toContain('منتج ثان');
+    expect(row.textContent).not.toContain('منتج ثالث');
+    expect(row.textContent).toMatch(/\+1|و 1|المزيد|أخرى/);
+  });
+
+  it('opens a popup with everything about the transfer when its row is clicked', async () => {
+    mocks.list.mockResolvedValue(page([{
+      ...transfer,
+      lines: [
+        { sourceProductId: 1, destinationProductId: 11, productName: 'منتج أول', quantity: 1, unitCost: '10.00', lineTotal: '10.00' },
+        { sourceProductId: 2, destinationProductId: 12, productName: 'منتج ثان', quantity: 2, unitCost: '20.00', lineTotal: '40.00' },
+        { sourceProductId: 3, destinationProductId: 13, productName: 'منتج ثالث', quantity: 3, unitCost: '30.00', lineTotal: '90.00' },
+      ],
+    }]));
+    mount();
+
+    const row = (await screen.findByText('INV.2026.08.17.0001')).closest('tr')!;
+    fireEvent.click(row);
+
+    const dialog = await screen.findByRole('dialog', { name: /تفاصيل التحويل/ });
+    expect(dialog.textContent).toContain('فرع مدينة نصر');
+    expect(dialog.textContent).toContain('فرع المعادي');
+    expect(dialog.textContent).toContain('2026-08-17');
+    expect(dialog.textContent).toContain('INV.2026.08.17.0001');
+    expect(dialog.textContent).toContain('نقل مخزون');
+    // Every moved product is listed inside the popup, even the truncated one.
+    expect(dialog.textContent).toContain('منتج أول');
+    expect(dialog.textContent).toContain('منتج ثان');
+    expect(dialog.textContent).toContain('منتج ثالث');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /إغلاق|رجوع/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /تفاصيل التحويل/ })).toBeNull());
+  });
 });
