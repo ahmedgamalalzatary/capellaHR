@@ -5,7 +5,7 @@ describe('test environment isolation', () => {
     expect(process.env.NODE_ENV).toBe('test');
   });
 
-  it('refuses to use the development database during tests', () => {
+  it('uses the database configured in the root .env.test file', () => {
     const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
 
     // A git worktree may point at its own suffixed test database
