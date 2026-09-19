@@ -6,7 +6,7 @@ import {
 } from '@capella/api/reports-runtime';
 import { hasModule, type ResolvedEdition } from '@capella/config/edition';
 import type { createDatabase } from '@capella/database';
-import { renderReportPdfToStream } from '@capella/reporting';
+import { renderReportPdfToStream } from './reporting/index.js';
 
 export const createWorkerEditionPlan = (edition: ResolvedEdition) => ({
   attendance: hasModule(edition, 'attendance'),

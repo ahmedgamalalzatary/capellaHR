@@ -7,7 +7,6 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
   test: {
     environment: 'jsdom',
-    setupFiles: ['@capella/testing/setup'],
     exclude: [...configDefaults.exclude, 'tests/e2e/**'],
   },
 });

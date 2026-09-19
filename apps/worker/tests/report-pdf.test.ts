@@ -3,13 +3,13 @@ import { PassThrough, Readable } from 'node:stream';
 import { constants, inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 
-import { renderReportPdf, renderReportPdfToStream } from '../src/index.js';
+import { renderReportPdf, renderReportPdfToStream } from '../src/reporting/index.js';
 import {
   formatCairoTimestamp,
   formatInvoiceSoldAt,
   reportSummaryLabel,
   reportSummaryRows,
-} from '../src/report-pdf.js';
+} from '../src/reporting/report-pdf.js';
 
 const snapshot: ReportSnapshot = {
   reportType: 'employees',

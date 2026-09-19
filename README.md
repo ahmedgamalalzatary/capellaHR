@@ -11,7 +11,6 @@ Domain-oriented HR monorepo template using Next.js, Express, Drizzle, MySQL, pnp
 - `packages/shared` — framework-independent types, enums, constants, utilities, and schemas
 - `packages/config` — shared environment parsing
 - `packages/ui` — reusable React UI boundary
-- `packages/testing` — shared test setup and helpers
 - `packages/eslint-config` — shared linting rules
 - `packages/typescript-config` — shared compiler configurations
 

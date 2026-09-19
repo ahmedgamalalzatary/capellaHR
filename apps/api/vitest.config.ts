@@ -14,7 +14,7 @@ export default defineConfig({
   resolve: { conditions: ['development'] },
   test: {
     environment: 'node',
-    setupFiles: ['@capella/testing/setup', './tests/mysql-integration-suite-setup.ts'],
+    setupFiles: ['./tests/mysql-integration-suite-setup.ts'],
     globalSetup: ['./tests/mysql-integration-global-setup.ts'],
     fileParallelism: false,
   },

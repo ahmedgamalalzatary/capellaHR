@@ -1190,15 +1190,6 @@ HR/
 |   |   |   \-- index.ts
 |   |   +-- package.json
 |   |   \-- tsconfig.json
-|   +-- testing/
-|   |   +-- src/
-|   |   |   +-- builders/
-|   |   |   +-- fixtures/
-|   |   |   +-- helpers/
-|   |   |   +-- mysql/
-|   |   |   \-- setup.ts
-|   |   +-- package.json
-|   |   \-- tsconfig.json
 |   +-- ui/
 |   |   +-- src/
 |   |   |   +-- components/

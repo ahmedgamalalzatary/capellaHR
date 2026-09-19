@@ -31,7 +31,6 @@
   },
   "devDependencies": {
     "@capella/eslint-config": "workspace:*",
-    "@capella/testing": "workspace:*",
     "@capella/typescript-config": "workspace:*",
     "@next/env": "16.3.4",
     "@playwright/test": "1.62.0",

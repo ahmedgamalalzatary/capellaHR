@@ -14,15 +14,18 @@
   "dependencies": {
     "@capella/api": "workspace:*",
     "@capella/config": "workspace:*",
+    "@capella/contracts": "workspace:*",
     "@capella/database": "workspace:*",
-    "@capella/reporting": "workspace:*",
+    "@expo-google-fonts/noto-sans-arabic": "^0.4.3",
+    "bidi-js": "^1.0.3",
+    "pdfkit": "^0.19.1",
     "pino": "^9.7.0"
   },
   "devDependencies": {
     "@capella/eslint-config": "workspace:*",
-    "@capella/testing": "workspace:*",
     "@capella/typescript-config": "workspace:*",
     "@types/node": "^24.0.14",
+    "@types/pdfkit": "^0.17.6",
     "eslint": "^9.31.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.20.3",
