@@ -1,36 +1,7 @@
-DROP TRIGGER IF EXISTS `erp_invoice_payments_validate_delete`;
---> statement-breakpoint
+-- Custom SQL migration file, put your code below! --
 DROP TRIGGER IF EXISTS `erp_invoice_payments_validate_insert`;
 --> statement-breakpoint
 DROP TRIGGER IF EXISTS `erp_invoice_payments_apply_insert`;
---> statement-breakpoint
-DELETE payment
-FROM `erp_invoice_payments` payment
-INNER JOIN `erp_invoices` invoice ON invoice.id = payment.invoice_id
-WHERE invoice.kind = 'branch_transfer';
---> statement-breakpoint
-UPDATE `erp_invoices`
-SET `amount_paid` = 0.00,
-    `credited_amount` = `total`,
-    `settlement_status` = 'settled'
-WHERE `kind` = 'branch_transfer';
---> statement-breakpoint
-CREATE TRIGGER `erp_invoice_payments_validate_delete`
-BEFORE DELETE ON `erp_invoice_payments`
-FOR EACH ROW
-BEGIN
-  DECLARE invoice_status VARCHAR(32) DEFAULT NULL;
-
-  SELECT status
-    INTO invoice_status
-    FROM `erp_invoices`
-    WHERE id = OLD.invoice_id
-    FOR UPDATE;
-
-  IF invoice_status <> 'draft' THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Completed invoice payments are immutable';
-  END IF;
-END;
 --> statement-breakpoint
 CREATE TRIGGER `erp_invoice_payments_validate_insert`
 BEFORE INSERT ON `erp_invoice_payments`

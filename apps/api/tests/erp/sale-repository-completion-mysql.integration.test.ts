@@ -648,6 +648,30 @@ describe('ERP sale repository MySQL integration', () => {
       .where(eq(invoices.idempotencyKey, request.input.idempotencyKey))).toHaveLength(1);
   });
 
+  it('rejects a multi-row payment insert whose combined amount exceeds the balance', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '10.00' }];
+    const invoice = await repository.complete(request);
+
+    await expect(database.execute(sql`
+      INSERT INTO ${invoicePayments}
+        (invoice_id, method, amount, operation_reference, is_initial,
+         cashier_session_id, acting_account_id, paid_at, created_at)
+      VALUES
+        (${invoice.id}, 'visa', 25.00, ${crypto.randomUUID()}, false,
+         ${data.cashierSessionId}, ${data.accountId}, ${data.at}, ${data.at}),
+        (${invoice.id}, 'instapay', 25.00, ${crypto.randomUUID()}, false,
+         ${data.cashierSessionId}, ${data.accountId}, ${data.at}, ${data.at})
+    `)).rejects.toBeDefined();
+    expect(await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, invoice.id))).toHaveLength(1);
+  });
+
   it('completes a concurrent counter burst without losing or duplicating service sales', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());

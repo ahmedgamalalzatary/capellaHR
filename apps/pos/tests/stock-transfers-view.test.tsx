@@ -358,6 +358,23 @@ describe('StockTransfersView', () => {
     expect(row.textContent).toMatch(/\+1|و 1|المزيد|أخرى/);
   });
 
+  it('keeps the additional-products badge outside the truncated preview', async () => {
+    mocks.list.mockResolvedValue(page([{
+      ...transfer,
+      lines: [
+        { sourceProductId: 1, destinationProductId: 11, productName: 'منتج أول', quantity: 1, unitCost: '10.00', lineTotal: '10.00' },
+        { sourceProductId: 2, destinationProductId: 12, productName: 'منتج ثان', quantity: 2, unitCost: '20.00', lineTotal: '40.00' },
+        { sourceProductId: 3, destinationProductId: 13, productName: 'منتج ثالث', quantity: 3, unitCost: '30.00', lineTotal: '90.00' },
+      ],
+    }]));
+    mount();
+
+    const badge = await screen.findByText('+1 أخرى');
+    const cell = badge.closest('td')!;
+    expect(cell.className).not.toContain('truncate');
+    expect(badge.previousElementSibling?.className).toContain('truncate');
+  });
+
   it('opens a popup with everything about the transfer when its row is clicked', async () => {
     mocks.list.mockResolvedValue(page([{
       ...transfer,

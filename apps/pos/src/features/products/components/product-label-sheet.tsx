@@ -10,28 +10,24 @@ import { PrintPageRule } from '@/lib/print/page-rule';
 /**
  * How the sticker's height is divided.
  *
- * A 40x10mm label has to carry the price, the brand, the product name, the bars
- * and the digits under them, and one centimetre is all there is. So the three
- * text rows are given fixed millimetres and the barcode takes everything left
- * over: enlarging a text row shortens the bars by exactly that much instead of
- * pushing them off the roll. The font sizes are in millimetres rather than
- * points for the same reason — at this size the row height is the constraint,
- * so the glyphs are tied to it.
+ * The 40x25mm label reserves room for the price/brand, product name and digits.
+ * Text line heights match their rows so the app font's glyphs stay inside them.
+ * The barcode takes the remaining height without changing the physical page.
  */
 // Keep edge-aligned text away from the roll's edges: the shop's printout clips
 // the price/brand with only 0.3mm clearance. This is artwork padding, not a
 // change to the physical page or the driver's stock dimensions.
 const LABEL_SIDE_PADDING_MM = 2;
-const LABEL_VERTICAL_PADDING_MM = 0.3;
-const TOP_ROW_MM = 1.5;
-const TOP_FONT_MM = 1.4;
-const NAME_ROW_MM = 1.4;
-const NAME_FONT_MM = 1.3;
-const DIGITS_ROW_MM = 1.3;
-const DIGITS_FONT_MM = 1.2;
+const LABEL_VERTICAL_PADDING_MM = 0.8;
+const TOP_ROW_MM = 3.2;
+const TOP_FONT_MM = 2.2;
+const NAME_ROW_MM = 3;
+const NAME_FONT_MM = 2;
+const DIGITS_ROW_MM = 2.6;
+const DIGITS_FONT_MM = 1.8;
 /** Extra space between the bars and the human-readable digits — a little, not a row. */
-const DIGITS_OFFSET_MM = 0.25;
-const ROW_GAP_MM = 0.15;
+const DIGITS_OFFSET_MM = 0.4;
+const ROW_GAP_MM = 0.3;
 /** Absorbs the sub-millimetre rounding the driver does, so no row is clipped. */
 const SLACK_MM = 0.1;
 const TEXT_ROWS = 3;
@@ -123,15 +119,15 @@ export function ProductLabelSheet({ products, onPrinted }: {
           {/* LTR so the price stays on the left and the brand on the right. */}
           <div
             dir="ltr"
-            className="flex w-full items-baseline justify-between gap-1 font-semibold leading-none"
-            style={{ height: mm(TOP_ROW_MM), fontSize: mm(TOP_FONT_MM) }}
+            className="flex w-full shrink-0 items-baseline justify-between gap-1 font-semibold"
+            style={{ height: mm(TOP_ROW_MM), lineHeight: mm(TOP_ROW_MM), fontSize: mm(TOP_FONT_MM) }}
           >
             <span className="tabular shrink-0">{product.sellingPrice} ج.م</span>
             <span className="truncate">{LABEL_BRAND}</span>
           </div>
           <div
-            className="w-full truncate leading-none"
-            style={{ height: mm(NAME_ROW_MM), fontSize: mm(NAME_FONT_MM) }}
+            className="w-full shrink-0 truncate"
+            style={{ height: mm(NAME_ROW_MM), lineHeight: mm(NAME_ROW_MM), fontSize: mm(NAME_FONT_MM) }}
           >
             {product.name}
           </div>
@@ -140,13 +136,15 @@ export function ProductLabelSheet({ products, onPrinted }: {
             role="img"
             aria-label={product.barcode!}
             data-product-label-bars
+            className="shrink-0"
             style={{ width: mm(CONTENT_WIDTH_MM), height: mm(BARCODE_HEIGHT_MM) }}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
           <div
-            className="tabular w-full text-center leading-none tracking-wider"
+            className="tabular w-full shrink-0 text-center tracking-wider"
             style={{
               height: mm(DIGITS_ROW_MM),
+              lineHeight: mm(DIGITS_ROW_MM),
               fontSize: mm(DIGITS_FONT_MM),
               marginTop: mm(DIGITS_OFFSET_MM),
             }}

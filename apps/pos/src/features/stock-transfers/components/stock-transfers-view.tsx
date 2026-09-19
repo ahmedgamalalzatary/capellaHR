@@ -444,9 +444,13 @@ export function StockTransfersView() {
                       <TD>{record.destinationBranchName}</TD>
                       <TD className="tabular">{record.totalCost}</TD>
                       <TD className="tabular text-muted">{record.invoiceNumber}</TD>
-                      <TD className="max-w-64 truncate text-muted" title={record.lines.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}>
-                        {visible.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}
-                        {remaining > 0 ? <Badge variant="neutral" className="ms-2">+{remaining} أخرى</Badge> : null}
+                      <TD className="max-w-64 text-muted" title={record.lines.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}>
+                        <div className="flex min-w-0 items-center">
+                          <span className="min-w-0 truncate">
+                            {visible.map((line) => `${line.productName} × ${line.quantity}`).join('، ')}
+                          </span>
+                          {remaining > 0 ? <Badge variant="neutral" className="ms-2 shrink-0">+{remaining} أخرى</Badge> : null}
+                        </div>
                       </TD>
                     </TR>
                   );

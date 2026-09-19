@@ -687,6 +687,13 @@
       "when": 1789581269902,
       "tag": "0097_transfer_internal_settlement",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "5",
+      "when": 1789582941272,
+      "tag": "0098_payment_balance_reservation",
+      "breakpoints": true
     }
   ]
 }

@@ -42,7 +42,7 @@ describe('ProductLabelSheet', () => {
   it('sizes the page from the one label-size constant', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
-    expect(baseElement.querySelector('style')?.textContent).toContain('40mm 10mm');
+    expect(baseElement.querySelector('style')?.textContent).toContain('40mm 25mm');
   });
 
   it('prints the sticker upright at the size of the loaded roll', () => {
@@ -51,13 +51,13 @@ describe('ProductLabelSheet', () => {
     const label = sticker(baseElement);
 
     expect(label.style.width).toBe('40mm');
-    expect(label.style.height).toBe('10mm');
+    expect(label.style.height).toBe('25mm');
     // The old sticker was authored portrait and rotated to fit; a 4cm-wide label
     // reads straight across, and a stray rotation would print it on its side.
     expect(label.style.transform).toBe('');
   });
 
-  it('fits the price, the brand, the name, the bars and the digits inside the one centimetre it has', () => {
+  it('fits the price, the brand, the name, the bars and the digits inside the label', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const label = sticker(baseElement);

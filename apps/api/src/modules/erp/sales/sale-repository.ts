@@ -454,14 +454,6 @@ export const createDrizzleSaleRepository = (
           paidAt: operation.paidAt,
           createdAt: operation.paidAt,
         });
-        const amountPaid = signedMoney(
-          toCents(original.amountPaid) + toCents(operation.input.amount),
-        );
-        await transaction.update(invoices).set({
-          amountPaid,
-          settlementStatus: toCents(amountPaid) + toCents(original.creditedAmount) === toCents(original.total)
-            ? 'settled' : 'open',
-        }).where(eq(invoices.id, original.id));
         const afterState = await hydrateInvoice(transaction, original.id);
         if (!afterState) throw new SaleError('INVOICE_NOT_FOUND');
         await audit.record(transaction, {
