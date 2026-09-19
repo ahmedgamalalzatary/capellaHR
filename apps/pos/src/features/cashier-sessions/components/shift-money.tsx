@@ -33,6 +33,11 @@ const fromCents = (value: bigint) => {
   return `${negative ? '-' : ''}${absolute / BigInt(100)}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`;
 };
 
+/** Net per method: what was taken minus what was handed back. */
+export const shiftMethodNet = (taken: string, refunded: string) => fromCents(
+  toCents(taken) - toCents(refunded),
+);
+
 /** Cash still in the till: cash taken, minus cash handed back, minus expenses. */
 export const cashLeftInDrawer = (summary: CashierSessionSummary) => fromCents(
   toCents(summary.taken.cash) - toCents(summary.refunded.cash) - toCents(summary.expenses),
@@ -81,6 +86,7 @@ export function ShiftMoney({ summary }: { summary: CashierSessionSummary }) {
                 <th scope="col" className="px-3 py-2 text-start font-medium">وسيلة الدفع</th>
                 <th scope="col" className="px-3 py-2 text-start font-medium">محصّل</th>
                 <th scope="col" className="px-3 py-2 text-start font-medium">مسترد</th>
+                <th scope="col" className="px-3 py-2 text-start font-medium">الصافي</th>
               </tr>
             </thead>
             <tbody>
@@ -94,6 +100,9 @@ export function ShiftMoney({ summary }: { summary: CashierSessionSummary }) {
                   </td>
                   <td className="tabular px-3 py-2 text-ink">
                     {formatShiftMoney(summary.refunded[method])}
+                  </td>
+                  <td className="tabular px-3 py-2 text-ink">
+                    {formatShiftMoney(shiftMethodNet(summary.taken[method], summary.refunded[method]))}
                   </td>
                 </tr>
               ))}

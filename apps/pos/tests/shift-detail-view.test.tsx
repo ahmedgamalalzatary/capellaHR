@@ -78,6 +78,30 @@ describe('ShiftDetailView', () => {
     expect(mocks.getCashierSessionDetail).toHaveBeenCalledWith(14);
   });
 
+  test('shows الصافي per method as محصّل minus مسترد', async () => {
+    mocks.getCashierSessionDetail.mockResolvedValue({
+      ...detail,
+      summary: {
+        ...detail.summary,
+        taken: { cash: '6800.00', visa: '0.00', instapay: '0.00', vodafone_cash: '1000.00' },
+        refunded: { cash: '590.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+        takenTotal: '7800.00',
+        refundedTotal: '590.00',
+        net: '7210.00',
+      },
+    });
+    renderView();
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getByRole('columnheader', { name: 'الصافي' })).toBeDefined();
+
+    const cashRow = within(table).getByRole('row', { name: /نقدي/ });
+    expect(within(cashRow).getByText('6210.00 ج.م')).toBeDefined();
+
+    const walletRow = within(table).getByRole('row', { name: /محفظة/ });
+    expect(within(walletRow).getAllByText('1000.00 ج.م')).toHaveLength(2);
+  });
+
   test('links each sale to the invoice with the shift branch, which an admin must send', async () => {
     renderView();
 
