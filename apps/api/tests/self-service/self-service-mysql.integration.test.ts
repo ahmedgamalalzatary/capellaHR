@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { createDatabase } from '@capella/database';
 import { employeeEmploymentPeriods, employeeTerminations } from '@capella/database/schema';
 import {
+  accounts,
   advanceInstallments,
   advances,
   attendanceDailyRecords,
@@ -24,10 +25,11 @@ import {
   employeePhoneReservations,
   employeeSalaryPeriods,
   employees,
+  erpExpenses,
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -75,8 +77,37 @@ const currentCairoDate = (instant: Date) => {
   return `${read('year')}-${read('month')}-${read('day')}`;
 };
 
+const ensureAdminAccount = async () => {
+  if ((await database.select({ id: accounts.id }).from(accounts).where(eq(accounts.role, 'admin')).limit(1))[0]) {
+    return;
+  }
+  const now = new Date();
+  await database.insert(accounts).values({
+    username: `advance-admin-${process.pid}`,
+    passwordHash: 'unused',
+    role: 'admin',
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+const purgeAdvanceExpenses = async () => {
+  await database.execute(sql.raw('DROP TRIGGER IF EXISTS `erp_expenses_reject_delete`'));
+  await database.update(advances).set({ expenseId: null });
+  await database.delete(erpExpenses).where(and(eq(erpExpenses.name, 'advance'), eq(erpExpenses.kind, 'reversal')));
+  await database.delete(erpExpenses).where(and(eq(erpExpenses.name, 'advance'), sql`${erpExpenses.supersedesId} is not null`));
+  await database.delete(erpExpenses).where(eq(erpExpenses.name, 'advance'));
+  await database.execute(sql.raw(`CREATE TRIGGER \`erp_expenses_reject_delete\`
+BEFORE DELETE ON \`erp_expenses\`
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ERP expense facts cannot be deleted';
+END`));
+};
+
 const cleanupDatabase = async () => {
   await database.delete(financialAuditEvents);
+  await purgeAdvanceExpenses();
   await database.delete(advanceInstallments);
   await database.delete(advances);
   await database.delete(bonuses);
@@ -103,7 +134,10 @@ const cleanupDatabase = async () => {
   await database.delete(branches);
 };
 
-beforeEach(cleanupDatabase);
+beforeEach(async () => {
+  await cleanupDatabase();
+  await ensureAdminAccount();
+});
 afterEach(cleanupDatabase);
 
 describe('MySQL-backed employee self-service', () => {

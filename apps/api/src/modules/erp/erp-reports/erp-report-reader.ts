@@ -63,7 +63,7 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
       ['invoiceNumber', 'رقم الفاتورة'], ['serviceName', 'الخدمة'], ['employeeName', 'الموظف'],
       ['eventType', 'نوع الحركة'], ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'],
-      ['amount', 'الإيراد'],
+      ['amount', 'الإيراد'], ['invoicePaid', 'المدفوع على الفاتورة'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-products': {
@@ -72,15 +72,19 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
       ['invoiceNumber', 'رقم الفاتورة'], ['productName', 'المنتج'], ['eventType', 'نوع الحركة'],
       ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'], ['costBasis', 'تكلفة الوحدة'],
-      ['amount', 'الإيراد'],
+      ['amount', 'الإيراد'], ['invoicePaid', 'المدفوع على الفاتورة'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-employees': {
-    title: 'تقرير مبيعات الموظفين',
+    title: 'إجماليات أداء الموظفين',
     columns: [
-      ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['invoiceNumber', 'رقم الفاتورة'], ['employeeCode', 'كود الموظف'],
-      ['employeeName', 'الموظف'], ['eventType', 'نوع الحركة'], ['amount', 'المبلغ'],
+      ['id', 'المعرف'], ['eventDate', 'آخر حركة'], ['branchName', 'الفرع'],
+      ['employeeCode', 'كود الموظف'], ['employeeName', 'الموظف'],
+      ['invoiceCount', 'عدد الفواتير'], ['serviceQuantity', 'عدد الخدمات'],
+      ['serviceAmount', 'صافي قيمة الخدمات'],
+      ['productQuantity', 'عدد المنتجات'],
+      ['productAmount', 'صافي قيمة المنتجات'],
+      ['netAmount', 'إجمالي صافي المبيعات'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-commissions': {
@@ -103,8 +107,10 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     title: 'تقرير المرتجعات',
     columns: [
       ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'], ['reason', 'السبب'],
-      ['authorizedBy', 'المنفذ'], ['amount', 'المبلغ'],
+      ['invoiceNumber', 'رقم الفاتورة'], ['clientName', 'العميل'],
+      ['itemName', 'المنتج أو الخدمة'], ['itemType', 'النوع'], ['quantity', 'الكمية'],
+      ['employeeName', 'الموظف'], ['reason', 'السبب'], ['authorizedBy', 'المنفذ'],
+      ['amount', 'المبلغ'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-voids': {
@@ -131,12 +137,21 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
       ['authorizedBy', 'المنفذ'], ['amount', 'المبلغ'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
-  'erp-stock': {
-    title: 'تقرير حركة المخزون',
+  'erp-transfers': {
+    title: 'تقرير التحويلات بين الفروع',
     columns: [
-      ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['productName', 'المنتج'], ['reason', 'السبب'], ['quantityDelta', 'تغير الكمية'],
-      ['balanceAfter', 'الرصيد بعد الحركة'], ['authorizedBy', 'المنفذ'], ['note', 'ملاحظة'],
+      ['id', 'المعرف'], ['eventDate', 'تاريخ التحويل'], ['sourceBranchName', 'من فرع'],
+      ['destinationBranchName', 'إلى فرع'], ['productName', 'المنتج'], ['quantity', 'الكمية'],
+      ['unitCost', 'تكلفة الوحدة'], ['totalCost', 'إجمالي التكلفة'],
+      ['authorizedBy', 'المنفذ'], ['note', 'ملاحظة'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
+  'erp-stock': {
+    title: 'تقرير المخزون المتاح',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'آخر تحديث'], ['branchName', 'الفرع'],
+      ['productName', 'المنتج'], ['availableQuantity', 'الكمية المتاحة'],
+      ['unitCost', 'تكلفة الوحدة'], ['inventoryValue', 'قيمة المخزون'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-profit': {

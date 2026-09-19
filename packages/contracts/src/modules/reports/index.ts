@@ -20,6 +20,7 @@ export const erpTabReportTypes = [
   'erp-voids',
   'erp-expenses',
   'erp-purchases',
+  'erp-transfers',
   'erp-stock',
   'erp-profit',
   'erp-client-history',
@@ -73,6 +74,8 @@ const idListSchema = z.preprocess(
 const reportFilterShape = {
   search: z.string().trim().min(1).max(255).optional(),
   branchId: coercedMysqlIntSchema.optional(),
+  sourceBranchId: coercedMysqlIntSchema.optional(),
+  destinationBranchId: coercedMysqlIntSchema.optional(),
   dateFrom: calendarDateSchema.optional(),
   dateTo: calendarDateSchema.optional(),
   monthFrom: payrollMonthSchema.optional(),
@@ -120,6 +123,7 @@ const allowedFilters: Record<ReportType, ReadonlySet<keyof z.infer<typeof report
     (typeof erpTabReportTypes)[number],
     ReadonlySet<keyof z.infer<typeof reportFiltersSchema>>
   >),
+  'erp-transfers': new Set(['search', 'sourceBranchId', 'destinationBranchId', 'dateFrom', 'dateTo']),
   'erp-invoice': new Set(['branchId']),
 };
 

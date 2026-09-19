@@ -9,6 +9,22 @@ import {
 } from '../../../src/modules/reports/index.js';
 
 describe('report contracts', () => {
+  it('accepts the branch-transfer report type', () => {
+    expect(reportTypeSchema.parse('erp-transfers')).toBe('erp-transfers');
+  });
+
+  it('accepts directional branch filters only for transfer reports', () => {
+    expect(createReportExportSchema.safeParse({
+      reportType: 'erp-transfers',
+      filters: { sourceBranchId: 2, destinationBranchId: 3 },
+      selection: { mode: 'all' },
+    }).success).toBe(true);
+    expect(createReportExportSchema.safeParse({
+      reportType: 'erp-sales',
+      filters: { sourceBranchId: 2 },
+      selection: { mode: 'all' },
+    }).success).toBe(false);
+  });
   it('publishes all consumables operational reports through the existing report system', () => {
     expect(erpTabReportTypes).toEqual(expect.arrayContaining([
       'erp-service-completions',
@@ -40,6 +56,7 @@ describe('report contracts', () => {
       'erp-voids',
       'erp-expenses',
       'erp-purchases',
+      'erp-transfers',
       'erp-stock',
       'erp-profit',
       'erp-client-history',

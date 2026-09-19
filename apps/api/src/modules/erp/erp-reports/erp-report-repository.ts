@@ -230,7 +230,8 @@ const serviceFacts = (filters: ReportFilters) => saleLineEvents(filters, 'servic
     ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
     ${sql.raw(args.line)}.item_name_snapshot serviceName,
     ${sql.raw(args.line)}.employee_name_snapshot employeeName, ${args.eventType} eventType,
-    ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice, ${args.amount} amount
+    ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice, ${args.amount} amount,
+    ${sql.raw(args.invoice)}.amount_paid invoicePaid
 `);
 
 const productFacts = (filters: ReportFilters) => saleLineEvents(filters, 'product', (args) => sql`
@@ -238,30 +239,34 @@ const productFacts = (filters: ReportFilters) => saleLineEvents(filters, 'produc
     ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
     ${sql.raw(args.line)}.item_name_snapshot productName, ${args.eventType} eventType,
     ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice,
-    ${sql.raw(args.line)}.product_cost_basis_snapshot costBasis, ${args.amount} amount
+    ${sql.raw(args.line)}.product_cost_basis_snapshot costBasis, ${args.amount} amount,
+    ${sql.raw(args.invoice)}.amount_paid invoicePaid
 `);
 
 /**
- * An employee is credited the services they themselves performed, never the
- * whole invoice: one sale split between three people produces three rows, each
- * carrying its own lines plus that share of the invoice's discount and tax.
+ * Services belong to their assigned employee. Products belong to the invoice's
+ * seller/cashier. Both streams retain their own quantities and net values so a
+ * combined employee row never hides how its total was earned.
  */
-const employeeFacts = (filters: ReportFilters) => sql`
+const employeeEventFacts = (filters: ReportFilters) => sql`
   SELECT CONCAT('sale-', invoice.id, '-', line.employee_id) id, invoice.sold_at eventDate,
     branch.name branchName, invoice.invoice_number invoiceNumber,
+    line.employee_id employeeId,
     line.employee_code_snapshot employeeCode, line.employee_name_snapshot employeeName,
-    'sale' eventType,
+    'service' activityType, SUM(line.quantity) serviceQuantity,
+    0 productQuantity,
     SUM(
       line.line_total
         - (${invoiceLineShare('line', 'invoice', 'discount_amount')})
         + (${invoiceLineShare('line', 'invoice', 'tax_amount')})
-    ) amount
+    ) serviceAmount, 0 productAmount
   FROM erp_invoice_lines line
   INNER JOIN erp_invoices invoice
     ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
-    sql`invoice.status <> 'draft'`, sql`line.employee_id IS NOT NULL`,
+    sql`invoice.status <> 'draft'`, sql`invoice.kind = 'sale'`,
+    sql`line.item_type = 'service'`, sql`line.employee_id IS NOT NULL`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
@@ -275,9 +280,11 @@ const employeeFacts = (filters: ReportFilters) => sql`
   UNION ALL
   SELECT CONCAT(reversal.type, '-', reversal.id, '-', original_line.employee_id) id,
     reversal.created_at eventDate, branch.name branchName, invoice.invoice_number invoiceNumber,
+    original_line.employee_id employeeId,
     original_line.employee_code_snapshot employeeCode,
     original_line.employee_name_snapshot employeeName,
-    reversal.type eventType, -SUM(reversal_line.total) amount
+    'service' activityType, -SUM(reversal_line.quantity) serviceQuantity,
+    0 productQuantity, -SUM(reversal_line.total) serviceAmount, 0 productAmount
   FROM erp_invoice_reversal_lines reversal_line
   INNER JOIN erp_invoice_reversals reversal
     ON reversal.id = reversal_line.reversal_id
@@ -291,7 +298,8 @@ const employeeFacts = (filters: ReportFilters) => sql`
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
   INNER JOIN branches branch ON branch.id = reversal.branch_id
   ${condition([
-    sql`reversal.status = 'finalized'`, sql`original_line.employee_id IS NOT NULL`,
+    sql`reversal.status = 'finalized'`, sql`invoice.kind = 'sale'`,
+    sql`original_line.item_type = 'service'`, sql`original_line.employee_id IS NOT NULL`,
     ...branchFilter(filters, 'reversal.branch_id'),
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
@@ -302,6 +310,70 @@ const employeeFacts = (filters: ReportFilters) => sql`
   GROUP BY reversal.id, reversal.type, reversal.created_at, branch.name, invoice.invoice_number,
     original_line.employee_id, original_line.employee_code_snapshot,
     original_line.employee_name_snapshot
+  UNION ALL
+  SELECT CONCAT('product-sale-', invoice.id) id, invoice.sold_at eventDate,
+    branch.name branchName, invoice.invoice_number invoiceNumber,
+    invoice.seller_employee_id employeeId, employee.employee_code employeeCode,
+    invoice.seller_name_snapshot employeeName, 'product' activityType,
+    0 serviceQuantity, SUM(line.quantity) productQuantity,
+    0 serviceAmount,
+    SUM(
+      line.line_total
+        - (${invoiceLineShare('line', 'invoice', 'discount_amount')})
+        + (${invoiceLineShare('line', 'invoice', 'tax_amount')})
+    ) productAmount
+  FROM erp_invoice_lines line
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
+  INNER JOIN employees employee ON employee.id = invoice.seller_employee_id
+  INNER JOIN branches branch ON branch.id = invoice.branch_id
+  ${condition([
+    sql`invoice.status <> 'draft'`, sql`invoice.kind = 'sale'`,
+    sql`line.item_type = 'product'`, sql`invoice.seller_employee_id IS NOT NULL`,
+    ...branchFilter(filters, 'invoice.branch_id'),
+    ...timestampFilter(filters, 'invoice.sold_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'invoice.seller_name_snapshot',
+      'CAST(employee.employee_code AS CHAR)',
+    ]),
+  ])}
+  GROUP BY invoice.id, branch.name, invoice.invoice_number, invoice.sold_at,
+    invoice.discount_amount, invoice.tax_amount, invoice.subtotal,
+    invoice.seller_employee_id, employee.employee_code, invoice.seller_name_snapshot
+  UNION ALL
+  SELECT CONCAT('product-', reversal.type, '-', reversal.id) id,
+    reversal.created_at eventDate, branch.name branchName,
+    invoice.invoice_number invoiceNumber, invoice.seller_employee_id employeeId,
+    employee.employee_code employeeCode, invoice.seller_name_snapshot employeeName,
+    'product' activityType, 0 serviceQuantity,
+    -SUM(reversal_line.quantity) productQuantity, 0 serviceAmount,
+    -SUM(reversal_line.total) productAmount
+  FROM erp_invoice_reversal_lines reversal_line
+  INNER JOIN erp_invoice_reversals reversal
+    ON reversal.id = reversal_line.reversal_id
+    AND reversal.invoice_id = reversal_line.invoice_id
+    AND reversal.branch_id = reversal_line.branch_id
+  INNER JOIN erp_invoice_lines original_line
+    ON original_line.id = reversal_line.invoice_line_id
+    AND original_line.invoice_id = reversal_line.invoice_id
+    AND original_line.branch_id = reversal_line.branch_id
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
+  INNER JOIN employees employee ON employee.id = invoice.seller_employee_id
+  INNER JOIN branches branch ON branch.id = reversal.branch_id
+  ${condition([
+    sql`reversal.status = 'finalized'`, sql`invoice.kind = 'sale'`,
+    sql`original_line.item_type = 'product'`, sql`invoice.seller_employee_id IS NOT NULL`,
+    ...branchFilter(filters, 'reversal.branch_id'),
+    ...timestampFilter(filters, 'reversal.created_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'invoice.seller_name_snapshot',
+      'CAST(employee.employee_code AS CHAR)',
+    ]),
+  ])}
+  GROUP BY reversal.id, reversal.type, reversal.created_at, branch.name,
+    invoice.invoice_number, invoice.seller_employee_id, employee.employee_code,
+    invoice.seller_name_snapshot
 `;
 
 const commissionFacts = (filters: ReportFilters) => sql`
@@ -366,20 +438,31 @@ const adjustmentFacts = (filters: ReportFilters, kind: 'discount' | 'tax') => {
   `;
 };
 
-const reversalFacts = (filters: ReportFilters, type: 'refund' | 'void') => sql`
-  SELECT reversal.id id, reversal.created_at eventDate, branch.name branchName,
+const refundFacts = (filters: ReportFilters) => sql`
+  SELECT reversal_line.id id, reversal.created_at eventDate, branch.name branchName,
     invoice.invoice_number invoiceNumber, invoice.client_name_snapshot clientName,
-    reversal.reason reason, account.username authorizedBy, reversal.total amount
+    original_line.item_name_snapshot itemName, original_line.item_type itemType,
+    reversal_line.quantity quantity, original_line.employee_name_snapshot employeeName,
+    reversal.reason reason, account.username authorizedBy, reversal_line.total amount
   FROM erp_invoice_reversals reversal
+  INNER JOIN erp_invoice_reversal_lines reversal_line
+    ON reversal_line.reversal_id = reversal.id
+    AND reversal_line.invoice_id = reversal.invoice_id
+    AND reversal_line.branch_id = reversal.branch_id
+  INNER JOIN erp_invoice_lines original_line
+    ON original_line.id = reversal_line.invoice_line_id
+    AND original_line.invoice_id = reversal_line.invoice_id
+    AND original_line.branch_id = reversal_line.branch_id
   INNER JOIN erp_invoices invoice
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
   INNER JOIN branches branch ON branch.id = reversal.branch_id
   INNER JOIN accounts account ON account.id = reversal.acting_account_id
   ${condition([
-    sql`reversal.status = 'finalized'`, sql`reversal.type = ${type}`,
+    sql`reversal.status = 'finalized'`, sql`reversal.type = 'refund'`,
     ...branchFilter(filters, 'reversal.branch_id'), ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'invoice.client_name_snapshot', 'reversal.reason', 'account.username',
+      'invoice.invoice_number', 'invoice.client_name_snapshot', 'original_line.item_name_snapshot',
+      'original_line.employee_name_snapshot', 'reversal.reason', 'account.username',
     ]),
   ])}
 `;
@@ -426,47 +509,73 @@ const purchaseFacts = (filters: ReportFilters) => sql`
   ])}
 `;
 
-const stockProductName = () => sql`COALESCE(
-  CASE WHEN movement.source_type = 'sale' THEN (
-    SELECT line.item_name_snapshot FROM erp_invoice_lines line
-    WHERE line.invoice_id = movement.source_id AND line.branch_id = movement.branch_id
-      AND line.product_id = movement.product_id LIMIT 1
-  ) END,
-  CASE WHEN movement.source_type IN ('refund', 'void') THEN (
-    SELECT line.item_name_snapshot
-    FROM erp_invoice_reversal_lines reversal_line
-    INNER JOIN erp_invoice_reversals reversal
-      ON reversal.id = reversal_line.reversal_id AND reversal.branch_id = reversal_line.branch_id
-    INNER JOIN erp_invoice_lines line
-      ON line.id = reversal_line.invoice_line_id AND line.branch_id = reversal_line.branch_id
-    WHERE reversal.id = movement.source_id AND reversal.branch_id = movement.branch_id
-      AND line.product_id = movement.product_id LIMIT 1
-  ) END,
-  CASE WHEN movement.source_type IN ('purchase', 'purchase_cancellation') THEN (
-    SELECT line.product_name_snapshot FROM erp_purchase_lines line
-    WHERE line.purchase_id = movement.source_id AND line.branch_id = movement.branch_id
-      AND line.product_id = movement.product_id LIMIT 1
-  ) END,
-  product.name
-)`;
+const voidFacts = (filters: ReportFilters) => sql`
+  SELECT reversal.id id, reversal.created_at eventDate, branch.name branchName,
+    invoice.invoice_number invoiceNumber, invoice.client_name_snapshot clientName,
+    reversal.reason reason, account.username authorizedBy, reversal.total amount
+  FROM erp_invoice_reversals reversal
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
+  INNER JOIN branches branch ON branch.id = reversal.branch_id
+  INNER JOIN accounts account ON account.id = reversal.acting_account_id
+  ${condition([
+    sql`reversal.status = 'finalized'`, sql`reversal.type = 'void'`,
+    ...branchFilter(filters, 'reversal.branch_id'), ...timestampFilter(filters, 'reversal.created_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'invoice.client_name_snapshot', 'reversal.reason', 'account.username',
+    ]),
+  ])}
+`;
+
+const employeeFacts = (filters: ReportFilters) => sql`
+  SELECT employeeId id, MAX(eventDate) eventDate, MAX(branchName) branchName,
+    MAX(employeeCode) employeeCode, MAX(employeeName) employeeName,
+    COUNT(DISTINCT invoiceNumber) invoiceCount,
+    SUM(serviceQuantity) serviceQuantity, SUM(serviceAmount) serviceAmount,
+    SUM(productQuantity) productQuantity, SUM(productAmount) productAmount,
+    SUM(serviceAmount + productAmount) netAmount,
+    SUM(serviceAmount + productAmount) amount
+  FROM (${employeeEventFacts(filters)}) employee_events
+  GROUP BY employeeId
+`;
+
+const transferFacts = (filters: ReportFilters) => sql`
+  SELECT line.id id, transfer.transfer_date eventDate,
+    source_branch.name sourceBranchName, destination_branch.name destinationBranchName,
+    line.product_name_snapshot productName, line.quantity quantity,
+    line.unit_cost unitCost, line.line_total totalCost,
+    account.username authorizedBy, transfer.note note
+  FROM erp_stock_transfer_lines line
+  INNER JOIN erp_stock_transfers transfer ON transfer.id = line.transfer_id
+    AND transfer.source_branch_id = line.source_branch_id
+    AND transfer.destination_branch_id = line.destination_branch_id
+  INNER JOIN branches source_branch ON source_branch.id = transfer.source_branch_id
+  INNER JOIN branches destination_branch ON destination_branch.id = transfer.destination_branch_id
+  INNER JOIN accounts account ON account.id = transfer.acting_account_id
+  ${condition([
+    sql`transfer.status = 'posted'`,
+    ...(filters.sourceBranchId === undefined ? [] : [sql`transfer.source_branch_id = ${filters.sourceBranchId}`]),
+    ...(filters.destinationBranchId === undefined ? [] : [sql`transfer.destination_branch_id = ${filters.destinationBranchId}`]),
+    ...dateFilter(filters, 'transfer.transfer_date'),
+    ...searchFilter(filters, [
+      'source_branch.name', 'destination_branch.name', 'line.product_name_snapshot',
+      'account.username', 'transfer.note',
+    ]),
+  ])}
+`;
 
 const stockFacts = (filters: ReportFilters) => sql`
-  SELECT movement.id id, movement.created_at eventDate, branch.name branchName,
-    ${stockProductName()} productName,
-    movement.reason reason, movement.quantity_delta quantityDelta,
-    movement.balance_after balanceAfter, account.username authorizedBy, movement.note note
-  FROM erp_stock_movements movement
+  SELECT product.id id, stock.updated_at eventDate, branch.name branchName,
+    product.name productName, stock.quantity availableQuantity,
+    product.last_purchase_cost unitCost,
+    stock.quantity * product.last_purchase_cost inventoryValue
+  FROM erp_product_stocks stock
   INNER JOIN erp_products product
-    ON product.id = movement.product_id AND product.branch_id = movement.branch_id
-  INNER JOIN branches branch ON branch.id = movement.branch_id
-  INNER JOIN accounts account ON account.id = movement.acting_account_id
+    ON product.id = stock.product_id AND product.branch_id = stock.branch_id
+  INNER JOIN branches branch ON branch.id = stock.branch_id
   ${condition([
-    ...branchFilter(filters, 'movement.branch_id'), ...timestampFilter(filters, 'movement.created_at'),
-    ...(filters.search ? [sql`(
-      LOCATE(${filters.search}, ${stockProductName()}) > 0
-      OR LOCATE(${filters.search}, movement.note) > 0
-      OR LOCATE(${filters.search}, account.username) > 0
-    )`] : []),
+    ...branchFilter(filters, 'stock.branch_id'), ...timestampFilter(filters, 'stock.updated_at'),
+    ...searchFilter(filters, ['product.name', 'product.barcode']),
   ])}
 `;
 
@@ -666,10 +775,11 @@ const factsFor = (
     case 'erp-employees': return employeeFacts(filters);
     case 'erp-commissions': return commissionFacts(filters);
     case 'erp-discounts': return adjustmentFacts(filters, 'discount');
-    case 'erp-refunds': return reversalFacts(filters, 'refund');
-    case 'erp-voids': return reversalFacts(filters, 'void');
+    case 'erp-refunds': return refundFacts(filters);
+    case 'erp-voids': return voidFacts(filters);
     case 'erp-expenses': return expenseFacts(filters);
     case 'erp-purchases': return purchaseFacts(filters);
+    case 'erp-transfers': return transferFacts(filters);
     case 'erp-stock': return stockFacts(filters);
     case 'erp-profit': return profitFacts(filters);
     case 'erp-client-history': return clientFacts(filters);
@@ -696,17 +806,32 @@ const sum = (column: string, alias: string) => sql.raw(
 const summaryProjection = (reportType: ErpReportType): SQL => {
   switch (reportType) {
     case 'erp-sales': return sql`COUNT(*) totalRecords, ${sum('total', 'totalSales')}, ${sum('discountAmount', 'totalDiscount')}, ${sum('taxAmount', 'totalTax')}`;
-    case 'erp-services':
-    case 'erp-products': return sql`COUNT(*) totalRecords, ${sum('quantity', 'totalQuantity')}, ${sum('amount', 'totalRevenue')}`;
-    case 'erp-payment-methods': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetPayments')}`;
-    case 'erp-employees': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
+    case 'erp-services': return sql`COUNT(*) totalRecords,
+      COALESCE(SUM(CASE WHEN eventType = 'sale' THEN quantity ELSE 0 END), 0) totalMadeServices,
+      COALESCE(-SUM(CASE WHEN eventType IN ('refund', 'void') THEN quantity ELSE 0 END), 0) totalRefundedServices,
+      ${sum('quantity', 'totalQuantity')}, ${sum('amount', 'totalRevenue')}`;
+    case 'erp-products': return sql`COUNT(*) totalRecords,
+      COALESCE(SUM(CASE WHEN eventType = 'sale' THEN quantity ELSE 0 END), 0) totalSoldProducts,
+      COALESCE(-SUM(CASE WHEN eventType IN ('refund', 'void') THEN quantity ELSE 0 END), 0) totalRefundedProducts,
+      ${sum('quantity', 'totalQuantity')}, ${sum('amount', 'totalRevenue')}`;
+    case 'erp-payment-methods': return sql`COUNT(*) totalRecords,
+      ${sum('amount', 'totalNetPayments')},
+      COALESCE(SUM(CASE WHEN paymentMethod = 'cash' THEN amount ELSE 0 END), 0) totalNetCashPayments,
+      COALESCE(SUM(CASE WHEN paymentMethod = 'visa' THEN amount ELSE 0 END), 0) totalNetVisaPayments,
+      COALESCE(SUM(CASE WHEN paymentMethod = 'instapay' THEN amount ELSE 0 END), 0) totalNetInstapayPayments,
+      COALESCE(SUM(CASE WHEN paymentMethod = 'vodafone_cash' THEN amount ELSE 0 END), 0) totalNetVodafoneCashPayments`;
+    case 'erp-employees': return sql`COUNT(*) totalRecords,
+      ${sum('serviceQuantity', 'totalServices')}, ${sum('serviceAmount', 'totalServiceSales')},
+      ${sum('productQuantity', 'totalProducts')}, ${sum('productAmount', 'totalProductSales')},
+      ${sum('netAmount', 'totalNetSales')}`;
     case 'erp-commissions': return sql`COUNT(*) totalRecords, ${sum('serviceCount', 'totalServices')}, ${sum('netAmount', 'totalCommission')}`;
     case 'erp-discounts': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalDiscount')}`;
     case 'erp-refunds': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalRefunds')}`;
     case 'erp-voids': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalVoids')}`;
     case 'erp-expenses': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetExpenses')}`;
     case 'erp-purchases': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetPurchases')}`;
-    case 'erp-stock': return sql`COUNT(*) totalRecords, ${sum('quantityDelta', 'netQuantityChange')}`;
+    case 'erp-transfers': return sql`COUNT(*) totalRecords, ${sum('quantity', 'totalQuantity')}, ${sum('totalCost', 'totalTransferCost')}`;
+    case 'erp-stock': return sql`COUNT(*) totalRecords, ${sum('availableQuantity', 'totalAvailableQuantity')}, ${sum('inventoryValue', 'totalInventoryValue')}`;
     case 'erp-profit': return sql`COUNT(*) totalRecords, ${sum('revenue', 'totalRevenue')}, ${sum('cost', 'totalCost')}, ${sum('profit', 'totalProfit')}`;
     case 'erp-client-history': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
     case 'erp-receivables': return sql`COUNT(*) totalRecords, ${sum('balanceDue', 'totalBalanceDue')}`;
@@ -721,9 +846,13 @@ const summaryProjection = (reportType: ErpReportType): SQL => {
 
 const moneySummaryKeys = new Set([
   'totalSales', 'totalDiscount', 'totalTax', 'totalRevenue', 'totalNetPayments',
-  'totalNetSales', 'totalCommission', 'totalRefunds', 'totalVoids',
+  'totalNetSales', 'totalServiceSales', 'totalProductSales',
+  'totalCommission', 'totalRefunds', 'totalVoids',
   'totalNetExpenses', 'totalNetPurchases', 'totalCost', 'totalProfit', 'lineSubtotal',
-  'totalBalanceDue',
+  'totalBalanceDue', 'totalTransferCost',
+  'totalNetCashPayments', 'totalNetVisaPayments', 'totalNetInstapayPayments',
+  'totalNetVodafoneCashPayments',
+  'totalInventoryValue',
 ]);
 
 const normalizeCell = (value: unknown): ReportCell => {

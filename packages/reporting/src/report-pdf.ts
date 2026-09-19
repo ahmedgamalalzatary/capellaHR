@@ -55,6 +55,20 @@ const summaryLabels: Record<string, string> = {
   totalCost: 'إجمالي التكلفة',
   totalProfit: 'إجمالي الربح',
   totalServices: 'إجمالي الخدمات',
+  totalProducts: 'إجمالي المنتجات',
+  totalServiceSales: 'صافي مبيعات الخدمات',
+  totalProductSales: 'صافي مبيعات المنتجات',
+  totalNetCashPayments: 'صافي المدفوع نقدي',
+  totalNetVisaPayments: 'صافي المدفوع فيزا',
+  totalNetInstapayPayments: 'صافي المدفوع إنستا باي',
+  totalNetVodafoneCashPayments: 'صافي المدفوع فودافون كاش',
+  totalMadeServices: 'إجمالي الخدمات المنفذة',
+  totalRefundedServices: 'إجمالي الخدمات المرتجعة',
+  totalSoldProducts: 'إجمالي المنتجات المباعة',
+  totalRefundedProducts: 'إجمالي المنتجات المرتجعة',
+  totalAvailableQuantity: 'إجمالي الكمية المتاحة',
+  totalInventoryValue: 'إجمالي قيمة المخزون',
+  totalTransferCost: 'إجمالي تكلفة التحويلات',
 };
 
 export const reportSummaryLabel = (key: string) => summaryLabels[key] ?? key;

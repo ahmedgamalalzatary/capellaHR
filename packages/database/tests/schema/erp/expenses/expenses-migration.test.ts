@@ -19,6 +19,10 @@ const categoryDropName = readdirSync(directory).find((entry) => /^0069_.*\.sql$/
 const categoryDropMigration = categoryDropName
   ? readFileSync(`${directory}/${categoryDropName}`, 'utf8')
   : '';
+const advanceExpenseName = readdirSync(directory).find((entry) => /^0100_.*\.sql$/.test(entry));
+const advanceExpenseMigration = advanceExpenseName
+  ? readFileSync(`${directory}/${advanceExpenseName}`, 'utf8')
+  : '';
 
 describe('ERP expense category removal migration', () => {
   it('names every expense and drops its category link', () => {
@@ -58,6 +62,32 @@ describe('ERP expense category removal migration', () => {
   it('retires the expense category type from the catalog', () => {
     expect(categoryDropMigration).toContain("DELETE FROM `erp_categories` WHERE `type` = 'expense'");
     expect(categoryDropMigration).toContain("MODIFY COLUMN `type` enum('service')");
+  });
+});
+
+describe('advance cash-out expense backfill', () => {
+  it('writes a till expense for every historical advance using the advance instant', () => {
+    expect(advanceExpenseName).toBe('0100_advance_expenses.sql');
+    expect(advanceExpenseMigration).toContain('INSERT INTO `erp_expenses`');
+    expect(advanceExpenseMigration).toContain('FROM `advances`');
+    expect(advanceExpenseMigration).toContain("'advance'");
+    expect(advanceExpenseMigration).toContain('advance for employee');
+    expect(advanceExpenseMigration).toContain('`created_at`');
+    expect(advanceExpenseMigration).toContain('employee_branch_assignments');
+    expect(advanceExpenseMigration).toContain(
+      "DATE(CONVERT_TZ(`advances`.`created_at`, @@session.time_zone, 'Africa/Cairo'))",
+    );
+  });
+
+  it('stores a durable advance-to-expense link after the cash-out backfill', () => {
+    const linkName = readdirSync(directory).find((entry) => /^0101_.*\.sql$/.test(entry));
+    expect(linkName).toBe('0101_advance_expense_link.sql');
+    const linkMigration = readFileSync(`${directory}/${linkName}`, 'utf8');
+    expect(linkMigration).toContain('`expense_id`');
+    expect(linkMigration).toContain('advances_expense_fk');
+    expect(linkMigration).toContain('SET `advances`.`expense_id`');
+    expect(linkMigration).toContain('`erp_expenses`.`branch_id`');
+    expect(linkMigration).toContain('HAVING COUNT(*) = 1');
   });
 });
 

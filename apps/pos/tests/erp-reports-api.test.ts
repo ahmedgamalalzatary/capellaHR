@@ -28,6 +28,16 @@ describe('ERP reports API', () => {
     );
   });
 
+  it('serializes source and destination branch filters for transfers', async () => {
+    mocks.getWithMeta.mockResolvedValue({ data: {}, meta: {} });
+    await viewErpReport('erp-transfers', {
+      sourceBranchId: 2, destinationBranchId: 3, page: 1,
+    });
+    expect(mocks.getWithMeta).toHaveBeenCalledWith(
+      '/reports/erp-transfers?sourceBranchId=2&destinationBranchId=3&page=1&pageSize=20',
+    );
+  });
+
   it('serializes selected report row identifiers for printing', async () => {
     mocks.getWithMeta.mockResolvedValue({ data: {}, meta: {} });
     await viewErpReport('erp-profit', {

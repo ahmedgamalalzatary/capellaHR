@@ -45,7 +45,12 @@ const snapshot = {
     saleKind: 'بيع',
     total: '230.00',
   }],
-  summary: { totalRecords: 21, totalSales: '4830.00' },
+  summary: {
+    totalRecords: 21, totalSales: '4830.00',
+    totalNetCashPayments: '3000.00', totalNetVisaPayments: '1830.00',
+    totalMadeServices: 14, totalRefundedServices: 2,
+    totalSoldProducts: 9, totalRefundedProducts: 1,
+  },
 };
 const failedExport = {
   id: 9, reportType: 'erp-sales' as const, status: 'failed' as const,
@@ -86,8 +91,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-08-09T12:00:00.000Z'));
   mocks.branches.mockResolvedValue({
-    items: [{ id: 2, name: 'الفرع الرئيسي' }],
-    meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    items: [{ id: 2, name: 'الفرع الرئيسي' }, { id: 3, name: 'فرع المعادي' }],
+    meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
   });
   mocks.view.mockResolvedValue({ snapshot, meta });
   mocks.listExports.mockResolvedValue({ items: [failedExport], meta: { ...meta, total: 1, totalPages: 1 } });
@@ -122,7 +127,8 @@ describe('ErpReportsView', () => {
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
     const selector = await screen.findByRole('group', { name: 'أنواع تقارير ERP' });
-    expect(within(selector).getAllByRole('button')).toHaveLength(20);
+    expect(within(selector).getAllByRole('button')).toHaveLength(21);
+    expect(within(selector).getByRole('button', { name: 'تقرير التحويلات بين الفروع' })).toBeDefined();
     expect(within(selector).queryByRole('button', { name: 'تقرير الضرائب' })).toBeNull();
     expect(within(selector).getByRole('button', { name: 'الدفعات الجزئية' })).toBeDefined();
     expect(within(selector).queryByRole('button', { name: 'تقرير أرصدة العملاء' })).toBeNull();
@@ -149,6 +155,51 @@ describe('ErpReportsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
     await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
       'erp-sales', expect.objectContaining({ page: 2 }),
+    ));
+  });
+
+  it('refreshes report rows and totals as soon as either date changes', async () => {
+    mount();
+    await screen.findByText('عميل التقرير');
+    fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-07-01' } });
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
+      'erp-sales', expect.objectContaining({ dateFrom: '2026-07-01', page: 1 }),
+    ));
+    fireEvent.change(screen.getByLabelText('إلى تاريخ'), { target: { value: '2026-07-31' } });
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
+      'erp-sales', expect.objectContaining({ dateFrom: '2026-07-01', dateTo: '2026-07-31', page: 1 }),
+    ));
+  });
+
+  it('replaces the shared branch filter with independent from and to filters on transfers', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'تقرير التحويلات بين الفروع' }));
+
+    expect(screen.queryByLabelText('الفرع')).toBeNull();
+    fireEvent.change(screen.getByLabelText('من فرع'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('إلى فرع'), { target: { value: '3' } });
+
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
+      'erp-transfers', expect.objectContaining({
+        sourceBranchId: 2, destinationBranchId: 3, page: 1,
+      }),
+    ));
+  });
+
+  it('restores the last report tab after leaving or refreshing the page', async () => {
+    const first = mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'تقرير المخزون' }));
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
+      'erp-stock', expect.anything(),
+    ));
+    first.unmount();
+
+    mount();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'تقرير المخزون' })
+      .getAttribute('aria-pressed')).toBe('true'));
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
+      'erp-stock', expect.anything(),
     ));
   });
 
@@ -189,6 +240,10 @@ describe('ErpReportsView', () => {
     expect(within(totals).getByText('21')).toBeDefined();
     expect(within(totals).getByText('إجمالي المبيعات')).toBeDefined();
     expect(within(totals).getByText('4830.00')).toBeDefined();
+    expect(within(totals).getByText('صافي المدفوع نقدي')).toBeDefined();
+    expect(within(totals).getByText('3000.00')).toBeDefined();
+    expect(within(totals).getByText('إجمالي الخدمات المنفذة')).toBeDefined();
+    expect(within(totals).getByText('إجمالي المنتجات المباعة')).toBeDefined();
   });
 
   it('renders a safe fallback badge for an unknown future export status', async () => {

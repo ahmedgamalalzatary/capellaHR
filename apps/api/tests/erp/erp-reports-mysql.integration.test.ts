@@ -9,6 +9,8 @@ import {
   erpCategories,
   erpProducts,
   erpProductStocks,
+  erpStockTransferLines,
+  erpStockTransfers,
   erpServiceCommissionOverrides,
   erpServices,
   invoiceLines,
@@ -37,6 +39,8 @@ let branchId: number;
 let otherBranchId: number;
 let invoiceId: number;
 let productOnlyInvoiceId: number;
+let transferInvoiceId: number;
+let productId: number;
 let serviceLineId: number;
 let productLineId: number;
 let employeeId: number;
@@ -83,7 +87,7 @@ beforeAll(async () => {
     price: '200.00', commissionPercent: '10.00', createdAt: soldAt, updatedAt: soldAt,
   }))[0].insertId);
   originalProductName = 'منتج تاريخي';
-  const productId = Number((await database.insert(erpProducts).values({
+  productId = Number((await database.insert(erpProducts).values({
     branchId, name: originalProductName, nameNormalized: 'historical-product',
     sellingPrice: '50.00', lastPurchaseCost: '30.00', lowStockThreshold: 1,
     createdAt: soldAt, updatedAt: soldAt,
@@ -145,7 +149,7 @@ beforeAll(async () => {
   // Internal trade between branches: a real invoice, priced at cost, no seller.
   await database.update(erpProductStocks).set({ quantity: 5, updatedAt: soldAt })
     .where(eq(erpProductStocks.productId, productId));
-  await sales.complete({
+  transferInvoiceId = (await sales.complete({
     input: {
       branchId,
       clientId,
@@ -161,7 +165,7 @@ beforeAll(async () => {
     soldAt: new Date('2026-07-10T09:00:00.000Z'),
     pricing: 'cost',
     kind: 'branch_transfer',
-  });
+  })).id;
   await sales.reverse({
     type: 'refund', invoiceId,
     input: {
@@ -180,6 +184,44 @@ beforeAll(async () => {
 afterAll(async () => { await closeMysqlIntegrationDatabase(database); }, 30_000);
 
 describe('ERP reports MySQL reader', () => {
+  it('reports individual transfer lines and filtered combined totals', async () => {
+    const destinationProductId = Number((await database.insert(erpProducts).values({
+      branchId: otherBranchId, name: originalProductName, nameNormalized: 'transfer-destination-product',
+      sellingPrice: '35.00', lastPurchaseCost: '25.00', lowStockThreshold: 1,
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    const transferId = Number((await database.insert(erpStockTransfers).values({
+      sourceBranchId: branchId, destinationBranchId: otherBranchId, invoiceId: transferInvoiceId,
+      idempotencyKey: crypto.randomUUID(), status: 'posting', transferDate: '2026-07-10',
+      totalCost: '60.00', actingAccountId: adminId, note: 'نقل مخزون التقرير', createdAt: soldAt,
+    }))[0].insertId);
+    await database.insert(erpStockTransferLines).values({
+      transferId, sourceBranchId: branchId, destinationBranchId: otherBranchId,
+      sourceProductId: productId, destinationProductId, productNameSnapshot: originalProductName,
+      quantity: 2, unitCost: '30.00', previousDestinationCost: '25.00', lineTotal: '60.00',
+    });
+    await database.update(erpStockTransfers).set({ status: 'posted' })
+      .where(eq(erpStockTransfers.id, transferId));
+
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-transfers', {
+        sourceBranchId: branchId, destinationBranchId: otherBranchId,
+        dateFrom: '2026-07-01', dateTo: '2026-07-31',
+      },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success', total: 1,
+      snapshot: {
+        rows: [expect.objectContaining({
+          productName: originalProductName, quantity: 2, unitCost: '30.00', totalCost: '60.00',
+          authorizedBy: 'erp19-admin', note: 'نقل مخزون التقرير',
+        })],
+        summary: { totalRecords: 1, totalQuantity: '2', totalTransferCost: '60.00' },
+      },
+    });
+  });
+
   it('reports each issued queue number with its stored invoice and service snapshots', async () => {
     const line = (await database.select().from(invoiceLines)
       .where(eq(invoiceLines.id, serviceLineId)))[0]!;
@@ -213,7 +255,7 @@ describe('ERP reports MySQL reader', () => {
     });
   });
 
-  it('includes product-only invoices in sales but not employee performance', async () => {
+  it('credits products to the cashier and services to their assigned employee', async () => {
     const reader = createErpReportsModule(database).reader;
     const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };
 
@@ -226,19 +268,29 @@ describe('ERP reports MySQL reader', () => {
 
     // Two customer sales plus the branch transfer, which is a sale too.
     expect(sales).toMatchObject({ kind: 'success', total: 3 });
-    // One row: the service the employee performed. The refund reversed a
-    // product line, which belongs to no employee and so credits none.
+    // The same person performed the service and acted as cashier, so their
+    // service and product activity is combined into one employee row.
     expect(employees).toMatchObject({ kind: 'success', total: 1 });
     if (employees.kind === 'success') {
-      expect(employees.snapshot.rows).not.toEqual(expect.arrayContaining([
-        expect.objectContaining({ invoiceNumber: 'INV.2026.07.09.0001' }),
-      ]));
-      // The employee is credited their own service line, 200.00, carrying that
-      // line's own share of the invoice discount (20.00) and tax (4.00) — the
-      // shares allocated per line, not recomputed over the employee's group.
       expect(employees.snapshot.rows).toEqual(expect.arrayContaining([
-        expect.objectContaining({ amount: '184.00' }),
+        expect.objectContaining({
+          id: employeeId,
+          invoiceCount: 2,
+          serviceQuantity: '1',
+          serviceAmount: '184.00',
+          productQuantity: '1',
+          productAmount: '50.00',
+          netAmount: '234.00',
+        }),
       ]));
+      expect(employees.snapshot.summary).toMatchObject({
+        totalRecords: 1,
+        totalServices: '1',
+        totalServiceSales: '184.00',
+        totalProducts: '1',
+        totalProductSales: '50.00',
+        totalNetSales: '234.00',
+      });
     }
     expect(productOnlyInvoiceId).toBeGreaterThan(0);
   });
@@ -383,12 +435,15 @@ describe('ERP reports MySQL reader', () => {
     )).resolves.toMatchObject({ kind: 'success', total: 0 });
 
     await expect(reader.read(
-      'erp-stock', { branchId, search: originalProductName }, { mode: 'all' },
+      'erp-stock', { branchId, search: 'اسم منتج جديد' }, { mode: 'all' },
       { page: 1, pageSize: 20 }, reversedAt,
     )).resolves.toMatchObject({
       kind: 'success',
       snapshot: { rows: expect.arrayContaining([
-        expect.objectContaining({ productName: originalProductName }),
+        expect.objectContaining({
+          productName: 'اسم منتج جديد', availableQuantity: expect.any(Number),
+          unitCost: '30.00', inventoryValue: expect.any(String),
+        }),
       ]) },
     });
   });
@@ -453,6 +508,9 @@ describe('ERP reports MySQL reader', () => {
         rows: [expect.objectContaining({
           invoiceNumber: 'INV.2026.07.09.0001', paymentMethod: 'فيزا', amount: '-50.00',
         })],
+        summary: expect.objectContaining({
+          totalNetVisaPayments: '-50.00',
+        }),
       },
     });
   });

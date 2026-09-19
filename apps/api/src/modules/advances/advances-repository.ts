@@ -1,5 +1,6 @@
 import type { ListAdvancesQuery } from '@capella/contracts';
 import {
+  accounts,
   advanceInstallments,
   advances,
   branches,
@@ -7,9 +8,11 @@ import {
   employeeDeactivationAdjustments,
   employeeOutstandingDebts,
   employees,
+  erpExpenses,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, count, eq, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 
 import {
   createFinancialContext,
@@ -118,6 +121,107 @@ const amountToCents = (value: string) => {
   const magnitude = BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, '0'));
   return negative ? -magnitude : magnitude;
 };
+const calendarDateInTimeZone = (instant: Date, timeZone: string) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(instant);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
+};
+const requireActiveAdminId = async (transaction: Transaction) => {
+  const actor = (await transaction.select({ id: accounts.id }).from(accounts)
+    .where(and(eq(accounts.role, 'admin'), eq(accounts.active, true), isNull(accounts.archivedAt)))
+    .orderBy(asc(accounts.id)).limit(1))[0];
+  if (!actor) throw new Error('Advance cash-out requires an admin account');
+  return actor.id;
+};
+const insertAdvanceExpense = async (
+  transaction: Transaction,
+  input: {
+    advanceId: number;
+    branchId: number;
+    amount: string;
+    expenseDate: string;
+    description: string;
+    actingAccountId: number;
+    createdAt: Date;
+  },
+) => {
+  const inserted = await transaction.insert(erpExpenses).values({
+    branchId: input.branchId,
+    name: 'advance',
+    amount: input.amount,
+    expenseDate: input.expenseDate,
+    description: input.description,
+    actingAccountId: input.actingAccountId,
+    createdAt: input.createdAt,
+  });
+  await transaction.update(advances).set({ expenseId: Number(inserted[0].insertId) })
+    .where(eq(advances.id, input.advanceId));
+};
+const linkedExpenseId = async (transaction: Transaction, advanceId: number) => (
+  await transaction.select({ expenseId: advances.expenseId }).from(advances)
+    .where(eq(advances.id, advanceId)).limit(1)
+)[0]?.expenseId ?? null;
+const replaceAdvanceExpense = async (
+  transaction: Transaction,
+  expenseId: number,
+  input: {
+    branchId: number;
+    amount: string;
+    expenseDate: string;
+    description: string;
+    actingAccountId: number;
+    createdAt: Date;
+    reason: string;
+  },
+) => {
+  const correctionOperationId = randomUUID();
+  await transaction.execute(sql`CALL correct_erp_expense(
+    ${expenseId}, ${input.branchId}, ${'advance'}, ${input.amount}, ${input.expenseDate},
+    ${input.description}, ${input.actingAccountId}, ${input.reason}, ${input.createdAt},
+    ${correctionOperationId}
+  )`);
+  const replacement = (await transaction.select({ id: erpExpenses.id }).from(erpExpenses)
+    .where(and(
+      eq(erpExpenses.correctionOperationId, correctionOperationId),
+      eq(erpExpenses.supersedesId, expenseId),
+    )).limit(1))[0];
+  if (!replacement) throw new Error('Advance expense replacement was not created');
+  return replacement.id;
+};
+const reverseAdvanceExpense = async (
+  transaction: Transaction,
+  expenseId: number,
+  actingAccountId: number,
+  createdAt: Date,
+  reason: string,
+) => {
+  const original = (await transaction.select().from(erpExpenses)
+    .where(eq(erpExpenses.id, expenseId)).limit(1))[0];
+  if (!original || original.kind !== 'expense') {
+    throw new Error('Advance cash-out expense is missing');
+  }
+  const correctionOperationId = randomUUID();
+  await transaction.execute(sql`INSERT INTO erp_expense_correction_guards
+    (connection_id, operation_id, original_id)
+    VALUES (CONNECTION_ID(), ${correctionOperationId}, ${expenseId})`);
+  await transaction.insert(erpExpenses).values({
+    branchId: original.branchId,
+    name: original.name,
+    amount: original.amount,
+    expenseDate: original.expenseDate,
+    description: original.description,
+    actingAccountId,
+    kind: 'reversal',
+    reversalOfId: original.id,
+    correctionOperationId,
+    correctionReason: reason,
+    createdAt,
+  });
+  await transaction.execute(sql`DELETE FROM erp_expense_correction_guards
+    WHERE connection_id = CONNECTION_ID()`);
+};
 
 export const createDrizzleAdvanceRepository = (
   database: Database,
@@ -145,6 +249,16 @@ export const createDrizzleAdvanceRepository = (
         const id = Number(inserted[0].insertId);
         await insertSchedule(transaction, id, input.employeeId, schedule, at);
         const record = (await findRecord(transaction, id))!;
+        const actingAccountId = await requireActiveAdminId(transaction);
+        await insertAdvanceExpense(transaction, {
+          advanceId: id,
+          branchId: record.branchId,
+          amount: input.amount,
+          expenseDate: calendarDateInTimeZone(at, timeZone),
+          description: `advance for employee ${record.employeeName}`,
+          actingAccountId,
+          createdAt: at,
+        });
         await writeFinancialAudit(transaction, { entityType: 'advance', entityId: id, action: 'create', afterState: record, createdAt: at });
         return { kind: 'success' as const, record };
       });
@@ -202,6 +316,21 @@ export const createDrizzleAdvanceRepository = (
         }).where(eq(advances.id, id));
         await insertSchedule(transaction, id, employee.id, schedule, at);
         const record = (await findRecord(transaction, id))!;
+        const expenseId = await linkedExpenseId(transaction, id);
+        if (expenseId === null) throw new Error('Advance cash-out expense is missing');
+        if (amount !== current.amount) {
+          const actingAccountId = await requireActiveAdminId(transaction);
+          const replacementId = await replaceAdvanceExpense(transaction, expenseId, {
+            branchId: record.branchId,
+            amount,
+            expenseDate: calendarDateInTimeZone(current.createdAt, timeZone),
+            description: `advance for employee ${record.employeeName}`,
+            actingAccountId,
+            createdAt: at,
+            reason: 'advance updated',
+          });
+          await transaction.update(advances).set({ expenseId: replacementId }).where(eq(advances.id, id));
+        }
         await writeFinancialAudit(transaction, { entityType: 'advance', entityId: id, action: 'update', beforeState: current, afterState: record, createdAt: at });
         return { kind: 'success' as const, record };
       });
@@ -215,6 +344,10 @@ export const createDrizzleAdvanceRepository = (
         if (!employee || !current) return { kind: 'not_found' as const };
         if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
         if (await hasFinalizedInstallment(transaction, id)) return { kind: 'finalized' as const };
+        const expenseId = await linkedExpenseId(transaction, id);
+        if (expenseId === null) throw new Error('Advance cash-out expense is missing');
+        const actingAccountId = await requireActiveAdminId(transaction);
+        await reverseAdvanceExpense(transaction, expenseId, actingAccountId, context.now(), 'advance deleted');
         await transaction.delete(advanceInstallments).where(eq(advanceInstallments.advanceId, id));
         await transaction.delete(advances).where(eq(advances.id, id));
         await writeFinancialAudit(transaction, { entityType: 'advance', entityId: id, action: 'delete', beforeState: current, createdAt: context.now() });

@@ -1,6 +1,7 @@
 import { createDatabase } from '@capella/database';
 import { employeeDeactivationAdjustments, employeeEmploymentPeriods, employeeOutstandingDebts, employeePendingDeactivations, employeeTerminations } from '@capella/database/schema';
 import {
+  accounts,
   advanceInstallments,
   advances,
   auditEvents,
@@ -18,6 +19,7 @@ import {
   employeePhoneReservations,
   employeeSalaryPeriods,
   employees,
+  erpExpenses,
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
@@ -45,9 +47,37 @@ const attendance: PayrollAttendanceGateway = {
   }),
 };
 
+const ensureAdminAccount = async () => {
+  if ((await database.select({ id: accounts.id }).from(accounts).where(eq(accounts.role, 'admin')).limit(1))[0]) {
+    return;
+  }
+  await database.insert(accounts).values({
+    username: `advance-admin-${process.pid}`,
+    passwordHash: 'unused',
+    role: 'admin',
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+  });
+};
+
+const purgeAdvanceExpenses = async () => {
+  await database.execute(sql.raw('DROP TRIGGER IF EXISTS `erp_expenses_reject_delete`'));
+  await database.update(advances).set({ expenseId: null });
+  await database.delete(erpExpenses).where(and(eq(erpExpenses.name, 'advance'), eq(erpExpenses.kind, 'reversal')));
+  await database.delete(erpExpenses).where(and(eq(erpExpenses.name, 'advance'), sql`${erpExpenses.supersedesId} is not null`));
+  await database.delete(erpExpenses).where(eq(erpExpenses.name, 'advance'));
+  await database.execute(sql.raw(`CREATE TRIGGER \`erp_expenses_reject_delete\`
+BEFORE DELETE ON \`erp_expenses\`
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'ERP expense facts cannot be deleted';
+END`));
+};
+
 const clear = async () => {
   await database.delete(auditEvents);
   await database.delete(financialAuditEvents);
+  await purgeAdvanceExpenses();
   await database.delete(advanceInstallments);
   await database.delete(advances);
   await database.delete(bonuses);
@@ -71,7 +101,10 @@ const clear = async () => {
   await database.delete(employeeCodeSequence);
   await database.delete(branches);
 };
-beforeEach(clear);
+beforeEach(async () => {
+  await clear();
+  await ensureAdminAccount();
+});
 afterAll(clear);
 
 const createBranch = async (name = 'القاهرة') => Number((await database.insert(branches).values({

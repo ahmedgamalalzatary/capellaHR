@@ -140,6 +140,10 @@ describe('Arabic report PDF renderer', () => {
       'totalRevenue', 'totalNetPayments', 'totalNetSales', 'totalCommission',
       'totalRefunds', 'totalVoids', 'totalNetExpenses', 'totalNetPurchases',
       'netQuantityChange', 'totalCost', 'totalProfit',
+      'totalNetCashPayments', 'totalNetVisaPayments', 'totalNetInstapayPayments',
+      'totalNetVodafoneCashPayments', 'totalMadeServices', 'totalRefundedServices',
+      'totalSoldProducts', 'totalRefundedProducts', 'totalAvailableQuantity',
+      'totalInventoryValue', 'totalTransferCost',
     ];
 
     for (const key of keys) {

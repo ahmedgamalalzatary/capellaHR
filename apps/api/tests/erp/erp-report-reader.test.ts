@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -100,6 +102,104 @@ describe('ERP report reader', () => {
     });
   });
 
+  it('publishes transfer columns for both branches, products, quantities, costs, and actor', async () => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+    const result = await createErpReportReader(repository).read(
+      'erp-transfers', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success',
+      snapshot: { columns: [
+        { key: 'id', label: 'المعرف' },
+        { key: 'eventDate', label: 'تاريخ التحويل' },
+        { key: 'sourceBranchName', label: 'من فرع' },
+        { key: 'destinationBranchName', label: 'إلى فرع' },
+        { key: 'productName', label: 'المنتج' },
+        { key: 'quantity', label: 'الكمية' },
+        { key: 'unitCost', label: 'تكلفة الوحدة' },
+        { key: 'totalCost', label: 'إجمالي التكلفة' },
+        { key: 'authorizedBy', label: 'المنفذ' },
+        { key: 'note', label: 'ملاحظة' },
+      ] },
+    });
+  });
+
+  it.each([
+    ['erp-services', 'invoicePaid'],
+    ['erp-products', 'invoicePaid'],
+  ] as const)('shows the whole invoice payment on %s rows without allocating it to a line', async (reportType, key) => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+    const result = await createErpReportReader(repository).read(
+      reportType, {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success',
+      snapshot: { columns: expect.arrayContaining([{ key, label: 'المدفوع على الفاتورة' }]) },
+    });
+  });
+
+  it('shows refund item, quantity, employee, and executor columns', async () => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+    const result = await createErpReportReader(repository).read(
+      'erp-refunds', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success', snapshot: { columns: expect.arrayContaining([
+        { key: 'itemName', label: 'المنتج أو الخدمة' },
+        { key: 'itemType', label: 'النوع' },
+        { key: 'quantity', label: 'الكمية' },
+        { key: 'employeeName', label: 'الموظف' },
+        { key: 'authorizedBy', label: 'المنفذ' },
+      ]) },
+    });
+  });
+
+  it('publishes current stock quantities and inventory value columns', async () => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+    const result = await createErpReportReader(repository).read(
+      'erp-stock', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success', snapshot: { columns: expect.arrayContaining([
+        { key: 'availableQuantity', label: 'الكمية المتاحة' },
+        { key: 'unitCost', label: 'تكلفة الوحدة' },
+        { key: 'inventoryValue', label: 'قيمة المخزون' },
+      ]) },
+    });
+  });
+
+  it('publishes one combined performance row per employee', async () => {
+    const repository: ErpReportRepository = {
+      readPage: vi.fn().mockResolvedValue({ rows: [], total: 0, summary: { totalRecords: 0 } }),
+      readBatches: vi.fn(),
+    };
+    const result = await createErpReportReader(repository).read(
+      'erp-employees', {}, { mode: 'all' }, { page: 1, pageSize: 20 }, generatedAt,
+    );
+    expect(result).toMatchObject({
+      kind: 'success', snapshot: { columns: expect.arrayContaining([
+        { key: 'invoiceCount', label: 'عدد الفواتير' },
+        { key: 'serviceQuantity', label: 'عدد الخدمات' },
+        { key: 'serviceAmount', label: 'صافي قيمة الخدمات' },
+        { key: 'productQuantity', label: 'عدد المنتجات' },
+        { key: 'productAmount', label: 'صافي قيمة المنتجات' },
+        { key: 'netAmount', label: 'إجمالي صافي المبيعات' },
+      ]) },
+    });
+  });
+
   it.each([
     ['erp-service-queue', 'تقرير أرقام أدوار الخدمات', [
       ['id', 'المعرف'], ['eventDate', 'وقت الإصدار'], ['branchName', 'الفرع'], ['shiftId', 'الوردية'],
@@ -144,5 +244,14 @@ describe('ERP report reader', () => {
         columns: columns.map(([key, label]) => ({ key, label })),
       },
     });
+  });
+
+  it('formats employee service and product sales as money totals', () => {
+    const source = readFileSync(fileURLToPath(
+      new URL('../../src/modules/erp/erp-reports/erp-report-repository.ts', import.meta.url),
+    ), 'utf8');
+    const block = source.slice(source.indexOf('moneySummaryKeys'), source.indexOf('normalizeCell'));
+    expect(block).toContain('totalServiceSales');
+    expect(block).toContain('totalProductSales');
   });
 });

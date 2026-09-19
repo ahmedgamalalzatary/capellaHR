@@ -15,6 +15,7 @@ import {
 } from 'drizzle-orm/mysql-core';
 
 import { employees } from '../employees/index.js';
+import { erpExpenses } from '../erp/expenses/index.js';
 
 const auditEntityTypes = ['salary', 'payroll', 'bonus', 'deduction', 'advance'] as const;
 const auditActions = ['create', 'update', 'delete', 'finalize', 'accelerate'] as const;
@@ -256,11 +257,18 @@ export const advances = mysqlTable('advances', {
   installmentCount: int('installment_count').notNull(),
   startMonth: date('start_month', { mode: 'string' }).notNull(),
   reason: varchar('reason', { length: 200 }).notNull(),
+  expenseId: int('expense_id'),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   uniqueIndex('advances_id_employee_unique').on(table.id, table.employeeId),
+  uniqueIndex('advances_expense_id_unique').on(table.expenseId),
   index('advances_employee_idx').on(table.employeeId),
+  foreignKey({
+    name: 'advances_expense_fk',
+    columns: [table.expenseId],
+    foreignColumns: [erpExpenses.id],
+  }),
   check('advances_amount_positive', sql`${table.amount} > 0`),
   check('advances_installment_count_range', sql`${table.installmentCount} between 1 and 12`),
   check('advances_month_first_day', sql`dayofmonth(${table.startMonth}) = 1`),

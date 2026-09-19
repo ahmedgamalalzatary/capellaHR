@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, FileText, Printer, RotateCcw, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import {
   erpTabReportTypes,
@@ -36,6 +36,27 @@ import { erpReportQueryKeys } from '../query-keys';
 import { PrintSheet, type PrintableReport } from './print-sheet';
 
 type ErpTabReportType = (typeof erpTabReportTypes)[number];
+const REPORT_TAB_STORAGE_KEY = 'capella:erp-reports:active-tab';
+const REPORT_TAB_CHANGE_EVENT = 'capella:erp-reports:active-tab-change';
+
+const isErpTabReportType = (value: string | null): value is ErpTabReportType => (
+  value !== null && (erpTabReportTypes as readonly string[]).includes(value)
+);
+
+const storedReportTab = (): ErpTabReportType => {
+  const stored = sessionStorage.getItem(REPORT_TAB_STORAGE_KEY);
+  return isErpTabReportType(stored) ? stored : 'erp-sales';
+};
+
+const subscribeToReportTab = (onChange: () => void) => {
+  window.addEventListener(REPORT_TAB_CHANGE_EVENT, onChange);
+  return () => window.removeEventListener(REPORT_TAB_CHANGE_EVENT, onChange);
+};
+
+const selectStoredReportTab = (reportType: ErpTabReportType) => {
+  sessionStorage.setItem(REPORT_TAB_STORAGE_KEY, reportType);
+  window.dispatchEvent(new Event(REPORT_TAB_CHANGE_EVENT));
+};
 
 const tabLabels: Record<ErpTabReportType, string> = {
   'erp-sales': 'تقرير المبيعات',
@@ -49,6 +70,7 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-voids': 'تقرير الإلغاءات',
   'erp-expenses': 'تقرير المصروفات',
   'erp-purchases': 'تقرير المشتريات',
+  'erp-transfers': 'تقرير التحويلات بين الفروع',
   'erp-stock': 'تقرير المخزون',
   'erp-profit': 'تقرير الأرباح',
   'erp-client-history': 'تقرير سجل العملاء',
@@ -71,6 +93,20 @@ const summaryLabels: Record<string, string> = {
   totalNetPurchases: 'صافي المشتريات', netQuantityChange: 'صافي تغير المخزون',
   totalCost: 'إجمالي التكلفة', totalProfit: 'إجمالي الربح',
   totalServices: 'إجمالي الخدمات',
+  totalProducts: 'إجمالي المنتجات',
+  totalServiceSales: 'صافي مبيعات الخدمات',
+  totalProductSales: 'صافي مبيعات المنتجات',
+  totalTransferCost: 'إجمالي تكلفة التحويلات',
+  totalNetCashPayments: 'صافي المدفوع نقدي',
+  totalNetVisaPayments: 'صافي المدفوع فيزا',
+  totalNetInstapayPayments: 'صافي المدفوع إنستا باي',
+  totalNetVodafoneCashPayments: 'صافي المدفوع فودافون كاش',
+  totalAvailableQuantity: 'إجمالي الكمية المتاحة',
+  totalInventoryValue: 'إجمالي قيمة المخزون',
+  totalMadeServices: 'إجمالي الخدمات المنفذة',
+  totalRefundedServices: 'إجمالي الخدمات المرتجعة',
+  totalSoldProducts: 'إجمالي المنتجات المباعة',
+  totalRefundedProducts: 'إجمالي المنتجات المرتجعة',
 };
 
 const cairoDate = (value: Date) => {
@@ -295,8 +331,14 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
 export function ErpReportsView() {
   const queryClient = useQueryClient();
   const dates = useMemo(() => initialDates(), []);
-  const [reportType, setReportType] = useState<ErpTabReportType>('erp-sales');
+  const reportType = useSyncExternalStore<ErpTabReportType>(
+    subscribeToReportTab,
+    storedReportTab,
+    () => 'erp-sales' as ErpTabReportType,
+  );
   const { branchId: branchInput, setBranchId: setBranchInput } = useAdminBranch();
+  const [sourceBranchInput, setSourceBranchInput] = useState<number>();
+  const [destinationBranchInput, setDestinationBranchInput] = useState<number>();
   const [dateFromInput, setDateFromInput] = useState(dates.dateFrom);
   const [dateToInput, setDateToInput] = useState(dates.dateTo);
   const [searchInput, setSearchInput] = useState('');
@@ -329,11 +371,35 @@ export function ErpReportsView() {
   });
   const applyFilters = () => {
     setFilters({
-      ...(branchInput === undefined ? {} : { branchId: branchInput }),
+      ...(reportType === 'erp-transfers'
+        ? {
+          ...(sourceBranchInput === undefined ? {} : { sourceBranchId: sourceBranchInput }),
+          ...(destinationBranchInput === undefined ? {} : { destinationBranchId: destinationBranchInput }),
+        }
+        : branchInput === undefined ? {} : { branchId: branchInput }),
       ...(dateFromInput ? { dateFrom: dateFromInput } : {}),
       ...(dateToInput ? { dateTo: dateToInput } : {}),
       ...(searchInput.trim() ? { search: searchInput.trim() } : {}),
     });
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+  const applyLiveScope = (
+    nextReportType: ErpTabReportType,
+    next: Pick<ReportFilters, 'branchId' | 'sourceBranchId' | 'destinationBranchId' | 'dateFrom' | 'dateTo'>,
+  ) => {
+    if (next.dateFrom && next.dateTo && next.dateFrom > next.dateTo) return;
+    setFilters((current) => ({
+      ...(current.search ? { search: current.search } : {}),
+      ...(nextReportType === 'erp-transfers'
+        ? {
+          ...(next.sourceBranchId === undefined ? {} : { sourceBranchId: next.sourceBranchId }),
+          ...(next.destinationBranchId === undefined ? {} : { destinationBranchId: next.destinationBranchId }),
+        }
+        : next.branchId === undefined ? {} : { branchId: next.branchId }),
+      ...(next.dateFrom ? { dateFrom: next.dateFrom } : {}),
+      ...(next.dateTo ? { dateTo: next.dateTo } : {}),
+    }));
     setPage(1);
     setSelectedIds(new Set());
   };
@@ -356,7 +422,7 @@ export function ErpReportsView() {
       <div role="group" aria-label="أنواع تقارير ERP" className="space-y-3">
         {([
           ['مبيعات', ['erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products', 'erp-employees', 'erp-commissions', 'erp-discounts']],
-          ['عكس وقيود', ['erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases']],
+          ['عكس وقيود', ['erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases', 'erp-transfers']],
           ['مخزون وأرباح', ['erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables']],
           ['أرضية الصالون', ['erp-service-queue', 'erp-service-completions', 'erp-consumable-usage', 'erp-consumable-ledger', 'erp-service-exceptions']],
         ] as const).map(([group, types]) => (
@@ -369,7 +435,16 @@ export function ErpReportsView() {
                   size="sm"
                   variant={type === reportType ? 'primary' : 'secondary'}
                   aria-pressed={type === reportType}
-                  onClick={() => { setReportType(type); setPage(1); setSelectedIds(new Set()); }}
+                  onClick={() => {
+                    selectStoredReportTab(type);
+                    applyLiveScope(type, {
+                      branchId: branchInput,
+                      sourceBranchId: sourceBranchInput,
+                      destinationBranchId: destinationBranchInput,
+                      dateFrom: dateFromInput,
+                      dateTo: dateToInput,
+                    });
+                  }}
                 >
                   {tabLabels[type]}
                 </Button>
@@ -381,25 +456,86 @@ export function ErpReportsView() {
 
       <Card className="shadow-card">
         <CardContent className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3 xl:grid-cols-5 xl:items-end">
-          <div className="space-y-1.5">
-            <Label htmlFor="report-branch">الفرع</Label>
-            <Select
-              id="report-branch"
-              aria-label="الفرع"
-              value={branchInput ?? ''}
-              onChange={(event) => setBranchInput(event.target.value ? Number(event.target.value) : undefined)}
-            >
-              <option value="">كل الفروع</option>
-              {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-            </Select>
-          </div>
+          {reportType === 'erp-transfers' ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-source-branch">من فرع</Label>
+                <Select
+                  id="report-source-branch"
+                  aria-label="من فرع"
+                  value={sourceBranchInput ?? ''}
+                  onChange={(event) => {
+                    const sourceBranchId = event.target.value ? Number(event.target.value) : undefined;
+                    setSourceBranchInput(sourceBranchId);
+                    applyLiveScope(reportType, {
+                      sourceBranchId, destinationBranchId: destinationBranchInput,
+                      dateFrom: dateFromInput, dateTo: dateToInput,
+                    });
+                  }}
+                >
+                  <option value="">كل الفروع</option>
+                  {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-destination-branch">إلى فرع</Label>
+                <Select
+                  id="report-destination-branch"
+                  aria-label="إلى فرع"
+                  value={destinationBranchInput ?? ''}
+                  onChange={(event) => {
+                    const destinationBranchId = event.target.value ? Number(event.target.value) : undefined;
+                    setDestinationBranchInput(destinationBranchId);
+                    applyLiveScope(reportType, {
+                      sourceBranchId: sourceBranchInput, destinationBranchId,
+                      dateFrom: dateFromInput, dateTo: dateToInput,
+                    });
+                  }}
+                >
+                  <option value="">كل الفروع</option>
+                  {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                </Select>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="report-branch">الفرع</Label>
+              <Select
+                id="report-branch"
+                aria-label="الفرع"
+                value={branchInput ?? ''}
+                onChange={(event) => {
+                  const branchId = event.target.value ? Number(event.target.value) : undefined;
+                  setBranchInput(branchId);
+                  applyLiveScope(reportType, { branchId, dateFrom: dateFromInput, dateTo: dateToInput });
+                }}
+              >
+                <option value="">كل الفروع</option>
+                {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="report-from">من تاريخ</Label>
-            <Input id="report-from" aria-label="من تاريخ" type="date" value={dateFromInput} onChange={(event) => setDateFromInput(event.target.value)} />
+            <Input id="report-from" aria-label="من تاريخ" type="date" value={dateFromInput} onChange={(event) => {
+              const dateFrom = event.target.value;
+              setDateFromInput(dateFrom);
+              applyLiveScope(reportType, {
+                branchId: branchInput, sourceBranchId: sourceBranchInput,
+                destinationBranchId: destinationBranchInput, dateFrom, dateTo: dateToInput,
+              });
+            }} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="report-to">إلى تاريخ</Label>
-            <Input id="report-to" aria-label="إلى تاريخ" type="date" value={dateToInput} onChange={(event) => setDateToInput(event.target.value)} />
+            <Input id="report-to" aria-label="إلى تاريخ" type="date" value={dateToInput} onChange={(event) => {
+              const dateTo = event.target.value;
+              setDateToInput(dateTo);
+              applyLiveScope(reportType, {
+                branchId: branchInput, sourceBranchId: sourceBranchInput,
+                destinationBranchId: destinationBranchInput, dateFrom: dateFromInput, dateTo,
+              });
+            }} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="report-search">بحث</Label>

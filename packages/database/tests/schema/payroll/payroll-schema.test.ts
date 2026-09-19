@@ -105,6 +105,8 @@ describe('payroll schema', () => {
     expect(checkSql(advanceInstallments, 'advance_installments_ordinal_range'))
       .toBe('`advance_installments`.`ordinal` between 1 and 12');
     expect(config(advances).indexes.some((index) => index.config.name === 'advances_id_employee_unique')).toBe(true);
+    expect(config(advances).columns.some((column) => column.name === 'expense_id')).toBe(true);
+    expect(config(advances).indexes.some((index) => index.config.name === 'advances_expense_id_unique')).toBe(true);
     expect(config(advanceInstallments).indexes.some((index) => index.config.name === 'advance_installments_advance_ordinal_unique')).toBe(true);
     expect(config(advanceInstallments).indexes.some((index) => index.config.name === 'advance_installments_advance_month_unique')).toBe(true);
     expect(config(advanceInstallments).foreignKeys.map((foreignKey) => foreignKey.reference()))
