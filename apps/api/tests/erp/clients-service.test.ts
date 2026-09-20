@@ -40,6 +40,7 @@ const repository = (overrides: Partial<ClientRepository> = {}): ClientRepository
     branchId: number,
     changes: Parameters<ClientRepository['update']>[2],
   ) => record({ id, branchId, ...changes })),
+  remove: vi.fn(async () => ({ status: 'deleted' as const, client: record() })),
   ...overrides,
 });
 
@@ -137,5 +138,45 @@ describe('ERP client service', () => {
     await service(repository({ list }), 7).list(CASHIER, { page: 1, pageSize: 20 });
 
     expect(list).toHaveBeenCalledWith(7, expect.objectContaining({ page: 1 }));
+  });
+
+  it('deletes a client with zero debt', async () => {
+    const remove = vi.fn(async () => ({ status: 'deleted' as const, client: record({ id: 5, branchId: 1 }) }));
+    const repo = repository({
+      remove,
+    });
+
+    await expect(service(repo, 1).remove(CASHIER, 5)).resolves.toMatchObject({ id: 5 });
+    expect(remove).toHaveBeenCalledWith(5, 1);
+  });
+
+  it('blocks delete when the client owes money', async () => {
+    const repo = repository({
+      remove: vi.fn(async () => ({ status: 'has_debt' as const })),
+    });
+
+    await expect(service(repo, 1).remove(CASHIER, 5)).rejects.toMatchObject({
+      code: 'CLIENT_HAS_DEBT',
+    });
+  });
+
+  it('delegates the delete decision to one repository operation', async () => {
+    const findById = vi.fn(async () => record({ id: 5, branchId: 1 }));
+    const remove = vi.fn(async () => ({ status: 'has_debt' as const }));
+    const repo = repository({ findById, remove });
+
+    await expect(service(repo, 1).remove(CASHIER, 5)).rejects.toMatchObject({
+      code: 'CLIENT_HAS_DEBT',
+    });
+    expect(remove).toHaveBeenCalledWith(5, 1);
+    expect(findById).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing client as not found', async () => {
+    const repo = repository({ remove: vi.fn(async () => ({ status: 'not_found' as const })) });
+
+    await expect(service(repo, 1).remove(CASHIER, 999)).rejects.toMatchObject({
+      code: 'CLIENT_NOT_FOUND',
+    });
   });
 });

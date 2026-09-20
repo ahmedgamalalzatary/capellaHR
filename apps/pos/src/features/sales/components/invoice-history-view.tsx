@@ -139,6 +139,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
               <Label htmlFor="invoice-branch">الفرع</Label>
               <Select
                 id="invoice-branch"
+                className="max-w-sm"
                 disabled={branches.isPending || branches.isError}
                 value={branchId ?? ''}
                 onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}

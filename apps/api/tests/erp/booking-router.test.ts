@@ -3,6 +3,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createErpBookingsRouter } from '../../src/modules/erp/bookings/booking-router.js';
+import { BookingError } from '../../src/modules/erp/bookings/booking-service.js';
 
 const actor = { type: 'cashier', accountId: 2, branchId: 1 };
 const service = () => ({
@@ -10,6 +11,7 @@ const service = () => ({
   get: vi.fn().mockResolvedValue({ id: 9 }),
   listDay: vi.fn().mockResolvedValue([{ id: 9 }]),
   updateStatus: vi.fn().mockResolvedValue({ id: 9, status: 'arrived' }),
+  remove: vi.fn().mockResolvedValue({ id: 9 }),
   countFutureForEmployee: vi.fn(),
   hasAny: vi.fn(),
   listEmployeeOptions: vi.fn().mockResolvedValue([]),
@@ -52,5 +54,30 @@ describe('ERP booking HTTP API', () => {
     const response = await request(app().app).post('/api/v1/erp/bookings').send({ services: [] });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('hard-deletes a booking without payment', async () => {
+    const test = app();
+    const response = await request(test.app).delete('/api/v1/erp/bookings/9');
+    expect(response.status).toBe(200);
+    expect(test.service.remove).toHaveBeenCalledWith(
+      { role: 'cashier', accountId: 2, branchId: 1 }, 9, undefined,
+    );
+  });
+
+  it('maps a missing booking to 404', async () => {
+    const failing = service();
+    failing.remove.mockRejectedValue(new BookingError('BOOKING_NOT_FOUND'));
+    const response = await request(app(failing).app).delete('/api/v1/erp/bookings/999');
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('BOOKING_NOT_FOUND');
+  });
+
+  it('maps a converted booking to 409', async () => {
+    const failing = service();
+    failing.remove.mockRejectedValue(new BookingError('BOOKING_ALREADY_HANDLED'));
+    const response = await request(app(failing).app).delete('/api/v1/erp/bookings/9');
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('BOOKING_ALREADY_HANDLED');
   });
 });

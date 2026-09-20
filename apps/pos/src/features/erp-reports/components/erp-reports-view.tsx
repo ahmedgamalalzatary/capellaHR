@@ -370,6 +370,7 @@ export function ErpReportsView() {
     onError: (error: unknown) => notifyError(error, 'تعذر بدء التصدير.'),
   });
   const applyFilters = () => {
+    if (dateFromInput && dateToInput && dateFromInput > dateToInput) return;
     setFilters({
       ...(reportType === 'erp-transfers'
         ? {
@@ -384,22 +385,8 @@ export function ErpReportsView() {
     setPage(1);
     setSelectedIds(new Set());
   };
-  const applyLiveScope = (
-    nextReportType: ErpTabReportType,
-    next: Pick<ReportFilters, 'branchId' | 'sourceBranchId' | 'destinationBranchId' | 'dateFrom' | 'dateTo'>,
-  ) => {
-    if (next.dateFrom && next.dateTo && next.dateFrom > next.dateTo) return;
-    setFilters((current) => ({
-      ...(current.search ? { search: current.search } : {}),
-      ...(nextReportType === 'erp-transfers'
-        ? {
-          ...(next.sourceBranchId === undefined ? {} : { sourceBranchId: next.sourceBranchId }),
-          ...(next.destinationBranchId === undefined ? {} : { destinationBranchId: next.destinationBranchId }),
-        }
-        : next.branchId === undefined ? {} : { branchId: next.branchId }),
-      ...(next.dateFrom ? { dateFrom: next.dateFrom } : {}),
-      ...(next.dateTo ? { dateTo: next.dateTo } : {}),
-    }));
+  const switchReportTab = (nextType: ErpTabReportType) => {
+    selectStoredReportTab(nextType);
     setPage(1);
     setSelectedIds(new Set());
   };
@@ -435,16 +422,7 @@ export function ErpReportsView() {
                   size="sm"
                   variant={type === reportType ? 'primary' : 'secondary'}
                   aria-pressed={type === reportType}
-                  onClick={() => {
-                    selectStoredReportTab(type);
-                    applyLiveScope(type, {
-                      branchId: branchInput,
-                      sourceBranchId: sourceBranchInput,
-                      destinationBranchId: destinationBranchInput,
-                      dateFrom: dateFromInput,
-                      dateTo: dateToInput,
-                    });
-                  }}
+                  onClick={() => switchReportTab(type)}
                 >
                   {tabLabels[type]}
                 </Button>
@@ -467,10 +445,6 @@ export function ErpReportsView() {
                   onChange={(event) => {
                     const sourceBranchId = event.target.value ? Number(event.target.value) : undefined;
                     setSourceBranchInput(sourceBranchId);
-                    applyLiveScope(reportType, {
-                      sourceBranchId, destinationBranchId: destinationBranchInput,
-                      dateFrom: dateFromInput, dateTo: dateToInput,
-                    });
                   }}
                 >
                   <option value="">كل الفروع</option>
@@ -486,10 +460,6 @@ export function ErpReportsView() {
                   onChange={(event) => {
                     const destinationBranchId = event.target.value ? Number(event.target.value) : undefined;
                     setDestinationBranchInput(destinationBranchId);
-                    applyLiveScope(reportType, {
-                      sourceBranchId: sourceBranchInput, destinationBranchId,
-                      dateFrom: dateFromInput, dateTo: dateToInput,
-                    });
                   }}
                 >
                   <option value="">كل الفروع</option>
@@ -503,11 +473,11 @@ export function ErpReportsView() {
               <Select
                 id="report-branch"
                 aria-label="الفرع"
+                className="max-w-sm"
                 value={branchInput ?? ''}
                 onChange={(event) => {
                   const branchId = event.target.value ? Number(event.target.value) : undefined;
                   setBranchInput(branchId);
-                  applyLiveScope(reportType, { branchId, dateFrom: dateFromInput, dateTo: dateToInput });
                 }}
               >
                 <option value="">كل الفروع</option>
@@ -518,23 +488,13 @@ export function ErpReportsView() {
           <div className="space-y-1.5">
             <Label htmlFor="report-from">من تاريخ</Label>
             <Input id="report-from" aria-label="من تاريخ" type="date" value={dateFromInput} onChange={(event) => {
-              const dateFrom = event.target.value;
-              setDateFromInput(dateFrom);
-              applyLiveScope(reportType, {
-                branchId: branchInput, sourceBranchId: sourceBranchInput,
-                destinationBranchId: destinationBranchInput, dateFrom, dateTo: dateToInput,
-              });
+              setDateFromInput(event.target.value);
             }} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="report-to">إلى تاريخ</Label>
             <Input id="report-to" aria-label="إلى تاريخ" type="date" value={dateToInput} onChange={(event) => {
-              const dateTo = event.target.value;
-              setDateToInput(dateTo);
-              applyLiveScope(reportType, {
-                branchId: branchInput, sourceBranchId: sourceBranchInput,
-                destinationBranchId: destinationBranchInput, dateFrom: dateFromInput, dateTo,
-              });
+              setDateToInput(event.target.value);
             }} />
           </div>
           <div className="space-y-1.5">

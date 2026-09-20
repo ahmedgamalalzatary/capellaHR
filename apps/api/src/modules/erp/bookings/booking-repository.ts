@@ -6,7 +6,7 @@ import {
   erpBookings,
   erpServices,
 } from '@capella/database/schema';
-import { and, asc, countDistinct, eq, gt, gte, inArray, lt } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, gt, gte, inArray, isNull, lt } from 'drizzle-orm';
 
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -295,6 +295,36 @@ export const createDrizzleBookingRepository = (
       afterState: record,
       relatedIds: { branchId: input.branchId, invoiceId: input.invoiceId },
       createdAt: input.convertedAt,
+    });
+  },
+
+  async remove(branchId, id) {
+    return database.transaction(async (transaction) => {
+      const scope = and(
+        eq(erpBookings.id, id),
+        eq(erpBookings.branchId, branchId),
+        inArray(erpBookings.status, ['booked', 'cancelled', 'no_show']),
+        isNull(erpBookings.invoiceId),
+      );
+      const before = (await transaction.select().from(erpBookings).where(scope)
+        .for('update').limit(1))[0];
+      if (!before) return null;
+      const record = (await hydrate(transaction, branchId, id))!;
+      await transaction.delete(erpBookingServices).where(and(
+        eq(erpBookingServices.bookingId, id),
+        eq(erpBookingServices.branchId, branchId),
+      ));
+      await transaction.delete(erpBookings).where(scope);
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: 'delete',
+        entityType: 'booking',
+        entityId: id,
+        beforeState: before,
+        relatedIds: { branchId },
+        createdAt: new Date(),
+      });
+      return record;
     });
   },
 

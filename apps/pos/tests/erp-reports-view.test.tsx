@@ -158,17 +158,70 @@ describe('ErpReportsView', () => {
     ));
   });
 
-  it('refreshes report rows and totals as soon as either date changes', async () => {
+  it('applies date changes only after apply is clicked', async () => {
     mount();
     await screen.findByText('عميل التقرير');
+    mocks.view.mockClear();
     fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-07-01' } });
-    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
-      'erp-sales', expect.objectContaining({ dateFrom: '2026-07-01', page: 1 }),
-    ));
     fireEvent.change(screen.getByLabelText('إلى تاريخ'), { target: { value: '2026-07-31' } });
+    expect(mocks.view).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
     await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
       'erp-sales', expect.objectContaining({ dateFrom: '2026-07-01', dateTo: '2026-07-31', page: 1 }),
     ));
+  });
+
+  it('rejects an inverted date range without discarding the draft dates', async () => {
+    mount();
+    await screen.findByText('عميل التقرير');
+    mocks.view.mockClear();
+    const from = screen.getByLabelText('من تاريخ') as HTMLInputElement;
+    const to = screen.getByLabelText('إلى تاريخ') as HTMLInputElement;
+    fireEvent.change(from, { target: { value: '2026-08-20' } });
+    fireEvent.change(to, { target: { value: '2026-08-10' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
+
+    expect(mocks.view).not.toHaveBeenCalled();
+    expect(from.value).toBe('2026-08-20');
+    expect(to.value).toBe('2026-08-10');
+  });
+
+  it('stages branch/date/search inputs until apply is clicked', async () => {
+    mount();
+    await screen.findByText('عميل التقرير');
+    mocks.view.mockClear();
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-07-01' } });
+    fireEvent.change(screen.getByLabelText('إلى تاريخ'), { target: { value: '2026-07-31' } });
+    fireEvent.change(screen.getByLabelText('بحث'), { target: { value: 'عميل جديد' } });
+
+    expect(mocks.view).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith('erp-sales', {
+      branchId: 2, dateFrom: '2026-07-01', dateTo: '2026-07-31',
+      search: 'عميل جديد', page: 1, pageSize: 20,
+    }));
+  });
+
+  it('carries applied filters when switching tabs without applying drafts', async () => {
+    mount();
+    await screen.findByText('عميل التقرير');
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('بحث'), { target: { value: 'عميل التقرير' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith('erp-sales', expect.objectContaining({
+      branchId: 2, search: 'عميل التقرير',
+    })));
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تقرير طرق الدفع' }));
+
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith('erp-payment-methods', expect.objectContaining({
+      branchId: 2, search: 'عميل التقرير', page: 1,
+    })));
   });
 
   it('replaces the shared branch filter with independent from and to filters on transfers', async () => {
@@ -178,6 +231,7 @@ describe('ErpReportsView', () => {
     expect(screen.queryByLabelText('الفرع')).toBeNull();
     fireEvent.change(screen.getByLabelText('من فرع'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('إلى فرع'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
 
     await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
       'erp-transfers', expect.objectContaining({

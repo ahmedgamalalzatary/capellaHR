@@ -126,5 +126,15 @@ export const createErpClientsRouter = (service: ClientService) => {
     } catch (error) { handleError(error, response); }
   });
 
+  router.delete('/:id', async (request: Request, response: Response) => {
+    try {
+      const { id } = clientIdParamsSchema.parse(request.params);
+      const branchId = request.query.branchId === undefined
+        ? undefined
+        : listClientsQuerySchema.parse(request.query).branchId;
+      response.json({ data: await service.remove(actorFrom(response), id, branchId) });
+    } catch (error) { handleError(error, response); }
+  });
+
   return router;
 };

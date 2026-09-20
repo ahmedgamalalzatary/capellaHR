@@ -1,11 +1,11 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { Pencil, Plus, Search } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
+import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label, Modal } from '@capella/ui';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Select } from '@/components/form/select';
@@ -15,9 +15,10 @@ import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 
-import { listClientBranches, listClientDebtInvoices, listClients, type Client } from '../api/clients-api';
+import { deleteClient, listClientBranches, listClientDebtInvoices, listClients, type Client } from '../api/clients-api';
 import { clientQueryKeys } from '../query-keys';
 import { ClientForm } from './client-form';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -85,6 +86,7 @@ function ClientDebtInvoices({
 }
 
 export function ClientsView() {
+  const cache = useQueryClient();
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
   const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
@@ -94,6 +96,7 @@ export function ClientsView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [debtClient, setDebtClient] = useState<(Client & { balanceDue: string }) | null>(null);
+  const [deleting, setDeleting] = useState<(Client & { balanceDue: string }) | null>(null);
   const [formPending, setFormPending] = useState(false);
 
   // Whitespace-only input must read as "no filter", so the trimmed term drives
@@ -124,6 +127,18 @@ export function ClientsView() {
   const meta = clientsQuery.data?.meta;
 
   const openCreate = () => { setCreateOpen(true); setEditing(null); };
+
+  const removal = useMutation({
+    mutationFn: (id: number) => deleteClient(id, branchId),
+    onSuccess: async () => {
+      await cache.invalidateQueries({ queryKey: clientQueryKeys.all });
+      notifySuccess('تم حذف العميل.');
+    },
+    onError: (cause: unknown) => {
+      const message = cause instanceof ApiError ? cause.message : 'تعذر حذف العميل.';
+      notifyError(cause, message);
+    },
+  });
 
   return (
     <section className="space-y-6">
@@ -290,14 +305,25 @@ export function ClientsView() {
                     <Badge variant="neutral" className="mt-1.5 tabular">مستحق {client.balanceDue} ج.م</Badge>
                   )}
                 </div>
-                <Button
-                  variant="secondary"
-                  disabled={formPending}
-                  onClick={() => { setEditing(client); setCreateOpen(false); }}
-                >
-                  <Pencil className="size-4" aria-hidden />
-                  تعديل
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={formPending}
+                    onClick={() => { setEditing(client); setCreateOpen(false); }}
+                  >
+                    <Pencil className="size-4" aria-hidden />
+                    تعديل
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={formPending || removal.isPending || Number(client.balanceDue) > 0}
+                    title={Number(client.balanceDue) > 0 ? 'لا يمكن حذف عميل عليه مستحقات' : 'حذف العميل'}
+                    onClick={() => setDeleting(client)}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                    حذف
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
@@ -322,6 +348,19 @@ export function ClientsView() {
           />
         ) : null}
       </Card>
+      {deleting ? (
+        <ConfirmDialog
+          title="حذف العميل"
+          description={`سيُحذف ${deleting.fullName ?? deleting.phone ?? `العميل #${deleting.id}`} نهائيًا.`}
+          confirmLabel="تأكيد الحذف"
+          tone="danger"
+          pending={removal.isPending}
+          onConfirm={() => {
+            removal.mutate(deleting.id, { onSettled: () => setDeleting(null) });
+          }}
+          onCancel={() => setDeleting(null)}
+        />
+      ) : null}
     </section>
   );
 }

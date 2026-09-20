@@ -42,6 +42,7 @@ export interface BookingRepository {
   create(input: CreateBookingWrite): Promise<BookingRecord>;
   findById(branchId: number, id: number): Promise<BookingRecord | null>;
   listDay(branchId: number, cairoDate: string): Promise<BookingRecord[]>;
+  remove(branchId: number, id: number): Promise<BookingRecord | null>;
   hasAny?(branchId: number): Promise<boolean>;
   transition(
     branchId: number,
@@ -172,6 +173,22 @@ export const createBookingService = (dependencies: {
       );
       if (!booking) throw new BookingError('BOOKING_ALREADY_HANDLED');
       return booking;
+    },
+
+    async remove(
+      actor: ErpAccountIdentity,
+      id: number,
+      requestedBranchId?: number,
+    ) {
+      const { branchId } = await resolveBranchContext(actor, requestedBranchId);
+      const existing = await repository.findById(branchId, id);
+      if (!existing) throw new BookingError('BOOKING_NOT_FOUND');
+      if (existing.invoiceId !== null || !['booked', 'cancelled', 'no_show'].includes(existing.status)) {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
+      }
+      const deleted = await repository.remove(branchId, id);
+      if (!deleted) throw new BookingError('BOOKING_ALREADY_HANDLED');
+      return deleted;
     },
 
     countFutureForEmployee(employeeId: number, now = new Date()) {

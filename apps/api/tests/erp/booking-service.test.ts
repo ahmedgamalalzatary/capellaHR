@@ -27,10 +27,13 @@ const setup = () => {
   const transition = vi.fn().mockResolvedValue(booking);
   const listActiveEmployees = vi.fn().mockResolvedValue([{ id: 7, name: 'Sara' }]);
   const updatePreference = vi.fn().mockResolvedValue(booking);
+  const findById = vi.fn().mockResolvedValue(booking);
+  const remove = vi.fn().mockResolvedValue(booking);
   const repository: BookingRepository = {
     create,
-    findById: vi.fn().mockResolvedValue(booking),
+    findById,
     listDay,
+    remove,
     transition,
     countFutureForEmployee: vi.fn().mockResolvedValue(0),
     convert: vi.fn().mockResolvedValue(undefined),
@@ -41,7 +44,7 @@ const setup = () => {
     repository,
     resolveBranchContext: vi.fn().mockResolvedValue({ branchId: 2, accountId: 3 }),
   });
-  return { service, create, listDay, transition, listActiveEmployees, updatePreference };
+  return { service, create, listDay, transition, listActiveEmployees, updatePreference, findById, remove };
 };
 
 describe('ERP booking service', () => {
@@ -108,5 +111,27 @@ describe('ERP booking service', () => {
     const { service, updatePreference } = setup();
     await service.updatePreference(actor, 9, 3, { preferredEmployeeId: 7 });
     expect(updatePreference).toHaveBeenCalledWith(2, 9, 3, 7, expect.any(Date));
+  });
+
+  it('hard-deletes a booking without payment (no linked invoice)', async () => {
+    const { service, remove } = setup();
+    await expect(service.remove(actor, 9)).resolves.toMatchObject({ id: 9 });
+    expect(remove).toHaveBeenCalledWith(2, 9);
+  });
+
+  it('reports a missing booking as not found', async () => {
+    const { service, findById } = setup();
+    findById.mockResolvedValue(null);
+    await expect(service.remove(actor, 999)).rejects.toEqual(
+      new BookingError('BOOKING_NOT_FOUND'),
+    );
+  });
+
+  it('refuses to hard-delete a converted booking linked to an invoice', async () => {
+    const { service, findById } = setup();
+    findById.mockResolvedValue({ ...booking, status: 'converted', invoiceId: 41 });
+    await expect(service.remove(actor, 9)).rejects.toEqual(
+      new BookingError('BOOKING_ALREADY_HANDLED'),
+    );
   });
 });

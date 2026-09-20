@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarPlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarPlus, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -18,7 +18,7 @@ import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { useTickingNow } from '@/lib/use-ticking-now';
 
-import { listBookingEmployeeOptions, listBookings, updateBookingServicePreference, updateBookingStatus, type BookingDto } from '../api/bookings-api';
+import { deleteBooking, listBookingEmployeeOptions, listBookings, updateBookingServicePreference, updateBookingStatus, type BookingDto } from '../api/bookings-api';
 import { isOverdueBooked, orderBookingsForDiary } from '../order-bookings';
 import { bookingQueryKeys } from '../query-keys';
 import { BookingForm } from './booking-form';
@@ -59,6 +59,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const { branchId: adminBranchId, setBranchId: setAdminBranchId } = useAdminBranch();
   const [error, setError] = useState<string>();
   const [confirming, setConfirming] = useState<{ id: number; next: 'cancelled' | 'no_show' } | null>(null);
+  const [deleting, setDeleting] = useState<BookingDto | null>(null);
 
   const branchId = actor?.type === 'admin' ? adminBranchId : undefined;
   const branches = useQuery({
@@ -104,6 +105,18 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       notifyError(cause, message);
     },
   });
+  const removal = useMutation({
+    mutationFn: (id: number) => deleteBooking(id, branchId),
+    onSuccess: async () => {
+      await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      notifySuccess('تم حذف الموعد.');
+    },
+    onError: (cause: unknown) => {
+      const message = cause instanceof ApiError ? cause.message : 'تعذر حذف الموعد.';
+      setError(message);
+      notifyError(cause, message);
+    },
+  });
   const now = useTickingNow();
   const overdueCount = diary.data?.filter((booking) => isOverdueBooked(booking, now)).length ?? 0;
   const orderedBookings = diary.data ? orderBookingsForDiary(diary.data, now) : [];
@@ -118,6 +131,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     />
     {actor?.type === 'admin' ? <Select
       aria-label="الفرع"
+      className="max-w-sm"
       disabled={branches.isPending || branches.isError}
       value={branchId ?? ''}
       onChange={(event) => setAdminBranchId(event.target.value ? Number(event.target.value) : undefined)}
@@ -196,6 +210,11 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                 <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button>
               </> : null}
               {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}
+              {(booking.status === 'booked' || booking.status === 'cancelled' || booking.status === 'no_show') ? (
+                <Button variant="ghost" disabled={removal.isPending} onClick={() => setDeleting(booking)}>
+                  <Trash2 className="size-4" />حذف
+                </Button>
+              ) : null}
             </div>
           </CardContent>
         </Card></div>)}</div>}
@@ -215,6 +234,21 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
           status.mutate(confirming, { onSettled: () => setConfirming(null) });
         }}
         onCancel={() => setConfirming(null)}
+      />
+    ) : null}
+    {deleting ? (
+      <ConfirmDialog
+        title={deleting.invoiceId === null ? 'حذف الموعد' : 'حذف حجز مدفوع'}
+        description={deleting.invoiceId === null
+          ? 'سيُحذف هذا الموعد نهائيًا ولا يمكن التراجع.'
+          : 'هذا الحجز مرتبط بمبلغ مدفوع. هل أعدت المبلغ للعميل؟ لا تحذف قبل رد المبلغ.'}
+        confirmLabel={deleting.invoiceId === null ? 'تأكيد الحذف' : 'نعم، أعدت المبلغ — احذف'}
+        tone="danger"
+        pending={removal.isPending}
+        onConfirm={() => {
+          removal.mutate(deleting.id, { onSettled: () => setDeleting(null) });
+        }}
+        onCancel={() => setDeleting(null)}
       />
     ) : null}
   </section>;

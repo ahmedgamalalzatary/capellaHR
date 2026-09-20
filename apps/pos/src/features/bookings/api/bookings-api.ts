@@ -33,6 +33,9 @@ export const updateBookingStatus = (
   id: number,
   input: UpdateBookingStatusInput,
 ) => api.patch<BookingDto>(`/erp/bookings/${id}/status`, input);
+export const deleteBooking = (id: number, branchId?: number) => (
+  api.delete<BookingDto>(`/erp/bookings/${id}${query({ branchId })}`)
+);
 export const listBookingEmployeeOptions = (branchId?: number) => (
   api.get<Array<{ id: number; name: string }>>(`/erp/bookings/employee-options${query({ branchId })}`)
 );

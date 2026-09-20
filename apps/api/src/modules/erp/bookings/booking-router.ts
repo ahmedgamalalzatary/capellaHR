@@ -100,5 +100,14 @@ export const createErpBookingsRouter = (service: BookingService) => {
       response.json({ data: await service.updatePreference(actorFrom(response), id, serviceId, input) });
     } catch (cause) { handle(cause, response); }
   });
+  router.delete('/:id', async (request, response) => {
+    try {
+      const { id } = bookingIdParamsSchema.parse(request.params);
+      const branchId = request.query.branchId === undefined
+        ? undefined
+        : optionalBranch(request.query.branchId);
+      response.json({ data: await service.remove(actorFrom(response), id, branchId) });
+    } catch (cause) { handle(cause, response); }
+  });
   return router;
 };

@@ -19,6 +19,11 @@ export type ClientListRecord = ClientRecord & {
 
 export type ClientWrite = { branchId: number; fullName: string | null; phone: string | null };
 
+export type ClientRemovalResult =
+  | { status: 'deleted'; client: ClientRecord }
+  | { status: 'has_debt' }
+  | { status: 'not_found' };
+
 export interface ClientRepository {
   create(input: ClientWrite): Promise<ClientRecord>;
   findById(id: number): Promise<ClientRecord | null>;
@@ -29,11 +34,12 @@ export interface ClientRepository {
     branchId: number,
     changes: { fullName?: string | null; phone?: string | null },
   ): Promise<ClientRecord | null>;
+  remove(id: number, branchId: number): Promise<ClientRemovalResult>;
 }
 
 export class ClientError extends Error {
   constructor(
-    public readonly code: 'CLIENT_NOT_FOUND' | 'CLIENT_PHONE_EXISTS',
+    public readonly code: 'CLIENT_NOT_FOUND' | 'CLIENT_PHONE_EXISTS' | 'CLIENT_HAS_DEBT',
     message: string,
     /**
      * On a duplicate phone the counter needs to continue with the client that
@@ -55,6 +61,7 @@ const isDuplicateEntryError = (error: unknown) => (
 
 const NOT_FOUND_MESSAGE = 'العميل غير موجود';
 const DUPLICATE_MESSAGE = 'رقم الهاتف مسجل لعميل آخر';
+const HAS_DEBT_MESSAGE = 'لا يمكن حذف عميل عليه مستحقات';
 
 export const createClientService = (dependencies: {
   repository: ClientRepository;
@@ -162,6 +169,20 @@ export const createClientService = (dependencies: {
       }
       if (!client) throw new ClientError('CLIENT_NOT_FOUND', NOT_FOUND_MESSAGE);
       return client;
+    },
+
+    async remove(
+      actor: ErpAccountIdentity,
+      id: number,
+      requestedBranchId?: number,
+    ) {
+      const { branchId } = await resolveBranchContext(actor, requestedBranchId);
+      const result = await repository.remove(id, branchId);
+      if (result.status === 'has_debt') {
+        throw new ClientError('CLIENT_HAS_DEBT', HAS_DEBT_MESSAGE);
+      }
+      if (result.status === 'not_found') throw new ClientError('CLIENT_NOT_FOUND', NOT_FOUND_MESSAGE);
+      return result.client;
     },
   };
 };

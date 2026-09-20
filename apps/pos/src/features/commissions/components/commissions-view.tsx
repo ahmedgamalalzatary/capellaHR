@@ -129,6 +129,7 @@ export function CommissionsView() {
                 <Select
                   id="commissions-branch"
                   aria-label="الفرع"
+                  className="max-w-sm"
                   value={branchId ?? ''}
                   onChange={(event) => {
                     setBranchId(event.target.value ? Number(event.target.value) : undefined);

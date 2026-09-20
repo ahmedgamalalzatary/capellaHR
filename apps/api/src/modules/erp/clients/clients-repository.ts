@@ -88,6 +88,33 @@ export const createDrizzleClientRepository = (
     return { items, total: totals[0]?.value ?? 0 };
   },
 
+  async remove(id, branchId) {
+    return database.transaction(async (transaction) => {
+      const scope = and(eq(clients.id, id), eq(clients.branchId, branchId));
+      const before = (await transaction.select().from(clients).where(scope).for('update').limit(1))[0];
+      if (!before) return { status: 'not_found' as const };
+      const debt = await transaction.select({ value: sql`1` }).from(invoices).where(and(
+        eq(invoices.clientId, id),
+        eq(invoices.branchId, branchId),
+        eq(invoices.kind, 'sale'),
+        ne(invoices.status, 'draft'),
+        gt(invoices.balanceDue, '0'),
+      )).limit(1);
+      if (debt.length > 0) return { status: 'has_debt' as const };
+      await transaction.delete(clients).where(scope);
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: 'delete',
+        entityType: 'client',
+        entityId: id,
+        beforeState: before,
+        relatedIds: { branchId },
+        createdAt: now(),
+      });
+      return { status: 'deleted' as const, client: before };
+    });
+  },
+
   async update(id, branchId, changes) {
     return database.transaction(async (transaction) => {
       // The branch is part of the lookup, so a client outside the acting branch

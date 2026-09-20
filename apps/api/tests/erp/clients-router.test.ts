@@ -7,6 +7,7 @@ import {
   type ErpBranchCapability,
 } from '../../src/modules/erp/index.js';
 import {
+  ClientError,
   createClientService,
   createErpClientsRouter,
   type ClientRecord,
@@ -34,6 +35,7 @@ const repository = (overrides: Partial<ClientRepository> = {}): ClientRepository
   findByPhone: vi.fn(async () => null),
   list: vi.fn(async () => ({ items: [{ ...record(), balanceDue: '0.00' }], total: 1 })),
   update: vi.fn(async () => record()),
+  remove: vi.fn(async () => ({ status: 'deleted' as const, client: record() })),
   ...overrides,
 });
 
@@ -127,5 +129,32 @@ describe('ERP clients HTTP API', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('CLIENT_NOT_FOUND');
+  });
+
+  it('deletes a debt-free client', async () => {
+    const response = await request(makeApp(CASHIER, repository())).delete('/api/v1/erp/clients/1');
+    expect(response.status).toBe(200);
+  });
+
+  it('blocks delete with 409 when the client owes money', async () => {
+    const repo = repository({
+      remove: vi.fn(async () => ({ status: 'has_debt' as const })),
+    });
+    const response = await request(makeApp(CASHIER, repo)).delete('/api/v1/erp/clients/1');
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('CLIENT_HAS_DEBT');
+  });
+
+  it('maps service debt error without debt check helper', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use((_request, response, next) => { response.locals.actor = CASHIER; next(); });
+    const failing = {
+      remove: vi.fn().mockRejectedValue(new ClientError('CLIENT_HAS_DEBT', 'x')),
+    };
+    app.use('/api/v1/erp/clients', createErpClientsRouter(failing as never));
+    const response = await request(app).delete('/api/v1/erp/clients/1');
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('CLIENT_HAS_DEBT');
   });
 });

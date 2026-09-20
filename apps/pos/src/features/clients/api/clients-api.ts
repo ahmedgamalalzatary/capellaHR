@@ -75,3 +75,7 @@ export function updateClient(
 ) {
   return api.patch<Client>(`/erp/clients/${id}`, input);
 }
+
+export function deleteClient(id: number, branchId?: number) {
+  return api.delete<Client>(`/erp/clients/${id}${queryString({ branchId })}`);
+}

@@ -209,6 +209,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
               <Label htmlFor="refund-invoice-branch">الفرع</Label>
               <Select
                 id="refund-invoice-branch"
+                className="max-w-sm"
                 disabled={branches.isPending || branches.isError}
                 value={branchId ?? ''}
                 onChange={(event) => {

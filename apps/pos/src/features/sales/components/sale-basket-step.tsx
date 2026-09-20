@@ -13,12 +13,19 @@ import {
   Input,
 } from '@capella/ui';
 
-import { ServicePicker } from '@/features/catalog';
+import { ServicePicker, type ServiceListItem } from '@/features/catalog';
 import { ProductPicker, type ProductSaleItem } from '@/features/products';
 import type { AssignableEmployee } from '@/features/employee-assignment';
 
 import { LineEmployeeSelect } from './line-employee-select';
-import { type Line } from './sale-primitives';
+import {
+  appendServiceLine,
+  decrementLine,
+  incrementLine,
+  removeLine,
+  type Line,
+} from './sale-primitives';
+import { createUuid } from '@/lib/uuid';
 
 export function SaleBasketStep({
   branchId,
@@ -46,29 +53,18 @@ export function SaleBasketStep({
         <div className={hasServices && hasProducts ? 'grid gap-4 md:grid-cols-2' : 'grid gap-4'}>
           {!hasServices && !hasProducts ? <EmptyState title="لا توجد خدمات أو منتجات متاحة" /> : null}
           {hasServices ? (
-          <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => {
-            const found = current.find(({ service: item, itemType }) => itemType !== 'product' && item.id === service.id);
-            return found
-              ? current.map((line) => line.itemType !== 'product' && line.service.id === service.id
-                ? { ...line, quantity: line.quantity + 1 }
-                : line)
-              : [...current, {
-                  service,
-                  quantity: 1,
-                  unitPrice: service.price ?? '',
-                  itemType: 'service',
-                  // The chosen default performs whatever is added next.
-                  employee,
-                }];
-          })} onAvailabilityChange={onServicesAvailability} />
+          // Every tap adds one more unit as its own line, so each unit of the same
+          // service can be performed — and commissioned — by a different employee.
+          <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => appendServiceLine(current, service, employee, createUuid))} onAvailabilityChange={onServicesAvailability} />
           ) : null}
           {hasProducts ? <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
             const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
             return found
-              ? current.map((line) => line.itemType === 'product' && line.service.id === product.id
-                ? { ...line, quantity: Math.min(line.quantity + 1, product.quantityAvailable) }
+              ? incrementLine(current, found.lineId).map((line) => line.lineId === found.lineId
+                ? { ...line, quantity: Math.min(line.quantity, product.quantityAvailable) }
                 : line)
               : [...current, {
+                  lineId: createUuid(),
                   service: product,
                   quantity: 1,
                   unitPrice: product.price,
@@ -82,7 +78,7 @@ export function SaleBasketStep({
           <ul className="space-y-2 border-t border-line/70 pt-4">
             {lines.map((line) => (
               <li
-                key={`${line.itemType ?? 'service'}:${line.service.id}`}
+                key={line.lineId}
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-control border border-line bg-surface/50 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,12rem)_auto]"
               >
                 <span className="min-w-0">
@@ -95,7 +91,7 @@ export function SaleBasketStep({
                       placeholder="سعر الوحدة"
                       value={line.unitPrice}
                       onChange={(event) => setLines((current) => current.map((item) => (
-                        item.service.id === line.service.id && item.itemType === line.itemType
+                        item.lineId === line.lineId
                           ? { ...item, unitPrice: event.target.value }
                           : item
                       )))}
@@ -109,7 +105,7 @@ export function SaleBasketStep({
                     line={line}
                     {...(branchId === undefined ? {} : { branchId })}
                     onSelect={(performer) => setLines((current) => current.map((item) => (
-                      item.service.id === line.service.id && item.itemType === line.itemType
+                      item.lineId === line.lineId
                         ? { ...item, employee: performer }
                         : item
                     )))}
@@ -117,10 +113,14 @@ export function SaleBasketStep({
                 ) : null}
                 {/* The most-tapped control in the app: kept at a 44px touch target. */}
                 <span className="flex items-center gap-1 rounded-control border border-line bg-paper p-0.5">
-                  <Button variant="ghost" className="size-11 px-0" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => current.flatMap((item) => item.service.id !== line.service.id || item.itemType !== line.itemType ? [item] : item.quantity > 1 ? [{ ...item, quantity: item.quantity - 1 }] : []))}><Minus className="size-4" aria-hidden /></Button>
+                  <Button variant="ghost" className="size-11 px-0" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => (line.quantity > 1 ? decrementLine(current, line.lineId) : removeLine(current, line.lineId)))}><Minus className="size-4" aria-hidden /></Button>
                   <span className="tabular w-8 text-center text-sm font-semibold">{line.quantity}</span>
-                  <Button variant="ghost" className="size-11 px-0" disabled={line.itemType === 'product' && line.quantity >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => current.map((item) => item.service.id === line.service.id && item.itemType === line.itemType ? { ...item, quantity: item.quantity + 1 } : item))}><Plus className="size-4" aria-hidden /></Button>
-                  <Button variant="ghost" className="size-11 px-0" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => current.filter((item) => item.service.id !== line.service.id || item.itemType !== line.itemType))}><Trash2 className="size-4" aria-hidden /></Button>
+                  <Button variant="ghost" className="size-11 px-0" disabled={line.itemType === 'product' && line.quantity >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => (
+                    line.itemType === 'product'
+                      ? incrementLine(current, line.lineId)
+                      : appendServiceLine(current, line.service as ServiceListItem, line.employee ?? null, createUuid)
+                  ))}><Plus className="size-4" aria-hidden /></Button>
+                  <Button variant="ghost" className="size-11 px-0" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => removeLine(current, line.lineId))}><Trash2 className="size-4" aria-hidden /></Button>
                 </span>
               </li>
             ))}

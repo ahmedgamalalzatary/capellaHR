@@ -9,6 +9,7 @@ import type { ServiceListItem } from '@/features/catalog';
 import type { AssignableEmployee } from '@/features/employee-assignment';
 import type { ProductSaleItem } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
+import { createUuid } from '@/lib/uuid';
 
 import type { SaleDraftOwner, StoredSaleDraft } from '../sale-draft-storage';
 
@@ -57,6 +58,8 @@ export function saleCheckoutBlockers(state: SaleCheckoutState): string[] {
 }
 
 export type Line = {
+  /** Stable per-line identity, so two units of the same service stay independent. */
+  lineId: string;
   service: ServiceListItem | ProductSaleItem;
   quantity: number;
   unitPrice: string;
@@ -66,15 +69,66 @@ export type Line = {
 };
 
 /**
+ * Every unit of a service is its own basket line, so a client who buys the same
+ * service several times can hand each unit to a different employee. The new line
+ * never merges with an existing one, even for the same service.
+ */
+export const appendServiceLine = (
+  lines: Line[],
+  service: ServiceListItem,
+  employee: AssignableEmployee | null,
+  nextLineId: () => string,
+): Line[] => [
+  ...lines,
+  {
+    lineId: nextLineId(),
+    service,
+    quantity: 1,
+    unitPrice: service.price ?? '',
+    itemType: 'service',
+    employee,
+  },
+];
+
+/** Updates only the addressed line; sibling units of the same service are untouched. */
+const updateLine = (lines: Line[], lineId: string, change: (line: Line) => Line): Line[] => (
+  lines.map((line) => (line.lineId === lineId ? change(line) : line))
+);
+
+export const incrementLine = (lines: Line[], lineId: string): Line[] => (
+  updateLine(lines, lineId, (line) => ({ ...line, quantity: line.quantity + 1 }))
+);
+
+export const decrementLine = (lines: Line[], lineId: string): Line[] => (
+  updateLine(lines, lineId, (line) => (
+    line.quantity > 1 ? { ...line, quantity: line.quantity - 1 } : line
+  ))
+);
+
+export const removeLine = (lines: Line[], lineId: string): Line[] => (
+  lines.filter((line) => line.lineId !== lineId)
+);
+
+/**
  * A draft saved before per-line assignment — or by a counter that picked only the
  * default — carries the employee once, at the top. Restore it onto the services.
+ * Stored drafts predate per-line identity, so each line is given a fresh id here.
  */
-export const restoredLines = (draft: { employee: AssignableEmployee | null; lines: Line[] }): Line[] => (
-  draft.lines.map((line) => (
-    line.itemType === 'product' || line.employee
-      ? line
-      : { ...line, employee: draft.employee }
-  ))
+export const restoredLines = (draft: { employee: AssignableEmployee | null; lines: Array<Omit<Line, 'lineId'> & { lineId?: string }> }): Line[] => (
+  draft.lines.flatMap<Line>((line) => {
+    const employee = line.itemType === 'product'
+      ? null
+      : line.lineId === undefined ? line.employee ?? draft.employee : line.employee ?? null;
+    if (line.itemType === 'product') {
+      return [{ ...line, lineId: line.lineId ?? createUuid(), employee }];
+    }
+    return Array.from({ length: line.quantity }, (_, index) => ({
+      ...line,
+      lineId: index === 0 && line.lineId ? line.lineId : createUuid(),
+      quantity: 1,
+      employee,
+    }));
+  })
 );
 
 export type AdjustmentKind = 'percentage' | 'fixed';

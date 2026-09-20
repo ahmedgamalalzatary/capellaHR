@@ -191,6 +191,64 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('credits each unit of the same service to its own employee with that employee\'s rate', async () => {
+    const data = await fixture();
+    // A second performing employee on the default 10% rate (the first has a 15% override).
+    const secondEmployeeId = Number((await database.insert(employees).values({
+      employeeCode: data.employeeCode + 7,
+      fullName: `Second ${data.marker}`,
+      personalPhone: `015${data.clientPhone.slice(3)}`,
+      whatsappPhone: `015${data.clientPhone.slice(3)}`,
+      pinHash: 'unused',
+      age: 30,
+      address: 'Cairo',
+      branchId: data.branchId,
+      shiftDurationMinutes: 480,
+      monthlyBaseSalary: '5000.00',
+      createdAt: data.at,
+      updatedAt: data.at,
+    }))[0].insertId);
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    // The same service twice on one invoice, each unit performed by someone else.
+    request.input.lines = [
+      { itemType: 'service', serviceId: data.serviceId, quantity: 1, unitPrice: '200.00', employeeId: data.employeeId },
+      { itemType: 'service', serviceId: data.serviceId, quantity: 1, unitPrice: '200.00', employeeId: secondEmployeeId },
+    ];
+    request.input.discount = undefined;
+    request.input.tax = undefined;
+    request.input.payments = [{ method: 'cash', amount: '400.00' }];
+    request.assertEmployees = async () => [
+      { id: data.employeeId, employeeCode: data.employeeCode, fullName: `Employee ${data.marker}`, branchId: data.branchId },
+      { id: secondEmployeeId, employeeCode: data.employeeCode + 7, fullName: `Second ${data.marker}`, branchId: data.branchId },
+    ];
+
+    const result = await repository.complete(request);
+
+    // Two independent line rows, each carrying its own performer and rate.
+    expect(result.lines).toHaveLength(2);
+    expect(result.lines.map((line) => ({
+      employeeId: line.employee?.id,
+      commissionRate: line.commissionRate,
+      commissionAmount: line.commissionAmount,
+    }))).toEqual([
+      { employeeId: data.employeeId, commissionRate: '15.00', commissionAmount: '30.00' },
+      { employeeId: secondEmployeeId, commissionRate: '10.00', commissionAmount: '20.00' },
+    ]);
+
+    // Two queue tickets, one per unit, each bound to its own line.
+    expect(result.lines.map((line) => line.queueNumbers)).toEqual([[expect.any(Number)], [expect.any(Number)]]);
+
+    // Each employee earns exactly their own unit's commission.
+    const ledger = await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, result.id));
+    const byEmployee = new Map(ledger.map((entry) => [entry.employeeId, entry.amount]));
+    expect(ledger).toHaveLength(2);
+    expect(byEmployee.get(data.employeeId)).toBe('30.00');
+    expect(byEmployee.get(secondEmployeeId)).toBe('20.00');
+    expect(ledger.every((entry) => entry.entryType === 'earned')).toBe(true);
+  });
+
   it('writes a complete service sale with snapshots, override commission, payment, and audit', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());

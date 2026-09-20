@@ -234,6 +234,56 @@ describe('ERP service-sale view', () => {
     vi.restoreAllMocks();
   });
 
+  it('lets each unit of the same service name a different employee and submits one line per unit', async () => {
+    // Two units of the same 200.00 service, fully paid in cash.
+    mocks.quoteSale.mockResolvedValue({
+      lines: [
+        { itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' },
+        { itemType: 'service', sourceId: 21, name: 'صبغة شعر', quantity: 1, unitPrice: '200.00', lineTotal: '200.00' },
+      ],
+      discount: null,
+      tax: null,
+      totals: { subtotal: '400.00', discountAmount: '0.00', taxAmount: '0.00', total: '400.00' },
+    });
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
+    // Buy the service once, then use its normal quantity control for the second unit.
+    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'زيادة صبغة شعر' }));
+
+    const selects = await screen.findAllByRole('combobox', { name: 'موظف صبغة شعر' });
+    expect(selects).toHaveLength(2);
+    // The per-line select only honours a value once the assignable-employees read
+    // has populated it; wait for the option to exist before choosing.
+    await waitFor(() => {
+      for (const select of selects) {
+        expect(within(select as HTMLElement).queryByRole('option', { name: 'سارة علي' })).not.toBeNull();
+        expect(within(select as HTMLElement).queryByRole('option', { name: 'هدى محمود' })).not.toBeNull();
+      }
+    });
+    fireEvent.change(selects[0]!, { target: { value: '8' } });
+    fireEvent.change(selects[1]!, { target: { value: '11' } });
+
+    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    await screen.findByText('تم سداد الإجمالي بالكامل');
+    // Reveal any lingering blocker before expecting the button to arm.
+    await waitFor(() => {
+      const blockersList = screen.queryByRole('list', { name: 'ما ينقص لإتمام البيع' });
+      if (blockersList) throw new Error(`blockers: ${blockersList.textContent ?? ''}`);
+    });
+    const completeButton = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect((completeButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(completeButton);
+
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      lines: [
+        { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 },
+        { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 11 },
+      ],
+    }));
+  });
+
   it('completes one fully paid service invoice from the server quote', async () => {
     const queryClient = renderView();
     for (const key of ['erp-sales', 'clients', 'erp-products', 'erp-commissions', 'erp-reports']) {

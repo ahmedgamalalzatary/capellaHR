@@ -12,6 +12,7 @@ import {
 } from '@/features/employee-assignment';
 
 import { errorMessage, type Line } from './sale-primitives';
+import { createUuid } from '@/lib/uuid';
 
 /**
  * Loads an arrived booking and, once, prefills the workspace from it. A draft
@@ -71,6 +72,7 @@ export function useBookingPrefill({
       );
       setClient(savedClient);
       setLines(booking.data.services.map((bookedService) => ({
+        lineId: createUuid(),
         itemType: 'service' as const,
         quantity: 1,
         unitPrice: bookedService.servicePrice ?? '',
