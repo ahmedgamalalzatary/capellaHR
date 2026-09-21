@@ -235,7 +235,8 @@ export function SuppliersPurchasesView() {
     onSuccess: async () => { closeCancellation(); setSuccessMessage('تم إلغاء المشتريات وعكس أثر المخزون.'); notifySuccess('تم إلغاء المشتريات وعكس أثر المخزون.'); await refreshPurchase(); },
     onError: (error: unknown) => notifyError(error),
   });
-  const validLines = lines.length > 0 && lines.every((line) => (
+  const chosenProductIds = new Set(lines.map((line) => line.productId));
+  const validLines = lines.length > 0 && chosenProductIds.size === lines.length && lines.every((line) => (
     Number(line.productId) && quantityValue(line.quantity) !== null && cents(line.unitCost) > BigInt(0)
   ));
   const activeSuppliers = suppliers.data?.items.filter((supplier) => supplier.isActive) ?? [];
@@ -510,7 +511,10 @@ export function SuppliersPurchasesView() {
                                     label="المنتج"
                                     value={line.productId}
                                     disabled={commandPending}
-                                    products={activeProducts.data?.items ?? []}
+                                    products={(activeProducts.data?.items ?? []).filter((product) => (
+                                      String(product.id) === line.productId
+                                      || !chosenProductIds.has(String(product.id))
+                                    ))}
                                     onChange={(productId) => { if (!commandPending) updateLine(line.key, { productId }); }}
                                   />
                                 </div>

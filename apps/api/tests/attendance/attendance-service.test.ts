@@ -61,6 +61,9 @@ const makeRepository = (): AttendanceRepository => ({
   checkOut: vi.fn(async () => ({ kind: 'success' as const, session: { ...session, checkOutAt: now } })),
   manualCheckIn: vi.fn(async () => ({ kind: 'success' as const, session })),
   manualCheckOut: vi.fn(async () => ({ kind: 'success' as const, session: { ...session, checkOutAt: now } })),
+  reconcileMissingDay: vi.fn(async () => ({
+    id: 9, employeeId: 7, attendanceDate: '2026-07-18', status: 'absence' as const,
+  })),
   approveDeniedAttempt: vi.fn(async () => ({ kind: 'success' as const, session })),
   dismissDeniedAttempt: vi.fn(async () => ({ kind: 'not_found' as const })),
   correctAutomaticTimeout: vi.fn(async () => ({ kind: 'success' as const, session })),

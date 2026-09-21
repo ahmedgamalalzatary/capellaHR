@@ -6,6 +6,7 @@ import {
   listAttendanceDeniedAttemptsQuerySchema,
   listAttendanceSessionsQuerySchema,
   manualAttendanceEventSchema,
+  reconcileAttendanceDaySchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { fileTypeFromBuffer } from 'file-type';
@@ -200,6 +201,15 @@ export const createAttendanceRouter = (
     try {
       response.json({
         data: await service.manualCheckOut(manualAttendanceEventSchema.parse(request.body)),
+      });
+    } catch (error) {
+      handle(error, response, next);
+    }
+  });
+  router.post('/reconciliation', async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      response.status(201).json({
+        data: await service.reconcileMissingDay(reconcileAttendanceDaySchema.parse(request.body)),
       });
     } catch (error) {
       handle(error, response, next);

@@ -341,6 +341,7 @@ export const createAttendanceSessionWriter = (options: {
     employeeId: number,
     attendanceDate: string,
     requiredMinutesOverride?: number,
+    source: 'automatic' | 'admin_reconciliation' = 'automatic',
   ) => {
     const employee = await lockEmployee(transaction, employeeId);
     if (!employee) return 0;
@@ -381,9 +382,9 @@ export const createAttendanceSessionWriter = (options: {
     });
     const id = Number(inserted[0].insertId);
     await writeAudit(transaction, {
-      actor: { type: 'system', identifier: 'system' },
+      ...(source === 'automatic' ? { actor: { type: 'system' as const, identifier: 'system' } } : {}),
       module: 'attendance',
-      action: 'automatic_absence',
+      action: source === 'automatic' ? 'automatic_absence' : 'reconcile_absence',
       entityType: 'attendance_daily_record',
       entityId: id,
       afterState: {

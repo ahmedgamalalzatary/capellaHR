@@ -42,6 +42,9 @@ const makeService = (): AttendanceService => ({
   checkOut: vi.fn(async () => ({ ...session, checkOutAt: now })),
   manualCheckIn: vi.fn(async () => session),
   manualCheckOut: vi.fn(async () => ({ ...session, checkOutAt: now })),
+  reconcileMissingDay: vi.fn(async () => ({
+    id: 9, employeeId: 7, attendanceDate: '2026-07-18', status: 'absence' as const,
+  })),
   approveDeniedAttempt: vi.fn(async () => session),
   dismissDeniedAttempt: vi.fn(async () => ({ id: 5, dismissedAt: now } as never)),
   correctAutomaticTimeout: vi.fn(async () => session),
@@ -160,6 +163,12 @@ describe('attendance HTTP API', () => {
       .send({ employeeId: 7, occurredAt: now.toISOString() })).status).toBe(201);
     expect((await request(app).post('/api/v1/attendance/manual/check-out').set(cookie)
       .send({ employeeId: 7, occurredAt: now.toISOString() })).status).toBe(200);
+    const reconciled = await request(app).post('/api/v1/attendance/reconciliation').set(cookie)
+      .send({ employeeId: 7, attendanceDate: '2026-07-18', resolution: 'absence' });
+    expect(reconciled.status).toBe(201);
+    expect(reconciled.body.data).toMatchObject({
+      employeeId: 7, attendanceDate: '2026-07-18', status: 'absence',
+    });
     expect((await request(app).post('/api/v1/attendance/denied-attempts/5/approve')
       .set(cookie)).status).toBe(200);
     expect((await request(app).post('/api/v1/attendance/denied-attempts/5/dismiss')

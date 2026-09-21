@@ -53,21 +53,37 @@ export interface PayrollAttendanceGateway {
     payrollMonth: string,
     context: PayrollTransactionContext,
     mode: 'preview' | 'finalize',
-  ): Promise<{ kind: 'ready'; facts: PayrollAttendanceFacts } | { kind: 'blocked'; reasons: string[] }>;
+  ): Promise<
+    | { kind: 'ready'; facts: PayrollAttendanceFacts }
+    | { kind: 'blocked'; reasons: string[]; missingDates?: string[] }
+  >;
 }
+
+export type BlockedPayrollRecord = {
+  state: 'blocked';
+  employeeId: number;
+  employeeCode: number;
+  employeeName: string;
+  branchId: number;
+  branchName: string;
+  payrollMonth: string;
+  blockers: string[];
+  missingAttendanceDates: string[];
+};
+export type PayrollListItem = (PayrollRecord & { state: 'ready' }) | BlockedPayrollRecord;
 
 export type PayrollResult =
   | { kind: 'success'; payroll: PayrollRecord }
   | { kind: 'employee_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
-  | { kind: 'blocked'; reasons: string[] };
+  | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
 type PayrollListResult =
-  | { kind: 'success'; items: PayrollRecord[]; total: number }
+  | { kind: 'success'; items: PayrollListItem[]; total: number }
   | { kind: 'month_not_ended' }
   | { kind: 'blocked'; reasons: string[] };
 type BranchPayrollResult =
   | { kind: 'success'; payrolls: PayrollRecord[] }
   | { kind: 'branch_not_found' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
-  | { kind: 'blocked'; reasons: string[] };
+  | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
 
 export interface PayrollRepository {
   getBaseSalary(employeeId: number): Promise<BaseSalaryRecord | null>;

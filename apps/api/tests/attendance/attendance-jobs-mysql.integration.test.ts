@@ -206,6 +206,52 @@ describe('MySQL-backed attendance jobs and absences', () => {
     });
   });
 
+  it('lets an admin reconcile a missing past day as absence or weekly day off', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+
+    await expect(repo.reconcileMissingDay({
+      employeeId,
+      attendanceDate: '2026-07-17',
+      resolution: 'absence',
+    })).resolves.toMatchObject({ status: 'absence' });
+    await expect(repo.reconcileMissingDay({
+      employeeId,
+      attendanceDate: '2026-07-18',
+      resolution: 'weekly_day_off',
+    })).resolves.toMatchObject({ status: 'weekly_day_off' });
+
+    expect(await database.select().from(attendanceDailyRecords)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ employeeId, attendanceDate: '2026-07-17', status: 'absence' }),
+      expect.objectContaining({ employeeId, attendanceDate: '2026-07-18', status: 'weekly_day_off' }),
+    ]));
+  });
+
+  it('refuses to convert an existing absence to a weekly day off while financially locked', async () => {
+    const { employeeId } = await createFixtures();
+    await repository().reconcileMissingDay({
+      employeeId,
+      attendanceDate: '2026-07-18',
+      resolution: 'absence',
+    });
+    const locked = createDrizzleAttendanceRepository(database, {
+      now: () => fixedNow,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(true),
+      readRequiredDuration: () => Promise.resolve(480),
+    });
+
+    await expect(locked.reconcileMissingDay({
+      employeeId,
+      attendanceDate: '2026-07-18',
+      resolution: 'weekly_day_off',
+    })).rejects.toThrow('Absence generation is financially locked');
+
+    expect(await database.select().from(attendanceDailyRecords)).toEqual([
+      expect.objectContaining({ employeeId, attendanceDate: '2026-07-18', status: 'absence' }),
+    ]);
+  });
+
   it('holds a retried job behind an attempt-scaled backoff before it can be reclaimed', async () => {
     await createFixtures();
     const repo = repository();

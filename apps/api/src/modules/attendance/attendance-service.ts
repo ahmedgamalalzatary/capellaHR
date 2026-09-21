@@ -3,6 +3,7 @@ import type {
   EmployeeAttendanceEvent,
   ListAttendanceDeniedAttemptsQuery,
   ListAttendanceSessionsQuery,
+  ReconcileAttendanceDay,
   ManualAttendanceEvent,
 } from '@capella/contracts';
 
@@ -133,6 +134,9 @@ export interface AttendanceRepository {
   checkOut(input: EmployeeAttendanceMutation): Promise<AttendanceMutationResult>;
   manualCheckIn(input: ManualAttendanceEvent): Promise<AttendanceMutationResult>;
   manualCheckOut(input: ManualAttendanceEvent): Promise<AttendanceMutationResult>;
+  reconcileMissingDay(input: ReconcileAttendanceDay): Promise<{
+    id: number; employeeId: number; attendanceDate: string; status: 'absence' | 'weekly_day_off';
+  }>;
   approveDeniedAttempt(id: number): Promise<AttendanceMutationResult>;
   dismissDeniedAttempt(id: number): Promise<
     | { kind: 'success'; attempt: AttendanceDeniedAttempt }
@@ -432,6 +436,26 @@ export const createAttendanceService = (
     async correctAutomaticTimeout(id: number, input: { checkOutAt: Date }) {
       ensureNotFuture(input.checkOutAt);
       return mutationValue(await repository.correctAutomaticTimeout(id, input.checkOutAt));
+    },
+    async reconcileMissingDay(input: ReconcileAttendanceDay) {
+      try {
+        return await repository.reconcileMissingDay(input);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        if (error.message === 'Attendance reconciliation requires a past date') {
+          throw new AttendanceError('ATTENDANCE_RECONCILIATION_DATE_NOT_PAST', 'يمكن استكمال أيام الحضور السابقة فقط');
+        }
+        if (error.message === 'Attendance day is not missing') {
+          throw new AttendanceError('ATTENDANCE_RECONCILIATION_NOT_MISSING', 'تم تسجيل حالة هذا اليوم بالفعل');
+        }
+        if (error.message === 'Weekly day-off spacing conflict') {
+          throw new AttendanceError('WEEKLY_DAY_OFF_SPACING_CONFLICT', 'لا يمكن تسجيل أكثر من إجازة أسبوعية خلال سبعة أيام متتالية');
+        }
+        if (error.message === 'Absence generation is financially locked') {
+          throw new AttendanceError('ATTENDANCE_FINANCIALLY_LOCKED', 'تم اعتماد الفترة ماليًا ولا يمكن تعديلها');
+        }
+        throw error;
+      }
     },
     async getSession(id: number) {
       const found = await repository.getSession(id);

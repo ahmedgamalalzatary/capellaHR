@@ -567,21 +567,29 @@ describe('MySQL-backed salary domain', () => {
     expect(await database.select().from(payrollMonths)).toHaveLength(0);
   });
 
-  it('reports blocked payroll-list employees instead of dropping them from the page', async () => {
+  it('returns blocked payroll-list employees beside ready payrolls instead of failing the page', async () => {
     const branchId = await createBranch();
     const first = await createEmployee(branchId, 1);
     const second = await createEmployee(branchId, 2);
     const blockedAttendance: PayrollAttendanceGateway = {
       readPayrollFacts: async (employeeId) => employeeId === second
-        ? { kind: 'blocked', reasons: ['OPEN_SESSION'] }
+        ? { kind: 'blocked', reasons: ['ATTENDANCE_RECONCILIATION_PENDING'], missingDates: ['2026-06-03'] }
         : attendance.readPayrollFacts(employeeId, '2026-06', {}, 'preview'),
     };
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance: blockedAttendance });
 
     await expect(payroll.service.list({ month: '2026-06', page: 1, pageSize: 20 }))
-      .rejects.toMatchObject({
-        code: 'PAYROLL_BLOCKED',
-        reasons: [`${second}:OPEN_SESSION`],
+      .resolves.toMatchObject({
+        total: 2,
+        items: expect.arrayContaining([
+          expect.objectContaining({ employeeId: first, state: 'ready' }),
+          expect.objectContaining({
+            employeeId: second,
+            state: 'blocked',
+            blockers: ['ATTENDANCE_RECONCILIATION_PENDING'],
+            missingAttendanceDates: ['2026-06-03'],
+          }),
+        ]),
       });
     expect(first).not.toBe(second);
   });

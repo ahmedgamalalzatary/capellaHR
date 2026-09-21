@@ -33,6 +33,7 @@ import {
 import type {
   BaseSalaryRecord,
   PayrollAttendanceGateway,
+  PayrollListItem,
   PayrollRecord,
   PayrollRepository,
 } from './payroll-service.js';
@@ -133,8 +134,8 @@ const priorCarry = async (transaction: Transaction, employeeId: number, month: s
 };
 
 const branchForMonth = async (
-  transaction: Transaction,
-  employee: NonNullable<Awaited<ReturnType<typeof lockEmployee>>>,
+  transaction: Executor,
+  employee: { id: number; branchId: number },
   month: string,
   timeZone: string,
 ) => {
@@ -149,7 +150,9 @@ const branchForMonth = async (
   ))?.branchId ?? employee.branchId;
 };
 
-type Computed = { kind: 'success'; payroll: PayrollRecord } | { kind: 'blocked'; reasons: string[] };
+type Computed =
+  | { kind: 'success'; payroll: PayrollRecord }
+  | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
 const compute = async (
   transaction: Transaction,
   employee: NonNullable<Awaited<ReturnType<typeof lockEmployee>>>,
@@ -336,6 +339,8 @@ export const createDrizzlePayrollRepository = (
       const candidates = await database.select({
         id: employees.id,
         employeeCode: employees.employeeCode,
+        fullName: employees.fullName,
+        branchId: employees.branchId,
         createdAt: employees.createdAt,
         deletedAt: employees.deletedAt,
       }).from(employees).where(where).orderBy(asc(employees.employeeCode));
@@ -343,20 +348,32 @@ export const createDrizzlePayrollRepository = (
       for (const employee of candidates) {
         if (await employeeEligibleForMonth(database, employee, query.month, timeZone)) eligible.push(employee);
       }
-      const matching: PayrollRecord[] = [];
-      const reasons: string[] = [];
+      const matching: PayrollListItem[] = [];
       for (const row of eligible) {
         const result = await this.preview(row.id, query.month, attendance);
         if (result.kind === 'success') {
-          if (query.branchId === undefined || result.payroll.branchId === query.branchId) matching.push(result.payroll);
+          if (query.branchId === undefined || result.payroll.branchId === query.branchId) {
+            matching.push({ ...result.payroll, state: 'ready' });
+          }
         }
         else if (result.kind === 'blocked') {
-          reasons.push(...result.reasons.map((reason) => `${row.id}:${reason}`));
-        } else {
-          reasons.push(`${row.id}:PAYROLL_MONTH_NOT_ELIGIBLE`);
+          const branchId = await branchForMonth(database, row, query.month, timeZone);
+          if (query.branchId !== undefined && branchId !== query.branchId) continue;
+          const branchName = (await database.select({ name: branches.name }).from(branches)
+            .where(eq(branches.id, branchId)).limit(1))[0]?.name ?? '';
+          matching.push({
+            state: 'blocked',
+            employeeId: row.id,
+            employeeCode: row.employeeCode,
+            employeeName: row.fullName,
+            branchId,
+            branchName,
+            payrollMonth: query.month,
+            blockers: result.reasons,
+            missingAttendanceDates: result.missingDates ?? [],
+          });
         }
       }
-      if (reasons.length) return { kind: 'blocked' as const, reasons };
       return {
         kind: 'success' as const,
         items: matching.slice((query.page - 1) * query.pageSize, query.page * query.pageSize),
@@ -370,7 +387,7 @@ export const createDrizzlePayrollRepository = (
         if (!await employeeEligibleForMonth(transaction, employee, month, timeZone)) return { kind: 'month_not_eligible' as const };
         if (month > context.currentMonth()) return { kind: 'month_not_ended' as const };
         const result = await compute(transaction, employee, month, attendance, 'preview', timeZone);
-        return result.kind === 'success' ? result : { kind: 'blocked' as const, reasons: result.reasons };
+        return result;
       });
     },
     async previewInContext(employeeId, month, attendance, transactionContext) {

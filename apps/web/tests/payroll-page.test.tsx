@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   finalizeBranchPayroll: vi.fn(),
   listEmployees: vi.fn(),
   listBranches: vi.fn(),
+  reconcileAttendanceDay: vi.fn(),
 }));
 
 vi.mock('../src/features/payroll/api/payroll-api', async (importOriginal) => ({
@@ -28,6 +29,11 @@ vi.mock('../src/features/employees/api/employees-api', async (importOriginal) =>
 
 vi.mock('../src/features/branches/api/branches-api', () => ({
   listBranches: mocks.listBranches,
+}));
+
+vi.mock('../src/features/attendance/api/attendance-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  reconcileAttendanceDay: mocks.reconcileAttendanceDay,
 }));
 
 import { PayrollView } from '../src/features/payroll/components/payroll-view';
@@ -70,6 +76,18 @@ const finalized = {
   finalizedAt: '2026-07-01T10:00:00.000Z',
 };
 
+const blocked = {
+  state: 'blocked' as const,
+  employeeId: 3,
+  employeeCode: 1003,
+  employeeName: 'سارة محمد',
+  branchId: 3,
+  branchName: 'فرع القاهرة',
+  payrollMonth: '2026-06',
+  blockers: ['ATTENDANCE_RECONCILIATION_PENDING'],
+  missingAttendanceDates: ['2026-06-03', '2026-06-04'],
+};
+
 const employee = {
   id: 1,
   employeeCode: 1001,
@@ -96,7 +114,10 @@ function renderView() {
 const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 
 beforeEach(() => {
-  mocks.listPayrollMonths.mockResolvedValue(pageOf([payroll, finalized]));
+  mocks.listPayrollMonths.mockResolvedValue(pageOf([
+    { ...payroll, state: 'ready' as const },
+    { ...finalized, state: 'ready' as const },
+  ]));
   mocks.listEmployees.mockResolvedValue(pageOf([employee]));
   mocks.listBranches.mockResolvedValue(pageOf([{ id: 3, name: 'فرع القاهرة' }]));
 });
@@ -115,6 +136,40 @@ describe('PayrollView', () => {
     expect(within(row).getByText(/5775\.00/)).toBeDefined();
     expect(within(row).getByText('مفتوح')).toBeDefined();
     expect(within(rowOf('منى علي')).getByText('معتمد نهائيًا')).toBeDefined();
+  });
+
+  test('keeps blocked employees on the payroll page and exposes every missing attendance date', async () => {
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([
+      { ...payroll, state: 'ready' as const },
+      blocked,
+    ]));
+    renderView();
+
+    const row = (await screen.findByText('سارة محمد')).closest('tr')!;
+    expect(within(row).getByText('يحتاج مراجعة الحضور')).toBeDefined();
+    fireEvent.click(within(row).getByRole('button', { name: 'مراجعة الأيام' }));
+    expect(screen.getByText('2026-06-03')).toBeDefined();
+    expect(screen.getByText('2026-06-04')).toBeDefined();
+    expect(screen.getAllByRole('button', { name: 'تسجيل غياب' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'إجازة أسبوعية' })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'تسجيل حضور فعلي' })).toHaveLength(2);
+  });
+
+  test('resolves a missing payroll day as an absence and refreshes payroll', async () => {
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([blocked]));
+    mocks.reconcileAttendanceDay.mockResolvedValue({ status: 'absence' });
+    renderView();
+    const row = (await screen.findByText('سارة محمد')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'مراجعة الأيام' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'تسجيل غياب' })[0]!);
+    expect(mocks.reconcileAttendanceDay).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog', { name: 'تسجيل غياب' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد تسجيل الغياب' }));
+    await waitFor(() => expect(mocks.reconcileAttendanceDay).toHaveBeenCalledWith({
+      employeeId: 3,
+      attendanceDate: '2026-06-03',
+      resolution: 'absence',
+    }));
   });
 
   test('requests the chosen month with search and branch filters', async () => {

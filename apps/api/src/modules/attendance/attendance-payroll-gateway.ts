@@ -72,6 +72,7 @@ export const createAttendancePayrollGateway = (
         ));
 
       const reasons: string[] = [];
+      const missingDates: string[] = [];
       const sessionByDate = new Map(sessions.map((session) => [session.attendanceDate, session]));
       const dailyByDate = new Map(dailyRecords.map((record) => [record.attendanceDate, record]));
       if (mode === 'finalize') {
@@ -99,11 +100,14 @@ export const createAttendancePayrollGateway = (
         if (attendanceDate < currentDate
           && employmentDateIsActive(attendanceDate, employmentPeriods, timeZone)
           && !sessionByDate.has(attendanceDate) && !dailyByDate.has(attendanceDate)) {
-          reasons.push('ATTENDANCE_RECONCILIATION_PENDING');
-          break;
+          missingDates.push(attendanceDate);
         }
       }
-      if (reasons.length) return { kind: 'blocked', reasons };
+      if (missingDates.length) reasons.push('ATTENDANCE_RECONCILIATION_PENDING');
+      if (reasons.length) return {
+        kind: 'blocked', reasons,
+        ...(missingDates.length ? { missingDates } : {}),
+      };
 
       let eligibleWorkdays = 0;
       let requiredMinutes = 0;

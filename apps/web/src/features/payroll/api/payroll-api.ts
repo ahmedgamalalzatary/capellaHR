@@ -4,6 +4,7 @@ import { api, type PageMeta } from '@/lib/api/client';
 
 /** One employee's payroll for one Cairo month: open preview or immutable snapshot. */
 export interface PayrollRecord {
+  state?: 'ready';
   id: number;
   employeeId: number;
   employeeCode: number;
@@ -31,6 +32,20 @@ export interface PayrollRecord {
   finalizedAt: string | null;
 }
 
+export interface BlockedPayrollRecord {
+  state: 'blocked';
+  employeeId: number;
+  employeeCode: number;
+  employeeName: string;
+  branchId: number;
+  branchName: string;
+  payrollMonth: string;
+  blockers: string[];
+  missingAttendanceDates: string[];
+}
+
+export type PayrollListItem = PayrollRecord | BlockedPayrollRecord;
+
 export interface BaseSalaryRecord {
   employeeId: number;
   employeeCode: number;
@@ -51,14 +66,14 @@ export interface ListPayrollMonthsParams {
 
 export function listPayrollMonths(
   params: ListPayrollMonthsParams,
-): Promise<{ items: PayrollRecord[]; meta: PageMeta }> {
+): Promise<{ items: PayrollListItem[]; meta: PageMeta }> {
   const query = new URLSearchParams();
   query.set('month', params.month);
   if (params.search) query.set('search', params.search);
   if (params.branchId !== undefined) query.set('branchId', String(params.branchId));
   if (params.page !== undefined) query.set('page', String(params.page));
   if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
-  return api.getPage<PayrollRecord>(`/payroll?${query.toString()}`);
+  return api.getPage<PayrollListItem>(`/payroll?${query.toString()}`);
 }
 
 /** Applies to the whole current Cairo month and future months; past months keep their periods. */

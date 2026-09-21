@@ -1,12 +1,15 @@
-import { attendanceJobs, attendanceSessions, employees } from '@capella/database/schema';
-import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import type { ReconcileAttendanceDay } from '@capella/contracts';
+import { attendanceDailyRecords, attendanceJobs, attendanceSessions, employees } from '@capella/database/schema';
+import { and, asc, eq, gte, isNull, lte, ne, sql } from 'drizzle-orm';
 
+import { writeAudit } from '../audit/index.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import { endOfDate, nextCalendarDate } from './attendance-calendar.js';
 import {
   findJob,
   lockEmployee,
   writeJobAudit,
+  type AttendanceFinancialLockCheck,
   type Database,
   type Transaction,
 } from './attendance-repository-support.js';
@@ -25,17 +28,74 @@ const retryRunAt = (failedAt: Date, attemptCount: number) => new Date(
 export const createAttendanceJobsRepository = (
   database: Database,
   writer: AttendanceSessionWriter,
-  options: { now: () => Date; timeZone: string },
+  options: { now: () => Date; timeZone: string; isFinanciallyLocked: AttendanceFinancialLockCheck },
 ): AttendanceJobRepository & {
+  reconcileMissingDay: (input: ReconcileAttendanceDay) => Promise<{
+    id: number; employeeId: number; attendanceDate: string; status: 'absence' | 'weekly_day_off';
+  }>;
   reconcileDueAbsencesForEmployee: (
     employeeId: number,
     previousRequiredMinutes: number,
     context: Transaction,
   ) => Promise<number>;
 } => {
-  const { now, timeZone } = options;
+  const { now, timeZone, isFinanciallyLocked } = options;
 
   return {
+    reconcileMissingDay(input) {
+      return database.transaction(async (transaction) => {
+        const currentDate = calendarDateInTimeZone(now(), timeZone);
+        if (input.attendanceDate >= currentDate) {
+          throw new Error('Attendance reconciliation requires a past date');
+        }
+        await writer.createAbsenceForEmployee(
+          transaction, input.employeeId, input.attendanceDate, undefined, 'admin_reconciliation',
+        );
+        const record = (await transaction.select({
+          id: attendanceDailyRecords.id,
+          employeeId: attendanceDailyRecords.employeeId,
+          attendanceDate: attendanceDailyRecords.attendanceDate,
+          status: attendanceDailyRecords.status,
+        }).from(attendanceDailyRecords).where(and(
+          eq(attendanceDailyRecords.employeeId, input.employeeId),
+          eq(attendanceDailyRecords.attendanceDate, input.attendanceDate),
+        )).for('update').limit(1))[0];
+        if (!record || record.status === 'attendance_replaced') {
+          throw new Error('Attendance day is not missing');
+        }
+        if (input.resolution === 'absence' || record.status === 'weekly_day_off') {
+          return record.status === 'absence'
+            ? { ...record, status: 'absence' as const }
+            : { ...record, status: 'weekly_day_off' as const };
+        }
+        const conflicting = (await transaction.select({ id: attendanceDailyRecords.id })
+          .from(attendanceDailyRecords).where(and(
+            eq(attendanceDailyRecords.employeeId, input.employeeId),
+            eq(attendanceDailyRecords.status, 'weekly_day_off'),
+            ne(attendanceDailyRecords.id, record.id),
+            sql`${attendanceDailyRecords.attendanceDate} between date_sub(${input.attendanceDate}, interval 6 day) and date_add(${input.attendanceDate}, interval 6 day)`,
+          )).for('update').limit(1))[0];
+        if (conflicting) throw new Error('Weekly day-off spacing conflict');
+        if (await isFinanciallyLocked(input.employeeId, input.attendanceDate, transaction)) {
+          throw new Error('Absence generation is financially locked');
+        }
+        const convertedAt = now();
+        await transaction.update(attendanceDailyRecords).set({
+          status: 'weekly_day_off',
+          withoutPermissionAt: null,
+          dayOffConvertedAt: convertedAt,
+          updatedAt: convertedAt,
+        }).where(eq(attendanceDailyRecords.id, record.id));
+        const updated = { ...record, status: 'weekly_day_off' as const };
+        await writeAudit(transaction, {
+          module: 'weekly-day-off', action: 'convert',
+          entityType: 'attendance_daily_record', entityId: record.id,
+          beforeState: record, afterState: updated,
+          relatedIds: { employeeId: input.employeeId }, createdAt: convertedAt,
+        });
+        return updated;
+      });
+    },
     async findMissingAbsenceScheduleStart(throughDate) {
       const firstScheduledDate = (await database.select({
         attendanceDate: attendanceJobs.attendanceDate,

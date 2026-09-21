@@ -99,6 +99,17 @@ export const manualAttendance = (
   input,
 );
 
+export const reconcileAttendanceDay = (input: {
+  employeeId: number;
+  attendanceDate: string;
+  resolution: 'absence' | 'weekly_day_off';
+}) => api.post<{
+  id: number;
+  employeeId: number;
+  attendanceDate: string;
+  status: 'absence' | 'weekly_day_off';
+}>('/attendance/reconciliation', input);
+
 export const approveDeniedAttempt = (attemptId: number) => (
   api.post<AttendanceSession>(`/attendance/denied-attempts/${attemptId}/approve`)
 );

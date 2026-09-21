@@ -321,4 +321,60 @@ describe('SuppliersPurchasesView', () => {
     expect(screen.getByLabelText('سبب الإلغاء')).toBeDefined();
     expect((screen.getByLabelText('سبب الإلغاء') as HTMLInputElement).value).toBe('خطأ في الكمية');
   });
+
+  it('hides products chosen in other lines while keeping each line’s own pick', async () => {
+    mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({
+      items: params.isActive
+        ? [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'بلسم', isActive: true }]
+        : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'بلسم', isActive: true }],
+    }));
+    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm();
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة بند' }));
+
+    // New lines are prepended, so the first combobox belongs to the blank line.
+    fireEvent.click(screen.getAllByRole('combobox', { name: 'المنتج' })[0]!);
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'شامبو' }));
+    expect(screen.getAllByRole('combobox', { name: 'المنتج' })[0]!.textContent).toContain('شامبو');
+
+    fireEvent.click(screen.getAllByRole('combobox', { name: 'المنتج' })[1]!);
+    const secondLine = within(screen.getByRole('listbox'));
+    expect(secondLine.queryByRole('option', { name: 'شامبو' })).toBeNull();
+    fireEvent.click(secondLine.getByRole('option', { name: 'بلسم' }));
+
+    fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } });
+    const quantities = screen.getAllByLabelText('الكمية');
+    const costs = screen.getAllByLabelText('تكلفة الوحدة');
+    fireEvent.change(quantities[0]!, { target: { value: '1' } });
+    fireEvent.change(costs[0]!, { target: { value: '10.00' } });
+    fireEvent.change(quantities[1]!, { target: { value: '2' } });
+    fireEvent.change(costs[1]!, { target: { value: '5.00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ترحيل المشتريات' }));
+    await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({
+      lines: expect.arrayContaining([
+        { productId: 4, quantity: 1, unitCost: '10.00' },
+        { productId: 8, quantity: 2, unitCost: '5.00' },
+      ]),
+    })));
+  });
+
+  it('blocks posting when a restored draft repeats a product across lines', async () => {
+    sessionStorage.setItem('capella:form-draft:purchase:2', JSON.stringify({
+      supplierId: '3',
+      purchaseDate: '2026-08-05',
+      lines: [
+        { key: 1, productId: '4', quantity: '1', unitCost: '10.00' },
+        { key: 2, productId: '4', quantity: '2', unitCost: '5.00' },
+      ],
+    }));
+    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm();
+    fireEvent.click(await screen.findByRole('button', { name: 'استعادة' }));
+
+    expect(screen.getAllByRole('combobox', { name: 'المنتج' })).toHaveLength(2);
+    const post = screen.getByRole('button', { name: 'ترحيل المشتريات' });
+    expect(post).toHaveProperty('disabled', true);
+    fireEvent.click(post);
+    expect(mocks.postPurchase).not.toHaveBeenCalled();
+  });
 });

@@ -49,6 +49,12 @@ export const manualAttendanceEventSchema = z.object({
   occurredAt: explicitOffsetDateTimeSchema,
 }).strict();
 
+export const reconcileAttendanceDaySchema = z.object({
+  employeeId: positiveMysqlIntSchema,
+  attendanceDate: cairoDateSchema,
+  resolution: z.enum(['absence', 'weekly_day_off']),
+}).strict();
+
 export const attendanceSessionParamsSchema = z.object({ sessionId: coercedMysqlIntSchema });
 export const attendanceDeniedAttemptParamsSchema = z.object({ attemptId: coercedMysqlIntSchema });
 
@@ -99,6 +105,7 @@ export const listAttendanceDeniedAttemptsQuerySchema = z.object({
 
 export type EmployeeAttendanceEvent = z.infer<typeof employeeAttendanceEventSchema>;
 export type ManualAttendanceEvent = z.infer<typeof manualAttendanceEventSchema>;
+export type ReconcileAttendanceDay = z.infer<typeof reconcileAttendanceDaySchema>;
 export type ListAttendanceSessionsQuery = z.infer<typeof listAttendanceSessionsQuerySchema>;
 export type ListAttendanceDeniedAttemptsQuery = z.infer<typeof listAttendanceDeniedAttemptsQuerySchema>;
 export type AttendanceEventType = z.infer<typeof attendanceEventTypeSchema>;
