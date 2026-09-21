@@ -13,6 +13,7 @@ import { DraftNotice } from '@/components/feedback/draft-notice';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
+import { ProductCombobox } from '@/components/form/product-combobox';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
@@ -504,15 +505,14 @@ export function SuppliersPurchasesView() {
                               <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
                                 <div className="space-y-1">
                                   <Label htmlFor={`purchase-product-${line.key}`}>المنتج</Label>
-                                  <Select
+                                  <ProductCombobox
                                     id={`purchase-product-${line.key}`}
+                                    label="المنتج"
                                     value={line.productId}
                                     disabled={commandPending}
-                                    onChange={(event) => { if (!commandPending) updateLine(line.key, { productId: event.target.value }); }}
-                                  >
-                                    <option value="">اختر المنتج</option>
-                                    {activeProducts.data?.items.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                                  </Select>
+                                    products={activeProducts.data?.items ?? []}
+                                    onChange={(productId) => { if (!commandPending) updateLine(line.key, { productId }); }}
+                                  />
                                 </div>
                                 <div className="space-y-1">
                                   <Label htmlFor={`purchase-quantity-${line.key}`}>الكمية</Label>

@@ -30,6 +30,10 @@ const openPurchaseForm = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'إضافة فاتورة مشتريات' }));
   await screen.findByLabelText('المورد للمشتريات');
 };
+const pickInvoiceProduct = (name: string | RegExp) => {
+  fireEvent.click(screen.getByLabelText('المنتج'));
+  fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name }));
+};
 
 beforeEach(() => { sessionStorage.clear(); actor.current = 'admin'; mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
@@ -67,7 +71,7 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.change(screen.getByLabelText('اسم المورد'), { target: { value: 'مورد جديد' } }); fireEvent.click(screen.getByRole('button', { name: 'إضافة المورد' }));
     await waitFor(() => expect(mocks.createSupplier).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, name: 'مورد جديد' })));
     await openPurchaseForm();
-    fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } }); fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } }); pickInvoiceProduct(/شامبو/);
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
     expect(screen.getByText('الإجمالي: 25.00 ج.م')).toBeDefined(); fireEvent.click(screen.getByRole('button', { name: 'ترحيل المشتريات' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, supplierId: 3, lines: [{ productId: 4, quantity: 2, unitCost: '12.50' }] })));
@@ -124,7 +128,7 @@ describe('SuppliersPurchasesView', () => {
     mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
-    expect(screen.getByText('تصحيح للمشتريات #9')).toBeDefined(); fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } }); fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } }); fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
+    expect(screen.getByText('تصحيح للمشتريات #9')).toBeDefined(); pickInvoiceProduct(/شامبو/); fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } }); fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ correctsPurchaseId: 9 })));
   });
 
@@ -134,7 +138,7 @@ describe('SuppliersPurchasesView', () => {
     mocks.postPurchase.mockReturnValue(new Promise(() => undefined));
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
-    fireEvent.change(screen.getByLabelText('المنتج'), { target: { value: '4' } });
+    pickInvoiceProduct(/شامبو/);
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
     fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
@@ -259,8 +263,10 @@ describe('SuppliersPurchasesView', () => {
   it('keeps inactive products out of entry while retaining them in history filters', async () => {
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     await openPurchaseForm();
-    const entry = await screen.findByLabelText('المنتج'); const history = screen.getByLabelText('تصفية حسب المنتج');
-    expect(within(entry).queryByRole('option', { name: 'منتج قديم' })).toBeNull();
+    fireEvent.click(await screen.findByLabelText('المنتج'));
+    const entryOptions = within(screen.getByRole('listbox'));
+    const history = screen.getByLabelText('تصفية حسب المنتج');
+    expect(entryOptions.queryByRole('option', { name: 'منتج قديم' })).toBeNull();
     expect(within(history).getByRole('option', { name: 'منتج قديم' })).toBeDefined();
   });
 
@@ -270,6 +276,32 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'إيقاف' }));
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد إيقاف المورد' }));
     expect((await screen.findByRole('alert')).textContent).toContain('تعذر تنفيذ العملية');
+  });
+
+  it('searches invoice products by name or barcode before selecting one', async () => {
+    mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({
+      items: params.isActive
+        ? [
+          { id: 4, name: 'شامبو', barcode: '62210001', isActive: true },
+          { id: 8, name: 'بلسم', barcode: '62210002', isActive: true },
+        ]
+        : [
+          { id: 4, name: 'شامبو', barcode: '62210001', isActive: true },
+          { id: 8, name: 'بلسم', barcode: '62210002', isActive: true },
+        ],
+    }));
+    renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm();
+
+    const picker = await screen.findByRole('combobox', { name: 'المنتج' });
+    fireEvent.click(picker);
+    const search = screen.getByRole('searchbox', { name: 'بحث عن المنتج' });
+    fireEvent.change(search, { target: { value: '62210002' } });
+
+    const listbox = screen.getByRole('listbox');
+    expect(within(listbox).queryByRole('option', { name: /شامبو/ })).toBeNull();
+    fireEvent.click(within(listbox).getByRole('option', { name: /بلسم/ }));
+    expect(picker.textContent).toContain('بلسم');
   });
 
   it('keeps cancellation controls and reason locked while cancellation is pending', async () => {
