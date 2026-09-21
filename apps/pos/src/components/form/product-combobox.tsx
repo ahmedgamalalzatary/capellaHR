@@ -86,14 +86,11 @@ export function ProductCombobox({ id, label, products, value, disabled, onChange
                   type="button"
                   role="option"
                   aria-selected={String(product.id) === value}
-                  className="flex w-full items-center gap-2 rounded-control px-3 py-2 text-start text-sm hover:bg-surface"
+                  className="flex w-full items-center gap-2 rounded-control py-2 text-start text-sm hover:bg-surface"
                   onClick={() => { onChange(String(product.id)); setOpen(false); setSearch(''); }}
                 >
-                  <Check className={`size-4 shrink-0 ${String(product.id) === value ? 'opacity-100' : 'opacity-0'}`} aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{product.name}</span>
-                  {product.quantity !== undefined ? (
-                    <span className="shrink-0 text-xs text-muted">متاح {product.quantity}</span>
-                  ) : null}
+                  <span className="min-w-0 flex-1 text-right">{product.name}</span>
+                  
                 </button>
               </li>
             ))}

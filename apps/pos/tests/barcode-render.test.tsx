@@ -10,6 +10,15 @@ describe('barcode rendering', () => {
     expect(barcodeSvg('INV-2026-000123', 'code128')).toContain('<svg');
   });
 
+  it('draws Code 39 bars as an SVG graphic', () => {
+    expect(barcodeSvg('2000000000114', 'code39')).toContain('<svg');
+    expect(barcodeSvg('ABC-1234', 'code39')).toContain('<svg');
+  });
+
+  it('paints those bars with crisp edges so print does not antialias them grey', () => {
+    expect(barcodeSvg('2000000000114', 'code39')).toContain('shape-rendering="crispEdges"');
+  });
+
   it('draws nothing rather than throwing on a code the symbology rejects', () => {
     // A mistyped check digit is not a printable EAN-13, and a half-printed
     // sticker is worse than none.

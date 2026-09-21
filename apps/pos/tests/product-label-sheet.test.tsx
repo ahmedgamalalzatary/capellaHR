@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ProductLabelSheet } from '@/features/products/components/product-label-sheet';
@@ -15,7 +15,7 @@ const sticker = (root: Element) => root.querySelector<HTMLElement>('[data-produc
 const millimetres = (value: string) => Number.parseFloat(value) || 0;
 
 describe('ProductLabelSheet', () => {
-  it('prints one sticker per product, carrying the price, brand, name and code', () => {
+  it('prints one sticker per product, carrying the price, brand, name and code', async () => {
     window.print = vi.fn();
     render(<ProductLabelSheet products={[product(), product({ id: 12, name: 'بلسم', barcode: '2000000000121' })]} onPrinted={vi.fn()} />);
     expect(screen.getAllByRole('img')).toHaveLength(2);
@@ -23,7 +23,7 @@ describe('ProductLabelSheet', () => {
     expect(screen.getByText('شامبو')).toBeTruthy();
     expect(screen.getByText('2000000000114')).toBeTruthy();
     expect(screen.getAllByText('120.00 ج.م')).toHaveLength(2);
-    expect(window.print).toHaveBeenCalled();
+    await waitFor(() => expect(window.print).toHaveBeenCalled());
   });
 
   it('prints a scannable sticker for a supplier code that is not an EAN-13', () => {
@@ -31,6 +31,37 @@ describe('ProductLabelSheet', () => {
     render(<ProductLabelSheet products={[product({ barcode: 'ABC-1234' })]} onPrinted={vi.fn()} />);
     expect(screen.getAllByRole('img')).toHaveLength(1);
     expect(screen.getByText('ABC-1234')).toBeTruthy();
+  });
+
+  it('draws Code 39 bars as a graphic, not as fallback digits of a barcode font', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
+    const bars = baseElement.querySelector<HTMLElement>('[data-product-label-bars]')!;
+
+    expect(bars.querySelector('svg')).not.toBeNull();
+    expect(bars.innerHTML).toContain('shape-rendering="crispEdges"');
+    expect(bars.textContent).not.toMatch(/\*\d+\*/);
+    expect(bars.getAttribute('dir')).toBe('ltr');
+  });
+
+  it('fills the barcode row with those bars so Chrome print does not leave a blank band', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
+    const bars = baseElement.querySelector<HTMLElement>('[data-product-label-bars]')!;
+    const svg = bars.querySelector('svg')!;
+
+    expect(millimetres(bars.style.height)).toBeGreaterThan(5);
+    expect(svg.getAttribute('width')).toBe('100%');
+    expect(svg.getAttribute('height')).toBe('100%');
+  });
+
+  it('prints supplier letters as Code 39 bars the same way', () => {
+    window.print = vi.fn();
+    const { baseElement } = render(<ProductLabelSheet products={[product({ barcode: 'ABC-1234' })]} onPrinted={vi.fn()} />);
+    const bars = baseElement.querySelector<HTMLElement>('[data-product-label-bars]')!;
+
+    expect(bars.querySelector('svg')).not.toBeNull();
+    expect(bars.textContent).not.toContain('*ABC-1234*');
   });
 
   it('skips a product that has no code to print', () => {
@@ -42,7 +73,10 @@ describe('ProductLabelSheet', () => {
   it('sizes the page from the one label-size constant', () => {
     window.print = vi.fn();
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
-    expect(baseElement.querySelector('style')?.textContent).toContain('40mm 25mm');
+    const css = [...baseElement.querySelectorAll('#print-root style')]
+      .map((node) => node.textContent ?? '')
+      .join('\n');
+    expect(css).toContain('50mm 25mm');
   });
 
   it('prints the sticker upright at the size of the loaded roll', () => {
@@ -50,10 +84,10 @@ describe('ProductLabelSheet', () => {
     const { baseElement } = render(<ProductLabelSheet products={[product()]} onPrinted={vi.fn()} />);
     const label = sticker(baseElement);
 
-    expect(label.style.width).toBe('40mm');
+    expect(label.style.width).toBe('50mm');
     expect(label.style.height).toBe('25mm');
-    // The old sticker was authored portrait and rotated to fit; a 4cm-wide label
-    // reads straight across, and a stray rotation would print it on its side.
+    // Alpha Soft's 5 cm full layout is landscape on the roll; a stray rotation
+    // would print it on its side.
     expect(label.style.transform).toBe('');
   });
 
@@ -122,7 +156,7 @@ describe('ProductLabelSheet', () => {
 
     expect(left).toBeGreaterThanOrEqual(2);
     expect(right).toBeGreaterThanOrEqual(2);
-    expect(left + millimetres(bars.style.width)).toBeLessThanOrEqual(38);
+    expect(left + millimetres(bars.style.width)).toBeLessThanOrEqual(48);
     expect(millimetres(bars.style.height)).toBeGreaterThanOrEqual(4.4);
     expect(label.textContent).toContain('500.00');
     expect(label.textContent).toContain('Capella Care');
@@ -137,14 +171,14 @@ describe('ProductLabelSheet', () => {
     expect(labels.at(-1)?.className).toContain('last:break-after-auto');
   });
 
-  it('opens the print dialog once, even when the caller re-renders', () => {
+  it('opens the print dialog once, even when the caller re-renders', async () => {
     // The screen passes a fresh arrow function every render, so an effect keyed on it
     // would reprint on any background refresh.
     window.print = vi.fn();
     const { rerender } = render(<ProductLabelSheet products={[product()]} onPrinted={() => undefined} />);
     rerender(<ProductLabelSheet products={[product()]} onPrinted={() => undefined} />);
     rerender(<ProductLabelSheet products={[product()]} onPrinted={() => undefined} />);
-    expect(window.print).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1));
   });
 
   it('tells the caller once the print dialog has closed', () => {

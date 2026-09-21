@@ -10,7 +10,7 @@ import { PrintPageRule } from '@/lib/print/page-rule';
 /**
  * How the sticker's height is divided.
  *
- * The 40x25mm label reserves room for the price/brand, product name and digits.
+ * The 50x25mm label (Alpha Soft 5 cm full) reserves room for the price/brand, product name and digits.
  * Text line heights match their rows so the app font's glyphs stay inside them.
  * The barcode takes the remaining height without changing the physical page.
  */
@@ -47,6 +47,9 @@ const LABEL_BRAND = 'Capella Care';
 /** Sub-millimetre arithmetic leaves float dust that has no business in the DOM. */
 const mm = (value: number) => `${Math.round(value * 100) / 100}mm`;
 
+const fillBarcodeBox = (svg: string) => svg
+  .replace('<svg ', '<svg width="100%" height="100%" ');
+
 export interface LabelProduct {
   id: number;
   name: string;
@@ -59,9 +62,10 @@ export interface LabelProduct {
  * printer bytes. Mounted beside the app like the report sheet, because anything
  * nested in the shell's scrolling layout comes out blank.
  *
- * A product with no code, or with one no 1D symbology can express, is skipped
- * rather than printed blank — a sticker carrying a name and a price but no bars
- * looks finished and is useless at the till, so the admin gives it a code first.
+ * Bars are drawn as Code 39 SVG — the same symbology Alpha Soft prints — because
+ * a barcode *font* does not load in Chrome/Firefox print and the row comes out
+ * blank or as digits. A product with no drawable code is skipped rather than
+ * printed blank.
  */
 export function ProductLabelSheet({ products, onPrinted }: {
   products: LabelProduct[];
@@ -90,13 +94,17 @@ export function ProductLabelSheet({ products, onPrinted }: {
   }, []);
 
   if (typeof document === 'undefined') return null;
-  // Drawn once and reused: the same call decides whether the sticker can be printed at all
-  // and supplies the bars, so no product is rendered through bwip-js twice.
   const printable = products.flatMap((product) => {
-    const svg = product.barcode
-      ? barcodeSvgFitting(product.barcode, { widthMm: CONTENT_WIDTH_MM, heightMm: BARCODE_HEIGHT_MM })
-      : null;
-    return svg ? [{ product, svg }] : [];
+    if (!product.barcode) return [];
+    const drawn = barcodeSvgFitting(
+      product.barcode,
+      { widthMm: CONTENT_WIDTH_MM, heightMm: BARCODE_HEIGHT_MM },
+      'code39',
+    ) ?? barcodeSvgFitting(
+      product.barcode,
+      { widthMm: CONTENT_WIDTH_MM, heightMm: BARCODE_HEIGHT_MM },
+    );
+    return drawn ? [{ product, svg: fillBarcodeBox(drawn) }] : [];
   });
 
   return createPortal(
@@ -131,16 +139,17 @@ export function ProductLabelSheet({ products, onPrinted }: {
           >
             {product.name}
           </div>
-          {/* Sized in millimetres and filled by an SVG the browser scales to it. */}
           <div
             role="img"
             aria-label={product.barcode!}
             data-product-label-bars
+            dir="ltr"
             className="shrink-0"
             style={{ width: mm(CONTENT_WIDTH_MM), height: mm(BARCODE_HEIGHT_MM) }}
             dangerouslySetInnerHTML={{ __html: svg }}
           />
           <div
+            dir="ltr"
             className="tabular w-full shrink-0 text-center tracking-wider"
             style={{
               height: mm(DIGITS_ROW_MM),

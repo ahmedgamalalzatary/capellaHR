@@ -52,6 +52,9 @@ test('prints label text without clipping or overlapping adjacent rows', async ({
   await page.evaluate(() => document.fonts.ready);
   const label = page.locator('[data-product-label]');
   await expect(label).toBeVisible();
+  const bars = page.locator('[data-product-label-bars]');
+  await expect(bars.locator('svg')).toHaveCount(1);
+  await expect(bars).not.toHaveText(/\*/);
   await label.screenshot({ path: testInfo.outputPath('label.png'), scale: 'css' });
 
   // Font ink can extend outside its CSS line box. Measure the actual glyphs,
@@ -84,7 +87,7 @@ test('prints label text without clipping or overlapping adjacent rows', async ({
     const bounds = element.getBoundingClientRect();
     return { width: bounds.width, height: bounds.height, text };
   });
-  expect(layout.width).toBeCloseTo(40 * 96 / 25.4, 1);
+  expect(layout.width).toBeCloseTo(50 * 96 / 25.4, 1);
   expect(layout.height).toBeCloseTo(25 * 96 / 25.4, 1);
   for (const text of layout.text) {
     expect(text.top, `${text.value}: letters fit below the top of their row`).toBeGreaterThanOrEqual(text.rowTop - 0.25);

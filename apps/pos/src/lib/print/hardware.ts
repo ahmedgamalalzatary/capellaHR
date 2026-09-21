@@ -22,7 +22,7 @@ export const LABEL_PRINTER = {
 /** Datalogic QuickScan Lite QW2100 — 1D only, USB keyboard wedge, CR suffix. */
 export const BARCODE_SCANNER = {
   model: 'QW2100',
-  symbologies: ['ean13', 'code128'],
+  symbologies: ['ean13', 'code128', 'code39'],
 } as const;
 
 /** Kept for consumers that need the nominal printable receipt width. */

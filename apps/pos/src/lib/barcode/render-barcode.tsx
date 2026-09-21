@@ -2,8 +2,8 @@
 
 import { toSVG } from 'bwip-js/browser';
 
-/** Both are 1D and both are read by the QW2100 with no configuration. */
-export type BarcodeSymbology = 'ean13' | 'code128';
+/** All three are 1D and all are read by the QW2100 with no configuration. */
+export type BarcodeSymbology = 'ean13' | 'code128' | 'code39';
 
 /**
  * The symbology a code should be drawn in. EAN-13 is the retail standard and the
@@ -30,7 +30,8 @@ const draw = (
       paddingwidth: 10,
       paddingheight: 0,
     });
-    return svg;
+    // Chrome print antialiases path strokes into grey; a scanner needs binary bars.
+    return svg.replace('<svg ', '<svg shape-rendering="crispEdges" ');
   } catch {
     return null;
   }
