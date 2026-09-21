@@ -1,13 +1,17 @@
 import {
+  attendanceDailyRecords,
   attendanceSessions,
   branches,
   employeeBranchAssignments,
+  employeeEmploymentPeriods,
   employeeImages,
   employees,
 } from '@capella/database/schema';
-import { and, asc, count, desc, eq, gt, gte, isNotNull, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, between, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
+import { employmentDateAccruesAbsence } from '../employees/employment-period.js';
+import { endOfDate, nextCalendarDate } from './attendance-calendar.js';
 import {
   findSession,
   lockEmployee,
@@ -18,7 +22,7 @@ import {
   type Executor,
 } from './attendance-repository-support.js';
 import { type AttendanceSessionWriter } from './attendance-session-writer.js';
-import { calculateAttendanceMinutes, type AttendanceRepository } from './attendance-service.js';
+import { calculateAttendanceMinutes, type AttendanceListItem, type AttendanceRepository } from './attendance-service.js';
 import type { ErpAttendanceCapability } from './erp-attendance-capability.js';
 
 /**
@@ -48,6 +52,7 @@ export const createAttendanceSessionsRepository = (
   writer: AttendanceSessionWriter,
   options: {
     now: () => Date;
+    timeZone: string;
     isFinanciallyLocked: (
       employeeId: number,
       attendanceDate: string,
@@ -66,7 +71,122 @@ export const createAttendanceSessionsRepository = (
   | 'hasOpenSession'
   | 'hasAnyOpenSession'
 > & ErpAttendanceCapability => {
-  const { now, isFinanciallyLocked } = options;
+  const { now, timeZone, isFinanciallyLocked } = options;
+
+  const listMissingCheckIns = async (query: Parameters<AttendanceRepository['listSessions']>[0]) => {
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now());
+    const from = query.dateFrom ?? query.dateTo ?? today;
+    const to = query.dateTo ?? query.dateFrom ?? from;
+    const dates: string[] = [];
+    for (let date = from; date <= to && dates.length < 366; date = nextCalendarDate(date)) {
+      dates.push(date);
+    }
+    const employeeFilters: SQL[] = [isNull(employees.deletedAt)];
+    if (query.employeeId !== undefined) employeeFilters.push(eq(employees.id, query.employeeId));
+    const staff = await database.select({
+      id: employees.id,
+      employeeCode: employees.employeeCode,
+      fullName: employees.fullName,
+      branchId: employees.branchId,
+      createdAt: employees.createdAt,
+      shiftDurationMinutes: employees.shiftDurationMinutes,
+    }).from(employees).where(and(...employeeFilters));
+    if (!staff.length || !dates.length) return { items: [], total: 0 };
+    const ids = staff.map((employee) => employee.id);
+    const [periods, assignments, sessions, daysOff, branchRows] = await Promise.all([
+      database.select({
+        employeeId: employeeEmploymentPeriods.employeeId,
+        activeFrom: employeeEmploymentPeriods.activeFrom,
+        activeTo: employeeEmploymentPeriods.activeTo,
+      }).from(employeeEmploymentPeriods).where(inArray(employeeEmploymentPeriods.employeeId, ids)),
+      database.select({
+        employeeId: employeeBranchAssignments.employeeId,
+        branchId: employeeBranchAssignments.branchId,
+        effectiveFrom: employeeBranchAssignments.effectiveFrom,
+        effectiveTo: employeeBranchAssignments.effectiveTo,
+      }).from(employeeBranchAssignments).where(inArray(employeeBranchAssignments.employeeId, ids)),
+      database.select({
+        employeeId: attendanceSessions.employeeId,
+        attendanceDate: attendanceSessions.attendanceDate,
+      }).from(attendanceSessions).where(and(
+        inArray(attendanceSessions.employeeId, ids),
+        between(attendanceSessions.attendanceDate, from, to),
+      )),
+      database.select({
+        employeeId: attendanceDailyRecords.employeeId,
+        attendanceDate: attendanceDailyRecords.attendanceDate,
+      }).from(attendanceDailyRecords).where(and(
+        inArray(attendanceDailyRecords.employeeId, ids),
+        between(attendanceDailyRecords.attendanceDate, from, to),
+        eq(attendanceDailyRecords.status, 'weekly_day_off'),
+      )),
+      database.select({ id: branches.id, name: branches.name }).from(branches),
+    ]);
+    const periodsByEmployee = new Map<number, Array<{ activeFrom: Date; activeTo: Date | null }>>();
+    for (const period of periods) {
+      const list = periodsByEmployee.get(period.employeeId) ?? [];
+      list.push(period);
+      periodsByEmployee.set(period.employeeId, list);
+    }
+    const checkedIn = new Set(sessions.map((row) => `${row.employeeId}:${row.attendanceDate}`));
+    const off = new Set(daysOff.map((row) => `${row.employeeId}:${row.attendanceDate}`));
+    const branchName = new Map(branchRows.map((branch) => [branch.id, branch.name]));
+    const branchOn = (employeeId: number, instant: Date, fallback: number) => {
+      const match = assignments
+        .filter((assignment) => assignment.employeeId === employeeId
+          && assignment.effectiveFrom.getTime() <= instant.getTime()
+          && (assignment.effectiveTo === null || assignment.effectiveTo.getTime() > instant.getTime()))
+        .sort((left, right) => right.effectiveFrom.getTime() - left.effectiveFrom.getTime())[0];
+      return match?.branchId ?? fallback;
+    };
+    const needle = query.search;
+    const rows: AttendanceListItem[] = [];
+    for (const date of dates) {
+      const at = endOfDate(date, timeZone);
+      for (const employee of staff) {
+        const employment = periodsByEmployee.get(employee.id) ?? [{
+          activeFrom: employee.createdAt,
+          activeTo: null,
+        }];
+        if (!employmentDateAccruesAbsence(date, employment, timeZone)) continue;
+        if (checkedIn.has(`${employee.id}:${date}`) || off.has(`${employee.id}:${date}`)) continue;
+        const branchId = branchOn(employee.id, at, employee.branchId);
+        if (query.branchId !== undefined && branchId !== query.branchId) continue;
+        const name = branchName.get(branchId) ?? '';
+        if (needle !== undefined && !(
+          employee.fullName.includes(needle)
+          || String(employee.employeeCode).includes(needle)
+          || name.includes(needle)
+        )) continue;
+        rows.push({
+          id: 0,
+          employeeId: employee.id,
+          employeeCode: employee.employeeCode,
+          employeeName: employee.fullName,
+          branchId,
+          branchName: name,
+          attendanceDate: date,
+          requiredMinutes: employee.shiftDurationMinutes,
+          checkInAt: null,
+          checkOutAt: null,
+          workedMinutes: null,
+          overtimeMinutes: null,
+          shortageMinutes: null,
+          automaticTimeoutAt: null,
+          automaticTimeoutCorrectedAt: null,
+          flagged: false,
+          createdAt: at,
+          updatedAt: at,
+        });
+      }
+    }
+    rows.sort((left, right) => right.attendanceDate.localeCompare(left.attendanceDate)
+      || left.employeeCode - right.employeeCode);
+    const start = (query.page - 1) * query.pageSize;
+    return { items: rows.slice(start, start + query.pageSize), total: rows.length };
+  };
 
   return {
     async findIdentityByCode(code) {
@@ -235,6 +355,7 @@ export const createAttendanceSessionsRepository = (
     },
 
     async listSessions(query) {
+      if (query.state === 'absent') return listMissingCheckIns(query);
       const filters: SQL[] = [];
       if (query.employeeId !== undefined) filters.push(eq(attendanceSessions.employeeId, query.employeeId));
       if (query.branchId !== undefined) filters.push(eq(sessionBranchId, query.branchId));

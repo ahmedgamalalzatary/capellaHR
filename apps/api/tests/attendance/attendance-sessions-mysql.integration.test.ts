@@ -99,6 +99,89 @@ describe('MySQL-backed attendance sessions', () => {
     expect((await repository().listSessions({ branchId, page: 1, pageSize: 20 })).total).toBe(1);
     expect((await repository().listSessions({ branchId: newBranchId, page: 1, pageSize: 20 })).total).toBe(0);
   });
+  it('lists employees who did not check in, and skips sessions and weekly days off', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    const present = await database.insert(employees).values({
+      employeeCode: 43,
+      fullName: 'حضر',
+      personalPhone: '01000000043',
+      whatsappPhone: '01000000043',
+      pinHash: 'hash',
+      credentialVersion: 1,
+      age: 30,
+      address: 'القاهرة',
+      branchId,
+      shiftDurationMinutes: 480,
+      monthlyBaseSalary: '5000.00',
+      deletedAt: null,
+      createdAt: new Date('2026-07-01T09:00:00.000Z'),
+      updatedAt: fixedNow,
+    });
+    const presentId = Number(present[0].insertId);
+    await database.insert(employeeBranchAssignments).values({
+      employeeId: presentId,
+      branchId,
+      effectiveFrom: new Date('2026-07-01T09:00:00.000Z'),
+      createdAt: new Date('2026-07-01T09:00:00.000Z'),
+    });
+    await repository().manualCheckIn({ employeeId: presentId, occurredAt: fixedNow });
+    const off = await database.insert(employees).values({
+      employeeCode: 44,
+      fullName: 'راحة',
+      personalPhone: '01000000044',
+      whatsappPhone: '01000000044',
+      pinHash: 'hash',
+      credentialVersion: 1,
+      age: 30,
+      address: 'القاهرة',
+      branchId,
+      shiftDurationMinutes: 480,
+      monthlyBaseSalary: '5000.00',
+      deletedAt: null,
+      createdAt: new Date('2026-07-01T09:00:00.000Z'),
+      updatedAt: fixedNow,
+    });
+    const offId = Number(off[0].insertId);
+    await database.insert(employeeBranchAssignments).values({
+      employeeId: offId,
+      branchId,
+      effectiveFrom: new Date('2026-07-01T09:00:00.000Z'),
+      createdAt: new Date('2026-07-01T09:00:00.000Z'),
+    });
+    await database.insert(attendanceDailyRecords).values({
+      employeeId: offId,
+      branchId,
+      attendanceDate: '2026-07-20',
+      status: 'weekly_day_off',
+      absenceRequiredMinutes: 480,
+      dayOffConvertedAt: fixedNow,
+      replacedBySessionId: null,
+      replacedAt: null,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    });
+
+    const absent = await repository().listSessions({
+      state: 'absent',
+      dateFrom: '2026-07-20',
+      dateTo: '2026-07-20',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(absent.items.map((item) => item.employeeId)).toEqual([employeeId]);
+    expect(absent.items[0]).toMatchObject({
+      employeeCode: 42,
+      attendanceDate: '2026-07-20',
+      branchId,
+      checkInAt: null,
+      checkOutAt: null,
+    });
+    expect(absent.total).toBe(1);
+    const everyone = await repository().listSessions({ page: 1, pageSize: 20 });
+    expect(everyone.items.every((item) => item.checkInAt !== null)).toBe(true);
+  });
+
   it('serializes concurrent check-ins into one session for the Cairo date', async () => {
     const { employeeId, deviceId } = await createFixtures();
     const repo = repository();

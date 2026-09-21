@@ -104,7 +104,25 @@ function installFetch() {
     if (url.includes('/attendance/sessions') && init?.method === 'PATCH') {
       return response({ data: { ...session, automaticTimeoutCorrectedAt: '2026-07-21T08:00:00.000Z' } });
     }
-    if (url.includes('/attendance/sessions')) return response(page([session]));
+    if (url.includes('/attendance/sessions')) {
+      if (url.includes('state=absent')) {
+        return response(page([{
+          ...session,
+          id: 0,
+          employeeId: 8,
+          employeeCode: 43,
+          employeeName: 'منى علي',
+          checkInAt: null,
+          checkOutAt: null,
+          workedMinutes: null,
+          overtimeMinutes: null,
+          shortageMinutes: null,
+          automaticTimeoutAt: null,
+          flagged: false,
+        }]));
+      }
+      return response(page([session]));
+    }
     if (url.includes('/attendance/denied-attempts') && init?.method === 'POST') {
       const id = url.includes('/22/') ? 22 : 21;
       if (url.endsWith('/approve')) {
@@ -221,6 +239,10 @@ describe('AttendancePage', () => {
       expect.stringMatching(/attendance\/sessions\?.*search=.*&.*state=closed|attendance\/sessions\?.*state=closed&.*search=/),
       expect.anything(),
     ));
+    fireEvent.change(screen.getByLabelText('حالة الجلسة'), { target: { value: 'absent' } });
+    expect(await screen.findByText('لم يحضر')).toBeDefined();
+    expect(screen.getByText('منى علي')).toBeDefined();
+    expect(screen.queryByText('لم يسجل الانصراف')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'إعادة ضبط التصفية' }));
     await waitFor(() => expect((screen.getByLabelText('حالة الجلسة') as HTMLSelectElement).value).toBe(''));
   });

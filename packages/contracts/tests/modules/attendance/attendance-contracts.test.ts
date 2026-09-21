@@ -47,6 +47,12 @@ describe('attendance contracts', () => {
     expect(contracts.listAttendanceDeniedAttemptsQuerySchema).toBeDefined();
   });
 
+  it('accepts an absent session-list state for people who did not check in', () => {
+    const schema = contracts.listAttendanceSessionsQuerySchema;
+    expect(schema.safeParse({ state: 'absent' }).success).toBe(true);
+    expect(schema.safeParse({ state: 'missing' }).success).toBe(false);
+  });
+
   it('requires explicit-offset ISO datetimes for manual events and timeout corrections', () => {
     const manual = contracts.manualAttendanceEventSchema;
     const correction = contracts.correctAutomaticTimeoutSchema;

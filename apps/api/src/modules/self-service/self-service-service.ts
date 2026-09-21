@@ -5,7 +5,7 @@ import type {
 } from '@capella/contracts';
 
 import type { AdvanceRecord, AdvanceService } from '../advances/index.js';
-import type { AttendanceService, AttendanceSession } from '../attendance/index.js';
+import type { AttendanceListItem, AttendanceService } from '../attendance/index.js';
 import type { BonusRecord, BonusService } from '../bonuses/index.js';
 import type { BranchService } from '../branches/index.js';
 import type { DeductionService } from '../deductions/index.js';
@@ -34,7 +34,7 @@ export type SelfServiceDependencies = {
   };
 };
 
-const projectAttendance = (record: AttendanceSession) => ({
+const projectAttendance = (record: AttendanceListItem) => ({
   id: record.id,
   attendanceDate: record.attendanceDate,
   state: record.checkOutAt === null ? 'open' as const : 'closed' as const,

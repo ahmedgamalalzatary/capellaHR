@@ -12,7 +12,7 @@ export interface AttendanceSession {
   branchName: string;
   attendanceDate: string;
   requiredMinutes: number;
-  checkInAt: string;
+  checkInAt: string | null;
   checkOutAt: string | null;
   workedMinutes: number | null;
   overtimeMinutes: number | null;
@@ -51,7 +51,7 @@ export interface AttendanceSessionFilters {
   search?: string | undefined;
   employeeId?: number | undefined;
   branchId?: number | undefined;
-  state?: 'open' | 'closed' | undefined;
+  state?: 'open' | 'closed' | 'absent' | undefined;
   dateFrom?: string | undefined;
   dateTo?: string | undefined;
   page?: number | undefined;

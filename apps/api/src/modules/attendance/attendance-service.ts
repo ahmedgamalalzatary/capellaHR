@@ -55,6 +55,8 @@ export type AttendanceSession = {
   updatedAt: Date;
 };
 
+export type AttendanceListItem = Omit<AttendanceSession, 'checkInAt'> & { checkInAt: Date | null };
+
 export type AttendanceDeniedAttempt = {
   id: number;
   eventType: AttendanceEventType;
@@ -144,7 +146,7 @@ export interface AttendanceRepository {
   >;
   correctAutomaticTimeout(id: number, checkOutAt: Date): Promise<AttendanceMutationResult>;
   getSession(id: number): Promise<AttendanceSession | null>;
-  listSessions(query: ListAttendanceSessionsQuery): Promise<{ items: AttendanceSession[]; total: number }>;
+  listSessions(query: ListAttendanceSessionsQuery): Promise<{ items: AttendanceListItem[]; total: number }>;
   listDeniedAttempts(query: ListAttendanceDeniedAttemptsQuery): Promise<{ items: AttendanceDeniedAttempt[]; total: number }>;
   hasOpenSession(employeeId: number, context?: unknown): Promise<boolean>;
   hasAnyOpenSession(employeeId: number, context?: unknown): Promise<boolean>;

@@ -82,7 +82,7 @@ export const listAttendanceSessionsQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
   employeeId: coercedMysqlIntSchema.optional(),
   branchId: coercedMysqlIntSchema.optional(),
-  state: z.enum(['open', 'closed']).optional(),
+  state: z.enum(['open', 'closed', 'absent']).optional(),
   ...dateRange,
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
