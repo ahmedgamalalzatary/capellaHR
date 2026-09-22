@@ -832,6 +832,68 @@ describe('ERP sale repository MySQL integration', () => {
     })).rejects.toMatchObject({ code: 'INVOICE_NOT_REASSIGNABLE' });
   });
 
+  it('reassigns only the unrefunded commission after a partial service refund', async () => {
+    const data = await fixture();
+    const targetEmployeeId = Number((await database.insert(employees).values({
+      employeeCode: data.employeeCode + 2,
+      fullName: `Partial target ${data.marker}`,
+      personalPhone: `010${String(Number(data.clientPhone.slice(3)) + 2).padStart(8, '0')}`,
+      whatsappPhone: `011${String(Number(data.clientPhone.slice(3)) + 2).padStart(8, '0')}`,
+      pinHash: 'unused', age: 30, address: 'Cairo', branchId: data.branchId,
+      shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
+      createdAt: data.at, updatedAt: data.at,
+    }))[0].insertId);
+    const repository = createDrizzleSaleRepository(
+      database, createErpAuditCapability(), createErpPayrollCapability(database),
+    );
+    const sale = operation(data, crypto.randomUUID());
+    sale.input.lines[0] = { ...sale.input.lines[0]!, quantity: 5 };
+    sale.input.payments = [{ method: 'cash', amount: '905.00' }];
+    const completed = await repository.complete(sale);
+    await repository.reverse({
+      type: 'refund', invoiceId: completed.id,
+      input: {
+        branchId: data.branchId, idempotencyKey: crypto.randomUUID(),
+        reason: 'One unit refunded',
+        lines: [{ invoiceLineId: completed.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '181.00' }],
+      },
+      actingAccountId: data.adminAccountId, actingAccountRole: 'admin',
+      reversedAt: new Date('2026-08-03T12:00:00.000Z'),
+    });
+
+    const reassigned = await repository.reassignLine({
+      invoiceId: completed.id,
+      invoiceLineId: completed.lines[0]!.id,
+      input: {
+        branchId: data.branchId, employeeId: targetEmployeeId,
+        operationReference: crypto.randomUUID(), reason: 'Actual performer for remaining units',
+      },
+      actingAccountId: data.adminAccountId, actingAccountRole: 'admin',
+      reassignedAt: new Date('2026-08-03T12:05:00.000Z'),
+      assertEmployee: async () => ({
+        id: targetEmployeeId, employeeCode: data.employeeCode + 2,
+        fullName: `Partial target ${data.marker}`, branchId: data.branchId,
+      }),
+    });
+
+    expect(reassigned.status).toBe('partially_refunded');
+    expect(await database.select().from(commissionLedgerEntries).where(
+      eq(commissionLedgerEntries.invoiceLineId, completed.lines[0]!.id),
+    )).toEqual(expect.arrayContaining([
+      expect.objectContaining({ employeeId: data.employeeId, entryType: 'earned', amount: '150.00' }),
+      expect.objectContaining({ employeeId: data.employeeId, entryType: 'reversal', amount: '-30.00' }),
+      expect.objectContaining({ employeeId: data.employeeId, entryType: 'reassignment_out', baseAmount: '800.00', amount: '-120.00' }),
+      expect.objectContaining({ employeeId: targetEmployeeId, entryType: 'reassignment_in', baseAmount: '800.00', amount: '120.00' }),
+    ]));
+    expect(await database.select().from(erpCommissionPayrollInputs).where(
+      eq(erpCommissionPayrollInputs.payrollMonth, '2026-08-01'),
+    )).toEqual(expect.arrayContaining([
+      expect.objectContaining({ employeeId: data.employeeId, amount: '0.00' }),
+      expect.objectContaining({ employeeId: targetEmployeeId, amount: '120.00' }),
+    ]));
+  });
+
   it('rolls back reassignment when either employee payroll is finalized', async () => {
     const data = await fixture();
     const targetEmployeeId = Number((await database.insert(employees).values({

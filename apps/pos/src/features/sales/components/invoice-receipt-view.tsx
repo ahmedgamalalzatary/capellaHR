@@ -202,15 +202,17 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         </CardContent>
       </Card>
     ) : null}
-    {query.data.status === 'completed'
-      && query.data.lines.some((line) => line.itemType === 'service') ? (
+    {(query.data.status === 'completed' || query.data.status === 'partially_refunded')
+      && query.data.lines.some((line) => line.itemType === 'service' && line.refundableQuantity > 0) ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
         <CardContent className="space-y-2 p-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium">تصحيح موظف الخدمة</p>
             <Button variant="secondary" size="sm" onClick={() => setServiceStatusOpen(true)}>حالة الخدمة</Button>
           </div>
-          {query.data.lines.filter((line) => line.itemType === 'service').map((line) => (
+          {query.data.lines.filter((line) => (
+            line.itemType === 'service' && line.refundableQuantity > 0
+          )).map((line) => (
             <div key={line.id} className="flex items-center justify-between gap-3 border-t border-line pt-2">
               <span className="text-sm">{line.name} — {line.employee?.name}</span>
               <Button variant="secondary" size="sm" onClick={() => setReassignLineId(line.id)}>

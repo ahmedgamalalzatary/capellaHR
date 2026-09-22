@@ -14,6 +14,8 @@ These instructions apply to the entire repository. Follow the user's explicit in
 - Prefer compact Markdown text diagrams in chat when they make flows, architecture, or decisions easier to understand.
 - Never guess, speculate, or improvise. If confidence is not 100%, stop and ask before answering or acting.
 - Never create a Git commit unless the user explicitly requests it. Each commit authorization is one-time, applies only to the changes explicitly named in that request, and does not authorize any later commit.
+- Never ever run/spawn sub-agents, background agents, or Task-tool agents without explicit user permission. Each permission is one-time for the named task only and does not authorize later use.
+- Some commands can race or cause failures for others (dev server, build, tests, lint, parallel runners). Run commands sequentially when they may conflict, and be aware of parallel-execution risks. Prefer the smallest safe sequential steps over parallel runs.
 - When the user asks to fix a bug, or identifies a specific bug and asks for help with it, that identification is sufficient authorization to implement the fix. Do not pause to ask for approval before changing the code. Choose the best production-ready, minimal solution: neither over-engineered nor under-engineered.
 - When adding a feature or fixing a bug, inspect and update every related integration point so the change is complete and the same omission does not recur elsewhere.
 
@@ -46,6 +48,7 @@ These instructions apply to the entire repository. Follow the user's explicit in
 
 - When using the brainstorming skill, always skip its writing-document section and provide the design in chat only.
 - For a small, bounded bug or feature, move quickly and skip formal design work. Perform only the analysis needed to understand and safely complete it.
+- For a small task, only confirm green in the touched area (targeted build/lint/typecheck/tests). Do not run the full suite/baseline — those are long-running commands.
 
 ## Mid-to-high complexity workflow
 
@@ -53,8 +56,9 @@ For a medium-to-high complexity fix or feature:
 
 1. Establish a baseline by running all applicable validation commands, including build, lint, typecheck, and tests. Record unrelated baseline failures. Fix failures caused by the change or required to validate it before feature work. Skip this pre-change baseline only when you are 100% certain the same applicable validation suite already passed in the current, uncompacted session or chat and no relevant workspace state has changed since that run.
 2. Implement the requested change.
-3.Run the complete applicable validation suite again and restore a green baseline.
-4. Run the complete applicable validation suite once more and report a concise summary of the changes and verification results.
+3. First confirm specific green in the touched area (targeted build/lint/typecheck/tests). Do not run the full suite/baseline until specific green passes.
+4. Then run the complete applicable validation suite and restore a green baseline.
+5. Run the complete applicable validation suite once more and report a concise summary of the changes and verification results.
 ## Context compaction
 
 - If context is compacted, re-read every instruction or reference document read at the start of the task. Do not rely only on the compaction summary.

@@ -476,7 +476,9 @@ export const createDrizzleSaleRepository = (
             eq(invoices.branchId, operation.input.branchId),
           )).for('update').limit(1))[0];
           if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
-          if (invoice.status !== 'completed') throw new SaleError('INVOICE_NOT_REASSIGNABLE');
+          if (invoice.status !== 'completed' && invoice.status !== 'partially_refunded') {
+            throw new SaleError('INVOICE_NOT_REASSIGNABLE');
+          }
           const committedRetry = await existingReassignment(operation, transaction);
           if (committedRetry) return committedRetry;
           const line = (await transaction.select().from(invoiceLines).where(and(
@@ -504,6 +506,31 @@ export const createDrizzleSaleRepository = (
               await payroll.lockCommissionEmployee(employeeId, transaction);
             }
           }
+          const ledger = await transaction.select().from(commissionLedgerEntries).where(
+            eq(commissionLedgerEntries.invoiceLineId, line.id),
+          );
+          const commissionSource = prior
+            ? ledger.find((entry) => entry.invoiceLineReassignmentId === prior.id
+              && entry.entryType === 'reassignment_in')
+            : ledger.find((entry) => entry.entryType === 'earned');
+          if (!commissionSource) throw new Error('Commission source entry is missing');
+          const finalizedReversalIds = new Set((await transaction.select({ id: invoiceReversals.id })
+            .from(invoiceReversals).where(and(
+              eq(invoiceReversals.invoiceId, invoice.id),
+              eq(invoiceReversals.status, 'finalized'),
+            ))).map(({ id }) => id));
+          const commissionReversals = ledger.filter((entry) => (
+            entry.reversesEntryId === commissionSource.id
+            && entry.invoiceReversalId !== null
+            && finalizedReversalIds.has(entry.invoiceReversalId)
+          ));
+          const remainingBase = toCents(commissionSource.baseAmount)
+            - commissionReversals.reduce((sum, entry) => sum + toCents(entry.baseAmount), 0n);
+          const remainingCommission = toCents(commissionSource.amount)
+            + commissionReversals.reduce((sum, entry) => sum + toCents(entry.amount), 0n);
+          if (remainingBase <= 0n || remainingCommission <= 0n) {
+            throw new SaleError('INVOICE_NOT_REASSIGNABLE');
+          }
           const inserted = await transaction.insert(invoiceLineReassignments).values({
             invoiceId: invoice.id,
             invoiceLineId: line.id,
@@ -523,20 +550,20 @@ export const createDrizzleSaleRepository = (
             invoiceLineReassignmentId: reassignmentId,
             commissionRuleSnapshot: line.commissionRuleSnapshot,
             commissionRateSnapshot: line.commissionRateSnapshot,
-            baseAmount: line.lineTotal,
+            baseAmount: signedMoney(remainingBase),
             createdAt: operation.reassignedAt,
           };
           await transaction.insert(commissionLedgerEntries).values({
             ...ledgerBase,
             employeeId: fromEmployeeId,
             entryType: 'reassignment_out' as const,
-            amount: signedMoney(-toCents(line.commissionAmountSnapshot)),
+            amount: signedMoney(-remainingCommission),
           });
           await transaction.insert(commissionLedgerEntries).values({
             ...ledgerBase,
             employeeId: target.id,
             entryType: 'reassignment_in' as const,
-            amount: line.commissionAmountSnapshot,
+            amount: signedMoney(remainingCommission),
           });
           for (const employeeId of employeeIds) {
             const result = await projectCommission(

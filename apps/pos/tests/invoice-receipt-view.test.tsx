@@ -233,6 +233,22 @@ describe('stored invoice receipt', () => {
     expect(screen.getAllByText(/مُسند أصلاً إلى/).length).toBeGreaterThan(0);
   });
 
+  it('offers employee reassignment while a service invoice is partially refunded', async () => {
+    getInvoice.mockResolvedValueOnce({
+      ...saleFixtures.completedInvoice,
+      status: 'partially_refunded',
+      lines: saleFixtures.completedInvoice.lines.map((line) => ({
+        ...line, quantity: 5, refundedQuantity: 1, refundableQuantity: 4,
+      })),
+      eligibility: { canVoid: false, canRefund: true },
+    });
+
+    renderView();
+
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+    expect(screen.getByRole('button', { name: 'تغيير الموظف' })).toBeDefined();
+  });
+
   it('updates a sold service status from a popup beside employee correction', async () => {
     renderView();
     await screen.findByText('تصحيح موظف الخدمة');
