@@ -13,7 +13,7 @@ describe('ERP invoice sequence store', () => {
     });
     const store = createDrizzleInvoiceSequenceStore({ execute } as never);
 
-    await expect(store.allocate('2026-08-04', new Date('2026-08-03T22:30:00.000Z')))
+    await expect(store.allocate(new Date('2026-08-03T22:30:00.000Z')))
       .resolves.toBe(23);
     expect(execute).toHaveBeenCalledOnce();
     expect(capturedQuery).toBeDefined();
@@ -21,5 +21,6 @@ describe('ERP invoice sequence store', () => {
     const statement = new MySqlDialect().sqlToQuery(capturedQuery).sql;
     expect(statement).toContain('LAST_INSERT_ID');
     expect(statement).toContain('ON DUPLICATE KEY UPDATE');
+    expect(statement).toContain('erp_invoice_global_sequence');
   });
 });

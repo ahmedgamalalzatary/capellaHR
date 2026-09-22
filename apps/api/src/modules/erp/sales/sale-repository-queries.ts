@@ -3,7 +3,7 @@ import {
   clients, invoiceLineReassignments, invoiceLines, invoices,
 } from '@capella/database/schema';
 import {
-  and, asc, count, desc, eq, exists, gte, like, lt, ne, or,
+  and, asc, count, desc, eq, exists, gte, like, lt, ne, or, sql,
 } from 'drizzle-orm';
 import { nextDay, startOfCairoDate } from '../cairo-calendar.js';
 import { hydrateInvoice } from './sale-repository-read.js';
@@ -81,11 +81,16 @@ export const createSaleRepositoryQueries = (
         ))),
       ),
     );
+    // Keep historical numbers first while sorting the new counter numerically,
+    // including after it grows beyond the initial six digits.
+    const invoiceNumberOrder = sql<string>`CASE WHEN ${invoices.invoiceNumber} REGEXP '^[0-9]+$'
+      THEN CONCAT('1', LPAD(${invoices.invoiceNumber}, 10, '0'))
+      ELSE CONCAT('0', ${invoices.invoiceNumber}) END`;
     const orderColumn = {
       soldAt: invoices.soldAt,
       total: invoices.total,
       balanceDue: invoices.balanceDue,
-      invoiceNumber: invoices.invoiceNumber,
+      invoiceNumber: invoiceNumberOrder,
     }[query.orderBy];
     const orderBy = query.orderDir === 'asc'
       ? [asc(orderColumn), asc(invoices.id)]

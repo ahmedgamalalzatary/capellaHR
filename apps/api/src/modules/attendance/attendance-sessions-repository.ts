@@ -77,8 +77,10 @@ export const createAttendanceSessionsRepository = (
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(now());
-    const from = query.dateFrom ?? query.dateTo ?? today;
-    const to = query.dateTo ?? query.dateFrom ?? from;
+    const to = query.dateTo === undefined || query.dateTo > today ? today : query.dateTo;
+    const from = query.dateFrom ?? (query.dateTo === undefined
+      ? today
+      : new Date(Date.parse(`${to}T00:00:00Z`) - 365 * 86_400_000).toISOString().slice(0, 10));
     const dates: string[] = [];
     for (let date = from; date <= to && dates.length < 366; date = nextCalendarDate(date)) {
       dates.push(date);

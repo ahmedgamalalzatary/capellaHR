@@ -7,10 +7,11 @@ import {
 } from '../../src/modules/erp/sales/services/invoice-number.js';
 
 describe('ERP invoice numbering', () => {
-  it('derives the business date and display time in Africa/Cairo', () => {
+  it('formats a globally allocated sequence with at least six digits', () => {
     const instant = new Date('2026-08-03T22:30:00.000Z');
     expect(cairoBusinessDate(instant)).toBe('2026-08-04');
-    expect(formatInvoiceNumber(instant, 17)).toBe('INV-2026.08.04-01.30-17');
+    expect(formatInvoiceNumber(instant, 17)).toBe('000017');
+    expect(formatInvoiceNumber(instant, 1_000_000)).toBe('1000000');
   });
 
   it('rejects sequence values outside the positive MySQL INT range', () => {
@@ -21,12 +22,12 @@ describe('ERP invoice numbering', () => {
     );
   });
 
-  it('durably allocates by Cairo business date before formatting the number', async () => {
-    const calls: Array<{ businessDate: string; allocatedAt: Date }> = [];
+  it('durably allocates a global number before formatting it', async () => {
+    const calls: Array<{ allocatedAt: Date }> = [];
     const instant = new Date('2026-08-03T22:30:00.000Z');
     const allocator = createInvoiceNumberAllocator({
-      allocate(businessDate, allocatedAt) {
-        calls.push({ businessDate, allocatedAt });
+      allocate(allocatedAt) {
+        calls.push({ allocatedAt });
         return Promise.resolve(17);
       },
     }, () => instant);
@@ -34,9 +35,21 @@ describe('ERP invoice numbering', () => {
     await expect(allocator.allocate()).resolves.toEqual({
       businessDate: '2026-08-04',
       sequence: 17,
-      invoiceNumber: 'INV-2026.08.04-01.30-17',
+      invoiceNumber: '000017',
       allocatedAt: instant,
     });
-    expect(calls).toEqual([{ businessDate: '2026-08-04', allocatedAt: instant }]);
+    expect(calls).toEqual([{ allocatedAt: instant }]);
+  });
+
+  it('keeps increasing across Cairo business dates', async () => {
+    let next = 0;
+    let now = new Date('2026-08-03T20:59:00.000Z');
+    const allocator = createInvoiceNumberAllocator({
+      allocate: async () => ++next,
+    }, () => now);
+
+    await expect(allocator.allocate()).resolves.toMatchObject({ invoiceNumber: '000001' });
+    now = new Date('2026-08-03T21:01:00.000Z');
+    await expect(allocator.allocate()).resolves.toMatchObject({ invoiceNumber: '000002' });
   });
 });

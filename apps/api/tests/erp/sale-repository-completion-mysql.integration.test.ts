@@ -191,6 +191,33 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
 });
 
 describe('ERP sale repository MySQL integration', () => {
+  it('sorts historical and numeric invoice numbers correctly after six digits', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const leading = operation(data, crypto.randomUUID());
+    leading.invoiceNumber = '000123';
+    const first = operation(data, crypto.randomUUID());
+    first.invoiceNumber = '999999';
+    const second = operation(data, crypto.randomUUID());
+    second.invoiceNumber = '1000000';
+    const historical = operation(data, crypto.randomUUID());
+    await repository.complete(leading);
+    await repository.complete(first);
+    await repository.complete(second);
+    await repository.complete(historical);
+
+    const result = await repository.listInvoices(data.branchId, {
+      page: 1, pageSize: 20, orderBy: 'invoiceNumber', orderDir: 'asc',
+    });
+    expect(result.items.map((invoice) => invoice.invoiceNumber)).toEqual([
+      historical.invoiceNumber, '000123', '999999', '1000000',
+    ]);
+    const search = await repository.listInvoices(data.branchId, {
+      page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc', search: '123',
+    });
+    expect(search.items.map((invoice) => invoice.invoiceNumber)).toEqual(['000123']);
+  });
+
   it('credits each unit of the same service to its own employee with that employee\'s rate', async () => {
     const data = await fixture();
     // A second performing employee on the default 10% rate (the first has a 15% override).

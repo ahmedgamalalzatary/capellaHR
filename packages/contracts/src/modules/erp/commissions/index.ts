@@ -6,6 +6,7 @@ import {
   paginationPageSizeSchema,
   positiveMysqlIntSchema,
 } from '../../../common/index.ts';
+import { invoiceNumberSchema } from '../sales/index.ts';
 
 const payrollMonthSchema = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/);
 const moneySchema = z.string().regex(/^\d{1,12}\.\d{2}$/);
@@ -40,7 +41,7 @@ export const commissionEntrySchema = z.object({
   id: positiveMysqlIntSchema,
   type: z.enum(['earned', 'reversal', 'reassignment_out', 'reassignment_in']),
   invoiceId: positiveMysqlIntSchema,
-  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  invoiceNumber: invoiceNumberSchema,
   invoiceLineId: positiveMysqlIntSchema,
   lineNumber: positiveMysqlIntSchema,
   serviceName: z.string().min(1).max(255),

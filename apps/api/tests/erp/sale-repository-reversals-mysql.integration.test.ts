@@ -290,14 +290,14 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const now = new Date();
-    const businessDate = cairoBusinessDate(now);
     const sale = operation(data, crypto.randomUUID());
     sale.soldAt = now;
-    sale.invoiceNumber = `INV-${businessDate.replaceAll('-', '.')}-14.35-${data.branchId}`;
+    sale.invoiceNumber = String(data.branchId).padStart(6, '0');
     // The sale happens now, so its shift must have been opened within the limit.
     await database.update(cashierSessions).set({ openedAt: now })
       .where(eq(cashierSessions.id, data.cashierSessionId));
     const completed = await repository.complete(sale);
+    expect(completed.eligibility.canVoid).toBe(true);
     await database.update(serviceQueueEntries).set({
       status: 'completed', completedAt: now, completedByAccountId: data.accountId,
     }).where(eq(serviceQueueEntries.invoiceId, completed.id));
@@ -919,7 +919,7 @@ describe('ERP sale repository MySQL integration', () => {
       .where(eq(invoices.id, completed.id)))[0]?.status).toBe('partially_refunded');
   });
 
-  it('rejects a direct void whose Cairo business date differs from its invoice number', async () => {
+  it('rejects a direct void whose Cairo business date differs from the sale date', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const completed = await repository.complete(operation(data, crypto.randomUUID()));

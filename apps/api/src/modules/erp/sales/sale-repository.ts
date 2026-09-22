@@ -70,7 +70,6 @@ const signedMoney = (value: bigint) => {
 const commissionCents = (base: bigint, rate: string) => (
   (base * toCents(rate) + 5_000n) / 10_000n
 );
-const invoiceBusinessDate = (invoiceNumber: string) => invoiceNumber.slice(4, 14).replaceAll('.', '-');
 const cairoDate = (value: Date) => {
   const parts = new Intl.DateTimeFormat('en', {
     timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -640,7 +639,7 @@ export const createDrizzleSaleRepository = (
             throw new SaleError('INVOICE_NOT_REVERSIBLE');
           }
           if (operation.type === 'void'
-            && invoiceBusinessDate(original.invoiceNumber) !== cairoDate(operation.reversedAt)) {
+            && cairoDate(original.soldAt) !== cairoDate(operation.reversedAt)) {
             throw new SaleError('VOID_DATE_EXPIRED');
           }
           if (operation.type === 'void' && original.settlementStatus === 'open'

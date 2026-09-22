@@ -8,6 +8,7 @@ import {
 } from '../../../common/index.ts';
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
+export const invoiceNumberSchema = z.string().regex(/^(?:INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+|(?!0+$)\d{6,})$/);
 
 export const cashierSessionCurrentQuerySchema = z.object({
   branchId: coercedMysqlIntSchema.optional(),
@@ -537,7 +538,7 @@ export const invoiceReversalSchema = z.object({
 
 export const invoiceSchema = z.object({
   id: positiveMysqlIntSchema,
-  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  invoiceNumber: invoiceNumberSchema,
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   // A customer sale, or internal trade moving stock to another branch.
   kind: z.enum(['sale', 'branch_transfer']),
@@ -703,7 +704,7 @@ const invoiceEmployeesSchema = z.array(z.object({
 
 export const invoiceHistoryItemSchema = z.object({
   id: positiveMysqlIntSchema,
-  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  invoiceNumber: invoiceNumberSchema,
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   total: exactMoneySchema,
   amountPaid: exactMoneySchema,
@@ -722,7 +723,7 @@ export const invoiceHistoryItemSchema = z.object({
 
 export const clientVisitSummarySchema = z.object({
   id: positiveMysqlIntSchema,
-  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  invoiceNumber: invoiceNumberSchema,
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   total: exactMoneySchema,
   employees: invoiceEmployeesSchema,
@@ -926,7 +927,7 @@ export const cashierSessionReportSchema = z.object({
   expenses: signedMoneySchema,
   collectedPayments: exactMoneySchema,
   collectedPaymentLines: z.array(z.object({
-    invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+    invoiceNumber: invoiceNumberSchema,
     client: z.object({
       id: positiveMysqlIntSchema,
       name: z.string().min(1).max(255).nullable(),
@@ -960,7 +961,7 @@ export const cashierSessionReportSchema = z.object({
 
 export const cashierSessionInvoiceSchema = z.object({
   id: positiveMysqlIntSchema,
-  invoiceNumber: z.string().regex(/^INV-\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}-\d+$/),
+  invoiceNumber: invoiceNumberSchema,
   status: z.enum(['completed', 'partially_refunded', 'refunded', 'voided']),
   client: z.object({
     id: positiveMysqlIntSchema,

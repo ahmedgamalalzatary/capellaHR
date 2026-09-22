@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  commissionEntrySchema,
   commissionDetailSchema,
   commissionListQuerySchema,
   commissionMonthParamsSchema,
@@ -44,5 +45,14 @@ describe('ERP commission contracts', () => {
       earnedAmount: '1000000000000.00', reversedAmount: '0.00', netAmount: '1000000000000.00',
       invoiceLineCount: 1, reversalCount: 0,
     }).success).toBe(false);
+  });
+
+  it('accepts numeric invoice numbers in commission entries', () => {
+    expect(commissionEntrySchema.safeParse({
+      id: 11, type: 'earned', invoiceId: 21, invoiceNumber: '000001',
+      invoiceLineId: 31, lineNumber: 1, serviceName: 'Hair', baseAmount: '100.00',
+      commissionRate: '10.00', amount: '10.00', reversalId: null, reassignmentId: null,
+      occurredAt: '2026-09-01T09:00:00.000Z',
+    }).success).toBe(true);
   });
 });

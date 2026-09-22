@@ -182,6 +182,50 @@ describe('MySQL-backed attendance sessions', () => {
     expect(everyone.items.every((item) => item.checkInAt !== null)).toBe(true);
   });
 
+  it('lists absences from dateFrom through today when dateTo is omitted', async () => {
+    const { employeeId } = await createFixtures();
+
+    const result = await repository().listSessions({
+      state: 'absent', dateFrom: '2026-07-19', page: 1, pageSize: 20,
+    });
+
+    expect(result.items.map((item) => [item.employeeId, item.attendanceDate])).toEqual([
+      [employeeId, '2026-07-20'],
+      [employeeId, '2026-07-19'],
+    ]);
+  });
+
+  it('bounds a dateTo-only absence search to 366 days', async () => {
+    const { employeeId } = await createFixtures();
+    await database.update(employees).set({ createdAt: new Date('2025-01-01T09:00:00.000Z') })
+      .where(eq(employees.id, employeeId));
+
+    const result = await repository().listSessions({
+      state: 'absent', dateTo: '2026-07-19', page: 1, pageSize: 366,
+    });
+
+    expect(result.total).toBe(366);
+    expect(result.items[0]?.attendanceDate).toBe('2026-07-19');
+    expect(result.items.at(-1)?.attendanceDate).toBe('2025-07-19');
+  });
+
+  it('does not create absence rows for future dates', async () => {
+    await createFixtures();
+    const repo = repository();
+
+    const futureOnly = await repo.listSessions({
+      state: 'absent', dateFrom: '2026-07-21', page: 1, pageSize: 20,
+    });
+    const crossingToday = await repo.listSessions({
+      state: 'absent', dateFrom: '2026-07-19', dateTo: '2026-07-22', page: 1, pageSize: 20,
+    });
+
+    expect(futureOnly).toEqual({ items: [], total: 0 });
+    expect(crossingToday.items.map((item) => item.attendanceDate)).toEqual([
+      '2026-07-20', '2026-07-19',
+    ]);
+  });
+
   it('serializes concurrent check-ins into one session for the Cairo date', async () => {
     const { employeeId, deviceId } = await createFixtures();
     const repo = repository();

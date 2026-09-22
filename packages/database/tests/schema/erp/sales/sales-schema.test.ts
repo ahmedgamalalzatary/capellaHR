@@ -258,13 +258,26 @@ describe('ERP sales persistence foundation', () => {
     );
   });
 
-  it('defines a durable daily invoice counter', () => {
+  it('retains the legacy daily invoice counter', () => {
     const sequences = table('invoiceDailySequences');
     expect(Object.keys(sequences)).toEqual(expect.arrayContaining([
       'businessDate', 'lastValue', 'updatedAt',
     ]));
     expect(getTableConfig(sequences).checks.map((value) => value.name)).toContain(
       'erp_invoice_daily_sequences_value_positive',
+    );
+  });
+
+  it('defines a durable global invoice counter', () => {
+    const sequences = table('invoiceGlobalSequence');
+    expect(Object.keys(sequences)).toEqual(expect.arrayContaining([
+      'id', 'lastValue', 'updatedAt',
+    ]));
+    expect(getTableConfig(sequences).checks.map((value) => value.name)).toEqual(
+      expect.arrayContaining([
+        'erp_invoice_global_sequence_singleton',
+        'erp_invoice_global_sequence_value_positive',
+      ]),
     );
   });
 

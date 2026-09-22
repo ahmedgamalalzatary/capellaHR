@@ -13,10 +13,10 @@ type Database = ReturnType<typeof createDatabase>;
 export const createDrizzleInvoiceSequenceStore = (
   database: Pick<Database, 'execute'>,
 ): InvoiceSequenceStore => ({
-  async allocate(businessDate, allocatedAt) {
+  async allocate(allocatedAt) {
     const result = await database.execute(sql`
-      INSERT INTO erp_invoice_daily_sequences (business_date, \`last_value\`, updated_at)
-      VALUES (${businessDate}, LAST_INSERT_ID(1), ${allocatedAt})
+      INSERT INTO erp_invoice_global_sequence (id, \`last_value\`, updated_at)
+      VALUES (1, LAST_INSERT_ID(1), ${allocatedAt})
       ON DUPLICATE KEY UPDATE
         \`last_value\` = LAST_INSERT_ID(\`last_value\` + 1),
         updated_at = VALUES(updated_at)

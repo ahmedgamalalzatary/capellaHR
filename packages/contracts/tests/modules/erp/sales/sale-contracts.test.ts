@@ -46,6 +46,18 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('accepts new numeric and historical invoice numbers', () => {
+    for (const number of ['000001', '1000000', 'INV-2026.08.03-14.35-17']) {
+      expect(invoiceSchema.safeParse({ ...saleFixtures.completedInvoice, invoiceNumber: number }).success).toBe(true);
+      expect(clientVisitSummarySchema.safeParse({
+        id: 44, invoiceNumber: number, status: 'completed', total: '185.00',
+        employees: [], soldAt: '2026-08-03T11:35:00.000Z',
+      }).success).toBe(true);
+    }
+    for (const number of ['000000', '123', 'INV-1', '000001A']) {
+      expect(invoiceSchema.safeParse({ ...saleFixtures.completedInvoice, invoiceNumber: number }).success).toBe(false);
+    }
+  });
   it('caps each service line at the supported queue cardinality', () => {
     expect(completeSaleSchema.safeParse({
       ...validDraft,

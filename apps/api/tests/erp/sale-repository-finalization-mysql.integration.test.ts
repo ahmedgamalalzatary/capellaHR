@@ -593,12 +593,12 @@ describe('ERP sale repository MySQL integration', () => {
     expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(2);
   });
 
-  it('allocates unique gap-safe daily invoice sequences under concurrency', async () => {
+  it('allocates unique gap-safe global invoice sequences under concurrency', async () => {
     const store = createDrizzleInvoiceSequenceStore(database);
     const allocatedAt = new Date('2026-08-04T09:00:00.000Z');
     const values = await Promise.all(Array.from(
       { length: 20 },
-      () => store.allocate('2026-08-04', allocatedAt),
+      () => store.allocate(allocatedAt),
     ));
     expect([...values].sort((left, right) => left - right))
       .toEqual(Array.from({ length: 20 }, (_, index) => index + 1));

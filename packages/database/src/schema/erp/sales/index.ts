@@ -485,6 +485,15 @@ export const invoiceDailySequences = mysqlTable('erp_invoice_daily_sequences', {
   check('erp_invoice_daily_sequences_value_positive', sql`${table.lastValue} > 0`),
 ]);
 
+export const invoiceGlobalSequence = mysqlTable('erp_invoice_global_sequence', {
+  id: int('id').primaryKey(),
+  lastValue: int('last_value').notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  check('erp_invoice_global_sequence_singleton', sql`${table.id} = 1`),
+  check('erp_invoice_global_sequence_value_positive', sql`${table.lastValue} > 0`),
+]);
+
 export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries', {
   id: int('id').autoincrement().primaryKey(),
   invoiceId: int('invoice_id').notNull(),

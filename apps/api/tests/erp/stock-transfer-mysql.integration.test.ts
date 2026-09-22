@@ -454,7 +454,7 @@ describe('ERP stock transfer MySQL integration', () => {
     expect(fromSource.items[0]).toMatchObject({
       sourceBranchName: expect.stringContaining('source'),
       destinationBranchName: expect.stringContaining('destination'),
-      invoiceNumber: expect.stringContaining('INV'),
+      invoiceNumber: transfer.invoiceNumber,
     });
   });
 });

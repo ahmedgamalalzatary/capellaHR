@@ -7,7 +7,6 @@ import {
   employees,
   erpCategories,
   erpServices,
-  invoiceDailySequences,
   invoiceLines,
   invoicePayments,
   invoices,
@@ -27,20 +26,16 @@ beforeAll(async () => {
 afterAll(async () => { await closeMysqlIntegrationDatabase(database); }, 30_000);
 
 describe('ERP sales foundation MySQL integration', () => {
-  it('allocates one non-reusable daily sequence under concurrency', async () => {
-    const businessDate = '2037-12-31';
-    await database.delete(invoiceDailySequences)
-      .where(eq(invoiceDailySequences.businessDate, businessDate));
+  it('allocates one non-reusable global sequence across dates under concurrency', async () => {
     const store = createDrizzleInvoiceSequenceStore(database);
 
     const values = await Promise.all(Array.from({ length: 20 }, () => (
-      store.allocate(businessDate, new Date('2037-12-31T10:00:00.000Z'))
+      store.allocate(new Date('2037-12-31T10:00:00.000Z'))
     )));
 
     expect([...values].sort((left, right) => left - right))
       .toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
-    await database.delete(invoiceDailySequences)
-      .where(eq(invoiceDailySequences.businessDate, businessDate));
+    await expect(store.allocate(new Date('2038-01-01T10:00:00.000Z'))).resolves.toBe(21);
   });
 
   it('enforces paid completion and valid immutable commission lineage', async () => {

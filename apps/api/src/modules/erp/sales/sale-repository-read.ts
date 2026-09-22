@@ -27,7 +27,6 @@ const signedMoney = (value: bigint) => {
   const absolute = value < 0n ? -value : value;
   return `${sign}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, '0')}`;
 };
-const invoiceBusinessDate = (invoiceNumber: string) => invoiceNumber.slice(4, 14).replaceAll('.', '-');
 const cairoDate = (value: Date) => {
   const parts = new Intl.DateTimeFormat('en', {
     timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -245,7 +244,7 @@ export const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
     eligibility: {
       canVoid: invoice.status === 'completed'
         && (invoice.settlementStatus === 'settled' || invoice.amountPaid === '0.00')
-        && invoiceBusinessDate(invoice.invoiceNumber) === cairoDate(new Date()),
+        && cairoDate(invoice.soldAt) === cairoDate(new Date()),
       canRefund: invoice.status === 'completed' || invoice.status === 'partially_refunded',
     },
     soldAt: asIso(invoice.soldAt),
