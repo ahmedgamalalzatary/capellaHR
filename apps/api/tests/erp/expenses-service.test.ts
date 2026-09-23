@@ -78,7 +78,7 @@ describe('expense service', () => {
     const input = { name: 'كهرباء', amount: '100.00', expenseDate: '2026-08-05', description: 'x', reason: 'x' };
     await expect(service.correct(admin, 11, input)).rejects.toMatchObject({
       code: 'EXPENSE_CORRECTION_TARGET_INVALID',
-      message: 'لا يمكن تصحيح قيد عكسي',
+      message: 'لا يمكن تصحيح مصروف مرتبط بسلفة أو صرف عمولة، أو قيد عكسي',
     });
   });
 });

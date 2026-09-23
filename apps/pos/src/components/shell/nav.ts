@@ -72,8 +72,7 @@ export const adminNavigation: NavGroup[] = [
 
 /**
  * The Cashier runs the same branch operations an Admin does. Only oversight of
- * other cashiers (shifts, accounts) and the money-analysis screens (commissions,
- * reports) stay with the Admin.
+ * other cashiers (shifts, accounts) and the reports screen stay with the Admin.
  */
 export const cashierNavigation: NavGroup[] = [
   {
@@ -95,6 +94,7 @@ export const cashierNavigation: NavGroup[] = [
       { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },
       { href: '/transfers', label: 'تحويل المنتجات', icon: ArrowLeftRight },
       { href: '/expenses', label: 'المصروفات', icon: Wallet },
+      { href: '/commissions', label: 'العمولات', icon: Percent },
     ],
   },
   {

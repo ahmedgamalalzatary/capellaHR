@@ -7,6 +7,9 @@ import {
   branches,
   employeeBranchAssignments,
   employeeImages,
+  employeeOutstandingDebts,
+  employeePendingDeactivations,
+  employeeTerminations,
   employees,
   payrollMonths,
 } from '@capella/database/schema';
@@ -121,6 +124,21 @@ describe('MySQL-backed reports reading', () => {
 
   it('cleans employee-owned residue before deleting shared fixtures', async () => {
     const { employeeId } = await seed();
+    await database.insert(employeeTerminations).values({
+      employeeId, reason: 'Fixture cleanup', lastWorkingDay: '2026-07-19',
+      terminatedByType: 'admin', terminatedByIdentifier: 'test',
+      netSalaryBeforeSettlement: '0.00', advancesRecovered: '0.00',
+      writeOffAmount: '0.00', forfeitedSalaryAmount: '0.00',
+      cashCollectedAmount: '0.00', debtRecordedAmount: '0.00',
+      finalNetSalary: '0.00', createdAt: now,
+    });
+    await database.insert(employeePendingDeactivations).values({
+      employeeId, advanceDecision: 'sum_all', reason: 'Fixture cleanup',
+      lastWorkingDay: '2026-07-19', requestedAt: now, createdAt: now,
+    });
+    await database.insert(employeeOutstandingDebts).values({
+      employeeId, payrollMonth: '2026-07-01', amount: '1.00', createdAt: now,
+    });
     await database.insert(employeeImages).values({
       employeeId,
       kind: 'personal',

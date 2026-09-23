@@ -118,7 +118,7 @@ describe('PosShell', () => {
     );
   });
 
-  test('shows commission reporting only to an admin actor', async () => {
+  test('shows commissions to admin and cashier actors', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell();
     expect(await screen.findByRole('link', { name: 'العمولات' })).toHaveProperty('href', expect.stringContaining('/commissions'));
@@ -126,7 +126,7 @@ describe('PosShell', () => {
     cleanup();
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'العمولات' })).toBeNull());
+    expect(await screen.findByRole('link', { name: 'العمولات' })).toHaveProperty('href', expect.stringContaining('/commissions'));
   });
 
   test('shows ERP reports only to an admin actor', async () => {

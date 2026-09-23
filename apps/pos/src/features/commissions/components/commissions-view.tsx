@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
+import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
@@ -39,7 +40,7 @@ const isPositiveMoney = (value: string) => /^\d{1,10}\.\d{2}$/.test(value) && /[
 
 function CommissionTrace({ summary, branchId, month, onClose, onPaid }: {
   summary: CommissionSummary;
-  branchId: number;
+  branchId?: number;
   month: string;
   onClose: () => void;
   onPaid?: (() => void) | undefined;
@@ -127,7 +128,11 @@ function CommissionTrace({ summary, branchId, month, onClose, onPaid }: {
 
 export function CommissionsView() {
   const client = useQueryClient();
-  const { branchId, setBranchId } = useAdminBranch();
+  const actor = useSession().data?.actor;
+  const isAdmin = actor?.type === 'admin';
+  const { branchId: selectedBranchId, setBranchId } = useAdminBranch();
+  const branchId = isAdmin ? selectedBranchId : undefined;
+  const scopeReady = isAdmin ? branchId !== undefined : actor?.type === 'cashier';
   const [month, setMonth] = useState(currentCairoMonth);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<CommissionSummary | null>(null);
@@ -138,12 +143,13 @@ export function CommissionsView() {
   const branches = useQuery({
     queryKey: ['erp-commissions', 'branches'],
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
+    enabled: isAdmin,
   });
   const filters = { branchId, month, page, pageSize: 20 };
   const commissions = useQuery({
     queryKey: commissionQueryKeys.list(filters),
-    queryFn: () => listCommissions({ branchId: branchId!, month, page, pageSize: 20 }),
-    enabled: branchId !== undefined && Boolean(month),
+    queryFn: () => listCommissions({ ...(branchId === undefined ? {} : { branchId }), month, page, pageSize: 20 }),
+    enabled: scopeReady && Boolean(month),
   });
   const openPayout = (summary: CommissionSummary, fromDetails = false) => {
     setSelected(summary);
@@ -165,7 +171,7 @@ export function CommissionsView() {
   const payout = useMutation({
     mutationFn: () => createCommissionPayout(selected!.employeeId, month, {
       amount: payoutAmount.trim(),
-      branchId,
+      ...(branchId === undefined ? {} : { branchId }),
       ...(payoutReason.trim() ? { reason: payoutReason.trim() } : {}),
     }),
     onSuccess: async (data) => {
@@ -184,7 +190,7 @@ export function CommissionsView() {
     : undefined;
   const canPayout = Boolean(selected)
     && isPositiveMoney(payoutAmount.trim())
-    && branchId !== undefined
+    && scopeReady
     && !payout.isPending;
   const summaryError = payout.error instanceof ApiError ? payout.error.message : undefined;
 
@@ -197,7 +203,7 @@ export function CommissionsView() {
 
       <Card className="shadow-card">
         <CardContent className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
-          {branches.isError
+          {!isAdmin ? null : branches.isError
             ? <EmptyState title="تعذر تحميل الفروع" className="py-8" action={<Button onClick={() => void branches.refetch()}>إعادة المحاولة</Button>} />
             : (
               <div className="space-y-1.5">
@@ -234,7 +240,7 @@ export function CommissionsView() {
       </Card>
 
       {!month ? <Card className="shadow-card"><EmptyState title="اختر شهرًا لعرض العمولات" /></Card>
-        : branchId === undefined ? <Card className="shadow-card"><EmptyState title="اختر فرعًا لعرض العمولات" /></Card>
+        : !scopeReady ? <Card className="shadow-card"><EmptyState title={isAdmin ? 'اختر فرعًا لعرض العمولات' : 'جارٍ تحميل العمولات…'} /></Card>
           : commissions.isPending ? <Card className="shadow-card"><LoadingState label="جارٍ تحميل العمولات…" className="py-16" /></Card>
             : commissions.isError ? <Card className="shadow-card"><EmptyState title="تعذر تحميل العمولات" action={<Button onClick={() => void commissions.refetch()}>إعادة المحاولة</Button>} /></Card>
               : !commissions.data.items.length ? <Card className="shadow-card"><EmptyState title="لا توجد عمولات لهذا الشهر" /></Card>
@@ -292,7 +298,7 @@ export function CommissionsView() {
                   </Card>
                 )}
 
-      {selected && branchId !== undefined && !payoutOpen ? (
+      {selected && scopeReady && !payoutOpen ? (
         <Modal
           title={`تفاصيل عمولة ${selected.employeeName}`}
           className="max-w-[calc(100vw-2rem)] sm:max-w-6xl"
@@ -300,7 +306,7 @@ export function CommissionsView() {
         >
           <CommissionTrace
             summary={selected}
-            branchId={branchId}
+            {...(branchId === undefined ? {} : { branchId })}
             month={month}
             onClose={() => setSelected(null)}
             onPaid={selected.availableAmount !== '0.00' ? () => openPayout(selected, true) : undefined}

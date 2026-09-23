@@ -542,7 +542,7 @@ export function CatalogView() {
                               >
                                 {service.isActive ? 'إيقاف' : 'تفعيل'}
                               </Button>
-                              {/* Commission percentages are pay data: admin-only, like the commission screen. */}
+                              {/* Editing commission percentages remains admin-only. */}
                               {isAdmin ? (
                                 <Button
                                   variant="ghost"

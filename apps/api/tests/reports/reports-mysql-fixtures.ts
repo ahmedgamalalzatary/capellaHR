@@ -17,8 +17,11 @@ import {
   employeeCodeSequence,
   employeeEmploymentPeriods,
   employeeImages,
+  employeeOutstandingDebts,
+  employeePendingDeactivations,
   employeePhoneReservations,
   employeeSalaryPeriods,
+  employeeTerminations,
   employees,
   payrollMonths,
   reportExports,
@@ -35,6 +38,9 @@ export const clear = async () => {
   await database.delete(bonuses);
   await database.delete(deductions);
   await database.delete(payrollMonths);
+  await database.delete(employeeOutstandingDebts);
+  await database.delete(employeePendingDeactivations);
+  await database.delete(employeeTerminations);
   await database.delete(employeeSalaryPeriods);
   await database.delete(attendanceDeniedAttempts);
   await database.delete(attendanceDailyRecords);

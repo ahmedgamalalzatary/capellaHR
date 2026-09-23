@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   detail: vi.fn(),
   branches: vi.fn(),
   createPayout: vi.fn(),
+  getSession: vi.fn(),
+}));
+
+vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getSession: mocks.getSession,
 }));
 
 vi.mock('../src/features/commissions/api/commissions-api', () => ({
@@ -86,6 +92,7 @@ function mount() {
 
 beforeEach(() => {
   sessionStorage.clear();
+  mocks.getSession.mockResolvedValue({ actor: { type: 'admin' } });
   mocks.branches.mockResolvedValue({
     items: [{ id: 2, name: 'الرئيسي' }],
     meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
@@ -103,6 +110,31 @@ afterEach(() => {
 });
 
 describe('CommissionsView', () => {
+  it('lets a cashier view and pay commissions from their own branch without selecting one', async () => {
+    mocks.getSession.mockResolvedValue({ actor: { type: 'cashier', accountId: 8 } });
+    mocks.createPayout.mockResolvedValue({
+      payout: {
+        id: 6, employeeId: 7, payrollMonth: '2026-08', branchId: 2, amount: '50.00',
+        expenseId: 10, reason: null, createdAt: '2026-08-20T10:00:00.000Z',
+      },
+      summary: { ...summary, paidAmount: '90.00', availableAmount: '160.00' },
+    });
+    sessionStorage.setItem('capella:pos-admin-branch', '99');
+    mount();
+
+    expect(screen.queryByLabelText('الفرع')).toBeNull();
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    expect(mocks.branches).not.toHaveBeenCalled();
+    expect(mocks.list.mock.calls[0]?.[0]).not.toHaveProperty('branchId');
+    fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
+    const dialog = await screen.findByRole('dialog', { name: /صرف عمولة/ });
+    fireEvent.change(within(dialog).getByLabelText('المبلغ'), { target: { value: '50.00' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الصرف' }));
+
+    await waitFor(() => expect(mocks.createPayout).toHaveBeenCalledWith(7, expect.any(String), {
+      amount: '50.00',
+    }));
+  });
   it('announces loading monthly totals', async () => {
     mocks.list.mockReturnValue(new Promise(() => undefined));
     mount();

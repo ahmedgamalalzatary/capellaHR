@@ -118,8 +118,8 @@ test('Cashier runs product and supplier administration for their own branch', as
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
   });
 
-  // A cashier runs their own branch like an admin; only oversight screens
-  // (commissions, reports, cashier accounts, shift history) stay admin-only.
+  // A cashier runs their own branch, including commissions; reports and
+  // oversight of cashier accounts stay admin-only.
   for (const path of ['/products', '/suppliers']) {
     await page.goto(path);
     await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toHaveCount(0);

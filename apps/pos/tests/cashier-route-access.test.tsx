@@ -11,18 +11,18 @@ import SuppliersLayout from '../src/app/(protected)/suppliers/layout';
 const children = <p>محتوى</p>;
 
 /**
- * A cashier runs their branch: catalog, products and purchases are theirs. Only
- * oversight of other cashiers and the money-analysis screens stay admin-only.
+ * A cashier runs their branch, including commission payouts. Reports and
+ * oversight of other cashiers stay admin-only.
  */
 describe('ERP route guards per role', () => {
   it('admits every ERP account to the branch operations routes', () => {
     expect(CatalogLayout({ children }).props.role).toBeUndefined();
     expect(ProductsLayout({ children }).props.role).toBeUndefined();
     expect(SuppliersLayout({ children }).props.role).toBeUndefined();
+    expect(CommissionsLayout({ children }).props.role).toBeUndefined();
   });
 
-  it('keeps commissions, reports and cashier accounts admin-only', () => {
-    expect(CommissionsLayout({ children }).props.role).toBe('admin');
+  it('keeps reports and cashier accounts admin-only', () => {
     expect(ReportsLayout({ children }).props.role).toBe('admin');
     expect(CashierAccountsLayout({ children }).props.role).toBe('admin');
   });

@@ -67,7 +67,6 @@ export const createCommissionService = (dependencies: {
   resolveBranchContext: ErpBranchContextResolver;
 }) => ({
   async list(actor: ErpAccountIdentity, query: CommissionListQuery) {
-    if (actor.role !== 'admin') throw new CommissionError('COMMISSION_FORBIDDEN');
     const { branchId } = await dependencies.resolveBranchContext(actor, query.branchId);
     return dependencies.repository.list(branchId, query);
   },
@@ -78,7 +77,6 @@ export const createCommissionService = (dependencies: {
     month: string,
     requestedBranchId?: number,
   ) {
-    if (actor.role !== 'admin') throw new CommissionError('COMMISSION_FORBIDDEN');
     const { branchId } = await dependencies.resolveBranchContext(actor, requestedBranchId);
     const detail = await dependencies.repository.detail(branchId, employeeId, month);
     if (!detail) throw new CommissionError('COMMISSION_NOT_FOUND');
@@ -91,8 +89,10 @@ export const createCommissionService = (dependencies: {
     month: string,
     input: CommissionPayoutCreate,
   ) {
-    if (actor.role !== 'admin') throw new CommissionError('COMMISSION_FORBIDDEN');
     const { branchId, accountId } = await dependencies.resolveBranchContext(actor, input.branchId);
+    if (actor.role === 'cashier' && !await dependencies.repository.detail(branchId, employeeId, month)) {
+      throw new CommissionError('COMMISSION_EMPLOYEE_NOT_FOUND');
+    }
     const result = await dependencies.repository.createPayout({
       branchId,
       accountId,

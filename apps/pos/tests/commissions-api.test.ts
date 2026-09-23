@@ -26,6 +26,15 @@ describe('commissions API', () => {
     expect(mocks.get).toHaveBeenCalledWith('/erp/commissions/7/2026-08?branchId=2');
   });
 
+  it('omits branch selection for a cashier-owned commission request', async () => {
+    mocks.getPage.mockResolvedValue({ items: [], meta: {} });
+    mocks.get.mockResolvedValue({});
+    await listCommissions({ month: '2026-08', page: 1, pageSize: 20 });
+    await getCommissionDetail(7, '2026-08');
+    expect(mocks.getPage).toHaveBeenCalledWith('/erp/commissions?month=2026-08&page=1&pageSize=20');
+    expect(mocks.get).toHaveBeenCalledWith('/erp/commissions/7/2026-08');
+  });
+
   it('posts a mid-month payout with amount, branch and reason', async () => {
     mocks.post.mockResolvedValue({});
 
