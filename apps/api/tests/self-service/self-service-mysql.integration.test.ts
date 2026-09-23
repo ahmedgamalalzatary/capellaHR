@@ -29,7 +29,7 @@ import {
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -94,9 +94,10 @@ const ensureAdminAccount = async () => {
 const purgeAdvanceExpenses = async () => {
   await database.execute(sql.raw('DROP TRIGGER IF EXISTS `erp_expenses_reject_delete`'));
   await database.update(advances).set({ expenseId: null });
-  await database.delete(erpExpenses).where(and(eq(erpExpenses.name, 'advance'), eq(erpExpenses.kind, 'reversal')));
-  await database.delete(erpExpenses).where(and(eq(erpExpenses.name, 'advance'), sql`${erpExpenses.supersedesId} is not null`));
-  await database.delete(erpExpenses).where(eq(erpExpenses.name, 'advance'));
+  const advanceNames = inArray(erpExpenses.name, ['advance', 'سلفة']);
+  await database.delete(erpExpenses).where(and(advanceNames, eq(erpExpenses.kind, 'reversal')));
+  await database.delete(erpExpenses).where(and(advanceNames, sql`${erpExpenses.supersedesId} is not null`));
+  await database.delete(erpExpenses).where(advanceNames);
   await database.execute(sql.raw(`CREATE TRIGGER \`erp_expenses_reject_delete\`
 BEFORE DELETE ON \`erp_expenses\`
 FOR EACH ROW

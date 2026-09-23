@@ -907,6 +907,9 @@ export const localizeErpReportRow = (
   Object.entries(row).map(([key, raw]) => {
     const value = normalizeCell(raw);
     if (key === 'eventType' && typeof value === 'string') return [key, eventLabels[value] ?? value];
+    if (reportType === 'erp-expenses' && key === 'expenseName' && value === 'advance') {
+      return [key, 'سلفة'];
+    }
     if (key === 'paymentMethod' && typeof value === 'string') return [key, paymentLabels[value] ?? value];
     if (key === 'adjustmentKind' && typeof value === 'string') {
       return [key, value === 'percentage' ? 'نسبة مئوية' : 'قيمة ثابتة'];

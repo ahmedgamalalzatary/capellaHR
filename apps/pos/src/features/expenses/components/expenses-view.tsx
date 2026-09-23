@@ -27,6 +27,7 @@ import { expenseQueryKeys } from '../query-keys';
 
 const errorText = (error: unknown) => error instanceof ApiError ? error.message : 'تعذر تنفيذ العملية. حاول مرة أخرى.';
 const todayInCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+const expenseNameLabel = (name: string) => name === 'advance' ? 'سلفة' : name;
 const kindLabel = (expense: Expense) => expense.kind === 'reversal' ? 'قيد عكسي' : expense.status === 'corrected' ? 'تم تصحيحه' : expense.supersedesId ? 'بديل تصحيح' : 'مصروف';
 const kindTone = (expense: Expense) => expense.kind === 'reversal'
   ? 'warning' as const
@@ -59,7 +60,7 @@ export function ExpensesView() {
   const create = useMutation({ mutationFn: () => createExpense({ ...branchScope, name: name.trim(), amount, expenseDate, description }), onSuccess: async () => { setName(''); setAmount(''); setDescription(''); setCreateOpen(false); setSuccessMessage('تم تسجيل المصروف.'); notifySuccess('تم تسجيل المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
   const correction = useMutation({ mutationFn: () => correctExpense(correcting!.id, { ...branchScope, name: name.trim(), amount, expenseDate, description, reason }), onSuccess: async () => { setCorrecting(null); setReason(''); setName(''); setAmount(''); setDescription(''); setSuccessMessage('تم تصحيح المصروف.'); notifySuccess('تم تصحيح المصروف.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
   const clearDraft = () => { setCorrecting(null); setCreateOpen(false); setName(''); setAmount(''); setExpenseDate(todayInCairo()); setDescription(''); setReason(''); create.reset(); correction.reset(); };
-  const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCreateOpen(false); setCorrecting(expense); setName(expense.name); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
+  const beginCorrection = (expense: Expense) => { create.reset(); correction.reset(); setCreateOpen(false); setCorrecting(expense); setName(expenseNameLabel(expense.name)); setAmount(expense.amount); setExpenseDate(expense.expenseDate); setDescription(expense.description); setReason(''); };
   const openCreate = () => { create.reset(); correction.reset(); setCorrecting(null); setReason(''); setCreateOpen(true); };
   /** Only a new expense is remembered; a correction is started from a stored row. */
   const draft = useFormDraft(
@@ -259,7 +260,7 @@ export function ExpensesView() {
                           {expenses.data.items.map((expense) => (
                             <TR key={expense.id}>
                               <TD className="tabular whitespace-nowrap text-muted">{expense.expenseDate}</TD>
-                              <TD className="font-medium">{expense.name}</TD>
+                              <TD className="font-medium">{expenseNameLabel(expense.name)}</TD>
                               <TD>
                                 {expense.description}
                                 {expense.correctionReason ? <span className="block text-xs text-muted">السبب: {expense.correctionReason}</span> : null}

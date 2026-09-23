@@ -3,6 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { localizeErpReportRow } from '../../src/modules/erp/erp-reports/erp-report-repository.js';
 
 describe('ERP report row localization', () => {
+  it('labels an advance cash-out expense as سلفة', () => {
+    expect(localizeErpReportRow('erp-expenses', { expenseName: 'advance' }))
+      .toEqual({ expenseName: 'سلفة' });
+    expect(localizeErpReportRow('erp-expenses', { expenseName: 'كهرباء' }))
+      .toEqual({ expenseName: 'كهرباء' });
+  });
+
   it('localizes stock reasons without rewriting reversal free text', () => {
     expect(localizeErpReportRow('erp-stock', { reason: 'damage' })).toEqual({ reason: 'تالف' });
     expect(localizeErpReportRow('erp-refunds', { reason: 'damage' })).toEqual({ reason: 'damage' });

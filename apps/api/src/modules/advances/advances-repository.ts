@@ -149,7 +149,7 @@ const insertAdvanceExpense = async (
 ) => {
   const inserted = await transaction.insert(erpExpenses).values({
     branchId: input.branchId,
-    name: 'advance',
+    name: 'سلفة',
     amount: input.amount,
     expenseDate: input.expenseDate,
     description: input.description,
@@ -178,7 +178,7 @@ const replaceAdvanceExpense = async (
 ) => {
   const correctionOperationId = randomUUID();
   await transaction.execute(sql`CALL correct_erp_expense(
-    ${expenseId}, ${input.branchId}, ${'advance'}, ${input.amount}, ${input.expenseDate},
+    ${expenseId}, ${input.branchId}, ${'سلفة'}, ${input.amount}, ${input.expenseDate},
     ${input.description}, ${input.actingAccountId}, ${input.reason}, ${input.createdAt},
     ${correctionOperationId}
   )`);

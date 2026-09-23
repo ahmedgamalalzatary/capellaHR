@@ -280,9 +280,9 @@ describe('ERP sale repository MySQL integration', () => {
 
     const expense = (await database.select().from(erpExpenses)
       .where(eq(erpExpenses.branchId, data.branchId)))
-      .find((row) => row.name === 'advance');
+      .find((row) => row.name === 'سلفة');
     expect(expense).toMatchObject({
-      name: 'advance',
+      name: 'سلفة',
       amount: '40.00',
       expenseDate: '2026-08-03',
       description: `advance for employee Employee ${data.marker}`,

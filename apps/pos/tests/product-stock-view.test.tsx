@@ -154,11 +154,75 @@ describe('ProductStockView', () => {
     expect(await screen.findByRole('status', { name: 'تم حفظ المنتج.' })).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
-    fireEvent.change(screen.getByLabelText('تغيير الكمية'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '8' } });
+    expect(screen.getByText('الفرق: +3 (زيادة)')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() => expect(mocks.adjust).toHaveBeenCalledWith(4, expect.objectContaining({ branchId: 2, quantityDelta: 3, reason: 'count_correction' })));
     expect(await screen.findByRole('status', { name: 'تم حفظ تسوية المخزون.' })).toBeDefined();
     expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
+  });
+
+  it('records a physical count of zero as emptying the stock', async () => {
+    mocks.adjust.mockResolvedValue({ product, movementId: 8 });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findAllByText('شامبو');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '0' } });
+    expect(screen.getByText('الفرق: -5 (تخفيض)')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+
+    await waitFor(() => expect(mocks.adjust).toHaveBeenCalledWith(4, expect.objectContaining({ quantityDelta: -5, reason: 'count_correction' })));
+  });
+
+  it('keeps save disabled when the counted quantity matches the current stock', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findAllByText('شامبو');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '5' } });
+
+    expect(screen.getByText('لا يوجد تغيير — الرصيد الحالي 5')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'حفظ' })).toHaveProperty('disabled', true);
+    expect(mocks.adjust).not.toHaveBeenCalled();
+  });
+
+  it('rejects a counted quantity with a fraction because units are whole', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findAllByText('شامبو');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '4.5' } });
+
+    expect(screen.getByText('الكمية وحدات صحيحة: أدخل عدد الوحدات بدون كسور')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'حفظ' })).toHaveProperty('disabled', true);
+    expect(mocks.adjust).not.toHaveBeenCalled();
+  });
+
+  it('hints the change direction and blocks a stock increase under wastage', async () => {
+    mocks.adjust.mockResolvedValue({ product, movementId: 8 });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findAllByText('شامبو');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
+    fireEvent.change(screen.getByLabelText('سبب التسوية'), { target: { value: 'wastage' } });
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '7' } });
+    expect(screen.getByText('الهالك والتالف يجب أن يخفضا المخزون')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'حفظ' })).toHaveProperty('disabled', true);
+
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '4' } });
+    expect(screen.queryByText('الهالك والتالف يجب أن يخفضا المخزون')).toBeNull();
+    expect(screen.getByText('الفرق: -1 (تخفيض)')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    await waitFor(() => expect(mocks.adjust).toHaveBeenCalledWith(4, expect.objectContaining({ quantityDelta: -1, reason: 'wastage' })));
   });
 
   it('keeps product edit and stock adjustment panels open while their request is pending', async () => {
@@ -182,12 +246,12 @@ describe('ProductStockView', () => {
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     await screen.findAllByText('شامبو');
     fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
-    fireEvent.change(screen.getByLabelText('تغيير الكمية'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('الكمية بعد الجرد'), { target: { value: '4' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
     await waitFor(() => expect(mocks.adjust).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: 'إلغاء' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByLabelText('الفرع').hasAttribute('disabled')).toBe(true);
-    expect(screen.getByLabelText('تغيير الكمية').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('الكمية بعد الجرد').hasAttribute('disabled')).toBe(true);
     expect(screen.queryByLabelText('اسم المنتج')).toBeNull();
     expect(screen.getByRole('button', { name: 'منتج جديد' })).toHaveProperty('disabled', true);
   });
@@ -259,7 +323,7 @@ describe('ProductStockView', () => {
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
 
     expect(screen.queryByRole('button', { name: 'حفظ التعديل' })).toBeNull();
-    expect(screen.queryByLabelText('تغيير الكمية')).toBeNull();
+    expect(screen.queryByLabelText('الكمية بعد الجرد')).toBeNull();
     expect((screen.getByLabelText('تصفية الحركات حسب المنتج') as HTMLSelectElement).value).toBe('');
   });
 

@@ -79,7 +79,7 @@ export function ProductStockView() {
   const [barcode, setBarcode] = useState('');
   const [labelling, setLabelling] = useState<Product | null>(null);
   const [adjusting, setAdjusting] = useState<Product | null>(null);
-  const [delta, setDelta] = useState('');
+  const [counted, setCounted] = useState('');
   const [reason, setReason] = useState<'count_correction' | 'wastage' | 'damage'>('count_correction');
   const [note, setNote] = useState('');
   const [movementProductId, setMovementProductId] = useState<number>();
@@ -151,9 +151,21 @@ export function ProductStockView() {
     onSuccess: async (_saved, product) => { setConfirmingToggle(null); setSuccessMessage(product.isActive ? 'تم إيقاف المنتج.' : 'تم تفعيل المنتج.'); notifySuccess(product.isActive ? 'تم إيقاف المنتج.' : 'تم تفعيل المنتج.'); await refresh(); },
     onError: (error: unknown) => notifyError(error),
   });
+  /** The count on the shelf is what the operator knows; the delta is derived from it. */
+  const countedNumber = Number(counted);
+  const wholeUnits = counted.trim() !== '' && Number.isInteger(countedNumber) && countedNumber >= 0;
+  const quantityDelta = adjusting && wholeUnits ? countedNumber - adjusting.quantity : 0;
+  const destructiveReason = reason === 'wastage' || reason === 'damage';
+  const adjustHint = !adjusting ? null
+    : counted.trim() !== '' && !wholeUnits ? 'الكمية وحدات صحيحة: أدخل عدد الوحدات بدون كسور'
+      : wholeUnits && quantityDelta === 0 ? `لا يوجد تغيير — الرصيد الحالي ${adjusting.quantity}`
+        : wholeUnits && destructiveReason && quantityDelta > 0 ? 'الهالك والتالف يجب أن يخفضا المخزون'
+          : wholeUnits ? `الفرق: ${quantityDelta > 0 ? '+' : ''}${quantityDelta} ${quantityDelta > 0 ? '(زيادة)' : '(تخفيض)'}`
+            : null;
+  const adjustBlocked = !wholeUnits || quantityDelta === 0 || (destructiveReason && quantityDelta > 0);
   const adjust = useMutation({
-    mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta: Number(delta), reason, ...(note.trim() ? { note: note.trim() } : {}) }),
-    onSuccess: async () => { setAdjusting(null); setDelta(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); notifySuccess('تم حفظ تسوية المخزون.'); await refresh(); },
+    mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta, reason, ...(note.trim() ? { note: note.trim() } : {}) }),
+    onSuccess: async () => { setAdjusting(null); setCounted(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); notifySuccess('تم حفظ تسوية المخزون.'); await refresh(); },
     onError: (error: unknown) => notifyError(error),
   });
   /**
@@ -298,11 +310,11 @@ export function ProductStockView() {
               onClose={() => { if (!commandPending) setAdjusting(null); }}
             >
               <div className="space-y-4">
-                <p className="text-[13px] text-muted">الرصيد الحالي يتغير فورًا وتُسجَّل الحركة في السجل.</p>
+                <p className="text-[13px] text-muted">اكتب الكمية بعد الجرد الفعلي؛ الفرق عن الرصيد الحالي يُحسب ويُسجَّل فورًا.</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="adjust-delta">تغيير الكمية</Label>
-                    <Input id="adjust-delta" aria-label="تغيير الكمية" type="number" className="text-start" disabled={commandPending} value={delta} onChange={(event) => setDelta(event.target.value)} />
+                    <Label htmlFor="adjust-counted">الكمية بعد الجرد</Label>
+                    <Input id="adjust-counted" aria-label="الكمية بعد الجرد" type="number" min={0} step={1} className="text-start" disabled={commandPending} value={counted} onChange={(event) => setCounted(event.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="adjust-reason">سبب التسوية</Label>
@@ -317,8 +329,9 @@ export function ProductStockView() {
                     <Input id="adjust-note" aria-label="ملاحظة التسوية" placeholder="ملاحظة" disabled={commandPending} value={note} onChange={(event) => setNote(event.target.value)} />
                   </div>
                 </div>
+                {adjustHint ? <p className="text-[13px] text-muted">{adjustHint}</p> : null}
                 <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
-                  <Button disabled={!Number(delta) || commandPending} onClick={() => { if (!commandPending) adjust.mutate(); }}>حفظ</Button>
+                  <Button disabled={adjustBlocked || commandPending} onClick={() => { if (!commandPending && !adjustBlocked) adjust.mutate(); }}>حفظ</Button>
                   <Button variant="ghost" disabled={commandPending} onClick={() => setAdjusting(null)}>إلغاء</Button>
                 </div>
                 {adjust.isError ? <FieldError>{errorText(adjust.error)}</FieldError> : null}

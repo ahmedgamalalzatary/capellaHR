@@ -43,6 +43,20 @@ describe('ExpensesView', () => {
     expect(within(header).getByRole('button', { name: 'تسجيل مصروف جديد' })).toBeDefined();
   });
 
+  it('labels an employee cash-out named advance as سلفة', async () => {
+    mocks.list.mockResolvedValue({
+      items: [{ ...expense, name: 'advance' }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+    actor.current = 'cashier';
+    mount();
+
+    expect(await screen.findByText('سلفة')).toBeDefined();
+    expect(screen.queryByText('advance')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'تصحيح' }));
+    expect((screen.getByLabelText('اسم المصروف') as HTMLInputElement).value).toBe('سلفة');
+  });
+
   it('finds an expense by its name or notes in the history filter', async () => {
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     actor.current = 'cashier';
