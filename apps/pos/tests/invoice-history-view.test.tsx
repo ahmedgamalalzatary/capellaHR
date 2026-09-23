@@ -43,7 +43,11 @@ const item = {
   amountPaid: saleFixtures.completedInvoice.totals.amountPaid,
   balanceDue: saleFixtures.completedInvoice.totals.balanceDue,
   settlementStatus: saleFixtures.completedInvoice.totals.settlementStatus,
-  client: { id: 5, name: saleFixtures.completedInvoice.client.name },
+  client: {
+    id: 5,
+    name: saleFixtures.completedInvoice.client.name,
+    phone: saleFixtures.completedInvoice.client.phone,
+  },
   employees: [
     { id: 8, name: saleFixtures.completedInvoice.lines[0].employee.name },
     { id: 11, name: 'هدى محمود' },
@@ -125,6 +129,26 @@ describe('invoice history', () => {
     const link = await screen.findByRole('link', { name: item.invoiceNumber });
     expect(link.getAttribute('href')).toBe('/invoices/44');
     expect(link.textContent).toContain(item.client.name);
+  });
+
+  it('shows the client phone on the card so a phone-matched search result explains itself', async () => {
+    renderView();
+
+    const link = await screen.findByRole('link', { name: item.invoiceNumber });
+    expect(link.textContent).toContain(saleFixtures.completedInvoice.client.phone);
+  });
+
+  it('prints the phone once when it already stands in as the client name', async () => {
+    mocks.listInvoices.mockResolvedValueOnce({
+      items: [{ ...item, client: { ...item.client, name: null } }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    });
+
+    renderView();
+
+    const link = await screen.findByRole('link', { name: item.invoiceNumber });
+    const phone = saleFixtures.completedInvoice.client.phone;
+    expect(link.textContent?.split(phone).length - 1).toBe(1);
   });
 
   it('asks the admin to pick a branch before listing invoices', async () => {

@@ -10,7 +10,7 @@ These instructions apply to the entire repository. Follow the user's explicit in
 - While reading or navigating the codebase, immediately notify the user about any likely bug, mismatch, unintended behavior, problem, incorrect implementation, or gap you notice, even when it is outside the immediate change. Do not silently ignore it.
 - Do not over-engineer or under-engineer the requested work.
 - Always provide the best complete and working solution, without compromises.
-- Be concise.
+- Be concise/precise.
 - Prefer compact Markdown text diagrams in chat when they make flows, architecture, or decisions easier to understand.
 - Never guess, speculate, or improvise. If confidence is not 100%, stop and ask before answering or acting.
 - Never create a Git commit unless the user explicitly requests it. Each commit authorization is one-time, applies only to the changes explicitly named in that request, and does not authorize any later commit.
@@ -18,51 +18,22 @@ These instructions apply to the entire repository. Follow the user's explicit in
 - Some commands can race or cause failures for others (dev server, build, tests, lint, parallel runners). Run commands sequentially when they may conflict, and be aware of parallel-execution risks. Prefer the smallest safe sequential steps over parallel runs.
 - When the user asks to fix a bug, or identifies a specific bug and asks for help with it, that identification is sufficient authorization to implement the fix. Do not pause to ask for approval before changing the code. Choose the best production-ready, minimal solution: neither over-engineered nor under-engineered.
 - When adding a feature or fixing a bug, inspect and update every related integration point so the change is complete and the same omission does not recur elsewhere.
-
-## Codex/ChatGPT explicit instructions
-
-# CODEX/CHATGPT: NEVER POLL OR PULL A RUNNING COMMAND OR AGENT
-
 - After starting a command or agent, do not manually trigger it, request its status, or use repeated timed waits to check whether it finished.
-- Use completion-triggered waiting only: the running command or agent must wake you when it completes. If other work is available, continue that work and let the completion notification arrive on its own.
 - A timed wait that expires must never be followed by another status check or timed wait. Treat any repeated check as prohibited polling.
 - Prefer commands that return the smallest useful output for the task to reduce token usage. Filter or limit output when the full result is unnecessary, for example with `tail -40`, `head -40`, or a search for only the relevant task/status lines.
 - Move quickly through red/green TDD phases and work in small, focused slices. Use TDD to catch wrong directions early rather than allowing the process itself to slow down delivery.
-- Assume commands copied from this chat CLI may be broken or split at line wraps. When the user must copy and run a command, keep it short, provide it as a single copy-safe line, avoid fragile line continuations, and provide commands one at a time when practical.
-
-## Claude Code/Claude explicit instructions
-
-- Be precise.
-- Do not hallucinate, invent missing facts, forget user-provided information, or ignore this `AGENTS.md` because of session configuration or defaults. Re-read the relevant instructions and verify facts before acting whenever needed.
-- When updating a specific area or file, read the complete related files when their unseen sections could materially affect the change. Do not rely only on search matches or partial excerpts when broader context is needed, but do not read unrelated files without a reason.
-
-## Shared instructions — Codex/ChatGPT and Claude Code/Claude
-
-- For every requested change, whether specific or general, understand every related part of the codebase before implementing it. Trace all relevant behavior, integrations, callers, consumers, tests, configuration, and documentation so the change is complete.
+- When updating a specific area or file, read the complete related files when their unseen sections could materially affect the change.
 - A task may be incomplete, unclear, or incorrectly explained. If anything material is confusing or uncertain, ask the user a simple, focused question instead of guessing; the user is available to clarify.
 - Explain problems in plain human language rather than developer-focused language so the user can understand them without needing coding expertise.
 - Ask questions with the simplest practical wording and tone so the user can answer precisely.
-- If a repository instruction conflicts with a higher-priority system or developer instruction, follow the higher-priority instruction and clearly explain the conflict and constraint to the user. Repository instructions cannot override system or developer instructions.
-
-## Brainstorming and small tasks
-
-- When using the brainstorming skill, always skip its writing-document section and provide the design in chat only.
-- For a small, bounded bug or feature, move quickly and skip formal design work. Perform only the analysis needed to understand and safely complete it.
+## small tasks
 - For a small task, only confirm green in the touched area (targeted build/lint/typecheck/tests). Do not run the full suite/baseline — those are long-running commands.
-
 ## Mid-to-high complexity workflow
-
-For a medium-to-high complexity fix or feature:
-
-1. Establish a baseline by running all applicable validation commands, including build, lint, typecheck, and tests. Record unrelated baseline failures. Fix failures caused by the change or required to validate it before feature work. Skip this pre-change baseline only when you are 100% certain the same applicable validation suite already passed in the current, uncompacted session or chat and no relevant workspace state has changed since that run.
-2. Implement the requested change.
-3. First confirm specific green in the touched area (targeted build/lint/typecheck/tests). Do not run the full suite/baseline until specific green passes.
-4. Then run the complete applicable validation suite and restore a green baseline.
-5. Run the complete applicable validation suite once more and report a concise summary of the changes and verification results.
-## Context compaction
-
-- If context is compacted, re-read every instruction or reference document read at the start of the task. Do not rely only on the compaction summary.
-
+1. Establish a baseline for the requested area ( if u are updating/going to update something in this part, ensure that this specific part is green before u even start, green === lint, build, typecheck, test )
+2. implement the requested changes in full 
+3. First confirm specific green in the touched area (targeted build/lint/typecheck/tests). Do not run the full
+4. if the complixity is high, touching mulitple areas/scopes run/ensure everything is green accorss everything ( the entire codebase is green )
+5. If context is compacted, re-read every instruction or reference document read at the start of the task. Do not rely only on the compaction summary.
 ## VPS and out-of-scope environment commands
 
 - When the task requires the user to run commands on a VPS or another environment outside the current scope, provide commands one at a time and move quickly.

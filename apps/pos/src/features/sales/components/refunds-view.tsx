@@ -282,6 +282,9 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
                       {invoiceClientLabel(invoice.client)} ·{' '}
                       {invoice.employees.map(({ name }) => name).join(' - ') || 'بدون موظف'}
                     </p>
+                    {invoice.client.name && invoice.client.phone ? (
+                      <p className="text-[13px] text-muted tabular" dir="ltr">{invoice.client.phone}</p>
+                    ) : null}
                     <time className="block text-[13px] text-muted" dateTime={invoice.soldAt}>
                       {formatCairoDateTime(invoice.soldAt)}
                     </time>

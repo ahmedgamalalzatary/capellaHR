@@ -547,6 +547,13 @@ describe('refunds tab', () => {
     expect(screen.queryByText('INV-DONE')).toBeNull();
   });
 
+  it('shows the client phone on the refundable invoice card', async () => {
+    renderView();
+
+    const open = await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` });
+    expect(open.closest('li')?.textContent).toContain(saleFixtures.completedInvoice.client.phone);
+  });
+
   it('does not offer a fully refunded invoice in the till list', async () => {
     listInvoices.mockResolvedValue({
       items: [{ ...historyItem, status: 'refunded' }],
