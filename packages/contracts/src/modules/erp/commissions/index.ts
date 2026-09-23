@@ -11,6 +11,9 @@ import { invoiceNumberSchema } from '../sales/index.ts';
 const payrollMonthSchema = z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/);
 const moneySchema = z.string().regex(/^\d{1,12}\.\d{2}$/);
 const signedMoneySchema = z.string().regex(/^-?\d{1,12}\.\d{2}$/);
+const positiveMoneySchema = z.string().regex(/^\d{1,10}\.\d{2}$/).refine((value) => /[1-9]/.test(value), {
+  message: 'amount must be positive',
+});
 
 export const commissionListQuerySchema = z.object({
   month: payrollMonthSchema,
@@ -33,8 +36,27 @@ export const commissionSummarySchema = z.object({
   earnedAmount: moneySchema,
   reversedAmount: moneySchema,
   netAmount: moneySchema,
+  paidAmount: moneySchema,
+  availableAmount: moneySchema,
   invoiceLineCount: z.number().int().min(0),
   reversalCount: z.number().int().min(0),
+}).strict();
+
+export const commissionPayoutCreateSchema = z.object({
+  amount: positiveMoneySchema,
+  branchId: coercedMysqlIntSchema.optional(),
+  reason: z.string().trim().min(1).max(200).optional(),
+}).strict();
+
+export const commissionPayoutSchema = z.object({
+  id: positiveMysqlIntSchema,
+  employeeId: positiveMysqlIntSchema,
+  payrollMonth: payrollMonthSchema,
+  branchId: positiveMysqlIntSchema,
+  amount: positiveMoneySchema,
+  expenseId: positiveMysqlIntSchema,
+  reason: z.string().min(1).max(200).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
 }).strict();
 
 export const commissionEntrySchema = z.object({
@@ -56,6 +78,7 @@ export const commissionEntrySchema = z.object({
 export const commissionDetailSchema = z.object({
   summary: commissionSummarySchema,
   entries: z.array(commissionEntrySchema),
+  payouts: z.array(commissionPayoutSchema),
 }).strict();
 
 export type CommissionListQuery = z.infer<typeof commissionListQuerySchema>;
@@ -63,3 +86,5 @@ export type CommissionMonthParams = z.infer<typeof commissionMonthParamsSchema>;
 export type CommissionSummary = z.infer<typeof commissionSummarySchema>;
 export type CommissionEntry = z.infer<typeof commissionEntrySchema>;
 export type CommissionDetail = z.infer<typeof commissionDetailSchema>;
+export type CommissionPayoutCreate = z.infer<typeof commissionPayoutCreateSchema>;
+export type CommissionPayout = z.infer<typeof commissionPayoutSchema>;

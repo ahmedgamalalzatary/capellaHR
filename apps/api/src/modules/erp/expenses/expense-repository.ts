@@ -1,5 +1,5 @@
 import type { createDatabase } from '@capella/database';
-import { accounts, erpExpenses } from '@capella/database/schema';
+import { accounts, advances, erpCommissionPayouts, erpExpenses } from '@capella/database/schema';
 import { and, count, desc, eq, gte, like, lte, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
@@ -56,6 +56,13 @@ export const createDrizzleExpenseRepository = (database: Database, audit: ErpAud
       const target = (await tx.select({ id: erpExpenses.id, kind: erpExpenses.kind, status: erpExpenses.status }).from(erpExpenses).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).for('update').limit(1))[0];
       if (!target || target.kind !== 'expense') return 'invalid-target';
       if (target.status !== 'active') return 'already-corrected';
+      const [payoutLink, advanceLink] = await Promise.all([
+        tx.select({ id: erpCommissionPayouts.id }).from(erpCommissionPayouts)
+          .where(eq(erpCommissionPayouts.expenseId, id)).limit(1),
+        tx.select({ id: advances.id }).from(advances)
+          .where(eq(advances.expenseId, id)).limit(1),
+      ]);
+      if (payoutLink.length || advanceLink.length) return 'invalid-target';
       const original = (await joined(tx).where(and(eq(erpExpenses.id, id), eq(erpExpenses.branchId, input.branchId))).limit(1))[0] as ExpenseRecord;
       const at = now();
       const correctionOperationId = randomUUID();

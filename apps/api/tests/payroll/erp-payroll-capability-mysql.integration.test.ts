@@ -1,7 +1,10 @@
 import {
+  accounts,
   branches,
   employees,
   erpCommissionPayrollInputs,
+  erpCommissionPayouts,
+  erpExpenses,
   erpPostPayrollDeductions,
   payrollMonths,
 } from '@capella/database/schema';
@@ -146,7 +149,7 @@ describe('ERP payroll public capability', () => {
     })).resolves.toBe('payroll_finalized_without_commission');
   });
 
-  it('includes live commission inputs and ERP deductions in open payroll', async () => {
+  it('includes live commission inputs, mid-month payouts, and ERP deductions in open payroll', async () => {
     const capability = createErpPayrollCapability(database);
     await capability.projectCommission({
       employeeId, payrollMonth: '2026-08', amount: '175.00',
@@ -155,6 +158,22 @@ describe('ERP payroll public capability', () => {
     await capability.recordPostPayrollDeduction({
       employeeId, occurredAt: new Date('2026-07-31T22:30:00.000Z'), amount: '20.00',
       reference: `erp-commission-reversal:77:${employeeId}`,
+    });
+    const at = new Date('2026-08-15T10:00:00.000Z');
+    const branchId = Number((await database.select({ branchId: employees.branchId })
+      .from(employees).where(eq(employees.id, employeeId)).limit(1))[0]?.branchId);
+    const accountId = Number((await database.insert(accounts).values({
+      username: `payout-admin-${Date.now()}`, passwordHash: 'unused', role: 'admin',
+      createdAt: at, updatedAt: at,
+    }))[0].insertId);
+    const expenseId = Number((await database.insert(erpExpenses).values({
+      branchId, name: 'صرف عمولة', amount: '50.00',
+      expenseDate: '2026-08-15', description: 'commission payout',
+      actingAccountId: accountId, createdAt: at,
+    }))[0].insertId);
+    await database.insert(erpCommissionPayouts).values({
+      employeeId, commissionMonth: '2026-08-01', branchId, amount: '50.00',
+      expenseId, actingAccountId: accountId, createdAt: at,
     });
     const repository = createDrizzlePayrollRepository(database, {
       now: () => new Date('2026-09-01T09:00:00.000Z'),
@@ -173,8 +192,43 @@ describe('ERP payroll public capability', () => {
       kind: 'success',
       payroll: {
         commissionAmount: '175.00',
+        commissionPaidAmount: '50.00',
         commissionDeductionAmount: '20.00',
-        netSalary: '155.00',
+        commissionCarryAmount: '0.00',
+        netSalary: '105.00',
+      },
+    });
+
+    await capability.projectCommission({
+      employeeId, payrollMonth: '2026-08', amount: '40.00',
+      reference: `erp-commission:2026-08:${employeeId}`,
+    });
+    expect(await repository.preview(employeeId, '2026-08', {
+      readPayrollFacts: async () => ({
+        kind: 'ready',
+        facts: { fullMonthWorkdays: 0, eligibleWorkdays: 0, requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0 },
+      }),
+    })).toMatchObject({
+      kind: 'success',
+      payroll: {
+        commissionAmount: '40.00', commissionPaidAmount: '50.00',
+        commissionDeductionAmount: '0.00', commissionCarryAmount: '30.00', netSalary: '0.00',
+      },
+    });
+
+    const september = createDrizzlePayrollRepository(database, {
+      now: () => new Date('2026-10-01T09:00:00.000Z'),
+    });
+    expect(await september.preview(employeeId, '2026-09', {
+      readPayrollFacts: async () => ({
+        kind: 'ready',
+        facts: { fullMonthWorkdays: 0, eligibleWorkdays: 0, requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0 },
+      }),
+    })).toMatchObject({
+      kind: 'success',
+      payroll: {
+        commissionAmount: '45.00', commissionDeductionAmount: '30.00',
+        commissionCarryAmount: '0.00', netSalary: '15.00',
       },
     });
   });

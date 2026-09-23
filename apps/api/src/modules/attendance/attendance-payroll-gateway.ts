@@ -7,7 +7,7 @@ import {
 } from '@capella/database/schema';
 import { and, eq, gte, isNull, lte } from 'drizzle-orm';
 
-import { employmentDateIsActive } from '../employees/employment-period.js';
+import { employmentDateAccruesAbsence } from '../employees/employment-period.js';
 import type { PayrollAttendanceGateway } from '../payroll/index.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import { endOfDate, startOfDate } from './attendance-calendar.js';
@@ -98,7 +98,7 @@ export const createAttendancePayrollGateway = (
       for (let day = 1; day <= daysInMonth; day += 1) {
         const attendanceDate = `${payrollMonth}-${String(day).padStart(2, '0')}`;
         if (attendanceDate < currentDate
-          && employmentDateIsActive(attendanceDate, employmentPeriods, timeZone)
+          && employmentDateAccruesAbsence(attendanceDate, employmentPeriods, timeZone)
           && !sessionByDate.has(attendanceDate) && !dailyByDate.has(attendanceDate)) {
           missingDates.push(attendanceDate);
         }

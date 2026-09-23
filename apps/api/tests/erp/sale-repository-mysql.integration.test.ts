@@ -1120,7 +1120,7 @@ describe('ERP sale repository MySQL integration', () => {
       actingAccountId: data.adminAccountId, actingAccountRole: 'admin',
       reversedAt: new Date('2026-09-01T09:00:00.000Z'),
     });
-    const commissions = createDrizzleCommissionRepository(database);
+    const commissions = createDrizzleCommissionRepository(database, { audit: createErpAuditCapability() });
 
     await expect(commissions.summary(data.employeeId, '2026-08')).resolves.toMatchObject({
       employeeId: data.employeeId, earnedAmount: '30.00', reversedAmount: '30.00',

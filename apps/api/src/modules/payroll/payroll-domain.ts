@@ -29,6 +29,26 @@ const fromCents = (cents: bigint) => {
   return `${negative ? '-' : ''}${absolute / 100n}.${String(absolute % 100n).padStart(2, '0')}`;
 };
 
+export const settleCommission = (input: {
+  earned: string;
+  paid: string;
+  priorCarry: string;
+  reversals: string;
+}) => {
+  const earned = toCents(input.earned);
+  const paid = toCents(input.paid);
+  const debt = toCents(input.priorCarry) + toCents(input.reversals);
+  const paidApplied = earned < paid ? earned : paid;
+  const afterPaid = earned - paidApplied;
+  const priorRecovery = afterPaid < debt ? afterPaid : debt;
+  return {
+    payable: fromCents(afterPaid - priorRecovery),
+    paidApplied: fromCents(paidApplied),
+    priorRecovery: fromCents(priorRecovery),
+    carry: fromCents(debt - priorRecovery + paid - paidApplied),
+  };
+};
+
 const payrollSnapshotMaxCents = 99_999_999_999_999n;
 export const isPayrollSnapshotAmount = (amount: string) => {
   const cents = toCents(amount);

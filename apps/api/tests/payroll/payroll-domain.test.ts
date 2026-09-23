@@ -3,10 +3,19 @@ import { describe, expect, it } from 'vitest';
 import {
   addPayrollMonths,
   calculatePayroll,
+  settleCommission,
   splitInstallments,
 } from '../../src/modules/payroll/index.js';
 
 describe('payroll exact arithmetic', () => {
+  it('carries an overpaid commission forward without reducing base salary', () => {
+    expect(settleCommission({ earned: '100.00', paid: '200.00', priorCarry: '0.00', reversals: '0.00' })).toEqual({
+      payable: '0.00', paidApplied: '100.00', priorRecovery: '0.00', carry: '100.00',
+    });
+    expect(settleCommission({ earned: '250.00', paid: '50.00', priorCarry: '100.00', reversals: '0.00' })).toEqual({
+      payable: '100.00', paidApplied: '50.00', priorRecovery: '100.00', carry: '0.00',
+    });
+  });
   it('prorates and calculates every component using exact rational cents', () => {
     expect(calculatePayroll({
       baseSalary: '6000.00',
@@ -51,6 +60,15 @@ describe('payroll exact arithmetic', () => {
       bonuses: '100.00', commission: '250.00', deductions: '25.00',
       commissionDeductions: '40.00', advances: '10.00', priorNegativeCarry: '0.00',
     }).netSalary).toBe('275.00');
+  });
+
+  it('leaves only the unpaid commission in net when part was paid mid-month', () => {
+    expect(calculatePayroll({
+      baseSalary: '5000.00', fullMonthWorkdays: 30, eligibleWorkdays: 30,
+      requiredMinutes: 9000, overtimeMinutes: 0, shortageMinutes: 0,
+      bonuses: '0.00', commission: '1000.00', deductions: '0.00',
+      commissionDeductions: '200.00', advances: '0.00', priorNegativeCarry: '0.00',
+    })).toMatchObject({ netSalary: '5800.00' });
   });
 
   it('subtracts a negative deactivation adjustment when the salary is forfeited', () => {

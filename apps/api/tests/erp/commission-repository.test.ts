@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/mysql2';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { createDatabase } from '@capella/database';
+import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { createDrizzleCommissionRepository } from '../../src/modules/erp/commissions/commission-repository.js';
 
 describe('commission repository', () => {
@@ -12,7 +13,7 @@ describe('commission repository', () => {
       logger: { logQuery: (query) => queries.push(query) },
     }) as unknown as ReturnType<typeof createDatabase>;
 
-    await createDrizzleCommissionRepository(database).list(2, {
+    await createDrizzleCommissionRepository(database, { audit: createErpAuditCapability() }).list(2, {
       month: '2026-08', page: 1, pageSize: 20,
     });
 

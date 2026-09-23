@@ -27,19 +27,25 @@ test('Admin traces monthly commission totals to invoice lines and reversals', as
     if (path === '/erp/commissions') return json(route, [{
       employeeId: 7, employeeCode: 1007, employeeName: 'سارة أحمد', payrollMonth: '2026-08',
       earnedAmount: '300.00', reversedAmount: '50.00', netAmount: '250.00',
+      paidAmount: '40.00', availableAmount: '210.00',
       invoiceLineCount: 3, reversalCount: 1,
     }], { page: 1, pageSize: 20, total: 1, totalPages: 1 });
     if (path === '/erp/commissions/7/2026-08') return json(route, {
       summary: {
         employeeId: 7, employeeCode: 1007, employeeName: 'سارة أحمد', payrollMonth: '2026-08',
         earnedAmount: '300.00', reversedAmount: '50.00', netAmount: '250.00',
+        paidAmount: '40.00', availableAmount: '210.00',
         invoiceLineCount: 3, reversalCount: 1,
       },
       entries: [{
         id: 12, type: 'reversal', invoiceId: 21, invoiceNumber: 'INV-2026.08.03-14.35-17',
         invoiceLineId: 31, lineNumber: 1, serviceName: 'صبغة شعر', baseAmount: '100.00',
-        commissionRate: '10.00', amount: '-10.00', reversalId: 41,
+        commissionRate: '10.00', amount: '-10.00', reversalId: 41, reassignmentId: null,
         occurredAt: '2026-09-01T09:00:00.000Z',
+      }],
+      payouts: [{
+        id: 5, employeeId: 7, payrollMonth: '2026-08', branchId: 2, amount: '40.00',
+        expenseId: 9, reason: 'دفعة جزئية', createdAt: '2026-08-15T10:00:00.000Z',
       }],
     });
     return route.fulfill({ status: 404, headers, body: '{}' });

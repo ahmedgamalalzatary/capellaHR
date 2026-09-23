@@ -24,6 +24,8 @@ export type PayrollRecord = {
   overtimeAmount: string;
   bonusAmount: string;
   commissionAmount: string;
+  commissionPaidAmount: string;
+  commissionCarryAmount: string;
   attendanceDeductionAmount: string;
   manualDeductionAmount: string;
   commissionDeductionAmount: string;

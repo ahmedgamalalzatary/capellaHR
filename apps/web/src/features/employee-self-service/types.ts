@@ -60,6 +60,8 @@ export type SelfServicePayroll = {
   overtimeAmount: string;
   bonusAmount: string;
   commissionAmount: string;
+  commissionPaidAmount: string;
+  commissionCarryAmount: string;
   attendanceDeductionAmount: string;
   manualDeductionAmount: string;
   commissionDeductionAmount: string;
@@ -83,6 +85,8 @@ export type SelfServiceCommission = {
   earnedAmount: string;
   reversedAmount: string;
   netAmount: string;
+  paidAmount: string;
+  availableAmount: string;
   invoiceLineCount: number;
   reversalCount: number;
 };

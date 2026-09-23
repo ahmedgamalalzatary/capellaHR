@@ -508,7 +508,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 ### Provisional net formula
 
-`net salary = prorated base + overtime + bonuses - attendance shortage/absence - deductions - advances + prior negative carry`
+`net salary = prorated base + overtime + bonuses + commission still due - attendance shortage/absence - deductions - advances + prior negative carry`
 
 - Bonus, deduction, and advance behavior is defined in their separate modules.
 - Calculations retain high precision internally.

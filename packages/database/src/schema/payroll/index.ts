@@ -44,6 +44,8 @@ export const payrollMonths = mysqlTable('payroll_months', {
   overtimeAmount: decimal('overtime_amount', { precision: 14, scale: 2 }).notNull(),
   bonusAmount: decimal('bonus_amount', { precision: 14, scale: 2 }).notNull(),
   commissionAmount: decimal('commission_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+  commissionPaidAmount: decimal('commission_paid_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+  commissionCarryAmount: decimal('commission_carry_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
   attendanceDeductionAmount: decimal('attendance_deduction_amount', { precision: 14, scale: 2 }).notNull(),
   manualDeductionAmount: decimal('manual_deduction_amount', { precision: 14, scale: 2 }).notNull(),
   commissionDeductionAmount: decimal('commission_deduction_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),

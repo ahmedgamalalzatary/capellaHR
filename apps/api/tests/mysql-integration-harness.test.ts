@@ -7,6 +7,7 @@ const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const isolatedSuites = [
   'tests/erp/booking-mysql.integration.test.ts',
   'tests/erp/cashier-sessions-repository-mysql.integration.test.ts',
+  'tests/erp/commission-payout-mysql.integration.test.ts',
   'tests/erp/consumables-mysql.integration.test.ts',
   'tests/erp/erp-reports-mysql.integration.test.ts',
   'tests/erp/expenses-mysql.integration.test.ts',

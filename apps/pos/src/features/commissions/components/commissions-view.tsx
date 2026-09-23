@@ -1,21 +1,25 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import type { CommissionSummary } from '@capella/contracts';
-import { Badge, Button, Card, CardContent, EmptyState, Label, Modal, MonthPicker } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal, MonthPicker } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
+import { FieldError } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
+import { ApiError } from '@/lib/api/client';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { notifyError, notifySuccess } from '@/lib/notify';
 
-import { getCommissionDetail, listCommissions } from '../api/commissions-api';
+import { createCommissionPayout, getCommissionDetail, listCommissions } from '../api/commissions-api';
 import { commissionQueryKeys } from '../query-keys';
 
 const currentCairoMonth = () => {
@@ -31,12 +35,14 @@ const money = (amount: string) => `${amount} ج.م`;
 const cairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short',
 }).format(new Date(value));
+const isPositiveMoney = (value: string) => /^\d{1,10}\.\d{2}$/.test(value) && /[1-9]/.test(value);
 
-function CommissionTrace({ summary, branchId, month, onClose }: {
+function CommissionTrace({ summary, branchId, month, onClose, onPaid }: {
   summary: CommissionSummary;
   branchId: number;
   month: string;
   onClose: () => void;
+  onPaid?: (() => void) | undefined;
 }) {
   const query = useQuery({
     queryKey: commissionQueryKeys.detail(summary.employeeId, month, branchId),
@@ -50,6 +56,12 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
           description="كل قيد مرتبط ببند فاتورة، وأي عكس مرتبط بعملية الاسترداد الأصلية."
           actions={<Button variant="ghost" size="sm" onClick={onClose}>إغلاق التفاصيل</Button>}
         />
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-muted">الصافي: <span className="tabular font-medium text-foreground">{money(summary.netAmount)}</span></span>
+          <span className="text-muted">مدفوع: <span className="tabular font-medium text-foreground">{money(summary.paidAmount)}</span></span>
+          <span className="text-muted">المتاح: <span className="tabular font-semibold text-foreground">{money(summary.availableAmount)}</span></span>
+          {onPaid ? <Button size="sm" onClick={onPaid}>صرف عمولة</Button> : null}
+        </div>
       </CardContent>
       {query.isPending ? <LoadingState label="جارٍ تحميل التفاصيل…" className="py-8" />
         : query.isError ? <EmptyState title="تعذر تحميل تفاصيل العمولة" action={<Button onClick={() => void query.refetch()}>إعادة المحاولة</Button>} />
@@ -90,6 +102,23 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
                     </TR>
                   ))}
                 </tbody>
+                {query.data.payouts.length ? (
+                  <tfoot>
+                    {query.data.payouts.map((payout) => (
+                      <TR key={payout.id}>
+                        <TD>
+                          <Badge variant="neutral">صرف عمولة</Badge>
+                          <time className="mt-1 block text-xs text-muted" dateTime={payout.createdAt}>
+                            {cairoDateTime(payout.createdAt)}
+                          </time>
+                        </TD>
+                        <TD colSpan={4} className="text-muted">{payout.reason ?? '—'}</TD>
+                        <TD numeric className="font-semibold">{money(payout.amount)}</TD>
+                        <TD className="tabular text-muted">مصروف #{payout.expenseId}</TD>
+                      </TR>
+                    ))}
+                  </tfoot>
+                ) : null}
               </DataTable>
             )}
     </Card>
@@ -97,10 +126,15 @@ function CommissionTrace({ summary, branchId, month, onClose }: {
 }
 
 export function CommissionsView() {
+  const client = useQueryClient();
   const { branchId, setBranchId } = useAdminBranch();
   const [month, setMonth] = useState(currentCairoMonth);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<CommissionSummary | null>(null);
+  const [payoutOpen, setPayoutOpen] = useState(false);
+  const [payoutFromDetails, setPayoutFromDetails] = useState(false);
+  const [payoutAmount, setPayoutAmount] = useState('');
+  const [payoutReason, setPayoutReason] = useState('');
   const branches = useQuery({
     queryKey: ['erp-commissions', 'branches'],
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
@@ -111,12 +145,54 @@ export function CommissionsView() {
     queryFn: () => listCommissions({ branchId: branchId!, month, page, pageSize: 20 }),
     enabled: branchId !== undefined && Boolean(month),
   });
+  const openPayout = (summary: CommissionSummary, fromDetails = false) => {
+    setSelected(summary);
+    setPayoutFromDetails(fromDetails);
+    setPayoutAmount(summary.availableAmount);
+    setPayoutReason('');
+    payout.reset();
+    setPayoutOpen(true);
+  };
+  const closePayout = () => {
+    if (payout.isPending) return;
+    setPayoutOpen(false);
+    if (!payoutFromDetails) setSelected(null);
+    setPayoutFromDetails(false);
+    setPayoutAmount('');
+    setPayoutReason('');
+    payout.reset();
+  };
+  const payout = useMutation({
+    mutationFn: () => createCommissionPayout(selected!.employeeId, month, {
+      amount: payoutAmount.trim(),
+      branchId,
+      ...(payoutReason.trim() ? { reason: payoutReason.trim() } : {}),
+    }),
+    onSuccess: async (data) => {
+      setPayoutOpen(false);
+      setPayoutAmount('');
+      setPayoutReason('');
+      setSelected(payoutFromDetails ? data.summary : null);
+      setPayoutFromDetails(false);
+      notifySuccess('تم صرف العمولة وتسجيل مصروف الصرف.');
+      await invalidateErpCaches(client, 'commission');
+    },
+    onError: (error: unknown) => notifyError(error),
+  });
+  const amountError = payoutAmount && !isPositiveMoney(payoutAmount.trim())
+    ? 'أدخل مبلغًا موجبًا بصيغة 0.00'
+    : undefined;
+  const canPayout = Boolean(selected)
+    && isPositiveMoney(payoutAmount.trim())
+    && branchId !== undefined
+    && !payout.isPending;
+  const summaryError = payout.error instanceof ApiError ? payout.error.message : undefined;
 
   return (
     <section className="space-y-6">
       <PageHeader
         title="العمولات"
-        description="مراجعة إجماليات الموظفين وتتبع قيود البيع والعكس."
+        description="مراجعة إجماليات الموظفين، تتبّع القيود، وصرف جزء من العمولة خلال الشهر."
       />
 
       <Card className="shadow-card">
@@ -135,6 +211,7 @@ export function CommissionsView() {
                     setBranchId(event.target.value ? Number(event.target.value) : undefined);
                     setPage(1);
                     setSelected(null);
+                    setPayoutOpen(false);
                   }}
                 >
                   <option value="">اختر الفرع</option>
@@ -150,7 +227,7 @@ export function CommissionsView() {
               id="commissions-month"
               filterLabel="شهر العمولة"
               value={month}
-              onChange={(next) => { setMonth(next); setPage(1); setSelected(null); }}
+              onChange={(next) => { setMonth(next); setPage(1); setSelected(null); setPayoutOpen(false); }}
             />
           </div>
         </CardContent>
@@ -170,6 +247,8 @@ export function CommissionsView() {
                         <TH numeric>مكتسبة</TH>
                         <TH numeric>معكوسة</TH>
                         <TH numeric>الصافي</TH>
+                        <TH numeric>مدفوع (كل الفروع)</TH>
+                        <TH numeric>المتاح (كل الفروع)</TH>
                         <TH numeric>البنود / العكس</TH>
                         <TH>الإجراء</TH>
                       </THead>
@@ -181,9 +260,20 @@ export function CommissionsView() {
                             <TD numeric>{money(item.earnedAmount)}</TD>
                             <TD numeric className="text-muted">{money(item.reversedAmount)}</TD>
                             <TD numeric className="font-semibold">{money(item.netAmount)}</TD>
+                            <TD numeric className="text-muted">{money(item.paidAmount)}</TD>
+                            <TD numeric className="font-semibold">{money(item.availableAmount)}</TD>
                             <TD numeric className="text-muted">{item.invoiceLineCount} / {item.reversalCount}</TD>
                             <TD>
-                              <Button size="sm" variant="ghost" onClick={() => setSelected(item)}>التفاصيل</Button>
+                              <div className="flex flex-wrap gap-1">
+                                <Button size="sm" variant="ghost" onClick={() => setSelected(item)}>التفاصيل</Button>
+                                <Button
+                                  size="sm"
+                                  disabled={item.availableAmount === '0.00'}
+                                  onClick={() => openPayout(item)}
+                                >
+                                  صرف عمولة
+                                </Button>
+                              </div>
                             </TD>
                           </TR>
                         ))}
@@ -202,13 +292,61 @@ export function CommissionsView() {
                   </Card>
                 )}
 
-      {selected && branchId !== undefined ? (
+      {selected && branchId !== undefined && !payoutOpen ? (
         <Modal
           title={`تفاصيل عمولة ${selected.employeeName}`}
           className="max-w-[calc(100vw-2rem)] sm:max-w-6xl"
           onClose={() => setSelected(null)}
         >
-          <CommissionTrace summary={selected} branchId={branchId} month={month} onClose={() => setSelected(null)} />
+          <CommissionTrace
+            summary={selected}
+            branchId={branchId}
+            month={month}
+            onClose={() => setSelected(null)}
+            onPaid={selected.availableAmount !== '0.00' ? () => openPayout(selected, true) : undefined}
+          />
+        </Modal>
+      ) : null}
+
+      {payoutOpen && selected ? (
+        <Modal
+          title={`صرف عمولة ${selected.employeeName}`}
+          className="max-w-md"
+          onClose={closePayout}
+        >
+          <p className="text-[13px] text-muted">
+            المتاح للصرف هذا الشهر من كل الفروع: <span className="tabular font-semibold text-foreground">{money(selected.availableAmount)}</span>
+            . سيتم تسجيل مصروف «صرف عمولة» في الدرج.
+          </p>
+          <div className="mt-4 space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="payout-amount">المبلغ</Label>
+              <Input
+                id="payout-amount"
+                inputMode="decimal"
+                value={payoutAmount}
+                onChange={(event) => setPayoutAmount(event.target.value)}
+                aria-invalid={amountError ? true : undefined}
+              />
+              {amountError ? <FieldError>{amountError}</FieldError> : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="payout-reason">السبب (اختياري)</Label>
+              <Input
+                id="payout-reason"
+                value={payoutReason}
+                maxLength={200}
+                onChange={(event) => setPayoutReason(event.target.value)}
+              />
+            </div>
+            {summaryError ? <FieldError>{summaryError}</FieldError> : null}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" disabled={payout.isPending} onClick={closePayout}>إلغاء</Button>
+              <Button disabled={!canPayout} onClick={() => payout.mutate()}>
+                {payout.isPending ? 'جارٍ الصرف…' : 'تأكيد الصرف'}
+              </Button>
+            </div>
+          </div>
         </Modal>
       ) : null}
     </section>

@@ -1,6 +1,7 @@
 import {
   commissionListQuerySchema,
   commissionMonthParamsSchema,
+  commissionPayoutCreateSchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Response } from 'express';
 import { ZodError } from 'zod';
@@ -19,12 +20,23 @@ const handle = (error: unknown, response: Response, next: NextFunction) => {
     return;
   }
   if (error instanceof CommissionError) {
-    errorResponse(
-      response,
-      error.code === 'COMMISSION_FORBIDDEN' ? 403 : 404,
-      error.code,
-      error.code === 'COMMISSION_FORBIDDEN' ? 'غير مصرح بعرض العمولات' : 'سجل العمولة غير موجود',
-    );
+    const statusByCode: Record<CommissionError['code'], number> = {
+      COMMISSION_FORBIDDEN: 403,
+      COMMISSION_NOT_FOUND: 404,
+      COMMISSION_EMPLOYEE_NOT_FOUND: 404,
+      COMMISSION_INSUFFICIENT_AVAILABLE: 409,
+      COMMISSION_PAYROLL_FINALIZED: 409,
+      COMMISSION_SHIFT_NOT_OPEN: 409,
+    };
+    const messageByCode: Record<CommissionError['code'], string> = {
+      COMMISSION_FORBIDDEN: 'غير مصرح بعرض العمولات',
+      COMMISSION_NOT_FOUND: 'سجل العمولة غير موجود',
+      COMMISSION_EMPLOYEE_NOT_FOUND: 'الموظف غير موجود',
+      COMMISSION_INSUFFICIENT_AVAILABLE: 'المبلغ يتجاوز الرصيد المتاح من العمولة',
+      COMMISSION_PAYROLL_FINALIZED: 'لا يمكن صرف عمولة لشهر رواتب مُقفل',
+      COMMISSION_SHIFT_NOT_OPEN: 'يجب فتح درج الفرع قبل صرف العمولة',
+    };
+    errorResponse(response, statusByCode[error.code], error.code, messageByCode[error.code]);
     return;
   }
   if (error instanceof ErpBranchContextError) {
@@ -70,6 +82,20 @@ export const createCommissionRouter = (service: CommissionService) => {
           branchId,
         ),
       });
+    } catch (error) { handle(error, response, next); }
+  });
+
+  router.post('/:employeeId/:month/payouts', async (request, response, next) => {
+    try {
+      const params = commissionMonthParamsSchema.parse(request.params);
+      const body = commissionPayoutCreateSchema.parse(request.body);
+      const data = await service.createPayout(
+        actor(response),
+        params.employeeId,
+        params.month,
+        body,
+      );
+      response.status(201).json({ data });
     } catch (error) { handle(error, response, next); }
   });
   return router;

@@ -98,6 +98,8 @@ export const readPayrollReport = async (
     ['payrollMonth', 'شهر الراتب'], ['status', 'الحالة'], ['baseSalary', 'الراتب الأساسي'],
     ['proratedBase', 'الراتب المستحق'], ['overtimeAmount', 'قيمة الإضافي'], ['bonusAmount', 'المكافآت'],
     ['commissionAmount', 'العمولات'],
+    ['commissionPaidAmount', 'عمولة مصروفة'],
+    ['commissionCarryAmount', 'عمولة مرحلة للشهر التالي'],
     ['attendanceDeductionAmount', 'خصم الحضور'], ['manualDeductionAmount', 'الخصومات اليدوية'],
     ['commissionDeductionAmount', 'خصومات عمولات سابقة'],
     ['advanceAmount', 'أقساط السلف'], ['priorNegativeCarry', 'الرصيد السالب السابق'],

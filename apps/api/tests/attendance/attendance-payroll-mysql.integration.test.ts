@@ -3,6 +3,7 @@ import {
   attendanceDeniedAttempts,
   attendanceSessions,
   auditEvents,
+  employeeEmploymentPeriods,
   employees,
 } from '@capella/database/schema';
 import { eq } from 'drizzle-orm';
@@ -187,6 +188,50 @@ describe('MySQL-backed attendance payroll facts', () => {
         '2026-07-11', '2026-07-12', '2026-07-13', '2026-07-14', '2026-07-15',
         '2026-07-16', '2026-07-17', '2026-07-18', '2026-07-19',
       ],
+    });
+  });
+
+  it('does not require attendance on a deactivation date after reactivation', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    await database.insert(employeeEmploymentPeriods).values([
+      {
+        employeeId,
+        activeFrom: new Date('2026-07-17T06:00:00.000Z'),
+        activeTo: new Date('2026-07-18T12:00:00.000Z'),
+        createdAt: fixedNow,
+      },
+      {
+        employeeId,
+        activeFrom: new Date('2026-07-19T06:00:00.000Z'),
+        activeTo: null,
+        createdAt: fixedNow,
+      },
+    ]);
+    await database.insert(attendanceDailyRecords).values(['2026-07-17', '2026-07-19'].map((attendanceDate) => ({
+      employeeId,
+      branchId,
+      attendanceDate,
+      status: 'absence' as const,
+      absenceRequiredMinutes: 480,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    })));
+    const repo = repository();
+
+    await expect(repo.reconcileMissingDay({
+      employeeId, attendanceDate: '2026-07-18', resolution: 'absence',
+    })).rejects.toThrow('Attendance day is not missing');
+    await expect(database.transaction((transaction) => (
+      repo.readPayrollFacts(employeeId, '2026-07', transaction, 'preview')
+    ))).resolves.toEqual({
+      kind: 'ready',
+      facts: {
+        fullMonthWorkdays: 31,
+        eligibleWorkdays: 2,
+        requiredMinutes: 960,
+        overtimeMinutes: 0,
+        shortageMinutes: 960,
+      },
     });
   });
 

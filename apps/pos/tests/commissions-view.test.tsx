@@ -6,11 +6,13 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   detail: vi.fn(),
   branches: vi.fn(),
+  createPayout: vi.fn(),
 }));
 
 vi.mock('../src/features/commissions/api/commissions-api', () => ({
   listCommissions: mocks.list,
   getCommissionDetail: mocks.detail,
+  createCommissionPayout: mocks.createPayout,
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.branches,
@@ -26,6 +28,8 @@ const summary = {
   earnedAmount: '300.00',
   reversedAmount: '50.00',
   netAmount: '250.00',
+  paidAmount: '40.00',
+  availableAmount: '210.00',
   invoiceLineCount: 3,
   reversalCount: 1,
 };
@@ -43,6 +47,7 @@ const detail = {
     commissionRate: '10.00',
     amount: '10.00',
     reversalId: null,
+    reassignmentId: null,
     occurredAt: '2026-08-03T12:35:00.000Z',
   }, {
     id: 12,
@@ -56,7 +61,18 @@ const detail = {
     commissionRate: '10.00',
     amount: '-10.00',
     reversalId: 41,
+    reassignmentId: null,
     occurredAt: '2026-09-01T09:00:00.000Z',
+  }],
+  payouts: [{
+    id: 5,
+    employeeId: 7,
+    payrollMonth: '2026-08',
+    branchId: 2,
+    amount: '40.00',
+    expenseId: 9,
+    reason: 'دفعة جزئية',
+    createdAt: '2026-08-15T10:00:00.000Z',
   }],
 };
 
@@ -159,6 +175,100 @@ describe('CommissionsView', () => {
     expect(dialog.className).toContain('max-w-6xl');
     const table = await within(dialog).findByRole('table');
     expect(table.parentElement?.className).toContain('overflow-y-auto');
+  });
+
+  it('shows paid and available totals and posts a mid-month payout', async () => {
+    mocks.createPayout.mockResolvedValue({
+      payout: {
+        id: 6, employeeId: 7, payrollMonth: '2026-08', branchId: 2, amount: '50.00',
+        expenseId: 10, reason: null, createdAt: '2026-08-20T10:00:00.000Z',
+      },
+      summary: { ...summary, paidAmount: '90.00', availableAmount: '160.00' },
+    });
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+
+    expect(within(row).getByText(/40\.00/)).toBeDefined();
+    expect(within(row).getByText(/210\.00/)).toBeDefined();
+
+    fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
+    const dialog = await screen.findByRole('dialog', { name: /صرف عمولة سارة أحمد/ });
+    const amount = within(dialog).getByLabelText('المبلغ');
+    fireEvent.change(amount, { target: { value: '50.00' } });
+    fireEvent.change(within(dialog).getByLabelText('السبب (اختياري)'), {
+      target: { value: 'دفعة جزئية' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الصرف' }));
+
+    await waitFor(() => expect(mocks.createPayout).toHaveBeenCalledWith(7, expect.any(String), {
+      amount: '50.00', branchId: 2, reason: 'دفعة جزئية',
+    }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('returns to the list after canceling a row-started payout', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('returns to updated details after a details-started payout', async () => {
+    mocks.createPayout.mockResolvedValue({
+      payout: {
+        id: 6, employeeId: 7, payrollMonth: '2026-08', branchId: 2, amount: '50.00',
+        expenseId: 10, reason: null, createdAt: '2026-08-20T10:00:00.000Z',
+      },
+      summary: { ...summary, paidAmount: '90.00', availableAmount: '160.00' },
+    });
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
+    const details = await screen.findByRole('dialog');
+    fireEvent.click(within(details).getByRole('button', { name: 'صرف عمولة' }));
+    const payout = await screen.findByRole('dialog', { name: /صرف عمولة/ });
+    fireEvent.change(within(payout).getByLabelText('المبلغ'), { target: { value: '50.00' } });
+    fireEvent.click(within(payout).getByRole('button', { name: 'تأكيد الصرف' }));
+
+    const updatedDetails = await screen.findByRole('dialog', { name: /تفاصيل عمولة/ });
+    expect(within(updatedDetails).getByText(/160\.00/)).toBeDefined();
+  });
+
+  it('returns to details when a details-started payout is canceled', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
+    const details = await screen.findByRole('dialog');
+    fireEvent.click(within(details).getByRole('button', { name: 'صرف عمولة' }));
+    const payout = await screen.findByRole('dialog', { name: /صرف عمولة/ });
+    fireEvent.click(within(payout).getByRole('button', { name: 'إلغاء' }));
+
+    expect(await screen.findByRole('dialog', { name: /تفاصيل عمولة/ })).toBeDefined();
+  });
+
+  it('blocks a non-positive payout amount before calling the API', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
+    const dialog = await screen.findByRole('dialog', { name: /صرف عمولة سارة أحمد/ });
+    fireEvent.change(within(dialog).getByLabelText('المبلغ'), { target: { value: '00.00' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'تأكيد الصرف' }));
+
+    expect(screen.getByText('أدخل مبلغًا موجبًا بصيغة 0.00')).toBeDefined();
+    expect(mocks.createPayout).not.toHaveBeenCalled();
   });
 
   it('loads every branch page and offers retry when totals fail', async () => {

@@ -1,4 +1,4 @@
-import type { CommissionDetail, CommissionSummary } from '@capella/contracts';
+import type { CommissionDetail, CommissionPayoutCreate, CommissionSummary } from '@capella/contracts';
 
 import { api, type PageMeta } from '@/lib/api/client';
 
@@ -25,5 +25,16 @@ export function listCommissions(
 export function getCommissionDetail(employeeId: number, month: string, branchId: number) {
   return api.get<CommissionDetail>(
     `/erp/commissions/${encodeURIComponent(String(employeeId))}/${encodeURIComponent(month)}?branchId=${encodeURIComponent(String(branchId))}`,
+  );
+}
+
+export function createCommissionPayout(
+  employeeId: number,
+  month: string,
+  input: CommissionPayoutCreate,
+) {
+  return api.post<{ payout: CommissionDetail['payouts'][number]; summary: CommissionSummary }>(
+    `/erp/commissions/${encodeURIComponent(String(employeeId))}/${encodeURIComponent(month)}/payouts`,
+    input,
   );
 }

@@ -26,7 +26,7 @@ export type ExpenseErrorCode = 'EXPENSE_NOT_FOUND' | 'EXPENSE_ALREADY_CORRECTED'
 const messages: Record<ExpenseErrorCode, string> = {
   EXPENSE_NOT_FOUND: 'المصروف غير موجود',
   EXPENSE_ALREADY_CORRECTED: 'تم تصحيح هذا المصروف من قبل',
-  EXPENSE_CORRECTION_TARGET_INVALID: 'لا يمكن تصحيح قيد عكسي',
+  EXPENSE_CORRECTION_TARGET_INVALID: 'لا يمكن تصحيح مصروف مرتبط بسلفة أو صرف عمولة، أو قيد عكسي',
 };
 export class ExpenseError extends Error {
   constructor(public readonly code: ExpenseErrorCode) { super(messages[code]); this.name = 'ExpenseError'; }

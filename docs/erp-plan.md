@@ -190,7 +190,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Commission base | **Pre-discount sale unit price.** For open-price services this is the seller-entered price. Discounts are the shop's cost, never the employee's — invoice discounts don't touch the commission ledger |
 | Roles | **Admin + Cashier only, final.** Admin = full (HR + ERP); Cashier = ERP/POS login only, HR rejects it; employees = HR attendance/self-service only (§6) |
 | Refund after payroll finalized | Becomes an HR **deduction** for the employee (submitted via public capability). Employees can **view their commission totals** |
-| Invoice numbers | `INV-YYYY.MM.DD-HH.MM-<seq>` in Cairo time; `<seq>` is a daily incrementing counter; gaps from rolled-back transactions are acceptable (numbers are never reused) |
+| Invoice numbers | One global increasing sequence, formatted as a numeric string with a minimum width of six digits (for example, `000001`); numbers do not reset each day, and gaps from rolled-back sales are acceptable because numbers are never reused |
 | E-invoice/ETA compliance | **Out of scope** — no legal/government integration |
 | Cashier sessions | Open/close and a printable end-of-shift report record cashier, branch, duration, sales, returns, discounts, tax, net sales, expenses, collections, credit sales, and net totals per payment method. There is still no cash-drawer counting or reconciliation; the drawer is trusted |
 | Voids & refunds | Performed by cashier **or** admin (no approval hierarchy), always recorded with acting account. For a refund, the cashier freely splits the cash payout across Cash, Visa, InstaPay, and Vodafone Cash, independently of the original tenders. Refund of a product line restores stock; any refund appends commission reversal entries (§8) |
@@ -216,6 +216,8 @@ These are architectural invariants, not features — the sales module is designe
 ### Commission ledger, not direct bonus rows
 
 Commissions are **ERP-owned** in an **immutable, append-only ledger**: one earned entry per service line for that line's assigned employee, snapshotting the rule and rate that applied. Refunds append reversal entries. A permitted post-sale employee correction appends reassignment-out and reassignment-in entries instead of erasing the original assignment. Every completed service sale or pre-finalization reversal/reassignment transactionally refreshes the affected HR-owned payroll inputs containing each employee/month's current **net** commission. Their deterministic identities make retries idempotent and keep open payroll previews current. Payroll finalization snapshots the value into the immutable payroll row. If a later refund targets a month whose payroll is already finalized, ERP leaves the snapshot untouched and submits one idempotent HR deduction in the Cairo month of the reversal. Payroll never reads or writes ERP tables directly; ERP uses HR-core public projection and deduction capabilities while the immutable ERP ledger remains the traceable source.
+
+Admins can pay any part of currently available commission before payroll finalization. Each payout requires an open cashier shift in the paying branch and atomically creates a linked cash expense and audit event. Payroll shows gross commission and the amount already paid separately. If a later refund makes commission smaller than payouts, the excess is carried against future commission instead of reducing base salary; prior commission reversals use the same carry. The general expense correction screen cannot alter a linked payout expense.
 
 Why not insert ordinary bonus rows at sale time: they lose refund reversibility, historical rate context, deterministic replacement under retries, and the audit path from salary back to invoice. The dedicated live input can be updated only until payroll finalization; the immutable ERP ledger remains the source of the calculated total.
 
@@ -271,7 +273,7 @@ Related mutations invalidate their owning data and every affected downstream vie
 
 ## 9. ERP module group status
 
-The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final backend module delivered in ERP19, ERP20 integrated the workflows into the hardened Admin experience, ERP21 delivered the named runtime editions, and ERP22 delivered the multi-frontend production boundary. Remaining work is deployment and environment validation rather than delivery or composition of the modules listed here:
+The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching schema folders in `packages/database/src/schema/` and contracts in `packages/contracts`. The `erp-reports` module was the final backend module delivered in ERP19, ERP20 integrated the workflows into the hardened Admin experience, ERP21 delivered the named runtime editions, and ERP22 delivered the multi-frontend production boundary. Section 10 still tracks documentation and validation work for void/refund semantics, the offline sale queue, and invoice numbering, as well as the printing decision and deployment validation:
 
 | Module | Purpose |
 |---|---|
@@ -287,22 +289,15 @@ Plus: `apps/pos` (new Next.js frontend), the account/role model in HR core (§6)
 
 ---
 
-## 10. Open questions & Step 2 design work
+## 10. Remaining design and validation work
 
-All owner-level questions from the original list are now **answered and locked in §7** (rounds recorded 2026-07-29). What remains falls into two small buckets:
+The ERP schemas, POS sale flow, employee commission visibility, void/refund endpoints, offline sale queue, and global invoice allocator are implemented. The remaining work is:
 
-### Genuinely open (deferred by the owner)
-
-1. **Thermal printing mechanism** — browser print CSS vs a local print agent. Deferred until printer hardware is chosen; the invoice/receipt data model does not depend on it. Default when building: browser print CSS first, agent only if the hardware demands it.
-
-### Step 2 design deliverables (direction decided; completed items are marked)
-
-2. **Full Drizzle schemas** for every ERP table + the accounts/roles migration in HR core (including retiring the `admin_credentials` singleton).
-3. **Void vs refund definitions** — the *authority* is decided (§7: cashier or admin, no hierarchy); the exact semantics to draft: void = same-day full cancellation, refund = full or partial after the fact; both reverse stock (products) and append commission reversals.
-4. **POS screen flow** (delivered): search/pick client → add service/product lines → assign a checked-in employee independently to each service line (with an optional default) → discount/tax if any → mixed payment entry → complete (one transaction) → print/reprint. Product-only sales skip employee assignment and may leave an open balance for later payments; service sales must be settled in full.
-5. **Employee commission visibility — delivered in ERP17:** employees see their own monthly earned, reversed, and net totals in HR self-service through a public capability; Admins get branch/month totals and invoice-line/reversal traceability in the POS.
-6. **Offline queue design** — the §7/§8 local-queue-with-idempotency-keys mechanism, drafted concretely (storage, replay, failure UX at the counter).
-7. **Invoice sequence implementation** — the daily counter behind `INV-YYYY.MM.DD-HH.MM-<seq>` (same singleton-sequence pattern the repo already uses for `employee_code_sequence`).
+1. **Thermal printing mechanism** — choose browser print CSS or a local print agent once printer hardware is known.
+2. **Void and refund semantics** — reconcile the written operating rules with the implemented same-day full void and full/partial refund behavior, including stock restoration and commission reversals.
+3. **Offline queue** — document and validate the implemented local storage, replay, and failure experience at the counter against §7/§8.
+4. **Invoice sequence** — validate the implemented global, non-reusable numeric sequence in the deployment environment and reconcile any remaining legacy daily-sequence references.
+5. **Deployment and environment validation** — verify these workflows with the target infrastructure and hardware.
 
 ---
 

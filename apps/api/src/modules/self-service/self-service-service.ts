@@ -28,6 +28,8 @@ export type SelfServiceDependencies = {
       earnedAmount: string;
       reversedAmount: string;
       netAmount: string;
+      paidAmount: string;
+      availableAmount: string;
       invoiceLineCount: number;
       reversalCount: number;
     } | null>;
@@ -93,6 +95,8 @@ const projectPayroll = (record: PayrollRecord) => ({
   overtimeAmount: record.overtimeAmount,
   bonusAmount: record.bonusAmount,
   commissionAmount: record.commissionAmount,
+  commissionPaidAmount: record.commissionPaidAmount,
+  commissionCarryAmount: record.commissionCarryAmount,
   attendanceDeductionAmount: record.attendanceDeductionAmount,
   manualDeductionAmount: record.manualDeductionAmount,
   commissionDeductionAmount: record.commissionDeductionAmount,
@@ -160,6 +164,8 @@ export const createSelfServiceService = (dependencies: SelfServiceDependencies) 
       earnedAmount: summary.earnedAmount,
       reversedAmount: summary.reversedAmount,
       netAmount: summary.netAmount,
+      paidAmount: summary.paidAmount,
+      availableAmount: summary.availableAmount,
       invoiceLineCount: summary.invoiceLineCount,
       reversalCount: summary.reversalCount,
     };

@@ -36,6 +36,8 @@ function PayrollBreakdownRow({ record }: { record: PayrollRecord }) {
     ['مبلغ الوقت الإضافي', formatMoney(record.overtimeAmount)],
     ['المكافآت', formatMoney(record.bonusAmount)],
     ['العمولات', formatMoney(record.commissionAmount)],
+    ['عمولة مصروفة', formatMoney(record.commissionPaidAmount)],
+    ['عمولة مرحلة للشهر التالي', formatMoney(record.commissionCarryAmount)],
     ['خصومات الحضور', formatMoney(record.attendanceDeductionAmount)],
     ['الخصومات اليدوية', formatMoney(record.manualDeductionAmount)],
     ['خصومات عمولات سابقة', formatMoney(record.commissionDeductionAmount)],

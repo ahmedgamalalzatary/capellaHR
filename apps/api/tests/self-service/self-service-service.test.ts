@@ -72,7 +72,7 @@ const makeDependencies = () => ({
       id: 9, employeeId: 7, employeeCode: 42, employeeName: employee.fullName,
       branchId: 3, branchName: branch.name, payrollMonth: '2026-06', status: 'finalized' as const,
       baseSalary: '5000.00', proratedBase: '5000.00', overtimeAmount: '0.00', bonusAmount: '100.00',
-      commissionAmount: '300.00', attendanceDeductionAmount: '0.00', manualDeductionAmount: '20.00',
+      commissionAmount: '300.00', commissionPaidAmount: '0.00', commissionCarryAmount: '0.00', attendanceDeductionAmount: '0.00', manualDeductionAmount: '20.00',
       commissionDeductionAmount: '50.00', advanceAmount: '200.00',
       priorNegativeCarry: '0.00', netSalary: '4880.00', eligibleWorkdays: 20, fullMonthWorkdays: 20,
       requiredMinutes: 9600, overtimeMinutes: 0, shortageMinutes: 0,
@@ -85,7 +85,7 @@ const makeDependencies = () => ({
   commissions: { getMonthlySummary: vi.fn(async () => ({
     employeeId: 7, employeeCode: 42, employeeName: employee.fullName,
     payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
-    netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
+    netAmount: '250.00', paidAmount: '100.00', availableAmount: '150.00', invoiceLineCount: 3, reversalCount: 1,
   })) },
 });
 
@@ -96,7 +96,7 @@ describe('employee self-service service', () => {
 
     await expect(service.getCommissionMonth(7, '2026-08')).resolves.toEqual({
       available: true, payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
-      netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
+      netAmount: '250.00', paidAmount: '100.00', availableAmount: '150.00', invoiceLineCount: 3, reversalCount: 1,
     });
     expect(dependencies.commissions.getMonthlySummary).toHaveBeenCalledWith(7, '2026-08');
   });

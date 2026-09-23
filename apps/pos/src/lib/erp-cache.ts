@@ -10,6 +10,7 @@ const roots = {
   commissions: ['erp-commissions'],
   reports: ['erp-reports'],
   bookings: ['erp-bookings'],
+  cashierSessions: ['cashier-sessions'],
 } as const;
 
 export type ErpMutationEffect =
@@ -19,16 +20,18 @@ export type ErpMutationEffect =
   | 'reversal'
   | 'purchase'
   | 'expense'
-  | 'product';
+  | 'product'
+  | 'commission';
 
 const affected: Record<ErpMutationEffect, ReadonlyArray<keyof typeof roots>> = {
   catalog: ['catalog', 'reports'],
   client: ['clients', 'reports'],
-  sale: ['sales', 'clients', 'products', 'commissions', 'reports', 'bookings'],
-  reversal: ['sales', 'clients', 'products', 'commissions', 'reports'],
+  sale: ['sales', 'clients', 'products', 'commissions', 'reports', 'bookings', 'cashierSessions'],
+  reversal: ['sales', 'clients', 'products', 'commissions', 'reports', 'cashierSessions'],
   purchase: ['suppliers', 'products', 'reports'],
-  expense: ['expenses', 'reports'],
+  expense: ['expenses', 'reports', 'cashierSessions'],
   product: ['products', 'reports'],
+  commission: ['commissions', 'expenses', 'reports', 'cashierSessions'],
 };
 
 export const invalidateErpCaches = (

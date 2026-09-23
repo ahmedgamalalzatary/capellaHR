@@ -10,16 +10,19 @@ import {
   employeeSalaryPeriods,
   employees,
   erpCommissionPayrollInputs,
+  erpCommissionPayouts,
   erpPostPayrollDeductions,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, asc, desc, eq, inArray, lt, lte, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, lte, notExists, or, sql } from 'drizzle-orm';
 
 import {
   calculatePayroll,
+  addPayrollMonths,
   calendarMonthInTimeZone,
   isPayrollSnapshotAmount,
   payrollMonthStart,
+  settleCommission,
 } from './payroll-domain.js';
 import {
   createFinancialContext,
@@ -58,6 +61,8 @@ const payrollFields = {
   baseSalary: payrollMonths.baseSalary, proratedBase: payrollMonths.proratedBase,
   overtimeAmount: payrollMonths.overtimeAmount, bonusAmount: payrollMonths.bonusAmount,
   commissionAmount: payrollMonths.commissionAmount,
+  commissionPaidAmount: payrollMonths.commissionPaidAmount,
+  commissionCarryAmount: payrollMonths.commissionCarryAmount,
   attendanceDeductionAmount: payrollMonths.attendanceDeductionAmount,
   manualDeductionAmount: payrollMonths.manualDeductionAmount,
   commissionDeductionAmount: payrollMonths.commissionDeductionAmount,
@@ -113,6 +118,67 @@ const sumAmount = async (
   .from(table).where(and(
     eq(table.employeeId, employeeId), eq(table.payrollMonth, payrollMonthStart(month)),
   )))[0]?.value ?? '0.00';
+
+const sumCommissionPayouts = async (
+  executor: Executor,
+  employeeId: number,
+  month: string,
+) => (await executor.select({ value: sql<string>`coalesce(sum(${erpCommissionPayouts.amount}), 0.00)` })
+  .from(erpCommissionPayouts).where(and(
+    eq(erpCommissionPayouts.employeeId, employeeId),
+    eq(erpCommissionPayouts.commissionMonth, payrollMonthStart(month)),
+  )))[0]?.value ?? '0.00';
+
+const priorCommissionCarry = async (executor: Executor, employeeId: number, month: string) => {
+  const previous = (await executor.select({
+    month: payrollMonths.payrollMonth, carry: payrollMonths.commissionCarryAmount,
+  }).from(payrollMonths)
+    .where(and(eq(payrollMonths.employeeId, employeeId), lt(payrollMonths.payrollMonth, payrollMonthStart(month))))
+    .orderBy(desc(payrollMonths.payrollMonth)).limit(1)
+  )[0];
+  const start = previous ? payrollMonthStart(addPayrollMonths(previous.month.slice(0, 7), 1)) : undefined;
+  const withinOpenMonths = (column: typeof erpCommissionPayrollInputs.payrollMonth) => and(
+    eq(erpCommissionPayrollInputs.employeeId, employeeId),
+    lt(column, payrollMonthStart(month)),
+    ...(start ? [gte(column, start)] : []),
+  );
+  const [earned, paid, reversals] = await Promise.all([
+    executor.select({ month: erpCommissionPayrollInputs.payrollMonth, amount: erpCommissionPayrollInputs.amount })
+      .from(erpCommissionPayrollInputs).where(withinOpenMonths(erpCommissionPayrollInputs.payrollMonth)),
+    executor.select({ month: erpCommissionPayouts.commissionMonth, amount: erpCommissionPayouts.amount })
+      .from(erpCommissionPayouts).where(and(
+        eq(erpCommissionPayouts.employeeId, employeeId),
+        lt(erpCommissionPayouts.commissionMonth, payrollMonthStart(month)),
+        ...(start ? [gte(erpCommissionPayouts.commissionMonth, start)] : []),
+      )),
+    executor.select({ month: erpPostPayrollDeductions.payrollMonth, amount: erpPostPayrollDeductions.amount })
+      .from(erpPostPayrollDeductions).where(and(
+        eq(erpPostPayrollDeductions.employeeId, employeeId),
+        lt(erpPostPayrollDeductions.payrollMonth, payrollMonthStart(month)),
+        ...(start ? [gte(erpPostPayrollDeductions.payrollMonth, start)] : []),
+      )),
+  ]);
+  const months = new Map<string, { earned: bigint; paid: bigint; reversals: bigint }>();
+  const rowFor = (key: string) => {
+    const existing = months.get(key);
+    if (existing) return existing;
+    const created = { earned: 0n, paid: 0n, reversals: 0n };
+    months.set(key, created);
+    return created;
+  };
+  for (const row of earned) rowFor(row.month).earned += BigInt(row.amount.replace('.', ''));
+  for (const row of paid) rowFor(row.month).paid += BigInt(row.amount.replace('.', ''));
+  for (const row of reversals) rowFor(row.month).reversals += BigInt(row.amount.replace('.', ''));
+  let carry = previous?.carry ?? '0.00';
+  for (const [, row] of [...months].sort(([left], [right]) => left.localeCompare(right))) {
+    const money = (cents: bigint) => `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
+    carry = settleCommission({
+      earned: money(row.earned), paid: money(row.paid),
+      priorCarry: carry, reversals: money(row.reversals),
+    }).carry;
+  }
+  return carry;
+};
 
 const salaryForMonth = async (
   transaction: Transaction,
@@ -170,7 +236,9 @@ const compute = async (
     bonusAmount,
     commissionAmount,
     manualDeductionAmount,
-    commissionDeductionAmount,
+    postPayrollDeductionAmount,
+    payoutAmount,
+    priorCommissionCarryAmount,
     advanceAmount,
     carry,
     deactivationAdjustmentAmount,
@@ -180,17 +248,28 @@ const compute = async (
     sumAmount(transaction, erpCommissionPayrollInputs, employee.id, month),
     sumAmount(transaction, deductions, employee.id, month),
     sumAmount(transaction, erpPostPayrollDeductions, employee.id, month),
+    sumCommissionPayouts(transaction, employee.id, month),
+    priorCommissionCarry(transaction, employee.id, month),
     sumAmount(transaction, advanceInstallments, employee.id, month),
     priorCarry(transaction, employee.id, month),
     sumAmount(transaction, employeeDeactivationAdjustments, employee.id, month),
   ]);
+  const settledCommission = settleCommission({
+    earned: commissionAmount,
+    paid: payoutAmount,
+    priorCarry: priorCommissionCarryAmount,
+    reversals: postPayrollDeductionAmount,
+  });
+  const commissionDeductionAmount = settledCommission.priorRecovery;
+  const commissionPaidAmount = payoutAmount;
+  const commissionCarryAmount = settledCommission.carry;
   const calculated = calculatePayroll({
     baseSalary,
     ...attendanceResult.facts,
     bonuses: bonusAmount,
-    commission: commissionAmount,
+    commission: settledCommission.payable,
     deductions: manualDeductionAmount,
-    commissionDeductions: commissionDeductionAmount,
+    commissionDeductions: '0.00',
     advances: advanceAmount,
     priorNegativeCarry: carry,
     deactivationAdjustment: deactivationAdjustmentAmount,
@@ -201,6 +280,8 @@ const compute = async (
     calculated.overtimeAmount,
     bonusAmount,
     commissionAmount,
+    commissionPaidAmount,
+    commissionCarryAmount,
     calculated.attendanceDeductionAmount,
     manualDeductionAmount,
     commissionDeductionAmount,
@@ -221,7 +302,7 @@ const compute = async (
       id: 0, employeeId: employee.id, employeeCode: employee.employeeCode,
       employeeName: employee.fullName, branchId, branchName,
       payrollMonth: month, status: 'open', baseSalary,
-      ...calculated, bonusAmount, commissionAmount, manualDeductionAmount,
+      ...calculated, bonusAmount, commissionAmount, commissionPaidAmount, commissionCarryAmount, manualDeductionAmount,
       commissionDeductionAmount, advanceAmount,
       priorNegativeCarry: carry, deactivationAdjustmentAmount, ...attendanceResult.facts, finalizedAt: null,
     },
@@ -239,6 +320,8 @@ const insertFinalized = async (
     status: 'finalized', baseSalary: payroll.baseSalary, proratedBase: payroll.proratedBase,
     overtimeAmount: payroll.overtimeAmount, bonusAmount: payroll.bonusAmount,
     commissionAmount: payroll.commissionAmount,
+    commissionPaidAmount: payroll.commissionPaidAmount,
+    commissionCarryAmount: payroll.commissionCarryAmount,
     attendanceDeductionAmount: payroll.attendanceDeductionAmount,
     manualDeductionAmount: payroll.manualDeductionAmount,
     commissionDeductionAmount: payroll.commissionDeductionAmount,

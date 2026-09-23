@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getPage: vi.fn(), get: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getPage: vi.fn(), get: vi.fn(), post: vi.fn() }));
 vi.mock('../src/lib/api/client', () => ({ api: mocks }));
 
-import { getCommissionDetail, listCommissions } from '../src/features/commissions';
+import { createCommissionPayout, getCommissionDetail, listCommissions } from '../src/features/commissions';
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -24,5 +24,18 @@ describe('commissions API', () => {
     await getCommissionDetail(7, '2026-08', 2);
 
     expect(mocks.get).toHaveBeenCalledWith('/erp/commissions/7/2026-08?branchId=2');
+  });
+
+  it('posts a mid-month payout with amount, branch and reason', async () => {
+    mocks.post.mockResolvedValue({});
+
+    await createCommissionPayout(7, '2026-08', {
+      amount: '50.00', branchId: 2, reason: 'دفعة جزئية',
+    });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      '/erp/commissions/7/2026-08/payouts',
+      { amount: '50.00', branchId: 2, reason: 'دفعة جزئية' },
+    );
   });
 });

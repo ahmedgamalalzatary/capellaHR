@@ -278,6 +278,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
       })
     : undefined;
   const commissionModule = enabled('erp-commissions') ? createCommissionModule(database, {
+    audit: auditModule.erp,
     branches: branchModule.erp,
     employees: employeeModule.erp,
   }) : undefined;

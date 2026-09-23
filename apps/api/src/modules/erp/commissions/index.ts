@@ -1,3 +1,4 @@
+export * from './commission-domain.js';
 export * from './commission-module.js';
 export * from './commission-repository.js';
 export * from './commission-router.js';

@@ -1,0 +1,2 @@
+ALTER TABLE `payroll_months` ADD `commission_paid_amount` decimal(14,2) DEFAULT '0.00' NOT NULL;--> statement-breakpoint
+ALTER TABLE `payroll_months` ADD `commission_carry_amount` decimal(14,2) DEFAULT '0.00' NOT NULL;

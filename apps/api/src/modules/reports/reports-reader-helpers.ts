@@ -142,6 +142,8 @@ export const payrollReportRow = (row: SuccessfulPayroll, isEmployeeDeleted: bool
   overtimeAmount: row.overtimeAmount,
   bonusAmount: row.bonusAmount,
   commissionAmount: row.commissionAmount,
+  commissionPaidAmount: row.commissionPaidAmount,
+  commissionCarryAmount: row.commissionCarryAmount,
   attendanceDeductionAmount: row.attendanceDeductionAmount,
   manualDeductionAmount: row.manualDeductionAmount,
   commissionDeductionAmount: row.commissionDeductionAmount,

@@ -327,6 +327,7 @@ function PayrollSection() {
                   {([
                     ['الراتب الأساسي', query.data.baseSalary], ['بعد الاستحقاق', query.data.proratedBase],
                     ['الوقت الإضافي', query.data.overtimeAmount], ['المكافآت', query.data.bonusAmount], ['العمولات', query.data.commissionAmount],
+                    ['عمولة مصروفة', query.data.commissionPaidAmount], ['عمولة مرحلة للشهر التالي', query.data.commissionCarryAmount],
                     ['خصم الحضور', query.data.attendanceDeductionAmount], ['الخصومات اليدوية', query.data.manualDeductionAmount],
                     ['خصومات عمولات سابقة', query.data.commissionDeductionAmount], ['السلف', query.data.advanceAmount], ['الترحيل السابق', query.data.priorNegativeCarry],
                   ] as Array<[string, string]>).map(([label, amount]) => <div key={label} className="flex justify-between gap-3"><dt className="text-muted">{label}</dt><dd className="tabular">{formatMoney(amount)}</dd></div>)}
@@ -372,6 +373,8 @@ function CommissionsSection() {
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                   <div className="flex justify-between gap-3"><dt className="text-muted">العمولة المكتسبة</dt><dd className="tabular">{formatMoney(query.data.earnedAmount)}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-muted">العمولة المعكوسة</dt><dd className="tabular">{formatMoney(query.data.reversedAmount)}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-muted">المدفوع</dt><dd className="tabular">{formatMoney(query.data.paidAmount)}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-muted">المتاح للصرف</dt><dd className="tabular">{formatMoney(query.data.availableAmount)}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-muted">بنود الخدمات</dt><dd className="tabular">{query.data.invoiceLineCount}</dd></div>
                   <div className="flex justify-between gap-3"><dt className="text-muted">عمليات الاسترداد</dt><dd className="tabular">{query.data.reversalCount}</dd></div>
                 </dl>

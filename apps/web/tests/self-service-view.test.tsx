@@ -94,6 +94,7 @@ beforeEach(() => {
   mocks.getPayrollMonth.mockResolvedValue({
     payrollMonth: '2026-06', status: 'finalized', baseSalary: '5000.00', proratedBase: '5000.00',
     overtimeAmount: '100.00', bonusAmount: '75.00', commissionAmount: '300.00',
+    commissionPaidAmount: '40.00', commissionCarryAmount: '0.00',
     attendanceDeductionAmount: '25.00', manualDeductionAmount: '20.00', commissionDeductionAmount: '50.00',
     advanceAmount: '500.00', priorNegativeCarry: '0.00', netSalary: '4880.00', eligibleWorkdays: 26,
     fullMonthWorkdays: 26, requiredMinutes: 12480, overtimeMinutes: 60, shortageMinutes: 0,
@@ -101,7 +102,7 @@ beforeEach(() => {
   });
   mocks.getCommissionMonth.mockResolvedValue({
     available: true, payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
-    netAmount: '250.00', invoiceLineCount: 3, reversalCount: 1,
+    netAmount: '250.00', paidAmount: '100.00', availableAmount: '150.00', invoiceLineCount: 3, reversalCount: 1,
   });
   mocks.listBonuses.mockResolvedValue(pageOf([{ id: 1, payrollMonth: '2026-07', amount: '100.00', createdAt: '', updatedAt: '' }]));
   mocks.listDeductions.mockResolvedValue(pageOf([{
@@ -281,6 +282,7 @@ describe('SelfServiceView', () => {
 
     expect(await screen.findByText('خصومات عمولات سابقة')).toBeDefined();
     expect(screen.getAllByText('العمولات')).toHaveLength(2);
+    expect(screen.getByText('عمولة مصروفة')).toBeDefined();
   });
 
   it('shows the employee own monthly earned, reversed, and net commission totals', async () => {
@@ -295,6 +297,8 @@ describe('SelfServiceView', () => {
     expect(await screen.findByText(/250\.00/)).toBeDefined();
     expect(screen.getByText(/300\.00/)).toBeDefined();
     expect(screen.getByText(/^50\.00/)).toBeDefined();
+    expect(screen.getByText('المدفوع')).toBeDefined();
+    expect(screen.getByText('المتاح للصرف')).toBeDefined();
   });
 
   it('marks commissions unavailable instead of reporting fabricated zero totals in HR-only mode', async () => {
