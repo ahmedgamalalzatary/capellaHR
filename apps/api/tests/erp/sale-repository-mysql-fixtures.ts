@@ -16,10 +16,11 @@ import { eq } from 'drizzle-orm';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 import { createMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
-export const database = createMysqlIntegrationDatabase();
+export const createSaleRepositoryMysqlFixtures = () => {
+  const database = createMysqlIntegrationDatabase();
 
-let sequence = 0;
-export const fixture = async () => {
+  let sequence = 0;
+  const fixture = async () => {
   sequence += 1;
   const uniqueNumber = Math.floor(Math.random() * 80_000_000) + 10_000_000;
   const employeeCode = 1_500_000_000 + uniqueNumber;
@@ -126,7 +127,7 @@ export const fixture = async () => {
   };
 };
 
-export const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): CompleteSaleOperation => ({
+  const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): CompleteSaleOperation => ({
   input: {
     branchId: data.branchId,
     clientId: data.clientId,
@@ -154,5 +155,8 @@ export const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string
     fullName: `Employee ${data.marker}`,
     branchId: data.branchId,
   }],
-});
+  });
+
+  return { database, fixture, operation };
+};
 
