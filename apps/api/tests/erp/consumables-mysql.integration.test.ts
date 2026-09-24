@@ -1,7 +1,7 @@
 import {
   accounts, branches, cashierSessions, clients, commissionLedgerEntries, employees, erpCategories,
   erpConsumableBalances, erpConsumableConfigurations, erpConsumableLedgerEntries, erpProducts, erpProductStocks,
-  erpServices, erpStockMovements, invoiceLineReassignments, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
+  erpServices, erpStockMovements, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
   serviceConsumptionUsages, serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, eq } from 'drizzle-orm';
@@ -82,11 +82,13 @@ describe('consumables MySQL inventory integration', () => {
     await database.insert(commissionLedgerEntries).values({ invoiceId, invoiceLineId: lineId, employeeId, actingAccountId: accountId, entryType: 'earned', commissionRuleSnapshot: 'service_default', commissionRateSnapshot: '0.00', baseAmount: '300.00', amount: '0.00', createdAt: at });
     await database.update(invoices).set({ status: 'completed', amountPaid: '300.00', settlementStatus: 'settled' }).where(eq(invoices.id, invoiceId));
     const queueIds: number[] = [];
-    for (let queueNumber = 1; queueNumber <= 3; queueNumber += 1) queueIds.push(Number((await database.insert(serviceQueueEntries).values({ invoiceId, invoiceLineId: lineId, branchId: data.branchId, cashierSessionId: sessionId, serviceId, queueNumber, createdAt: at }))[0].insertId));
+    for (let queueNumber = 1; queueNumber <= 3; queueNumber += 1) queueIds.push(Number((await database.insert(serviceQueueEntries).values({ invoiceId, invoiceLineId: lineId, branchId: data.branchId, cashierSessionId: sessionId, serviceId, employeeId, queueNumber, createdAt: at }))[0].insertId));
     const reassignedEmployeeId = Number((await database.insert(employees).values({ employeeCode: 900002, fullName: 'Reassigned Employee', personalPhone: '01000000002', whatsappPhone: '01000000002', pinHash: 'unused', age: 26, address: 'Cairo', branchId: data.branchId, shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00', createdAt: at, updatedAt: at }))[0].insertId);
-    await database.insert(invoiceLineReassignments).values({ invoiceId, invoiceLineId: lineId, branchId: data.branchId, fromEmployeeId: employeeId, toEmployeeId: reassignedEmployeeId, reason: 'Actual performer', operationReference: crypto.randomUUID(), actingAccountId: accountId, createdAt: at });
-    expect((await repository.listServices(data.branchId, { status: 'pending', employeeId: reassignedEmployeeId, page: 1, pageSize: 20 })).items)
-      .toEqual(expect.arrayContaining([expect.objectContaining({ employeeId: reassignedEmployeeId, employeeName: 'Reassigned Employee' })]));
+    await database.update(serviceQueueEntries).set({ employeeId: reassignedEmployeeId })
+      .where(eq(serviceQueueEntries.id, queueIds[1]!));
+    const assigned = (await repository.listServices(data.branchId, { status: 'pending', employeeId: reassignedEmployeeId, page: 1, pageSize: 20 })).items;
+    expect(assigned.map((item) => (item as { id: number }).id)).toEqual([queueIds[1]]);
+    expect(assigned[0]).toMatchObject({ employeeId: reassignedEmployeeId, employeeName: 'Reassigned Employee' });
     expect((await repository.listServices(data.branchId, { status: 'unfinished', page: 1, pageSize: 20 })).total).toBe(3);
 
     await expect(repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Too early', usages: [] }))

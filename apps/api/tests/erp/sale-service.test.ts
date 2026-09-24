@@ -100,6 +100,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
   const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(invoice);
   const reverse = vi.fn<SaleRepository['reverse']>().mockResolvedValue(invoice);
   const reassignLine = vi.fn<SaleRepository['reassignLine']>().mockResolvedValue(invoice);
+  const reassignQueue = vi.fn<SaleRepository['reassignQueue']>().mockResolvedValue(invoice);
   const recordPayment = vi.fn<SaleRepository['recordPayment']>().mockResolvedValue(invoice);
   const listClientVisits = vi.fn().mockResolvedValue({ items: [], total: 0 });
   const listInvoices = vi.fn().mockResolvedValue({ items: [], total: 0 });
@@ -110,6 +111,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
     complete: completeRepository,
     reverse,
     reassignLine,
+    reassignQueue,
     recordPayment,
     listClientVisits,
     listInvoices,

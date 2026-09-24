@@ -232,6 +232,7 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
   branchId: int('branch_id').notNull(),
   cashierSessionId: int('cashier_session_id').notNull(),
   serviceId: int('service_id').notNull(),
+  employeeId: int('employee_id').notNull(),
   queueNumber: int('queue_number').notNull(),
   status: mysqlEnum('status', serviceQueueStatuses).notNull().default('pending'),
   completedAt: timestamp('completed_at', { mode: 'date', fsp: 3 }),
@@ -253,6 +254,11 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
     columns: [table.serviceId, table.branchId],
     foreignColumns: [erpServices.id, erpServices.branchId],
   }),
+  foreignKey({
+    name: 'erp_service_queue_employee_branch_fk',
+    columns: [table.employeeId, table.branchId],
+    foreignColumns: [employees.id, employees.branchId],
+  }),
   uniqueIndex('erp_service_queue_session_service_number_unique')
     .on(table.cashierSessionId, table.serviceId, table.queueNumber),
   uniqueIndex('erp_service_queue_line_number_unique')
@@ -264,6 +270,27 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
     'erp_service_queue_completion_consistent',
     sql`(${table.status} in ('pending', 'in_progress', 'overdue', 'canceled') and ${table.completedAt} is null and ${table.completedByAccountId} is null) or (${table.status} = 'completed' and ${table.completedAt} is not null and ${table.completedByAccountId} is not null)`,
   ),
+]);
+
+export const serviceQueueReassignments = mysqlTable('erp_service_queue_reassignments', {
+  id: int('id').autoincrement().primaryKey(),
+  serviceQueueEntryId: int('service_queue_entry_id').notNull(),
+  branchId: int('branch_id').notNull(),
+  fromEmployeeId: int('from_employee_id').notNull(),
+  toEmployeeId: int('to_employee_id').notNull(),
+  reason: varchar('reason', { length: 1000 }).notNull(),
+  operationReference: varchar('operation_reference', { length: 36 }).notNull(),
+  actingAccountId: int('acting_account_id').notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({ name: 'erp_service_queue_reassignments_entry_fk', columns: [table.serviceQueueEntryId], foreignColumns: [serviceQueueEntries.id] }),
+  foreignKey({ name: 'erp_service_queue_reassignments_from_employee_branch_fk', columns: [table.fromEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
+  foreignKey({ name: 'erp_service_queue_reassignments_to_employee_branch_fk', columns: [table.toEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
+  foreignKey({ name: 'erp_service_queue_reassignments_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
+  uniqueIndex('erp_service_queue_reassignments_operation_unique').on(table.operationReference),
+  index('erp_service_queue_reassignments_entry_created_idx').on(table.serviceQueueEntryId, table.createdAt, table.id),
+  check('erp_service_queue_reassignments_employee_changed', sql`${table.fromEmployeeId} <> ${table.toEmployeeId}`),
+  check('erp_service_queue_reassignments_reason_required', sql`CHAR_LENGTH(TRIM(${table.reason})) > 0`),
 ]);
 
 export const serviceConsumptionReports = mysqlTable('erp_service_consumption_reports', {
@@ -504,6 +531,8 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
   reversesEntryId: int('reverses_entry_id'),
   invoiceReversalId: int('invoice_reversal_id'),
   invoiceLineReassignmentId: int('invoice_line_reassignment_id'),
+  serviceQueueEntryId: int('service_queue_entry_id'),
+  serviceQueueReassignmentId: int('service_queue_reassignment_id'),
   commissionRuleSnapshot: mysqlEnum('commission_rule_snapshot', ['service_default', 'employee_override']).notNull(),
   commissionRateSnapshot: decimal('commission_rate_snapshot', { precision: 5, scale: 2 }).notNull(),
   baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull(),
@@ -526,6 +555,8 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
     columns: [table.invoiceLineReassignmentId],
     foreignColumns: [invoiceLineReassignments.id],
   }),
+  foreignKey({ name: 'erp_commission_ledger_queue_entry_fk', columns: [table.serviceQueueEntryId], foreignColumns: [serviceQueueEntries.id] }),
+  foreignKey({ name: 'erp_commission_ledger_queue_reassignment_fk', columns: [table.serviceQueueReassignmentId], foreignColumns: [serviceQueueReassignments.id] }),
   foreignKey({
     name: 'erp_commission_ledger_invoice_reversal_fk',
     columns: [table.invoiceReversalId],
@@ -537,7 +568,7 @@ export const commissionLedgerEntries = mysqlTable('erp_commission_ledger_entries
   index('erp_commission_ledger_reversal_idx').on(table.reversesEntryId),
   check(
     'erp_commission_ledger_entry_consistent',
-    sql`(entry_type = 'earned' and reverses_entry_id is null and invoice_reversal_id is null and invoice_line_reassignment_id is null) or (entry_type = 'reversal' and reverses_entry_id is not null and invoice_reversal_id is not null and invoice_line_reassignment_id is null) or (entry_type in ('reassignment_out', 'reassignment_in') and reverses_entry_id is null and invoice_reversal_id is null and invoice_line_reassignment_id is not null)`,
+    sql`(entry_type = 'earned' and reverses_entry_id is null and invoice_reversal_id is null and invoice_line_reassignment_id is null and service_queue_reassignment_id is null) or (entry_type = 'reversal' and reverses_entry_id is not null and invoice_reversal_id is not null and invoice_line_reassignment_id is null and service_queue_reassignment_id is null) or (entry_type in ('reassignment_out', 'reassignment_in') and reverses_entry_id is null and invoice_reversal_id is null and ((invoice_line_reassignment_id is not null and service_queue_reassignment_id is null) or (invoice_line_reassignment_id is null and service_queue_reassignment_id is not null)))`,
   ),
   check(
     'erp_commission_ledger_amount_direction',

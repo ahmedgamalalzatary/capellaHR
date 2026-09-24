@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
 import {
-  clients, invoiceLineReassignments, invoiceLines, invoices,
+  clients, invoiceLines, invoices, serviceQueueEntries,
 } from '@capella/database/schema';
 import {
   and, asc, count, desc, eq, exists, gte, like, lt, ne, or, sql,
@@ -68,16 +68,17 @@ export const createSaleRepositoryQueries = (
       query.settlementStatus === undefined ? undefined : eq(invoices.settlementStatus, query.settlementStatus),
       query.fromDate === undefined ? undefined : gte(invoices.soldAt, startOfCairoDate(query.fromDate)),
       query.toDate === undefined ? undefined : lt(invoices.soldAt, startOfCairoDate(nextDay(query.toDate))),
-      // Lines name the performing employee; a reassignment moves the work, so
-      // either the current line employee or a reassignment target matches.
+      // Service performers are assigned per queue entry. Products retain their
+      // line-level commission employee.
       query.employeeId === undefined ? undefined : or(
+        exists(database.select({ id: serviceQueueEntries.id }).from(serviceQueueEntries).where(and(
+          eq(serviceQueueEntries.invoiceId, invoices.id),
+          eq(serviceQueueEntries.employeeId, query.employeeId),
+        ))),
         exists(database.select({ id: invoiceLines.id }).from(invoiceLines).where(and(
           eq(invoiceLines.invoiceId, invoices.id),
+          eq(invoiceLines.itemType, 'product'),
           eq(invoiceLines.employeeId, query.employeeId),
-        ))),
-        exists(database.select({ id: invoiceLineReassignments.id }).from(invoiceLineReassignments).where(and(
-          eq(invoiceLineReassignments.invoiceId, invoices.id),
-          eq(invoiceLineReassignments.toEmployeeId, query.employeeId),
         ))),
       ),
     );

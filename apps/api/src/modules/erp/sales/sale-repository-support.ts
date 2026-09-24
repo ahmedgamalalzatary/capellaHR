@@ -1,7 +1,7 @@
 import { type createDatabase } from '@capella/database';
 import {
   commissionLedgerEntries, employees, invoiceLines, invoiceLineReassignments,
-  invoiceReversalLines, invoiceReversalPayments, invoiceReversals, invoices,
+  invoiceReversalLines, invoiceReversalPayments, invoiceReversals, invoices, serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm';
 import { isDeepStrictEqual } from 'node:util';
@@ -55,12 +55,21 @@ export const createSaleRepositorySupport = (database: Database, payroll?: ErpPay
     const rows = await database.select({
       id: invoiceLines.id,
       invoiceId: invoiceLines.invoiceId,
+      itemType: invoiceLines.itemType,
       employeeId: invoiceLines.employeeId,
       employeeName: invoiceLines.employeeNameSnapshot,
     }).from(invoiceLines).where(and(
       inArray(invoiceLines.invoiceId, invoiceIds),
       isNotNull(invoiceLines.employeeId),
     )).orderBy(asc(invoiceLines.invoiceId), asc(invoiceLines.lineNumber));
+    const queueEmployees = await database.select({
+      invoiceLineId: serviceQueueEntries.invoiceLineId,
+      employeeId: serviceQueueEntries.employeeId,
+      employeeName: employees.fullName,
+    }).from(serviceQueueEntries)
+      .innerJoin(employees, eq(employees.id, serviceQueueEntries.employeeId))
+      .where(inArray(serviceQueueEntries.invoiceId, invoiceIds))
+      .orderBy(asc(serviceQueueEntries.invoiceLineId), asc(serviceQueueEntries.queueNumber));
     const reassignedRows = await database.select().from(invoiceLineReassignments).where(
       inArray(invoiceLineReassignments.invoiceId, invoiceIds),
     ).orderBy(
@@ -79,6 +88,15 @@ export const createSaleRepositorySupport = (database: Database, payroll?: ErpPay
     const targetById = new Map(targets.map((employee) => [employee.id, employee.name]));
     for (const row of rows) {
       const current = byInvoice.get(row.invoiceId) ?? [];
+      if (row.itemType === 'service') {
+        for (const ticket of queueEmployees.filter((entry) => entry.invoiceLineId === row.id)) {
+          if (!current.some((employee) => employee.id === ticket.employeeId)) {
+            current.push({ id: ticket.employeeId, name: ticket.employeeName });
+          }
+        }
+        byInvoice.set(row.invoiceId, current);
+        continue;
+      }
       const employeeId = latestByLine.get(row.id) ?? row.employeeId!;
       const employeeName = targetById.get(employeeId) ?? row.employeeName!;
       if (current.some((employee) => employee.id === employeeId)) continue;

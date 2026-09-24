@@ -63,7 +63,7 @@ export const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
     .orderBy(asc(invoiceLineReassignments.createdAt), asc(invoiceLineReassignments.id));
   const reassignmentEmployeeIds = [...new Set(reassignments.flatMap((row) => [
     row.fromEmployeeId, row.toEmployeeId,
-  ]))];
+  ]).concat(queueEntries.map((row) => row.employeeId)))];
   const reassignmentEmployees = reassignmentEmployeeIds.length
     ? await executor.select({
       id: employees.id, employeeCode: employees.employeeCode, name: employees.fullName,
@@ -173,6 +173,13 @@ export const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       queueNumbers: queueEntries
         .filter((entry) => entry.invoiceLineId === line.id)
         .map((entry) => entry.queueNumber),
+      queueAssignments: queueEntries
+        .filter((entry) => entry.invoiceLineId === line.id)
+        .map((entry) => ({
+          id: entry.id,
+          queueNumber: entry.queueNumber,
+          employee: reassignmentEmployeeById.get(entry.employeeId)!,
+        })),
     }); }),
     discount: invoice.discountKind === null ? null : {
       kind: invoice.discountKind,

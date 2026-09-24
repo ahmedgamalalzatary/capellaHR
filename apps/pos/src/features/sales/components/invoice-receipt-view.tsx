@@ -24,7 +24,6 @@ import { salesQueryKeys } from '../query-keys';
 import { requestReference, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
 import { ReceiptBundle } from './receipt';
-import { ReassignEmployeeDialog } from './reassign-employee-dialog';
 import { RecordPaymentDialog } from './record-payment-dialog';
 import { ServiceStatusDialog } from './service-status-dialog';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -33,7 +32,6 @@ import { notifyError, notifySuccess } from '@/lib/notify';
 export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number; branchId?: number }) {
   const [printError, setPrintError] = useState<string | null>(null);
   const [exportId, setExportId] = useState<number>();
-  const [reassignLineId, setReassignLineId] = useState<number | null>(null);
   const [serviceStatusOpen, setServiceStatusOpen] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const queryClient = useQueryClient();
@@ -203,42 +201,20 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       </Card>
     ) : null}
     {(query.data.status === 'completed' || query.data.status === 'partially_refunded')
-      && query.data.lines.some((line) => line.itemType === 'service' && line.refundableQuantity > 0) ? (
+      && query.data.lines.some((line) => line.itemType === 'service') ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
         <CardContent className="space-y-2 p-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium">تصحيح موظف الخدمة</p>
             <Button variant="secondary" size="sm" onClick={() => setServiceStatusOpen(true)}>حالة الخدمة</Button>
           </div>
-          {query.data.lines.filter((line) => (
-            line.itemType === 'service' && line.refundableQuantity > 0
-          )).map((line) => (
-            <div key={line.id} className="flex items-center justify-between gap-3 border-t border-line pt-2">
-              <span className="text-sm">{line.name} — {line.employee?.name}</span>
-              <Button variant="secondary" size="sm" onClick={() => setReassignLineId(line.id)}>
-                تغيير الموظف
-              </Button>
-            </div>
-          ))}
         </CardContent>
       </Card>
     ) : null}
-    {reassignLineId === null ? null : (
-      <ReassignEmployeeDialog
-        invoice={query.data}
-        line={query.data.lines.find((line) => line.id === reassignLineId)!}
-        {...(branchId === undefined ? {} : { branchId })}
-        onClose={() => setReassignLineId(null)}
-        onUpdated={(invoice) => {
-          const invoiceKey = salesQueryKeys.invoice(invoiceId, branchId);
-          queryClient.setQueryData(invoiceKey, invoice);
-          void invalidateErpCaches(queryClient, 'sale', invoiceKey);
-        }}
-      />
-    )}
     {serviceStatusOpen ? (
       <ServiceStatusDialog
         invoiceId={query.data.id}
+        isAdmin={isAdmin}
         {...(branchId === undefined ? {} : { branchId })}
         onClose={() => setServiceStatusOpen(false)}
       />

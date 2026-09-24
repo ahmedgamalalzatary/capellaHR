@@ -27,7 +27,7 @@ describe('ServiceStatusDialog', () => {
       .mockResolvedValueOnce(page(101, 2, 2));
 
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ServiceStatusDialog invoiceId={41} branchId={3} onClose={vi.fn()} />
+      <ServiceStatusDialog invoiceId={41} branchId={3} isAdmin={false} onClose={vi.fn()} />
     </QueryClientProvider>);
 
     expect(await screen.findByText('Service 101')).toBeDefined();
@@ -46,12 +46,32 @@ describe('ServiceStatusDialog', () => {
     });
 
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <ServiceStatusDialog invoiceId={14} branchId={1} onClose={vi.fn()} />
+      <ServiceStatusDialog invoiceId={14} branchId={1} isAdmin={false} onClose={vi.fn()} />
     </QueryClientProvider>);
 
     expect(await screen.findByText('ملغاة')).toBeDefined();
     expect(screen.queryByRole('button', { name: 'لم تبدأ' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'قيد التنفيذ' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'تمت' })).toBeNull();
+  });
+
+  it('offers completed ticket reassignment only to an admin', async () => {
+    mocks.list.mockResolvedValue({
+      items: [{ id: 7, invoiceId: 14, serviceId: 25, status: 'completed', queueNumber: 2,
+        serviceName: 'Haircut', invoiceNumber: 'INV-14', employeeId: 8, employeeName: 'Sara' }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
+    const renderDialog = (isAdmin: boolean) => render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ServiceStatusDialog invoiceId={14} branchId={1} isAdmin={isAdmin} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const cashier = renderDialog(false);
+    await screen.findByText('Haircut');
+    expect(screen.queryByRole('button', { name: 'تغيير الموظف' })).toBeNull();
+    cashier.unmount();
+    renderDialog(true);
+    await screen.findByText('Haircut');
+    expect(screen.getByRole('button', { name: 'تغيير الموظف' })).toBeDefined();
   });
 });

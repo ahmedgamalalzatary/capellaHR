@@ -269,7 +269,7 @@ export function CommissionsView() {
                             <TD numeric className="font-semibold">{money(item.netAmount)}</TD>
                             <TD numeric className="text-muted">{money(item.paidAmount)}</TD>
                             <TD numeric className="font-semibold">{money(item.availableAmount)}</TD>
-                            <TD numeric className="text-muted">{item.invoiceLineCount} / {item.reversalCount}</TD>
+                            <TD numeric className="text-muted">{item.serviceUnitCount ?? item.invoiceLineCount} / {item.reversalCount}</TD>
                             <TD>
                               <div className="flex flex-wrap gap-1">
                                 <Button size="sm" variant="ghost" onClick={() => setSelected(item)}>التفاصيل</Button>

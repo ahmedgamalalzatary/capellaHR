@@ -63,6 +63,20 @@ export function ReceiptFooter() {
 type PublicInvoiceLine = PublicInvoiceDto['lines'][number];
 type ReceiptEmployee = NonNullable<PublicInvoiceLine['employee']>;
 
+const receiptUnits = (invoice: PublicInvoiceDto): PublicInvoiceLine[] => invoice.lines.flatMap((line) => (
+  line.itemType === 'service' && line.queueAssignments?.length
+    ? line.queueAssignments.map((assignment) => ({
+      ...line,
+      id: assignment.id,
+      quantity: 1,
+      lineTotal: line.unitPrice,
+      employee: assignment.employee,
+      queueNumbers: [assignment.queueNumber],
+      queueAssignments: [assignment],
+    }))
+    : [line]
+));
+
 /**
  * The barcode uses the receipt's full nominal 72 mm content width. SVG's
  * default proportional scaling preserves every Code 128 module instead of
@@ -100,7 +114,7 @@ const money = (value: bigint) => (
 /** The distinct employees who performed this invoice's services, in line order. */
 export const invoiceEmployees = (invoice: PublicInvoiceDto): ReceiptEmployee[] => {
   const seen = new Map<number, ReceiptEmployee>();
-  for (const line of invoice.lines) {
+  for (const line of receiptUnits(invoice)) {
     if (line.employee && !seen.has(line.employee.id)) seen.set(line.employee.id, line.employee);
   }
   return [...seen.values()];
@@ -113,7 +127,8 @@ export const invoiceEmployees = (invoice: PublicInvoiceDto): ReceiptEmployee[] =
  */
 const employeeShare = (invoice: PublicInvoiceDto, employeeId: number) => {
   const employees = invoiceEmployees(invoice);
-  const grossOf = (id: number) => invoice.lines
+  const units = receiptUnits(invoice);
+  const grossOf = (id: number) => units
     .filter((line) => line.employee?.id === id)
     .reduce((sum, line) => sum + toCents(line.lineTotal), ZERO);
   const subtotal = toCents(invoice.totals.subtotal);
@@ -130,7 +145,7 @@ const employeeShare = (invoice: PublicInvoiceDto, employeeId: number) => {
   const discount = allocate(invoice.totals.discountAmount);
   const tax = allocate(invoice.totals.taxAmount);
   return {
-    lines: invoice.lines.filter((line) => line.employee?.id === employeeId),
+    lines: units.filter((line) => line.employee?.id === employeeId),
     subtotal: money(gross),
     discount: money(discount),
     tax: money(tax),
@@ -290,6 +305,11 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
                 {line.queueNumbers?.length ? (
                   <span className="block text-[10px]">أرقام الدور: {line.queueNumbers.join('، ')}</span>
                 ) : null}
+                {line.queueAssignments?.map((assignment) => (
+                  <span key={assignment.id} className="block text-[10px]">
+                    {assignment.queueNumber} · {assignment.employee.name}
+                  </span>
+                ))}
                 {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
                   <span className="block text-[10px] text-muted">
                     مُسند أصلاً إلى {line.originalEmployee.name}

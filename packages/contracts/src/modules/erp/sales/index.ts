@@ -442,7 +442,17 @@ const invoiceLineSchema = z.object({
   refundableQuantity: z.number().int().min(0),
   /** One number per sold service unit; products never enter a service queue. */
   queueNumbers: z.array(positiveMysqlIntSchema).max(100),
+  /** Current performer of each sold service unit. Omitted by older clients. */
+  queueAssignments: z.array(z.object({
+    id: positiveMysqlIntSchema,
+    queueNumber: positiveMysqlIntSchema,
+    employee: invoiceEmployeeSchema,
+  }).strict()).max(100).optional(),
 }).strict().superRefine((value, context) => {
+  if (value.queueAssignments && (value.queueAssignments.length !== value.queueNumbers.length
+    || value.queueAssignments.some((entry, index) => entry.queueNumber !== value.queueNumbers[index]))) {
+    context.addIssue({ code: 'custom', path: ['queueAssignments'], message: 'Queue assignments do not match the sold service units' });
+  }
   if (value.itemType === 'service' && value.employee === null) {
     context.addIssue({ code: 'custom', path: ['employee'], message: 'الخدمة يجب أن تحمل الموظف المنفّذ' });
   }

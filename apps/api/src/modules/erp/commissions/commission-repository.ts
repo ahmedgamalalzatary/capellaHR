@@ -65,6 +65,8 @@ const entryFields = {
   invoiceNumber: invoices.invoiceNumber,
   invoiceLineId: invoiceLines.id,
   lineNumber: invoiceLines.lineNumber,
+  itemType: invoiceLines.itemType,
+  unitPrice: invoiceLines.unitPrice,
   serviceName: invoiceLines.itemNameSnapshot,
   baseAmount: commissionLedgerEntries.baseAmount,
   commissionRate: commissionLedgerEntries.commissionRateSnapshot,
@@ -238,9 +240,15 @@ export const createDrizzleCommissionRepository = (
     if (branchId !== undefined && rows.length === 0) return null;
     let earned = 0n;
     let reversed = 0n;
+    let serviceUnitCount = 0;
     for (const row of rows) {
       if (row.type === 'earned' || row.type === 'reassignment_in') earned += toCents(row.amount);
       else reversed += -toCents(row.amount);
+      if (row.itemType === 'service') {
+        const units = Number(toCents(row.baseAmount) / toCents(row.unitPrice));
+        serviceUnitCount += row.type === 'earned' || row.type === 'reassignment_in'
+          ? units : -units;
+      }
     }
     const paid = await paidForMonth(executor, employeeId, month);
     const debt = await debtForMonth(executor, employeeId, month);
@@ -259,12 +267,15 @@ export const createDrizzleCommissionRepository = (
         paidAmount: money(paid),
         availableAmount: nonNegative(money(available)),
         invoiceLineCount: rows.filter(({ type }) => type === 'earned' || type === 'reassignment_in').length,
+        serviceUnitCount,
         reversalCount: rows.filter(({ type }) => type === 'reversal' || type === 'reassignment_out').length,
       },
-      entries: rows.map((row) => ({
-        ...row,
-        occurredAt: row.occurredAt.toISOString(),
-      })),
+      entries: rows.map((row) => {
+        const detail = { ...row };
+        Reflect.deleteProperty(detail, 'itemType');
+        Reflect.deleteProperty(detail, 'unitPrice');
+        return { ...detail, occurredAt: row.occurredAt.toISOString() };
+      }),
       payouts,
     };
   };

@@ -39,6 +39,7 @@ export const commissionSummarySchema = z.object({
   paidAmount: moneySchema,
   availableAmount: moneySchema,
   invoiceLineCount: z.number().int().min(0),
+  serviceUnitCount: z.number().int().min(0).optional(),
   reversalCount: z.number().int().min(0),
 }).strict();
 

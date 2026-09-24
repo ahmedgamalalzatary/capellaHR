@@ -311,7 +311,7 @@ describe('WeeklyDayOffView', () => {
     mocks.convertWeeklyDayRecord.mockResolvedValue({ ...absence, status: 'weekly_day_off' });
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'التالي' }));
     await waitFor(() => {
       expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 2 }),
@@ -330,7 +330,7 @@ describe('WeeklyDayOffView', () => {
     mocks.listWeeklyDayRecords.mockResolvedValue(pageOf([absence], { total: 30, totalPages: 2 }));
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'التالي' }));
     await waitFor(() => {
       const params = mocks.listWeeklyDayRecords.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(params).toMatchObject({ page: 2 });

@@ -17,6 +17,7 @@ const setup = (overrides: Partial<SaleService> = {}) => {
   const voidInvoice = vi.fn().mockResolvedValue({ id: 44, status: 'voided' });
   const quoteRefund = vi.fn().mockResolvedValue({ totals: { total: '185.00' } });
   const reassignLine = vi.fn().mockResolvedValue({ id: 44 });
+  const reassignQueue = vi.fn().mockResolvedValue({ id: 44 });
   const recordPayment = vi.fn().mockResolvedValue({ id: 44 });
   const service = {
     quote,
@@ -28,6 +29,7 @@ const setup = (overrides: Partial<SaleService> = {}) => {
     void: voidInvoice,
     quoteRefund,
     reassignLine,
+    reassignQueue,
     recordPayment,
     ...overrides,
   };
@@ -42,10 +44,24 @@ const setup = (overrides: Partial<SaleService> = {}) => {
     void _next;
     response.status(500).json({ error: { code: 'UNEXPECTED' } });
   });
-  return { app, quote, complete, listClientVisits, listInvoices, getInvoice, refund, voidInvoice, quoteRefund, reassignLine, recordPayment };
+  return { app, quote, complete, listClientVisits, listInvoices, getInvoice, refund, voidInvoice, quoteRefund, reassignLine, reassignQueue, recordPayment };
 };
 
 describe('ERP sales router', () => {
+  it('submits reassignment for one queue entry', async () => {
+    const { app, reassignQueue } = setup();
+    const response = await request(app).post('/erp/sales/invoices/44/queue/91/reassign').send({
+      branchId: 2, employeeId: 11,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'Correct performer',
+    });
+    expect(response.status).toBe(201);
+    expect(reassignQueue).toHaveBeenCalledWith(actor, 44, 91, {
+      branchId: 2, employeeId: 11,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'Correct performer',
+    });
+  });
   it('validates and submits a later invoice payment', async () => {
     const { app, recordPayment } = setup();
     const response = await request(app).post('/erp/sales/invoices/44/payments').send({
@@ -62,21 +78,15 @@ describe('ERP sales router', () => {
     });
   });
 
-  it('validates and submits an invoice-line employee reassignment', async () => {
+  it('does not expose whole-line employee reassignment', async () => {
     const { app, reassignLine } = setup();
     const response = await request(app).post('/erp/sales/invoices/44/lines/81/reassign').send({
-      branchId: 2,
-      employeeId: 11,
+      branchId: 2, employeeId: 11,
       operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
-      reason: '  الموظفة المنفذة فعليًا  ',
+      reason: 'Correct performer',
     });
-    expect(response.status).toBe(201);
-    expect(reassignLine).toHaveBeenCalledWith(actor, 44, 81, {
-      branchId: 2,
-      employeeId: 11,
-      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
-      reason: 'الموظفة المنفذة فعليًا',
-    });
+    expect(response.status).toBe(404);
+    expect(reassignLine).not.toHaveBeenCalled();
   });
 
   it('returns the authoritative quote for selected refund quantities', async () => {

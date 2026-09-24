@@ -14,11 +14,12 @@ import {
   erpServiceCommissionOverrides,
   erpServices,
   invoiceLines,
+  invoices,
   invoiceReversals,
   serviceQueueEntries,
 } from '@capella/database/schema';
 import { erpTabReportTypes } from '@capella/contracts';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
@@ -227,15 +228,16 @@ describe('ERP reports MySQL reader', () => {
       .where(eq(invoiceLines.id, serviceLineId)))[0]!;
     const session = (await database.select().from(cashierSessions)
       .where(eq(cashierSessions.branchId, branchId)).limit(1))[0]!;
-    await database.insert(serviceQueueEntries).values({
+    const extraQueueId = Number((await database.insert(serviceQueueEntries).values({
       invoiceId,
       invoiceLineId: serviceLineId,
       branchId,
       cashierSessionId: session.id,
       serviceId: line.serviceId!,
+      employeeId: line.employeeId!,
       queueNumber: 7,
       createdAt: soldAt,
-    });
+    }))[0].insertId);
 
     const result = await createErpReportsModule(database).reader.read(
       'erp-service-queue', { branchId, search: '7' }, { mode: 'all' },
@@ -253,6 +255,7 @@ describe('ERP reports MySQL reader', () => {
         summary: { totalRecords: 1 },
       },
     });
+    await database.delete(serviceQueueEntries).where(eq(serviceQueueEntries.id, extraQueueId));
   });
 
   it('keeps combined service rows after the individual rows for the same item', async () => {
@@ -579,5 +582,113 @@ describe('ERP reports MySQL reader', () => {
         }),
       },
     });
+  });
+
+  it('reports each reassigned service ticket under its current employee', async () => {
+    const reassignedEmployeeId = Number((await database.insert(employees).values({
+      employeeCode: 1_919_002, fullName: 'Reassigned report worker',
+      personalPhone: '01019190002', whatsappPhone: '01119190002',
+      pinHash: employeePinSentinel, age: 30, address: 'Cairo', branchId,
+      shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    const originalLine = (await database.select().from(invoiceLines)
+      .where(eq(invoiceLines.id, serviceLineId)))[0]!;
+    const originalInvoice = (await database.select().from(invoices)
+      .where(eq(invoices.id, invoiceId)))[0]!;
+    const session = (await database.select().from(cashierSessions)
+      .where(eq(cashierSessions.branchId, branchId)).limit(1))[0]!;
+    const sales = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const invoiceNumber = 'INV.2026.08.10.QUEUE-REPORT';
+    const invoice = await sales.complete({
+      input: {
+        branchId, clientId: originalInvoice.clientId, sellerEmployeeId: employeeId,
+        cashierSessionId: session.id,
+        idempotencyKey: crypto.randomUUID(),
+        lines: [{ itemType: 'service', serviceId: originalLine.serviceId!,
+          quantity: 3, unitPrice: '200.00', employeeId }],
+        payments: [{ method: 'cash', amount: '600.00' }],
+      },
+      actingAccountId: adminId, actingAccountRole: 'admin', invoiceNumber, soldAt,
+      assertEmployees: async () => [{ id: employeeId, employeeCode: 1_919_001,
+        fullName: 'موظف التقرير', branchId }],
+    });
+    const tickets = await database.select().from(serviceQueueEntries)
+      .where(eq(serviceQueueEntries.invoiceId, invoice.id))
+      .orderBy(asc(serviceQueueEntries.queueNumber));
+    await sales.reassignQueue({
+      invoiceId: invoice.id, serviceQueueEntryId: tickets[1]!.id,
+      input: { branchId, employeeId: reassignedEmployeeId,
+        reason: 'Correct performer', operationReference: crypto.randomUUID() },
+      actingAccountId: adminId, actingAccountRole: 'admin', reassignedAt: soldAt,
+      assertEmployee: async () => ({ id: reassignedEmployeeId,
+        employeeCode: 1_919_002, fullName: 'Reassigned report worker', branchId }),
+    });
+    await sales.reassignQueue({
+      invoiceId: invoice.id, serviceQueueEntryId: tickets[2]!.id,
+      input: { branchId, employeeId: reassignedEmployeeId,
+        reason: 'Correct performer', operationReference: crypto.randomUUID() },
+      actingAccountId: adminId, actingAccountRole: 'admin', reassignedAt: soldAt,
+      assertEmployee: async () => ({ id: reassignedEmployeeId,
+        employeeCode: 1_919_002, fullName: 'Reassigned report worker', branchId }),
+    });
+    const reader = createErpReportsModule(database).reader;
+    const filters = { branchId, search: invoiceNumber };
+    const employeeReport = await reader.read('erp-employees', filters,
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt);
+    expect(employeeReport).toMatchObject({ kind: 'success', total: 2,
+      snapshot: { rows: expect.arrayContaining([
+        expect.objectContaining({ id: employeeId, serviceQuantity: '1', serviceAmount: '200.00' }),
+        expect.objectContaining({ id: reassignedEmployeeId,
+          serviceQuantity: '2', serviceAmount: '400.00' }),
+      ]) } });
+    const services = await reader.read('erp-services', filters,
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt);
+    expect(services).toMatchObject({ kind: 'success',
+      snapshot: { rows: expect.arrayContaining([
+        expect.objectContaining({ employeeName: 'موظف التقرير', quantity: '1', amount: '200.00' }),
+        expect.objectContaining({ employeeName: 'Reassigned report worker', quantity: '1', amount: '200.00' }),
+      ]) } });
+    if (services.kind === 'success') {
+      expect(services.snapshot.rows.filter((row) => String(row.id).startsWith('sale-'))).toHaveLength(3);
+    }
+    const commissionReport = await reader.read('erp-commissions', filters,
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt);
+    expect(commissionReport).toMatchObject({ kind: 'success', total: 2,
+      snapshot: { rows: expect.arrayContaining([
+        expect.objectContaining({ id: employeeId, serviceCount: 1,
+          earnedAmount: '90.00', reversedAmount: '60.00', netAmount: '30.00' }),
+        expect.objectContaining({ id: reassignedEmployeeId, serviceCount: 2,
+          earnedAmount: '60.00', reversedAmount: '0.00', netAmount: '60.00' }),
+      ]) } });
+    await sales.reverse({
+      type: 'refund', invoiceId: invoice.id,
+      input: { branchId, idempotencyKey: crypto.randomUUID(),
+        reason: 'One ticket refunded',
+        lines: [{ invoiceLineId: invoice.lines[0]!.id, quantity: 1 }],
+        payments: [{ method: 'cash', amount: '200.00' }] },
+      actingAccountId: adminId, actingAccountRole: 'admin', reversedAt,
+    });
+    const afterRefund = await reader.read('erp-employees', filters,
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt);
+    expect(afterRefund).toMatchObject({ kind: 'success',
+      snapshot: { rows: expect.arrayContaining([
+        expect.objectContaining({ id: employeeId, serviceQuantity: '1', serviceAmount: '200.00' }),
+        expect.objectContaining({ id: reassignedEmployeeId,
+          serviceQuantity: '1', serviceAmount: '200.00' }),
+      ]) } });
+    const refunds = await reader.read('erp-refunds', filters,
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt);
+    expect(refunds).toMatchObject({ kind: 'success', total: 1,
+      snapshot: { rows: [expect.objectContaining({
+        employeeName: 'Reassigned report worker', quantity: 1, amount: '200.00',
+      })] } });
+    const servicesAfterRefund = await reader.read('erp-services', filters,
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt);
+    expect(servicesAfterRefund).toMatchObject({ kind: 'success',
+      snapshot: { rows: expect.arrayContaining([
+        expect.objectContaining({ employeeName: 'Reassigned report worker',
+          eventType: 'استرداد', quantity: '-1', amount: '-200.00' }),
+      ]) } });
   });
 });

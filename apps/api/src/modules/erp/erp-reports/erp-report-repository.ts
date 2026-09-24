@@ -81,19 +81,32 @@ const invoiceLineDiscount = (lineAlias: string, invoiceAlias: string) => (
   invoiceLineShare(lineAlias, invoiceAlias, 'discount_amount')
 );
 
+const refundedQueueRank = sql`(SELECT COUNT(*)
+  FROM erp_commission_ledger_entries prior_ledger
+  INNER JOIN erp_service_queue_entries prior_queue
+    ON prior_queue.id = prior_ledger.service_queue_entry_id
+  WHERE prior_ledger.invoice_reversal_id = reversal.id
+    AND prior_ledger.invoice_line_id = original_line.id
+    AND prior_ledger.entry_type = 'reversal'
+    AND prior_queue.queue_number <= queue.queue_number)`;
+const refundedQueueAmount = sql`ROUND(reversal_line.total * ${refundedQueueRank}
+  / reversal_line.quantity, 2)
+  - ROUND(reversal_line.total * (${refundedQueueRank} - 1)
+  / reversal_line.quantity, 2)`;
+
 /**
  * An invoice no longer names one employee: each service line names its own, so
  * invoice-level columns list every distinct name (or code) behind the sale.
  */
 const invoiceEmployeeList = (invoiceAlias: string, column: 'name' | 'code') => {
   const invoice = sql.raw(invoiceAlias);
-  const field = sql.raw(column === 'name' ? 'employee_name_snapshot' : 'employee_code_snapshot');
+  const field = sql.raw(column === 'name' ? 'full_name' : 'employee_code');
   return sql`(
-    SELECT GROUP_CONCAT(DISTINCT employee_line.${field} ORDER BY employee_line.${field} SEPARATOR ' | ')
-    FROM erp_invoice_lines employee_line
-    WHERE employee_line.invoice_id = ${invoice}.id
-      AND employee_line.branch_id = ${invoice}.branch_id
-      AND employee_line.employee_id IS NOT NULL
+    SELECT GROUP_CONCAT(DISTINCT assigned_employee.${field} ORDER BY assigned_employee.${field} SEPARATOR ' | ')
+    FROM erp_service_queue_entries assigned_queue
+    INNER JOIN employees assigned_employee ON assigned_employee.id = assigned_queue.employee_id
+    WHERE assigned_queue.invoice_id = ${invoice}.id
+      AND assigned_queue.branch_id = ${invoice}.branch_id
   )`;
 };
 
@@ -230,15 +243,111 @@ const paymentFacts = (filters: ReportFilters) => sql`
   ])}
 `;
 
-const serviceFacts = (filters: ReportFilters) => saleLineEvents(filters, 'service', (args) => sql`
-  SELECT ${args.id} id, ${args.eventDate} eventDate, ${sql.raw(args.branch)}.name branchName,
-    ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
-    ${sql.raw(args.line)}.item_name_snapshot serviceName,
-    ${sql.raw(args.line)}.employee_name_snapshot employeeName, 'individual' rowType,
-    ${args.eventType} eventType,
-    ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice, ${args.amount} amount,
-    ${args.invoicePaid} invoicePaid
-`);
+const serviceFacts = (filters: ReportFilters) => {
+  const queueRank = sql`(SELECT COUNT(*) FROM erp_service_queue_entries prefix
+    WHERE prefix.invoice_line_id = line.id AND prefix.queue_number <= queue.queue_number)`;
+  const lineNet = sql`line.line_total - (${invoiceLineDiscount('line', 'invoice')})`;
+  const unitSaleAmount = sql`ROUND((${lineNet}) * ${queueRank} / line.quantity, 2)
+    - ROUND((${lineNet}) * (${queueRank} - 1) / line.quantity, 2)`;
+  const unitPaid = sql`ROUND(invoice.amount_paid * ${queueRank} / line.quantity, 2)
+    - ROUND(invoice.amount_paid * (${queueRank} - 1) / line.quantity, 2)`;
+  const reversalNet = sql`reversal_line.gross_amount - reversal_line.discount_amount`;
+  const unitReversalAmount = sql`ROUND((${reversalNet}) * ${refundedQueueRank}
+    / reversal_line.quantity, 2)
+    - ROUND((${reversalNet}) * (${refundedQueueRank} - 1)
+    / reversal_line.quantity, 2)`;
+  return sql`
+    SELECT IF(line.quantity = 1, CONCAT('sale-', line.id),
+      CONCAT('sale-', line.id, '-', queue.id)) id,
+      invoice.sold_at eventDate, branch.name branchName,
+      invoice.invoice_number invoiceNumber, line.item_name_snapshot serviceName,
+      employee.full_name employeeName, 'individual' rowType, 'sale' eventType,
+      1 quantity, line.unit_price unitPrice, ${unitSaleAmount} amount,
+      ${unitPaid} invoicePaid
+    FROM erp_service_queue_entries queue
+    INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id
+      AND line.invoice_id = queue.invoice_id AND line.branch_id = queue.branch_id
+    INNER JOIN erp_invoices invoice
+      ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
+    INNER JOIN employees employee ON employee.id = queue.employee_id
+    INNER JOIN branches branch ON branch.id = invoice.branch_id
+    ${condition([
+      sql`invoice.status <> 'draft'`, sql`invoice.kind = 'sale'`,
+      ...branchFilter(filters, 'invoice.branch_id'),
+      ...timestampFilter(filters, 'invoice.sold_at'),
+      ...searchFilter(filters, [
+        'line.item_name_snapshot', 'invoice.invoice_number',
+        'invoice.client_name_snapshot', 'employee.full_name',
+      ]),
+    ])}
+    UNION ALL
+    SELECT CONCAT(reversal.type, '-', reversal_line.id, '-', queue.id) id,
+      reversal.created_at eventDate, branch.name branchName,
+      invoice.invoice_number invoiceNumber, original_line.item_name_snapshot serviceName,
+      employee.full_name employeeName, 'individual' rowType, reversal.type eventType,
+      -1 quantity, original_line.unit_price unitPrice,
+      -(${unitReversalAmount}) amount,
+      -ROUND(invoice.amount_paid / reversal_line.quantity, 2) invoicePaid
+    FROM erp_invoice_reversal_lines reversal_line
+    INNER JOIN erp_invoice_reversals reversal ON reversal.id = reversal_line.reversal_id
+      AND reversal.invoice_id = reversal_line.invoice_id
+      AND reversal.branch_id = reversal_line.branch_id
+    INNER JOIN erp_invoice_lines original_line ON original_line.id = reversal_line.invoice_line_id
+      AND original_line.invoice_id = reversal_line.invoice_id
+      AND original_line.branch_id = reversal_line.branch_id
+    INNER JOIN erp_commission_ledger_entries ledger
+      ON ledger.invoice_reversal_id = reversal.id
+      AND ledger.invoice_line_id = original_line.id
+      AND ledger.entry_type = 'reversal' AND ledger.service_queue_entry_id IS NOT NULL
+    INNER JOIN erp_service_queue_entries queue ON queue.id = ledger.service_queue_entry_id
+    INNER JOIN employees employee ON employee.id = ledger.employee_id
+    INNER JOIN erp_invoices invoice
+      ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
+    INNER JOIN branches branch ON branch.id = reversal.branch_id
+    ${condition([
+      sql`reversal.status = 'finalized'`, sql`original_line.item_type = 'service'`,
+      ...branchFilter(filters, 'reversal.branch_id'),
+      ...timestampFilter(filters, 'reversal.created_at'),
+      ...searchFilter(filters, [
+        'original_line.item_name_snapshot', 'invoice.invoice_number',
+        'invoice.client_name_snapshot', 'employee.full_name',
+      ]),
+    ])}
+    UNION ALL
+    SELECT CONCAT(reversal.type, '-', reversal_line.id) id,
+      reversal.created_at eventDate, branch.name branchName,
+      invoice.invoice_number invoiceNumber, original_line.item_name_snapshot serviceName,
+      original_line.employee_name_snapshot employeeName, 'individual' rowType,
+      reversal.type eventType, -reversal_line.quantity quantity,
+      original_line.unit_price unitPrice,
+      -(reversal_line.gross_amount - reversal_line.discount_amount) amount,
+      -invoice.amount_paid invoicePaid
+    FROM erp_invoice_reversal_lines reversal_line
+    INNER JOIN erp_invoice_reversals reversal ON reversal.id = reversal_line.reversal_id
+      AND reversal.invoice_id = reversal_line.invoice_id
+      AND reversal.branch_id = reversal_line.branch_id
+    INNER JOIN erp_invoice_lines original_line ON original_line.id = reversal_line.invoice_line_id
+      AND original_line.invoice_id = reversal_line.invoice_id
+      AND original_line.branch_id = reversal_line.branch_id
+    INNER JOIN erp_invoices invoice
+      ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
+    INNER JOIN branches branch ON branch.id = reversal.branch_id
+    ${condition([
+      sql`reversal.status = 'finalized'`, sql`original_line.item_type = 'service'`,
+      sql`NOT EXISTS (SELECT 1 FROM erp_commission_ledger_entries mapped
+        WHERE mapped.invoice_reversal_id = reversal.id
+          AND mapped.invoice_line_id = original_line.id
+          AND mapped.entry_type = 'reversal'
+          AND mapped.service_queue_entry_id IS NOT NULL)`,
+      ...branchFilter(filters, 'reversal.branch_id'),
+      ...timestampFilter(filters, 'reversal.created_at'),
+      ...searchFilter(filters, [
+        'original_line.item_name_snapshot', 'invoice.invoice_number',
+        'invoice.client_name_snapshot', 'original_line.employee_name_snapshot',
+      ]),
+    ])}
+  `;
+};
 
 const productFacts = (filters: ReportFilters) => saleLineEvents(filters, 'product', (args) => sql`
   SELECT ${args.id} id, ${args.eventDate} eventDate, ${sql.raw(args.branch)}.name branchName,
@@ -309,34 +418,84 @@ const withCombinedRows = (
  * combined employee row never hides how its total was earned.
  */
 const employeeEventFacts = (filters: ReportFilters) => sql`
-  SELECT CONCAT('sale-', invoice.id, '-', line.employee_id) id, invoice.sold_at eventDate,
+  SELECT CONCAT('sale-', invoice.id, '-', queue.employee_id) id, invoice.sold_at eventDate,
     branch.name branchName, invoice.invoice_number invoiceNumber,
-    line.employee_id employeeId,
-    line.employee_code_snapshot employeeCode, line.employee_name_snapshot employeeName,
-    'service' activityType, SUM(line.quantity) serviceQuantity,
+    queue.employee_id employeeId,
+    employee.employee_code employeeCode, employee.full_name employeeName,
+    'service' activityType, COUNT(*) serviceQuantity,
     0 productQuantity,
     SUM(
-      line.line_total
+      ROUND((line.line_total
         - (${invoiceLineShare('line', 'invoice', 'discount_amount')})
-        + (${invoiceLineShare('line', 'invoice', 'tax_amount')})
+        + (${invoiceLineShare('line', 'invoice', 'tax_amount')})) *
+        (SELECT COUNT(*) FROM erp_service_queue_entries prefix
+          WHERE prefix.invoice_line_id = line.id AND prefix.queue_number <= queue.queue_number)
+        / line.quantity, 2)
+      - ROUND((line.line_total
+        - (${invoiceLineShare('line', 'invoice', 'discount_amount')})
+        + (${invoiceLineShare('line', 'invoice', 'tax_amount')})) *
+        ((SELECT COUNT(*) FROM erp_service_queue_entries prefix
+          WHERE prefix.invoice_line_id = line.id AND prefix.queue_number <= queue.queue_number) - 1)
+        / line.quantity, 2)
     ) serviceAmount, 0 productAmount
-  FROM erp_invoice_lines line
+  FROM erp_service_queue_entries queue
+  INNER JOIN erp_invoice_lines line ON line.id = queue.invoice_line_id
+    AND line.invoice_id = queue.invoice_id AND line.branch_id = queue.branch_id
   INNER JOIN erp_invoices invoice
     ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
+  INNER JOIN employees employee ON employee.id = queue.employee_id
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
     sql`invoice.status <> 'draft'`, sql`invoice.kind = 'sale'`,
-    sql`line.item_type = 'service'`, sql`line.employee_id IS NOT NULL`,
+    sql`line.item_type = 'service'`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'line.employee_name_snapshot',
-      'CAST(line.employee_code_snapshot AS CHAR)',
+      'invoice.invoice_number', 'employee.full_name',
+      'CAST(employee.employee_code AS CHAR)',
     ]),
   ])}
   GROUP BY invoice.id, branch.name, invoice.invoice_number, invoice.sold_at,
     invoice.discount_amount, invoice.tax_amount, invoice.subtotal,
-    line.employee_id, line.employee_code_snapshot, line.employee_name_snapshot
+    queue.employee_id, employee.employee_code, employee.full_name
+  UNION ALL
+  SELECT CONCAT(reversal.type, '-', reversal.id, '-', ledger.employee_id) id,
+    reversal.created_at eventDate, branch.name branchName, invoice.invoice_number invoiceNumber,
+    ledger.employee_id employeeId, employee.employee_code employeeCode,
+    employee.full_name employeeName, 'service' activityType,
+    -COUNT(*) serviceQuantity, 0 productQuantity,
+    -SUM(${refundedQueueAmount}) serviceAmount, 0 productAmount
+  FROM erp_invoice_reversal_lines reversal_line
+  INNER JOIN erp_invoice_reversals reversal
+    ON reversal.id = reversal_line.reversal_id
+    AND reversal.invoice_id = reversal_line.invoice_id
+    AND reversal.branch_id = reversal_line.branch_id
+  INNER JOIN erp_invoice_lines original_line
+    ON original_line.id = reversal_line.invoice_line_id
+    AND original_line.invoice_id = reversal_line.invoice_id
+    AND original_line.branch_id = reversal_line.branch_id
+  INNER JOIN erp_commission_ledger_entries ledger
+    ON ledger.invoice_reversal_id = reversal.id
+    AND ledger.invoice_line_id = original_line.id
+    AND ledger.entry_type = 'reversal'
+    AND ledger.service_queue_entry_id IS NOT NULL
+  INNER JOIN erp_service_queue_entries queue ON queue.id = ledger.service_queue_entry_id
+  INNER JOIN employees employee ON employee.id = ledger.employee_id
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
+  INNER JOIN branches branch ON branch.id = reversal.branch_id
+  ${condition([
+    sql`reversal.status = 'finalized'`, sql`invoice.kind = 'sale'`,
+    sql`original_line.item_type = 'service'`,
+    ...branchFilter(filters, 'reversal.branch_id'),
+    ...timestampFilter(filters, 'reversal.created_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'employee.full_name',
+      'CAST(employee.employee_code AS CHAR)',
+    ]),
+  ])}
+  GROUP BY reversal.id, reversal.type, reversal.created_at, branch.name, invoice.invoice_number,
+    ledger.employee_id, employee.employee_code, employee.full_name
   UNION ALL
   SELECT CONCAT(reversal.type, '-', reversal.id, '-', original_line.employee_id) id,
     reversal.created_at eventDate, branch.name branchName, invoice.invoice_number invoiceNumber,
@@ -360,6 +519,11 @@ const employeeEventFacts = (filters: ReportFilters) => sql`
   ${condition([
     sql`reversal.status = 'finalized'`, sql`invoice.kind = 'sale'`,
     sql`original_line.item_type = 'service'`, sql`original_line.employee_id IS NOT NULL`,
+    sql`NOT EXISTS (SELECT 1 FROM erp_commission_ledger_entries mapped
+      WHERE mapped.invoice_reversal_id = reversal.id
+        AND mapped.invoice_line_id = original_line.id
+        AND mapped.entry_type = 'reversal'
+        AND mapped.service_queue_entry_id IS NOT NULL)`,
     ...branchFilter(filters, 'reversal.branch_id'),
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
@@ -437,17 +601,24 @@ const employeeEventFacts = (filters: ReportFilters) => sql`
 `;
 
 const commissionFacts = (filters: ReportFilters) => sql`
-  SELECT ledger.employee_id id, MAX(line.employee_code_snapshot) employeeCode,
-    MAX(line.employee_name_snapshot) employeeName,
-    COUNT(DISTINCT CASE WHEN ledger.entry_type = 'earned' THEN ledger.invoice_line_id END) serviceCount,
-    COALESCE(SUM(CASE WHEN ledger.entry_type = 'earned' THEN ledger.amount ELSE 0 END), 0) earnedAmount,
-    COALESCE(-SUM(CASE WHEN ledger.entry_type = 'reversal' THEN ledger.amount ELSE 0 END), 0) reversedAmount,
+  SELECT ledger.employee_id id, MAX(employee.employee_code) employeeCode,
+    MAX(employee.full_name) employeeName,
+    CAST(ROUND(SUM(CASE WHEN line.item_type = 'service' THEN
+      CASE WHEN ledger.entry_type IN ('earned', 'reassignment_in')
+        THEN ledger.base_amount / line.unit_price
+        ELSE -ledger.base_amount / line.unit_price END
+      ELSE 0 END), 0) AS SIGNED) serviceCount,
+    COALESCE(SUM(CASE WHEN ledger.entry_type IN ('earned', 'reassignment_in')
+      THEN ledger.amount ELSE 0 END), 0) earnedAmount,
+    COALESCE(-SUM(CASE WHEN ledger.entry_type IN ('reversal', 'reassignment_out')
+      THEN ledger.amount ELSE 0 END), 0) reversedAmount,
     COALESCE(SUM(ledger.amount), 0) netAmount
   FROM erp_commission_ledger_entries ledger
   INNER JOIN erp_invoices invoice ON invoice.id = ledger.invoice_id
   INNER JOIN erp_invoice_lines line
     ON line.id = ledger.invoice_line_id AND line.invoice_id = ledger.invoice_id
-      AND line.branch_id = invoice.branch_id AND line.employee_id = ledger.employee_id
+      AND line.branch_id = invoice.branch_id
+  INNER JOIN employees employee ON employee.id = ledger.employee_id
   LEFT JOIN erp_invoice_reversals reversal
     ON reversal.id = ledger.invoice_reversal_id
       AND reversal.invoice_id = ledger.invoice_id
@@ -457,7 +628,7 @@ const commissionFacts = (filters: ReportFilters) => sql`
     sql`(ledger.entry_type <> 'reversal' OR reversal.status = 'finalized')`,
     ...branchFilter(filters, 'invoice.branch_id'), ...timestampFilter(filters, 'ledger.created_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'line.employee_name_snapshot', 'line.item_name_snapshot',
+      'invoice.invoice_number', 'employee.full_name', 'line.item_name_snapshot',
     ]),
   ])}
   GROUP BY ledger.employee_id
@@ -519,10 +690,53 @@ const refundFacts = (filters: ReportFilters) => sql`
   INNER JOIN accounts account ON account.id = reversal.acting_account_id
   ${condition([
     sql`reversal.status = 'finalized'`, sql`reversal.type = 'refund'`,
+    sql`(original_line.item_type <> 'service' OR NOT EXISTS (
+      SELECT 1 FROM erp_commission_ledger_entries mapped
+      WHERE mapped.invoice_reversal_id = reversal.id
+        AND mapped.invoice_line_id = original_line.id
+        AND mapped.entry_type = 'reversal'
+        AND mapped.service_queue_entry_id IS NOT NULL))`,
     ...branchFilter(filters, 'reversal.branch_id'), ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
       'invoice.invoice_number', 'invoice.client_name_snapshot', 'original_line.item_name_snapshot',
       'original_line.employee_name_snapshot', 'reversal.reason', 'account.username',
+    ]),
+  ])}
+  UNION ALL
+  SELECT CONCAT(reversal_line.id, '-', queue.id) id,
+    reversal.created_at eventDate, branch.name branchName,
+    invoice.invoice_number invoiceNumber, invoice.client_name_snapshot clientName,
+    original_line.item_name_snapshot itemName, original_line.item_type itemType,
+    1 quantity, employee.full_name employeeName,
+    reversal.reason reason, account.username authorizedBy,
+    ${refundedQueueAmount} amount
+  FROM erp_invoice_reversals reversal
+  INNER JOIN erp_invoice_reversal_lines reversal_line
+    ON reversal_line.reversal_id = reversal.id
+    AND reversal_line.invoice_id = reversal.invoice_id
+    AND reversal_line.branch_id = reversal.branch_id
+  INNER JOIN erp_invoice_lines original_line
+    ON original_line.id = reversal_line.invoice_line_id
+    AND original_line.invoice_id = reversal_line.invoice_id
+    AND original_line.branch_id = reversal_line.branch_id
+  INNER JOIN erp_commission_ledger_entries ledger
+    ON ledger.invoice_reversal_id = reversal.id
+    AND ledger.invoice_line_id = original_line.id
+    AND ledger.entry_type = 'reversal'
+    AND ledger.service_queue_entry_id IS NOT NULL
+  INNER JOIN erp_service_queue_entries queue ON queue.id = ledger.service_queue_entry_id
+  INNER JOIN employees employee ON employee.id = ledger.employee_id
+  INNER JOIN erp_invoices invoice
+    ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
+  INNER JOIN branches branch ON branch.id = reversal.branch_id
+  INNER JOIN accounts account ON account.id = reversal.acting_account_id
+  ${condition([
+    sql`reversal.status = 'finalized'`, sql`reversal.type = 'refund'`,
+    sql`original_line.item_type = 'service'`,
+    ...branchFilter(filters, 'reversal.branch_id'), ...timestampFilter(filters, 'reversal.created_at'),
+    ...searchFilter(filters, [
+      'invoice.invoice_number', 'invoice.client_name_snapshot', 'original_line.item_name_snapshot',
+      'employee.full_name', 'reversal.reason', 'account.username',
     ]),
   ])}
 `;
@@ -941,14 +1155,8 @@ const purchaseStatusLabels: Record<string, string> = {
   posted: 'مرحّلة', cancelled: 'ملغاة',
 };
 
-const currentQueueEmployeeName = `COALESCE((
-  SELECT employee.full_name
-  FROM erp_invoice_line_reassignments reassignment
-  INNER JOIN employees employee ON employee.id = reassignment.to_employee_id
-  WHERE reassignment.invoice_line_id = line.id
-  ORDER BY reassignment.created_at DESC, reassignment.id DESC
-  LIMIT 1
-), line.employee_name_snapshot)`;
+const currentQueueEmployeeName = `(SELECT employee.full_name
+  FROM employees employee WHERE employee.id = queue.employee_id)`;
 const serviceStatusLabels: Record<string, string> = {
   pending: 'لم تبدأ', in_progress: 'قيد التنفيذ', completed: 'مكتملة', overdue: 'متأخرة',
 };
@@ -1078,7 +1286,8 @@ const reportRows = async (
   return (await rawRows<RawRow>(transaction.execute(sql`
     SELECT * FROM (${reportBase}) facts ${order} ${limit}
   `))).map((row) => {
-    const { rowType: _rowType, ...reportRow } = row;
+    const reportRow = { ...row };
+    Reflect.deleteProperty(reportRow, 'rowType');
     return localizeErpReportRow(reportType, reportRow);
   });
 };

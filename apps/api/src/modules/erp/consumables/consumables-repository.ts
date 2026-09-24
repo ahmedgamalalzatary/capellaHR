@@ -9,6 +9,7 @@ import {
   erpProductStocks,
   erpServices,
   erpStockMovements,
+  employees,
   invoiceLines,
   invoices,
   serviceConsumptionReports,
@@ -178,8 +179,6 @@ export const createDrizzleConsumablesRepository = (
   },
 
   async listServices(branchId, query, openedByAccountId) {
-    const currentEmployeeId = sql<number | null>`coalesce((select reassignment.to_employee_id from erp_invoice_line_reassignments reassignment where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeId})`;
-    const currentEmployeeName = sql<string | null>`coalesce((select employee.full_name from erp_invoice_line_reassignments reassignment inner join employees employee on employee.id = reassignment.to_employee_id where reassignment.invoice_line_id = ${invoiceLines.id} order by reassignment.created_at desc, reassignment.id desc limit 1), ${invoiceLines.employeeNameSnapshot})`;
     const consumptionRecorded = sql<number>`exists (select 1 from erp_service_consumption_reports report where report.service_queue_entry_id = ${serviceQueueEntries.id} and report.is_current = true)`;
     const filters = [eq(serviceQueueEntries.branchId, branchId)];
     if (query.status === 'unfinished') filters.push(inArray(serviceQueueEntries.status, ['pending', 'in_progress', 'overdue']));
@@ -188,7 +187,7 @@ export const createDrizzleConsumablesRepository = (
     if (query.cashierSessionId) filters.push(eq(serviceQueueEntries.cashierSessionId, query.cashierSessionId));
     if (query.invoiceId) filters.push(eq(serviceQueueEntries.invoiceId, query.invoiceId));
     if (query.serviceId) filters.push(eq(serviceQueueEntries.serviceId, query.serviceId));
-    if (query.employeeId) filters.push(eq(currentEmployeeId, query.employeeId));
+    if (query.employeeId) filters.push(eq(serviceQueueEntries.employeeId, query.employeeId));
     if (query.consumptionStatus === 'recorded') filters.push(consumptionRecorded);
     if (query.consumptionStatus === 'unrecorded') filters.push(sql`not ${consumptionRecorded}`);
     if (openedByAccountId !== undefined) filters.push(eq(cashierSessions.openedByAccountId, openedByAccountId));
@@ -198,12 +197,13 @@ export const createDrizzleConsumablesRepository = (
       id: serviceQueueEntries.id, status: serviceQueueEntries.status, queueNumber: serviceQueueEntries.queueNumber,
       cashierSessionId: serviceQueueEntries.cashierSessionId, invoiceId: invoices.id, invoiceNumber: invoices.invoiceNumber,
       clientName: invoices.clientNameSnapshot, clientPhone: invoices.clientPhoneSnapshot,
-      serviceId: erpServices.id, serviceName: erpServices.name, employeeId: currentEmployeeId,
-      employeeName: currentEmployeeName, createdAt: serviceQueueEntries.createdAt,
+      serviceId: erpServices.id, serviceName: erpServices.name, employeeId: serviceQueueEntries.employeeId,
+      employeeName: employees.fullName, createdAt: serviceQueueEntries.createdAt,
       completedAt: serviceQueueEntries.completedAt, consumptionRecorded,
     }).from(serviceQueueEntries)
       .innerJoin(invoices, eq(invoices.id, serviceQueueEntries.invoiceId))
       .innerJoin(invoiceLines, eq(invoiceLines.id, serviceQueueEntries.invoiceLineId))
+      .innerJoin(employees, eq(employees.id, serviceQueueEntries.employeeId))
       .innerJoin(erpServices, eq(erpServices.id, serviceQueueEntries.serviceId))
       .innerJoin(cashierSessions, eq(cashierSessions.id, serviceQueueEntries.cashierSessionId))
       .where(where).orderBy(desc(serviceQueueEntries.createdAt), desc(serviceQueueEntries.id))

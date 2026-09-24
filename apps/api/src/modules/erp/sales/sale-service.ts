@@ -88,6 +88,16 @@ export type ReassignInvoiceLineOperation = {
   assertEmployee(context: unknown): Promise<AssignableEmployee>;
 };
 
+export type ReassignQueueOperation = {
+  invoiceId: number;
+  serviceQueueEntryId: number;
+  input: ReassignInvoiceLineInput & { branchId: number };
+  actingAccountId: number;
+  actingAccountRole: 'admin' | 'cashier';
+  reassignedAt: Date;
+  assertEmployee(context: unknown): Promise<AssignableEmployee>;
+};
+
 export type RecordInvoicePaymentOperation = {
   invoiceId: number;
   input: RecordInvoicePaymentInput & { branchId: number };
@@ -108,6 +118,7 @@ export interface SaleRepository {
   complete(operation: CompleteSaleOperation): Promise<InvoiceDto>;
   reverse(operation: ReverseInvoiceOperation): Promise<InvoiceDto>;
   reassignLine(operation: ReassignInvoiceLineOperation): Promise<InvoiceDto>;
+  reassignQueue(operation: ReassignQueueOperation): Promise<InvoiceDto>;
   recordPayment(operation: RecordInvoicePaymentOperation): Promise<InvoiceDto>;
   listClientVisits(
     branchId: number,
@@ -143,11 +154,13 @@ type SaleErrorCode =
   | 'REASSIGN_LINE_NOT_SERVICE'
   | 'REASSIGN_SAME_EMPLOYEE'
   | 'INVOICE_NOT_REASSIGNABLE'
+  | 'REASSIGN_ADMIN_REQUIRED'
   | 'PAYMENT_EXCEEDS_BALANCE'
   | 'PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES'
   | 'INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID';
 
 const messages: Record<SaleErrorCode, string> = {
+  REASSIGN_ADMIN_REQUIRED: 'يمكن للمسؤول فقط تغيير موظف خدمة مكتملة.',
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
   CLIENT_NOT_FOUND: 'العميل غير موجود',
   EMPLOYEE_NOT_ASSIGNABLE: 'الموظف غير مسجل الحضور حاليًا',
@@ -168,7 +181,7 @@ const messages: Record<SaleErrorCode, string> = {
   REASSIGN_PAYROLL_FINALIZED: 'لا يمكن تغيير الموظف بعد اعتماد راتب أي من الموظفين لهذا الشهر',
   REASSIGN_LINE_NOT_SERVICE: 'يمكن تغيير الموظف في بنود الخدمات فقط',
   REASSIGN_SAME_EMPLOYEE: 'الموظف المحدد هو الموظف الحالي بالفعل',
-  INVOICE_NOT_REASSIGNABLE: 'يمكن تغيير الموظف قبل إلغاء أو استرداد أي جزء من الفاتورة فقط',
+  INVOICE_NOT_REASSIGNABLE: 'لا يمكن تغيير موظف هذه الخدمة في حالتها الحالية.',
   PAYMENT_EXCEEDS_BALANCE: 'الدفعة أكبر من الرصيد المستحق',
   PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES: 'فواتير الخدمات يجب سدادها بالكامل',
   INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID: 'لا يمكن إلغاء فاتورة مدفوعة جزئيًا؛ استخدم الاسترداد',
@@ -335,6 +348,29 @@ export const createSaleService = (dependencies: {
         if (error instanceof ErpAssignmentError) {
           throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
         }
+        throw error;
+      }
+    },
+
+    async reassignQueue(
+      actor: ErpAccountIdentity,
+      invoiceId: number,
+      serviceQueueEntryId: number,
+      input: ReassignInvoiceLineInput,
+    ) {
+      const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
+      try {
+        return await repository.reassignQueue({
+          invoiceId, serviceQueueEntryId,
+          input: { ...input, branchId },
+          actingAccountId: accountId, actingAccountRole: actor.role,
+          reassignedAt: new Date(),
+          assertEmployee: (context) => assignment.assertAssignable(actor, {
+            employeeId: input.employeeId, branchId,
+          }, context),
+        });
+      } catch (error) {
+        if (error instanceof ErpAssignmentError) throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
         throw error;
       }
     },

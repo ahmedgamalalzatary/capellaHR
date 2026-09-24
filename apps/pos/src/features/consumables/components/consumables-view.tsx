@@ -12,6 +12,7 @@ import { FieldError, Notice } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
+import { QueueReassignmentDialog } from '@/features/sales';
 import { listCatalogBranches } from '@/features/catalog';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -34,7 +35,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return <button type="button" role="tab" aria-selected={active} onClick={onClick} className={`inline-flex min-h-10 items-center gap-2 border-b-2 px-3 text-sm font-medium ${active ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{children}</button>;
 }
 
-function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPending, page, totalPages, onPage }: {
+function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPending, page, totalPages, onPage, isAdmin, onReassign }: {
   items: ConsumableServiceExecution[]; mode: 'status' | 'consumables'; selected: number[];
   onToggle: (item: ConsumableServiceExecution) => void;
   onStatus: (item: ConsumableServiceExecution, status: 'pending' | 'in_progress' | 'completed') => void;
@@ -42,13 +43,15 @@ function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPendin
   page: number;
   totalPages: number;
   onPage: (page: number) => void;
+  isAdmin: boolean;
+  onReassign: (item: ConsumableServiceExecution) => void;
 }) {
   if (!items.length) return <EmptyState title={mode === 'status' ? 'لا توجد خدمات' : 'لا توجد خدمات مكتملة'} />;
   return <><DataTable><THead>{mode === 'consumables' ? <TH>اختيار</TH> : null}<TH>الخدمة</TH><TH>الدور</TH><TH>العميل</TH><TH>الموظف</TH><TH>الفاتورة</TH><TH>الحالة</TH></THead><tbody>{items.map((item) => <TR key={item.id}>
     {mode === 'consumables' ? <TD>{item.consumptionRecorded ? null : <input type="checkbox" aria-label={`اختيار الخدمة ${item.queueNumber}`} checked={selected.includes(item.id)} onChange={() => onToggle(item)} />}</TD> : null}
     <TD className="font-medium">{item.serviceName}</TD>
     <TD><Badge variant={item.status === 'overdue' ? 'warning' : 'neutral'}>{item.queueNumber}</Badge></TD>
-    <TD>{item.clientName ?? item.clientPhone ?? '—'}</TD><TD>{item.employeeName ?? '—'}</TD><TD>{item.invoiceNumber}</TD>
+    <TD>{item.clientName ?? item.clientPhone ?? '—'}</TD><TD>{item.employeeName ?? '—'}</TD><TD>{item.invoiceNumber}{mode === 'status' && item.status !== 'canceled' && (item.status !== 'completed' || isAdmin) ? <Button size="sm" variant="secondary" onClick={() => onReassign(item)}>{'\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0645\u0648\u0638\u0641'}</Button> : null}</TD>
     <TD>{mode === 'consumables' ? <Badge variant={item.consumptionRecorded ? 'success' : 'warning'}>{item.consumptionRecorded ? 'مسجلة' : 'لم تسجل'}</Badge> : item.status === 'completed' ? <Badge variant="success">تمت</Badge> : <div className="flex gap-1"><Button size="sm" variant={item.status === 'pending' ? 'secondary' : 'ghost'} disabled={statusPending} onClick={() => onStatus(item, 'pending')}>لم تبدأ</Button><Button size="sm" variant={item.status === 'in_progress' ? 'secondary' : 'ghost'} disabled={statusPending} onClick={() => onStatus(item, 'in_progress')}>قيد التنفيذ</Button><Button size="sm" disabled={statusPending} onClick={() => onStatus(item, 'completed')}>تمت</Button></div>}</TD>
   </TR>)}</tbody></DataTable><Pagination summary={<>صفحة <span className="tabular">{page}</span></>} previousDisabled={page <= 1} nextDisabled={page >= totalPages} onPrevious={() => onPage(page - 1)} onNext={() => onPage(page + 1)} page={page} totalPages={totalPages} onPage={onPage} persistenceKey={mode === 'status' ? 'pos:consumables:services' : 'pos:consumables:usage'} resultSetKey={JSON.stringify({ mode })} /></>;
 }
@@ -164,6 +167,7 @@ export function ConsumablesView() {
   const [consumablesPage, setConsumablesPage] = useState(1);
   const [stockPage, setStockPage] = useState(1);
   const [selected, setSelected] = useState<number[]>([]);
+  const [reassigning, setReassigning] = useState<ConsumableServiceExecution | null>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<number>();
   const [selectionHint, setSelectionHint] = useState<string>();
   const cashierSessionId = Number(search?.get('cashierSessionId')) || undefined;
@@ -202,7 +206,8 @@ export function ConsumablesView() {
   return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description="تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة." />
     {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" className="max-w-sm" disabled={branches.isPending || branches.isError} value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setSelected([]); setStatusPage(1); setConsumablesPage(1); setStockPage(1); }}><option value="">اختر الفرع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select>{branches.isError ? <FieldError>تعذر تحميل الفروع. <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></FieldError> : null}</CardContent></Card> : null}
     <div role="tablist" aria-label="خدمات العملاء والمستهلكات" className="flex gap-1 overflow-x-auto border-b border-line"><TabButton active={tab === 'status'} onClick={() => changeTab('status')}><Clock3 className="size-4" />حالة الخدمات</TabButton><TabButton active={tab === 'consumables'} onClick={() => changeTab('consumables')}><CheckCircle2 className="size-4" />تسجيل المستهلكات</TabButton><TabButton active={tab === 'stock'} onClick={() => changeTab('stock')}><PackageOpen className="size-4" />مخزون المستهلكات</TabButton></div>
-    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data?.items ?? []} allBalances={balanceOptions.data ?? []} meta={{ page: balances.data?.meta.page ?? stockPage, totalPages: balances.data?.meta.totalPages ?? 1 }} onPage={setStockPage} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data?.items ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} page={services.data?.meta.page ?? (tab === 'consumables' ? consumablesPage : statusPage)} totalPages={services.data?.meta.totalPages ?? 1} onPage={tab === 'consumables' ? setConsumablesPage : setStatusPage} onStatus={(item, status) => statusMutation.mutate({ item, status })} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
+    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : <StockPanel branchId={branchId} balances={balances.data?.items ?? []} allBalances={balanceOptions.data ?? []} meta={{ page: balances.data?.meta.page ?? stockPage, totalPages: balances.data?.meta.totalPages ?? 1 }} onPage={setStockPage} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : <ServicesTable items={services.data?.items ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} page={services.data?.meta.page ?? (tab === 'consumables' ? consumablesPage : statusPage)} totalPages={services.data?.meta.totalPages ?? 1} onPage={tab === 'consumables' ? setConsumablesPage : setStatusPage} onStatus={(item, status) => statusMutation.mutate({ item, status })} isAdmin={isAdmin} onReassign={setReassigning} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
     {tab === 'consumables' && selected.length && ready ? <CompletionPanel selected={selected} balances={balanceOptions.data ?? []} branchId={branchId} onCompleted={async () => { setSelected([]); setSelectedServiceId(undefined); await refresh(); }} onClose={() => { setSelected([]); setSelectedServiceId(undefined); }} /> : null}
+    {reassigning ? <QueueReassignmentDialog ticket={reassigning} {...(branchId === undefined ? {} : { branchId })} onClose={() => setReassigning(null)} onUpdated={() => { void refresh(); void cache.invalidateQueries({ queryKey: ['erp-sales'] }); void cache.invalidateQueries({ queryKey: ['erp-commissions'] }); void cache.invalidateQueries({ queryKey: ['erp-reports'] }); }} /> : null}
   </section>;
 }

@@ -12,7 +12,7 @@ import {
   quoteSale,
   quoteRefund,
   refundInvoice,
-  reassignInvoiceLine,
+  reassignServiceQueueEntry,
   recordInvoicePayment,
   voidInvoice,
 } from '../src/features/sales/api/sales-api';
@@ -84,12 +84,12 @@ describe('sales API', () => {
     expect(mocks.post).toHaveBeenCalledWith('/erp/sales/44/void', voidCommand);
   });
 
-  it('posts an employee reassignment to the selected stored service line', async () => {
+  it('posts an employee reassignment to one service queue entry', async () => {
     const command = {
       branchId: 2, employeeId: 11, operationReference: crypto.randomUUID(), reason: 'Actual performer',
     };
-    await reassignInvoiceLine(44, 81, command);
-    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/invoices/44/lines/81/reassign', command);
+    await reassignServiceQueueEntry(44, 91, command);
+    expect(mocks.post).toHaveBeenCalledWith('/erp/sales/invoices/44/queue/91/reassign', command);
   });
 
   it('posts an idempotent later payment to the stored invoice', async () => {

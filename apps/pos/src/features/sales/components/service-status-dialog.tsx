@@ -1,6 +1,7 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 
 import { Badge, Button, EmptyState, Modal } from '@capella/ui';
 
@@ -14,18 +15,24 @@ import {
 } from '@/features/consumables';
 
 import { responseMessage } from './invoice-format';
+import { QueueReassignmentDialog } from './queue-reassignment-dialog';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 
 type EditableStatus = 'pending' | 'in_progress' | 'completed';
 
 export function ServiceStatusDialog({
   invoiceId,
   branchId,
+  isAdmin,
   onClose,
 }: {
   invoiceId: number;
   branchId?: number;
+  isAdmin: boolean;
   onClose(): void;
 }) {
+  const [reassigning, setReassigning] = useState<ConsumableServiceExecution | null>(null);
+  const cache = useQueryClient();
   const params = { ...(branchId === undefined ? {} : { branchId }), invoiceId };
   const services = useQuery({
     queryKey: ['invoice-service-statuses', invoiceId, branchId ?? null],
@@ -56,6 +63,7 @@ export function ServiceStatusDialog({
             <p className="text-sm font-medium">{item.serviceName}</p>
             <p className="text-xs text-muted">الدور {item.queueNumber}{item.employeeName ? ` — ${item.employeeName}` : ''}</p>
           </div>
+          {(item.status !== 'canceled' && (item.status !== 'completed' || isAdmin)) ? <Button size="sm" variant="secondary" onClick={() => setReassigning(item)}>تغيير الموظف</Button> : null}
           {item.status === 'completed' ? <Badge variant="success">تمت</Badge> : item.status === 'canceled' ? (
             <Badge variant="danger">ملغاة</Badge>
           ) : <div className="flex flex-wrap gap-1">
@@ -67,5 +75,6 @@ export function ServiceStatusDialog({
         {mutation.isError ? <p role="alert" className="text-sm text-danger">{responseMessage(mutation.error, 'تعذر تحديث حالة الخدمة.')}</p> : null}
       </div>
     )}
+    {reassigning ? <QueueReassignmentDialog ticket={reassigning} {...(branchId === undefined ? {} : { branchId })} onClose={() => setReassigning(null)} onUpdated={() => { void services.refetch(); void cache.invalidateQueries({ queryKey: ['consumables-services'] }); void invalidateErpCaches(cache, 'sale'); }} /> : null}
   </Modal>;
 }

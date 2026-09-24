@@ -70,6 +70,8 @@ const handleError = (error: unknown, response: Response, next: NextFunction) => 
   if (error instanceof SaleError) {
     const status = error.code === 'CLIENT_NOT_FOUND' || error.code === 'INVOICE_NOT_FOUND'
       ? 404
+      : error.code === 'REASSIGN_ADMIN_REQUIRED'
+        ? 403
       : error.code === 'SALE_VALIDATION_FAILED'
         ? 400
         : 409;
@@ -148,13 +150,15 @@ export const createErpSalesRouter = (service: SaleService) => {
     }
   });
 
-  router.post('/invoices/:invoiceId/lines/:lineId/reassign', async (request, response, next) => {
+  router.post('/invoices/:invoiceId/queue/:queueEntryId/reassign', async (request, response, next) => {
     try {
-      const { invoiceId, lineId } = invoiceLineParamsSchema.parse(request.params);
-      const input = reassignInvoiceLineSchema.parse(request.body);
-      response.status(201).json({
-        data: await service.reassignLine(actorFrom(response), invoiceId, lineId, input),
+      const { invoiceId, lineId: queueEntryId } = invoiceLineParamsSchema.parse({
+        invoiceId: request.params.invoiceId, lineId: request.params.queueEntryId,
       });
+      const input = reassignInvoiceLineSchema.parse(request.body);
+      response.status(201).json({ data: await service.reassignQueue(
+        actorFrom(response), invoiceId, queueEntryId, input,
+      ) });
     } catch (error) {
       handleError(error, response, next);
     }

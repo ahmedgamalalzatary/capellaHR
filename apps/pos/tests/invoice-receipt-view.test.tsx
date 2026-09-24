@@ -8,7 +8,7 @@ const getInvoice = vi.hoisted(() => vi.fn());
 const quoteRefund = vi.hoisted(() => vi.fn());
 const refundInvoice = vi.hoisted(() => vi.fn());
 const voidInvoice = vi.hoisted(() => vi.fn());
-const reassignInvoiceLine = vi.hoisted(() => vi.fn());
+const reassignServiceQueueEntry = vi.hoisted(() => vi.fn());
 const recordInvoicePayment = vi.hoisted(() => vi.fn());
 const listConsumableServices = vi.hoisted(() => vi.fn());
 const updateServiceExecutionStatus = vi.hoisted(() => vi.fn());
@@ -26,7 +26,7 @@ vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
   quoteRefund,
   refundInvoice,
   voidInvoice,
-  reassignInvoiceLine,
+  reassignServiceQueueEntry,
   recordInvoicePayment,
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
@@ -95,21 +95,7 @@ describe('stored invoice receipt', () => {
     listAssignableEmployees.mockReset().mockResolvedValue([{
       id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2,
     }]);
-    reassignInvoiceLine.mockReset().mockResolvedValue({
-      ...saleFixtures.completedInvoice,
-      lines: saleFixtures.completedInvoice.lines.map((line) => ({
-        ...line,
-        employee: { id: 11, employeeCode: 1011, name: 'هدى محمود' },
-        reassignments: [{
-          id: 91,
-          fromEmployee: line.originalEmployee,
-          toEmployee: { id: 11, employeeCode: 1011, name: 'هدى محمود' },
-          reason: 'الموظفة المنفذة فعليًا',
-          actingAccount: { id: 1, username: 'admin' },
-          createdAt: '2026-08-03T12:00:00.000Z',
-        }],
-      })),
-    });
+    reassignServiceQueueEntry.mockReset().mockResolvedValue(saleFixtures.completedInvoice);
     getCurrentCashierSession.mockReset().mockResolvedValue({ id: 14, branchId: 2 });
     recordInvoicePayment.mockReset();
     listConsumableServices.mockReset().mockResolvedValue({
@@ -212,28 +198,25 @@ describe('stored invoice receipt', () => {
     expect(getInvoice).toHaveBeenCalledWith(44, 2);
   });
 
-  it('reassigns a service to a present employee and retains the original on the receipt', async () => {
+  it('reassigns one service queue ticket to a present employee', async () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    fireEvent.click(screen.getByRole('button', { name: 'تغيير الموظف' }));
-    fireEvent.click(await screen.findByRole('button', { name: /هدى محمود/ }));
-    fireEvent.change(screen.getByLabelText('سبب التغيير'), {
-      target: { value: 'الموظفة المنفذة فعليًا' },
+    fireEvent.click(screen.getByRole('button', { name: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062e\u062f\u0645\u0629' }));
+    fireEvent.click(await screen.findByRole('button', { name: '\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0645\u0648\u0638\u0641' }));
+    fireEvent.click(await screen.findByRole('button', { name: /\u0647\u062f\u0649 \u0645\u062d\u0645\u0648\u062f/ }));
+    fireEvent.change(screen.getByLabelText('\u0633\u0628\u0628 \u0627\u0644\u062a\u063a\u064a\u064a\u0631'), {
+      target: { value: 'Correct performer' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد التغيير' }));
+    fireEvent.click(screen.getByRole('button', { name: '\u062a\u0623\u0643\u064a\u062f \u0627\u0644\u062a\u063a\u064a\u064a\u0631' }));
 
-    await waitFor(() => expect(reassignInvoiceLine).toHaveBeenCalledWith(44, 81, {
-      branchId: 2,
-      employeeId: 11,
-      operationReference: expect.any(String),
-      reason: 'الموظفة المنفذة فعليًا',
+    await waitFor(() => expect(reassignServiceQueueEntry).toHaveBeenCalledWith(44, 71, {
+      branchId: 2, employeeId: 11,
+      operationReference: expect.any(String), reason: 'Correct performer',
     }));
-    expect(await screen.findAllByText('هدى محمود')).not.toHaveLength(0);
-    expect(screen.getAllByText(/مُسند أصلاً إلى/).length).toBeGreaterThan(0);
   });
 
-  it('offers employee reassignment while a service invoice is partially refunded', async () => {
+  it('offers ticket reassignment while a service invoice is partially refunded', async () => {
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
       status: 'partially_refunded',
@@ -242,11 +225,10 @@ describe('stored invoice receipt', () => {
       })),
       eligibility: { canVoid: false, canRefund: true },
     });
-
     renderView();
-
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
-    expect(screen.getByRole('button', { name: 'تغيير الموظف' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '\u062d\u0627\u0644\u0629 \u0627\u0644\u062e\u062f\u0645\u0629' }));
+    expect(await screen.findByRole('button', { name: '\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0645\u0648\u0638\u0641' })).toBeDefined();
   });
 
   it('updates a sold service status from a popup beside employee correction', async () => {

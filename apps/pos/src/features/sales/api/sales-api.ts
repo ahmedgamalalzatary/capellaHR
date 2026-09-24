@@ -65,19 +65,19 @@ export const voidInvoice = (invoiceId: number, input: VoidInvoiceInput) => (
   )
 );
 
-export const reassignInvoiceLine = (
-  invoiceId: number,
-  lineId: number,
-  input: ReassignInvoiceLineInput,
-) => api.post<PublicInvoiceDto>(
-  `/erp/sales/invoices/${encodeURIComponent(String(invoiceId))}/lines/${encodeURIComponent(String(lineId))}/reassign`,
-  input,
-);
-
 export const recordInvoicePayment = (
   invoiceId: number,
   input: RecordInvoicePaymentInput,
 ) => api.post<PublicInvoiceDto>(
   `/erp/sales/invoices/${encodeURIComponent(String(invoiceId))}/payments`,
+  input,
+);
+
+export const reassignServiceQueueEntry = (
+  invoiceId: number,
+  queueEntryId: number,
+  input: ReassignInvoiceLineInput,
+) => api.post<PublicInvoiceDto>(
+  `/erp/sales/invoices/${encodeURIComponent(String(invoiceId))}/queue/${encodeURIComponent(String(queueEntryId))}/reassign`,
   input,
 );
