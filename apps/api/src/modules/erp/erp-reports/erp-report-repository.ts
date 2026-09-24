@@ -109,6 +109,7 @@ const saleLineEvents = (
     eventType: SQL;
     eventDate: SQL;
     id: SQL;
+    invoicePaid: SQL;
   }) => SQL,
 ) => {
   const lineConditions = [
@@ -122,6 +123,7 @@ const saleLineEvents = (
     ...searchFilter(filters, [
       'line.item_name_snapshot', 'invoice.invoice_number',
       'invoice.client_name_snapshot', 'line.employee_name_snapshot',
+      ...(itemType === 'product' ? ['invoice.seller_name_snapshot'] : []),
     ]),
   ];
   const reversalConditions = [
@@ -132,6 +134,7 @@ const saleLineEvents = (
     ...searchFilter(filters, [
       'original_line.item_name_snapshot', 'invoice.invoice_number',
       'invoice.client_name_snapshot', 'original_line.employee_name_snapshot',
+      ...(itemType === 'product' ? ['invoice.seller_name_snapshot'] : []),
     ]),
   ];
   const lineAmount = sql`line.line_total - (${invoiceLineDiscount('line', 'invoice')})`;
@@ -140,6 +143,7 @@ const saleLineEvents = (
       line: 'line', invoice: 'invoice', branch: 'branch', amount: lineAmount,
       quantity: sql`line.quantity`, eventType: sql`'sale'`, eventDate: sql`invoice.sold_at`,
       id: sql`CONCAT('sale-', line.id)`,
+      invoicePaid: sql`invoice.amount_paid`,
     })}
     FROM erp_invoice_lines line
     INNER JOIN erp_invoices invoice
@@ -152,6 +156,7 @@ const saleLineEvents = (
       amount: sql`-(reversal_line.gross_amount - reversal_line.discount_amount)`,
       quantity: sql`-reversal_line.quantity`, eventType: sql`reversal.type`,
       eventDate: sql`reversal.created_at`, id: sql`CONCAT(reversal.type, '-', reversal_line.id)`,
+      invoicePaid: sql`-invoice.amount_paid`,
     })}
     FROM erp_invoice_reversal_lines reversal_line
     INNER JOIN erp_invoice_reversals reversal
@@ -229,19 +234,74 @@ const serviceFacts = (filters: ReportFilters) => saleLineEvents(filters, 'servic
   SELECT ${args.id} id, ${args.eventDate} eventDate, ${sql.raw(args.branch)}.name branchName,
     ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
     ${sql.raw(args.line)}.item_name_snapshot serviceName,
-    ${sql.raw(args.line)}.employee_name_snapshot employeeName, ${args.eventType} eventType,
+    ${sql.raw(args.line)}.employee_name_snapshot employeeName, 'individual' rowType,
+    ${args.eventType} eventType,
     ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice, ${args.amount} amount,
-    ${sql.raw(args.invoice)}.amount_paid invoicePaid
+    ${args.invoicePaid} invoicePaid
 `);
 
 const productFacts = (filters: ReportFilters) => saleLineEvents(filters, 'product', (args) => sql`
   SELECT ${args.id} id, ${args.eventDate} eventDate, ${sql.raw(args.branch)}.name branchName,
     ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
-    ${sql.raw(args.line)}.item_name_snapshot productName, ${args.eventType} eventType,
+    ${sql.raw(args.invoice)}.seller_name_snapshot employeeName,
+    ${sql.raw(args.line)}.item_name_snapshot productName, 'individual' rowType,
+    ${args.eventType} eventType,
     ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice,
     ${sql.raw(args.line)}.product_cost_basis_snapshot costBasis, ${args.amount} amount,
-    ${sql.raw(args.invoice)}.amount_paid invoicePaid
+    ${args.invoicePaid} invoicePaid
 `);
+
+const withCombinedRows = (
+  facts: SQL,
+  nameColumn: 'serviceName' | 'productName',
+): SQL => {
+  const employeeCounts = nameColumn === 'serviceName'
+    ? sql`
+      SELECT serviceName,
+        SUBSTRING_INDEX(GROUP_CONCAT(employeeName ORDER BY employeeCount DESC, employeeName), ',', 1) employeeName
+      FROM (
+        SELECT serviceName, employeeName, COUNT(*) employeeCount
+        FROM (${facts}) AS employee_facts
+        WHERE employeeName IS NOT NULL
+        GROUP BY serviceName, employeeName
+      ) AS counted_employees
+      GROUP BY serviceName
+    `
+    : sql`
+      SELECT productName,
+        SUBSTRING_INDEX(GROUP_CONCAT(employeeName ORDER BY employeeCount DESC, employeeName), ',', 1) employeeName
+      FROM (
+        SELECT productName, employeeName, COUNT(*) employeeCount
+        FROM (${facts}) AS employee_facts
+        WHERE employeeName IS NOT NULL
+        GROUP BY productName, employeeName
+      ) AS counted_employees
+      GROUP BY productName
+    `;
+  const combined = nameColumn === 'serviceName'
+    ? sql`
+      SELECT CONCAT('combined:', combined_facts.serviceName) id, NULL eventDate, NULL branchName,
+        NULL invoiceNumber, combined_facts.serviceName, employee_counts.employeeName,
+        'combined' rowType, 'مجمع' eventType, SUM(combined_facts.quantity) quantity,
+        NULL unitPrice, SUM(combined_facts.amount) amount, SUM(combined_facts.invoicePaid) invoicePaid
+      FROM (${facts}) AS combined_facts
+      LEFT JOIN (${employeeCounts}) AS employee_counts
+        ON employee_counts.serviceName = combined_facts.serviceName
+      GROUP BY combined_facts.serviceName, employee_counts.employeeName
+    `
+    : sql`
+      SELECT CONCAT('combined:', combined_facts.productName) id, NULL eventDate, NULL branchName,
+        NULL invoiceNumber, employee_counts.employeeName, combined_facts.productName,
+        'combined' rowType, 'مجمع' eventType, SUM(combined_facts.quantity) quantity,
+        NULL unitPrice, NULL costBasis, SUM(combined_facts.amount) amount,
+        SUM(combined_facts.invoicePaid) invoicePaid
+      FROM (${facts}) AS combined_facts
+      LEFT JOIN (${employeeCounts}) AS employee_counts
+        ON employee_counts.productName = combined_facts.productName
+      GROUP BY combined_facts.productName, employee_counts.employeeName
+    `;
+  return sql`SELECT * FROM (${facts}) AS individual_facts UNION ALL ${combined}`;
+};
 
 /**
  * Services belong to their assigned employee. Products belong to the invoice's
@@ -906,6 +966,9 @@ export const localizeErpReportRow = (
 ): Record<string, ReportCell> => Object.fromEntries(
   Object.entries(row).map(([key, raw]) => {
     const value = normalizeCell(raw);
+    if (key === 'rowType' && typeof value === 'string') {
+      return [key, value === 'combined' ? 'مجمع' : 'فردي'];
+    }
     if (key === 'eventType' && typeof value === 'string') return [key, eventLabels[value] ?? value];
     if (reportType === 'erp-expenses' && key === 'expenseName' && value === 'advance') {
       return [key, 'سلفة'];
@@ -995,17 +1058,43 @@ const reportRows = async (
   base: SQL,
   pagination: ErpReportPagination,
 ) => {
+  const reportBase = reportType === 'erp-services'
+    ? withCombinedRows(base, 'serviceName')
+    : reportType === 'erp-products'
+      ? withCombinedRows(base, 'productName')
+      : base;
   const order = reportType === 'erp-invoice'
     ? sql` ORDER BY lineNumber ASC, id ASC`
     : reportType === 'erp-commissions'
       ? sql` ORDER BY employeeName ASC, id ASC`
-    : sql` ORDER BY eventDate DESC, id DESC`;
+      : reportType === 'erp-services'
+        ? sql` ORDER BY serviceName ASC, rowType = 'combined' ASC, eventDate DESC, id ASC`
+        : reportType === 'erp-products'
+          ? sql` ORDER BY productName ASC, rowType = 'combined' ASC, eventDate DESC, id ASC`
+          : sql` ORDER BY eventDate DESC, id DESC`;
   const limit = pagination
     ? sql` LIMIT ${pagination.pageSize} OFFSET ${(pagination.page - 1) * pagination.pageSize}`
     : sql``;
   return (await rawRows<RawRow>(transaction.execute(sql`
-    SELECT * FROM (${base}) facts ${order} ${limit}
-  `))).map((row) => localizeErpReportRow(reportType, row));
+    SELECT * FROM (${reportBase}) facts ${order} ${limit}
+  `))).map((row) => {
+    const { rowType: _rowType, ...reportRow } = row;
+    return localizeErpReportRow(reportType, reportRow);
+  });
+};
+
+const displayTotal = async (
+  transaction: Transaction,
+  reportType: ErpReportType,
+  base: SQL,
+  summaryTotal: number,
+) => {
+  if (reportType !== 'erp-services' && reportType !== 'erp-products') return summaryTotal;
+  const nameColumn = reportType === 'erp-services' ? 'serviceName' : 'productName';
+  const [row] = await rawRows<RawRow>(transaction.execute(sql`
+    SELECT COUNT(DISTINCT ${sql.raw(nameColumn)}) count FROM (${base}) facts
+  `));
+  return summaryTotal + Number(row?.count ?? 0);
 };
 
 export const createDrizzleErpReportRepository = (database: Database): ErpReportRepository => ({
@@ -1015,7 +1104,7 @@ export const createDrizzleErpReportRepository = (database: Database): ErpReportR
       const summary = await normalizedSummary(transaction, reportType, filters, selection, base);
       return {
         rows: await reportRows(transaction, reportType, base, pagination),
-        total: Number(summary.totalRecords ?? 0),
+        total: await displayTotal(transaction, reportType, base, Number(summary.totalRecords ?? 0)),
         summary,
       };
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' });
@@ -1024,7 +1113,7 @@ export const createDrizzleErpReportRepository = (database: Database): ErpReportR
     return database.transaction(async (transaction) => {
       const base = factsFor(reportType, filters, selection);
       const summary = await normalizedSummary(transaction, reportType, filters, selection, base);
-      const total = Number(summary.totalRecords ?? 0);
+      const total = await displayTotal(transaction, reportType, base, Number(summary.totalRecords ?? 0));
       let page = 1;
       let rowCount = 0;
       while (rowCount < total) {

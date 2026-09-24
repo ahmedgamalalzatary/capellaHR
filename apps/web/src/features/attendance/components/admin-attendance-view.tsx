@@ -81,13 +81,14 @@ function QueryState({
   return <>{children}</>;
 }
 
-function Pagination({ meta, onPage }: { meta: { page: number; total: number; totalPages: number } | undefined; onPage: (page: number) => void }) {
+function Pagination({ meta, onPage, persistenceKey }: { meta: { page: number; total: number; totalPages: number } | undefined; onPage: (page: number) => void; persistenceKey: string }) {
   if (!meta || meta.totalPages <= 1) return null;
   return (
     <SmartPagination
       page={meta.page}
       totalPages={meta.totalPages}
       onPage={onPage}
+      persistenceKey={persistenceKey}
       summary={
         <>
           صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span> — <span className="tabular">{meta.total}</span> سجل
@@ -190,7 +191,7 @@ function SessionSection() {
           </table></div>
         </QueryState>
       </Card>
-      <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} />
+      <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} persistenceKey="web:attendance:sessions" />
     </div>
   );
 }
@@ -236,7 +237,7 @@ function DeniedSection() {
         {items.map((item: AttendanceDeniedAttempt) => { const pending = !item.approvedAt && !item.dismissedAt; return <tr key={item.id} className="border-b border-line/60 last:border-0"><td className="px-4 py-3"><span className="tabular">{item.claimedEmployeeCode}</span></td><td className="px-4 py-3"><div>{item.eventType === 'check_in' ? 'حضور' : 'انصراف'}</div><div className="text-[12px] text-muted">{item.source === 'personal_device' ? 'هاتف شخصي' : 'هاتف الفرع'}</div></td><td className="px-4 py-3">{dateTime(item.occurredAt)}</td><td className="px-4 py-3">{failureLabels[item.failureReason] ?? 'سبب الرفض غير متاح'}</td><td className="px-4 py-3">{item.distanceMeters === null ? 'غير متاح' : <span className="tabular">{Math.round(item.distanceMeters)} م / {item.branchRadiusMeters} م</span>}</td><td className="px-4 py-3">{item.suspicious ? <Badge variant="danger">مشتبه بها</Badge> : <Badge variant="warning">مرفوضة</Badge>}</td><td className="px-4 py-3">{pending ? <div className="flex flex-wrap gap-1">{item.employeeId !== null ? <Button size="sm" disabled={review.isPending} onClick={() => review.mutate({ id: item.id, action: 'approve' })}><Check className="size-4" aria-hidden />اعتماد المحاولة</Button> : <span className="basis-full text-[12px] text-muted">تعذر تحديد الموظف؛ يمكن الرفض النهائي فقط.</span>}<Button variant="ghost" size="sm" disabled={review.isPending} onClick={() => review.mutate({ id: item.id, action: 'dismiss' })}><X className="size-4" aria-hidden />رفض نهائي</Button></div> : <Badge variant={item.approvedAt ? 'success' : 'neutral'}>{item.approvedAt ? 'معتمدة' : 'مرفوضة نهائيًا'}</Badge>}</td></tr>; })}
       </tbody></table></div>
     </QueryState></Card>
-    <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} />
+    <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} persistenceKey="web:attendance:denied" />
   </div>;
 }
 
@@ -301,7 +302,7 @@ function AbsenceSection() {
       <Field label="الحالة" htmlFor="absence-state"><select id="absence-state" aria-label="حالة الغياب" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.status ?? ''} onChange={(event) => update({ status: event.target.value ? event.target.value as ListWeeklyDayRecordsParams['status'] : undefined })}><option value="">كل الحالات</option><option value="absence">غياب</option><option value="weekly_day_off">يوم راحة</option></select></Field>
     </Filters>
     <Card><QueryState pending={query.isPending} error={query.error} empty={!items.length} emptyTitle="لا توجد سجلات غياب أو أيام راحة" onRetry={() => void query.refetch()}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-line text-[12px] text-muted"><th className="px-4 py-2.5 text-start font-medium">الموظف</th><th className="px-4 py-2.5 text-start font-medium">الفرع</th><th className="px-4 py-2.5 text-start font-medium">التاريخ</th><th className="px-4 py-2.5 text-start font-medium">الحالة</th><th className="px-4 py-2.5 text-start font-medium">الدقائق المطلوبة</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b border-line/60 last:border-0"><td className="px-4 py-3"><span className="font-medium">{item.employeeName}</span><span className="ms-2 tabular text-muted">{item.employeeCode}</span></td><td className="px-4 py-3 text-muted">{item.branchName}</td><td className="tabular px-4 py-3">{item.attendanceDate}</td><td className="px-4 py-3"><div className="flex flex-wrap gap-1"><Badge variant={item.status === 'absence' ? 'danger' : 'success'}>{item.status === 'absence' ? 'غياب' : 'يوم راحة'}</Badge>{item.withoutPermissionAt ? <Badge variant="danger">بدون إذن</Badge> : null}</div></td><td className="tabular px-4 py-3">{formatDuration(item.requiredMinutes)}</td></tr>)}</tbody></table></div></QueryState></Card>
-    <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} />
+    <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} persistenceKey="web:attendance:absence" />
   </div>;
 }
 

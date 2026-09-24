@@ -25,6 +25,8 @@ export function Pagination({
   pageSize,
   pageSizeOptions,
   onPageSizeChange,
+  persistenceKey,
+  resultSetKey,
 }: {
   summary?: ReactNode;
   previousDisabled: boolean;
@@ -40,6 +42,8 @@ export function Pagination({
   pageSize?: number;
   pageSizeOptions?: number[];
   onPageSizeChange?: (pageSize: number) => void;
+  persistenceKey?: string;
+  resultSetKey?: string;
 }) {
   if (page !== undefined && totalPages !== undefined && onPage) {
     return (
@@ -47,6 +51,8 @@ export function Pagination({
         page={page}
         totalPages={totalPages}
         onPage={onPage}
+        {...(persistenceKey !== undefined ? { persistenceKey } : {})}
+        {...(resultSetKey !== undefined ? { resultSetKey } : {})}
         {...(summary !== undefined ? { summary } : {})}
         {...(className !== undefined ? { className } : {})}
         {...(pageSize !== undefined &&

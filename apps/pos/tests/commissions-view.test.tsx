@@ -135,6 +135,16 @@ describe('CommissionsView', () => {
       amount: '50.00',
     }));
   });
+  it('fills both filter columns without extra inner space', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    const branch = screen.getByLabelText('الفرع');
+    const month = screen.getByRole('button', { name: 'شهر العمولة' });
+    expect(branch.className).toContain('w-full');
+    expect(branch.className).not.toContain('max-w-sm');
+    expect(month.parentElement?.className).toContain('[&>button]:w-full');
+  });
+
   it('announces loading monthly totals', async () => {
     mocks.list.mockReturnValue(new Promise(() => undefined));
     mount();

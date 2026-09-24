@@ -365,6 +365,8 @@ export function ReportsView() {
           page={meta.page}
           totalPages={meta.totalPages}
           onPage={setPage}
+          persistenceKey="web:reports:rows"
+          resultSetKey={JSON.stringify({ reportType, filters })}
           summary={
             <>
               صفحة <span className="tabular">{meta.page}</span> من{' '}

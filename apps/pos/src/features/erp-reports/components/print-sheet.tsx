@@ -61,7 +61,12 @@ export function PrintSheet({ report, onPrinted }: {
         </thead>
         <tbody>
           {report.rows.map((row, index) => (
-            <tr key={String(row.id ?? index)} className="break-inside-avoid">
+            <tr
+              key={String(row.id ?? index)}
+              className={typeof row.id === 'string' && row.id.startsWith('combined:')
+                ? 'report-combined-row bg-black text-white [print-color-adjust:exact] print-color-adjust-exact'
+                : 'break-inside-avoid'}
+            >
               {report.columns.map((column) => (
                 <td key={column.key} className="border border-line px-2 py-1">
                   {cellText(row[column.key] ?? null)}

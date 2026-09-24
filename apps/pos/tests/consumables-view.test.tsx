@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -106,7 +106,8 @@ describe('ConsumablesView', () => {
       serviceQueueEntryIds: [11, 12], usages: [{ productId: 9, quantity: '15' }], noConsumablesConfirmed: false,
     }));
     await waitFor(() => {
-      expect(mocks.balances).toHaveBeenCalledTimes(2);
+      expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }));
+      expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 100 }));
       expect(mocks.services.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
     expect(screen.queryByLabelText('المستهلك 1')).toBeNull();
@@ -134,17 +135,16 @@ describe('ConsumablesView', () => {
     expect(screen.queryByRole('button', { name: 'تنفيذ التحويل' })).toBeNull();
   });
 
-  it('loads every balance and service page', async () => {
-    mocks.balances
-      .mockResolvedValueOnce(page([{ productId: 9, productName: 'A', unit: 'ml', packageSize: '1.000', consumableQuantity: '1.000', sellableQuantity: 1 }], 1, 2))
-      .mockResolvedValueOnce(page([{ productId: 10, productName: 'B', unit: 'gm', packageSize: '1.000', consumableQuantity: '1.000', sellableQuantity: 1 }], 2, 2));
-    mocks.services
-      .mockResolvedValueOnce(page([{ id: 11, serviceId: 5, status: 'pending', queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }], 1, 2))
-      .mockResolvedValueOnce(page([{ id: 12, serviceId: 5, status: 'pending', queueNumber: 2, serviceName: 'Two', invoiceNumber: 'INV-2' }], 2, 2));
+  it('paginates services and consumable stock independently', async () => {
+    mocks.services.mockResolvedValue(page([{ id: 11, status: 'pending', queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }], 1, 2));
+    mocks.balances.mockResolvedValue(page([{ productId: 9, productName: 'A', unit: 'ml', packageSize: '1.000', consumableQuantity: '1.000', sellableQuantity: 1 }], 1, 2));
     mount();
-    await screen.findByText('INV-2');
-    expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 100 }));
-    expect(mocks.services).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 100 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.services).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 })));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'مخزون المستهلكات' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.balances).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, pageSize: 20 })));
   });
 
   it('blocks incomplete usage rows and mixed-service selections', async () => {
@@ -174,7 +174,41 @@ describe('ConsumablesView', () => {
     expect(dialog).toBeDefined();
   });
 
-  it('opens the consumable stock setup in a dialog instead of inline', async () => {
+  it('loads complete balance options separately from the paginated stock table', async () => {
+    const firstBalance = { productId: 9, productName: 'صفحة واحدة', unit: 'ml', packageSize: '1.000', consumableQuantity: '1.000', sellableQuantity: 1 };
+    const secondBalance = { productId: 10, productName: 'صفحة ثانية', unit: 'ml', packageSize: '1.000', consumableQuantity: '2.000', sellableQuantity: 1 };
+    mocks.balances.mockImplementation(async ({ page: pageNumber = 1, pageSize = 20 }: { page?: number; pageSize?: number }) => (
+      pageSize === 100
+        ? page(pageNumber === 1 ? [firstBalance] : [secondBalance], pageNumber, 2)
+        : page([firstBalance], pageNumber, 2)
+    ));
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
+    mocks.services.mockResolvedValue(page([{ id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }]));
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+
+    const options = within(await screen.findByLabelText('المستهلك 1')).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual(expect.arrayContaining(['صفحة واحدة (1.000 ml)', 'صفحة ثانية (2.000 ml)']));
+    expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 20 }));
+    expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 100 }));
+  });
+
+  it('keeps a selected service scoped to one service across pages', async () => {
+    mocks.services
+      .mockResolvedValueOnce(page([{ id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }], 1, 2))
+      .mockResolvedValue(page([{ id: 12, serviceId: 6, status: 'completed', consumptionRecorded: false, queueNumber: 2, serviceName: 'Two', invoiceNumber: 'INV-2' }], 2, 2));
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    const secondPageCheckbox = (await screen.findAllByRole('checkbox'))[0]!;
+    fireEvent.click(secondPageCheckbox);
+
+    expect((secondPageCheckbox as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByRole('dialog', { name: /تسجيل مستهلكات/ })).toBeNull();
+  });
+
+  it('opens the product actions on every stock tab', async () => {
     mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'admin' } } });
     sessionStorage.setItem('capella:pos-admin-branch', '3');
     mount();

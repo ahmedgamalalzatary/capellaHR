@@ -33,6 +33,7 @@ const snapshot = {
     { key: 'clientPhone', label: 'الهاتف' },
     { key: 'authorizedBy', label: 'المصرح' },
     { key: 'saleKind', label: 'النوع' },
+    { key: 'employeeName', label: 'الموظف' },
     { key: 'total', label: 'الإجمالي' },
   ],
   rows: [{
@@ -156,6 +157,26 @@ describe('ErpReportsView', () => {
     await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith(
       'erp-sales', expect.objectContaining({ page: 2 }),
     ));
+  });
+
+  it('shows at most two sales employees and summarizes the rest', async () => {
+    mocks.view.mockResolvedValue({
+      snapshot: {
+        ...snapshot,
+        rows: [{
+          ...snapshot.rows[0],
+          employeeName: 'موظف أول | موظف ثان | موظف ثالث | موظف رابع',
+        }],
+      },
+      meta: { ...meta, total: 1, totalPages: 1 },
+    });
+    mount();
+
+    await screen.findByText('عميل التقرير');
+    const salesRow = (await screen.findByText('عميل التقرير')).closest('tr')!;
+    expect(within(salesRow).getByText('موظف أول, موظف ثان +2')).toBeDefined();
+    expect(within(salesRow).queryByText('موظف ثالث')).toBeNull();
+    expect(within(salesRow).queryByText('موظف رابع')).toBeNull();
   });
 
   it('applies date changes only after apply is clicked', async () => {
@@ -298,6 +319,49 @@ describe('ErpReportsView', () => {
     expect(within(totals).getByText('3000.00')).toBeDefined();
     expect(within(totals).getByText('إجمالي الخدمات المنفذة')).toBeDefined();
     expect(within(totals).getByText('إجمالي المنتجات المباعة')).toBeDefined();
+  });
+
+  it.each([
+    ['erp-services', 'تقرير الخدمات', 'خدمة تجريبية'],
+    ['erp-products', 'تقرير المنتجات', 'منتج تجريبي'],
+  ] as const)('marks combined %s rows and prevents selecting them as transactions', async (reportType, buttonName, itemName) => {
+    mocks.view.mockResolvedValue({
+      snapshot: {
+        reportType,
+        title: buttonName,
+        generatedAt: '2026-08-09T12:00:00.000Z',
+        columns: [
+          { key: 'id', label: 'المعرف' },
+          { key: itemName === 'خدمة تجريبية' ? 'serviceName' : 'productName', label: 'الصنف' },
+          { key: 'rowType', label: 'نوع الصف' },
+          { key: 'employeeName', label: 'الموظف' },
+          { key: 'quantity', label: 'الكمية' },
+          { key: 'amount', label: 'المبلغ' },
+          { key: 'invoicePaid', label: 'المدفوع على الفاتورة' },
+        ],
+        rows: [
+          { id: 'sale-1', [itemName === 'خدمة تجريبية' ? 'serviceName' : 'productName']: itemName, rowType: 'فردي', quantity: '1', amount: '50.00' },
+          { id: `combined:${itemName}`, [itemName === 'خدمة تجريبية' ? 'serviceName' : 'productName']: itemName, rowType: 'مجمع', employeeName: 'موظف التقرير', quantity: '3', amount: '150.00', invoicePaid: '150.00' },
+        ],
+        summary: { totalRecords: 1, totalRevenue: '50.00' },
+      },
+      meta: { ...meta, total: 2, totalPages: 1 },
+    });
+    mount();
+
+    fireEvent.click(await screen.findByRole('button', { name: buttonName }));
+    await screen.findAllByText(itemName);
+    const combinedRow = document.querySelector<HTMLElement>('tr.report-combined-row')!;
+    const combinedCells = within(combinedRow);
+    expect(combinedCells.getAllByText(itemName)).toHaveLength(1);
+    expect(combinedCells.getByText('3')).toBeDefined();
+    expect(combinedCells.getAllByText('150.00')).toHaveLength(2);
+    expect(combinedCells.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'نوع الصف' })).toBeNull();
+    expect(combinedRow.classList.contains('report-combined-row')).toBe(true);
+    expect(combinedRow.classList.contains('bg-black')).toBe(true);
+    expect(combinedRow.classList.contains('text-white')).toBe(true);
+    expect(combinedRow.classList.contains('[print-color-adjust:exact]')).toBe(true);
   });
 
   it('renders a safe fallback badge for an unknown future export status', async () => {

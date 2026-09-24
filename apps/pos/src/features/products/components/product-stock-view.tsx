@@ -29,6 +29,7 @@ import {
   createProduct,
   generateProductBarcode,
   listAllProducts,
+  listProducts,
   listStockMovements,
   updateProduct,
   type Product,
@@ -68,6 +69,7 @@ export function ProductStockView() {
   const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
   const [search, setSearch] = useState('');
   const [lowStock, setLowStock] = useState(false);
+  const [productPage, setProductPage] = useState(1);
   const [editing, setEditing] = useState<Product | null>(null);
   const [confirmingToggle, setConfirmingToggle] = useState<Product | null>(null);
   const [name, setName] = useState('');
@@ -90,13 +92,15 @@ export function ProductStockView() {
     ...(branchId === undefined ? {} : { branchId }),
     ...(search.trim() ? { search: search.trim() } : {}),
     ...(lowStock ? { lowStock: true } : {}),
+    page: productPage,
+    pageSize: 20,
   };
   const movementParams = {
     ...(branchId === undefined ? {} : { branchId }),
     ...(movementProductId === undefined ? {} : { productId: movementProductId }),
     page: movementPage, pageSize: 20,
   };
-  const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listAllProducts(productParams), enabled: scopeReady });
+  const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listProducts(productParams), enabled: scopeReady });
   const catalogProducts = useQuery({
     queryKey: productQueryKeys.list({ ...(branchId === undefined ? {} : { branchId }), catalog: true }),
     queryFn: () => listAllProducts(branchId === undefined ? {} : { branchId }),
@@ -218,7 +222,7 @@ export function ProductStockView() {
                     if (commandPending) return;
                     setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
                     setEditing(null); setCreateOpen(false); setConfirmingToggle(null); setAdjusting(null);
-                    setMovementProductId(undefined); setMovementPage(1);
+                    setMovementProductId(undefined); setMovementPage(1); setProductPage(1);
                   }}
                 >
                   <option value="">اختر الفرع</option>
@@ -343,14 +347,14 @@ export function ProductStockView() {
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
               <div className="relative w-full max-w-xs">
                 <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
-                <Input aria-label="بحث في المنتجات" placeholder="بحث" className="ps-9" value={search} onChange={(event) => setSearch(event.target.value)} />
+                <Input aria-label="بحث في المنتجات" placeholder="بحث" className="ps-9" value={search} onChange={(event) => { setSearch(event.target.value); setProductPage(1); }} />
               </div>
               <Button
                 variant={lowStock ? 'primary' : 'secondary'}
                 size="sm"
                 aria-pressed={lowStock}
                 aria-label="عرض المنتجات منخفضة المخزون فقط"
-                onClick={() => setLowStock((value) => !value)}
+                onClick={() => { setLowStock((value) => !value); setProductPage(1); }}
               >
                 المخزون المنخفض
               </Button>
@@ -358,7 +362,7 @@ export function ProductStockView() {
 
             {products.isPending ? <LoadingState label="جارٍ تحميل المنتجات…" className="py-16" />
               : products.isError ? <EmptyState title="تعذر تحميل المنتجات" action={<Button onClick={() => void products.refetch()}>إعادة المحاولة</Button>} />
-                : !products.data?.items.length ? (
+                : products.data?.meta.total === 0 ? (
                   <EmptyState
                     title={lowStock || search.trim() ? 'لا توجد منتجات مطابقة' : 'لا توجد منتجات'}
                     description={lowStock ? 'لا يوجد منتج تحت حد المخزون المنخفض.' : search.trim() ? 'جرّب بحثًا آخر.' : 'أضف أول منتج لهذا الفرع.'}
@@ -373,8 +377,7 @@ export function ProductStockView() {
                   />
                 )
                   : (
-                    // Content-width: a stretched table hands the spare width to the
-                    // product column, leaving it far wider than any name it holds.
+                    <>
                     <DataTable minWidth="w-auto min-w-max">
                       <THead>
                         <TH>المنتج</TH>
@@ -418,6 +421,8 @@ export function ProductStockView() {
                         ))}
                       </tbody>
                     </DataTable>
+                    <Pagination summary={<>صفحة <span className="tabular">{productPage}</span></>} previousDisabled={productPage <= 1} nextDisabled={productPage >= (products.data?.meta.totalPages ?? 1)} onPrevious={() => setProductPage((page) => page - 1)} onNext={() => setProductPage((page) => page + 1)} page={productPage} totalPages={products.data?.meta.totalPages} onPage={setProductPage} persistenceKey="pos:products:list" resultSetKey={JSON.stringify({ branchId, search: search.trim(), lowStock })} />
+                    </>
                   )}
           </Card>
 
@@ -500,6 +505,7 @@ export function ProductStockView() {
                       page={movementPage}
                       totalPages={movements.data.totalPages}
                       onPage={setMovementPage}
+                      persistenceKey="pos:products:movements"
                     />
                   </>
                 ) : <EmptyState title="لا توجد حركات بعد" />}

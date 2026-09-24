@@ -22,6 +22,7 @@ import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { listAllProducts, productQueryKeys } from '@/features/products';
 import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
 import { createUuid } from '@/lib/uuid';
@@ -29,7 +30,7 @@ import { createUuid } from '@/lib/uuid';
 import {
   cancelPurchase,
   createSupplier,
-  listAllSuppliers,
+  listSuppliers,
   listPurchases,
   postPurchase,
   updateSupplier,
@@ -85,6 +86,7 @@ export function SuppliersPurchasesView() {
   const [lines, setLines] = useState<DraftLine[]>([blankLine(1)]);
   const [idempotencyKey, setIdempotencyKey] = useState(createUuid);
   const [correctionOf, setCorrectionOf] = useState<number>();
+  const [supplierPage, setSupplierPage] = useState(1);
   const [page, setPage] = useState(1);
   const [historySupplier, setHistorySupplier] = useState('');
   const [historyProduct, setHistoryProduct] = useState('');
@@ -100,10 +102,15 @@ export function SuppliersPurchasesView() {
     enabled: isAdmin,
   });
   const branchScope = branchId === undefined ? {} : { branchId };
-  const supplierParams = { ...branchScope, pageSize: 100 };
+  const supplierParams = { ...branchScope, page: supplierPage, pageSize: 20 };
   const suppliers = useQuery({
     queryKey: supplierQueryKeys.suppliers(supplierParams),
-    queryFn: () => listAllSuppliers(supplierParams),
+    queryFn: () => listSuppliers(supplierParams),
+    enabled: scopeReady,
+  });
+  const allSuppliers = useQuery({
+    queryKey: supplierQueryKeys.suppliers({ ...branchScope, options: true }),
+    queryFn: () => fetchAllPages((page) => listSuppliers({ ...branchScope, page, pageSize: 100 })),
     enabled: scopeReady,
   });
   const activeProductParams = { ...(branchId === undefined ? {} : { branchId }), isActive: true };
@@ -169,7 +176,7 @@ export function SuppliersPurchasesView() {
     if (saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending) return;
     setSelectedBranchId(value ? Number(value) : undefined);
     clearSupplier(); resetDraft(); setPurchasePanelOpen(false); setHistorySupplier(''); setHistoryProduct(''); setStatus('');
-    setPage(1); setConfirmingToggle(null); setCancelling(null); setReason('');
+    setPage(1); setSupplierPage(1); setConfirmingToggle(null); setCancelling(null); setReason('');
   };
   const updateLine = (key: number, changes: Partial<DraftLine>) => {
     if (commandPending) return;
@@ -239,7 +246,7 @@ export function SuppliersPurchasesView() {
   const validLines = lines.length > 0 && chosenProductIds.size === lines.length && lines.every((line) => (
     Number(line.productId) && quantityValue(line.quantity) !== null && cents(line.unitCost) > BigInt(0)
   ));
-  const activeSuppliers = suppliers.data?.items.filter((supplier) => supplier.isActive) ?? [];
+  const activeSuppliers = allSuppliers.data?.filter((supplier: Supplier) => supplier.isActive) ?? [];
   const commandPending = saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending;
   const closePurchasePanel = () => {
     if (commandPending) return;
@@ -387,6 +394,7 @@ export function SuppliersPurchasesView() {
                 }
               />
             ) : (
+              <>
               <DataTable className="border-t border-line/70">
                 <THead>
                   <TH>المورد</TH>
@@ -416,6 +424,8 @@ export function SuppliersPurchasesView() {
                   ))}
                 </tbody>
               </DataTable>
+              <Pagination summary={<>صفحة <span className="tabular">{supplierPage}</span></>} previousDisabled={supplierPage <= 1} nextDisabled={supplierPage >= (suppliers.data?.meta.totalPages ?? 1)} onPrevious={() => setSupplierPage((page) => page - 1)} onNext={() => setSupplierPage((page) => page + 1)} page={supplierPage} totalPages={suppliers.data?.meta.totalPages ?? 1} onPage={setSupplierPage} persistenceKey="pos:suppliers:list" resultSetKey={JSON.stringify(branchScope)} />
+              </>
             )}
           </Card>
 
@@ -581,7 +591,7 @@ export function SuppliersPurchasesView() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Select aria-label="تصفية حسب المورد" value={historySupplier} onChange={(event) => { setHistorySupplier(event.target.value); setPage(1); }}>
                   <option value="">كل الموردين</option>
-                  {suppliers.data?.items.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                  {allSuppliers.data?.map((supplier: Supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
                 </Select>
                 <Select aria-label="تصفية حسب المنتج" value={historyProduct} onChange={(event) => { setHistoryProduct(event.target.value); setPage(1); }}>
                   <option value="">كل المنتجات</option>
@@ -659,6 +669,7 @@ export function SuppliersPurchasesView() {
                   page={page}
                   totalPages={purchases.data.meta.totalPages}
                   onPage={setPage}
+                  persistenceKey="pos:suppliers:purchases"
                 />
               </>
             )}

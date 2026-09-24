@@ -222,6 +222,7 @@ export function BaseSalariesSection() {
             setEditingId(null);
             setPage(next);
           }}
+          persistenceKey="web:payroll:base-salaries"
           summary={
             <>
               صفحة <span className="tabular">{meta.page}</span> من{' '}

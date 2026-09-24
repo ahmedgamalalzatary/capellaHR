@@ -22,7 +22,7 @@ vi.mock('../src/features/catalog', () => ({
   listCatalogBranches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }, { id: 3, name: 'الفرع الثاني' }], totalPages: 1 })),
 }));
 vi.mock('../src/features/products/api/products-api', () => ({
-  listAllProducts: mocks.listProducts,
+  listAllProducts: mocks.listProducts, listProducts: mocks.listProducts,
   listStockMovements: mocks.movements,
   createProduct: mocks.create,
   updateProduct: mocks.update,
@@ -47,6 +47,30 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('paginates the main products table', async () => {
+    mocks.listProducts.mockResolvedValue({
+      items: [product], meta: { page: 1, pageSize: 20, total: 2, totalPages: 2 },
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.listProducts).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, page: 2, pageSize: 20 })));
+  });
+
+  it('keeps pagination available when a saved page has no product rows', async () => {
+    sessionStorage.setItem(`capella:pagination:pos:products:list:${JSON.stringify({ branchId: 2, search: '', lowStock: false })}`, '2');
+    mocks.listProducts.mockResolvedValue({
+      items: [], meta: { page: 2, pageSize: 20, total: 1, totalPages: 2 },
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    expect(await screen.findByRole('button', { name: 'الصفحة 1' })).toBeDefined();
+  });
+
   it('shows each product commission percentage in the products table', async () => {
     mocks.listProducts.mockResolvedValue({
       items: [{ ...product, commissionPercent: '3.00' }],

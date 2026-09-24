@@ -453,10 +453,11 @@ export function MonthlyPayrollSection() {
         <SmartPagination
           page={meta.page}
           totalPages={meta.totalPages}
-            onPage={(next) => {
-              setExpandedEmployeeId(null);
-              setPage(next);
-            }}
+          onPage={(next) => {
+            setExpandedEmployeeId(null);
+            setPage(next);
+          }}
+          persistenceKey="web:payroll:monthly"
           summary={
             <>
               صفحة <span className="tabular">{meta.page}</span> من{' '}

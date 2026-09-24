@@ -189,6 +189,7 @@ export function ExportsHistory() {
           page={meta.page}
           totalPages={meta.totalPages}
           onPage={setPage}
+          persistenceKey="web:reports:exports"
           summary={
             <>
               صفحة <span className="tabular">{meta.page}</span> من{' '}

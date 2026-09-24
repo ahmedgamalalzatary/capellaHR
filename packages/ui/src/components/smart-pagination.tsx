@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { cn } from '../lib/cn';
 import { getVisiblePages } from '../lib/pagination';
@@ -15,6 +15,8 @@ export interface SmartPaginationProps {
   pageSizeOptions?: number[];
   onPageSizeChange?: (pageSize: number) => void;
   className?: string;
+  persistenceKey?: string;
+  resultSetKey?: string;
 }
 
 /**
@@ -30,14 +32,42 @@ export function SmartPagination({
   pageSizeOptions,
   onPageSizeChange,
   className,
+  persistenceKey,
+  resultSetKey,
 }: SmartPaginationProps) {
   const [draft, setDraft] = useState('');
+  const restoredKey = useRef<string | undefined>(undefined);
+  const resultIdentity = resultSetKey ?? '';
+  const storageKey = typeof window === 'undefined'
+    ? undefined
+    : `capella:pagination:${persistenceKey ?? window.location.pathname}:${resultIdentity}`;
+  useEffect(() => {
+    if (!storageKey || totalPages <= 1) return;
+    if (restoredKey.current !== storageKey) {
+      restoredKey.current = storageKey;
+      const storedPage = Number(window.sessionStorage.getItem(storageKey));
+      if (Number.isInteger(storedPage) && storedPage >= 1 && storedPage <= totalPages && storedPage !== page) {
+        onPage(storedPage);
+        return;
+      }
+    }
+    window.sessionStorage.setItem(storageKey, String(page));
+  }, [onPage, page, storageKey, totalPages]);
+  const selectPage = (next: number) => {
+    if (storageKey && next >= 1 && next <= totalPages) {
+      window.sessionStorage.setItem(storageKey, String(next));
+    }
+    (document.activeElement as HTMLElement | null)?.blur();
+    onPage(next);
+    window.scrollTo(0, 0);
+    window.requestAnimationFrame(() => window.scrollTo(0, 0));
+  };
   if (totalPages <= 1) return null;
   const items = getVisiblePages(page, totalPages);
   const jump = () => {
     const next = Number(draft);
     if (Number.isInteger(next) && next >= 1 && next <= totalPages && next !== page) {
-      onPage(next);
+      selectPage(next);
     }
     setDraft('');
   };
@@ -55,7 +85,7 @@ export function SmartPagination({
           variant="secondary"
           size="sm"
           disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
+          onClick={() => selectPage(page - 1)}
         >
           السابق
         </Button>
@@ -70,7 +100,7 @@ export function SmartPagination({
               variant={item === page ? 'primary' : 'ghost'}
               size="sm"
               disabled={item === page}
-              onClick={() => onPage(item)}
+              onClick={() => selectPage(item)}
               aria-label={`الصفحة ${item}`}
               aria-current={item === page ? 'page' : undefined}
             >
@@ -82,7 +112,7 @@ export function SmartPagination({
           variant="secondary"
           size="sm"
           disabled={page >= totalPages}
-          onClick={() => onPage(page + 1)}
+          onClick={() => selectPage(page + 1)}
         >
           التالي
         </Button>

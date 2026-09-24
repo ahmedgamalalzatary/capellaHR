@@ -255,6 +255,68 @@ describe('ERP reports MySQL reader', () => {
     });
   });
 
+  it('keeps combined service rows after the individual rows for the same item', async () => {
+    const firstPage = await createErpReportsModule(database).reader.read(
+      'erp-services', { branchId, dateFrom: '2026-08-01', dateTo: '2026-08-31' },
+      { mode: 'all' }, { page: 1, pageSize: 1 }, reversedAt,
+    );
+    const secondPage = await createErpReportsModule(database).reader.read(
+      'erp-services', { branchId, dateFrom: '2026-08-01', dateTo: '2026-08-31' },
+      { mode: 'all' }, { page: 2, pageSize: 1 }, reversedAt,
+    );
+
+    expect(firstPage).toMatchObject({
+      kind: 'success',
+      snapshot: { rows: [expect.objectContaining({ id: 'sale-1' })] },
+    });
+    expect(secondPage).toMatchObject({
+      kind: 'success',
+      snapshot: { rows: [expect.objectContaining({ id: 'combined:خدمة تاريخية' })] },
+    });
+  });
+
+  it.each([
+    ['erp-services', 'serviceName', 'خدمة تاريخية', '2026-08-01', '2026-08-31', '1', '180.00', '184.00'],
+    ['erp-products', 'productName', 'منتج تاريخي', '2026-07-01', '2026-07-31', '1', '50.00', '50.00'],
+  ] as const)('reports individual and filtered combined rows for %s', async (reportType, nameKey, name, dateFrom, dateTo, quantity, amount, invoicePaid) => {
+    const result = await createErpReportsModule(database).reader.read(
+      reportType, { branchId, dateFrom, dateTo, search: name },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+
+    expect(result).toMatchObject({ kind: 'success', total: 2 });
+    if (result.kind === 'success') {
+      expect(result.snapshot.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ [nameKey]: name, eventType: 'بيع', quantity: '1', amount }),
+        expect.objectContaining({
+          [nameKey]: name,
+          id: `combined:${name}`,
+          employeeName: 'موظف التقرير',
+          quantity,
+          amount,
+          invoicePaid,
+        }),
+      ]));
+      expect(result.snapshot.summary).toMatchObject({ totalRevenue: amount });
+    }
+  });
+
+  it('searches product sales and reversals by the stored seller snapshot', async () => {
+    const reader = createErpReportsModule(database).reader;
+    const sellerSearch = 'موظف التقرير';
+    const sale = await reader.read(
+      'erp-products', { branchId, dateFrom: '2026-08-01', dateTo: '2026-08-31', search: sellerSearch },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+    const reversal = await reader.read(
+      'erp-products', { branchId, dateFrom: '2026-09-01', dateTo: '2026-09-30', search: sellerSearch },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+
+    expect(sale).toMatchObject({ kind: 'success', total: 2 });
+    expect(reversal).toMatchObject({ kind: 'success', total: 2 });
+  });
+
   it('credits products to the cashier and services to their assigned employee', async () => {
     const reader = createErpReportsModule(database).reader;
     const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };
@@ -354,7 +416,11 @@ describe('ERP reports MySQL reader', () => {
       if (result.kind !== 'success') continue;
       expect(result.snapshot.reportType).toBe(reportType);
       expect(result.snapshot.columns.length).toBeGreaterThan(0);
-      expect(result.snapshot.summary.totalRecords).toBe(result.total);
+      if (reportType === 'erp-services' || reportType === 'erp-products') {
+        expect(result.total).toBeGreaterThanOrEqual(Number(result.snapshot.summary.totalRecords));
+      } else {
+        expect(result.snapshot.summary.totalRecords).toBe(result.total);
+      }
       const serializedSnapshot = JSON.stringify(result.snapshot);
       expect(serializedSnapshot).not.toContain('pinHash');
       expect(serializedSnapshot).not.toContain('passwordHash');

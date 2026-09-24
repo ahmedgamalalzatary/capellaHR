@@ -70,8 +70,9 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     title: 'تقرير المنتجات المباعة',
     columns: [
       ['id', 'المعرف'], ['eventDate', 'التاريخ'], ['branchName', 'الفرع'],
-      ['invoiceNumber', 'رقم الفاتورة'], ['productName', 'المنتج'], ['eventType', 'نوع الحركة'],
-      ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'], ['costBasis', 'تكلفة الوحدة'],
+      ['invoiceNumber', 'رقم الفاتورة'], ['productName', 'المنتج'],
+      ['employeeName', 'الموظف'], ['eventType', 'نوع الحركة'], ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'],
+      ['costBasis', 'تكلفة الوحدة'],
       ['amount', 'الإيراد'], ['invoicePaid', 'المدفوع على الفاتورة'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },

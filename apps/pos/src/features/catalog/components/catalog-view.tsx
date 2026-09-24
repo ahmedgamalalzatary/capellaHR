@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
+import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
@@ -67,6 +68,8 @@ export function CatalogView() {
   const [tab, setTab] = useState<Tab>('categories');
   const [categorySearch, setCategorySearch] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [servicePage, setServicePage] = useState(1);
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [confirmingCategory, setConfirmingCategory] = useState<Category | null>(null);
@@ -90,23 +93,31 @@ export function CatalogView() {
 
   const trimmedCategorySearch = categorySearch.trim();
   const categoriesQuery = useQuery({
-    queryKey: catalogQueryKeys.categories({ branchId, search: trimmedCategorySearch }),
-    queryFn: () => fetchAllPages((page) => listCategories({
+    queryKey: catalogQueryKeys.categories({ branchId, search: trimmedCategorySearch, page: categoryPage }),
+    queryFn: () => listCategories({
       ...branchScope,
       ...(trimmedCategorySearch ? { search: trimmedCategorySearch } : {}),
-      page,
-    })),
+      page: categoryPage,
+      pageSize: 20,
+    }),
+    enabled: scopeReady,
+  });
+
+  const categoryOptionsQuery = useQuery({
+    queryKey: [...catalogQueryKeys.categories({ branchId, search: '', page: 1, pageSize: 100 }), 'options'],
+    queryFn: () => fetchAllPages((page) => listCategories({ ...branchScope, page, pageSize: 100 })),
     enabled: scopeReady,
   });
 
   const trimmedServiceSearch = serviceSearch.trim();
   const servicesQuery = useQuery({
-    queryKey: catalogQueryKeys.services({ branchId, search: trimmedServiceSearch }),
-    queryFn: () => fetchAllPages((page) => listServices({
+    queryKey: catalogQueryKeys.services({ branchId, search: trimmedServiceSearch, page: servicePage }),
+    queryFn: () => listServices({
       ...branchScope,
       ...(trimmedServiceSearch ? { search: trimmedServiceSearch } : {}),
-      page,
-    })),
+      page: servicePage,
+      pageSize: 20,
+    }),
     enabled: scopeReady,
   });
 
@@ -132,8 +143,9 @@ export function CatalogView() {
     onError: (error: unknown) => notifyError(error),
   });
 
-  const categories = categoriesQuery.data ?? [];
-  const services = servicesQuery.data ?? [];
+  const categories = categoriesQuery.data?.items ?? [];
+  const categoryOptions = categoryOptionsQuery.data ?? [];
+  const services = servicesQuery.data?.items ?? [];
   const visibleTabs = tabs;
 
   useEffect(() => {
@@ -161,6 +173,8 @@ export function CatalogView() {
               onChange={(event) => {
                 if (commandPending) return;
                 setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
+                setCategoryPage(1);
+                setServicePage(1);
               }}
             >
               <option value="">اختر الفرع</option>
@@ -245,7 +259,7 @@ export function CatalogView() {
                       placeholder="بحث باسم التصنيف"
                       className="ps-9"
                       value={categorySearch}
-                      onChange={(event) => setCategorySearch(event.target.value)}
+                      onChange={(event) => { setCategorySearch(event.target.value); setCategoryPage(1); }}
                     />
                   </div>
                   <Button
@@ -347,6 +361,7 @@ export function CatalogView() {
                     </tbody>
                   </DataTable>
                 )}
+                <Pagination summary={<>صفحة <span className="tabular">{categoryPage}</span></>} previousDisabled={categoryPage <= 1} nextDisabled={categoryPage >= (categoriesQuery.data?.meta.totalPages ?? 1)} onPrevious={() => setCategoryPage((page) => page - 1)} onNext={() => setCategoryPage((page) => page + 1)} page={categoryPage} totalPages={categoriesQuery.data?.meta.totalPages ?? 1} onPage={setCategoryPage} persistenceKey="pos:catalog:categories" resultSetKey={JSON.stringify({ branchId, search: trimmedCategorySearch })} />
               </Card>
 
               {toggleCategory.isError ? (
@@ -396,7 +411,7 @@ export function CatalogView() {
               {creatingService ? (
                 <Modal title="إضافة خدمة" className="max-h-[90dvh] overflow-y-auto" onClose={() => !commandPending && setCreatingService(false)}>
                   <ServiceForm
-                    categories={categories}
+                    categories={categoryOptions}
                     {...branchScope}
                     onDone={() => { setCreatingService(false); setSuccessMessage('تم حفظ الخدمة.'); }}
                     onCancel={() => setCreatingService(false)}
@@ -407,7 +422,7 @@ export function CatalogView() {
                 <Modal title="تعديل خدمة" className="max-h-[90dvh] overflow-y-auto" onClose={() => !commandPending && setEditingService(null)}>
                   <ServiceForm
                     service={editingService}
-                    categories={categories}
+                    categories={categoryOptions}
                     {...branchScope}
                     onDone={() => { setEditingService(null); setSuccessMessage('تم حفظ الخدمة.'); }}
                     onCancel={() => setEditingService(null)}
@@ -427,7 +442,7 @@ export function CatalogView() {
                       placeholder="بحث باسم الخدمة"
                       className="ps-9"
                       value={serviceSearch}
-                      onChange={(event) => setServiceSearch(event.target.value)}
+                      onChange={(event) => { setServiceSearch(event.target.value); setServicePage(1); }}
                     />
                   </div>
                   <Button
@@ -561,6 +576,7 @@ export function CatalogView() {
                     </tbody>
                   </DataTable>
                 )}
+                <Pagination summary={<>صفحة <span className="tabular">{servicePage}</span></>} previousDisabled={servicePage <= 1} nextDisabled={servicePage >= (servicesQuery.data?.meta.totalPages ?? 1)} onPrevious={() => setServicePage((page) => page - 1)} onNext={() => setServicePage((page) => page + 1)} page={servicePage} totalPages={servicesQuery.data?.meta.totalPages ?? 1} onPage={setServicePage} persistenceKey="pos:catalog:services" resultSetKey={JSON.stringify({ branchId, search: trimmedServiceSearch })} />
               </Card>
 
               {toggleService.isError ? (

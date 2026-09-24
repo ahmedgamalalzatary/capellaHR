@@ -124,7 +124,8 @@ const initialDates = () => {
 
 const extraHiddenOnScreen: Partial<Record<ErpTabReportType, readonly string[]>> = {
   'erp-sales': ['clientPhone', 'authorizedBy', 'saleKind'],
-  'erp-products': ['eventType'],
+  'erp-products': ['eventType', 'rowType'],
+  'erp-services': ['rowType'],
   'erp-employees': ['employeeCode'],
   'erp-commissions': ['employeeCode'],
   'erp-client-history': ['clientPhone'],
@@ -144,6 +145,13 @@ const displayCell = (value: ReportCell) => {
   const text = String(value);
   const dateOnly = text.match(/^(\d{4}-\d{2}-\d{2})[ T]\d/);
   return dateOnly?.[1] ?? text;
+};
+
+const salesEmployeeSummary = (value: ReportCell) => {
+  if (typeof value !== 'string') return displayCell(value);
+  const employees = value.split(' | ').map((employee) => employee.trim()).filter(Boolean);
+  if (employees.length <= 2) return displayCell(value);
+  return `${employees.slice(0, 2).join(', ')} +${employees.length - 2}`;
 };
 
 const errorMessage = (error: unknown) => error instanceof Error
@@ -309,6 +317,7 @@ function ExportHistory({ reportType }: { reportType: ErpTabReportType }) {
             page={page}
             totalPages={meta.totalPages}
             onPage={setPage}
+            persistenceKey="pos:reports:export-history"
           />
         ) : null}
       </Card>
@@ -533,10 +542,20 @@ export function ErpReportsView() {
                     </THead>
                     <tbody>
                       {snapshot.rows.map((row, index) => {
-                        const rowId = typeof row.id === 'string' || typeof row.id === 'number'
-                          ? row.id
-                          : null;
-                        return <TR key={String(row.id ?? index)}>
+                        const combined = row.rowType === 'مجمع' || (
+                          typeof row.id === 'string' && row.id.startsWith('combined:')
+                        );
+                        const rowId = combined
+                          ? null
+                          : typeof row.id === 'string' || typeof row.id === 'number'
+                            ? row.id
+                            : null;
+                        return <TR
+                          key={String(row.id ?? index)}
+                          className={combined
+                            ? 'report-combined-row bg-black text-white hover:bg-black [print-color-adjust:exact] print-color-adjust-exact'
+                            : undefined}
+                        >
                           <TD>
                             {rowId !== null ? (
                               <input
@@ -549,7 +568,9 @@ export function ErpReportsView() {
                           </TD>
                           {columns.map((column) => (
                             <TD key={column.key} className="whitespace-nowrap">
-                              {displayCell(row[column.key] ?? null)}
+                              {reportType === 'erp-sales' && column.key === 'employeeName'
+                                ? salesEmployeeSummary(row[column.key] ?? null)
+                                : displayCell(row[column.key] ?? null)}
                             </TD>
                           ))}
                         </TR>;
@@ -584,6 +605,8 @@ export function ErpReportsView() {
               page={page}
               totalPages={meta.totalPages}
               onPage={setPage}
+              persistenceKey={`pos:reports:${reportType}`}
+              resultSetKey={JSON.stringify({ reportType, filters })}
             />
           ) : null}
         </Card>

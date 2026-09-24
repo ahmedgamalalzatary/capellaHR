@@ -211,7 +211,7 @@ export function CommissionsView() {
                 <Select
                   id="commissions-branch"
                   aria-label="الفرع"
-                  className="max-w-sm"
+                  className="w-full"
                   value={branchId ?? ''}
                   onChange={(event) => {
                     setBranchId(event.target.value ? Number(event.target.value) : undefined);
@@ -232,6 +232,7 @@ export function CommissionsView() {
             <MonthPicker
               id="commissions-month"
               filterLabel="شهر العمولة"
+              className="[&>button]:w-full"
               value={month}
               onChange={(next) => { setMonth(next); setPage(1); setSelected(null); setPayoutOpen(false); }}
             />

@@ -149,18 +149,34 @@ describe('CatalogView branch scope', () => {
 });
 
 describe('CatalogView categories', () => {
-  test('loads every category page', async () => {
+  test('uses complete category options in both service forms while keeping the table paginated', async () => {
     const secondCategory = { ...hairCategory, id: 2, name: 'أظافر' };
-    mocks.listCategories.mockImplementation(async ({ page = 1 }) => (
-      page === 1
-        ? pageOf([hairCategory], { total: 2, totalPages: 2 })
-        : pageOf([secondCategory], { page: 2, total: 2, totalPages: 2 })
+    mocks.listCategories.mockImplementation(async ({ page = 1, pageSize = 20 }: { page?: number; pageSize?: number }) => (
+      pageSize === 100
+        ? pageOf(page === 1 ? [hairCategory] : [secondCategory], { page, total: 21, totalPages: 2 })
+        : pageOf([hairCategory], { page, total: 21, totalPages: 2 })
     ));
     renderView();
     await pickBranch();
+    fireEvent.click(await screen.findByRole('tab', { name: 'الخدمات' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة خدمة' }));
 
-    expect(await screen.findByText('أظافر')).toBeDefined();
-    expect(mocks.listCategories).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3, page: 2 }));
+    expect(within(await screen.findByLabelText(/^التصنيف/)).getByRole('option', { name: 'شعر' })).toBeDefined();
+    expect(mocks.listCategories).toHaveBeenCalledWith({ branchId: 3, page: 1, pageSize: 20 });
+    expect(mocks.listCategories).toHaveBeenCalledWith({ branchId: 3, page: 1, pageSize: 100 });
+  });
+
+  test('paginates category and service tables', async () => {
+    mocks.listCategories.mockResolvedValue(pageOf([hairCategory], { total: 2, totalPages: 2 }));
+    mocks.listServices.mockResolvedValue(pageOf([colouring], { total: 2, totalPages: 2 }));
+    renderView();
+    await pickBranch();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.listCategories).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+    fireEvent.click(screen.getByRole('tab', { name: 'الخدمات' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.listServices).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
   });
 
   test('lists categories with their Arabic type and state', async () => {
@@ -319,20 +335,16 @@ describe('CatalogView categories', () => {
 });
 
 describe('CatalogView services', () => {
-  test('loads every service page', async () => {
-    const secondService = { ...colouring, id: 6, name: 'قص' };
-    mocks.listServices.mockImplementation(async ({ page = 1 }) => (
-      page === 1
-        ? pageOf([colouring], { total: 2, totalPages: 2 })
-        : pageOf([secondService], { page: 2, total: 2, totalPages: 2 })
-    ));
+  test('loads only the current service page', async () => {
+    mocks.listServices.mockResolvedValue(pageOf([colouring], { total: 2, totalPages: 2 }));
     renderView();
     await pickBranch();
     await screen.findByText('شعر');
     openServicesTab();
 
-    expect(await screen.findByText('قص')).toBeDefined();
-    expect(mocks.listServices).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3, page: 2 }));
+    expect(await screen.findByText('صبغة')).toBeDefined();
+    expect(mocks.listServices).toHaveBeenCalledWith(expect.objectContaining({ branchId: 3, page: 1, pageSize: 20 }));
+    expect(mocks.listServices).toHaveBeenCalledTimes(1);
   });
 
   test('lists services with their fixed price, commission and category', async () => {

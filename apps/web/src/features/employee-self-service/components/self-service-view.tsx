@@ -79,11 +79,12 @@ const useExitOnUnauthorized = (error: unknown) => {
   }, [error, queryClient]);
 };
 
-const Pagination = ({ meta, onPage }: { meta: PageMeta; onPage: (page: number) => void }) => meta.totalPages > 1 ? (
+const Pagination = ({ meta, onPage, persistenceKey }: { meta: PageMeta; onPage: (page: number) => void; persistenceKey: string }) => meta.totalPages > 1 ? (
   <SmartPagination
     page={meta.page}
     totalPages={meta.totalPages}
     onPage={onPage}
+    persistenceKey={persistenceKey}
     summary={(
       <>
         صفحة <span className="tabular">{meta.page}</span> من <span className="tabular">{meta.totalPages}</span>
@@ -189,7 +190,7 @@ function AttendanceSection() {
           ))}</tbody>
         </table>
       </Card>
-      <Pagination meta={query.data.meta} onPage={setPage} />
+      <Pagination meta={query.data.meta} onPage={setPage} persistenceKey="web:self-service:attendance" />
     </div>
   );
 }
@@ -223,7 +224,7 @@ function WeeklyDaysSection() {
         ))}</tbody>
       </table>
       </Card>
-      <Pagination meta={query.data.meta} onPage={setPage} />
+      <Pagination meta={query.data.meta} onPage={setPage} persistenceKey="web:self-service:weekly-days" />
     </div>
   );
 }
@@ -259,7 +260,7 @@ function AdjustmentSection({ kind }: { kind: 'bonuses' | 'deductions' }) {
         ))}</tbody>
       </table>
       </Card>
-      <Pagination meta={query.data.meta} onPage={setPage} />
+      <Pagination meta={query.data.meta} onPage={setPage} persistenceKey={`web:self-service:${kind}`} />
     </div>
   );
 }
@@ -290,7 +291,7 @@ function AdvancesSection() {
         </li>
       ))}</ul>
     </Card>
-  ))}</div><Pagination meta={query.data.meta} onPage={setPage} /></div>;
+  ))}</div><Pagination meta={query.data.meta} onPage={setPage} persistenceKey="web:self-service:advances" /></div>;
 }
 
 function PayrollSection() {
