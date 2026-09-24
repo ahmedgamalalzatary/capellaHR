@@ -156,7 +156,7 @@ const saleLineEvents = (
       line: 'line', invoice: 'invoice', branch: 'branch', amount: lineAmount,
       quantity: sql`line.quantity`, eventType: sql`'sale'`, eventDate: sql`invoice.sold_at`,
       id: sql`CONCAT('sale-', line.id)`,
-      invoicePaid: sql`invoice.amount_paid`,
+      invoicePaid: invoiceLineShare('line', 'invoice', 'amount_paid'),
     })}
     FROM erp_invoice_lines line
     INNER JOIN erp_invoices invoice
@@ -169,7 +169,8 @@ const saleLineEvents = (
       amount: sql`-(reversal_line.gross_amount - reversal_line.discount_amount)`,
       quantity: sql`-reversal_line.quantity`, eventType: sql`reversal.type`,
       eventDate: sql`reversal.created_at`, id: sql`CONCAT(reversal.type, '-', reversal_line.id)`,
-      invoicePaid: sql`-invoice.amount_paid`,
+      invoicePaid: sql`-ROUND((${invoiceLineShare('original_line', 'invoice', 'amount_paid')})
+        * reversal_line.quantity / original_line.quantity, 2)`,
     })}
     FROM erp_invoice_reversal_lines reversal_line
     INNER JOIN erp_invoice_reversals reversal
@@ -251,6 +252,12 @@ const serviceFacts = (filters: ReportFilters) => {
     - ROUND((${lineNet}) * (${queueRank} - 1) / line.quantity, 2)`;
   const unitPaid = sql`ROUND(invoice.amount_paid * ${queueRank} / line.quantity, 2)
     - ROUND(invoice.amount_paid * (${queueRank} - 1) / line.quantity, 2)`;
+  const originalQueueRank = sql`(SELECT COUNT(*) FROM erp_service_queue_entries prefix
+    WHERE prefix.invoice_line_id = original_line.id AND prefix.queue_number <= queue.queue_number)`;
+  const unitReversalPaid = sql`ROUND(invoice.amount_paid * ${originalQueueRank}
+    / original_line.quantity, 2)
+    - ROUND(invoice.amount_paid * (${originalQueueRank} - 1)
+    / original_line.quantity, 2)`;
   const reversalNet = sql`reversal_line.gross_amount - reversal_line.discount_amount`;
   const unitReversalAmount = sql`ROUND((${reversalNet}) * ${refundedQueueRank}
     / reversal_line.quantity, 2)
@@ -287,7 +294,7 @@ const serviceFacts = (filters: ReportFilters) => {
       employee.full_name employeeName, 'individual' rowType, reversal.type eventType,
       -1 quantity, original_line.unit_price unitPrice,
       -(${unitReversalAmount}) amount,
-      -ROUND(invoice.amount_paid / reversal_line.quantity, 2) invoicePaid
+      -(${unitReversalPaid}) invoicePaid
     FROM erp_invoice_reversal_lines reversal_line
     INNER JOIN erp_invoice_reversals reversal ON reversal.id = reversal_line.reversal_id
       AND reversal.invoice_id = reversal_line.invoice_id
@@ -321,7 +328,7 @@ const serviceFacts = (filters: ReportFilters) => {
       reversal.type eventType, -reversal_line.quantity quantity,
       original_line.unit_price unitPrice,
       -(reversal_line.gross_amount - reversal_line.discount_amount) amount,
-      -invoice.amount_paid invoicePaid
+      -ROUND(invoice.amount_paid * reversal_line.quantity / original_line.quantity, 2) invoicePaid
     FROM erp_invoice_reversal_lines reversal_line
     INNER JOIN erp_invoice_reversals reversal ON reversal.id = reversal_line.reversal_id
       AND reversal.invoice_id = reversal_line.invoice_id

@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runMigrations } from '../src/migration-runner.js';
@@ -7,21 +8,15 @@ const timestamp = new Date('2026-07-19T10:00:00.000Z');
 const noRepairs = () => Promise.resolve({ account: 'capella_app@%', repaired: [] });
 
 describe('migration runner', () => {
-  it('logs success and preserves the migration command output', async () => {
-    const execute = vi.fn(() => ({ signal: null, status: 0 }));
+  it('logs success after applying migrations and checking database ownership', async () => {
     const stdout = { write: vi.fn() };
     const stderr = { write: vi.fn() };
 
     const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr, stdout, reconcile: noRepairs,
+      migrate: () => Promise.resolve(), now: () => timestamp, stderr, stdout, reconcile: noRepairs,
     });
 
     expect(exitCode).toBe(0);
-    expect(execute).toHaveBeenCalledWith(
-      process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-      ['exec', 'drizzle-kit', 'migrate'],
-      expect.objectContaining({ stdio: 'inherit' }),
-    );
     expect(stdout.write).toHaveBeenNthCalledWith(
       1,
       '[2026-07-19T10:00:00.000Z] [migrate] Starting database migrations.\n',
@@ -32,42 +27,52 @@ describe('migration runner', () => {
     expect(stderr.write).not.toHaveBeenCalled();
   });
 
-  it('logs the exit code and returns failure when Drizzle fails', async () => {
-    const execute = vi.fn(() => ({ signal: null, status: 23 }));
+  it('logs a migration failure without SQL context', async () => {
     const stdout = { write: vi.fn() };
     const stderr = { write: vi.fn() };
 
     const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr, stdout, reconcile: noRepairs,
-    });
-
-    expect(exitCode).toBe(23);
-    expect(stderr.write).toHaveBeenCalledWith(
-      '[2026-07-19T10:00:00.000Z] [migrate] Database migrations failed with exit code 23. Drizzle error output is shown above.\n',
-    );
-  });
-
-  it('logs command startup errors without exposing environment values', async () => {
-    const execute = vi.fn(() => ({
-      error: new Error('spawn pnpm ENOENT'),
-      signal: null,
-      status: null,
-    }));
-    const stdout = { write: vi.fn() };
-    const stderr = { write: vi.fn() };
-
-    const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr, stdout, reconcile: noRepairs,
+      migrate: () => Promise.reject(new Error('connect ECONNREFUSED')),
+      now: () => timestamp, stderr, stdout, reconcile: noRepairs,
     });
 
     expect(exitCode).toBe(1);
     expect(stderr.write).toHaveBeenCalledWith(
-      '[2026-07-19T10:00:00.000Z] [migrate] Could not start Drizzle: spawn pnpm ENOENT.\n',
+      '[2026-07-19T10:00:00.000Z] [migrate] Database migrations failed: connect ECONNREFUSED.\n',
     );
   });
 
+  it('prints the database reason and failed SQL when a migration fails', async () => {
+    const cause = Object.assign(new Error('Invalid use of NULL value'), {
+      code: 'ER_INVALID_USE_OF_NULL',
+    });
+    const failure = new DrizzleQueryError(
+      'ALTER TABLE `erp_service_queue_entries` MODIFY `employee_id` int NOT NULL;',
+      [],
+      cause,
+    );
+    const stderr = { write: vi.fn() };
+    const reconcile = vi.fn(noRepairs);
+
+    const exitCode = await runMigrations({
+      migrate: () => Promise.reject(failure),
+      now: () => timestamp,
+      stderr,
+      stdout: { write: vi.fn() },
+      reconcile,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.write).toHaveBeenCalledWith(
+      '[2026-07-19T10:00:00.000Z] [migrate] Database migrations failed: ER_INVALID_USE_OF_NULL: Invalid use of NULL value.\n',
+    );
+    expect(stderr.write).toHaveBeenCalledWith(
+      '[2026-07-19T10:00:00.000Z] [migrate] Failed SQL: ALTER TABLE `erp_service_queue_entries` MODIFY `employee_id` int NOT NULL;\n',
+    );
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
   it('hands every trigger and routine to the migrating account after a successful migration', async () => {
-    const execute = vi.fn(() => ({ signal: null, status: 0 }));
     const stdout = { write: vi.fn() };
     const stderr = { write: vi.fn() };
     const reconcile = vi.fn(() => Promise.resolve({
@@ -76,7 +81,7 @@ describe('migration runner', () => {
     }));
 
     const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr, stdout, reconcile,
+      migrate: () => Promise.resolve(), now: () => timestamp, stderr, stdout, reconcile,
     });
 
     expect(exitCode).toBe(0);
@@ -87,19 +92,18 @@ describe('migration runner', () => {
   });
 
   it('skips the ownership pass when the migration itself failed', async () => {
-    const execute = vi.fn(() => ({ signal: null, status: 7 }));
     const reconcile = vi.fn(noRepairs);
 
     const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr: { write: vi.fn() }, stdout: { write: vi.fn() }, reconcile,
+      migrate: () => Promise.reject(new Error('migration failed')),
+      now: () => timestamp, stderr: { write: vi.fn() }, stdout: { write: vi.fn() }, reconcile,
     });
 
-    expect(exitCode).toBe(7);
+    expect(exitCode).toBe(1);
     expect(reconcile).not.toHaveBeenCalled();
   });
 
   it('reports a skipped ownership pass without failing the migration', async () => {
-    const execute = vi.fn(() => ({ signal: null, status: 0 }));
     const stdout = { write: vi.fn() };
     const stderr = { write: vi.fn() };
     const reconcile = vi.fn(() => Promise.resolve({
@@ -109,7 +113,7 @@ describe('migration runner', () => {
     }));
 
     const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr, stdout, reconcile,
+      migrate: () => Promise.resolve(), now: () => timestamp, stderr, stdout, reconcile,
     });
 
     expect(exitCode).toBe(0);
@@ -119,12 +123,12 @@ describe('migration runner', () => {
   });
 
   it('fails the migration when database objects cannot be reassigned', async () => {
-    const execute = vi.fn(() => ({ signal: null, status: 0 }));
     const stderr = { write: vi.fn() };
     const reconcile = vi.fn(() => Promise.reject(new Error('access denied')));
 
     const exitCode = await runMigrations({
-      execute, now: () => timestamp, stderr, stdout: { write: vi.fn() }, reconcile,
+      migrate: () => Promise.resolve(),
+      now: () => timestamp, stderr, stdout: { write: vi.fn() }, reconcile,
     });
 
     expect(exitCode).toBe(1);

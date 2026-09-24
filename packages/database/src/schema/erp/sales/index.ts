@@ -259,6 +259,7 @@ export const serviceQueueEntries = mysqlTable('erp_service_queue_entries', {
     columns: [table.employeeId, table.branchId],
     foreignColumns: [employees.id, employees.branchId],
   }),
+  uniqueIndex('erp_service_queue_id_branch_unique').on(table.id, table.branchId),
   uniqueIndex('erp_service_queue_session_service_number_unique')
     .on(table.cashierSessionId, table.serviceId, table.queueNumber),
   uniqueIndex('erp_service_queue_line_number_unique')
@@ -283,7 +284,11 @@ export const serviceQueueReassignments = mysqlTable('erp_service_queue_reassignm
   actingAccountId: int('acting_account_id').notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
-  foreignKey({ name: 'erp_service_queue_reassignments_entry_fk', columns: [table.serviceQueueEntryId], foreignColumns: [serviceQueueEntries.id] }),
+  foreignKey({
+    name: 'erp_service_queue_reassignments_entry_fk',
+    columns: [table.serviceQueueEntryId, table.branchId],
+    foreignColumns: [serviceQueueEntries.id, serviceQueueEntries.branchId],
+  }),
   foreignKey({ name: 'erp_service_queue_reassignments_from_employee_branch_fk', columns: [table.fromEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   foreignKey({ name: 'erp_service_queue_reassignments_to_employee_branch_fk', columns: [table.toEmployeeId, table.branchId], foreignColumns: [employees.id, employees.branchId] }),
   foreignKey({ name: 'erp_service_queue_reassignments_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
@@ -320,7 +325,7 @@ export const serviceConsumptionReports = mysqlTable('erp_service_consumption_rep
   check('erp_service_consumption_reports_revision_positive', sql`${table.revision} > 0`),
   check(
     'erp_service_consumption_reports_revision_consistent',
-    sql`(${table.revision} = 1 and ${table.replacesReportId} is null and ${table.reason} is null) or (${table.revision} > 1 and ${table.replacesReportId} is not null and char_length(trim(${table.reason})) > 0)`,
+    sql`(${table.revision} = 1 and ${table.replacesReportId} is null and ${table.reason} is null) or (${table.revision} > 1 and ${table.replacesReportId} is not null and ${table.reason} is not null and char_length(trim(${table.reason})) > 0)`,
   ),
 ]);
 

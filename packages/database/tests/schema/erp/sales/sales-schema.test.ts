@@ -1,5 +1,5 @@
 import { getTableName } from 'drizzle-orm';
-import { getTableConfig } from 'drizzle-orm/mysql-core';
+import { getTableConfig, MySqlDialect } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
 import * as salesSchema from '../../../../src/schema/erp/sales/index.js';
@@ -204,6 +204,12 @@ describe('ERP sales persistence foundation', () => {
       .find((value) => value.getName() === 'erp_service_usages_ledger_fk')!;
     expect(usageLedgerForeignKey.reference().columns.map((column) => column.name))
       .toEqual(['ledger_entry_id', 'product_id', 'branch_id']);
+
+    const dialect = new MySqlDialect();
+    const revisionCheck = getTableConfig(reports).checks
+      .find((check) => check.name === 'erp_service_consumption_reports_revision_consistent');
+    expect(dialect.sqlToQuery(revisionCheck!.value).sql)
+      .toMatch(/`reason` is not null and char_length\(trim\(`erp_service_consumption_reports`.`reason`\)\)/i);
   });
 
   it('records immutable employee reassignments for sold service lines', () => {
@@ -225,6 +231,20 @@ describe('ERP sales persistence foundation', () => {
     expect(config.checks.map((value) => value.name)).toContain(
       'erp_invoice_line_reassignments_employee_changed',
     );
+  });
+
+  it('scopes a queue reassignment to the same branch as the ticket', () => {
+    const entries = table('serviceQueueEntries');
+    expect(getTableConfig(entries).indexes.map((value) => value.config.name))
+      .toContain('erp_service_queue_id_branch_unique');
+
+    const reassignments = table('serviceQueueReassignments');
+    const entryForeignKey = getTableConfig(reassignments).foreignKeys
+      .find((value) => value.getName() === 'erp_service_queue_reassignments_entry_fk')!;
+    expect(entryForeignKey.reference().columns.map((column) => column.name))
+      .toEqual(['service_queue_entry_id', 'branch_id']);
+    expect(entryForeignKey.reference().foreignColumns.map((column) => column.name))
+      .toEqual(['id', 'branch_id']);
   });
 
   it('defines exact payment breakdowns using only the locked methods', () => {

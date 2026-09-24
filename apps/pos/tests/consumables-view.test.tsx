@@ -193,6 +193,38 @@ describe('ConsumablesView', () => {
     expect(mocks.balances).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 100 }));
   });
 
+  it('lets an admin pick a different service after changing branch', async () => {
+    mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'admin' } } });
+    sessionStorage.setItem('capella:pos-admin-branch', '3');
+    mocks.branches.mockResolvedValue(page([
+      { id: 3, name: 'الفرع الرئيسي' },
+      { id: 4, name: 'فرع آخر' },
+    ]));
+    mocks.services.mockImplementation(async ({ branchId }: { branchId?: number }) => (
+      branchId === 4
+        ? page([{
+          id: 21, serviceId: 9, status: 'completed', consumptionRecorded: false,
+          queueNumber: 1, serviceName: 'Other', invoiceNumber: 'INV-4',
+        }])
+        : page([{
+          id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false,
+          queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1',
+        }])
+    ));
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
+    fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    expect(screen.getByRole('dialog', { name: /تسجيل مستهلكات/ })).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '4' } });
+    await screen.findByText('INV-4');
+    const nextBranchCheckbox = (await screen.findAllByRole('checkbox'))[0]!;
+    fireEvent.click(nextBranchCheckbox);
+
+    expect((nextBranchCheckbox as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('keeps a selected service scoped to one service across pages', async () => {
     mocks.services
       .mockResolvedValueOnce(page([{ id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }], 1, 2))

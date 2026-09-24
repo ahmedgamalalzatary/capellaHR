@@ -1,36 +1,39 @@
-import { spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { drizzle } from 'drizzle-orm/mysql2';
+import { migrate } from 'drizzle-orm/mysql2/migrator';
+import { createConnection } from 'mysql2/promise';
+
 import { reconcileDefiners, type DefinerReport } from './definer-reconciler.js';
-
-interface CommandResult {
-  error?: Error;
-  signal: NodeJS.Signals | null;
-  status: number | null;
-}
-
-type ExecuteCommand = (
-  command: string,
-  args: string[],
-  options: SpawnSyncOptions,
-) => CommandResult;
 
 interface OutputWriter {
   write(message: string): unknown;
 }
 
 interface MigrationRunnerOptions {
-  execute?: ExecuteCommand;
+  migrate?: () => Promise<void>;
   now?: () => Date;
   reconcile?: () => Promise<DefinerReport>;
   stderr?: OutputWriter;
   stdout?: OutputWriter;
 }
 
-const databasePackageRoot = fileURLToPath(new URL('..', import.meta.url));
+const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url));
 
 function writeLog(output: OutputWriter, now: () => Date, message: string): void {
   output.write(`[${now().toISOString()}] [migrate] ${message}\n`);
+}
+
+async function migrateDatabase(): Promise<void> {
+  const connectionUrl = process.env.DATABASE_URL;
+  if (!connectionUrl) throw new Error('DATABASE_URL is not set');
+
+  const connection = await createConnection(connectionUrl);
+  try {
+    await migrate(drizzle(connection), { migrationsFolder });
+  } finally {
+    await connection.end();
+  }
 }
 
 /** Runs on the same credentials as the application, so repaired objects end up owned by it. */
@@ -51,7 +54,7 @@ async function reconcileConnectedDefiners(): Promise<DefinerReport> {
 }
 
 export async function runMigrations(options: MigrationRunnerOptions = {}): Promise<number> {
-  const execute = options.execute ?? spawnSync;
+  const runMigration = options.migrate ?? migrateDatabase;
   const now = options.now ?? (() => new Date());
   const reconcile = options.reconcile ?? reconcileConnectedDefiners;
   const stderr = options.stderr ?? process.stderr;
@@ -59,28 +62,19 @@ export async function runMigrations(options: MigrationRunnerOptions = {}): Promi
 
   writeLog(stdout, now, 'Starting database migrations.');
 
-  const packageManager = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-  const result = execute(packageManager, ['exec', 'drizzle-kit', 'migrate'], {
-    cwd: databasePackageRoot,
-    stdio: 'inherit',
-    ...(process.platform === 'win32' ? { shell: true } : {}),
-  });
-
-  if (result.error) {
-    writeLog(stderr, now, `Could not start Drizzle: ${result.error.message}.`);
+  try {
+    await runMigration();
+  } catch (error) {
+    const cause = error instanceof Error && error.cause ? error.cause : error;
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    const code = cause && typeof cause === 'object' && 'code' in cause
+      ? String(cause.code)
+      : null;
+    writeLog(stderr, now, `Database migrations failed: ${code ? `${code}: ` : ''}${reason}.`);
+    if (error && typeof error === 'object' && 'query' in error && typeof error.query === 'string') {
+      writeLog(stderr, now, `Failed SQL: ${error.query.replace(/\s+/g, ' ').trim()}`);
+    }
     return 1;
-  }
-
-  if (result.status !== 0) {
-    const failure = result.signal
-      ? `signal ${result.signal}`
-      : `exit code ${result.status ?? 'unknown'}`;
-    writeLog(
-      stderr,
-      now,
-      `Database migrations failed with ${failure}. Drizzle error output is shown above.`,
-    );
-    return result.status ?? 1;
   }
 
   try {

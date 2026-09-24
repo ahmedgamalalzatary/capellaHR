@@ -65,6 +65,11 @@ const consumablesHardeningMigrationName = readdirSync(migrationsDirectory)
 const consumablesHardeningMigration = consumablesHardeningMigrationName
   ? readFileSync(`${migrationsDirectory}/${consumablesHardeningMigrationName}`, 'utf8')
   : '';
+const queueReassignmentBranchMigrationName = readdirSync(migrationsDirectory)
+  .find((name) => /^0109_.*\.sql$/.test(name));
+const queueReassignmentBranchMigration = queueReassignmentBranchMigrationName
+  ? readFileSync(`${migrationsDirectory}/${queueReassignmentBranchMigrationName}`, 'utf8')
+  : '';
 
 describe('ERP per-shift service queue migration', () => {
   it('creates one constrained queue ticket per sold service unit', () => {
@@ -320,5 +325,18 @@ describe('ERP sales migration', () => {
     expect(hardeningMigration).toContain('erp_categories_id_branch_unique');
     expect(hardeningMigration).toContain('DROP FOREIGN KEY `erp_services_category_id_erp_categories_id_fk`');
     expect(hardeningMigration).toContain('erp_services_category_branch_fk');
+  });
+});
+
+describe('ERP queue reassignment branch and revised-report reason migration', () => {
+  it('ties queue reassignments to the ticket branch and requires a revised-report reason', () => {
+    expect(queueReassignmentBranchMigrationName).toBeDefined();
+    expect(queueReassignmentBranchMigration).toContain('erp_service_queue_id_branch_unique');
+    expect(queueReassignmentBranchMigration).toContain(
+      'FOREIGN KEY (`service_queue_entry_id`,`branch_id`) REFERENCES `erp_service_queue_entries`(`id`,`branch_id`)',
+    );
+    expect(queueReassignmentBranchMigration).toContain(
+      '`erp_service_consumption_reports`.`reason` is not null and char_length(trim(`erp_service_consumption_reports`.`reason`)) > 0',
+    );
   });
 });

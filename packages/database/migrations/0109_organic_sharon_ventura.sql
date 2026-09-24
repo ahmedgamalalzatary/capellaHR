@@ -1,0 +1,6 @@
+ALTER TABLE `erp_service_consumption_reports` DROP CONSTRAINT `erp_service_consumption_reports_revision_consistent`;--> statement-breakpoint
+ALTER TABLE `erp_service_queue_reassignments` DROP FOREIGN KEY `erp_service_queue_reassignments_entry_fk`;
+--> statement-breakpoint
+ALTER TABLE `erp_service_queue_entries` ADD CONSTRAINT `erp_service_queue_id_branch_unique` UNIQUE(`id`,`branch_id`);--> statement-breakpoint
+ALTER TABLE `erp_service_consumption_reports` ADD CONSTRAINT `erp_service_consumption_reports_revision_consistent` CHECK ((`erp_service_consumption_reports`.`revision` = 1 and `erp_service_consumption_reports`.`replaces_report_id` is null and `erp_service_consumption_reports`.`reason` is null) or (`erp_service_consumption_reports`.`revision` > 1 and `erp_service_consumption_reports`.`replaces_report_id` is not null and `erp_service_consumption_reports`.`reason` is not null and char_length(trim(`erp_service_consumption_reports`.`reason`)) > 0));--> statement-breakpoint
+ALTER TABLE `erp_service_queue_reassignments` ADD CONSTRAINT `erp_service_queue_reassignments_entry_fk` FOREIGN KEY (`service_queue_entry_id`,`branch_id`) REFERENCES `erp_service_queue_entries`(`id`,`branch_id`) ON DELETE no action ON UPDATE no action;

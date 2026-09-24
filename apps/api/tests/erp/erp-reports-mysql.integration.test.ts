@@ -690,5 +690,69 @@ describe('ERP reports MySQL reader', () => {
         expect.objectContaining({ employeeName: 'Reassigned report worker',
           eventType: 'استرداد', quantity: '-1', amount: '-200.00' }),
       ]) } });
+    if (servicesAfterRefund.kind === 'success') {
+      const [invoiceRow] = await database.select().from(invoices).where(eq(invoices.id, invoice.id));
+      const paid = Number(invoiceRow!.amountPaid);
+      const unitShare = (rank: number) => (
+        Number((paid * rank / 3).toFixed(2)) - Number((paid * (rank - 1) / 3).toFixed(2))
+      );
+      const refundPaid = servicesAfterRefund.snapshot.rows
+        .filter((row) => row.eventType === 'استرداد' && !String(row.id).startsWith('combined:'))
+        .map((row) => Number(row.invoicePaid));
+      expect(refundPaid).toHaveLength(1);
+      expect([1, 2, 3].map((rank) => -unitShare(rank))).toContain(refundPaid[0]);
+      const combined = servicesAfterRefund.snapshot.rows
+        .find((row) => String(row.id).startsWith('combined:'));
+      expect(Number(combined!.invoicePaid)).toBeCloseTo(paid + refundPaid[0]!, 2);
+    }
+  });
+
+  it('counts each invoice paid amount once across product lines', async () => {
+    const originalInvoice = (await database.select().from(invoices)
+      .where(eq(invoices.id, invoiceId)))[0]!;
+    const session = (await database.select().from(cashierSessions)
+      .where(eq(cashierSessions.branchId, branchId)).limit(1))[0]!;
+    const firstPaidProductId = Number((await database.insert(erpProducts).values({
+      branchId, name: 'منتج أول للمدفوع', nameNormalized: 'first-paid-product',
+      sellingPrice: '50.00', lastPurchaseCost: '20.00', lowStockThreshold: 1,
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    const secondPaidProductId = Number((await database.insert(erpProducts).values({
+      branchId, name: 'منتج ثانٍ للمدفوع', nameNormalized: 'second-paid-product',
+      sellingPrice: '50.00', lastPurchaseCost: '20.00', lowStockThreshold: 1,
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    await database.insert(erpProductStocks).values([
+      { productId: firstPaidProductId, branchId, quantity: 2, updatedAt: soldAt },
+      { productId: secondPaidProductId, branchId, quantity: 2, updatedAt: soldAt },
+    ]);
+    const sales = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const invoiceNumber = 'INV.2026.08.11.TWO-PRODUCTS';
+    await sales.complete({
+      input: {
+        branchId, clientId: originalInvoice.clientId, sellerEmployeeId: employeeId,
+        cashierSessionId: session.id, idempotencyKey: crypto.randomUUID(),
+        lines: [
+          { itemType: 'product', productId: firstPaidProductId, quantity: 1 },
+          { itemType: 'product', productId: secondPaidProductId, quantity: 1 },
+        ],
+        payments: [{ method: 'cash', amount: '100.00' }],
+      },
+      actingAccountId: adminId, actingAccountRole: 'admin', invoiceNumber, soldAt,
+    });
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-products', { branchId, search: invoiceNumber },
+      { mode: 'all' }, { page: 1, pageSize: 20 }, reversedAt,
+    );
+    expect(result).toMatchObject({ kind: 'success' });
+    if (result.kind === 'success') {
+      const paidByName = Object.fromEntries(result.snapshot.rows
+        .filter((row) => !String(row.id).startsWith('combined:'))
+        .map((row) => [String(row.productName), Number(row.invoicePaid)]));
+      expect(paidByName).toEqual({
+        'منتج أول للمدفوع': 50,
+        'منتج ثانٍ للمدفوع': 50,
+      });
+    }
   });
 });
