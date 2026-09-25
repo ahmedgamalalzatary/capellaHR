@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -244,14 +242,5 @@ describe('ERP report reader', () => {
         columns: columns.map(([key, label]) => ({ key, label })),
       },
     });
-  });
-
-  it('formats employee service and product sales as money totals', () => {
-    const source = readFileSync(fileURLToPath(
-      new URL('../../src/modules/erp/erp-reports/erp-report-repository.ts', import.meta.url),
-    ), 'utf8');
-    const block = source.slice(source.indexOf('moneySummaryKeys'), source.indexOf('normalizeCell'));
-    expect(block).toContain('totalServiceSales');
-    expect(block).toContain('totalProductSales');
   });
 });

@@ -13,10 +13,6 @@ const accountRow = {
 };
 
 describe('branch cashier account persistence', () => {
-  it('exports the production Drizzle repository', () => {
-    expect(Reflect.get(auth, 'createDrizzleCashierAccountRepository')).toBeTypeOf('function');
-  });
-
   it('creates the first branch login and audits it in one transaction', async () => {
     const events: string[] = [];
     const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];

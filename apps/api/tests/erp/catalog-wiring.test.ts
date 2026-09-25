@@ -3,14 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/app.js';
 import type { AuthService } from '../../src/modules/auth/index.js';
-import * as catalog from '../../src/modules/erp/catalog/index.js';
 import type { CategoryService, ServiceCatalogService } from '../../src/modules/erp/index.js';
-
-describe('ERP catalog module', () => {
-  it('publishes the catalog composition root through its public boundary', () => {
-    expect(Reflect.get(catalog, 'createErpCatalogModule')).toBeTypeOf('function');
-  });
-});
 
 /**
  * The composition root authenticates before ERP routers run, so an unauthenticated

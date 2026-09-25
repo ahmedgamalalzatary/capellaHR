@@ -4,13 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { clients } from '../../../../src/schema/erp/clients/index.js';
 
 describe('clients schema', () => {
-  it('exports the branch-scoped client table', () => {
-    expect(clients.id).toBeDefined();
-    expect(clients.branchId).toBeDefined();
-    expect(clients.fullName).toBeDefined();
-    expect(clients.phone).toBeDefined();
-  });
-
   it('scopes phone uniqueness to the branch so two branches may hold the same number', () => {
     const unique = getTableConfig(clients).indexes
       .find((entry) => entry.config.name === 'clients_branch_phone_unique');

@@ -81,10 +81,6 @@ const setup = () => {
 };
 
 describe('ERP Cashier-session service', () => {
-  it('publishes the Cashier-session service through the sales module boundary', () => {
-    expect(Reflect.get(sales, 'createCashierSessionService')).toBeTypeOf('function');
-  });
-
   it('opens a session only for the Cashier branch derived by the ERP boundary', async () => {
     const { repository, resolveBranchContext, service } = setup();
     const actor = { role: 'cashier' as const, accountId: 8, branchId: 3 };

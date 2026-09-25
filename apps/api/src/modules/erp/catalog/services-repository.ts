@@ -13,6 +13,35 @@ import type {
 type Database = ReturnType<typeof createDatabase>;
 type ServiceRow = typeof erpServices.$inferSelect;
 
+/**
+ * Concurrent `INSERT ... ON DUPLICATE KEY UPDATE` statements on the same unique
+ * key take shared next-key locks before one can upgrade to an exclusive insert
+ * lock, so InnoDB resolves the cycle by killing one of them with a deadlock.
+ * The killed transaction did nothing wrong: re-running it converges on the same
+ * single row, so the repository retries instead of surfacing the 1213 error.
+ */
+const DEADLOCK_SQL_STATE = '40001';
+const DEADLOCK_ERRNO = 1213;
+const MAX_DEADLOCK_RETRIES = 3;
+
+const isDeadlockError = (error: unknown): boolean => {
+  // Drizzle wraps the driver error, so the mysql2 markers can sit on the cause.
+  let current: unknown = error;
+  while (typeof current === 'object' && current !== null) {
+    const { sqlState, errno, code, cause } = current as {
+      sqlState?: unknown;
+      errno?: unknown;
+      code?: unknown;
+      cause?: unknown;
+    };
+    if (sqlState === DEADLOCK_SQL_STATE || errno === DEADLOCK_ERRNO || code === 'ER_LOCK_DEADLOCK') {
+      return true;
+    }
+    current = cause;
+  }
+  return false;
+};
+
 /** `nameNormalized` is an internal duplicate-detection detail, not an API fact. */
 const toRecord = (row: ServiceRow): ServiceRecord => ({
   id: row.id,
@@ -147,32 +176,38 @@ export const createDrizzleServiceRepository = (
   },
 
   async setOverride(serviceId, employeeId, commissionPercent) {
-    return database.transaction(async (transaction) => {
-      const scope = and(
-        eq(erpServiceCommissionOverrides.serviceId, serviceId),
-        eq(erpServiceCommissionOverrides.employeeId, employeeId),
-      );
-      const at = now();
-      const before = (await transaction.select().from(erpServiceCommissionOverrides)
-        .where(scope).for('update').limit(1))[0];
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await database.transaction(async (transaction) => {
+          const scope = and(
+            eq(erpServiceCommissionOverrides.serviceId, serviceId),
+            eq(erpServiceCommissionOverrides.employeeId, employeeId),
+          );
+          const at = now();
+          const before = (await transaction.select().from(erpServiceCommissionOverrides)
+            .where(scope).for('update').limit(1))[0];
 
-      await transaction.insert(erpServiceCommissionOverrides)
-        .values({ serviceId, employeeId, commissionPercent, createdAt: at, updatedAt: at })
-        .onDuplicateKeyUpdate({ set: { commissionPercent, updatedAt: at } });
-      const after = (await transaction.select().from(erpServiceCommissionOverrides)
-        .where(scope).limit(1))[0]!;
-      await audit.record(transaction, {
-        module: CATALOG_AUDIT_MODULE,
-        action: before ? 'update' : 'create',
-        entityType: 'service-commission-override',
-        entityId: after.id,
-        ...(before ? { beforeState: before } : {}),
-        afterState: after,
-        relatedIds: { serviceId, employeeId },
-        createdAt: at,
-      });
-      return after satisfies CommissionOverrideRecord;
-    });
+          await transaction.insert(erpServiceCommissionOverrides)
+            .values({ serviceId, employeeId, commissionPercent, createdAt: at, updatedAt: at })
+            .onDuplicateKeyUpdate({ set: { commissionPercent, updatedAt: at } });
+          const after = (await transaction.select().from(erpServiceCommissionOverrides)
+            .where(scope).limit(1))[0]!;
+          await audit.record(transaction, {
+            module: CATALOG_AUDIT_MODULE,
+            action: before ? 'update' : 'create',
+            entityType: 'service-commission-override',
+            entityId: after.id,
+            ...(before ? { beforeState: before } : {}),
+            afterState: after,
+            relatedIds: { serviceId, employeeId },
+            createdAt: at,
+          });
+          return after satisfies CommissionOverrideRecord;
+        });
+      } catch (error) {
+        if (!isDeadlockError(error) || attempt >= MAX_DEADLOCK_RETRIES) throw error;
+      }
+    }
   },
 
   async deleteOverride(serviceId, employeeId) {

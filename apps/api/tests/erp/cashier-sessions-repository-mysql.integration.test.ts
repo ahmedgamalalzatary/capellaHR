@@ -141,10 +141,6 @@ const sessionCookie = async (accountId: number) => {
 };
 
 describe('ERP Cashier-session repository', () => {
-  it('publishes the Drizzle repository through the sales module boundary', () => {
-    expect(Reflect.get(sales, 'createDrizzleCashierSessionRepository')).toBeTypeOf('function');
-  });
-
   it('opens and reads the branch session with account and branch ownership labels', async () => {
     const data = await fixture();
     const result = await repository().open({

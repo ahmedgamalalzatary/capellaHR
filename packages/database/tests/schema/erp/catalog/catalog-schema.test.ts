@@ -4,13 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { erpCategories, erpServiceCommissionOverrides, erpServices } from '../../../../src/schema/erp/catalog/index.js';
 
 describe('erp categories schema', () => {
-  it('exports one branch-scoped category table carrying its type', () => {
-    expect(erpCategories.id).toBeDefined();
-    expect(erpCategories.branchId).toBeDefined();
-    expect(erpCategories.type).toBeDefined();
-    expect(erpCategories.name).toBeDefined();
-  });
-
   it('offers the service type only, expenses having left the catalog', () => {
     expect(erpCategories.type.enumValues).toEqual(['service']);
   });

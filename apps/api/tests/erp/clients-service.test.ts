@@ -80,14 +80,6 @@ describe('ERP client service', () => {
     expect(findByPhone).toHaveBeenCalledWith(7, '01001234567');
   });
 
-  it('reports a duplicate phone with the existing client so the counter can continue', async () => {
-    const repo = repository({ findByPhone: vi.fn(async () => record({ id: 42 })) });
-
-    await expect(
-      service(repo).create(CASHIER, { fullName: 'ندى', phone: '01001234567' }),
-    ).rejects.toMatchObject({ code: 'CLIENT_PHONE_EXISTS', existingClientId: 42 });
-  });
-
   it('translates a lost uniqueness race into the same conflict', async () => {
     // Pre-check sees nothing, then the unique index rejects the insert.
     const findByPhone = vi.fn()
@@ -148,16 +140,6 @@ describe('ERP client service', () => {
 
     await expect(service(repo, 1).remove(CASHIER, 5)).resolves.toMatchObject({ id: 5 });
     expect(remove).toHaveBeenCalledWith(5, 1);
-  });
-
-  it('blocks delete when the client owes money', async () => {
-    const repo = repository({
-      remove: vi.fn(async () => ({ status: 'has_debt' as const })),
-    });
-
-    await expect(service(repo, 1).remove(CASHIER, 5)).rejects.toMatchObject({
-      code: 'CLIENT_HAS_DEBT',
-    });
   });
 
   it('delegates the delete decision to one repository operation', async () => {

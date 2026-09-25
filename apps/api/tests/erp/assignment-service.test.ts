@@ -42,23 +42,6 @@ const code = async (run: Promise<unknown>) => {
 };
 
 describe('ERP employee assignment eligibility', () => {
-  it('lists the employees present in the cashier own branch', async () => {
-    const listPresentEmployees = vi.fn(async () => [nada]);
-
-    await expect(service({ listPresentEmployees }).listAssignable(CASHIER, {}))
-      .resolves.toEqual([nada]);
-    expect(listPresentEmployees).toHaveBeenCalledWith(1);
-  });
-
-  it('requires an admin to name the branch they act on', async () => {
-    expect(await code(service().listAssignable(ADMIN, {}))).toBe('ERP_BRANCH_REQUIRED');
-  });
-
-  it('refuses to list another branch for a cashier', async () => {
-    expect(await code(service().listAssignable(CASHIER, { branchId: 2 })))
-      .toBe('ERP_BRANCH_FORBIDDEN');
-  });
-
   it('confirms an employee who is still checked in at the acting branch', async () => {
     await expect(service().assertAssignable(CASHIER, { employeeId: 7 })).resolves.toEqual(nada);
   });

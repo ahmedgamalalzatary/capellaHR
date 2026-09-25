@@ -6,16 +6,25 @@ import { proxy } from '../src/proxy';
 afterEach(() => vi.unstubAllEnvs());
 
 describe('ERP Web route boundary', () => {
-  it.each(['/dashboard', '/payroll/2026-08', '/reports', '/self-service'])(
-    'redirects the HR-only route %s to attendance',
-    (pathname) => {
-      vi.stubEnv('EDITION', 'erp');
+  it('redirects every HR-only route to attendance', () => {
+    vi.stubEnv('EDITION', 'erp');
+    for (const pathname of [
+      '/dashboard',
+      '/weekly-day-off',
+      '/payroll/2026-08',
+      '/bonuses',
+      '/deductions',
+      '/advances',
+      '/reports',
+      '/self-service',
+    ]) {
       const response = proxy(new NextRequest(`https://attendance.example.com${pathname}`));
 
-      expect(response.status).toBe(307);
-      expect(response.headers.get('location')).toBe('https://attendance.example.com/branch-kiosk');
-    },
-  );
+      expect(response.status, pathname).toBe(307);
+      expect(response.headers.get('location'), pathname)
+        .toBe('https://attendance.example.com/branch-kiosk');
+    }
+  });
 
   it.each(['/attendance', '/employees', '/devices', '/shifts', '/branches'])(
     'allows the attendance-support route %s',

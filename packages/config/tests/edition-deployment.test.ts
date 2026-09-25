@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -37,16 +37,6 @@ describe('edition deployment contract', () => {
     expect(serviceBlock(compose, 'worker')).toContain('profiles: ["hr", "erp", "full"]');
     expect(serviceBlock(compose, 'web')).toContain('profiles: ["hr", "erp", "full"]');
     expect(serviceBlock(compose, 'pos')).toContain('profiles: ["erp", "full"]');
-  });
-
-  it('blocks direct HR-only routes from the ERP attendance surface', () => {
-    const proxyPath = repositoryFile('apps/web/src/proxy.ts');
-    expect(existsSync(proxyPath)).toBe(true);
-    if (!existsSync(proxyPath)) return;
-    const proxy = readFileSync(proxyPath, 'utf8');
-    for (const route of ['/dashboard', '/weekly-day-off', '/payroll', '/bonuses', '/deductions', '/advances', '/reports', '/self-service']) {
-      expect(proxy).toContain(`'${route}'`);
-    }
   });
 
   it('uses the same explicit profile value for Compose selection and runtime validation', () => {
@@ -98,13 +88,4 @@ describe('edition deployment contract', () => {
     }
   });
 
-  it('documents the completed multi-frontend security rollout and verification', () => {
-    const deployment = readFileSync(repositoryFile('docs/docker.md'), 'utf8');
-    expect(deployment).toContain('INVALID_ORIGIN');
-    expect(deployment).toContain('host-only');
-    expect(deployment).toContain('independent');
-
-    const plan = readFileSync(repositoryFile('docs/erp-plan.md'), 'utf8');
-    expect(plan).not.toContain('api.customer.com');
-  });
 });

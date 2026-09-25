@@ -20,91 +20,68 @@ const restrictedMessages = async (eslint: ESLint, root: string, source: string, 
 describe('POS feature and app boundaries', () => {
   // This first case pays ESLint's cold start for the whole file, which needs
   // room when the monorepo runs every package's suite at once.
-  it('prevents a feature from importing another feature internals', { timeout: 60_000 }, async () => {
-    const messages = await restrictedMessages(
+  it('keeps features to each other public indexes and their own internals', { timeout: 60_000 }, async () => {
+    // A feature must not import another feature internals.
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { useSession } from '@/features/auth/hooks/use-session';",
       'src/features/cashier-accounts/components/cashier-accounts-view.tsx',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('allows a feature to import another feature public index', async () => {
-    const messages = await restrictedMessages(
+    // A feature may import another feature public index.
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { useSession } from '@/features/auth';",
       'src/features/cashier-accounts/components/cashier-accounts-view.tsx',
-    );
+    )).resolves.toHaveLength(0);
 
-    expect(messages).toHaveLength(0);
-  });
-
-  it('allows a feature to import its own internals via a relative path', async () => {
-    const messages = await restrictedMessages(
+    // A feature may import its own internals via a relative path.
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { useSession } from '../hooks/use-session';",
       'src/features/auth/components/login-view.tsx',
-    );
-
-    expect(messages).toHaveLength(0);
+    )).resolves.toHaveLength(0);
   });
 
-  it('prevents an app-level file from importing a feature internal path', async () => {
-    const messages = await restrictedMessages(
+  it('keeps app-level files to feature public indexes', async () => {
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { useSession } from '@/features/auth/hooks/use-session';",
       'src/app/(protected)/page.tsx',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('allows an app-level file to import a feature public index', async () => {
-    const messages = await restrictedMessages(
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { useSession } from '@/features/auth';",
       'src/app/(protected)/page.tsx',
-    );
-
-    expect(messages).toHaveLength(0);
+    )).resolves.toHaveLength(0);
   });
 
-  it('prevents apps/pos from importing apps/web', async () => {
-    const messages = await restrictedMessages(
+  it('keeps apps/pos and apps/web isolated without blocking unrelated relative imports', async () => {
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { something } from '../../../../../web/src/lib/api/client';",
       'src/features/auth/api/auth-api.ts',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('prevents apps/web from importing apps/pos', async () => {
-    const messages = await restrictedMessages(
+    await expect(restrictedMessages(
       webEslint,
       webRoot,
       "import { something } from '../../../../../pos/src/lib/api/client';",
       'src/features/auth/api/auth-api.ts',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('allows unrelated relative imports within apps/pos', async () => {
-    const messages = await restrictedMessages(
+    await expect(restrictedMessages(
       posEslint,
       posRoot,
       "import { api } from '../../../lib/api/client';",
       'src/features/auth/api/auth-api.ts',
-    );
-
-    expect(messages).toHaveLength(0);
+    )).resolves.toHaveLength(0);
   });
 });

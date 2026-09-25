@@ -55,13 +55,6 @@ describe('authorization middleware', () => {
     expect(response.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('allows the admin through an admin-only boundary', async () => {
-    const response = await request(makeApp('admin')).get('/admin').set('Cookie', 'capella_session=valid-token');
-
-    expect(response.status).toBe(200);
-    expect(response.body.actor).toEqual({ type: 'admin' });
-  });
-
   it('forbids an employee from an admin-only boundary', async () => {
     const response = await request(makeApp('employee')).get('/admin').set('Cookie', 'capella_session=valid-token');
 

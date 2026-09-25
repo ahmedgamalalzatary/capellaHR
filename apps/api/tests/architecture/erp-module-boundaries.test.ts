@@ -17,116 +17,78 @@ const restrictedMessages = async (source: string, relativePath: string) => {
 describe('ERP module import boundaries', () => {
   // Spawns a real TypeScript compile, which takes seconds on its own and considerably
   // longer when the rest of the suite is competing for the same cores.
-  it('prevents HR modules from importing ERP', { timeout: 90_000 }, async () => {
-    const messages = await restrictedMessages(
+  it('keeps HR and ERP from importing each other across the boundary', { timeout: 90_000 }, async () => {
+    // HR modules must not import ERP.
+    await expect(restrictedMessages(
       "import '../erp/sales/index.js';",
       'src/modules/auth/index.ts',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('prevents ERP modules from importing HR internals', async () => {
-    const messages = await restrictedMessages(
+    // ERP modules must not import HR internals, from the root or deeply nested.
+    await expect(restrictedMessages(
       "import '../../auth/auth-service.js';",
       'src/modules/erp/sales/index.ts',
-    );
-
-    expect(messages).toHaveLength(1);
-  });
-
-  it('prevents root and deeply nested ERP files from importing HR directly', async () => {
-    const rootMessages = await restrictedMessages(
+    )).resolves.toHaveLength(1);
+    await expect(restrictedMessages(
       "import '../auth/auth-service.js';",
       'src/modules/erp/index.ts',
-    );
-    const nestedMessages = await restrictedMessages(
+    )).resolves.toHaveLength(1);
+    await expect(restrictedMessages(
       "import '../../../auth/auth-service.js';",
       'src/modules/erp/sales/index.ts',
-    );
-
-    expect(rootMessages).toHaveLength(1);
-    expect(nestedMessages).toHaveLength(1);
+    )).resolves.toHaveLength(1);
   });
 
-  it('allows the ERP capability bridge to import public HR barrels', async () => {
-    const messages = await restrictedMessages(
+  it('lets the ERP capability bridge import public HR barrels but not HR internals', async () => {
+    await expect(restrictedMessages(
       "import type { AuthService } from '../auth/index.js';",
       'src/modules/erp/hr-capabilities.ts',
-    );
+    )).resolves.toHaveLength(0);
 
-    expect(messages).toHaveLength(0);
-  });
-
-  it('prevents the ERP capability bridge from importing HR internals', async () => {
-    const messages = await restrictedMessages(
+    await expect(restrictedMessages(
       "import type { AuthService } from '../auth/auth-service.js';",
       'src/modules/erp/hr-capabilities.ts',
-    );
-
-    expect(messages).toHaveLength(1);
+    )).resolves.toHaveLength(1);
   });
 
-  it('prevents one ERP module from importing another module internals', async () => {
-    const messages = await restrictedMessages(
+  it('keeps ERP modules to each other public barrels, never internals', async () => {
+    // One ERP module importing another module internals, at any depth.
+    await expect(restrictedMessages(
       "import '../clients/clients-repository.js';",
       'src/modules/erp/sales/index.ts',
-    );
-
-    expect(messages).toHaveLength(1);
-  });
-
-  it('prevents deeply nested ERP files from importing another module internals', async () => {
-    const messages = await restrictedMessages(
+    )).resolves.toHaveLength(1);
+    await expect(restrictedMessages(
       "import '../../clients/clients-repository.js';",
       'src/modules/erp/sales/services/index.ts',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('prevents the ERP root from importing submodule internals', async () => {
-    const messages = await restrictedMessages(
+    // The ERP root importing submodule internals.
+    await expect(restrictedMessages(
       "import './clients/clients-repository.js';",
       'src/modules/erp/index.ts',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('allows one ERP module to import another public barrel', async () => {
-    const messages = await restrictedMessages(
+    // One ERP module importing another public barrel stays allowed.
+    await expect(restrictedMessages(
       "import type { ClientCapability } from '../clients/index.js';",
       'src/modules/erp/sales/index.ts',
-    );
-
-    expect(messages).toHaveLength(0);
+    )).resolves.toHaveLength(0);
   });
 
-  it('allows the ERP root to import a submodule public index', async () => {
-    const messages = await restrictedMessages(
+  it('keeps the ERP root to submodule public indexes, relative or aliased', async () => {
+    await expect(restrictedMessages(
       "import './clients/index.js';",
       'src/modules/erp/index.ts',
-    );
+    )).resolves.toHaveLength(0);
 
-    expect(messages).toHaveLength(0);
-  });
-
-  it('prevents the ERP root from importing submodule internals via the module alias', async () => {
-    const messages = await restrictedMessages(
+    await expect(restrictedMessages(
       "import '@/modules/erp/clients/clients-repository.js';",
       'src/modules/erp/index.ts',
-    );
+    )).resolves.toHaveLength(1);
 
-    expect(messages).toHaveLength(1);
-  });
-
-  it('allows the ERP root to import a submodule public index via the module alias', async () => {
-    const messages = await restrictedMessages(
+    await expect(restrictedMessages(
       "import '@/modules/erp/clients/index.js';",
       'src/modules/erp/index.ts',
-    );
-
-    expect(messages).toHaveLength(0);
+    )).resolves.toHaveLength(0);
   });
 });

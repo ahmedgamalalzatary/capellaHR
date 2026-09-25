@@ -1,12 +1,13 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+
+import { erpServiceCommissionOverrides } from '@capella/database/schema';
 
 import type { ErpAccountIdentity, ErpBranchContextResolver } from '../../src/modules/erp/index.js';
 import {
   CatalogError,
   createCategoryService,
   createServiceCatalogService,
+  createDrizzleServiceRepository,
   isDuplicateEntryError,
   type CategoryRecord,
   type CategoryRepository,
@@ -207,11 +208,6 @@ describe('ERP category service', () => {
 });
 
 describe('ERP service catalog service', () => {
-  it('uses an atomic upsert for commission overrides', () => {
-    const source = readFileSync(resolve('src/modules/erp/catalog/services-repository.ts'), 'utf8');
-    expect(source).toContain('.onDuplicateKeyUpdate({');
-  });
-
   it('stores the exact price and commission the contract normalized', async () => {
     const create = vi.fn(async (input: Parameters<ServiceRepository['create']>[0]) => service(input));
     await services(serviceRepository({ create })).create(ADMIN, {
@@ -392,5 +388,89 @@ describe('ERP service catalog service', () => {
 
     await expect(services(repository, { branchId: 1 }).listCommissionOverrides(ADMIN, 1))
       .rejects.toMatchObject({ code: 'SERVICE_NOT_FOUND' });
+  });
+});
+
+describe('Drizzle commission override persistence', () => {
+  const overrideRow = {
+    id: 9,
+    serviceId: 1,
+    employeeId: 4,
+    commissionPercent: '25.00',
+    createdAt: new Date('2026-09-25T11:00:00.000Z'),
+    updatedAt: new Date('2026-09-25T11:00:00.000Z'),
+  };
+
+  // Drizzle wraps the mysql2 error, so the deadlock markers sit on the cause.
+  const deadlockError = () => Object.assign(new Error('Failed query: insert into …'), {
+    cause: Object.assign(new Error('Deadlock found when trying to get lock; try restarting transaction'), {
+      code: 'ER_LOCK_DEADLOCK',
+      errno: 1213,
+      sqlState: '40001',
+    }),
+  });
+
+  const databaseWith = (insert: (attempt: number) => Promise<unknown>) => {
+    let attempts = 0;
+    const transaction = {
+      select() {
+        return {
+          from() {
+            const builder = {
+              where() { return builder; },
+              for() { return builder; },
+              limit() { return Promise.resolve([overrideRow]); },
+            };
+            return builder;
+          },
+        };
+      },
+      insert(table: unknown) {
+        return {
+          values() {
+            return {
+              onDuplicateKeyUpdate() {
+                attempts += 1;
+                expect(table).toBe(erpServiceCommissionOverrides);
+                return insert(attempts);
+              },
+            };
+          },
+        };
+      },
+    };
+    const database = {
+      transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>) => callback(transaction),
+    };
+    return {
+      database,
+      attempts: () => attempts,
+    };
+  };
+
+  it('retries the upsert when InnoDB kills a concurrent insert with a deadlock', async () => {
+    const { database, attempts } = databaseWith(async (attempt) => {
+      if (attempt === 1) throw deadlockError();
+      return [];
+    });
+    const repository = createDrizzleServiceRepository(database as never, {
+      record: async () => {},
+    });
+
+    await expect(repository.setOverride(1, 4, '25.00'))
+      .resolves.toMatchObject({ serviceId: 1, employeeId: 4, commissionPercent: '25.00' });
+    expect(attempts()).toBe(2);
+  });
+
+  it('does not retry a non-deadlock failure', async () => {
+    const { database, attempts } = databaseWith(async () => {
+      throw Object.assign(new Error('duplicate'), { code: 'ER_DUP_ENTRY' });
+    });
+    const repository = createDrizzleServiceRepository(database as never, {
+      record: async () => {},
+    });
+
+    await expect(repository.setOverride(1, 4, '25.00')).rejects.toThrow('duplicate');
+    expect(attempts()).toBe(1);
   });
 });
