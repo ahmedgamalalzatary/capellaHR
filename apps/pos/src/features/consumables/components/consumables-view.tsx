@@ -178,7 +178,7 @@ export function ConsumablesView() {
   const params = !isAdmin || branchId === undefined ? {} : { branchId };
   const branches = useQuery({ queryKey: ['consumables-branches'], queryFn: () => fetchAllPages((page) => listCatalogBranches(page)), enabled: isAdmin });
   const balances = useQuery({ queryKey: ['consumables-balances', branchId, stockPage], queryFn: () => listConsumableBalances({ ...params, page: stockPage, pageSize: 20 }), enabled: ready });
-  const balanceOptions = useQuery({ queryKey: ['consumables-balance-options', branchId], queryFn: () => fetchAllPages((page) => listConsumableBalances({ ...params, page, pageSize: 100 })), enabled: ready });
+  const balanceOptions = useQuery({ queryKey: ['consumables-balance-options', branchId], queryFn: () => fetchAllPages((page) => listConsumableBalances({ ...params, page, pageSize: 100 }), (balance) => balance.productId), enabled: ready });
   const services = useQuery({ queryKey: ['consumables-services', branchId, tab, cashierSessionId, tab === 'status' ? statusPage : consumablesPage], queryFn: () => listConsumableServices({ ...params, ...(cashierSessionId ? { cashierSessionId } : {}), status: tab === 'consumables' ? 'completed' : 'operational', page: tab === 'consumables' ? consumablesPage : statusPage, pageSize: 20 }), enabled: ready && tab !== 'stock' });
   const refresh = async () => { await Promise.all([cache.invalidateQueries({ queryKey: ['consumables-balances'] }), cache.invalidateQueries({ queryKey: ['consumables-services'] })]); };
   const statusMutation = useMutation({
