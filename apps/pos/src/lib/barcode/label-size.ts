@@ -1,16 +1,18 @@
 /**
- * Alpha Soft's "Label ( 5 CM) Full Layout" — 5 cm across the roll by 2.5 cm of
- * feed. Code 39 needs that extra width: the same 13-digit code on a 4 cm sticker
- * draws bars too thin for the QW2100. The XP-233B feeds 20–60 mm, so 50 mm fits.
- * This is the one constant everything else derives from — the print page rule,
- * the sheet layout and the barcode height. Changing the roll is a one-line edit.
+ * The measured white sticker is 40mm across by 10mm high, including all text.
+ * This is the white sticker, not the Windows print page used by Alpha Soft.
  */
-export const LABEL_SIZE_MM = { width: 50, height: 25 } as const;
+export const LABEL_SIZE_MM = { width: 40, height: 10 } as const;
 
-/**
- * Printing goes through the printer's Windows driver rather than raw ESC/POS or
- * TSPL bytes: the model's label claims ESC/POS while this hardware commonly
- * speaks TSPL, and the driver makes the question irrelevant.
- */
+/** Alpha Soft Half Layout: PaperSize("papersize", 150, 100), in 1/100 inch. */
+export const LABEL_PAGE_SIZE_MM = { width: 38.1, height: 25.4 } as const;
+
+/** GDI printer coordinates are hundredths of an inch; retain their precision. */
+export const labelUnitMm = (units: number) => Math.round(units * 254) / 1000;
+
+/** The selected desktop template fills the lower slot, then the upper slot. */
+export const LABEL_SLOT_Y = [56, 6] as const;
+
+/** Same Windows-driver page contract as Alpha Soft, via the browser. */
 export const LABEL_PAGE_RULE =
-  `@page { size: ${LABEL_SIZE_MM.width}mm ${LABEL_SIZE_MM.height}mm; margin: 0; }`;
+  `@page { size: ${LABEL_PAGE_SIZE_MM.width}mm ${LABEL_PAGE_SIZE_MM.height}mm; margin: 0; }`;

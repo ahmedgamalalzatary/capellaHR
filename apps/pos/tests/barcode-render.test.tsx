@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { LABEL_PAGE_RULE, LABEL_SIZE_MM } from '@/lib/barcode/label-size';
 import { Barcode, barcodeSvg, barcodeSvgFitting, symbologyFor } from '@/lib/barcode/render-barcode';
 
 describe('barcode rendering', () => {
@@ -53,10 +52,6 @@ describe('barcode rendering', () => {
   it('renders a supplier code as an image without being told the symbology', () => {
     render(<Barcode value="ABC-1234" />);
     expect(screen.getByRole('img', { name: 'ABC-1234' }).querySelector('svg')).not.toBeNull();
-  });
-
-  it('derives the print page rule from the one label-size constant', () => {
-    expect(LABEL_PAGE_RULE).toContain(`${LABEL_SIZE_MM.width}mm ${LABEL_SIZE_MM.height}mm`);
   });
 
   it.each([

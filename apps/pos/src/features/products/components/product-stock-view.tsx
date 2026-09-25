@@ -80,6 +80,10 @@ export function ProductStockView() {
   const [threshold, setThreshold] = useState('0');
   const [barcode, setBarcode] = useState('');
   const [labelling, setLabelling] = useState<Product | null>(null);
+  const [labelCopies, setLabelCopies] = useState('1');
+  const [labelJob, setLabelJob] = useState<Product[] | null>(null);
+  const labelCount = Number(labelCopies);
+  const validLabelCount = Number.isInteger(labelCount) && labelCount >= 1 && labelCount <= 1000;
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [counted, setCounted] = useState('');
   const [reason, setReason] = useState<'count_correction' | 'wastage' | 'damage'>('count_correction');
@@ -222,6 +226,7 @@ export function ProductStockView() {
                     if (commandPending) return;
                     setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
                     setEditing(null); setCreateOpen(false); setConfirmingToggle(null); setAdjusting(null);
+                    setLabelling(null);
                     setMovementProductId(undefined); setMovementPage(1); setProductPage(1);
                   }}
                 >
@@ -409,7 +414,7 @@ export function ProductStockView() {
                                 {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-surface" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>ربط كمستهلك</Link> : null}
                                 <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjusting(product); }}>تسوية</Button>
                                 {product.barcode
-                                  ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => setLabelling(product)}>طباعة ملصق</Button>
+                                  ? <Button variant="ghost" size="sm" disabled={commandPending || labelJob !== null} onClick={() => { setLabelCopies('1'); setLabelling(product); }}>طباعة ملصق</Button>
                                   : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => beginEdit(product)}>تعديل</Button>
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => product.isActive ? setConfirmingToggle(product) : toggle.mutate(product)}>
@@ -430,8 +435,26 @@ export function ProductStockView() {
           {generate.isError ? <FieldError>{errorText(generate.error)}</FieldError> : null}
 
           {labelling ? (
-            <ProductLabelSheet products={[labelling]} onPrinted={() => setLabelling(null)} />
+            <Modal title="طباعة الملصقات" className="max-w-sm" onClose={() => setLabelling(null)}>
+              <div className="space-y-4">
+                <p className="text-sm">{labelling.name}</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="product-label-copies">عدد الملصقات</Label>
+                  <Input id="product-label-copies" type="number" min={1} max={1000} step={1} value={labelCopies} onChange={(event) => setLabelCopies(event.target.value)} />
+                </div>
+                <p className="text-[13px] text-muted">كل صفحة طباعة تسع ملصقين. اختر العدد هنا واترك عدد النسخ في نافذة الطباعة 1.</p>
+                <div className="flex gap-2">
+                  <Button disabled={!validLabelCount} onClick={() => {
+                    if (!validLabelCount) return;
+                    setLabelJob(Array.from({ length: labelCount }, () => labelling));
+                    setLabelling(null);
+                  }}>طباعة</Button>
+                  <Button variant="ghost" onClick={() => setLabelling(null)}>إلغاء</Button>
+                </div>
+              </div>
+            </Modal>
           ) : null}
+          {labelJob ? <ProductLabelSheet products={labelJob} onPrinted={() => setLabelJob(null)} /> : null}
 
           {confirmingToggle ? <ConfirmDialog
             title="إيقاف المنتج"

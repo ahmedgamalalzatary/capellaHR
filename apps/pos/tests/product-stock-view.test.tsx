@@ -391,4 +391,29 @@ describe('ProductStockView', () => {
     expect(await screen.findByRole('button', { name: 'طباعة ملصق' })).toBeDefined();
     expect(screen.queryByRole('button', { name: 'توليد باركود' })).toBeNull();
   });
+
+  it('prints the requested quantity together on paired label pages', async () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    try {
+      mocks.listProducts.mockResolvedValue({
+        items: [{ ...product, barcode: '5555236735' }],
+        meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+      });
+      const { baseElement } = render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+      await screen.findByRole('option', { name: 'الرئيسي' });
+      fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+      fireEvent.click(await screen.findByRole('button', { name: 'طباعة ملصق' }));
+      fireEvent.change(screen.getByLabelText('عدد الملصقات'), { target: { value: '0' } });
+      expect(screen.getByRole('button', { name: 'طباعة', exact: true })).toHaveProperty('disabled', true);
+      fireEvent.change(screen.getByLabelText('عدد الملصقات'), { target: { value: '3' } });
+      fireEvent.click(screen.getByRole('button', { name: 'طباعة', exact: true }));
+      expect(baseElement.querySelectorAll('[data-product-label]')).toHaveLength(3);
+      expect(baseElement.querySelectorAll('[data-product-label-page]')).toHaveLength(2);
+      await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+      fireEvent(window, new Event('afterprint'));
+      expect(baseElement.querySelector('#print-root')).toBeNull();
+    } finally {
+      print.mockRestore();
+    }
+  });
 });

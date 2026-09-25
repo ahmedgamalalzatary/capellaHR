@@ -15,7 +15,7 @@ const json = (route: Route, data: unknown, meta?: unknown) => route.fulfill({
   body: JSON.stringify(meta ? { data, meta } : { data }),
 });
 
-test('prints label text without clipping or overlapping adjacent rows', async ({ page }, testInfo) => {
+test('prints the Alpha Soft half layout with two labels and readable text', async ({ page }, testInfo) => {
   await page.addInitScript(() => { window.print = () => undefined; });
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1', '');
@@ -48,17 +48,30 @@ test('prints label text without clipping or overlapping adjacent rows', async ({
   await page.goto('/products');
   await page.getByLabel('الفرع').selectOption('3');
   await page.getByRole('button', { name: 'طباعة ملصق' }).click();
+  await page.getByLabel('عدد الملصقات').fill('2');
+  await page.getByRole('button', { name: 'طباعة', exact: true }).click();
   await page.emulateMedia({ media: 'print' });
   await page.evaluate(() => document.fonts.ready);
-  const label = page.locator('[data-product-label]');
+  const sheet = page.locator('[data-product-label-page]');
+  await expect(sheet).toHaveCount(1);
+  const labels = page.locator('[data-product-label]');
+  await expect(labels).toHaveCount(2);
+  const label = labels.first();
   await expect(label).toBeVisible();
-  const bars = page.locator('[data-product-label-bars]');
+  const bars = label.locator('[data-product-label-bars]');
   await expect(bars.locator('svg')).toHaveCount(1);
   await expect(bars).not.toHaveText(/\*/);
-  await label.screenshot({ path: testInfo.outputPath('label.png'), scale: 'css' });
+  await sheet.screenshot({ path: testInfo.outputPath('alpha-half-layout.png'), scale: 'css' });
+
+  const sheetBounds = (await sheet.boundingBox())!;
+  expect(sheetBounds.width).toBeCloseTo(38.1 * 96 / 25.4, 1);
+  expect(sheetBounds.height).toBeCloseTo(25.4 * 96 / 25.4, 1);
+  const lower = (await labels.nth(0).boundingBox())!;
+  const upper = (await labels.nth(1).boundingBox())!;
+  expect(lower.y - upper.y).toBeCloseTo(12.7 * 96 / 25.4, 1);
 
   // Font ink can extend outside its CSS line box. Measure the actual glyphs,
-  // including Arabic currency and Latin descenders, using the loaded print font.
+  // including Latin descenders, using the loaded print fonts.
   const layout = await label.evaluate((element) => {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d')!;
@@ -87,8 +100,8 @@ test('prints label text without clipping or overlapping adjacent rows', async ({
     const bounds = element.getBoundingClientRect();
     return { width: bounds.width, height: bounds.height, text };
   });
-  expect(layout.width).toBeCloseTo(50 * 96 / 25.4, 1);
-  expect(layout.height).toBeCloseTo(25 * 96 / 25.4, 1);
+  expect(layout.width).toBeCloseTo(38.1 * 96 / 25.4, 1);
+  expect(layout.height).toBeCloseTo(11.176 * 96 / 25.4, 1);
   for (const text of layout.text) {
     expect(text.top, `${text.value}: letters fit below the top of their row`).toBeGreaterThanOrEqual(text.rowTop - 0.25);
     expect(text.bottom, `${text.value}: letters fit above the bottom of their row`).toBeLessThanOrEqual(text.rowBottom + 0.25);
