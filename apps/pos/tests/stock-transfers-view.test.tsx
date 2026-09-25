@@ -445,6 +445,39 @@ describe('StockTransfersView', () => {
     expect(document.body.classList.contains('printing-report')).toBe(false);
   });
 
+  it('keeps printing the original transfer after its dialog closes', async () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+    mocks.list.mockResolvedValue(page([
+      transfer,
+      { ...transfer, id: 5, invoiceNumber: 'INV.2026.08.17.0002' },
+    ]));
+    mount();
+
+    fireEvent.click((await screen.findByText('INV.2026.08.17.0001')).closest('tr')!);
+    const dialog = await screen.findByRole('dialog', { name: /تفاصيل التحويل/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'طباعة التحويل' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق' }));
+    expect(screen.queryByRole('dialog', { name: /تفاصيل التحويل/ })).toBeNull();
+    const receipt = document.querySelector('#print-root [data-receipt]');
+    expect(receipt).not.toBeNull();
+    expect(receipt?.textContent).toContain('INV.2026.08.17.0001');
+    expect(document.body.classList.contains('printing-report')).toBe(true);
+
+    fireEvent.click(screen.getByText('INV.2026.08.17.0002').closest('tr')!);
+    const nextDialog = await screen.findByRole('dialog', { name: /تفاصيل التحويل/ });
+    expect(nextDialog.textContent).toContain('INV.2026.08.17.0002');
+    expect(within(nextDialog).getByRole('button', { name: 'طباعة التحويل' })).toHaveProperty('disabled', true);
+    expect(document.querySelector('#print-root [data-receipt]')?.textContent).toContain('INV.2026.08.17.0001');
+    expect(print).toHaveBeenCalledTimes(1);
+
+    fireEvent(window, new Event('afterprint'));
+    await waitFor(() => expect(document.querySelector('#print-root')).toBeNull());
+    expect(document.body.classList.contains('printing-report')).toBe(false);
+    expect(within(nextDialog).getByRole('button', { name: 'طباعة التحويل' })).toHaveProperty('disabled', false);
+  });
+
   it('explains when the browser cannot open the transfer print dialog', async () => {
     vi.spyOn(window, 'print').mockImplementation(() => { throw new Error('Printer unavailable'); });
     mount();

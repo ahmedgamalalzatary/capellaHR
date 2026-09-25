@@ -26,7 +26,7 @@ import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
-import { createStockTransfer, listStockTransfers } from '../api/stock-transfers-api';
+import { createStockTransfer, listStockTransfers, type StockTransfer } from '../api/stock-transfers-api';
 import { stockTransferQueryKeys } from '../query-keys';
 import { StockTransferReceipt } from './stock-transfer-receipt';
 
@@ -85,8 +85,8 @@ export function StockTransfersView() {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
-  const [printing, setPrinting] = useState(false);
-  const finishPrinting = useCallback(() => setPrinting(false), []);
+  const [printTransfer, setPrintTransfer] = useState<StockTransfer | null>(null);
+  const finishPrinting = useCallback(() => setPrintTransfer(null), []);
   const effectiveSourceBranchId = cashierBranchId ?? sourceBranchId;
   useEffect(() => {
     if (!successMessage) return;
@@ -177,11 +177,12 @@ export function StockTransfersView() {
   };
   const printSelected = () => {
     setPrintError(null);
+    if (!selected || printTransfer) return;
     if (typeof window.print !== 'function') {
       setPrintError('الطباعة غير متاحة في هذا المتصفح. استخدم متصفحًا يدعم الطباعة.');
       return;
     }
-    setPrinting(true);
+    setPrintTransfer(selected);
   };
 
   return (
@@ -474,6 +475,7 @@ export function StockTransfersView() {
           <div className="flex justify-end gap-2 border-t border-line/70 pt-3">
             <Button
               variant="secondary"
+              disabled={printTransfer !== null}
               onClick={printSelected}
             >
               <Printer className="size-4" aria-hidden />
@@ -483,9 +485,9 @@ export function StockTransfersView() {
           </div>
         </Modal>
       ) : null}
-      {selected && printing ? (
+      {printTransfer ? (
         <StockTransferReceipt
-          transfer={selected}
+          transfer={printTransfer}
           onPrinted={finishPrinting}
           onPrintError={setPrintError}
         />

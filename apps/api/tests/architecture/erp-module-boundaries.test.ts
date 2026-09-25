@@ -35,7 +35,7 @@ describe('ERP module import boundaries', () => {
     )).resolves.toHaveLength(1);
     await expect(restrictedMessages(
       "import '../../../auth/auth-service.js';",
-      'src/modules/erp/sales/index.ts',
+      'src/modules/erp/sales/services/index.ts',
     )).resolves.toHaveLength(1);
   });
 
