@@ -114,6 +114,7 @@ function renderView() {
 const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listPayrollMonths.mockResolvedValue(pageOf([
     { ...payroll, state: 'ready' as const },
     { ...finalized, state: 'ready' as const },

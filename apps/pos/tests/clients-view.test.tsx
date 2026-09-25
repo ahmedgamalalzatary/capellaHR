@@ -57,6 +57,7 @@ function renderView() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   sessionStorage.clear();
   mocks.actor.current = { type: 'cashier', accountId: 3, employeeId: 9 };
   mocks.listClients.mockResolvedValue(pageOf([nada]));

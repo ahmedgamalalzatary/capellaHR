@@ -75,6 +75,7 @@ function renderView() {
 const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listBonuses.mockResolvedValue(pageOf([bonus, readOnly]));
   mocks.listEmployees.mockResolvedValue(
     pageOf([{ id: 1, employeeCode: 1001, fullName: 'أحمد جمال' }]),

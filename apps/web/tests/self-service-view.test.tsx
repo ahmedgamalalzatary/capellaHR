@@ -76,6 +76,7 @@ const noRetryCases = [
 ] as const;
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.getOverview.mockResolvedValue(overview);
   mocks.listAttendance.mockResolvedValue(pageOf([{
     id: 11,

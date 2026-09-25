@@ -88,6 +88,7 @@ function mount() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   sessionStorage.clear();
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-08-09T12:00:00.000Z'));

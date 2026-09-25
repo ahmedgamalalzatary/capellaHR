@@ -80,6 +80,7 @@ function renderView() {
 const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listWeeklyDayRecords.mockResolvedValue(pageOf([absence, dayOff]));
   mocks.listBranches.mockResolvedValue(pageOf([{ id: 3, name: 'فرع القاهرة' }]));
   mocks.listEmployees.mockResolvedValue(

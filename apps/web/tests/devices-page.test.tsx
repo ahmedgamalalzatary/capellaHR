@@ -69,6 +69,7 @@ function renderView() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listDevices.mockResolvedValue(pageOf([activeDevice, revokedDevice]));
   mocks.listEmployees.mockResolvedValue(pageOf([{ id: 7, fullName: 'أحمد جمال', employeeCode: 1 }]));
   mocks.listBranches.mockResolvedValue(pageOf([{ id: 3, name: 'فرع القاهرة' }]));

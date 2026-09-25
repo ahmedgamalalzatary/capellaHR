@@ -46,6 +46,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listAuditEvents.mockResolvedValue(pageOf([event]));
 });
 

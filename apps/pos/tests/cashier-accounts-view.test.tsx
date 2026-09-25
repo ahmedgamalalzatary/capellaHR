@@ -42,6 +42,7 @@ async function create() {
   return dialog;
 }
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   vi.resetAllMocks();
   mocks.listCashierAccounts.mockResolvedValue(pageOf([account, disabled]));
   mocks.saveCashierAccount.mockResolvedValue(account);

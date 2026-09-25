@@ -38,6 +38,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   sessionStorage.clear();
   actor.current = 'admin';
   mocks.listProducts.mockResolvedValue({
@@ -404,9 +405,9 @@ describe('ProductStockView', () => {
       fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
       fireEvent.click(await screen.findByRole('button', { name: 'طباعة ملصق' }));
       fireEvent.change(screen.getByLabelText('عدد الملصقات'), { target: { value: '0' } });
-      expect(screen.getByRole('button', { name: 'طباعة', exact: true })).toHaveProperty('disabled', true);
+      expect(screen.getByRole('button', { name: /^طباعة$/ })).toHaveProperty('disabled', true);
       fireEvent.change(screen.getByLabelText('عدد الملصقات'), { target: { value: '3' } });
-      fireEvent.click(screen.getByRole('button', { name: 'طباعة', exact: true }));
+      fireEvent.click(screen.getByRole('button', { name: /^طباعة$/ }));
       expect(baseElement.querySelectorAll('[data-product-label]')).toHaveLength(3);
       expect(baseElement.querySelectorAll('[data-product-label-page]')).toHaveLength(2);
       await waitFor(() => expect(print).toHaveBeenCalledTimes(1));

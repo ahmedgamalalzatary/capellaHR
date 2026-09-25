@@ -64,6 +64,7 @@ const openEditor = async (name: string) => {
 };
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listShiftAssignments.mockResolvedValue(pageOf([ahmed, mona]));
   mocks.listBranches.mockResolvedValue(pageOf([{ id: 3, name: 'فرع القاهرة' }]));
 });

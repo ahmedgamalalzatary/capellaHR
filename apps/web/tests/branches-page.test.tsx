@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { BranchesView } from '../src/features/branches';
 import { ApiError } from '../src/lib/api/client';
@@ -48,6 +48,8 @@ function renderView() {
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => vi.stubGlobal('scrollTo', vi.fn()));
 
 afterEach(() => {
   cleanup();

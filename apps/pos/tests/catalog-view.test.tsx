@@ -86,6 +86,7 @@ const pickBranch = async () => {
 const openServicesTab = () => fireEvent.click(screen.getByRole('tab', { name: 'الخدمات' }));
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
     sessionStorage.clear();
   mocks.getSession.mockResolvedValue({ actor: { type: 'admin', accountId: 1 } });
   mocks.listCatalogBranches.mockResolvedValue(pageOf([{ id: 3, name: 'الفرع الرئيسي' }]));

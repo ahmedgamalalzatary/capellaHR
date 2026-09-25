@@ -180,6 +180,7 @@ const parkedKeys = () => listSaleDrafts(owner).map((record) => record.draft.idem
 
 describe('sales parked side by side at one till', () => {
   beforeEach(() => {
+    vi.stubGlobal('print', vi.fn());
     localStorage.clear();
     sessionStorage.clear();
     mocks.actor.current = { type: 'cashier', accountId: 3 };

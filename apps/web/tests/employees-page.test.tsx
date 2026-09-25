@@ -83,6 +83,7 @@ const setFile = (label: RegExp, file: File) => {
 };
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   mocks.listEmployees.mockResolvedValue(pageOf([employee]));
   mocks.listBranches.mockResolvedValue(pageOf([
     { id: 3, name: 'فرع القاهرة' },

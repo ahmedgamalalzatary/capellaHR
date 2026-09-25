@@ -35,6 +35,7 @@ const pickInvoiceProduct = (name: string | RegExp) => {
   fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name }));
 };
 
+beforeEach(() => vi.stubGlobal('scrollTo', vi.fn()));
 beforeEach(() => { sessionStorage.clear(); actor.current = 'admin'; mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listAllSuppliers.mockResolvedValue([supplier]); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 

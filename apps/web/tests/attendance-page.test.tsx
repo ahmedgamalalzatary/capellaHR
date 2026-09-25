@@ -175,6 +175,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
   sessionStorage.setItem('capella:protected-area:attendance-manual', 'unlocked');
   sessionStorage.setItem('capella:protected-area:attendance-absence', 'unlocked');
   installFetch();

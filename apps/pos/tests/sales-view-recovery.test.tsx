@@ -146,6 +146,7 @@ const buildDraft = async () => {
 
 describe('ERP service-sale view', () => {
   beforeEach(() => {
+    vi.stubGlobal('print', vi.fn());
     localStorage.clear();
     sessionStorage.clear();
     mocks.actor.current = { type: 'cashier', accountId: 3 };
