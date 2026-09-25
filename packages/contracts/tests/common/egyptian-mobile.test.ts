@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { isNormalizedEgyptianMobile, normalizeEgyptianMobile } from '../../src/utils/egyptian-mobile.js';
+import { isNormalizedEgyptianMobile, normalizeEgyptianMobile } from '../../src/common/index.js';
 
 describe('isNormalizedEgyptianMobile', () => {
   test.each(['01012345678', '01112345678', '01212345678', '01512345678'])(

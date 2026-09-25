@@ -1,4 +1,4 @@
-import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/shared';
+import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/contracts';
 import { z } from 'zod';
 
 import { FORM_MESSAGES } from '@/lib/validation/messages';

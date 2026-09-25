@@ -1,5 +1,4 @@
-import { adminLoginSchema } from '@capella/contracts';
-import { containsArabicIndicDigits } from '@capella/shared';
+import { adminLoginSchema, containsArabicIndicDigits } from '@capella/contracts';
 import { z } from 'zod';
 
 /** Contract schema with Arabic messages layered on for form display. */

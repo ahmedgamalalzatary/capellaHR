@@ -8,7 +8,6 @@ Domain-oriented HR monorepo template using Next.js, Express, Drizzle, MySQL, pnp
 - `apps/api` — versioned REST API modular monolith
 - `packages/database` — Drizzle/MySQL boundary
 - `packages/contracts` — REST DTO and validation boundary
-- `packages/shared` — framework-independent types, enums, constants, utilities, and schemas
 - `packages/config` — shared environment parsing
 - `packages/ui` — reusable React UI boundary
 - `packages/eslint-config` — shared linting rules

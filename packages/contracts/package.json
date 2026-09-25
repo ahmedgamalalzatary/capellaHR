@@ -13,7 +13,6 @@
     "clean": "rimraf dist coverage"
   },
   "dependencies": {
-    "@capella/shared": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

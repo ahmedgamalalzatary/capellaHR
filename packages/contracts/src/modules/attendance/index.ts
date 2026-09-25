@@ -1,8 +1,8 @@
-import { containsArabicIndicDigits } from '@capella/shared';
 import { z } from 'zod';
 
 import {
   coercedMysqlIntSchema,
+  containsArabicIndicDigits,
   paginationPageSchema,
   paginationPageSizeSchema,
   positiveMysqlIntSchema,

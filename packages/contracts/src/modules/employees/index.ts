@@ -1,8 +1,9 @@
-import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/shared';
 import { z } from 'zod';
 import { coercedShiftDurationMinutesSchema } from '../shifts/index.ts';
 import {
   coercedMysqlIntSchema,
+  containsArabicIndicDigits,
+  normalizeEgyptianMobile,
   paginationPageSchema,
   paginationPageSizeSchema,
 } from '../../common/index.ts';

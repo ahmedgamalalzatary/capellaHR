@@ -1,7 +1,8 @@
-import { containsArabicIndicDigits, normalizeEgyptianMobile } from '@capella/shared';
 import { z } from 'zod';
 import {
   coercedMysqlIntSchema,
+  containsArabicIndicDigits,
+  normalizeEgyptianMobile,
   paginationPageSchema,
   paginationPageSizeSchema,
 } from '../../../common/index.ts';

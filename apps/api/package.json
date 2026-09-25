@@ -44,7 +44,6 @@
     "@capella/config": "workspace:*",
     "@capella/contracts": "workspace:*",
     "@capella/database": "workspace:*",
-    "@capella/shared": "workspace:*",
     "argon2": "^0.44.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.45.2",

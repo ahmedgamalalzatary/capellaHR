@@ -14,7 +14,7 @@ const apiProxyTarget = resolveApiProxyTarget();
 const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: path.resolve(__dirname, '../..'),
-  transpilePackages: ['@capella/ui', '@capella/shared', '@capella/contracts'],
+  transpilePackages: ['@capella/ui', '@capella/contracts'],
   rewrites: async () => [{
     source: '/api/:path*',
     destination: `${apiProxyTarget}/api/:path*`,
