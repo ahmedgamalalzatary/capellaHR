@@ -116,6 +116,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -402,5 +403,56 @@ describe('StockTransfersView', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: /إغلاق|رجوع/ }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /تفاصيل التحويل/ })).toBeNull());
+  });
+
+  it('prints the selected transfer with every product and its totals', async () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {});
+    mocks.list.mockResolvedValue(page([{
+      ...transfer,
+      lines: [
+        transfer.lines[0],
+        { sourceProductId: 8, destinationProductId: 22, productName: 'بلسم', quantity: 2, unitCost: '12.50', lineTotal: '25.00' },
+        { sourceProductId: 9, destinationProductId: 23, productName: 'كريم', quantity: 1, unitCost: '10.00', lineTotal: '10.00' },
+      ],
+      totalCost: '155.00',
+    }]));
+    mount();
+
+    fireEvent.click((await screen.findByText('INV.2026.08.17.0001')).closest('tr')!);
+    const dialog = await screen.findByRole('dialog', { name: /تفاصيل التحويل/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'طباعة التحويل' }));
+
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+    expect(document.body.classList.contains('printing-report')).toBe(true);
+    const root = document.body.querySelector(':scope > #print-root')!;
+    const receipt = root.querySelector('[data-receipt]')!;
+    expect(getComputedStyle(receipt).padding).toBe('8mm');
+    expect(receipt.textContent).toContain('INV.2026.08.17.0001');
+    expect(receipt.textContent).toContain('فرع مدينة نصر');
+    expect(receipt.textContent).toContain('فرع المعادي');
+    expect(receipt.textContent).toContain('2026-08-17');
+    expect(receipt.querySelector('time[datetime="2026-08-17T09:00:00.000Z"]')?.textContent).toContain('١٢:٠٠');
+    expect(receipt.textContent).toContain('نقل مخزون');
+    expect(receipt.textContent).toContain('شامبو الأرغان');
+    expect(receipt.textContent).toContain('بلسم');
+    expect(receipt.textContent).toContain('كريم');
+    expect(receipt.textContent).toContain('155.00');
+    expect(receipt.querySelector('style')?.textContent).toContain('size: 80mm auto');
+    expect(screen.getByRole('dialog', { name: /تفاصيل التحويل/ })).toBeDefined();
+
+    fireEvent(window, new Event('afterprint'));
+    await waitFor(() => expect(document.querySelector('#print-root')).toBeNull());
+    expect(document.body.classList.contains('printing-report')).toBe(false);
+  });
+
+  it('explains when the browser cannot open the transfer print dialog', async () => {
+    vi.spyOn(window, 'print').mockImplementation(() => { throw new Error('Printer unavailable'); });
+    mount();
+
+    fireEvent.click((await screen.findByText('INV.2026.08.17.0001')).closest('tr')!);
+    const dialog = await screen.findByRole('dialog', { name: /تفاصيل التحويل/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'طباعة التحويل' }));
+
+    expect(within(dialog).getByRole('alert').textContent).toContain('تعذر فتح نافذة الطباعة');
   });
 });

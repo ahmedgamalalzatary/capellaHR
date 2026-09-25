@@ -1,8 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeftRight, Plus, Printer, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Button, Badge, Card, EmptyState, Input, Label, Modal } from '@capella/ui';
 
@@ -28,6 +28,7 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { createStockTransfer, listStockTransfers } from '../api/stock-transfers-api';
 import { stockTransferQueryKeys } from '../query-keys';
+import { StockTransferReceipt } from './stock-transfer-receipt';
 
 const errorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -83,6 +84,9 @@ export function StockTransfersView() {
   const [successMessage, setSuccessMessage] = useState<string>();
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [printError, setPrintError] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const finishPrinting = useCallback(() => setPrinting(false), []);
   const effectiveSourceBranchId = cashierBranchId ?? sourceBranchId;
   useEffect(() => {
     if (!successMessage) return;
@@ -167,6 +171,18 @@ export function StockTransfersView() {
   const items = transfers.data?.items ?? [];
   const meta = transfers.data?.meta;
   const selected = items.find((record) => record.id === selectedId) ?? null;
+  const openTransfer = (id: number) => {
+    setPrintError(null);
+    setSelectedId(id);
+  };
+  const printSelected = () => {
+    setPrintError(null);
+    if (typeof window.print !== 'function') {
+      setPrintError('الطباعة غير متاحة في هذا المتصفح. استخدم متصفحًا يدعم الطباعة.');
+      return;
+    }
+    setPrinting(true);
+  };
 
   return (
     <section className="space-y-6">
@@ -348,11 +364,11 @@ export function StockTransfersView() {
                       className="cursor-pointer"
                       tabIndex={0}
                       aria-label={`تفاصيل التحويل ${record.invoiceNumber}`}
-                      onClick={() => setSelectedId(record.id)}
+                      onClick={() => openTransfer(record.id)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
-                          setSelectedId(record.id);
+                          openTransfer(record.id);
                         }
                       }}
                     >
@@ -454,10 +470,25 @@ export function StockTransfersView() {
             </Card>
           </div>
 
-          <div className="flex justify-end border-t border-line/70 pt-3">
+          {printError ? <FieldError>{printError}</FieldError> : null}
+          <div className="flex justify-end gap-2 border-t border-line/70 pt-3">
+            <Button
+              variant="secondary"
+              onClick={printSelected}
+            >
+              <Printer className="size-4" aria-hidden />
+              طباعة التحويل
+            </Button>
             <Button variant="ghost" onClick={() => setSelectedId(null)}>إغلاق</Button>
           </div>
         </Modal>
+      ) : null}
+      {selected && printing ? (
+        <StockTransferReceipt
+          transfer={selected}
+          onPrinted={finishPrinting}
+          onPrintError={setPrintError}
+        />
       ) : null}
     </section>
   );
