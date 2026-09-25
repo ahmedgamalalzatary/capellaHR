@@ -6,8 +6,9 @@ This is the living product specification for the Capella HR system. Modules are 
 
 ## User-confirmed scope revision
 
-- **SKIP — USER CONFIRMED (2026-07-20):** Capella-managed facial recognition, face enrollment/templates, liveness challenges, ONNX processing, biometric thresholds, and biometric Settings must not be implemented.
-- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-22):** Employee-originated check-in and check-out require employee code plus the four-digit PIN while retaining the exact registered browser marker and assigned-branch GPS checks.
+- **SUPERSEDED — see the revision below:** ~~**SKIP — USER CONFIRMED (2026-07-20):** Capella-managed facial recognition, face enrollment/templates, liveness challenges, ONNX processing, biometric thresholds, and biometric Settings must not be implemented.~~
+- **REVISION — IMPLEMENTED:** Face verification is back, in a different architecture than the originally planned in-repo ONNX pipeline. A dedicated Python service (`apps/attendance-ai`, the `attendance-ai` Docker service) performs face detection (YuNet), passive liveness (MiniFASNet ensemble with temporal aggregation over 8–12 camera frames), and 128-dimension face-embedding comparison. The API calls it over the private Docker network (`AI_FACE_SERVICE_URL`). The admin captures one face photo per employee at creation (optionally replaced later); the service derives the embedding, which is stored on the employee record (`face_embedding`) and never exposed through the API. Employee-originated check-in/check-out submits live camera frames, which are verified against the stored embedding and discarded immediately — they are never stored. The originally planned pieces remain unimplemented: active liveness challenges (blink/turn/smile), admin-configurable thresholds, a biometric Settings module, template encryption at rest, and model-version tracking.
+- **ACTIVE REPLACEMENT — USER CONFIRMED (2026-07-22):** Employee-originated check-in and check-out require employee code plus the four-digit PIN while retaining the exact registered browser marker and assigned-branch GPS checks. Face verification is an additional factor on top of these, not a replacement.
 - Device verification is silent: opening an admin-issued pairing link stores a random marker in that browser profile, with no pattern, security-key, biometric, or device-passcode prompt.
 
 ## Product scope
@@ -35,18 +36,19 @@ The system manages one company with multiple branches. Its planned functional ar
 ### Actors and account creation
 
 - The system has exactly one admin account.
+- The ERP adds cashier accounts (see `docs/erp-plan.md` §6); cashiers can log into the POS only and never into the HR app. There are no other account roles.
 - No public registration or employee self-registration exists.
 - The admin creates and manages all employee accounts and credentials.
 
 ### Admin authentication
 
 - The admin email and plaintext bootstrap password are stored in server-only environment variables.
-- On API startup, the password is Argon2-hashed and the single admin credential is upserted in MySQL; the database never stores the plaintext password.
+- On API startup, the password is Argon2-hashed and the single admin account is upserted in MySQL; the database never stores the plaintext password.
 - Admin login reads the stored hash from MySQL and verifies the submitted password against it.
-- The `admin_credentials` MySQL table exists and permits exactly one singleton credential row for the system admin; additional admin accounts remain prohibited.
-- Changing admin credentials requires changing the server environment and restarting the API; startup replaces the single stored admin credential hash.
+- **SUPERSEDED:** ~~The `admin_credentials` MySQL table exists and permits exactly one singleton credential row for the system admin; additional admin accounts remain prohibited.~~ The `admin_credentials` table was retired (migration `0042`). The singleton admin now lives in the `accounts` table, where a generated-column unique index (`accounts_admin_singleton_unique`) still permits exactly one admin account.
+- Changing admin credentials requires changing the server environment and restarting the API; startup replaces the stored admin credential hash and revokes the admin's existing sessions when the credentials actually change.
 - A successful login creates a secure HTTP-only cookie session.
-- Admin sessions remain valid until explicit logout.
+- **SUPERSEDED:** ~~Admin sessions remain valid until explicit logout.~~ Admin sessions now also expire after 30 days (cashier sessions after 24 hours, employee self-service sessions after 7 days) and are revoked when the admin credentials change.
 - Multiple concurrent admin sessions are allowed and do not invalidate one another.
 - Audit records identify admin actions as actions by the single system admin.
 
@@ -83,15 +85,15 @@ The system manages one company with multiple branches. Its planned functional ar
 - A branch has one registered shared branch phone.
 - An employee using the shared phone provides their employee code and four-digit PIN.
 - The attempt must originate within the permitted GPS range of the employee's assigned branch.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The shared phone uses camera-based facial recognition to verify that the person matches the claimed employee.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Face enrollment is supervised by the admin and captures multiple angles with liveness checks.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The face-recognition template is separate from the employee profile photo and ID-card images.~~
-- The registered shared branch phone verifies attendance using employee code, four-digit PIN, its registered browser marker, and assigned-branch GPS validation without camera or biometric processing.
+- **REVISION — IMPLEMENTED:** ~~**SKIP — USER CONFIRMED (2026-07-20):** The shared phone uses camera-based facial recognition~~ Both attendance device paths now use camera-based face verification through the `attendance-ai` service to confirm the person matches the claimed employee's enrolled embedding.
+- **REVISION — IMPLEMENTED:** ~~**SKIP — USER CONFIRMED (2026-07-20):** Face enrollment is supervised by the admin~~ Face enrollment is admin-supervised: the admin captures the employee's face photo during employee creation (and may replace it later), and the AI service derives the stored embedding from it. There are no multi-angle captures and no active liveness challenges.
+- **REVISION — IMPLEMENTED:** ~~**SKIP — USER CONFIRMED (2026-07-20):** The face-recognition template is separate~~ The face embedding is a separate stored value (`face_embedding`), distinct from the employee profile photo and ID-card images, and is never returned by the API.
+- ~~The registered shared branch phone verifies attendance using employee code, four-digit PIN, its registered browser marker, and assigned-branch GPS validation without camera or biometric processing.~~ The registered shared branch phone verifies attendance using employee code, four-digit PIN, its registered browser marker, assigned-branch GPS validation, **and** camera face verification (passive liveness plus embedding match) via the `attendance-ai` service.
 
 ### Failed and suspicious attempts
 
 - Authentication and attendance-verification attempts are unlimited.
-- Failed PIN, device, and GPS attempts are recorded and flagged. **SKIP — USER CONFIRMED (2026-07-20):** Liveness and face-match failure types do not exist.
+- Failed PIN, device, and GPS attempts are recorded and flagged. **REVISION — IMPLEMENTED:** ~~**SKIP — USER CONFIRMED (2026-07-20):** Liveness and face-match failure types do not exist.~~ Face failure types exist and are recorded: face mismatch and multiple-faces are flagged suspicious, while spoof detection, no-face-found, invalid image, and comparison failure are recorded as ordinary denials.
 - Flagged attempts retain the employee or claimed employee, timestamp, device, location, and failure reason when available.
 - Failed attempts never cause a temporary or permanent automatic block.
 - A failed factor does not create a successful login or attendance record.
@@ -165,7 +167,7 @@ Every employee field is required at creation:
 - ID-card front image
 - ID-card back image
 
-Device registration is a separate post-creation workflow and is not an employee-creation field. **SKIP — USER CONFIRMED (2026-07-20):** Live facial enrollment is removed.
+Device registration is a separate post-creation workflow and is not an employee-creation field. **REVISION — IMPLEMENTED:** ~~**SKIP — USER CONFIRMED (2026-07-20):** Live facial enrollment is removed.~~ Face enrollment is part of employee creation: the admin captures the employee's face photo in the creation form and the `attendance-ai` service derives the embedding stored on the employee record. Creation fails if no clear single face can be enrolled.
 
 ### Name, age, and address
 
@@ -180,8 +182,8 @@ Device registration is a separate post-creation workflow and is not an employee-
 - A normalized number contains exactly 11 digits, contains no spaces or separators, and begins with `010`, `011`, `012`, or `015`.
 - The same employee may use the same number for both personal phone and WhatsApp.
 - A current number cannot belong to two different employees across either phone field.
-- If the admin edits a number away from an active employee, that old number becomes available for reuse provided no current or deleted employee still uses it.
-- The current personal and WhatsApp numbers of a soft-deleted employee remain permanently reserved.
+- If the admin edits a number away from an employee, that old number becomes available for reuse by another current employee.
+- **SUPERSEDED:** ~~The current personal and WhatsApp numbers of a soft-deleted employee remain permanently reserved.~~ Soft-deleting an employee releases their phone-number reservations; the numbers become available for reuse.
 - Changing a personal phone number does not invalidate an already active employee self-service session; future authentication requires the new number.
 
 ### Branch and shift assignments
@@ -211,11 +213,20 @@ Device registration is a separate post-creation workflow and is not an employee-
 - Employee code and branch assignment are not editable.
 - PIN changes follow the session-revocation rules in Login and identity.
 
-### Face enrollment — SKIPPED; USER CONFIRMED (2026-07-20)
+### Face enrollment — REVISED; IMPLEMENTED
 
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Admin-supervised live face enrollment is a separate step after employee creation.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~A created but unenrolled employee cannot use facial recognition on the shared branch phone.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The enrollment template remains separate from personal and ID images.~~
+- **REVISION — IMPLEMENTED:** Admin-supervised face enrollment happens inside employee creation (not as a separate later step): the admin captures one face photo, the `attendance-ai` service validates it and derives the embedding, and creation fails when enrollment is rejected (no face, multiple faces, or invalid image). Replacing the personal photo on edit re-enrolls and replaces the embedding only after the new enrollment succeeds.
+- **REVISION — IMPLEMENTED:** An employee without an enrolled embedding cannot complete employee-originated check-in or check-out on either attendance device; the attempt is denied as a face-comparison failure. Because enrollment is required at creation, every current employee has one.
+- **REVISION — IMPLEMENTED:** The enrollment embedding is stored separately from the personal and ID images (the `face_embedding` column), is never exposed through the API, and is retained on soft-deleted employees as part of the preserved record.
+
+### Employee deactivation and reactivation
+
+- Deactivation is the normal way to end employment: the employee keeps their record and history but is marked `inactive`, their sessions and credentials are revoked, and they can no longer authenticate, check in, or use self-service.
+- Deactivation requires a reason and a last working day, and settles the employee's finances: outstanding advances are accelerated into the current month, and the admin chooses how to settle any remaining balance (write it off, zero the salary against the debt, collect cash, or record an outstanding debt). The frozen settlement figures are retained on the termination record.
+- Deactivation is blocked while the employee has future bookings or open service-queue tickets in the ERP, and while the current month's payroll is already finalized.
+- A checked-in employee's deactivation is deferred: the decisions are stored and applied automatically when their attendance session closes.
+- An inactive employee can be reactivated; reactivation opens a new employment period and restores the ability to check in and use self-service.
+- Employment periods are tracked, so attendance, absence, and payroll calculations only count dates on which the employee was actually employed.
 
 ### Employee deletion
 
@@ -225,6 +236,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - There is no deleted-employees screen, restore operation, or employee reactivation.
 - Deleted employees cannot authenticate, check in, or use self-service.
 - Historical attendance and payroll reports continue to display the deleted employee's code and name.
+- **SUPERSEDED:** ~~The current personal and WhatsApp numbers of a soft-deleted employee remain permanently reserved.~~ Soft deletion releases the employee's phone-number reservations, so a deleted employee's numbers may be reused by a new employee.
 
 ## 4. Devices — Locked
 
@@ -393,15 +405,15 @@ Device registration is a separate post-creation workflow and is not an employee-
 - Personal-phone verification requires employee code, four-digit PIN, assigned-branch GPS validation, and marker-only verification of the registered browser profile.
 - Branch-phone verification requires employee code, four-digit PIN, marker-only verification of the registered branch browser profile, and assigned-branch GPS validation.
 - Both device paths verify the submitted marker silently, with no credential, challenge, authentication option, or authentication prompt.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Branch-phone verification requires liveness and face match.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Raw face images captured during attendance attempts are discarded and never stored.~~ No camera frames are captured.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Face-match/liveness results and operational metadata are retained.~~
+- **REVISION — IMPLEMENTED:** ~~**SKIP — USER CONFIRMED (2026-07-20):** Branch-phone verification requires liveness and face match.~~ Both device paths (personal and branch phone) require face verification: the browser captures live camera frames and the `attendance-ai` service runs passive liveness (MiniFASNet temporal ensemble) plus an embedding match against the employee's enrolled embedding before the event is recorded.
+- **REVISION — IMPLEMENTED:** Raw face frames captured during attendance attempts are sent to the AI service for verification and are discarded immediately afterward; they are never stored in MySQL, on disk, or in audit history.
+- **REVISION — IMPLEMENTED:** Face outcomes are recorded as denial reasons only (`FACE_MISMATCH`, `FACE_NOT_FOUND`, `MULTIPLE_FACES`, `FACE_SPOOF_DETECTED`, `FACE_IMAGE_INVALID`, `FACE_COMPARISON_FAILED`). No scores, thresholds, model versions, or other biometric metadata are retained.
 
 ### Manual admin events
 
 - The admin attendance screen provides separate Check-in and Check-out actions/tabs.
 - The admin explicitly chooses which event to record.
-- Admin manual events bypass employee code, PIN, GPS, and device verification. **SKIP — USER CONFIRMED (2026-07-20):** Liveness and face verification do not exist.
+- Admin manual events bypass employee code, PIN, GPS, device verification, and face verification.
 - Such events use source `admin_manual`.
 - Manual event timestamps may be in the past or present but never in the future.
 - Manual check-out requires an existing open session and must be after its check-in.
@@ -413,9 +425,9 @@ Device registration is a separate post-creation workflow and is not an employee-
 ### Denied and flagged attempts
 
 - Every failed attendance attempt is recorded as denied and is visible to the admin.
-- Security-relevant failures are additionally flagged, including wrong employee code/PIN pairing, unrecognized or revoked device, and out-of-range GPS. **SKIP — USER CONFIRMED (2026-07-20):** Face mismatch and liveness failure do not exist.
-- Ordinary technical failures may remain denied without the additional suspicious flag.
-- A denied attempt retains event type, claimed employee when known, timestamp, device/source, coordinates and distance when available, and failure reason. **SKIP — USER CONFIRMED (2026-07-20):** No recognition/liveness results are stored.
+- Security-relevant failures are additionally flagged, including wrong employee code/PIN pairing, unrecognized or revoked device, out-of-range GPS, face mismatch, multiple faces, and detected spoof attempts.
+- Ordinary technical failures may remain denied without the additional suspicious flag; this includes no-face-found, invalid camera image, and face-comparison service failures.
+- A denied attempt retains event type, claimed employee when known, timestamp, device/source, coordinates and distance when available, and failure reason. No face scores or other recognition results are stored.
 - Attempts remain unlimited and do not automatically block an employee.
 - The admin may approve any denied attempt as a manual override.
 - The admin may instead dismiss a denied attempt as reviewed-invalid; dismissal preserves the attempt, is audited, and permanently prevents later approval.
@@ -568,7 +580,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 ### Employee-deletion behavior
 
-- No new bonus may be created after an employee is soft-deleted.
+- No new bonus may be created after an employee is soft-deleted **or deactivated**; both states reject creation, edits, and deletion of bonuses.
 - Existing bonuses remain included in payroll after deletion.
 - Existing bonuses become read-only immediately after employee deletion.
 - Employee deletion does not remove or recalculate existing bonuses.
@@ -609,7 +621,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 ### Employee-deletion behavior
 
-- No new deduction may be created after an employee is soft-deleted.
+- No new deduction may be created after an employee is soft-deleted **or deactivated**; both states reject creation, edits, and deletion of deductions.
 - Existing deductions remain included in payroll after deletion.
 - Existing deductions become read-only immediately after employee deletion.
 - Employee deletion does not remove or recalculate existing deductions.
@@ -654,8 +666,8 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 ### Employee-deletion behavior
 
-- No new advance may be created for a soft-deleted employee.
-- When an employee is soft-deleted, the entire remaining advance balance moves into that employee's final unfinalized payroll.
+- No new advance may be created for a soft-deleted **or deactivated** employee; both states reject creation, edits, and deletion of advances.
+- When an employee is soft-deleted or deactivated, the entire remaining advance balance moves into that employee's final unfinalized payroll. Deactivation additionally requires the admin to choose how the resulting balance is settled (write-off, zero-salary, cash collection, or recorded debt — see Employees §3).
 - Accelerating the remaining balance may produce a negative final net salary.
 - Existing advance and installment history remains preserved.
 
@@ -711,7 +723,8 @@ Device registration is a separate post-creation workflow and is not an employee-
 
 ### Fixed roles
 
-- The system has exactly two fixed roles: Admin and Employee.
+- The HR system has two actor kinds: the single Admin account and Employees (code+PIN self-service).
+- The ERP adds a third: Cashier accounts, which authenticate against the POS only and are rejected by the HR app (see `docs/erp-plan.md` §6).
 - The single environment-configured admin is the only administrative actor.
 - No additional admin accounts, custom roles, role editor, or configurable permission matrix exists.
 - Authorization is enforced by the Express API and is not dependent only on hidden frontend controls.
@@ -721,7 +734,7 @@ Device registration is a separate post-creation workflow and is not an employee-
 - The admin can access all administrative modules and all company records.
 - Admin access remains constrained by locked business rules; being admin does not allow reopening finalized payroll, editing immutable attendance, restoring deleted employees, or bypassing other prohibited state transitions.
 - The admin may access protected employee images through authorized API endpoints.
-- The admin cannot retrieve PINs, raw installation markers, marker hashes, or other stored secrets. **SKIP — USER CONFIRMED (2026-07-20):** Raw biometric images are never created.
+- The admin cannot retrieve PINs, raw installation markers, marker hashes, face embeddings, or other stored secrets. Raw attendance camera frames are never stored.
 
 ### Employee attendance identity
 
@@ -792,8 +805,8 @@ Each entry stores available contextual metadata:
 ### Secret redaction
 
 - Audit entries never store plaintext PINs or passwords.
-- Password hashes, PIN hashes, raw installation markers, marker hashes, raw device tokens, session cookies, and other secrets are redacted or excluded. **SKIP — USER CONFIRMED (2026-07-20):** Biometric templates do not exist.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Raw attendance camera images do not exist and therefore cannot enter audit history.~~ No attendance camera capture is implemented.
+- Password hashes, PIN hashes, raw installation markers, marker hashes, raw device tokens, session cookies, face embeddings, and other secrets are redacted or excluded.
+- Raw attendance camera frames are processed transiently by the `attendance-ai` service and never stored, so they cannot enter audit history.
 
 ## 15. Dashboard and Operational Visibility — Locked
 
@@ -843,46 +856,44 @@ The admin dashboard shows live summaries for:
 - Attendance and payroll system jobs continue reconciliation retries until the required business state succeeds because those records cannot be silently skipped.
 - Job handlers must be idempotent so retries cannot create duplicate absences, check-outs, exports, or financial effects.
 
-## 18. Facial Recognition and Biometrics — SKIPPED; USER CONFIRMED (2026-07-20)
+## 18. Facial Recognition and Biometrics — REVISED; PARTIALLY IMPLEMENTED
 
-> **SKIP — USER CONFIRMED (2026-07-20):** This entire section is retained only as decision history. None of its requirements may be implemented.
+> **REVISION:** The 2026-07-20 skip of this entire section was later reversed in part. The implemented architecture is the `attendance-ai` service described in "User-confirmed scope revision" above: admin-supervised enrollment at employee creation, passive liveness, and embedding comparison at attendance time, with no frame storage. The requirements that remain unimplemented are marked below; the rest of the section is retained as decision history.
 
 ### Local ONNX processing — SKIPPED; USER CONFIRMED (2026-07-20)
 
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Face recognition and liveness use locally hosted ONNX models.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The worker performs model inference so recognition work does not block normal API request handling.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~No third-party biometric recognition service receives employee biometric data.~~ No local or third-party biometric recognition service is used.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Temporary camera frames exist only for processing and are discarded immediately afterward.~~ No camera frames are captured.
+- **REVISION — IMPLEMENTED (differently):** ~~Face recognition and liveness use locally hosted ONNX models.~~ Face detection, liveness, and recognition run on YuNet and MiniFASNet models inside the dedicated `attendance-ai` Python service, not as ONNX inference inside the Node codebase.
+- **REVISION — IMPLEMENTED (differently):** ~~The worker performs model inference so recognition work does not block normal API request handling.~~ Inference runs in the separate `attendance-ai` container, called synchronously by the API during enrollment and attendance verification; the Node worker is not involved.
+- **REVISION — IMPLEMENTED:** No third-party biometric recognition service receives employee biometric data; all processing stays inside the installation's own Docker network.
+- **REVISION — IMPLEMENTED:** Temporary camera frames exist only for processing and are discarded immediately afterward; they are never persisted.
 
-### Liveness — SKIPPED; USER CONFIRMED (2026-07-20)
+### Liveness — REVISED; PARTIALLY IMPLEMENTED
 
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Branch-phone verification uses a randomized active challenge, such as blink, turn left/right, or smile.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The active challenge is combined with the local ONNX liveness model result.~~
+- **REMAINING SKIP:** Branch-phone verification does not use a randomized active challenge (blink, turn left/right, smile).
+- **REVISION — IMPLEMENTED (differently):** Liveness is passive: the `attendance-ai` service aggregates MiniFASNet scores over the submitted frame sequence (temporal aggregation) and rejects spoof attempts without any user challenge.
 
 ### Templates and encryption — SKIPPED; USER CONFIRMED (2026-07-20)
 
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Supervised enrollment produces a face template separate from profile and ID images.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Face templates are encrypted at rest in MySQL.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Encryption uses a server-only key supplied through environment configuration.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The encryption key is never stored in MySQL or exposed to clients, logs, audit entries, or exports.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Soft-deleting an employee permanently deletes their encrypted face template.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Historical attempts retain only non-biometric scores, thresholds, outcomes, model version, and operational metadata.~~ Attendance attempts retain only active code/PIN, device, GPS, outcome, and operational metadata as applicable.
+- **REVISION — IMPLEMENTED:** Supervised enrollment produces a face embedding separate from profile and ID images.
+- **REMAINING SKIP:** Face embeddings are **not** encrypted at rest in MySQL; they are stored as a JSON vector in `face_embedding` and protected only by never being exposed through the API.
+- **REMAINING SKIP:** There is no server-only biometric encryption key in the environment configuration.
+- **REMAINING SKIP:** Soft-deleting an employee does **not** delete their face embedding; it is retained as part of the preserved record.
+- **REVISION — IMPLEMENTED:** Historical attempts retain no biometric scores, thresholds, or model versions — only the denial outcome and ordinary operational metadata.
 
-### Re-enrollment and model compatibility — SKIPPED; USER CONFIRMED (2026-07-20)
+### Re-enrollment and model compatibility — REVISED; PARTIALLY IMPLEMENTED
 
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The admin may initiate supervised face re-enrollment.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The old template remains active until replacement enrollment succeeds.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Successful replacement permanently deletes the old template.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Every template and recognition attempt stores the ONNX model name/version.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Templates produced by an incompatible embedding model cannot be silently compared using another model.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~An incompatible model upgrade requires supervised re-enrollment for affected employees.~~
+- **REVISION — IMPLEMENTED:** Replacing an employee's personal photo on edit re-enrolls the face through the `attendance-ai` service; there is no separate re-enrollment action.
+- **REVISION — IMPLEMENTED:** The old embedding remains active until the replacement enrollment succeeds; a failed replacement leaves the existing embedding untouched.
+- **REVISION — IMPLEMENTED:** Successful replacement permanently replaces the old embedding.
+- **REMAINING SKIP:** Templates and recognition attempts do not store a model name/version.
+- **REMAINING SKIP:** There is no model-compatibility guard; an incompatible model upgrade would require re-enrolling affected employees by replacing their photos.
 
 ### Admin thresholds — SKIPPED; USER CONFIRMED (2026-07-20)
 
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The admin controls one company-wide face-match threshold.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~The admin controls one company-wide liveness threshold.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Threshold changes are audited and apply only to future attempts.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Each attempt stores the face/liveness scores and threshold snapshots used for its decision.~~
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~The admin controls one company-wide face-match threshold.~~ Still unimplemented: thresholds are fixed inside the `attendance-ai` service.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~The admin controls one company-wide liveness threshold.~~ Still unimplemented.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Threshold changes are audited and apply only to future attempts.~~ Still unimplemented.
+- **SKIP — USER CONFIRMED (2026-07-20):** ~~Each attempt stores the face/liveness scores and threshold snapshots used for its decision.~~ Still unimplemented; attempts store only the outcome.
 
 ## 19. Session Persistence — Locked
 
@@ -931,13 +942,12 @@ Unused scaffold placeholders such as Benefits, Departments, Positions, Recruitme
 - Authorization tests prove employees cannot access another employee, employee images, Reports, Audit, denied attempts, or admin mutation endpoints.
 - Session tests cover logout, PIN-reset revocation, attendance check-out revocation, automatic-timeout revocation, and the separately locked device-removal behavior.
 
-### Attendance tests; biometrics skipped by user confirmation (2026-07-20)
+### Attendance and face-verification tests
 
 - Attendance workflows cover personal and branch devices, exact GPS-radius boundaries, denied and flagged attempts, admin approval, cross-midnight sessions, one-session rules, automatic timeout, and allowed correction.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Biometric tests use synthetic or explicitly consented fixtures only.~~
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Production employee face images and templates never enter the test suite.~~ No biometric fixtures, images, or templates are created.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~Tests cover model-version compatibility, threshold snapshots, template encryption/deletion, active liveness challenges, and raw-frame disposal.~~
-- Attendance tests instead cover employee-code/PIN validation on both attendance device types in addition to the active device, GPS, session, approval, timeout, and correction requirements.
+- **REVISION:** Face verification is tested through the `AttendanceFaceGateway` interface with stubbed gateway results (match, mismatch, spoof, no-face, multiple faces, service failure); production employee face images and embeddings never enter the test suite.
+- **REMAINING SKIP:** ~~Tests cover model-version compatibility, threshold snapshots, template encryption/deletion, active liveness challenges~~ — these features remain unimplemented, so there is nothing to test.
+- Attendance tests also cover employee-code/PIN validation on both attendance device types in addition to the active device, GPS, session, approval, timeout, and correction requirements.
 
 ### Reports and end-to-end tests
 
@@ -972,7 +982,7 @@ Unused scaffold placeholders such as Benefits, Departments, Positions, Recruitme
 - REST errors use one consistent response shape containing a stable error code, Arabic user-facing message, field errors when relevant, and request/correlation ID.
 - Expected conflicts return specific Arabic errors, including duplicate phone, duplicate branch name, existing daily session, open session, finalized payroll, invalid day-off spacing, revoked device, invalid pairing request, and financial-lock violations.
 - Unexpected errors return a safe generic Arabic message.
-- Stack traces, SQL details, filesystem paths, hashes, credentials, and other secrets remain server-side. **SKIP — USER CONFIRMED (2026-07-20):** No biometric data is processed or stored.
+- Stack traces, SQL details, filesystem paths, hashes, credentials, face embeddings, and other secrets remain server-side. Raw camera frames are processed transiently and never stored.
 
 ### Correlation and diagnostics
 
@@ -985,7 +995,7 @@ This is the intended functional structure after implementation. The later visual
 
 Every API domain directory contains focused route, controller, service/use-case, repository, validation/schema, DTO, and test files as required by that domain. Every web feature directory contains its own API adapters, components, hooks, schemas, types, and utilities. These repeated internal files are summarized rather than expanded for every module.
 
-**SKIP — USER CONFIRMED (2026-07-20):** The following previously targeted paths are intentionally omitted from the active structure: `apps/api/src/modules/settings`, `apps/web/src/app/(admin)/settings`, `apps/web/src/features/settings`, `apps/worker/src/jobs/biometric-processing`, `packages/biometrics`, `packages/contracts/src/modules/settings`, and `packages/database/src/schema/settings`.
+**SKIP — USER CONFIRMED (2026-07-20):** The following previously targeted paths are intentionally omitted from the active structure: `apps/api/src/modules/settings`, `apps/web/src/app/(admin)/settings`, `apps/web/src/features/settings`, `apps/worker/src/jobs/biometric-processing`, `packages/biometrics`, `packages/contracts/src/modules/settings`, and `packages/database/src/schema/settings`. Face verification instead lives in the standalone `apps/attendance-ai` Python service plus the `ai-face-gateway.ts` adapter in the attendance module; the tree below is the original HR-only target and predates the ERP/POS additions, so treat it as the HR subset of the current repository rather than an exact map.
 
 ```text
 HR/
@@ -1224,5 +1234,5 @@ HR/
 ### Runtime and generated assets
 
 - `apps/api/uploads/employees` and `apps/api/uploads/reports` are runtime storage directories excluded from Git; only keep-files or documentation remain in source control.
-- **SKIP — USER CONFIRMED (2026-07-20):** ~~ONNX model binaries may be provisioned as deployment assets rather than committed when licensing or file size requires it; model manifests and compatibility code remain in `packages/biometrics`.~~ No biometric model assets or manifests are provisioned.
+- **REVISION:** ~~No biometric model assets or manifests are provisioned.~~ The face-detection and liveness model assets ship inside the `attendance-ai` Docker image (`apps/attendance-ai`), not in the Node packages; the browser-side face-quality preview model (`blaze-face-short-range.tflite`) is served from `apps/web` static assets.
 - Database migrations are committed; generated databases, logs, caches, coverage, and build artifacts are not.

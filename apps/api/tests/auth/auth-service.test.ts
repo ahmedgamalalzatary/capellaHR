@@ -60,12 +60,19 @@ class MemorySessions {
 class MemoryAttempts {
   readonly rows: Array<{ actorType: string; identifier: string; succeeded: boolean; reason: string | null }> = [];
   accountLoginAllowed = true;
-  async reserveAccountLoginAttempt() {
+  readonly reservations: Array<{ identifier: string; maximumAttempts: number; windowMs: number }> = [];
+  resets = 0;
+  async reserveAccountLoginAttempt(input: { identifier: string; maximumAttempts: number; windowMs: number }) {
+    this.reservations.push({
+      identifier: input.identifier,
+      maximumAttempts: input.maximumAttempts,
+      windowMs: input.windowMs,
+    });
     return this.accountLoginAllowed
       ? { allowed: true as const, reservation: [] }
       : { allowed: false as const, retryAfterSeconds: 42 };
   }
-  async resetAccountLoginLimits() {}
+  async resetAccountLoginLimits() { this.resets += 1; }
   async record(attempt: (typeof this.rows)[number]) { this.rows.push(attempt); }
 }
 
@@ -224,7 +231,46 @@ describe('authentication service', () => {
     expect(sessions.rows.some((row) => row.tokenHash === first.token)).toBe(false);
   });
 
-  it('rejects invalid admin credentials and records every attempt without locking', async () => {
+  it('reserves an admin login attempt before checking the password', async () => {
+    const { service, attempts } = makeService();
+
+    await expect(service.loginAdmin(
+      'admin@capella.test',
+      'wrong',
+      { ipAddress: '203.0.113.9' },
+    )).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });
+
+    expect(attempts.reservations).toEqual([
+      { identifier: 'admin@capella.test', maximumAttempts: 5, windowMs: 5 * 60_000 },
+    ]);
+  });
+
+  it('rejects a rate-limited admin login before creating a session', async () => {
+    const { service, sessions, attempts } = makeService();
+    attempts.accountLoginAllowed = false;
+
+    await expect(service.loginAdmin(
+      'admin@capella.test',
+      'correct horse battery staple',
+      { ipAddress: '203.0.113.7' },
+    )).rejects.toMatchObject({
+      code: 'TOO_MANY_ATTEMPTS',
+      retryAfterSeconds: 42,
+    });
+
+    expect(sessions.rows).toHaveLength(0);
+    expect(attempts.rows).toHaveLength(0);
+  });
+
+  it('clears the admin login limit after a successful login', async () => {
+    const { service, attempts } = makeService();
+
+    await service.loginAdmin('admin@capella.test', 'correct horse battery staple');
+
+    expect(attempts.resets).toBe(1);
+  });
+
+  it('rejects invalid admin credentials and records every attempt', async () => {
     const { service, sessions, attempts } = makeService();
 
     await expect(service.loginAdmin('admin@capella.test', 'wrong')).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS' });

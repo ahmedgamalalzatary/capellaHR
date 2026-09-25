@@ -70,7 +70,7 @@ Rule 1 will be **enforced automatically with an ESLint import-boundary rule** (t
 
 These were confirmed by reading the code on 2026-07-29 (not assumptions):
 
-- **Stack:** Next.js + Express + **Drizzle ORM** + MySQL, pnpm workspaces + Turborepo, Docker Compose deployment, `apps/` = `api` / `web` / `worker`. (Note: earlier discussion said "Prisma" — the repo actually uses Drizzle.)
+- **Stack:** Next.js + Express + **Drizzle ORM** + MySQL, pnpm workspaces + Turborepo, Docker Compose deployment, `apps/` = `api` / `web` / `worker` at planning time; the delivered system adds `apps/pos` (ERP frontend) and `apps/attendance-ai` (Python face-verification service for HR attendance). (Note: earlier discussion said "Prisma" — the repo actually uses Drizzle.)
 - **Modules are optional at the wiring level.** `apps/api/src/routes/index.ts` mounts each module's router only if its service is passed into `createApp` (`apps/api/src/app.ts`), and the ERP21 runtime composition root now constructs only the resolved edition's modules.
 - **Live presence already exists as data.** `attendance_sessions.open_employee_id` is a stored generated column (non-null while the session is open) with a unique index. The ERP will consume it **only** via a public capability such as `listPresentEmployees(branchId)` (Rule 2, §2) — the point is that the capability is cheap to provide, not that ERP queries attendance tables.
 - **A payroll-input pipeline already exists.** Ordinary bonuses remain separate, while ERP17 adds an HR-owned deterministic commission input that is included in open previews and snapshotted at finalization, plus an HR-owned post-payroll deduction input for later reversals (§8). ERP never reads or writes HR tables directly.
@@ -198,7 +198,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Offline behavior | **Degrade gracefully:** completed sales queue locally (browser storage) with their idempotency keys and sync when the connection returns — never a lost sale, never a duplicate (§8) |
 | Service queue | Every sold service unit receives a static queue number scoped to its cashier shift and service. Operational status moves from not started (`pending`) through in progress to completed. Numbers print on the receipt and appear in service views and reports; this is not a live serving-position board |
 | Customer services and consumables | A Cashier or Admin updates service status independently from consumables. Every sold service must be completed before manual shift closing, but a completed service may still have unrecorded consumables. Recording later stores the quantities used, or explicit confirmation that none were used, without changing service status. Sales cancellations remove unfinished services from the operational workflow. The POS workspace separately manages service status, consumption capture, `ml`/`gm` package configuration, transfers, balances, valued ledger history, usage, and completion reports. Completed services are final in the operational UI. |
-| Stock operations | Recommended defaults (owner delegated): stock **adjustments** with reasons (count correction, wastage, damage) via stocktaking; **no** inter-branch transfers; one unit per product; **no** variants |
+| Stock operations | Recommended defaults (owner delegated): stock **adjustments** with reasons (count correction, wastage, damage) via stocktaking; one unit per product; **no** variants. **Superseded in part:** inter-branch transfers **were later implemented** — the `transfers` module moves stock between branches at cost through a generated zero-commission invoice (the receiving branch appears as a transfer client), with idempotency keys and a printable transfer receipt |
 | Costing | **Last purchase cost** is the cost basis |
 | Suppliers | **No returns; purchases always fully paid** — no supplier balances or credit |
 | Negative stock | **Never allowed, with no override** |
@@ -283,6 +283,12 @@ The `apps/api/src/modules/erp/` group is delivered through ERP20, with matching 
 | `sales` | POS: invoices, invoice lines, payment ledger/open balances, per-service-line employee assignment and correction, refunds, static service queue numbers, cashier sessions, and printable shift reports |
 | `expenses` | Categorized expenses |
 | `clients` | Client records (name, phone, visit history) |
+| `assignment` | Read-only surface listing strictly checked-in employees eligible for service-line assignment |
+| `bookings` | Staff-only appointment book (§7) |
+| `commissions` | Immutable commission ledger, payouts, and payroll projection (§8) |
+| `consumables` | `ml`/`gm` package configuration, consumption capture, balances, and valued ledger |
+| `transfers` | Inter-branch stock transfers at cost through a generated zero-commission invoice |
+| `fixed-assets` | Fixed-asset register |
 | `erp-reports` | 21 tabular ERP reports plus invoice/report PDF export and browser printing through the existing worker pipeline |
 
 Plus: `apps/pos` (new Next.js frontend), the account/role model in HR core (§6), and the edition wiring (§4).
@@ -291,13 +297,16 @@ Plus: `apps/pos` (new Next.js frontend), the account/role model in HR core (§6)
 
 ## 10. Remaining design and validation work
 
-The ERP schemas, POS sale flow, employee commission visibility, void/refund endpoints, offline sale queue, and global invoice allocator are implemented. The remaining work is:
+The ERP schemas, POS sale flow, employee commission visibility, void/refund endpoints, offline sale queue, and global invoice allocator are implemented. Since this list was written, two items have been resolved in code:
 
-1. **Thermal printing mechanism** — choose browser print CSS or a local print agent once printer hardware is known.
-2. **Void and refund semantics** — reconcile the written operating rules with the implemented same-day full void and full/partial refund behavior, including stock restoration and commission reversals.
-3. **Offline queue** — document and validate the implemented local storage, replay, and failure experience at the counter against §7/§8.
-4. **Invoice sequence** — validate the implemented global, non-reusable numeric sequence in the deployment environment and reconcile any remaining legacy daily-sequence references.
-5. **Deployment and environment validation** — verify these workflows with the target infrastructure and hardware.
+- **Thermal printing — decided and implemented.** Browser print CSS through the Windows driver; no local print agent. The counter hardware is known and codified in `apps/pos/src/lib/print/hardware.ts`: an Xprinter XP-T80Q 80mm receipt printer, an Xprinter XP-233B sticker printer (product barcode labels), and a Datalogic QW2100 1D scanner. Receipts, refund notes, shift reports, transfer receipts, booking tickets, and label sheets all print via `window.print()` with dedicated `@page` rules. The cash drawer stays manual because a browser cannot address the drawer port.
+- **Void and refund semantics — implemented behavior.** A void is a full reversal allowed only on the same Cairo date as the sale (`VOID_DATE_EXPIRED` afterwards) and only for completed, fully-paid invoices (a partially paid open invoice cannot be voided). Refunds are full or partial, allowed on completed or partially refunded invoices, restore stock on product lines, and append commission reversals (§8). Both record the acting account.
+
+The remaining work is:
+
+1. **Offline queue** — document and validate the implemented local storage, replay, and failure experience at the counter against §7/§8.
+2. **Invoice sequence** — validate the implemented global, non-reusable numeric sequence in the deployment environment and reconcile any remaining legacy daily-sequence references.
+3. **Deployment and environment validation** — verify these workflows with the target infrastructure and hardware.
 
 ---
 

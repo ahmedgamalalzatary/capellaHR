@@ -178,6 +178,20 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
   return {
     async loginAdmin(email: string, password: string, context: AttemptContext = {}) {
       const normalizedUsername = email.trim().toLowerCase();
+      const limit = await dependencies.attempts.reserveAccountLoginAttempt({
+        identifier: normalizedUsername,
+        ipAddress: context.ipAddress ?? null,
+        now: now(),
+        maximumAttempts: 5,
+        windowMs: 5 * 60_000,
+      });
+      if (!limit.allowed) {
+        throw new AuthError(
+          'TOO_MANY_ATTEMPTS',
+          'محاولات كثيرة، حاول مرة أخرى لاحقاً',
+          limit.retryAfterSeconds,
+        );
+      }
       const credential = await dependencies.accounts.findAdminByUsername(normalizedUsername);
       const passwordMatches = await safelyVerifyHash(credential?.passwordHash ?? TIMING_DUMMY_HASH, password);
       const valid = credential !== null && credential.active && passwordMatches;
@@ -185,11 +199,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies) => {
         actorType: 'account', identifier: normalizedUsername, succeeded: valid, reason: valid ? null : 'INVALID_CREDENTIALS', ...context,
       });
       if (!valid) throw new AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
+      const token = await createSession({
+        actorType: 'account', employeeId: null, accountId: credential.id,
+        lifetimeMs: SESSION_LIFETIME_MS.admin,
+      });
+      await dependencies.attempts.resetAccountLoginLimits(limit.reservation);
       return {
-        token: await createSession({
-          actorType: 'account', employeeId: null, accountId: credential.id,
-          lifetimeMs: SESSION_LIFETIME_MS.admin,
-        }),
+        token,
         actor: { type: 'admin' as const },
       };
     },

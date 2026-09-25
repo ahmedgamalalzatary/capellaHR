@@ -10,7 +10,10 @@ This project uses Docker only for production on the Hostinger KVM 1 VPS. Nginx a
 | POS | 3000 | `127.0.0.1:3021` | `https://pos.capellaegy.com` |
 | API | 4000 | `127.0.0.1:4020` | `/api/v1` on both frontend hosts |
 | Worker | None | None | None |
+| Attendance AI | 8000 | None | None |
 | MySQL | 3306 | None | None |
+
+The `attendance-ai` service runs the face-verification pipeline (`apps/attendance-ai`) that employee attendance check-in/check-out depends on. It runs on every edition, is reachable only inside the Docker network, and the API talks to it at `http://attendance-ai:8000`. The API's `depends_on` health gate means the API will not start until `attendance-ai` is healthy.
 
 The Compose project name remains `capellahr`, so its container names continue to use the `capellahr-` prefix. The new database and employee-upload volumes end in `_v2` to prevent the old beta data from being reused accidentally.
 
@@ -87,6 +90,7 @@ docker compose --env-file .env.production build worker
 docker compose --env-file .env.production build web
 docker compose --env-file .env.production build pos
 docker compose --env-file .env.production build migrate
+docker compose --env-file .env.production build attendance-ai
 ```
 
 The old containers continue running while the images build. If a build fails, fix it before beginning the maintenance window.
@@ -110,12 +114,12 @@ Remove the confirmed old HR volumes by their exact recorded names. Do not use a 
 docker volume rm OLD_HR_MYSQL_VOLUME OLD_HR_UPLOAD_VOLUME
 ```
 
-Start the clean database, run all committed Drizzle migrations, and then start the API and web services:
+Start the clean database, run all committed Drizzle migrations, and then start the API, AI, and web services:
 
 ```bash
 docker compose --env-file .env.production up -d db
 docker compose --env-file .env.production up migrate
-docker compose --env-file .env.production up -d api worker web pos
+docker compose --env-file .env.production up -d attendance-ai api worker web pos
 ```
 
 If migration fails, leave API, worker, and both frontends stopped and inspect the migration output. Do not bypass a failed migration.
@@ -133,15 +137,16 @@ docker compose --env-file .env.production build worker
 docker compose --env-file .env.production build web
 docker compose --env-file .env.production build pos
 docker compose --env-file .env.production build migrate
+docker compose --env-file .env.production build attendance-ai
 ```
 
 Then use the short maintenance window to migrate and replace the application containers:
 
 ```bash
-docker compose --env-file .env.production stop web pos worker api
+docker compose --env-file .env.production stop web pos worker api attendance-ai
 docker compose --env-file .env.production up -d db
 docker compose --env-file .env.production up migrate
-docker compose --env-file .env.production up -d api worker web pos
+docker compose --env-file .env.production up -d attendance-ai api worker web pos
 ```
 
 The API initializes the configured admin account at startup. The repository's seed command is currently empty and is not part of deployment.
@@ -207,6 +212,7 @@ docker compose --env-file .env.production logs --tail=200 api
 docker compose --env-file .env.production logs --tail=200 web
 docker compose --env-file .env.production logs --tail=200 pos
 docker compose --env-file .env.production logs --tail=200 worker
+docker compose --env-file .env.production logs --tail=200 attendance-ai
 docker compose --env-file .env.production logs --tail=200 db
 docker compose --env-file .env.production logs --follow api
 ```
