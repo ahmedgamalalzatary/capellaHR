@@ -53,7 +53,11 @@ describe('ProductLabelSheet — Alpha Soft half layout', () => {
     expect(name.style.top).toBe('2.794mm');
     expect(bars.style.top).toBe('5.334mm');
     expect(bars.style.height).toBe('3.556mm');
-    expect(digits.style.top).toBe('8.382mm');
+    // The browser's digits box must follow the bars and stay inside the slot.
+    const barsBottom = Number.parseFloat(bars.style.top) + Number.parseFloat(bars.style.height);
+    const digitsTop = Number.parseFloat(digits.style.top);
+    expect(digitsTop - barsBottom).toBeGreaterThanOrEqual(0.25);
+    expect(digitsTop + Number.parseFloat(digits.style.height)).toBeLessThanOrEqual(11.176);
     expect(bars.querySelector('svg')).not.toBeNull();
     expect(bars.textContent).not.toContain('*');
   });

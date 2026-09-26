@@ -29,9 +29,9 @@ export interface LabelProduct {
 
 /**
  * Alpha Soft's selected "Label (1.25 * 3.5 CM) Half Layout", X=0 and Y=0.
- * PrintDocument uses a 150x100 page and fills Y=56 before Y=6. The name, bars
- * and digits start at +11, +21 and +33 respectively; bars are 14 units high.
- * See docs/barcode-printing.md for the recovered source and browser adaptations.
+ * PrintDocument uses a 150x100 page and fills Y=56 before Y=6. The name and
+ * bars start at +11 and +21; bars are 14 units high. Browser digits start at
+ * +36 instead of GDI's +33 so their text box clears the bars without touching.
  */
 export function ProductLabelSheet({ products, onPrinted }: {
   products: LabelProduct[];
@@ -123,7 +123,7 @@ export function ProductLabelSheet({ products, onPrinted }: {
                 data-label-digits
                 dir="ltr"
                 style={{
-                  ...box(0, 33, 134, 11), ...textStyle(6, true), textAlign: 'center',
+                  ...box(0, 36, 134, 8), ...textStyle(6, true), lineHeight: unit(8), textAlign: 'center',
                   fontFamily: '"Lao UI", Arial, sans-serif',
                 }}
               >

@@ -90,6 +90,7 @@ test('prints the Alpha Soft half layout with two labels and readable text', asyn
         const baseline = box.top + metrics.fontBoundingBoxAscent;
         return {
           value: node.textContent,
+          isDigits: row.hasAttribute('data-label-digits'),
           top: baseline - metrics.actualBoundingBoxAscent,
           bottom: baseline + metrics.actualBoundingBoxDescent,
           rowTop: bounds.top,
@@ -98,11 +99,15 @@ test('prints the Alpha Soft half layout with two labels and readable text', asyn
       });
     });
     const bounds = element.getBoundingClientRect();
-    return { width: bounds.width, height: bounds.height, text };
+    const barsBottom = element.querySelector('[data-product-label-bars]')!.getBoundingClientRect().bottom;
+    return { width: bounds.width, height: bounds.height, barsBottom, text };
   });
   expect(layout.width).toBeCloseTo(38.1 * 96 / 25.4, 1);
   expect(layout.height).toBeCloseTo(11.176 * 96 / 25.4, 1);
   for (const text of layout.text) {
+    if (text.isDigits) {
+      expect(text.top, 'digits have visible clearance below the barcode bars').toBeGreaterThan(layout.barsBottom);
+    }
     expect(text.top, `${text.value}: letters fit below the top of their row`).toBeGreaterThanOrEqual(text.rowTop - 0.25);
     expect(text.bottom, `${text.value}: letters fit above the bottom of their row`).toBeLessThanOrEqual(text.rowBottom + 0.25);
   }
