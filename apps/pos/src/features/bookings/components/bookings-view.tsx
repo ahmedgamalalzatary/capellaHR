@@ -179,42 +179,75 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       : <div className="space-y-3">{orderedBookings.map((booking, index) => <div key={booking.id} className="space-y-3">
           {index === 0 && overdueCount > 0 ? <h2 className="font-semibold text-danger">لم يحضروا بعد</h2> : null}
           {index === overdueCount && overdueCount > 0 ? <h2 className="font-semibold">المواعيد الأخرى</h2> : null}
-          <Card className="shadow-card">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-            <p className="tabular w-20 text-xl font-semibold">{time(booking.scheduledAt)}</p>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{clientName(booking)}</h3><Badge variant={statusTone[booking.status]}>{statusLabel[booking.status]}</Badge></div>
-              <p className="text-sm text-muted">{booking.services.map(({ serviceName }) => serviceName).join('، ')}</p>
-              {booking.services.some(({ preferredEmployee }) => preferredEmployee) ? <p className="text-sm text-muted">مع {booking.services.map(({ preferredEmployee }) => preferredEmployee?.name).filter(Boolean).join('، ')}</p> : null}
-              {(booking.status === 'booked' || booking.status === 'arrived') ? booking.services.map((service) => <label key={service.serviceId} className="mt-2 flex items-center gap-2 text-sm">
-                <span className="shrink-0">{service.serviceName}</span>
-                <Select aria-label={`الموظف المفضل لخدمة ${service.serviceName}`} value={service.preferredEmployee?.id ?? ''} disabled={preference.isPending} onChange={(event) => preference.mutate({ bookingId: booking.id, serviceId: service.serviceId, employeeId: event.target.value ? Number(event.target.value) : null })}>
-                  <option value="">بدون موظف مفضل</option>
-                  {employees.data?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-                </Select>
-              </label>) : null}
-              {booking.note ? <p className="mt-1 text-sm">{booking.note}</p> : null}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {booking.status === 'booked' ? <>
-                <Button disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'arrived' })}>وصل العميل</Button>
-                {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
-              </> : null}
-              {booking.status === 'arrived' ? <>
-                <Link
-                  href={`/sales?bookingId=${booking.id}`}
-                  className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper"
-                >
-                  بدء البيع
-                </Link>
-                <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button>
-              </> : null}
-              {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}
-              {(booking.status === 'booked' || booking.status === 'cancelled' || booking.status === 'no_show') ? (
-                <Button variant="ghost" disabled={removal.isPending} onClick={() => setDeleting(booking)}>
-                  <Trash2 className="size-4" />حذف
-                </Button>
-              ) : null}
+          <Card className="overflow-hidden shadow-card">
+          <CardContent className="p-0">
+            <div className="flex flex-col gap-4 p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold">{clientName(booking)}</h3>
+                    <Badge variant={statusTone[booking.status]}>{statusLabel[booking.status]}</Badge>
+                  </div>
+                  {booking.client.phone ? <p dir="ltr" className="tabular mt-0.5 text-right text-[13px] text-muted">{booking.client.phone}</p> : null}
+                </div>
+                <div className="flex h-16 w-[76px] shrink-0 flex-col items-center justify-center rounded-control bg-ink text-paper">
+                  <span className="tabular text-lg font-bold leading-none">{time(booking.scheduledAt)}</span>
+                  <span className="tabular mt-1.5 text-[11px] opacity-70">#{booking.id}</span>
+                </div>
+              </div>
+              <ul className="divide-y divide-line rounded-control border border-line bg-surface/50">
+                {booking.services.map((service) => {
+                  const options = employees.data ?? [];
+                  const preferredMissing = service.preferredEmployee
+                    && !options.some((employee) => employee.id === service.preferredEmployee?.id);
+                  return (
+                  <li key={service.serviceId} className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current opacity-40" />
+                      <span className="truncate text-sm font-medium">{service.serviceName}</span>
+                      {service.servicePrice !== null ? <span className="tabular shrink-0 text-[13px] text-muted">{service.servicePrice} ج</span> : null}
+                    </div>
+                    {(booking.status === 'booked' || booking.status === 'arrived') ? (
+                      <Select className="sm:w-48" aria-label={`الموظف المفضل لخدمة ${service.serviceName}`} value={service.preferredEmployee?.id ?? ''} disabled={preference.isPending} onChange={(event) => preference.mutate({ bookingId: booking.id, serviceId: service.serviceId, employeeId: event.target.value ? Number(event.target.value) : null })}>
+                        <option value="">بدون موظف مفضل</option>
+                        {preferredMissing ? <option value={service.preferredEmployee?.id}>{service.preferredEmployee?.name}</option> : null}
+                        {options.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+                      </Select>
+                    ) : service.preferredEmployee ? (
+                      <span className="text-[13px] text-muted">مع {service.preferredEmployee.name}</span>
+                    ) : null}
+                  </li>
+                  );
+                })}
+              </ul>
+              <p className="text-[13px] text-muted">
+                {booking.services.length === 1 ? 'خدمة واحدة' : `${booking.services.length} خدمات`}
+                {booking.services.some(({ servicePrice }) => servicePrice !== null)
+                  ? ` • الإجمالي ${booking.services.reduce((sum, { servicePrice }) => sum + Number(servicePrice ?? 0), 0).toFixed(2)} ج`
+                  : null}
+              </p>
+              {booking.note ? <p className="rounded-control bg-surface px-3 py-2 text-sm">{booking.note}</p> : null}
+              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                {booking.status === 'booked' ? <>
+                  <Button disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'arrived' })}>وصل العميل</Button>
+                  {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
+                </> : null}
+                {booking.status === 'arrived' ? <>
+                  <Link
+                    href={`/sales?bookingId=${booking.id}`}
+                    className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper"
+                  >
+                    بدء البيع
+                  </Link>
+                  <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button>
+                </> : null}
+                {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}
+                {(booking.status === 'booked' || booking.status === 'cancelled' || booking.status === 'no_show') ? (
+                  <Button variant="ghost" className="ms-auto text-danger hover:bg-danger/10 hover:text-danger" disabled={removal.isPending} onClick={() => setDeleting(booking)}>
+                    <Trash2 className="size-4" />حذف
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </CardContent>
         </Card></div>)}</div>}
