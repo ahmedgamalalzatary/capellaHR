@@ -86,17 +86,32 @@ describe('ProductStockView', () => {
     expect(within(productsTable).getByRole('cell', { name: '3.00%' })).toBeDefined();
   });
 
-  it('sizes the products table to its content instead of stretching columns across the card', async () => {
-    // A stretched table hands the spare width to the first column, so المنتج
-    // ends up far wider than any product name; a content-width table cannot.
+  it('fills the card with the products table so no dead space sits beside it', async () => {
+    // A content-width table shrink-wraps to its rows, which in RTL leaves a dead
+    // strip down the far side of the card. Filling the card removes that strip,
+    // and min-w-max keeps a wide table scrolling rather than squeezing columns.
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 
     const productsTable = await screen.findByRole('table');
-    expect(productsTable.className).toContain('w-auto');
+    expect(productsTable.className).toContain('w-full');
     expect(productsTable.className).toContain('min-w-max');
-    expect(productsTable.className).not.toContain('w-full');
+    expect(productsTable.className).not.toContain('w-auto');
+  });
+
+  it('hides the stocktake and the commission field from a cashier', async () => {
+    // Stocktake writes to the ledger and commission is pay data: neither is a
+    // cashier's to change, so the controls are absent rather than merely disabled.
+    actor.current = 'cashier';
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findAllByText('شامبو');
+
+    expect(screen.queryByRole('button', { name: 'تسوية' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'منتج جديد' }));
+    await screen.findByLabelText('اسم المنتج');
+    expect(screen.queryByLabelText('عمولة البائع %')).toBeNull();
   });
 
   it('restores the product commission percentage from a saved draft', async () => {

@@ -145,9 +145,21 @@ export function ProductStockView() {
   );
 
   const save = useMutation({
-    mutationFn: () => editing
-      ? updateProduct(editing.id, { branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, commissionPercent, lowStockThreshold: Number(threshold), barcode })
-      : createProduct({ branchId, name, description, sellingPrice: price, lastPurchaseCost: cost, commissionPercent, lowStockThreshold: Number(threshold), barcode }),
+    /**
+     * A cashier's edit never carries a commission percentage, so the stored rate
+     * stays untouched — hiding the field cannot quietly reset it to zero. A new
+     * product has no rate to preserve, so its create still sends the form value.
+     */
+    mutationFn: () => {
+      const facts = {
+        branchId, name, description, sellingPrice: price, lastPurchaseCost: cost,
+        lowStockThreshold: Number(threshold), barcode,
+      };
+      if (!editing) return createProduct({ ...facts, commissionPercent });
+      return isAdmin
+        ? updateProduct(editing.id, { ...facts, commissionPercent })
+        : updateProduct(editing.id, facts);
+    },
     onSuccess: async () => { clearProductForm(); setSuccessMessage('تم حفظ المنتج.'); notifySuccess('تم حفظ المنتج.'); await refresh(); },
     onError: (error: unknown) => notifyError(error),
   });
@@ -288,10 +300,10 @@ export function ProductStockView() {
                     <Label htmlFor="product-cost">آخر تكلفة شراء</Label>
                     <Input id="product-cost" aria-label="آخر تكلفة شراء" className="text-start" placeholder="آخر تكلفة شراء" disabled={commandPending} value={cost} onChange={(event) => setCost(event.target.value)} />
                   </div>
-                  <div className="space-y-1.5">
+                  {isAdmin ? <div className="space-y-1.5">
                     <Label htmlFor="product-commission">عمولة البائع %</Label>
                     <Input id="product-commission" aria-label="عمولة البائع %" type="number" min="0" max="100" step="0.01" className="text-start" disabled={commandPending} value={commissionPercent} onChange={(event) => setCommissionPercent(event.target.value)} />
-                  </div>
+                  </div> : null}
                   <div className="space-y-1.5">
                     <Label htmlFor="product-barcode">الباركود</Label>
                     <Input id="product-barcode" aria-label="الباركود" className="text-start" placeholder="امسح باركود العلبة أو اتركه فارغًا" disabled={commandPending} value={barcode} onChange={(event) => setBarcode(event.target.value)} />
@@ -412,7 +424,7 @@ export function ProductStockView() {
                             <TD pinned>
                               <RowActions>
                                 {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-surface" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>ربط كمستهلك</Link> : null}
-                                <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjusting(product); }}>تسوية</Button>
+                                {isAdmin ? <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjusting(product); }}>تسوية</Button> : null}
                                 {product.barcode
                                   ? <Button variant="ghost" size="sm" disabled={commandPending || labelJob !== null} onClick={() => { setLabelCopies('1'); setLabelling(product); }}>طباعة ملصق</Button>
                                   : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}

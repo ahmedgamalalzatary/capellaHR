@@ -10,6 +10,7 @@ import { Textarea } from '@/components/form/textarea';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Select } from '@/components/form/select';
+import { useSession } from '@/features/auth';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -46,6 +47,12 @@ export function ServiceForm({
   const isEdit = service !== undefined;
   const hasFixedPrice = service?.price !== null && service?.price !== undefined;
   const [confirmDeletePrice, setConfirmDeletePrice] = useState(false);
+  /**
+   * Commission percentages are pay data: only an admin sets them. A cashier
+   * editing a service leaves the field out entirely, so the saved value stays
+   * whatever the branch already had.
+   */
+  const canSetCommission = useSession().data?.actor.type === 'admin';
 
   const { register, handleSubmit, control, setValue, formState: { errors } } =
     useForm<ServiceFormInput, unknown, ServiceFormValues>({
@@ -88,8 +95,17 @@ export function ServiceForm({
     : activeCategories;
 
   const save = useMutation({
+    /**
+     * A cashier's edit never carries a commission percentage, so the stored rate
+     * stays untouched. Creating one still sends the form's value, which is the
+     * contract default when the field is absent.
+     */
     mutationFn: (values: ServiceFormValues) => {
       if (!isEdit) return createService({ ...values, ...branchScope });
+      if (!canSetCommission) {
+        const { commissionPercent: _lockedCommission, ...editableValues } = values;
+        return updateService(service.id, { ...editableValues, ...branchScope });
+      }
       if (!hasFixedPrice) return updateService(service.id, { ...values, ...branchScope });
       const { price: _lockedPrice, ...editableValues } = values;
       return updateService(service.id, { ...editableValues, ...branchScope });
@@ -181,17 +197,19 @@ export function ServiceForm({
                 </Button>
               ) : null}
             </Field>
-            <Field label="نسبة العمولة %" htmlFor="service-commission">
-              <Input
-                id="service-commission"
-                inputMode="decimal"
-                autoComplete="off"
-                className="text-start"
-                placeholder="0"
-                disabled={pending}
-                {...register('commissionPercent')}
-              />
-            </Field>
+            {canSetCommission ? (
+              <Field label="نسبة العمولة %" htmlFor="service-commission">
+                <Input
+                  id="service-commission"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  className="text-start"
+                  placeholder="0"
+                  disabled={pending}
+                  {...register('commissionPercent')}
+                />
+              </Field>
+            ) : null}
           </div>
           <Field label="الوصف" htmlFor="service-description">
             <Textarea id="service-description" autoComplete="off" disabled={pending} {...register('description')} />

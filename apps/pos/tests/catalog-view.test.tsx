@@ -147,6 +147,20 @@ describe('CatalogView branch scope', () => {
     await screen.findByText('صبغة');
     expect(screen.queryByRole('button', { name: /العمولات/ })).toBeNull();
   });
+
+  test('hides the commission field from the cashier service form', async () => {
+    // A cashier may name and price a service, but not restate what the seller earns.
+    mocks.getSession.mockResolvedValue({ actor: { type: 'cashier', accountId: 2, employeeId: 4 } });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'الخدمات' }));
+    await screen.findByText('صبغة');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة خدمة' }));
+
+    // The form itself opens for a cashier, minus the pay field.
+    expect(await screen.findByLabelText(/^اسم الخدمة/)).toBeDefined();
+    expect(screen.queryByLabelText('نسبة العمولة %')).toBeNull();
+  });
 });
 
 describe('CatalogView categories', () => {
