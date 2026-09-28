@@ -142,6 +142,56 @@ const createEmployee = async (
 }))[0].insertId);
 
 describe('MySQL-backed salary domain', () => {
+  describe.each([
+    ['bonuses', bonuses],
+    ['deductions', deductions],
+  ] as const)('%s day pricing', (_name, table) => {
+    it.each([
+      { days: 2, baseSalarySnapshot: null },
+      { days: null, baseSalarySnapshot: '6000.00' },
+      { days: 2, baseSalarySnapshot: '0.00' },
+      { days: 2, baseSalarySnapshot: '-6000.00' },
+      { days: 0, baseSalarySnapshot: '6000.00' },
+    ])('rejects incomplete or non-positive pricing: %j', async (pricing) => {
+      const employeeId = await createEmployee(await createBranch(), 1);
+      await expect(database.insert(table).values({
+        employeeId, payrollMonth: '2026-06-01', amount: '100.00',
+        ...pricing, createdAt: fixedNow, updatedAt: fixedNow,
+      })).rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+    });
+
+    it('accepts cash entries and complete day pricing without changing the amount', async () => {
+      const employeeId = await createEmployee(await createBranch(), 1);
+      const common = {
+        employeeId, payrollMonth: '2026-06-01', amount: '100.00',
+        createdAt: fixedNow, updatedAt: fixedNow,
+      };
+      await database.insert(table).values([
+        { ...common, days: null, baseSalarySnapshot: null },
+        { ...common, days: 2, baseSalarySnapshot: '6000.00' },
+      ]);
+      const rows = await database.select({
+        amount: table.amount, days: table.days, baseSalarySnapshot: table.baseSalarySnapshot,
+      }).from(table).where(eq(table.employeeId, employeeId));
+      expect(rows).toEqual(expect.arrayContaining([
+        { amount: '100.00', days: null, baseSalarySnapshot: null },
+        { amount: '100.00', days: 2, baseSalarySnapshot: '6000.00' },
+      ]));
+      expect(rows).toHaveLength(2);
+    });
+
+    it('rejects removing the salary from an existing day-priced entry', async () => {
+      const employeeId = await createEmployee(await createBranch(), 1);
+      const result = await database.insert(table).values({
+        employeeId, payrollMonth: '2026-06-01', amount: '100.00',
+        days: 2, baseSalarySnapshot: '6000.00', createdAt: fixedNow, updatedAt: fixedNow,
+      });
+      await expect(database.update(table).set({ baseSalarySnapshot: null })
+        .where(eq(table.id, Number(result[0].insertId))))
+        .rejects.toMatchObject({ cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' } });
+    });
+  });
+
   it('uses the configured payroll time zone for finalized branch boundaries', async () => {
     const payrollTimeZone = 'Africa/Cairo';
     const sessionZoneResult = await database.execute(sql`select @@session.time_zone as timeZone`);

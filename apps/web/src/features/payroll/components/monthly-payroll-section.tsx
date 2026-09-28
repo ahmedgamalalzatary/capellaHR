@@ -246,10 +246,17 @@ export function MonthlyPayrollSection() {
    * `window.print()` snapshots the document as it stands, and a state set in the
    * same tick has not rendered the sheet yet, so printing straight from the
    * click would come out blank.
+   *
+   * The selection is cleared once the dialog has been handed off, so asking for the
+   * same employee again is a real change and prints again, and so a later data change
+   * cannot reopen the print dialog for someone the user never asked about.
    */
   useEffect(() => {
-    if (printEmployeeId === null) return;
-    const handle = window.setTimeout(() => window.print(), 0);
+    if (printEmployeeId === null || printableRecord === null) return undefined;
+    const handle = window.setTimeout(() => {
+      window.print();
+      setPrintEmployeeId(null);
+    }, 0);
     return () => window.clearTimeout(handle);
   }, [printEmployeeId, printableRecord]);
 

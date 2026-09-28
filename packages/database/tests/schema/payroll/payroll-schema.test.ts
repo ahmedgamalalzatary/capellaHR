@@ -41,7 +41,7 @@ describe('payroll schema', () => {
     }
   });
 
-  it('rejects a day count of zero or more when one is recorded', () => {
+  it('requires a positive day count when one is recorded', () => {
     for (const table of [bonuses, deductions]) {
       const tableName = config(table).name;
       expect(checkSql(table, `${tableName}_days_positive`))
@@ -78,16 +78,30 @@ describe('payroll schema', () => {
   it('records the day-based columns in a snapshot so the next diff starts from them', () => {
     // Without this, drizzle would diff the schema against 0109 and try to add the
     // same columns a second time.
-    const snapshot = JSON.parse(readFileSync(
-      `${migrationsDirectory}meta/0110_snapshot.json`, 'utf8',
-    )) as { tables: Record<string, { columns: Record<string, unknown> }> };
     const journal = JSON.parse(readFileSync(
       `${migrationsDirectory}meta/_journal.json`, 'utf8',
     )) as { entries: { idx: number; tag: string }[] };
-    expect(journal.entries.at(-1)).toMatchObject({ idx: 110, tag: '0110_brave_ozymandias' });
+    expect(journal.entries).toContainEqual(expect.objectContaining({ idx: 110, tag: '0110_brave_ozymandias' }));
+    const latest = journal.entries.at(-1)!;
+    const snapshot = JSON.parse(readFileSync(
+      `${migrationsDirectory}meta/${String(latest.idx).padStart(4, '0')}_snapshot.json`, 'utf8',
+    )) as { tables: Record<string, { columns: Record<string, unknown> }> };
     for (const table of ['bonuses', 'deductions']) {
       expect(Object.keys(snapshot.tables[table]?.columns ?? {})).toEqual(
         expect.arrayContaining(['days', 'base_salary_snapshot']),
+      );
+    }
+  });
+
+  it('records the day count and the salary behind it together, or neither', () => {
+    // A day count with no salary cannot be re-priced, so the pair is all-or-nothing.
+    // The amount is still the truth; these two only explain it.
+    for (const table of [bonuses, deductions]) {
+      const tableName = config(table).name;
+      expect(checkSql(table, `${tableName}_day_pricing_paired`)).toBe(
+        `(\`${tableName}\`.\`days\` is null and \`${tableName}\`.\`base_salary_snapshot\` is null`
+        + ` or \`${tableName}\`.\`days\` is not null and \`${tableName}\`.\`base_salary_snapshot\` is not null`
+        + ` and \`${tableName}\`.\`base_salary_snapshot\` > 0)`,
       );
     }
   });

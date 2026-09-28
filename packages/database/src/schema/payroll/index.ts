@@ -242,6 +242,10 @@ export const bonuses = mysqlTable('bonuses', {
   index('bonuses_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('bonuses_amount_positive', sql`${table.amount} > 0`),
   check('bonuses_days_positive', sql`${table.days} > 0`),
+  check(
+    'bonuses_day_pricing_paired',
+    sql`(${table.days} is null and ${table.baseSalarySnapshot} is null or ${table.days} is not null and ${table.baseSalarySnapshot} is not null and ${table.baseSalarySnapshot} > 0)`,
+  ),
   check('bonuses_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 
@@ -261,6 +265,10 @@ export const deductions = mysqlTable('deductions', {
   index('deductions_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('deductions_amount_positive', sql`${table.amount} > 0`),
   check('deductions_days_positive', sql`${table.days} > 0`),
+  check(
+    'deductions_day_pricing_paired',
+    sql`(${table.days} is null and ${table.baseSalarySnapshot} is null or ${table.days} is not null and ${table.baseSalarySnapshot} is not null and ${table.baseSalarySnapshot} > 0)`,
+  ),
   check('deductions_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, expectTypeOf, test } from 'vitest';
 
 import {
   adjustmentCreateFormSchema,
@@ -7,7 +7,14 @@ import {
   bonusAdjustmentUpdateFormSchema,
   deductionAdjustmentCreateFormSchema,
   deductionAdjustmentUpdateFormSchema,
+  type AdjustmentUpdateFormValues,
 } from '../src/features/financial-adjustments/schemas/adjustment-form';
+
+test('preserves the price field types used by the adjustment forms', () => {
+  expectTypeOf<AdjustmentUpdateFormValues['amount']>().toEqualTypeOf<string | undefined>();
+  expectTypeOf<AdjustmentUpdateFormValues['days']>().toEqualTypeOf<string | undefined>();
+  expectTypeOf<AdjustmentUpdateFormValues['payrollMonth']>().toEqualTypeOf<string>();
+});
 
 describe('adjustmentCreateFormSchema', () => {
   test('accepts an employee, a positive amount, and a payroll month', () => {
@@ -30,6 +37,57 @@ describe('adjustmentUpdateFormSchema', () => {
   test('accepts amount and month without an employee', () => {
     expect(adjustmentUpdateFormSchema.parse({ amount: '99.90', payrollMonth: '2026-05' }))
       .toEqual({ amount: '99.90', payrollMonth: '2026-05' });
+  });
+});
+
+describe('a blank price field', () => {
+  test('is recognised through whitespace rather than read as a malformed figure', () => {
+    // A field the user never meant to fill in can still hold a stray space. That is
+    // "not filled in", so the other price may stand on its own.
+    const base = { employeeId: '1', payrollMonth: '2026-06' };
+    expect(adjustmentCreateFormSchema.parse({ ...base, amount: ' ', days: '2' }))
+      .toEqual({ employeeId: 1, amount: '', days: '2', payrollMonth: '2026-06' });
+    expect(adjustmentCreateFormSchema.parse({ ...base, amount: '250', days: '   ' }))
+      .toEqual({ employeeId: 1, amount: '250', days: '', payrollMonth: '2026-06' });
+  });
+
+  test('still rejects a real figure that is not a price', () => {
+    const base = { employeeId: '1', payrollMonth: '2026-06' };
+    expect(adjustmentCreateFormSchema.safeParse({ ...base, amount: '0', days: '' }).success).toBe(false);
+    expect(adjustmentCreateFormSchema.safeParse({ ...base, amount: '10.123', days: '' }).success).toBe(false);
+    expect(adjustmentCreateFormSchema.safeParse({ ...base, amount: 'abc', days: '2' }).success).toBe(false);
+    expect(adjustmentCreateFormSchema.safeParse({ ...base, amount: '', days: '99' }).success).toBe(false);
+  });
+
+  test('still refuses a form with neither price filled in', () => {
+    const base = { employeeId: '1', payrollMonth: '2026-06' };
+    expect(adjustmentCreateFormSchema.safeParse({ ...base, amount: '', days: '' }).success).toBe(false);
+    expect(adjustmentCreateFormSchema.safeParse({ ...base, amount: '  ', days: '  ' }).success).toBe(false);
+  });
+});
+
+describe.each([
+  ['create', adjustmentCreateFormSchema],
+  ['update', adjustmentUpdateFormSchema],
+  ['bonus create', bonusAdjustmentCreateFormSchema],
+  ['bonus update', bonusAdjustmentUpdateFormSchema],
+  ['deduction create', deductionAdjustmentCreateFormSchema],
+  ['deduction update', deductionAdjustmentUpdateFormSchema],
+] as const)('%s price validation', (_name, schema) => {
+  const common = { employeeId: '1', payrollMonth: '2026-06', reason: 'سبب' };
+
+  test.each([
+    { amount: ' \t ', days: '2', expected: { amount: '', days: '2' } },
+    { amount: '250', days: ' \t ', expected: { amount: '250', days: '' } },
+  ])('treats whitespace as blank: $expected', ({ amount, days, expected }) => {
+    expect(schema.parse({ ...common, amount, days })).toMatchObject(expected);
+  });
+
+  test.each([
+    { amount: ' \t ', days: ' \t ' },
+    { amount: '250', days: '2' },
+  ])('requires exactly one price: %j', (price) => {
+    expect(schema.safeParse({ ...common, ...price }).success).toBe(false);
   });
 });
 

@@ -778,6 +778,13 @@
       "when": 1790574194249,
       "tag": "0110_brave_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "5",
+      "when": 1790575315804,
+      "tag": "0111_parched_talon",
+      "breakpoints": true
     }
   ]
 }

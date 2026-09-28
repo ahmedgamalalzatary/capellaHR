@@ -121,6 +121,7 @@ async function pickMonth(monthName: string) {
 }
 
 beforeEach(() => {
+  window.sessionStorage.clear();
   vi.stubGlobal('scrollTo', vi.fn());
   mocks.listPayrollMonths.mockResolvedValue(pageOf([
     { ...payroll, state: 'ready' as const },
@@ -132,6 +133,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -397,10 +399,14 @@ describe('PayrollView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
     fireEvent.click(await screen.findByRole('button', { name: 'مسح الشهر' }));
 
-    // Payroll is always for one month; clearing must not leave the list open-ended.
+    // A fresh search proves the retained month is used by a new request.
+    mocks.listPayrollMonths.mockClear();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'أحمد' } });
+    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
     await waitFor(() => {
-      const params = mocks.listPayrollMonths.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(params).toMatchObject({ month: '2026-05' });
+      expect(mocks.listPayrollMonths).toHaveBeenCalledWith(
+        expect.objectContaining({ month: '2026-05', search: 'أحمد', page: 1 }),
+      );
     });
   });
 
@@ -417,7 +423,11 @@ describe('PayrollView', () => {
   });
 
   test('prints one employee sheet from that row and keeps the button off it', async () => {
-    const print = vi.fn();
+    const printedSheets: (Element | null)[] = [];
+    const print = vi.fn(() => {
+      const sheet = document.querySelector('.print-statement');
+      printedSheets.push(sheet ? sheet.cloneNode(true) as Element : null);
+    });
     vi.stubGlobal('print', print);
     renderView();
     await screen.findByText('أحمد جمال');
@@ -432,8 +442,9 @@ describe('PayrollView', () => {
 
     fireEvent.click(button);
 
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     // The sheet carries this employee's full breakdown, and nobody else's.
-    const sheet = document.querySelector('.print-statement');
+    const sheet = printedSheets[0];
     expect(sheet).not.toBeNull();
     expect(sheet!.textContent).toContain('أحمد جمال');
     expect(sheet!.textContent).toContain('الراتب الأساسي');
@@ -454,8 +465,6 @@ describe('PayrollView', () => {
     // Money aligns in a column, so the figures are easy to scan down the page.
     expect(table!.querySelector('td:last-child')?.className).toContain('text-end');
 
-    // Printing waits for the sheet to render, so it is not synchronous.
-    await waitFor(() => expect(print).toHaveBeenCalled());
   });
 
   test('prints the other employee when that row is the one asked for', async () => {
@@ -470,6 +479,65 @@ describe('PayrollView', () => {
     expect(sheet!.textContent).toContain('منى علي');
     expect(sheet!.textContent).not.toContain('أحمد جمال');
     await waitFor(() => expect(print).toHaveBeenCalled());
+  });
+
+  test('prints the same employee again when their row is asked twice', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'طباعة' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+
+    // The first print must not leave the selection armed, or asking again changes
+    // nothing and the employee silently gets no second sheet.
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'طباعة' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
+  });
+
+  test('prints the sheet as it stands at the moment print runs', async () => {
+    // Captured inside the mock: checking the DOM afterwards would pass even if print
+    // fired before React had rendered the sheet.
+    const printed: (string | null)[] = [];
+    vi.stubGlobal('print', vi.fn(() => {
+      printed.push(document.querySelector('.print-statement')?.textContent ?? null);
+    }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(within(rowOf('منى علي')).getByRole('button', { name: 'طباعة' }));
+
+    await waitFor(() => expect(printed).toHaveLength(1));
+    // The sheet already carries this employee when the dialog opens, so it cannot
+    // come out blank and it cannot be another employee's figures.
+    expect(printed[0]).toContain('منى علي');
+    expect(printed[0]).not.toContain('أحمد جمال');
+  });
+
+  test('stops printing once the armed employee is no longer on the page', async () => {
+    // Page 2 must genuinely hold a different employee, or the armed one is still
+    // on screen and the test would prove nothing about the stale selection.
+    const other = { ...payroll, id: 77, employeeId: 2, employeeName: 'منى علي' };
+    mocks.listPayrollMonths.mockImplementation(({ page }: { page?: number } = {}) =>
+      Promise.resolve(page === 1
+        ? pageOf([{ ...payroll, state: 'ready' as const }], { page: 1, total: 30, totalPages: 2 })
+        : pageOf([{ ...other, state: 'ready' as const }], { page: 2, total: 30, totalPages: 2 })),
+    );
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'طباعة' }));
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+
+    // Page away, so the armed employee is gone. Nothing may print without a new click.
+    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    await screen.findByText('منى علي');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.print-statement')).toBeNull();
   });
 
   test('offers no print on a row still waiting on attendance', async () => {
