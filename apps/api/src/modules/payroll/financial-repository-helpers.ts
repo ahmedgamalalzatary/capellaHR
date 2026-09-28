@@ -1,13 +1,21 @@
 import { type createDatabase } from '@capella/database';
 import {
+  attendanceDailyRecords,
+  employeeSalaryPeriods,
   employees,
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lte } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
-import { calendarMonthInTimeZone, payrollMonthStart } from './payroll-domain.js';
+import {
+  bonusDaysAmount,
+  calendarMonthInTimeZone,
+  fullMonthWorkdaysFor,
+  monthEnd,
+  payrollMonthStart,
+} from './payroll-domain.js';
 
 export type Database = ReturnType<typeof createDatabase>;
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -33,6 +41,46 @@ export const lockEmployee = async (transaction: Transaction, employeeId: number)
     deletedAt: employees.deletedAt,
   }).from(employees).where(eq(employees.id, employeeId)).for('update').limit(1)
 )[0] ?? null;
+
+/**
+ * Resolves a day count into money for the employee it is for. The rate is the salary
+ * that applied in that month over that month's workday count, so the figure the employee
+ * sees is derived the same way their prorated base is rather than typed in by hand.
+ */
+export const resolveAdjustmentAmount = async (
+  executor: Executor,
+  employee: { id: number; monthlyBaseSalary: string },
+  input: { amount?: string | undefined; days?: number | undefined; payrollMonth: string },
+) => {
+  if (input.amount !== undefined) {
+    return { amount: input.amount, days: null as number | null, baseSalarySnapshot: null as string | null };
+  }
+  const month = payrollMonthStart(input.payrollMonth);
+  const [salary, daysOff] = await Promise.all([
+    executor.select({ baseSalary: employeeSalaryPeriods.baseSalary }).from(employeeSalaryPeriods)
+      .where(and(
+        eq(employeeSalaryPeriods.employeeId, employee.id),
+        lte(employeeSalaryPeriods.effectiveMonth, month),
+      )).orderBy(desc(employeeSalaryPeriods.effectiveMonth)).limit(1),
+    executor.select({ attendanceDate: attendanceDailyRecords.attendanceDate })
+      .from(attendanceDailyRecords).where(and(
+        eq(attendanceDailyRecords.employeeId, employee.id),
+        eq(attendanceDailyRecords.status, 'weekly_day_off'),
+        gte(attendanceDailyRecords.attendanceDate, month),
+        lte(attendanceDailyRecords.attendanceDate, monthEnd(input.payrollMonth)),
+      )),
+  ]);
+  const baseSalary = salary[0]?.baseSalary ?? employee.monthlyBaseSalary;
+  const workdays = fullMonthWorkdaysFor({
+    payrollMonth: input.payrollMonth,
+    weeklyDaysOff: daysOff.map(({ attendanceDate }) => attendanceDate),
+  });
+  return {
+    amount: bonusDaysAmount({ days: input.days!, baseSalary, fullMonthWorkdays: workdays }),
+    days: input.days!,
+    baseSalarySnapshot: baseSalary,
+  };
+};
 
 export const isFinalized = async (
   executor: Executor,

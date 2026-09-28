@@ -211,6 +211,63 @@ describe('BonusesView', () => {
     );
   });
 
+  test('offers day presets and prices a bonus by days instead of a typed amount', async () => {
+    mocks.createBonus.mockResolvedValue(bonus);
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
+    await screen.findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
+
+    // The business sets awards in days, not in money, so the common sizes are one tap.
+    for (const name of ['يوم واحد', 'يومان', '5 أيام', 'نصف شهر']) {
+      expect(screen.getByRole('button', { name })).toBeDefined();
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'نصف شهر' }));
+    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'مكافأة نصف شهر' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+
+    // The server prices the day count; the form must not invent a money figure.
+    await waitFor(() =>
+      expect(mocks.createBonus).toHaveBeenCalledWith({
+        employeeId: 1,
+        days: 15,
+        payrollMonth: '2026-06',
+        reason: 'مكافأة نصف شهر',
+      }),
+    );
+    expect(mocks.createBonus.mock.calls.at(-1)?.[0]).not.toHaveProperty('amount');
+  });
+
+  test('shows the day count a bonus was priced from', async () => {
+    mocks.listBonuses.mockResolvedValue(pageOf([{ ...bonus, days: 15, baseSalarySnapshot: '6000.00' }]));
+    renderView();
+    const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
+    // The figure alone cannot be explained later; the days beside it say where it came from.
+    expect(within(row).getByText(/15 يوم/)).toBeDefined();
+  });
+
+  test('leaves a hand-typed amount with no day count beside it', async () => {
+    renderView();
+    const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
+    expect(within(row).queryByText(/يوم/)).toBeNull();
+  });
+
+  test('rejects a bonus with neither a day count nor an amount', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
+    await screen.findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'سبب' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    expect(await screen.findByText('حدد المبلغ أو عدد الأيام، أحدهما فقط')).toBeDefined();
+    expect(mocks.createBonus).not.toHaveBeenCalled();
+  });
+
   test('deletes a bonus after an inline confirmation', async () => {
     mocks.deleteBonus.mockResolvedValue(undefined);
     renderView();

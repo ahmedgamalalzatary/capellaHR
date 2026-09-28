@@ -18,6 +18,10 @@ import { branchQueryKeys } from '../../branches/query-keys';
 import { listEmployees } from '../../employees/api/employees-api';
 import { employeeQueryKeys } from '../../employees/query-keys';
 import {
+  dayCountLabel,
+  DayPresetPicker,
+} from './day-preset-picker';
+import {
   adjustmentCreateFormSchema,
   adjustmentUpdateFormSchema,
   bonusAdjustmentCreateFormSchema,
@@ -32,6 +36,7 @@ import type {
   AdjustmentLabels,
   FinancialAdjustment,
 } from '../types';
+import { pricedFields } from '../types';
 
 type AdjustmentQueryKeys = {
   all: readonly string[];
@@ -77,6 +82,8 @@ function AdjustmentCreateForm({
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<CreateFormInput, unknown, AdjustmentCreateFormValues>({
     resolver: zodResolver(
@@ -84,11 +91,29 @@ function AdjustmentCreateForm({
         ? deductionAdjustmentCreateFormSchema
         : reasonLabel ? bonusAdjustmentCreateFormSchema : adjustmentCreateFormSchema,
     ),
-    defaultValues: { employeeId: '', amount: '', payrollMonth: '', reason: '' },
+    defaultValues: { employeeId: '', amount: '', days: '', payrollMonth: '', reason: '' },
   });
 
+  const watchedDays = watch('days');
+  const watchedAmount = watch('amount');
+
+  /** A day count replaces a typed amount, so the two can never both claim to price it. */
+  const chooseDays = (days: number) => {
+    setValue('days', String(days), { shouldValidate: true, shouldDirty: true });
+    setValue('amount', '', { shouldDirty: true });
+  };
+  const typeAmount = (value: string) => {
+    setValue('amount', value, { shouldValidate: true, shouldDirty: true });
+    setValue('days', '', { shouldDirty: true });
+  };
+
   const save = useMutation({
-    mutationFn: (values: AdjustmentCreateFormValues) => api.create(values),
+    mutationFn: (values: AdjustmentCreateFormValues) => api.create({
+      employeeId: values.employeeId,
+      ...pricedFields(values),
+      payrollMonth: values.payrollMonth,
+      ...(values.reason === undefined ? {} : { reason: values.reason }),
+    }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.all });
       notifySuccess('تمت الإضافة بنجاح.');
@@ -136,14 +161,35 @@ function AdjustmentCreateForm({
             ) : null}
           </div>
         </Field>
-        <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
+        <Field
+          label="المبلغ (ج.م)"
+          htmlFor="adjustment-amount"
+          error={errors.amount?.message}
+        >
           <Input
             id="adjustment-amount"
             inputMode="decimal"
             className="tabular"
-            {...register('amount')}
+            {...register('amount', { onChange: (event) => typeAmount(event.target.value) })}
           />
         </Field>
+        <Field label="أو بالأيام" htmlFor="adjustment-days" error={errors.days?.message}>
+          <Input
+            id="adjustment-days"
+            inputMode="numeric"
+            placeholder="مثال: 3"
+            className="tabular"
+            {...register('days', {
+              onChange: (event) => {
+                if (event.target.value) typeAmount('');
+              },
+            })}
+          />
+        </Field>
+        <div className="sm:col-span-2 lg:col-span-3">
+          <p className="mb-1.5 text-sm font-medium text-ink">اختصارات</p>
+          <DayPresetPicker selected={watchedDays} onSelect={chooseDays} />
+        </div>
         <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
           <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
         </Field>
@@ -201,6 +247,8 @@ function AdjustmentEditForm({
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<AdjustmentUpdateFormValues>({
     resolver: zodResolver(
@@ -209,14 +257,32 @@ function AdjustmentEditForm({
         : reasonLabel ? bonusAdjustmentUpdateFormSchema : adjustmentUpdateFormSchema,
     ),
     defaultValues: {
-      amount: record.amount,
+      // A day-priced record opens on its day count, so the preset that made it is
+      // still pressed rather than the money it happened to come out at.
+      amount: record.days === null || record.days === undefined ? record.amount : '',
+      days: record.days === null || record.days === undefined ? '' : String(record.days),
       payrollMonth: record.payrollMonth,
       reason: record.reason ?? '',
     },
   });
 
+  const watchedDays = watch('days');
+
+  const chooseDays = (days: number) => {
+    setValue('days', String(days), { shouldValidate: true, shouldDirty: true });
+    setValue('amount', '', { shouldDirty: true });
+  };
+  const typeAmount = (value: string) => {
+    setValue('amount', value, { shouldValidate: true, shouldDirty: true });
+    setValue('days', '', { shouldDirty: true });
+  };
+
   const save = useMutation({
-    mutationFn: (values: AdjustmentUpdateFormValues) => api.update(record.id, values),
+    mutationFn: (values: AdjustmentUpdateFormValues) => api.update(record.id, {
+      ...pricedFields(values),
+      payrollMonth: values.payrollMonth,
+      ...(values.reason === undefined ? {} : { reason: values.reason }),
+    }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.all });
       notifySuccess('تم حفظ التعديل بنجاح.');
@@ -232,14 +298,31 @@ function AdjustmentEditForm({
       className="space-y-3"
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" required error={errors.amount?.message}>
+        <Field label="المبلغ (ج.م)" htmlFor="adjustment-amount" error={errors.amount?.message}>
           <Input
             id="adjustment-amount"
             inputMode="decimal"
             className="tabular"
-            {...register('amount')}
+            {...register('amount', { onChange: (event) => typeAmount(event.target.value) })}
           />
         </Field>
+        <Field label="أو بالأيام" htmlFor="adjustment-days" error={errors.days?.message}>
+          <Input
+            id="adjustment-days"
+            inputMode="numeric"
+            placeholder="مثال: 3"
+            className="tabular"
+            {...register('days', {
+              onChange: (event) => {
+                if (event.target.value) typeAmount('');
+              },
+            })}
+          />
+        </Field>
+        <div className="sm:col-span-2 lg:col-span-3">
+          <p className="mb-1.5 text-sm font-medium text-ink">اختصارات</p>
+          <DayPresetPicker selected={watchedDays} onSelect={chooseDays} />
+        </div>
         <Field label="شهر الراتب" htmlFor="adjustment-month" required error={errors.payrollMonth?.message}>
           <Input id="adjustment-month" type="month" {...register('payrollMonth')} />
         </Field>
@@ -487,6 +570,13 @@ export function AdjustmentView({
                     </td>
                     <td className="px-4 py-3">
                       <span className="tabular">{formatMoney(record.amount)}</span>
+                      {/* The days are why the figure is what it is, so a priced
+                          record says so instead of leaving the number unexplained. */}
+                      {record.days === null || record.days === undefined ? null : (
+                        <span className="ms-2 text-[12px] text-muted">
+                          ({dayCountLabel(record.days)})
+                        </span>
+                      )}
                     </td>
                     {reasonLabel ? (
                       <td className="max-w-80 whitespace-normal px-4 py-3 text-muted">

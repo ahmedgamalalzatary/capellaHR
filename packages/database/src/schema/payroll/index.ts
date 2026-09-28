@@ -228,12 +228,20 @@ export const bonuses = mysqlTable('bonuses', {
   payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
   reason: varchar('reason', { length: 500 }),
+  /**
+   * The day count this amount was priced from, when it was not typed in money directly.
+   * Null on a hand-entered amount, so the two entry routes never masquerade as each other.
+   */
+  days: int('days'),
+  /** The salary the day rate was taken from, so the amount can be recomputed later. */
+  baseSalarySnapshot: decimal('base_salary_snapshot', { precision: 14, scale: 2 }),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   index('bonuses_employee_month_idx').on(table.employeeId, table.payrollMonth),
   index('bonuses_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('bonuses_amount_positive', sql`${table.amount} > 0`),
+  check('bonuses_days_positive', sql`${table.days} > 0`),
   check('bonuses_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 
@@ -243,12 +251,16 @@ export const deductions = mysqlTable('deductions', {
   payrollMonth: date('payroll_month', { mode: 'string' }).notNull(),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
   reason: varchar('reason', { length: 200 }),
+  /** See `bonuses.days`; a null day count means the amount was typed in money. */
+  days: int('days'),
+  baseSalarySnapshot: decimal('base_salary_snapshot', { precision: 14, scale: 2 }),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   index('deductions_employee_month_idx').on(table.employeeId, table.payrollMonth),
   index('deductions_month_employee_idx').on(table.payrollMonth, table.employeeId),
   check('deductions_amount_positive', sql`${table.amount} > 0`),
+  check('deductions_days_positive', sql`${table.days} > 0`),
   check('deductions_month_first_day', sql`dayofmonth(${table.payrollMonth}) = 1`),
 ]);
 

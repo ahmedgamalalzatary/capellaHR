@@ -8,6 +8,12 @@ export type FinancialAdjustmentRecord = {
   payrollMonth: string;
   amount: string;
   reason?: string | null;
+  /**
+   * Set only when the amount was derived from a day count. A null day count means the
+   * amount was typed in outright, so the two entry routes are told apart on the record.
+   */
+  days?: number | null;
+  baseSalarySnapshot?: string | null;
   employeeDeletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

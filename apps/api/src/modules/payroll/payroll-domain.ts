@@ -55,6 +55,38 @@ export const isPayrollSnapshotAmount = (amount: string) => {
   return cents >= -payrollSnapshotMaxCents && cents <= payrollSnapshotMaxCents;
 };
 
+export const monthEnd = (payrollMonth: string) => {
+  const [year, monthNumber] = payrollMonth.split('-').map(Number) as [number, number];
+  return `${payrollMonth}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, '0')}`;
+};
+
+/**
+ * The workday count payroll prorates against, derived the same way for a day-based
+ * bonus as for the base salary: the length of the month less the weekly days off taken
+ * in it. A short month and a month with many days off both raise what a day is worth.
+ */
+export const fullMonthWorkdaysFor = (input: {
+  payrollMonth: string;
+  weeklyDaysOff: string[];
+}) => {
+  const [year, monthNumber] = input.payrollMonth.split('-').map(Number) as [number, number];
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const takenInMonth = new Set(input.weeklyDaysOff
+    .filter((date) => date.startsWith(`${input.payrollMonth}-`))).size;
+  return Math.max(0, daysInMonth - takenInMonth);
+};
+
+export const bonusDaysAmount = (input: {
+  days: number;
+  baseSalary: string;
+  fullMonthWorkdays: number;
+}) => {
+  if (!Number.isInteger(input.days) || input.days <= 0) return '0.00';
+  const workdays = BigInt(input.fullMonthWorkdays);
+  if (workdays <= 0n) return '0.00';
+  return fromCents(roundRatio(toCents(input.baseSalary) * BigInt(input.days), workdays));
+};
+
 const roundRatio = (numerator: bigint, denominator: bigint) => {
   if (denominator <= 0n) return 0n;
   const negative = numerator < 0n;

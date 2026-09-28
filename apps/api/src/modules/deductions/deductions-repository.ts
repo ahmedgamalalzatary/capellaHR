@@ -8,6 +8,7 @@ import {
   type Executor,
   isFinalized,
   lockEmployee,
+  resolveAdjustmentAmount,
   writeFinancialAudit,
 } from '../payroll/financial-repository-helpers.js';
 import { calendarMonthInTimeZone, payrollMonthStart } from '../payroll/payroll-domain.js';
@@ -21,6 +22,7 @@ const fields = {
   id: deductions.id, employeeId: deductions.employeeId, employeeCode: employees.employeeCode,
   employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
   payrollMonth: deductions.payrollMonth, amount: deductions.amount, reason: deductions.reason,
+  days: deductions.days, baseSalarySnapshot: deductions.baseSalarySnapshot,
   employeeDeletedAt: employees.deletedAt,
   createdAt: deductions.createdAt, updatedAt: deductions.updatedAt,
 };
@@ -50,10 +52,13 @@ export const createDrizzleDeductionRepository = (
         if (input.payrollMonth < calendarMonthInTimeZone(employee.createdAt, timeZone)) return { kind: 'ineligible_month' as const };
         if (input.payrollMonth > context.currentMonth()) return { kind: 'future_month' as const };
         if (await isFinalized(transaction, input.employeeId, input.payrollMonth)) return { kind: 'finalized' as const };
+        const priced = await resolveAdjustmentAmount(transaction, employee, input);
         const at = context.now();
         const inserted = await transaction.insert(deductions).values({
           employeeId: input.employeeId, payrollMonth: payrollMonthStart(input.payrollMonth),
-          amount: input.amount, reason: input.reason, createdAt: at, updatedAt: at,
+          amount: priced.amount, reason: input.reason,
+          days: priced.days, baseSalarySnapshot: priced.baseSalarySnapshot,
+          createdAt: at, updatedAt: at,
         });
         const id = Number(inserted[0].insertId);
         const record = (await findRecord(transaction, id))!;
@@ -99,8 +104,24 @@ export const createDrizzleDeductionRepository = (
         if (targetMonth > context.currentMonth()) return { kind: 'future_month' as const };
         if (await isFinalized(transaction, employee.id, targetMonth)) return { kind: 'finalized' as const };
         const before = expose(current)!;
+        // A day-priced deduction belongs to the month it was priced in, so moving it to
+        // another month re-derives the amount from the stored day count against that
+        // month's workday count rather than carrying a stale figure across.
+        const repriced = await resolveAdjustmentAmount(transaction, employee, {
+          payrollMonth: targetMonth,
+          ...(input.days !== undefined
+            ? { days: input.days }
+            : input.amount !== undefined
+              ? { amount: input.amount }
+              // Neither given: keep whatever the row was priced under, in the new month.
+              : current.days !== null
+                ? { days: current.days }
+                : { amount: current.amount }),
+        });
         await transaction.update(deductions).set({
-          ...(input.amount === undefined ? {} : { amount: input.amount }),
+          amount: repriced.amount,
+          days: repriced.days,
+          baseSalarySnapshot: repriced.baseSalarySnapshot,
           ...(input.payrollMonth === undefined ? {} : { payrollMonth: payrollMonthStart(input.payrollMonth) }),
           reason: input.reason,
           updatedAt: context.now(),

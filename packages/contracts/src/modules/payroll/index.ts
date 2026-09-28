@@ -21,6 +21,29 @@ export const moneyAmountSchema = z.string()
 export const payrollMonthSchema = z.string()
   .regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, 'شهر الراتب غير صالح');
 
+/**
+ * A day count for an amount priced off the employee's own day rate. Bounded by a full
+ * month because a bonus or deduction past that is a mistyped form, not a bigger award.
+ */
+export const payrollDaysSchema = z.number({
+  invalid_type_error: 'عدد الأيام غير صالح',
+  required_error: 'عدد الأيام غير صالح',
+}).int('عدد الأيام يجب أن يكون رقمًا صحيحًا').min(1, 'عدد الأيام يجب أن يكون أكبر من صفر').max(31, 'عدد الأيام يجب ألا يتجاوز 31 يومًا');
+
+/**
+ * Exactly one way of saying what a bonus or deduction is worth: a day count, which the
+ * server prices, or an amount typed outright. Both would leave the figure ambiguous and
+ * neither would say nothing at all.
+ */
+export const payrollAmountOrDaysShape = {
+  amount: moneyAmountSchema.optional(),
+  days: payrollDaysSchema.optional(),
+};
+export const payrollAmountOrDaysSchema = z.object(payrollAmountOrDaysShape).refine(
+  (value) => (value.amount === undefined) !== (value.days === undefined),
+  { message: 'حدد المبلغ أو عدد الأيام، أحدهما فقط' },
+);
+
 export const payrollEmployeeParamsSchema = z.object({
   employeeId: coercedMysqlIntSchema,
 });

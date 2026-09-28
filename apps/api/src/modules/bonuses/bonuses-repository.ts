@@ -8,6 +8,7 @@ import {
   type Executor,
   isFinalized,
   lockEmployee,
+  resolveAdjustmentAmount,
   writeFinancialAudit,
 } from '../payroll/financial-repository-helpers.js';
 import { calendarMonthInTimeZone, payrollMonthStart } from '../payroll/payroll-domain.js';
@@ -21,6 +22,7 @@ const fields = {
   id: bonuses.id, employeeId: bonuses.employeeId, employeeCode: employees.employeeCode,
   employeeName: employees.fullName, branchId: branchIdAtCreation, branchName: branches.name,
   payrollMonth: bonuses.payrollMonth, amount: bonuses.amount, reason: bonuses.reason,
+  days: bonuses.days, baseSalarySnapshot: bonuses.baseSalarySnapshot,
   employeeDeletedAt: employees.deletedAt,
   createdAt: bonuses.createdAt, updatedAt: bonuses.updatedAt,
 };
@@ -50,10 +52,13 @@ export const createDrizzleBonusRepository = (
         if (input.payrollMonth < calendarMonthInTimeZone(employee.createdAt, timeZone)) return { kind: 'ineligible_month' as const };
         if (input.payrollMonth > context.currentMonth()) return { kind: 'future_month' as const };
         if (await isFinalized(transaction, input.employeeId, input.payrollMonth)) return { kind: 'finalized' as const };
+        const priced = await resolveAdjustmentAmount(transaction, employee, input);
         const at = context.now();
         const inserted = await transaction.insert(bonuses).values({
           employeeId: input.employeeId, payrollMonth: payrollMonthStart(input.payrollMonth),
-          amount: input.amount, reason: input.reason, createdAt: at, updatedAt: at,
+          amount: priced.amount, reason: input.reason,
+          days: priced.days, baseSalarySnapshot: priced.baseSalarySnapshot,
+          createdAt: at, updatedAt: at,
         });
         const id = Number(inserted[0].insertId);
         const record = (await findRecord(transaction, id))!;
@@ -99,8 +104,25 @@ export const createDrizzleBonusRepository = (
         if (targetMonth > context.currentMonth()) return { kind: 'future_month' as const };
         if (await isFinalized(transaction, employee.id, targetMonth)) return { kind: 'finalized' as const };
         const before = expose(current)!;
+        // A day-priced bonus belongs to the month it was priced in. Moving it to another
+        // month changes that month's workday count, so the amount is derived again from
+        // the stored day count rather than carried over — otherwise the same day count
+        // would be worth different money in two months of the same statement.
+        const repriced = await resolveAdjustmentAmount(transaction, employee, {
+          payrollMonth: targetMonth,
+          ...(input.days !== undefined
+            ? { days: input.days }
+            : input.amount !== undefined
+              ? { amount: input.amount }
+              // Neither given: keep whatever the row was priced under, in the new month.
+              : current.days !== null
+                ? { days: current.days }
+                : { amount: current.amount }),
+        });
         await transaction.update(bonuses).set({
-          ...(input.amount === undefined ? {} : { amount: input.amount }),
+          amount: repriced.amount,
+          days: repriced.days,
+          baseSalarySnapshot: repriced.baseSalarySnapshot,
           ...(input.payrollMonth === undefined ? {} : { payrollMonth: payrollMonthStart(input.payrollMonth) }),
           reason: input.reason,
           updatedAt: context.now(),

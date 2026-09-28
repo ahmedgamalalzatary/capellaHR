@@ -34,4 +34,37 @@ describe('bonus contracts', () => {
       employeeId: 4, amount: '10', payrollMonth: '2026-07', reason: 'سبب', description: 'x',
     })).toThrow();
   });
+
+  it('accepts a bonus priced by days instead of a typed amount', () => {
+    expect(createBonusSchema.parse({
+      employeeId: 4, days: 15, payrollMonth: '2026-07', reason: 'مكافأة نصف شهر',
+    })).toEqual({
+      employeeId: 4, days: 15, payrollMonth: '2026-07', reason: 'مكافأة نصف شهر',
+    });
+  });
+
+  it('takes either days or an amount, never both and never neither', () => {
+    // Both would leave the amount ambiguous: the typed figure or the priced one?
+    expect(() => createBonusSchema.parse({
+      employeeId: 4, amount: '10', days: 2, payrollMonth: '2026-07', reason: 'سبب',
+    })).toThrow();
+    expect(() => createBonusSchema.parse({
+      employeeId: 4, payrollMonth: '2026-07', reason: 'سبب',
+    })).toThrow();
+  });
+
+  it('rejects a day count that is not a positive whole number', () => {
+    for (const days of [0, -1, 1.5, 'ثلاثة', null]) {
+      expect(() => createBonusSchema.parse({
+        employeeId: 4, days, payrollMonth: '2026-07', reason: 'سبب',
+      })).toThrow();
+    }
+  });
+
+  it('caps a day count at a full month of days', () => {
+    // More than this is not a bonus for working, it is a mistake in the form.
+    expect(() => createBonusSchema.parse({
+      employeeId: 4, days: 32, payrollMonth: '2026-07', reason: 'سبب',
+    })).toThrow();
+  });
 });

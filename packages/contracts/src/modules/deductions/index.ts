@@ -5,21 +5,26 @@ import {
   paginationPageSchema,
   paginationPageSizeSchema,
 } from '../../common/index.ts';
-import { moneyAmountSchema, payrollMonthSchema } from '../payroll/index.ts';
+import { moneyAmountSchema, payrollAmountOrDaysShape, payrollDaysSchema, payrollMonthSchema } from '../payroll/index.ts';
 
 export const deductionParamsSchema = z.object({ deductionId: coercedMysqlIntSchema });
 export const deductionReasonSchema = z.string().trim().min(1).max(200);
 export const createDeductionSchema = z.object({
   employeeId: coercedMysqlIntSchema,
-  amount: moneyAmountSchema,
+  ...payrollAmountOrDaysShape,
   payrollMonth: payrollMonthSchema,
   reason: deductionReasonSchema,
-}).strict();
+}).strict().refine((value) => (value.amount === undefined) !== (value.days === undefined), {
+  message: 'حدد المبلغ أو عدد الأيام، أحدهما فقط',
+});
 export const updateDeductionSchema = z.object({
   amount: moneyAmountSchema.optional(),
+  days: payrollDaysSchema.optional(),
   payrollMonth: payrollMonthSchema.optional(),
   reason: deductionReasonSchema,
-}).strict();
+}).strict().refine((value) => value.amount === undefined || value.days === undefined, {
+  message: 'حدد المبلغ أو عدد الأيام، أحدهما فقط',
+});
 export const listDeductionsQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
   branchId: coercedMysqlIntSchema.optional(),

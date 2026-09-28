@@ -6,6 +6,70 @@ import {
   settleCommission,
   splitInstallments,
 } from '../../src/modules/payroll/index.js';
+import { bonusDaysAmount, fullMonthWorkdaysFor } from '../../src/modules/payroll/index.js';
+
+describe('the workday count a day rate is priced against', () => {
+  it('is the length of the month less each weekly day off taken in it', () => {
+    // This is the same figure payroll prorates against, so a day bonus and the
+    // prorated base can never be derived from two different months.
+    expect(fullMonthWorkdaysFor({ payrollMonth: '2026-07', weeklyDaysOff: [] })).toBe(31);
+    expect(fullMonthWorkdaysFor({ payrollMonth: '2026-02', weeklyDaysOff: [] })).toBe(28);
+    expect(fullMonthWorkdaysFor({ payrollMonth: '2026-07', weeklyDaysOff: ['2026-07-04'] })).toBe(30);
+    expect(fullMonthWorkdaysFor({
+      payrollMonth: '2026-07', weeklyDaysOff: ['2026-07-04', '2026-07-11', '2026-07-18'],
+    })).toBe(28);
+  });
+
+  it('counts a day off once even when it is recorded more than once', () => {
+    expect(fullMonthWorkdaysFor({
+      payrollMonth: '2026-07', weeklyDaysOff: ['2026-07-04', '2026-07-04'],
+    })).toBe(30);
+  });
+
+  it('ignores days off outside the month being priced', () => {
+    expect(fullMonthWorkdaysFor({
+      payrollMonth: '2026-07', weeklyDaysOff: ['2026-06-30', '2026-08-01'],
+    })).toBe(31);
+  });
+
+  it('leaves a month with more days off than days as a floor, not a negative', () => {
+    // Payroll cannot prorate against a negative denominator, and a day rate cannot
+    // be negative either, so an over-booked month is worth nothing rather than inverted.
+    const everyDay = Array.from({ length: 31 }, (_, index) => `2026-07-${String(index + 1).padStart(2, '0')}`);
+    expect(fullMonthWorkdaysFor({ payrollMonth: '2026-07', weeklyDaysOff: everyDay })).toBe(0);
+  });
+});
+
+describe('day-based bonus and deduction amounts', () => {
+  it('prices a day against the salary and that month\'s workday count', () => {
+    // 6000 over 30 workdays is 200.00 a day, so a single day is exactly that.
+    expect(bonusDaysAmount({ days: 1, baseSalary: '6000.00', fullMonthWorkdays: 30 })).toBe('200.00');
+    expect(bonusDaysAmount({ days: 2, baseSalary: '6000.00', fullMonthWorkdays: 30 })).toBe('400.00');
+    expect(bonusDaysAmount({ days: 5, baseSalary: '6000.00', fullMonthWorkdays: 30 })).toBe('1000.00');
+  });
+
+  it('prices half a month as fifteen days against the same rate', () => {
+    expect(bonusDaysAmount({ days: 15, baseSalary: '6000.00', fullMonthWorkdays: 30 })).toBe('3000.00');
+    // A short month raises the daily rate, so fifteen days is worth more than half a
+    // thirty-day salary. This is the rule the business asked for, not an accident.
+    expect(bonusDaysAmount({ days: 15, baseSalary: '6000.00', fullMonthWorkdays: 28 })).toBe('3214.29');
+  });
+
+  it('rounds the day amount in exact cents rather than through a float', () => {
+    // 100.00 over 3 days is 33.33... a day; two days of it must not drift.
+    expect(bonusDaysAmount({ days: 1, baseSalary: '100.00', fullMonthWorkdays: 3 })).toBe('33.33');
+    expect(bonusDaysAmount({ days: 2, baseSalary: '100.00', fullMonthWorkdays: 3 })).toBe('66.67');
+    expect(bonusDaysAmount({ days: 3, baseSalary: '100.00', fullMonthWorkdays: 3 })).toBe('100.00');
+  });
+
+  it('prices nothing rather than dividing by a month with no workdays', () => {
+    expect(bonusDaysAmount({ days: 5, baseSalary: '6000.00', fullMonthWorkdays: 0 })).toBe('0.00');
+  });
+
+  it('prices zero days as nothing', () => {
+    expect(bonusDaysAmount({ days: 0, baseSalary: '6000.00', fullMonthWorkdays: 30 })).toBe('0.00');
+  });
+});
 
 describe('payroll exact arithmetic', () => {
   it('carries an overpaid commission forward without reducing base salary', () => {

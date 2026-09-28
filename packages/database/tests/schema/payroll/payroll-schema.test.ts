@@ -30,6 +30,68 @@ const checkSql = (table: Parameters<typeof getTableConfig>[0], name: string) => 
 };
 
 describe('payroll schema', () => {
+  it('stores the day count that produced a bonus or deduction amount', () => {
+    // The amount is what payroll adds up, but the day count is why it is that number.
+    // Without it, a figure like 3214.29 cannot be explained months later.
+    for (const table of [bonuses, deductions]) {
+      const days = config(table).columns.find((column) => column.name === 'days');
+      expect(days).toBeDefined();
+      expect(days?.notNull).toBe(false);
+      expect(days?.getSQLType()).toBe('int');
+    }
+  });
+
+  it('rejects a day count of zero or more when one is recorded', () => {
+    for (const table of [bonuses, deductions]) {
+      const tableName = config(table).name;
+      expect(checkSql(table, `${tableName}_days_positive`))
+        .toBe(`\`${tableName}\`.\`days\` > 0`);
+    }
+  });
+
+  it('records the salary the day rate was computed from', () => {
+    // A bonus is a rate applied to a salary. Keeping the salary on the row means the
+    // derived amount can be recomputed later instead of being taken on trust.
+    for (const table of [bonuses, deductions]) {
+      const baseSalary = config(table).columns.find((column) => column.name === 'base_salary_snapshot');
+      expect(baseSalary).toBeDefined();
+      expect(baseSalary?.notNull).toBe(false);
+      expect(baseSalary?.getSQLType()).toBe('decimal(14,2)');
+    }
+  });
+
+  it('adds the day-based columns through a migration without rewriting stored amounts', () => {
+    // Resolved by number rather than name so a regeneration cannot silently break the
+    // test while leaving the migration itself untouched.
+    const migrationName = readdirSync(migrationsDirectory).find((name) => /^0110_.*\.sql$/.test(name));
+    if (!migrationName) throw new Error('day-based bonus migration 0110 is missing');
+    const migration = readFileSync(`${migrationsDirectory}/${migrationName}`, 'utf8');
+    expect(migration).toContain('ALTER TABLE `bonuses`');
+    expect(migration).toContain('ALTER TABLE `deductions`');
+    expect(migration).toContain('`days` int');
+    expect(migration).toContain('`base_salary_snapshot` decimal(14,2)');
+    // Existing rows were entered in money, not days, so there is nothing to backfill.
+    expect(migration).not.toContain('UPDATE `bonuses` SET');
+    expect(migration).not.toContain('UPDATE `deductions` SET');
+  });
+
+  it('records the day-based columns in a snapshot so the next diff starts from them', () => {
+    // Without this, drizzle would diff the schema against 0109 and try to add the
+    // same columns a second time.
+    const snapshot = JSON.parse(readFileSync(
+      `${migrationsDirectory}meta/0110_snapshot.json`, 'utf8',
+    )) as { tables: Record<string, { columns: Record<string, unknown> }> };
+    const journal = JSON.parse(readFileSync(
+      `${migrationsDirectory}meta/_journal.json`, 'utf8',
+    )) as { entries: { idx: number; tag: string }[] };
+    expect(journal.entries.at(-1)).toMatchObject({ idx: 110, tag: '0110_brave_ozymandias' });
+    for (const table of ['bonuses', 'deductions']) {
+      expect(Object.keys(snapshot.tables[table]?.columns ?? {})).toEqual(
+        expect.arrayContaining(['days', 'base_salary_snapshot']),
+      );
+    }
+  });
+
   it('allows nonblank advance reasons while rejecting empty and whitespace-only values', () => {
     const reason = config(advances).columns.find((column) => column.name === 'reason');
     expect(reason).toBeDefined();

@@ -30,4 +30,29 @@ describe('deduction contracts', () => {
     expect(() => updateDeductionSchema.parse({ reason: 'x'.repeat(201) })).toThrow();
     expect(updateDeductionSchema.parse({ reason: 'x'.repeat(200) }).reason).toHaveLength(200);
   });
+
+  it('accepts a deduction priced by days instead of a typed amount', () => {
+    expect(createDeductionSchema.parse({
+      employeeId: 4, days: 2, payrollMonth: '2026-07', reason: 'خصم يومين',
+    })).toEqual({
+      employeeId: 4, days: 2, payrollMonth: '2026-07', reason: 'خصم يومين',
+    });
+  });
+
+  it('takes either days or an amount, never both and never neither', () => {
+    expect(() => createDeductionSchema.parse({
+      employeeId: 4, amount: '10', days: 2, payrollMonth: '2026-07', reason: 'سبب',
+    })).toThrow();
+    expect(() => createDeductionSchema.parse({
+      employeeId: 4, payrollMonth: '2026-07', reason: 'سبب',
+    })).toThrow();
+  });
+
+  it('rejects a day count that is not a positive whole number within a month', () => {
+    for (const days of [0, -1, 1.5, 'ثلاثة', 32]) {
+      expect(() => createDeductionSchema.parse({
+        employeeId: 4, days, payrollMonth: '2026-07', reason: 'سبب',
+      })).toThrow();
+    }
+  });
 });
