@@ -58,9 +58,9 @@
 }
 
 /*
- * Printing the settlement statement. The whole admin shell is hidden rather than the statement
- * being opened in a new window, so what prints is exactly the figures on screen and nothing can
- * drift between the two.
+ * Printing. The whole admin shell is hidden rather than the sheet being opened in a new
+ * window, so what prints is exactly the figures on screen and nothing can drift between the
+ * two. Each sheet marks its own region.
  */
 @media print {
   body * {

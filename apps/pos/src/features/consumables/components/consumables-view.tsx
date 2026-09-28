@@ -51,8 +51,17 @@ function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPendin
     {mode === 'consumables' ? <TD>{item.consumptionRecorded ? null : <input type="checkbox" aria-label={`اختيار الخدمة ${item.queueNumber}`} checked={selected.includes(item.id)} onChange={() => onToggle(item)} />}</TD> : null}
     <TD className="font-medium">{item.serviceName}</TD>
     <TD><Badge variant={item.status === 'overdue' ? 'warning' : 'neutral'}>{item.queueNumber}</Badge></TD>
-    <TD>{item.clientName ?? item.clientPhone ?? '—'}</TD><TD>{item.employeeName ?? '—'}</TD><TD>{item.invoiceNumber}{mode === 'status' && item.status !== 'canceled' && (item.status !== 'completed' || isAdmin) ? <Button size="sm" variant="secondary" onClick={() => onReassign(item)}>{'\u062a\u063a\u064a\u064a\u0631 \u0627\u0644\u0645\u0648\u0638\u0641'}</Button> : null}</TD>
-    <TD>{mode === 'consumables' ? <Badge variant={item.consumptionRecorded ? 'success' : 'warning'}>{item.consumptionRecorded ? 'مسجلة' : 'لم تسجل'}</Badge> : item.status === 'completed' ? <Badge variant="success">تمت</Badge> : <div className="flex gap-1"><Button size="sm" variant={item.status === 'pending' ? 'secondary' : 'ghost'} disabled={statusPending} onClick={() => onStatus(item, 'pending')}>لم تبدأ</Button><Button size="sm" variant={item.status === 'in_progress' ? 'secondary' : 'ghost'} disabled={statusPending} onClick={() => onStatus(item, 'in_progress')}>قيد التنفيذ</Button><Button size="sm" disabled={statusPending} onClick={() => onStatus(item, 'completed')}>تمت</Button></div>}</TD>
+    <TD>{item.clientName ?? item.clientPhone ?? '—'}</TD><TD>{item.employeeName ?? '—'}</TD><TD>{item.invoiceNumber}</TD>
+    <TD>
+      {mode === 'consumables' ? <Badge variant={item.consumptionRecorded ? 'success' : 'warning'}>{item.consumptionRecorded ? 'مسجلة' : 'لم تسجل'}</Badge>
+        : item.status === 'completed' ? <div className="flex flex-wrap items-center gap-1"><Badge variant="success">تمت</Badge>{isAdmin ? <Button size="sm" variant="secondary" onClick={() => onReassign(item)}>تغيير الموظف</Button> : null}</div>
+          : <div className="flex flex-wrap items-center gap-1">
+            <Button size="sm" variant={item.status === 'pending' ? 'primary' : 'secondary'} aria-pressed={item.status === 'pending'} disabled={statusPending} onClick={() => onStatus(item, 'pending')}>لم تبدأ</Button>
+            <Button size="sm" variant={item.status === 'in_progress' ? 'primary' : 'secondary'} aria-pressed={item.status === 'in_progress'} disabled={statusPending} onClick={() => onStatus(item, 'in_progress')}>قيد التنفيذ</Button>
+            <Button size="sm" variant="secondary" disabled={statusPending} onClick={() => onStatus(item, 'completed')}>تمت</Button>
+            {item.status !== 'canceled' ? <Button size="sm" variant="secondary" onClick={() => onReassign(item)}>تغيير الموظف</Button> : null}
+          </div>}
+    </TD>
   </TR>)}</tbody></DataTable><Pagination summary={<>صفحة <span className="tabular">{page}</span></>} previousDisabled={page <= 1} nextDisabled={page >= totalPages} onPrevious={() => onPage(page - 1)} onNext={() => onPage(page + 1)} page={page} totalPages={totalPages} onPage={onPage} persistenceKey={mode === 'status' ? 'pos:consumables:services' : 'pos:consumables:usage'} resultSetKey={JSON.stringify({ mode })} /></>;
 }
 

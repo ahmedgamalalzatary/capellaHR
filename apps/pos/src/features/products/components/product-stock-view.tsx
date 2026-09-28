@@ -383,7 +383,7 @@ export function ProductStockView() {
                 )
                   : (
                     <>
-                    <DataTable minWidth="w-auto min-w-max">
+                    <DataTable>
                       <THead>
                         <TH>المنتج</TH>
                         <TH>الباركود</TH>

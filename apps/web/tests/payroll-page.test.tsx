@@ -113,6 +113,13 @@ function renderView() {
 
 const rowOf = (name: string) => screen.getByText(name).closest('tr')!;
 
+/** Drives the calendar month picker the way a user does: open it, tap the month. */
+async function pickMonth(monthName: string) {
+  fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+  const grid = await screen.findByRole('group', { name: 'تصفية حسب الشهر' });
+  fireEvent.click(within(grid).getByRole('button', { name: monthName }));
+}
+
 beforeEach(() => {
   vi.stubGlobal('scrollTo', vi.fn());
   mocks.listPayrollMonths.mockResolvedValue(pageOf([
@@ -176,7 +183,7 @@ describe('PayrollView', () => {
   test('requests the chosen month with search and branch filters', async () => {
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-05' } });
+    await pickMonth('مايو');
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'أحمد' } });
     fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
@@ -240,7 +247,7 @@ describe('PayrollView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
+    await pickMonth('يونيو');
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
     fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
     const dialog = await screen.findByRole('dialog', { name: 'اعتماد رواتب الفرع' });
@@ -260,7 +267,7 @@ describe('PayrollView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     expect(screen.queryByRole('button', { name: 'اعتماد رواتب الفرع' })).toBeNull();
-    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
+    await pickMonth('يونيو');
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
     fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
     expect(mocks.finalizeBranchPayroll).not.toHaveBeenCalled();
@@ -275,7 +282,7 @@ describe('PayrollView', () => {
     ]));
     renderView();
     await screen.findByText('أحمد جمال');
-    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-06' } });
+    await pickMonth('يونيو');
     fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '4' } });
     fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
 
@@ -301,7 +308,7 @@ describe('PayrollView', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'اعتماد رواتب الفرع' }));
     expect(screen.getByRole('button', { name: 'تأكيد اعتماد الفرع' })).toBeDefined();
-    fireEvent.change(screen.getByLabelText('شهر الراتب'), { target: { value: '2026-05' } });
+    await pickMonth('مايو');
 
     expect(screen.queryByRole('button', { name: 'تأكيد اعتماد الفرع' })).toBeNull();
     expect(mocks.finalizeBranchPayroll).not.toHaveBeenCalled();
@@ -363,6 +370,40 @@ describe('PayrollView', () => {
     expect(await screen.findByText('لا توجد رواتب لهذا الشهر')).toBeDefined();
   });
 
+  test('picks the month from the calendar instead of a raw month input', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    // A payroll month is always one month, so there is no free-text entry.
+    expect(screen.queryByLabelText('شهر الاستحقاق', { selector: 'input' })).toBeNull();
+
+    await pickMonth('مايو');
+
+    await waitFor(() => {
+      const params = mocks.listPayrollMonths.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ month: '2026-05' });
+    });
+  });
+
+  test('keeps the chosen month when the picker is cleared', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    await pickMonth('مايو');
+    await waitFor(() => {
+      const params = mocks.listPayrollMonths.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ month: '2026-05' });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'تصفية حسب الشهر' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'مسح الشهر' }));
+
+    // Payroll is always for one month; clearing must not leave the list open-ended.
+    await waitFor(() => {
+      const params = mocks.listPayrollMonths.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).toMatchObject({ month: '2026-05' });
+    });
+  });
+
   test('paginates the payroll list with the next button', async () => {
     mocks.listPayrollMonths.mockResolvedValue(pageOf([payroll], { total: 30, totalPages: 2 }));
     renderView();
@@ -373,5 +414,69 @@ describe('PayrollView', () => {
       expect(params).toMatchObject({ page: 2 });
       expect(params).not.toHaveProperty('pageSize');
     });
+  });
+
+  test('prints one employee sheet from that row and keeps the button off it', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    // Printing is per employee, so the button lives on the row, not on the card.
+    const row = rowOf('أحمد جمال');
+    const button = within(row).getByRole('button', { name: 'طباعة' });
+    expect(within(rowOf('منى علي')).queryByRole('button', { name: 'طباعة' })).not.toBeNull();
+
+    // Nothing is armed for printing before a row asks for it.
+    expect(document.querySelector('.print-statement')).toBeNull();
+
+    fireEvent.click(button);
+
+    // The sheet carries this employee's full breakdown, and nobody else's.
+    const sheet = document.querySelector('.print-statement');
+    expect(sheet).not.toBeNull();
+    expect(sheet!.textContent).toContain('أحمد جمال');
+    expect(sheet!.textContent).toContain('الراتب الأساسي');
+    expect(sheet!.textContent).toContain('صافي الراتب');
+    expect(sheet!.textContent).not.toContain('منى علي');
+
+    // It prints as a ruled table, not a loose list of label/value pairs.
+    const table = sheet!.querySelector('table');
+    expect(table).not.toBeNull();
+    // Every body row carries a rule, so the lines are drawn rather than implied.
+    const rows = table!.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(17);
+    for (const row of Array.from(rows)) {
+      expect(row.className).toContain('border-b');
+    }
+    expect(table!.querySelector('th')?.textContent).toBe('البيان');
+    expect(table!.querySelectorAll('th')[1]?.textContent).toBe('المبلغ');
+    // Money aligns in a column, so the figures are easy to scan down the page.
+    expect(table!.querySelector('td:last-child')?.className).toContain('text-end');
+
+    // Printing waits for the sheet to render, so it is not synchronous.
+    await waitFor(() => expect(print).toHaveBeenCalled());
+  });
+
+  test('prints the other employee when that row is the one asked for', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await screen.findByText('منى علي');
+
+    fireEvent.click(within(rowOf('منى علي')).getByRole('button', { name: 'طباعة' }));
+
+    const sheet = document.querySelector('.print-statement');
+    expect(sheet!.textContent).toContain('منى علي');
+    expect(sheet!.textContent).not.toContain('أحمد جمال');
+    await waitFor(() => expect(print).toHaveBeenCalled());
+  });
+
+  test('offers no print on a row still waiting on attendance', async () => {
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([blocked]));
+    renderView();
+    await screen.findByText('سارة محمد');
+    // There is no payroll to print until the blocking days are resolved.
+    expect(within(rowOf('سارة محمد')).queryByRole('button', { name: 'طباعة' })).toBeNull();
   });
 });

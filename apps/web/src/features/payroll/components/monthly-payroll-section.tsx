@@ -1,11 +1,11 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, BadgeCheck, CalendarCheck, ChevronDown, Search, UserCheck, UserRound, Wallet } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, CalendarCheck, ChevronDown, Printer, Search, UserCheck, UserRound, Wallet } from 'lucide-react';
 import Link from 'next/link';
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
-import { Button, Card, ConfirmDialog, EmptyState, Input, SmartPagination } from '@capella/ui';
+import { Button, Card, ConfirmDialog, EmptyState, Input, Label, MonthPicker, SmartPagination } from '@capella/ui';
 
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -26,7 +26,12 @@ import {
 import { payrollQueryKeys } from '../query-keys';
 import { currentCairoMonth, serverErrorMessage } from './payroll-helpers';
 
-function PayrollBreakdownRow({ record }: { record: PayrollRecord }) {
+/**
+ * The line items, kept in one place so the expanded row and the printed sheet
+ * can never quote different figures for the same payroll. `asTable` swaps the
+ * loose layout for a ruled one, which is what the printed sheet wants.
+ */
+function PayrollBreakdownSheet({ record, asTable = false }: { record: PayrollRecord; asTable?: boolean }) {
   const formatters = useDisplayFormatters();
   const formatMoney = (amount: string) =>
     formatters ? formatters.formatMoney(amount) : `${amount} ج.م`;
@@ -50,17 +55,44 @@ function PayrollBreakdownRow({ record }: { record: PayrollRecord }) {
     ['دقائق العجز', formatDuration(record.shortageMinutes)],
   ];
 
+  if (asTable) {
+    return (
+      <table className="w-full border-collapse text-[13px]">
+        <thead>
+          <tr className="border-b-2 border-line">
+            <th scope="col" className="px-2 py-2 text-start font-medium text-muted">البيان</th>
+            <th scope="col" className="px-2 py-2 text-end font-medium text-muted">المبلغ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map(([label, value]) => (
+            <tr key={label} className="border-b border-line/60 last:border-b-0">
+              <td className="px-2 py-1.5">{label}</td>
+              <td className="tabular px-2 py-1.5 text-end">{value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
+  return (
+    <dl className="grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+      {entries.map(([label, value]) => (
+        <div key={label} className="flex items-center justify-between gap-4">
+          <dt className="text-muted">{label}</dt>
+          <dd className="tabular">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function PayrollBreakdownRow({ record }: { record: PayrollRecord }) {
   return (
     <tr className="border-b border-line/60 bg-ink/[0.02] last:border-b-0">
-      <td colSpan={6} className="px-4 py-4">
-        <dl className="grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
-          {entries.map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between gap-4">
-              <dt className="text-muted">{label}</dt>
-              <dd className="tabular">{value}</dd>
-            </div>
-          ))}
-        </dl>
+      <td colSpan={6} className="px-4 py-4 lg:grid-cols-3">
+        <PayrollBreakdownSheet record={record} />
       </td>
     </tr>
   );
@@ -142,6 +174,12 @@ export function MonthlyPayrollSection() {
    * open row at once. The month is fixed per list, so employeeId is unique.
    */
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<number | null>(null);
+  /**
+   * Which employee's sheet is armed for printing. It is set by that row's own
+   * button rather than derived from the row list, so a page change between
+   * clicking and printing can never swap the name on the sheet.
+   */
+  const [printEmployeeId, setPrintEmployeeId] = useState<number | null>(null);
   const [confirmFinalizeEmployeeId, setConfirmFinalizeEmployeeId] = useState<number | null>(null);
   const [confirmBranchFinalize, setConfirmBranchFinalize] = useState(false);
   const [pendingResolution, setPendingResolution] = useState<{
@@ -199,26 +237,25 @@ export function MonthlyPayrollSection() {
   const finalizeTarget = items.find((record): record is PayrollRecord => (
     record.state !== 'blocked' && record.employeeId === confirmFinalizeEmployeeId
   )) ?? null;
+  const printableRecord = items.find((record): record is PayrollRecord => (
+    record.state !== 'blocked' && record.employeeId === printEmployeeId
+  )) ?? null;
+
+  /**
+   * The sheet is printed from an effect rather than from the click handler:
+   * `window.print()` snapshots the document as it stands, and a state set in the
+   * same tick has not rendered the sheet yet, so printing straight from the
+   * click would come out blank.
+   */
+  useEffect(() => {
+    if (printEmployeeId === null) return;
+    const handle = window.setTimeout(() => window.print(), 0);
+    return () => window.clearTimeout(handle);
+  }, [printEmployeeId, printableRecord]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1 text-sm text-muted">
-          شهر الراتب
-          <Input
-            type="month"
-            aria-label="شهر الراتب"
-            className="w-44"
-            value={month}
-            onChange={(event) => {
-              if (!event.target.value) return;
-              setPage(1);
-              setExpandedEmployeeId(null);
-              setConfirmBranchFinalize(false);
-              setMonth(event.target.value);
-            }}
-          />
-        </label>
         <form
           role="search"
           className="flex items-center gap-2"
@@ -285,6 +322,21 @@ export function MonthlyPayrollSection() {
             </Button>
           )
         ) : null}
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="payroll-month">شهر الاستحقاق</Label>
+          <MonthPicker
+            id="payroll-month"
+            filterLabel="تصفية حسب الشهر"
+            value={month}
+            onChange={(next) => {
+              if (!next) return;
+              setPage(1);
+              setExpandedEmployeeId(null);
+              setConfirmBranchFinalize(false);
+              setMonth(next);
+            }}
+          />
+        </div>
       </div>
 
       <p className="text-[13px] text-muted">
@@ -414,6 +466,16 @@ export function MonthlyPayrollSection() {
                             <ChevronDown className="size-4" aria-hidden />
                             {record.state === 'blocked' ? 'مراجعة الأيام' : 'التفاصيل'}
                           </Button>
+                          {record.state !== 'blocked' ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setPrintEmployeeId(record.employeeId)}
+                            >
+                              <Printer className="size-4" aria-hidden />
+                              طباعة
+                            </Button>
+                          ) : null}
                           {record.state !== 'blocked' && record.status === 'open' ? (
                             <Button
                               variant="ghost"
@@ -448,6 +510,18 @@ export function MonthlyPayrollSection() {
           </div>
         )}
       </Card>
+
+      {printableRecord ? (
+        <section className="print-statement space-y-2">
+          <h3 className="text-sm font-medium">
+            كشف راتب {printableRecord.employeeName} — {printableRecord.branchName}
+          </h3>
+          <p className="text-[13px] text-muted">
+            شهر الاستحقاق <span className="tabular">{printableRecord.payrollMonth}</span>
+          </p>
+          <PayrollBreakdownSheet record={printableRecord} asTable />
+        </section>
+      ) : null}
 
       {meta && meta.totalPages > 1 ? (
         <SmartPagination
