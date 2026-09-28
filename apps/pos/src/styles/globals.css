@@ -164,3 +164,86 @@
     }
   }
 }
+
+/*
+ * The service status actions carry the tone of the state they move the row to,
+ * and the row's current state is the filled one, so the state of a row reads at
+ * a glance instead of from three identical buttons. They live here so every
+ * screen offering the same action looks the same, and so a view file only names
+ * a state instead of restating its colors.
+ *
+ * The border is declared in full rather than as a color alone: the shared
+ * Button's solid variant draws no outline, so a color on its own would be
+ * invisible and every action would keep the same square silhouette.
+ */
+@layer utilities {
+  .status-action-pending,
+  .status-action-in-progress,
+  .status-action-done {
+    border-width: 1px;
+    border-style: solid;
+  }
+
+  .status-action-pending {
+    border-color: var(--color-line);
+    background-color: var(--color-paper);
+    color: var(--color-muted);
+  }
+
+  .status-action-pending:hover {
+    border-color: var(--color-ink);
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+  }
+
+  .status-action-pending[aria-pressed='true'] {
+    border-color: var(--color-ink);
+    background-color: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  .status-action-pending[aria-pressed='true']:hover {
+    background-color: color-mix(in srgb, var(--color-ink) 85%, var(--color-paper));
+  }
+
+  .status-action-in-progress {
+    border-color: color-mix(in srgb, var(--color-warning) 25%, transparent);
+    background-color: var(--color-warning-soft);
+    color: var(--color-warning);
+  }
+
+  .status-action-in-progress:hover {
+    border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  }
+
+  .status-action-in-progress[aria-pressed='true'] {
+    border-color: var(--color-warning);
+    background-color: var(--color-warning);
+    color: var(--color-paper);
+  }
+
+  .status-action-in-progress[aria-pressed='true']:hover {
+    background-color: color-mix(in srgb, var(--color-warning) 85%, var(--color-ink));
+  }
+
+  /*
+   * Finishing a service is the terminal step, so it is the solid call to action
+   * in every row — the state it leads to no longer needs its own quiet tone.
+   */
+  .status-action-done {
+    border-color: var(--color-success);
+    background-color: var(--color-success);
+    color: var(--color-paper);
+  }
+
+  .status-action-done:hover {
+    border-color: color-mix(in srgb, var(--color-success) 85%, var(--color-ink));
+    background-color: color-mix(in srgb, var(--color-success) 85%, var(--color-ink));
+  }
+
+  /* A quiet action sitting beside the state controls, out of their rhythm. */
+  .status-action-quiet {
+    padding-inline: 0.5rem;
+    color: var(--color-muted);
+  }
+}
