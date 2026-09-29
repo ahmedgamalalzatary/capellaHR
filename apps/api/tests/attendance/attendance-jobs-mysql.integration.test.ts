@@ -372,4 +372,37 @@ describe('MySQL-backed attendance jobs and absences', () => {
       ),
     ).toBe(true);
   });
+
+  it('reschedules a claimed timeout that is no longer due after a check-in correction', async () => {
+    const { employeeId, deviceId } = await createFixtures();
+    const repo = repository();
+    const checkedIn = await repo.checkIn(mutation(employeeId, deviceId));
+    expect(checkedIn.kind).toBe('success');
+    if (checkedIn.kind !== 'success') return;
+    const movedCheckIn = new Date(fixedNow.getTime() + 60 * 60_000);
+    const corrected = await repo.correctSessionTimes(checkedIn.session.id, {
+      checkInAt: movedCheckIn,
+      checkOutAt: null,
+      expectedUpdatedAt: checkedIn.session.updatedAt,
+    });
+    expect(corrected.kind).toBe('success');
+    // Simulate a worker that had already claimed the job before the correction landed.
+    await database.update(attendanceJobs).set({
+      status: 'processing',
+      startedAt: fixedNow,
+      updatedAt: fixedNow,
+    });
+
+    await expect(repositoryAt(fixedNow).processAutomaticTimeout(checkedIn.session.id))
+      .resolves.toBe('rescheduled');
+
+    expect((await database.select().from(attendanceJobs))[0]).toMatchObject({
+      status: 'scheduled',
+      runAt: new Date(movedCheckIn.getTime() + 16 * 60 * 60_000),
+      startedAt: null,
+    });
+    expect((await database.select().from(attendanceSessions)
+      .where(eq(attendanceSessions.id, checkedIn.session.id)))[0])
+      .toMatchObject({ checkOutAt: null });
+  });
 });

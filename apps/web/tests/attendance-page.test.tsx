@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AttendancePage from '../src/app/(admin)/attendance/page';
+import { cairoLocalDateTimeToIso, isoToCairoDateTimeLocal } from '../src/features/attendance/lib/cairo-time';
 
 const session = {
   id: 11,
@@ -248,11 +249,11 @@ describe('AttendancePage', () => {
     await waitFor(() => expect((screen.getByLabelText('حالة الجلسة') as HTMLSelectElement).value).toBe(''));
   });
 
-  it('explains when an automatic-timeout correction is not a real Cairo wall time', async () => {
+  it('explains when an edited attendance time is not a real Cairo wall time', async () => {
     renderPage();
     await screen.findByText('أحمد سالم');
-    fireEvent.click(screen.getByRole('button', { name: 'تصحيح وقت الانصراف' }));
-    fireEvent.change(screen.getByLabelText('وقت الانصراف المصحح'), {
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الأوقات' }));
+    fireEvent.change(screen.getByLabelText('وقت الحضور المصحح'), {
       target: { value: '2026-04-24T00:30' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ التصحيح' }));
@@ -381,7 +382,7 @@ describe('AttendancePage', () => {
     expect(screen.getByRole('tabpanel', { name: 'تسجيل انصراف' })).toBeDefined();
   });
 
-  it('shows automatic absences and allows correcting only automatic timeouts', async () => {
+  it('shows automatic absences and edits both times of a closed session with its saved version', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('tab', { name: 'الغياب وأيام الراحة' }));
     expect(await screen.findByText('منى علي')).toBeDefined();
@@ -389,15 +390,88 @@ describe('AttendancePage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'سجل الحضور' }));
     const row = (await screen.findByText('أحمد سالم')).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'تصحيح وقت الانصراف' }));
-    fireEvent.change(screen.getByLabelText('وقت الانصراف المصحح'), {
-      target: { value: '2026-07-20T17:00' },
+    expect(within(row).getByRole('button', { name: 'تعديل الأوقات' })).toBeDefined();
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل الأوقات' }));
+    // The editor opens prefilled with the stored times in Cairo wall time.
+    expect((screen.getByLabelText('وقت الحضور المصحح') as HTMLInputElement).value).toBe('2026-07-20T09:00');
+    expect((screen.getByLabelText('وقت الانصراف المصحح') as HTMLInputElement).value).toBe('2026-07-20T17:30');
+    fireEvent.change(screen.getByLabelText('وقت الحضور المصحح'), {
+      target: { value: '2026-07-20T10:00' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ التصحيح' }));
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      expect.stringContaining('/attendance/sessions/11/automatic-timeout'),
+      expect.stringContaining('/attendance/sessions/11/times'),
       expect.objectContaining({ method: 'PATCH' }),
     ));
+    const patch = vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/attendance/sessions/11/times'));
+    // The unedited check-out keeps its exact original instant instead of being
+    // rebuilt from truncated wall time.
+    expect(JSON.parse(String((patch![1] as RequestInit).body))).toEqual({
+      checkInAt: '2026-07-20T10:00:00.000+03:00',
+      checkOutAt: '2026-07-20T14:30:00.000Z',
+      expectedUpdatedAt: '2026-07-20T14:30:00.000Z',
+    });
+  });
+
+  it('edits only the check-in of an open session and sends a null check-out', async () => {
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.includes('/attendance/sessions') && url.includes('state=open')) {
+        return response(page([{
+          ...session,
+          checkOutAt: null,
+          workedMinutes: null,
+          overtimeMinutes: null,
+          shortageMinutes: null,
+          automaticTimeoutAt: null,
+          flagged: false,
+        }]));
+      }
+      return normalFetch(input, init);
+    });
+    renderPage();
+    await screen.findByText('أحمد سالم');
+    fireEvent.change(screen.getByLabelText('حالة الجلسة'), { target: { value: 'open' } });
+    const row = (await screen.findByText('أحمد سالم')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل الأوقات' }));
+    expect(screen.queryByLabelText('وقت الانصراف المصحح')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التصحيح' }));
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('/attendance/sessions/11/times'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: expect.stringContaining('"checkOutAt":null'),
+      }),
+    ));
+  });
+
+  it('refreshes the record and closes the editor when the saved version changed', async () => {
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (String(input).includes('/attendance/sessions/11/times')) {
+        return response({
+          error: { code: 'ATTENDANCE_SESSION_STALE', message: 'تغيّر السجل أثناء التحرير؛ أعد المحاولة' },
+        }, 409);
+      }
+      return normalFetch(input, init);
+    });
+    renderPage();
+    await screen.findByText('أحمد سالم');
+    fireEvent.click(within(screen.getByText('أحمد سالم').closest('tr')!).getByRole('button', { name: 'تعديل الأوقات' }));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ التصحيح' }));
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('/attendance/sessions/11/times'),
+      expect.objectContaining({ method: 'PATCH' }),
+    ));
+    // The editor closes and the sessions list reloads so reopening shows the
+    // current saved version instead of repeating the stale one.
+    expect(screen.queryByRole('button', { name: 'حفظ التصحيح' })).toBeNull();
+    const calls = vi.mocked(fetch).mock.calls;
+    const patchIndex = calls.findIndex(([input]) => String(input).includes('/attendance/sessions/11/times'));
+    await waitFor(() => expect(calls.slice(patchIndex + 1).some(([input, init]) => (
+      String(input).includes('/attendance/sessions') && (init?.method ?? 'GET') === 'GET'
+    ))).toBe(true));
   });
 
   it('filters the absence register and resets it explicitly', async () => {
@@ -455,5 +529,40 @@ describe('AttendancePage', () => {
     expect(screen.getByRole('alert').textContent).toContain('تعذر تحميل سجل الحضور');
     fireEvent.click(retry);
     expect(await screen.findByText('أحمد سالم')).toBeDefined();
+  });
+});
+
+describe('cairo time conversions', () => {
+  it('converts a Cairo wall time to an explicit ISO instant in both winter and summer', () => {
+    expect(cairoLocalDateTimeToIso('2026-01-15T09:00')).toBe('2026-01-15T09:00:00.000+02:00');
+    expect(cairoLocalDateTimeToIso('2026-07-20T09:15')).toBe('2026-07-20T09:15:00.000+03:00');
+    expect(new Date(cairoLocalDateTimeToIso('2026-01-15T09:00')!).getTime())
+      .toBe(new Date('2026-01-15T07:00:00.000Z').getTime());
+  });
+
+  it('rejects wall times that do not exist in Cairo', () => {
+    // Daylight saving starts at midnight on the last Friday of April 2026.
+    expect(cairoLocalDateTimeToIso('2026-04-24T00:30')).toBeNull();
+    expect(cairoLocalDateTimeToIso('not-a-time')).toBeNull();
+  });
+
+  it('resolves the repeated fall-back hour to its later occurrence', () => {
+    // Cairo repeats 23:00–23:59 on October 29 when DST ends in 2026.
+    expect(cairoLocalDateTimeToIso('2026-10-29T23:30')).toBe('2026-10-29T23:30:00.000+02:00');
+  });
+
+  it('renders a stored instant as the Cairo wall clock for the editor', () => {
+    expect(isoToCairoDateTimeLocal('2026-07-20T06:00:00.000Z')).toBe('2026-07-20T09:00');
+    expect(isoToCairoDateTimeLocal('2026-01-15T22:30:00.000Z')).toBe('2026-01-16T00:30');
+  });
+
+  it('round-trips through the editor without shifting the instant', () => {
+    const iso = '2026-07-20T14:30:00.000Z';
+    expect(new Date(cairoLocalDateTimeToIso(isoToCairoDateTimeLocal(iso)!)!).getTime())
+      .toBe(new Date(iso).getTime());
+  });
+
+  it('rejects non-instant input instead of throwing', () => {
+    expect(isoToCairoDateTimeLocal('garbage')).toBeNull();
   });
 });

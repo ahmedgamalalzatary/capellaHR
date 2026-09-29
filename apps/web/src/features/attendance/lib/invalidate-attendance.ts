@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
 
+import { auditQueryKeys } from '../../audit/query-keys';
 import { dashboardQueryKeys } from '../../dashboard/query-keys';
 import { payrollQueryKeys } from '../../payroll/query-keys';
 import { reportQueryKeys } from '../../reports/query-keys';
@@ -14,6 +15,7 @@ export async function invalidateAttendanceDependents(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: reportQueryKeys.all }),
+    queryClient.invalidateQueries({ queryKey: auditQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: ['self-service'] }),
     queryClient.invalidateQueries({ queryKey: ['auth', 'session'] }),
   ]);

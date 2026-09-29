@@ -2,6 +2,7 @@ import {
   attendanceDailyRecords,
   attendanceDeniedAttempts,
   attendanceEvents,
+  attendanceJobs,
   attendanceSessions,
   auditEvents,
   authSessions,
@@ -648,4 +649,212 @@ describe('MySQL-backed attendance sessions', () => {
     await expect(overdueRepository.hasAnyOpenSession(employeeId)).resolves.toBe(true);
   });
 
+});
+
+describe('MySQL-backed admin attendance time corrections', () => {
+  it('corrects an open session check-in, reschedules its timeout job, and audits the change', async () => {
+    const { employeeId, deviceId } = await createFixtures();
+    const repo = repository();
+    const checkedIn = await repo.checkIn(mutation(employeeId, deviceId));
+    expect(checkedIn.kind).toBe('success');
+    if (checkedIn.kind !== 'success') return;
+    const movedCheckIn = new Date(fixedNow.getTime() + 60 * 60_000);
+
+    const result = await repo.correctSessionTimes(checkedIn.session.id, {
+      checkInAt: movedCheckIn,
+      checkOutAt: null,
+      expectedUpdatedAt: checkedIn.session.updatedAt,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'success',
+      session: { checkInAt: movedCheckIn, checkOutAt: null, workedMinutes: null },
+    });
+    expect((await database.select().from(attendanceJobs))[0]).toMatchObject({
+      jobType: 'automatic_timeout',
+      status: 'scheduled',
+      runAt: new Date(movedCheckIn.getTime() + 16 * 60 * 60_000),
+    });
+    const audit = await database.select().from(auditEvents)
+      .where(eq(auditEvents.action, 'correct_session_times'));
+    expect(audit[0]).toMatchObject({
+      beforeState: expect.objectContaining({ checkInAt: checkedIn.session.checkInAt.toISOString() }),
+      afterState: expect.objectContaining({ checkInAt: movedCheckIn.toISOString() }),
+      relatedIds: expect.objectContaining({ employeeId: String(employeeId) }),
+    });
+  });
+
+  it('corrects both times of a timeout-closed session while keeping the original timeout history', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+    const created = await repo.manualCheckIn({
+      employeeId,
+      occurredAt: new Date('2026-07-19T06:00:00.000Z'),
+    });
+    expect(created.kind).toBe('success');
+    if (created.kind !== 'success') return;
+    expect(created.session.flagged).toBe(true);
+    const newCheckIn = new Date('2026-07-19T07:00:00.000Z');
+    const newCheckOut = new Date('2026-07-19T12:00:00.000Z');
+
+    const result = await repo.correctSessionTimes(created.session.id, {
+      checkInAt: newCheckIn,
+      checkOutAt: newCheckOut,
+      expectedUpdatedAt: created.session.updatedAt,
+    });
+
+    expect(result).toMatchObject({
+      kind: 'success',
+      session: {
+        checkInAt: newCheckIn,
+        checkOutAt: newCheckOut,
+        workedMinutes: 300,
+        overtimeMinutes: 0,
+        shortageMinutes: 180,
+        automaticTimeoutAt: new Date('2026-07-19T22:00:00.000Z'),
+        automaticTimeoutCorrectedAt: fixedNow,
+      },
+    });
+  });
+
+  it('rejects reversed, beyond-ceiling, cross-day, and checkout-state corrections', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+    const created = await repo.manualCheckIn({
+      employeeId,
+      occurredAt: new Date('2026-07-19T06:00:00.000Z'),
+    });
+    expect(created.kind).toBe('success');
+    if (created.kind !== 'success') return;
+    const id = created.session.id;
+    const expectedUpdatedAt = created.session.updatedAt;
+    const base = { checkInAt: new Date('2026-07-19T07:00:00.000Z'), expectedUpdatedAt };
+
+    await expect(repo.correctSessionTimes(id, {
+      ...base, checkOutAt: new Date('2026-07-19T06:30:00.000Z'),
+    })).resolves.toEqual({ kind: 'invalid_time' });
+    await expect(repo.correctSessionTimes(id, {
+      ...base, checkOutAt: new Date('2026-07-19T23:30:00.000Z'),
+    })).resolves.toEqual({ kind: 'invalid_time' });
+    // 2026-07-19T21:00Z is midnight Cairo on the next day.
+    await expect(repo.correctSessionTimes(id, {
+      checkInAt: new Date('2026-07-19T21:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T22:00:00.000Z'),
+      expectedUpdatedAt,
+    })).resolves.toEqual({ kind: 'date_fixed' });
+    // A closed session must keep its check-out.
+    await expect(repo.correctSessionTimes(id, { ...base, checkOutAt: null }))
+      .resolves.toEqual({ kind: 'invalid_time' });
+  });
+
+  it('rejects a check-out added to an open session', async () => {
+    const { employeeId, deviceId } = await createFixtures();
+    const repo = repository();
+    const checkedIn = await repo.checkIn(mutation(employeeId, deviceId));
+    expect(checkedIn.kind).toBe('success');
+    if (checkedIn.kind !== 'success') return;
+
+    await expect(repo.correctSessionTimes(checkedIn.session.id, {
+      checkInAt: checkedIn.session.checkInAt,
+      checkOutAt: new Date(fixedNow.getTime() + 60 * 60_000),
+      expectedUpdatedAt: checkedIn.session.updatedAt,
+    })).resolves.toEqual({ kind: 'invalid_time' });
+  });
+
+  it('rejects a correction that overlaps a neighboring session of the same employee', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+    // Yesterday's session runs until 07:00 Cairo today (fixedNow is 12:00 Cairo).
+    const overnight = await repo.manualCheckIn({
+      employeeId, occurredAt: new Date('2026-07-19T20:00:00.000Z'),
+    });
+    expect(overnight.kind).toBe('success');
+    const closedOvernight = await repo.manualCheckOut({
+      employeeId, occurredAt: new Date('2026-07-20T04:00:00.000Z'),
+    });
+    expect(closedOvernight.kind).toBe('success');
+    const created = await repo.manualCheckIn({
+      employeeId, occurredAt: new Date('2026-07-19T21:00:00.000Z'),
+    });
+    expect(created.kind).toBe('success');
+    if (created.kind !== 'success') return;
+    const closedCreated = await repo.manualCheckOut({
+      employeeId, occurredAt: new Date('2026-07-20T03:00:00.000Z'),
+    });
+    expect(closedCreated.kind).toBe('success');
+
+    // Moving the check-in into the neighboring session's window double-counts that hour.
+    await expect(repo.correctSessionTimes(created.session.id, {
+      checkInAt: new Date('2026-07-19T22:00:00.000Z'),
+      checkOutAt: new Date('2026-07-20T03:00:00.000Z'),
+      expectedUpdatedAt: created.session.updatedAt,
+    })).resolves.toEqual({ kind: 'overlap' });
+
+    // A check-in after the neighboring session ends is still allowed.
+    await expect(repo.correctSessionTimes(created.session.id, {
+      checkInAt: new Date('2026-07-20T04:30:00.000Z'),
+      checkOutAt: new Date('2026-07-20T08:00:00.000Z'),
+      expectedUpdatedAt: created.session.updatedAt,
+    })).resolves.toMatchObject({ kind: 'success' });
+  });
+
+  it('rejects a correction when the record changed while the admin was editing', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+    const created = await repo.manualCheckIn({
+      employeeId,
+      occurredAt: new Date('2026-07-19T06:00:00.000Z'),
+    });
+    expect(created.kind).toBe('success');
+    if (created.kind !== 'success') return;
+    const originalUpdatedAt = created.session.updatedAt;
+    const first = await repo.correctSessionTimes(created.session.id, {
+      checkInAt: new Date('2026-07-19T07:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T12:00:00.000Z'),
+      expectedUpdatedAt: originalUpdatedAt,
+    });
+    expect(first.kind).toBe('success');
+
+    // Another admin (or worker) touches the record between open and save.
+    const changedAt = new Date(fixedNow.getTime() + 30_000);
+    await database.update(attendanceSessions).set({ updatedAt: changedAt })
+      .where(eq(attendanceSessions.id, created.session.id));
+
+    await expect(repo.correctSessionTimes(created.session.id, {
+      checkInAt: new Date('2026-07-19T08:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T13:00:00.000Z'),
+      expectedUpdatedAt: originalUpdatedAt,
+    })).resolves.toEqual({ kind: 'stale_record' });
+
+    await expect(repo.correctSessionTimes(created.session.id, {
+      checkInAt: new Date('2026-07-19T08:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T13:00:00.000Z'),
+      expectedUpdatedAt: changedAt,
+    })).resolves.toMatchObject({ kind: 'success' });
+  });
+
+  it('blocks corrections on financially finalized periods', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+    const created = await repo.manualCheckIn({
+      employeeId,
+      occurredAt: new Date('2026-07-19T06:00:00.000Z'),
+    });
+    expect(created.kind).toBe('success');
+    if (created.kind !== 'success') return;
+    const lockedRepo = createDrizzleAttendanceRepository(database, {
+      now: () => fixedNow,
+      timeZone: 'Africa/Cairo',
+      isFinanciallyLocked: () => Promise.resolve(true),
+      readRequiredDuration: () => Promise.resolve(480),
+    });
+
+    await expect(lockedRepo.correctSessionTimes(created.session.id, {
+      checkInAt: new Date('2026-07-19T07:00:00.000Z'),
+      checkOutAt: new Date('2026-07-19T12:00:00.000Z'),
+      expectedUpdatedAt: created.session.updatedAt,
+    })).resolves.toEqual({ kind: 'financially_locked' });
+    expect((await database.select().from(attendanceSessions))[0])
+      .toMatchObject({ checkInAt: new Date('2026-07-19T06:00:00.000Z') });
+  });
 });

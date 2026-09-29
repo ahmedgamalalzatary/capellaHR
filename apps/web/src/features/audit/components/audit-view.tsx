@@ -30,6 +30,7 @@ const ACTOR_VARIANTS: Record<AuditActorType, 'neutral' | 'success' | 'warning'> 
 
 const MODULE_LABELS: Record<string, string> = {
   auth: 'المصادقة',
+  attendance: 'الحضور',
   branches: 'الفروع',
   employees: 'الموظفون',
   shifts: 'الورديات',
@@ -50,6 +51,11 @@ const ACTION_LABELS: Record<string, string> = {
   reference_lock: 'قفل مرجع',
   convert: 'تحويل إلى يوم راحة',
   revert: 'إعادة إلى غياب',
+  correct_session_times: 'تصحيح أوقات الحضور',
+  correct_automatic_timeout: 'تصحيح الخروج التلقائي',
+  automatic_timeout: 'خروج تلقائي',
+  manual_check_in: 'حضور يدوي',
+  manual_check_out: 'انصراف يدوي',
   finalize: 'إقفال الراتب',
   accelerate: 'تعجيل السلفة',
   credential_sync: 'مزامنة بيانات الدخول',

@@ -1,6 +1,7 @@
 import {
   attendanceDeniedAttemptParamsSchema,
   attendanceSessionParamsSchema,
+  correctAttendanceTimesSchema,
   correctAutomaticTimeoutSchema,
   employeeAttendanceEventSchema,
   listAttendanceDeniedAttemptsQuerySchema,
@@ -238,6 +239,19 @@ export const createAttendanceRouter = (
         data: await service.correctAutomaticTimeout(
           sessionId,
           correctAutomaticTimeoutSchema.parse(request.body),
+        ),
+      });
+    } catch (error) {
+      handle(error, response, next);
+    }
+  });
+  router.patch('/sessions/:sessionId/times', async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = attendanceSessionParamsSchema.parse(request.params);
+      response.json({
+        data: await service.correctSessionTimes(
+          sessionId,
+          correctAttendanceTimesSchema.parse(request.body),
         ),
       });
     } catch (error) {

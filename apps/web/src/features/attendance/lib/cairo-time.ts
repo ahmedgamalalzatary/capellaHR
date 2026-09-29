@@ -18,5 +18,32 @@ export function cairoLocalDateTimeToIso(value: string): string | null {
     || result.getHours() !== Number(hour)
     || result.getMinutes() !== Number(minute)
   ) return null;
+  // Cairo repeats one hour when daylight saving ends. For an edited wall time
+  // in that hour, use its later occurrence rather than TZDate's earlier one.
+  const later = new TZDate(result.getTime() + 60 * 60_000, 'Africa/Cairo');
+  if (
+    later.getFullYear() === result.getFullYear()
+    && later.getMonth() === result.getMonth()
+    && later.getDate() === result.getDate()
+    && later.getHours() === result.getHours()
+    && later.getMinutes() === result.getMinutes()
+  ) return later.toISOString();
   return result.toISOString();
+}
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+/** Renders a stored timestamp as a Cairo wall-clock datetime-local value. */
+export function isoToCairoDateTimeLocal(value: string): string | null {
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(instant);
+  const part = (type: Intl.DateTimeFormatPartTypes) => (
+    parts.find((item) => item.type === type)?.value ?? ''
+  );
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
 }

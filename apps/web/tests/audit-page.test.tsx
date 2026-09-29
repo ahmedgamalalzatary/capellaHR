@@ -91,6 +91,22 @@ describe('AuditPage', () => {
     await waitFor(() => expect(mocks.listAuditEvents).toHaveBeenLastCalledWith({ page: 1 }));
   });
 
+  test('labels attendance modules and time corrections readably', async () => {
+    mocks.listAuditEvents.mockResolvedValue(pageOf([{
+      ...event,
+      module: 'attendance',
+      action: 'correct_session_times',
+      entityType: 'attendance_session',
+    }]));
+    renderPage();
+    const row = (await screen.findByText('تصحيح أوقات الحضور')).closest('tr')!;
+    expect(within(row).getByText('الحضور')).toBeDefined();
+    fireEvent.change(screen.getByLabelText('الوحدة'), { target: { value: 'attendance' } });
+    await waitFor(() => expect(mocks.listAuditEvents).toHaveBeenLastCalledWith(expect.objectContaining({
+      module: 'attendance', page: 1,
+    })));
+  });
+
   test('shows empty and retryable error states', async () => {
     mocks.listAuditEvents.mockRejectedValueOnce(new ApiError(0, {
       code: 'NETWORK_ERROR', message: 'تعذر الاتصال بالخادم',

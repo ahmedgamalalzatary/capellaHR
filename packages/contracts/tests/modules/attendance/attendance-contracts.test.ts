@@ -43,8 +43,26 @@ describe('attendance contracts', () => {
     expect(contracts.manualAttendanceEventSchema).toBeDefined();
     expect(contracts.attendanceDeniedAttemptParamsSchema).toBeDefined();
     expect(contracts.correctAutomaticTimeoutSchema).toBeDefined();
+    expect(contracts.correctAttendanceTimesSchema).toBeDefined();
     expect(contracts.listAttendanceSessionsQuerySchema).toBeDefined();
     expect(contracts.listAttendanceDeniedAttemptsQuerySchema).toBeDefined();
+  });
+
+  it('requires explicit-offset times and an edit version for session time corrections', () => {
+    const schema = contracts.correctAttendanceTimesSchema as {
+      safeParse(value: unknown): { success: boolean };
+    };
+    const valid = {
+      checkInAt: '2026-07-20T09:00:00+03:00',
+      checkOutAt: '2026-07-20T17:00:00+03:00',
+      expectedUpdatedAt: '2026-07-20T14:30:00.000Z',
+    };
+    expect(schema.safeParse(valid).success).toBe(true);
+    expect(schema.safeParse({ ...valid, checkOutAt: null }).success).toBe(true);
+    expect(schema.safeParse({ ...valid, checkOutAt: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, expectedUpdatedAt: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, checkInAt: '2026-07-20T09:00:00' }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, extra: 1 }).success).toBe(false);
   });
 
   it('accepts an absent session-list state for people who did not check in', () => {

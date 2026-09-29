@@ -96,7 +96,10 @@ type AttendanceMutationFailure =
   | 'already_reviewed'
   | 'financially_locked'
   | 'not_automatic_timeout'
-  | 'location_unreliable';
+  | 'location_unreliable'
+  | 'stale_record'
+  | 'date_fixed'
+  | 'overlap';
 
 export type AttendanceMutationResult =
   | { kind: 'success'; session: AttendanceSession }
@@ -145,6 +148,11 @@ export interface AttendanceRepository {
     | { kind: 'not_found' | 'already_reviewed' }
   >;
   correctAutomaticTimeout(id: number, checkOutAt: Date): Promise<AttendanceMutationResult>;
+  correctSessionTimes(id: number, input: {
+    checkInAt: Date;
+    checkOutAt: Date | null;
+    expectedUpdatedAt: Date;
+  }): Promise<AttendanceMutationResult>;
   getSession(id: number): Promise<AttendanceSession | null>;
   listSessions(query: ListAttendanceSessionsQuery): Promise<{ items: AttendanceListItem[]; total: number }>;
   listDeniedAttempts(query: ListAttendanceDeniedAttemptsQuery): Promise<{ items: AttendanceDeniedAttempt[]; total: number }>;
@@ -237,6 +245,9 @@ const failures: Record<AttendanceMutationFailure, {
   already_reviewed: { code: 'ATTENDANCE_DENIED_ALREADY_REVIEWED', reason: 'ALREADY_REVIEWED', message: 'تمت مراجعة المحاولة من قبل', suspicious: false },
   financially_locked: { code: 'ATTENDANCE_FINANCIALLY_LOCKED', reason: 'FINANCIALLY_LOCKED', message: 'تم اعتماد الفترة ماليًا ولا يمكن تعديلها', suspicious: false },
   not_automatic_timeout: { code: 'ATTENDANCE_AUTOMATIC_TIMEOUT_ONLY', reason: 'NOT_AUTOMATIC_TIMEOUT', message: 'يمكن تصحيح الخروج التلقائي فقط', suspicious: false },
+  stale_record: { code: 'ATTENDANCE_SESSION_STALE', reason: 'SESSION_STALE', message: 'تغيّر السجل أثناء التحرير؛ أعد المحاولة', suspicious: false },
+  date_fixed: { code: 'ATTENDANCE_DATE_FIXED', reason: 'DATE_FIXED', message: 'لا يمكن نقل تسجيل الحضور إلى يوم آخر', suspicious: false },
+  overlap: { code: 'ATTENDANCE_SESSION_OVERLAP', reason: 'SESSION_OVERLAP', message: 'الأوقات المصححة تتقاطع مع جلسة أخرى لنفس الموظف', suspicious: false },
   location_unreliable: { code: 'ATTENDANCE_LOCATION_UNRELIABLE', reason: 'LOCATION_UNRELIABLE', message: 'Location accuracy is insufficient', suspicious: true },
 };
 
@@ -438,6 +449,15 @@ export const createAttendanceService = (
     async correctAutomaticTimeout(id: number, input: { checkOutAt: Date }) {
       ensureNotFuture(input.checkOutAt);
       return mutationValue(await repository.correctAutomaticTimeout(id, input.checkOutAt));
+    },
+    async correctSessionTimes(id: number, input: {
+      checkInAt: Date;
+      checkOutAt: Date | null;
+      expectedUpdatedAt: Date;
+    }) {
+      ensureNotFuture(input.checkInAt);
+      if (input.checkOutAt) ensureNotFuture(input.checkOutAt);
+      return mutationValue(await repository.correctSessionTimes(id, input));
     },
     async reconcileMissingDay(input: ReconcileAttendanceDay) {
       try {

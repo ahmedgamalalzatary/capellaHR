@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import request from 'supertest';
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
@@ -48,6 +49,7 @@ const makeService = (): AttendanceService => ({
   approveDeniedAttempt: vi.fn(async () => session),
   dismissDeniedAttempt: vi.fn(async () => ({ id: 5, dismissedAt: now } as never)),
   correctAutomaticTimeout: vi.fn(async () => session),
+  correctSessionTimes: vi.fn(async () => session),
   getSession: vi.fn(async () => session),
   listSessions: vi.fn(async () => ({ items: [session], total: 1 })),
   listDeniedAttempts: vi.fn(async () => ({ items: [], total: 0 })),
@@ -175,6 +177,20 @@ describe('attendance HTTP API', () => {
       .set(cookie)).status).toBe(200);
     expect((await request(app).patch('/api/v1/attendance/sessions/11/automatic-timeout')
       .set(cookie).send({ checkOutAt: now.toISOString() })).status).toBe(200);
+    const corrected = await request(app).patch('/api/v1/attendance/sessions/11/times').set(cookie)
+      .send({
+        checkInAt: now.toISOString(),
+        checkOutAt: new Date(now.getTime() + 8 * 60 * 60_000).toISOString(),
+        expectedUpdatedAt: now.toISOString(),
+      });
+    expect(corrected.status).toBe(200);
+    expect(corrected.body.data).toMatchObject({ id: 11 });
+    expect(vi.mocked(service.correctSessionTimes)).toHaveBeenCalledWith(11, expect.objectContaining({
+      checkInAt: now,
+      expectedUpdatedAt: now,
+    }));
+    expect((await request(app).patch('/api/v1/attendance/sessions/11/times').set(cookie)
+      .send({ checkInAt: '2026-07-20T09:00:00' })).status).toBe(400);
   });
 
   it('forwards unexpected failures to the application error middleware', async () => {

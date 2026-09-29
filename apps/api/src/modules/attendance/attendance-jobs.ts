@@ -36,7 +36,9 @@ export const createAttendanceJobProcessor = (repository: AttendanceJobRepository
     try {
       if (job.jobType === 'automatic_timeout') {
         if (job.sessionId === null) throw new Error('Automatic-timeout job has no session');
-        await repository.processAutomaticTimeout(job.sessionId);
+        const result = await repository.processAutomaticTimeout(job.sessionId);
+        // The deadline was moved (admin correction): the job stays scheduled for it.
+        if (result === 'rescheduled') return null;
       } else {
         if (job.attendanceDate === null) throw new Error('Absence-generation job has no date');
         await repository.generateAbsences(job.attendanceDate);

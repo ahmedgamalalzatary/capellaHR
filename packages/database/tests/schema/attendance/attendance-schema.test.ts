@@ -156,3 +156,19 @@ describe('attendance daily-record schema', () => {
       })]));
   });
 });
+
+describe('automatic timeout state constraint', () => {
+  it('keeps the original timeout history when a corrected check-in moves the deadline', () => {
+    const config = getTableConfig(attendanceSessions);
+    const constraint = config.checks.find((item) => item.name === 'attendance_sessions_automatic_timeout_state');
+    expect(constraint).toBeDefined();
+    const snapshot = readFileSync(new URL(
+      '../../../migrations/0112_mushy_agent_brand.sql',
+      import.meta.url,
+    ), 'utf8');
+    // Uncorrected timeouts stay exactly pinned to check-in + 16 hours.
+    expect(snapshot).toContain('`automatic_timeout_corrected_at` is null and `attendance_sessions`.`check_out_at` = `attendance_sessions`.`automatic_timeout_at` and `attendance_sessions`.`automatic_timeout_at` = timestampadd(hour, 16, `attendance_sessions`.`check_in_at`)');
+    // Once corrected, the original timeout instant is retained instead of being re-derived.
+    expect(snapshot).toContain('`automatic_timeout_corrected_at` is not null and `attendance_sessions`.`automatic_timeout_corrected_at` >= `attendance_sessions`.`automatic_timeout_at`');
+  });
+});

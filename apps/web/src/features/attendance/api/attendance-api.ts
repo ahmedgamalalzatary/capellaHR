@@ -122,6 +122,12 @@ export const correctAutomaticTimeout = (sessionId: number, checkOutAt: string) =
   api.patch<AttendanceSession>(`/attendance/sessions/${sessionId}/automatic-timeout`, { checkOutAt })
 );
 
+export const correctAttendanceTimes = (sessionId: number, input: {
+  checkInAt: string;
+  checkOutAt: string | null;
+  expectedUpdatedAt: string;
+}) => api.patch<AttendanceSession>(`/attendance/sessions/${sessionId}/times`, input);
+
 export interface EmployeeAttendanceInput {
   employeeCode: number;
   pin: string;

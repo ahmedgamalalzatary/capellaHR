@@ -1,5 +1,6 @@
 import {
   attendanceDailyRecords,
+  attendanceJobs,
   attendanceSessions,
   branches,
   employeeBranchAssignments,
@@ -7,10 +8,11 @@ import {
   employeeImages,
   employees,
 } from '@capella/database/schema';
-import { and, asc, between, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, between, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import { employmentDateAccruesAbsence } from '../employees/employment-period.js';
+import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import { endOfDate, nextCalendarDate } from './attendance-calendar.js';
 import {
   findSession,
@@ -66,6 +68,7 @@ export const createAttendanceSessionsRepository = (
   | 'manualCheckIn'
   | 'manualCheckOut'
   | 'correctAutomaticTimeout'
+  | 'correctSessionTimes'
   | 'getSession'
   | 'listSessions'
   | 'hasOpenSession'
@@ -341,6 +344,106 @@ export const createAttendanceSessionsRepository = (
         await writeAudit(transaction, {
           module: 'attendance',
           action: 'correct_automatic_timeout',
+          entityType: 'attendance_session',
+          entityId: id,
+          beforeState: before,
+          afterState: updated,
+          relatedIds: { employeeId: row.employeeId },
+          createdAt: correctedAt,
+        });
+        return { kind: 'success', session: updated };
+      });
+    },
+
+    correctSessionTimes(id, input) {
+      return database.transaction(async (transaction) => {
+        const target = (await transaction.select({ employeeId: attendanceSessions.employeeId })
+          .from(attendanceSessions).where(eq(attendanceSessions.id, id)).limit(1))[0];
+        if (!target) return { kind: 'not_found' };
+        const employee = await lockEmployee(transaction, target.employeeId);
+        if (!employee) return { kind: 'not_found' };
+        const row = (await transaction.select({
+          id: attendanceSessions.id,
+          employeeId: attendanceSessions.employeeId,
+          attendanceDate: attendanceSessions.attendanceDate,
+          requiredMinutes: attendanceSessions.requiredMinutes,
+          checkInAt: attendanceSessions.checkInAt,
+          checkOutAt: attendanceSessions.checkOutAt,
+          automaticTimeoutAt: attendanceSessions.automaticTimeoutAt,
+          updatedAt: attendanceSessions.updatedAt,
+        }).from(attendanceSessions).where(and(
+          eq(attendanceSessions.id, id),
+          eq(attendanceSessions.employeeId, target.employeeId),
+        ))
+          .for('update').limit(1))[0];
+        if (!row) return { kind: 'not_found' };
+        if (row.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+          return { kind: 'stale_record' };
+        }
+        // The attendance day stays fixed: an open session keeps no checkout and a
+        // closed session must keep one.
+        if ((row.checkOutAt === null) !== (input.checkOutAt === null)) {
+          return { kind: 'invalid_time' };
+        }
+        const checkOutAt = input.checkOutAt;
+        if (checkOutAt !== null) {
+          if (checkOutAt.getTime() <= input.checkInAt.getTime()) return { kind: 'invalid_time' };
+          // The existing sixteen-hour session ceiling still applies.
+          if (checkOutAt.getTime() > input.checkInAt.getTime() + 16 * 60 * 60_000) {
+            return { kind: 'invalid_time' };
+          }
+        }
+        if (calendarDateInTimeZone(input.checkInAt, timeZone) !== row.attendanceDate) {
+          return { kind: 'date_fixed' };
+        }
+        if (input.checkInAt.getTime() < employee.createdAt.getTime()
+          || (employee.deletedAt !== null
+            && input.checkInAt.getTime() > employee.deletedAt.getTime())) {
+          return { kind: 'invalid_time' };
+        }
+        if (await isFinanciallyLocked(row.employeeId, row.attendanceDate, transaction)) {
+          return { kind: 'financially_locked' };
+        }
+        // A neighboring session (open sessions end at their sixteen-hour ceiling)
+        // must not overlap the corrected window, or its hour is counted twice.
+        const editedEnd = checkOutAt ?? new Date(input.checkInAt.getTime() + 16 * 60 * 60_000);
+        const overlapping = await transaction.select({ id: attendanceSessions.id })
+          .from(attendanceSessions)
+          .where(and(
+            eq(attendanceSessions.employeeId, row.employeeId),
+            ne(attendanceSessions.id, id),
+            lt(attendanceSessions.checkInAt, editedEnd),
+            gt(sql`coalesce(${attendanceSessions.checkOutAt}, ${attendanceSessions.automaticTimeoutAt}, timestampadd(hour, 16, ${attendanceSessions.checkInAt}))`, input.checkInAt),
+          ))
+          .limit(1);
+        if (overlapping.length) return { kind: 'overlap' };
+        const before = await findSession(transaction, id);
+        const correctedAt = now();
+        await transaction.update(attendanceSessions).set({
+          checkInAt: input.checkInAt,
+          ...(checkOutAt === null ? {} : {
+            checkOutAt,
+            ...calculateAttendanceMinutes(input.checkInAt, checkOutAt, row.requiredMinutes),
+          }),
+          ...(row.automaticTimeoutAt === null ? {} : { automaticTimeoutCorrectedAt: correctedAt }),
+          updatedAt: correctedAt,
+        }).where(eq(attendanceSessions.id, id));
+        if (row.checkOutAt === null) {
+          // Follow the corrected check-in so the worker never fires on a stale deadline.
+          await transaction.update(attendanceJobs).set({
+            runAt: new Date(input.checkInAt.getTime() + 16 * 60 * 60_000),
+            updatedAt: correctedAt,
+          }).where(and(
+            eq(attendanceJobs.sessionId, id),
+            eq(attendanceJobs.jobType, 'automatic_timeout'),
+            eq(attendanceJobs.status, 'scheduled'),
+          ));
+        }
+        const updated = await findSession(transaction, id);
+        if (!updated) throw new Error('Attendance session disappeared during correction');
+        await writeAudit(transaction, {
+          module: 'attendance',
+          action: 'correct_session_times',
           entityType: 'attendance_session',
           entityId: id,
           beforeState: before,

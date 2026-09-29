@@ -28,7 +28,7 @@ import {
 } from '../../weekly-day-off/api/weekly-day-off-api';
 import {
   approveDeniedAttempt,
-  correctAutomaticTimeout,
+  correctAttendanceTimes,
   dismissDeniedAttempt,
   listAttendanceDeniedAttempts,
   listAttendanceSessions,
@@ -39,7 +39,7 @@ import {
   type AttendanceSession,
   type AttendanceSessionFilters,
 } from '../api/attendance-api';
-import { cairoLocalDateTimeToIso } from '../lib/cairo-time';
+import { cairoLocalDateTimeToIso, isoToCairoDateTimeLocal } from '../lib/cairo-time';
 import { FACE_FAILURE_LABELS } from '../lib/failure-labels';
 import { invalidateAttendanceDependents } from '../lib/invalidate-attendance';
 import { handleRtlTabKey } from '../lib/tab-keyboard';
@@ -151,20 +151,66 @@ function SessionSection() {
   const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState<AttendanceSessionFilters>({ page: 1 });
   const [editing, setEditing] = useState<AttendanceSession | null>(null);
-  const [correctedAt, setCorrectedAt] = useState('');
-  const [correctionValidationError, setCorrectionValidationError] = useState<string | null>(null);
+  const [editedCheckIn, setEditedCheckIn] = useState('');
+  const [editedCheckOut, setEditedCheckOut] = useState('');
+  const [editorValidationError, setEditorValidationError] = useState<string | null>(null);
+  const [pendingUnlock, setPendingUnlock] = useState<AttendanceSession | null>(null);
   const query = useQuery({ queryKey: attendanceQueryKeys.sessions(filters), queryFn: () => listAttendanceSessions(filters), retry: false });
   const correction = useMutation({
-    mutationFn: ({ id, iso }: { id: number; iso: string }) => correctAutomaticTimeout(id, iso),
+    mutationFn: ({ id, checkInAt, checkOutAt, expectedUpdatedAt }: {
+      id: number; checkInAt: string; checkOutAt: string | null; expectedUpdatedAt: string;
+    }) => correctAttendanceTimes(id, { checkInAt, checkOutAt, expectedUpdatedAt }),
     onSuccess: async () => {
       setEditing(null);
-      setCorrectedAt('');
-      setCorrectionValidationError(null);
+      setEditorValidationError(null);
       notifySuccess('تم حفظ التصحيح.');
       await invalidateAttendanceDependents(queryClient);
     },
-    onError: (error: unknown) => notifyError(error),
+    onError: async (error: unknown) => {
+      notifyError(error);
+      if (error instanceof ApiError && error.code === 'ATTENDANCE_SESSION_STALE') {
+        // Reopen against the current saved version instead of repeating the stale one.
+        setEditing(null);
+        setEditorValidationError(null);
+        await query.refetch();
+      }
+    },
   });
+  const openEditor = (item: AttendanceSession) => {
+    setEditing(item);
+    setEditedCheckIn(isoToCairoDateTimeLocal(item.checkInAt!) ?? '');
+    setEditedCheckOut(item.checkOutAt ? isoToCairoDateTimeLocal(item.checkOutAt) ?? '' : '');
+    setEditorValidationError(null);
+  };
+  const requestEditor = (item: AttendanceSession) => {
+    if (!isProtectedAreaUnlocked('attendance-manual')) {
+      setPendingUnlock(item);
+      return;
+    }
+    openEditor(item);
+  };
+  const submitEditor = () => {
+    if (!editing) return;
+    // Fields the admin did not edit keep their exact original instants —
+    // rebuilding them from truncated wall time could shift the timestamp.
+    const prefilledCheckIn = isoToCairoDateTimeLocal(editing.checkInAt!) ?? '';
+    const prefilledCheckOut = editing.checkOutAt ? isoToCairoDateTimeLocal(editing.checkOutAt) ?? '' : '';
+    const checkInIso = editedCheckIn === prefilledCheckIn ? editing.checkInAt : cairoLocalDateTimeToIso(editedCheckIn);
+    const checkOutIso = !editing.checkOutAt
+      ? null
+      : (editedCheckOut === prefilledCheckOut ? editing.checkOutAt : cairoLocalDateTimeToIso(editedCheckOut));
+    if (!checkInIso || (editing.checkOutAt && !checkOutIso)) {
+      setEditorValidationError('أدخل وقتًا صالحًا بتوقيت القاهرة.');
+      return;
+    }
+    setEditorValidationError(null);
+    correction.mutate({
+      id: editing.id,
+      checkInAt: checkInIso,
+      checkOutAt: checkOutIso,
+      expectedUpdatedAt: editing.updatedAt,
+    });
+  };
   const dateTime = (value: string) => formatters?.formatDateTime(value) ?? fallbackDateTime.format(new Date(value));
   const update = (next: Partial<AttendanceSessionFilters>) => setFilters((current) => ({ ...current, ...next, page: 1 }));
   const reset = () => { setSearchInput(''); setFilters({ page: 1 }); };
@@ -174,24 +220,37 @@ function SessionSection() {
       <Filters searchLabel="بحث في سجلات الحضور" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
         <Field label="الحالة" htmlFor="attendance-session-state"><select id="attendance-session-state" aria-label="حالة الجلسة" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.state ?? ''} onChange={(event) => update({ state: event.target.value ? event.target.value as 'open' | 'closed' | 'absent' : undefined })}><option value="">كل الحالات</option><option value="open">مفتوحة</option><option value="closed">مغلقة</option><option value="absent">لم يحضر</option></select></Field>
       </Filters>
-      {correctionValidationError || correction.error ? <p role="alert" className="text-[13px] text-danger">{correctionValidationError ?? errorMessage(correction.error)}</p> : null}
+      {editorValidationError || correction.error ? <p role="alert" className="text-[13px] text-danger">{editorValidationError ?? errorMessage(correction.error)}</p> : null}
       {editing ? (
         <Card className="border-warning/40 bg-warning-soft/40 p-4">
-          <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); const iso = cairoLocalDateTimeToIso(correctedAt); if (!iso) { setCorrectionValidationError('أدخل وقتًا صالحًا بتوقيت القاهرة.'); return; } setCorrectionValidationError(null); correction.mutate({ id: editing.id, iso }); }}>
-            <Field label={`تصحيح خروج ${editing.employeeName}`} htmlFor="corrected-check-out" required><Input id="corrected-check-out" aria-label="وقت الانصراف المصحح" type="datetime-local" required value={correctedAt} onChange={(event) => { setCorrectedAt(event.target.value); setCorrectionValidationError(null); }} /></Field>
-            <Button type="submit" size="sm" disabled={!correctedAt || correction.isPending}>حفظ التصحيح</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(null); setCorrectionValidationError(null); }}>إلغاء</Button>
+          <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); submitEditor(); }}>
+            <Field label={`تعديل حضور ${editing.employeeName}`} htmlFor="edited-check-in" required><Input id="edited-check-in" aria-label="وقت الحضور المصحح" type="datetime-local" required value={editedCheckIn} onChange={(event) => { setEditedCheckIn(event.target.value); setEditorValidationError(null); }} /></Field>
+            {editing.checkOutAt ? <Field label="تعديل الانصراف" htmlFor="edited-check-out" required><Input id="edited-check-out" aria-label="وقت الانصراف المصحح" type="datetime-local" required value={editedCheckOut} onChange={(event) => { setEditedCheckOut(event.target.value); setEditorValidationError(null); }} /></Field> : null}
+            <Button type="submit" size="sm" disabled={correction.isPending}>حفظ التصحيح</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(null); setEditorValidationError(null); }}>إلغاء</Button>
           </form>
         </Card>
       ) : null}
       <Card>
         <QueryState pending={query.isPending} error={query.error} empty={!items.length} emptyTitle="لا توجد سجلات حضور مطابقة" onRetry={() => void query.refetch()}>
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-line text-[12px] text-muted"><th className="px-4 py-2.5 text-start font-medium">الموظف</th><th className="px-4 py-2.5 text-start font-medium">الفرع</th><th className="px-4 py-2.5 text-start font-medium">تاريخ العمل</th><th className="px-4 py-2.5 text-start font-medium">الدخول / الخروج</th><th className="px-4 py-2.5 text-start font-medium">المدة</th><th className="px-4 py-2.5 text-start font-medium">الحالة</th><th className="px-4 py-2.5 text-start font-medium">إجراء</th></tr></thead>
-            <tbody>{items.map((item) => { const absent = item.checkInAt === null; return <tr key={`${item.employeeId}-${item.attendanceDate}`} className="border-b border-line/60 last:border-0"><td className="px-4 py-3"><span className="font-medium">{item.employeeName}</span><span className="ms-2 tabular text-muted">{item.employeeCode}</span></td><td className="px-4 py-3 text-muted">{item.branchName}</td><td className="tabular px-4 py-3">{item.attendanceDate}</td><td className="px-4 py-3">{absent ? <div>—</div> : <><div>{dateTime(item.checkInAt!)}</div><div className="text-muted">{item.checkOutAt ? dateTime(item.checkOutAt) : 'لم يسجل الانصراف'}</div></>}</td><td className="tabular px-4 py-3">{item.workedMinutes === null ? '—' : formatDuration(item.workedMinutes)}</td><td className="px-4 py-3"><div className="flex flex-wrap gap-1">{absent ? <Badge variant="danger">لم يحضر</Badge> : item.checkOutAt ? <Badge variant="neutral">مغلقة</Badge> : <Badge variant="success">مفتوحة</Badge>}{item.automaticTimeoutAt ? <Badge variant="warning">خروج تلقائي</Badge> : null}{item.flagged ? <Badge variant="danger">معلّمة</Badge> : null}</div></td><td className="px-4 py-3">{!absent && item.automaticTimeoutAt ? <Button variant="ghost" size="sm" onClick={() => { setEditing(item); setCorrectionValidationError(null); }}><Clock3 className="size-4" aria-hidden />تصحيح وقت الانصراف</Button> : <span className="text-muted">للقراءة فقط</span>}</td></tr>; })}</tbody>
+            <tbody>{items.map((item) => { const absent = item.checkInAt === null; return <tr key={`${item.employeeId}-${item.attendanceDate}`} className="border-b border-line/60 last:border-0"><td className="px-4 py-3"><span className="font-medium">{item.employeeName}</span><span className="ms-2 tabular text-muted">{item.employeeCode}</span></td><td className="px-4 py-3 text-muted">{item.branchName}</td><td className="tabular px-4 py-3">{item.attendanceDate}</td><td className="px-4 py-3">{absent ? <div>—</div> : <><div>{dateTime(item.checkInAt!)}</div><div className="text-muted">{item.checkOutAt ? dateTime(item.checkOutAt) : 'لم يسجل الانصراف'}</div></>}</td><td className="tabular px-4 py-3">{item.workedMinutes === null ? '—' : formatDuration(item.workedMinutes)}</td><td className="px-4 py-3"><div className="flex flex-wrap gap-1">{absent ? <Badge variant="danger">لم يحضر</Badge> : item.checkOutAt ? <Badge variant="neutral">مغلقة</Badge> : <Badge variant="success">مفتوحة</Badge>}{item.automaticTimeoutAt ? <Badge variant="warning">خروج تلقائي</Badge> : null}{item.flagged ? <Badge variant="danger">معلّمة</Badge> : null}</div></td><td className="px-4 py-3">{!absent ? <Button variant="ghost" size="sm" onClick={() => requestEditor(item)}><Clock3 className="size-4" aria-hidden />تعديل الأوقات</Button> : <span className="text-muted">للقراءة فقط</span>}</td></tr>; })}</tbody>
           </table></div>
         </QueryState>
       </Card>
       <Pagination meta={query.data?.meta} onPage={(page) => setFilters((current) => ({ ...current, page }))} persistenceKey="web:attendance:sessions" />
+      {pendingUnlock ? (
+        <ProtectedAreaUnlockDialog
+          area="attendance-manual"
+          title="فتح تعديل أوقات الحضور"
+          onClose={() => setPendingUnlock(null)}
+          onUnlocked={() => {
+            const item = pendingUnlock;
+            setPendingUnlock(null);
+            if (item) openEditor(item);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

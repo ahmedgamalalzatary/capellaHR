@@ -62,6 +62,12 @@ export const correctAutomaticTimeoutSchema = z.object({
   checkOutAt: explicitOffsetDateTimeSchema,
 }).strict();
 
+export const correctAttendanceTimesSchema = z.object({
+  checkInAt: explicitOffsetDateTimeSchema,
+  checkOutAt: explicitOffsetDateTimeSchema.nullable(),
+  expectedUpdatedAt: explicitOffsetDateTimeSchema,
+}).strict();
+
 const dateRange = {
   dateFrom: cairoDateSchema.optional(),
   dateTo: cairoDateSchema.optional(),

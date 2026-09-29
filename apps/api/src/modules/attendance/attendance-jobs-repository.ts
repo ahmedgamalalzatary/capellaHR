@@ -195,7 +195,30 @@ export const createAttendanceJobsRepository = (
         if (!session) throw new Error('Attendance session for timeout job disappeared');
         if (session.checkOutAt) return;
         const timeoutAt = new Date(session.checkInAt.getTime() + 16 * 60 * 60_000);
-        if (timeoutAt.getTime() > now().getTime()) throw new Error('Attendance timeout job is not due');
+        if (timeoutAt.getTime() > now().getTime()) {
+          // An admin correction may have moved the deadline after this job was claimed.
+          // Reschedule it at the corrected instant instead of burning a retry; the
+          // processor skips completion for this outcome.
+          const rescheduledAt = now();
+          const job = (await transaction.select().from(attendanceJobs).where(and(
+            eq(attendanceJobs.sessionId, sessionId),
+            eq(attendanceJobs.jobType, 'automatic_timeout'),
+          )).for('update').limit(1))[0];
+          if (!job) throw new Error('Attendance timeout job is not due');
+          await transaction.update(attendanceJobs).set({
+            status: 'scheduled',
+            runAt: timeoutAt,
+            startedAt: null,
+            updatedAt: rescheduledAt,
+          }).where(and(
+            eq(attendanceJobs.id, job.id),
+            eq(attendanceJobs.status, 'processing'),
+          ));
+          const rescheduled = await findJob(transaction, job.id);
+          if (!rescheduled) throw new Error('Rescheduled attendance job disappeared');
+          await writeJobAudit(transaction, 'job_reschedule', job, rescheduled, rescheduledAt);
+          return 'rescheduled';
+        }
         const result = await writer.closeSession(transaction, session, timeoutAt, {
           source: 'automatic_timeout',
           deviceId: null,

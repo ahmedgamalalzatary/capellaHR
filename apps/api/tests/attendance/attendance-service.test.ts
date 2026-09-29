@@ -67,6 +67,7 @@ const makeRepository = (): AttendanceRepository => ({
   approveDeniedAttempt: vi.fn(async () => ({ kind: 'success' as const, session })),
   dismissDeniedAttempt: vi.fn(async () => ({ kind: 'not_found' as const })),
   correctAutomaticTimeout: vi.fn(async () => ({ kind: 'success' as const, session })),
+  correctSessionTimes: vi.fn(async () => ({ kind: 'success' as const, session })),
   getSession: vi.fn(async () => session),
   listSessions: vi.fn(async () => ({ items: [session], total: 1 })),
   listDeniedAttempts: vi.fn(async () => ({ items: [], total: 0 })),
@@ -425,5 +426,44 @@ describe('attendance service', () => {
     });
     await expect(service.correctAutomaticTimeout(11, { checkOutAt: now }))
       .rejects.toMatchObject({ code: 'ATTENDANCE_AUTOMATIC_TIMEOUT_ONLY' });
+  });
+
+  it('rejects a session time correction with a future check-in or check-out', async () => {
+    const repository = makeRepository();
+    const { service } = createService(repository);
+    const future = new Date(now.getTime() + 60_000);
+
+    await expect(service.correctSessionTimes(11, {
+      checkInAt: future,
+      checkOutAt: null,
+      expectedUpdatedAt: now,
+    })).rejects.toMatchObject({ code: 'ATTENDANCE_FUTURE_EVENT' });
+    await expect(service.correctSessionTimes(11, {
+      checkInAt: now,
+      checkOutAt: future,
+      expectedUpdatedAt: now,
+    })).rejects.toMatchObject({ code: 'ATTENDANCE_FUTURE_EVENT' });
+    expect(repository.correctSessionTimes).not.toHaveBeenCalled();
+  });
+
+  it('delegates a session time correction and maps stale and state failures', async () => {
+    const repository = makeRepository();
+    const { service } = createService(repository);
+    const input = { checkInAt: now, checkOutAt: null, expectedUpdatedAt: now };
+
+    await expect(service.correctSessionTimes(11, input)).resolves.toEqual(session);
+    expect(repository.correctSessionTimes).toHaveBeenCalledWith(11, input);
+
+    vi.mocked(repository.correctSessionTimes).mockResolvedValue({ kind: 'stale_record' });
+    await expect(service.correctSessionTimes(11, input))
+      .rejects.toMatchObject({ code: 'ATTENDANCE_SESSION_STALE' });
+
+    vi.mocked(repository.correctSessionTimes).mockResolvedValue({ kind: 'date_fixed' });
+    await expect(service.correctSessionTimes(11, input))
+      .rejects.toMatchObject({ code: 'ATTENDANCE_DATE_FIXED' });
+
+    vi.mocked(repository.correctSessionTimes).mockResolvedValue({ kind: 'overlap' });
+    await expect(service.correctSessionTimes(11, input))
+      .rejects.toMatchObject({ code: 'ATTENDANCE_SESSION_OVERLAP' });
   });
 });

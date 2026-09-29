@@ -63,7 +63,7 @@ export const attendanceSessions = mysqlTable('attendance_sessions', {
   ),
   check(
     'attendance_sessions_automatic_timeout_state',
-    sql`(${table.automaticTimeoutAt} is null and ${table.automaticTimeoutCorrectedAt} is null and ${table.flagged} = false) or (${table.automaticTimeoutAt} is not null and ${table.automaticTimeoutAt} = timestampadd(hour, 16, ${table.checkInAt}) and ${table.flagged} = true and ${table.checkOutAt} is not null and ((${table.automaticTimeoutCorrectedAt} is null and ${table.checkOutAt} = ${table.automaticTimeoutAt}) or (${table.automaticTimeoutCorrectedAt} is not null and ${table.automaticTimeoutCorrectedAt} >= ${table.automaticTimeoutAt})))`,
+    sql`(${table.automaticTimeoutAt} is null and ${table.automaticTimeoutCorrectedAt} is null and ${table.flagged} = false) or (${table.automaticTimeoutAt} is not null and ${table.flagged} = true and ${table.checkOutAt} is not null and ((${table.automaticTimeoutCorrectedAt} is null and ${table.checkOutAt} = ${table.automaticTimeoutAt} and ${table.automaticTimeoutAt} = timestampadd(hour, 16, ${table.checkInAt})) or (${table.automaticTimeoutCorrectedAt} is not null and ${table.automaticTimeoutCorrectedAt} >= ${table.automaticTimeoutAt})))`,
   ),
 ]);
 
