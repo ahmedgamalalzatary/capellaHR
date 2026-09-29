@@ -30,6 +30,7 @@ import { createAdvanceModule } from '../../src/modules/advances/index.js';
 import { createBonusModule } from '../../src/modules/bonuses/index.js';
 import { createDeductionModule } from '../../src/modules/deductions/index.js';
 import { createDrizzleEmployeeRepository, createEmployeesModule } from '../../src/modules/employees/index.js';
+import { resolveAdjustmentAmount } from '../../src/modules/payroll/financial-repository-helpers.js';
 import { createPayrollModule, type PayrollAttendanceGateway } from '../../src/modules/payroll/index.js';
 
 const database = createDatabase(process.env.DATABASE_URL ?? '');
@@ -142,6 +143,13 @@ const createEmployee = async (
 }))[0].insertId);
 
 describe('MySQL-backed salary domain', () => {
+  it('rejects adjustment pricing with neither an amount nor days', async () => {
+    const employeeId = await createEmployee(await createBranch(), 1);
+    await expect(resolveAdjustmentAmount(database, {
+      id: employeeId, monthlyBaseSalary: '6000.00',
+    }, { payrollMonth: '2026-06' })).rejects.toThrow('Either amount or days is required');
+  });
+
   describe.each([
     ['bonuses', bonuses],
     ['deductions', deductions],

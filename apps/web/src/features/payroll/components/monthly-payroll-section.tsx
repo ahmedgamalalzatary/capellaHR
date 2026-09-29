@@ -252,7 +252,13 @@ export function MonthlyPayrollSection() {
    * cannot reopen the print dialog for someone the user never asked about.
    */
   useEffect(() => {
-    if (printEmployeeId === null || printableRecord === null) return undefined;
+    if (printEmployeeId === null) return undefined;
+    if (printableRecord === null) {
+      queueMicrotask(() => setPrintEmployeeId((current) => (
+        current === printEmployeeId ? null : current
+      )));
+      return undefined;
+    }
     const handle = window.setTimeout(() => {
       window.print();
       setPrintEmployeeId(null);

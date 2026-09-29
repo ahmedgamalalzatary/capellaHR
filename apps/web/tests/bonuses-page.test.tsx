@@ -241,6 +241,38 @@ describe('BonusesView', () => {
     expect(mocks.createBonus.mock.calls.at(-1)?.[0]).not.toHaveProperty('amount');
   });
 
+  test('keeps a manually entered day count in the create form', async () => {
+    mocks.createBonus.mockResolvedValue(bonus);
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
+    await screen.findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '250' } });
+    fireEvent.change(screen.getByLabelText('أو بالأيام'), { target: { value: '3' } });
+    expect((screen.getByLabelText('أو بالأيام') as HTMLInputElement).value).toBe('3');
+    expect((screen.getByLabelText(/المبلغ/) as HTMLInputElement).value).toBe('');
+    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'عمل إضافي' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    await waitFor(() => expect(mocks.createBonus).toHaveBeenCalledWith({
+      employeeId: 1, days: 3, payrollMonth: '2026-06', reason: 'عمل إضافي',
+    }));
+  });
+
+  test('keeps a manually entered day count in the edit form', async () => {
+    mocks.updateBonus.mockResolvedValue({ ...bonus, days: 3 });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
+    fireEvent.change(screen.getByLabelText('أو بالأيام'), { target: { value: '3' } });
+    expect((screen.getByLabelText('أو بالأيام') as HTMLInputElement).value).toBe('3');
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    await waitFor(() => expect(mocks.updateBonus).toHaveBeenCalledWith(5, {
+      days: 3, payrollMonth: '2026-06', reason: 'أداء استثنائي',
+    }));
+  });
+
   test('shows the day count a bonus was priced from', async () => {
     mocks.listBonuses.mockResolvedValue(pageOf([{ ...bonus, days: 15, baseSalarySnapshot: '6000.00' }]));
     renderView();

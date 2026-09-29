@@ -379,6 +379,13 @@ describe('MySQL-backed attendance jobs and absences', () => {
     const checkedIn = await repo.checkIn(mutation(employeeId, deviceId));
     expect(checkedIn.kind).toBe('success');
     if (checkedIn.kind !== 'success') return;
+    const originalDeadline = new Date(checkedIn.session.checkInAt.getTime() + 16 * 60 * 60_000);
+    const worker = repositoryAt(originalDeadline);
+    await expect(worker.claimNext()).resolves.toMatchObject({
+      sessionId: checkedIn.session.id,
+      status: 'processing',
+      attemptCount: 1,
+    });
     const movedCheckIn = new Date(fixedNow.getTime() + 60 * 60_000);
     const corrected = await repo.correctSessionTimes(checkedIn.session.id, {
       checkInAt: movedCheckIn,
@@ -386,20 +393,15 @@ describe('MySQL-backed attendance jobs and absences', () => {
       expectedUpdatedAt: checkedIn.session.updatedAt,
     });
     expect(corrected.kind).toBe('success');
-    // Simulate a worker that had already claimed the job before the correction landed.
-    await database.update(attendanceJobs).set({
-      status: 'processing',
-      startedAt: fixedNow,
-      updatedAt: fixedNow,
-    });
 
-    await expect(repositoryAt(fixedNow).processAutomaticTimeout(checkedIn.session.id))
+    await expect(worker.processAutomaticTimeout(checkedIn.session.id))
       .resolves.toBe('rescheduled');
 
     expect((await database.select().from(attendanceJobs))[0]).toMatchObject({
       status: 'scheduled',
       runAt: new Date(movedCheckIn.getTime() + 16 * 60 * 60_000),
       startedAt: null,
+      attemptCount: 0,
     });
     expect((await database.select().from(attendanceSessions)
       .where(eq(attendanceSessions.id, checkedIn.session.id)))[0])

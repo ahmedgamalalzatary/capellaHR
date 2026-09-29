@@ -181,7 +181,7 @@ function AdjustmentCreateForm({
             className="tabular"
             {...register('days', {
               onChange: (event) => {
-                if (event.target.value) typeAmount('');
+                if (event.target.value) setValue('amount', '', { shouldValidate: true, shouldDirty: true });
               },
             })}
           />
@@ -314,7 +314,7 @@ function AdjustmentEditForm({
             className="tabular"
             {...register('days', {
               onChange: (event) => {
-                if (event.target.value) typeAmount('');
+                if (event.target.value) setValue('amount', '', { shouldValidate: true, shouldDirty: true });
               },
             })}
           />

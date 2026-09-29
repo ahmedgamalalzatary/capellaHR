@@ -209,6 +209,7 @@ export const createAttendanceJobsRepository = (
             status: 'scheduled',
             runAt: timeoutAt,
             startedAt: null,
+            attemptCount: Math.max(0, job.attemptCount - 1),
             updatedAt: rescheduledAt,
           }).where(and(
             eq(attendanceJobs.id, job.id),

@@ -55,6 +55,8 @@ export const resolveAdjustmentAmount = async (
   if (input.amount !== undefined) {
     return { amount: input.amount, days: null as number | null, baseSalarySnapshot: null as string | null };
   }
+  if (input.days === undefined) throw new Error('Either amount or days is required');
+  const days = input.days;
   const month = payrollMonthStart(input.payrollMonth);
   const [salary, daysOff] = await Promise.all([
     executor.select({ baseSalary: employeeSalaryPeriods.baseSalary }).from(employeeSalaryPeriods)
@@ -76,8 +78,8 @@ export const resolveAdjustmentAmount = async (
     weeklyDaysOff: daysOff.map(({ attendanceDate }) => attendanceDate),
   });
   return {
-    amount: bonusDaysAmount({ days: input.days!, baseSalary, fullMonthWorkdays: workdays }),
-    days: input.days!,
+    amount: bonusDaysAmount({ days, baseSalary, fullMonthWorkdays: workdays }),
+    days,
     baseSalarySnapshot: baseSalary,
   };
 };

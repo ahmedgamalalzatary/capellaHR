@@ -540,6 +540,30 @@ describe('PayrollView', () => {
     expect(document.querySelector('.print-statement')).toBeNull();
   });
 
+  test('does not print a stale selection when an employee returns to the page', async () => {
+    const other = { ...payroll, id: 77, employeeId: 2, employeeName: 'منى علي' };
+    mocks.listPayrollMonths.mockImplementation(({ page }: { page?: number } = {}) =>
+      Promise.resolve(page === 1
+        ? pageOf([{ ...payroll, state: 'ready' as const }], { page: 1, total: 30, totalPages: 2 })
+        : pageOf([{ ...other, state: 'ready' as const }], { page: 2, total: 30, totalPages: 2 })),
+    );
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'طباعة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    await screen.findByText('منى علي');
+    expect(print).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'السابق' }));
+    await screen.findByText('أحمد جمال');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(print).not.toHaveBeenCalled();
+    expect(document.querySelector('.print-statement')).toBeNull();
+  });
+
   test('offers no print on a row still waiting on attendance', async () => {
     mocks.listPayrollMonths.mockResolvedValue(pageOf([blocked]));
     renderView();
