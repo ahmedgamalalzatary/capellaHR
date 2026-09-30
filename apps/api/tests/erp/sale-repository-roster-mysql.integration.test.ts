@@ -53,25 +53,15 @@ describe('ERP sale repository MySQL integration', () => {
     expect(event?.beforeState).toEqual({ members: [data.sellerEmployeeId] });
   });
 
-  it('rejects removing the seller from a completed invoice', async () => {
+  it('rejects attaching a seller to a completed seller-free invoice', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const completed = await repository.complete(operation(data, crypto.randomUUID()));
 
     await expect(database.update(invoices).set({
-      sellerEmployeeId: null,
-      sellerNameSnapshot: null,
+      sellerEmployeeId: data.sellerEmployeeId,
+      sellerNameSnapshot: 'Changed seller',
     }).where(eq(invoices.id, completed.id))).rejects.toThrow();
   });
 
-  it('rejects a seller who is not on the branch roster', async () => {
-    const data = await fixture();
-    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
-    const outside = operation(data, crypto.randomUUID());
-    outside.input = { ...outside.input, sellerEmployeeId: data.employeeId };
-
-    await expect(repository.complete(outside)).rejects.toMatchObject({
-      code: 'SELLER_NOT_ON_ROSTER',
-    });
-  });
 });

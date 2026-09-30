@@ -3,6 +3,7 @@ import {
   auditEvents,
   commissionLedgerEntries,
   employees,
+  erpProducts,
   erpServices,
   invoiceLines,
   invoicePayments,
@@ -227,6 +228,78 @@ describe('ERP sale repository MySQL integration', () => {
     ))).toEqual([
       expect.objectContaining({ employeeId: data.sellerEmployeeId, amount: '-20.00' }),
     ]);
+  });
+
+  it('assigns each product line its own employee and pays product commission by the product percent', async () => {
+    const data = await fixture();
+    await database.update(erpProducts).set({ commissionPercent: '10.00' })
+      .where(eq(erpProducts.id, data.productId));
+    const secondEmployeeId = Number((await database.insert(employees).values({
+      employeeCode: data.employeeCode + 7,
+      fullName: `Second ${data.marker}`,
+      personalPhone: `015${data.clientPhone.slice(3)}`,
+      whatsappPhone: `015${data.clientPhone.slice(3)}`,
+      pinHash: 'unused',
+      age: 30,
+      address: 'Cairo',
+      branchId: data.branchId,
+      shiftDurationMinutes: 480,
+      monthlyBaseSalary: '5000.00',
+      createdAt: data.at,
+      updatedAt: data.at,
+    }))[0].insertId);
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    // The same product twice on one invoice, each line sold by someone else,
+    // drawing on the shared stock of two units.
+    request.input.lines = [
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: secondEmployeeId },
+    ];
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '100.00' }];
+    request.assertEmployees = async () => [
+      { id: data.employeeId, employeeCode: data.employeeCode, fullName: `Employee ${data.marker}`, branchId: data.branchId },
+      { id: secondEmployeeId, employeeCode: data.employeeCode + 7, fullName: `Second ${data.marker}`, branchId: data.branchId },
+    ];
+
+    const result = await repository.complete(request);
+
+    // A sale names no cashier any more; each product line carries its own seller.
+    expect(result.seller).toBeNull();
+    expect(result.lines).toMatchObject([
+      { employee: { id: data.employeeId }, commissionRule: 'service_default', commissionRate: '10.00', commissionAmount: '5.00' },
+      { employee: { id: secondEmployeeId }, commissionRule: 'service_default', commissionRate: '10.00', commissionAmount: '5.00' },
+    ]);
+    const ledger = await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, result.id));
+    expect(ledger).toEqual(expect.arrayContaining([
+      expect.objectContaining({ employeeId: data.employeeId, amount: '5.00' }),
+      expect.objectContaining({ employeeId: secondEmployeeId, amount: '5.00' }),
+    ]));
+    expect(ledger).toHaveLength(2);
+  });
+
+  it('records the assigned employee on a zero-commission product without a ledger entry', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
+    ];
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '50.00' }];
+
+    const result = await repository.complete(request);
+
+    expect(result.seller).toBeNull();
+    expect(result.lines).toMatchObject([
+      { employee: { id: data.employeeId }, commissionRule: 'none', commissionRate: '0.00', commissionAmount: '0.00' },
+    ]);
+    expect(await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(0);
   });
 
   it('rejects a submitted price that differs from a fixed service price', async () => {

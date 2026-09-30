@@ -53,6 +53,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('unified cashier account management', () => {
+  test('edits credentials without an employee picker or roster dependency', async () => {
+    mocks.listBranchCashierRoster.mockRejectedValue(new Error('obsolete roster'));
+    mocks.listActiveEmployeeOptions.mockRejectedValue(new Error('obsolete employee options'));
+    renderView();
+    const dialog = await edit();
+    expect(within(dialog).queryByRole('button', { name: /الموظفون المسموح لهم بالبيع/ })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({
+      mode: 'edit', accountId: 1, branchId: 3, username: 'nasr',
+    }));
+  });
   test('shows account loading, list failures and an empty-state creation action', async () => {
     mocks.listCashierAccounts.mockRejectedValue(new ApiError(500, { code: 'ERROR', message: 'تعذر الاتصال' }));
     renderView();
@@ -63,71 +74,25 @@ describe('unified cashier account management', () => {
     expect(await screen.findByText('لا توجد حسابات فروع بعد')).toBeDefined();
     expect(screen.getByRole('button', { name: 'إضافة حساب كاشير' })).toBeDefined();
   });
-  test('shows assigned employees beside the account and its status', async () => {
-    renderView();
-    const row = (await screen.findByText('nasr')).closest('tr')!;
-    expect(await within(row).findByText('أحمد جمال')).toBeDefined();
-    expect(within(row).getByText('نشط')).toBeDefined();
-    expect(mocks.listBranchCashierRoster).not.toHaveBeenCalled();
-  });
-  test('warns when a saved roster member is no longer an active seller before save', async () => {
-    mocks.listCashierAccounts.mockResolvedValue(pageOf([{
-      ...account,
-      employees: [{ id: 7, fullName: 'أحمد جمال' }, { id: 8, fullName: 'ليلى حسن' }],
-    }]));
-    renderView();
-    const dialog = await edit();
-    expect(within(dialog).getByText(/ليلى حسن لم تعد ضمن الموظفين النشطين/)).toBeDefined();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({
-      mode: 'edit', accountId: 1, branchId: 3, username: 'nasr', employeeIds: [7],
-    }));
-  });
-  test('edits username and employees together while keeping a blank password', async () => {
+  test('edits username without employee selection while keeping a blank password', async () => {
     renderView();
     const dialog = await edit();
     expect((within(dialog).getByLabelText(/^اسم المستخدم/) as HTMLInputElement).value).toBe('nasr');
     expect((within(dialog).getByLabelText(/^الفرع/) as HTMLInputElement).disabled).toBe(true);
-    expect(within(dialog).queryByRole('checkbox')).toBeNull();
-    fireEvent.click(within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ }));
-    expect((within(dialog).getByRole('checkbox', { name: 'أحمد جمال' }) as HTMLInputElement).checked).toBe(true);
-    fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: 'سارة' } });
-    expect(within(dialog).queryByRole('checkbox', { name: 'أحمد جمال' })).toBeNull();
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'سارة محمد' }));
     fireEvent.change(within(dialog).getByLabelText(/^اسم المستخدم/), { target: { value: ' New.Name ' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'new.name', employeeIds: [7, 9] }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'new.name' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
-  test('keeps the employee dropdown in place until a save-button click completes', async () => {
-    renderView();
-    const dialog = await edit();
-    const trigger = within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ });
-    fireEvent.click(trigger);
-    const checkbox = within(dialog).getByRole('checkbox', { name: 'سارة محمد' });
-    fireEvent.click(checkbox);
-    const saveButton = within(dialog).getByRole('button', { name: 'حفظ التغييرات' });
-
-    fireEvent.blur(checkbox, { relatedTarget: saveButton });
-
-    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)); });
-    expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    fireEvent.click(saveButton);
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ employeeIds: [7, 9] }),
-    ));
-  });
-  test('creates credentials and selected employees in a single save', async () => {
+  test('creates credentials without employee selection', async () => {
     renderView();
     const dialog = await create();
     const branch = within(dialog).getByLabelText(/^الفرع/);
     expect(within(branch).queryByRole('option', { name: account.branchName })).toBeNull();
     expect(within(branch).queryByRole('option', { name: disabled.branchName })).toBeNull();
     fireEvent.change(within(dialog).getByLabelText(/^كلمة المرور/), { target: { value: 'secret' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ }));
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'سارة محمد' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ الحساب' }));
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'create', branchId: 5, username: 'new.cashier', password: 'secret', employeeIds: [7, 9] }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'create', branchId: 5, username: 'new.cashier', password: 'secret' }));
   });
   test('requires a password on creation', async () => {
     renderView();
@@ -135,24 +100,6 @@ describe('unified cashier account management', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ الحساب' }));
     expect(await within(dialog).findByText('كلمة المرور مطلوبة')).toBeDefined();
     expect(mocks.saveCashierAccount).not.toHaveBeenCalled();
-  });
-  test('resets employee selection when switching branches without leaking the previous draft', async () => {
-    renderView();
-    const dialog = await create();
-    fireEvent.click(within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ }));
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'أحمد جمال' }));
-    fireEvent.change(within(dialog).getByLabelText(/^الفرع/), { target: { value: '6' } });
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'حفظ الحساب' }).hasAttribute('disabled')).toBe(false));
-    fireEvent.click(within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ }));
-    expect((within(dialog).getByRole('checkbox', { name: 'أحمد جمال' }) as HTMLInputElement).checked).toBe(true);
-  });
-  test('does not silently save an empty roster after its read fails', async () => {
-    mocks.listBranchCashierRoster.mockRejectedValue(new ApiError(500, { code: 'ERROR', message: 'تعذر تحميل الاختيارات' }));
-    renderView();
-    fireEvent.click(within((await screen.findByText('nasr')).closest('tr')!).getByRole('button', { name: 'تعديل' }));
-    const dialog = screen.getByRole('dialog');
-    expect(await within(dialog).findByText('تعذر تحميل الاختيارات')).toBeDefined();
-    expect(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }).hasAttribute('disabled')).toBe(true);
   });
   test('shows branch load errors with retry before allowing creation', async () => {
     mocks.listCashierSessionBranches.mockRejectedValue(new ApiError(500, { code: 'ERROR', message: 'تعذر تحميل الفروع' }));
@@ -170,7 +117,7 @@ describe('unified cashier account management', () => {
     fireEvent.change(within(dialog).getByLabelText(/^كلمة المرور/), { target: { value: 'replacement' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
     expect(await within(dialog).findByText('اسم المستخدم مستخدم بالفعل')).toBeDefined();
-    expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'nasr', password: 'replacement', employeeIds: [7] });
+    expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'nasr', password: 'replacement' });
     expect((within(dialog).getByLabelText(/^كلمة المرور/) as HTMLInputElement).value).toBe('replacement');
   });
   test('shows server field errors in the form', async () => {
@@ -179,30 +126,6 @@ describe('unified cashier account management', () => {
     const dialog = await edit();
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
     expect(await within(dialog).findByText('اسم غير مقبول')).toBeDefined();
-  });
-  test('blocks saving when employee loading fails and allows retry', async () => {
-    mocks.listActiveEmployeeOptions.mockRejectedValue(new ApiError(500, { code: 'ERROR', message: 'تعذر تحميل الموظفين' }));
-    renderView();
-    fireEvent.click(within((await screen.findByText('nasr')).closest('tr')!).getByRole('button', { name: 'تعديل' }));
-    const dialog = screen.getByRole('dialog');
-    expect(await within(dialog).findByText('تعذر تحميل الموظفين')).toBeDefined();
-    expect(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }).hasAttribute('disabled')).toBe(true);
-    mocks.listActiveEmployeeOptions.mockResolvedValue(pageOf([{ id: 7, fullName: 'أحمد جمال' }]));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'إعادة المحاولة' }));
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }).hasAttribute('disabled')).toBe(false));
-  });
-  test('clears every employee and closes the dropdown with Escape without closing the form', async () => {
-    renderView();
-    const dialog = await edit();
-    const trigger = within(dialog).getByRole('button', { name: /الموظفون المسموح لهم بالبيع/ });
-    fireEvent.click(trigger);
-    const checkbox = within(dialog).getByRole('checkbox', { name: 'أحمد جمال' });
-    fireEvent.click(checkbox);
-    fireEvent.keyDown(checkbox, { key: 'Escape' });
-    expect(screen.getByRole('dialog')).toBe(dialog);
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ employeeIds: [] })));
   });
   test('disables and deletes only after confirmation and enables directly', async () => {
     mocks.setCashierAccountStatus.mockResolvedValue(account);

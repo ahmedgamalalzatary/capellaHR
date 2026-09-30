@@ -1,7 +1,6 @@
 import { type createDatabase } from '@capella/database';
 import {
   accounts,
-  branchCashierRoster,
   cashierSessions,
   clients,
   commissionLedgerEntries,
@@ -9,7 +8,6 @@ import {
   erpStockMovements,
   erpServiceCommissionOverrides,
   erpServices,
-  employees,
   invoiceLines,
   invoicePayments,
   invoices,
@@ -54,14 +52,19 @@ export const createSaleRepositoryComplete = (
           const { input } = operation;
           const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
           const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
-          // Every service names the employee who performed it; the invoice as a
-          // whole names none, so one sale can pay several people.
-          const employeeIds = [...new Set(serviceInputs.map((line) => line.employeeId))]
-            .sort((left, right) => left - right);
-          if (serviceInputs.length && (
-            employeeIds.some((employeeId) => employeeId === undefined)
-            || operation.assertEmployees === undefined
-          )) {
+          // Every line names the employee who performed or sold it; the invoice as
+          // a whole names none, so one sale can pay several people. A transfer
+          // between branches names nobody.
+          const employeeIds = [...new Set([
+            ...serviceInputs.map((line) => line.employeeId),
+            ...productInputs.flatMap((line) => (
+              line.employeeId === undefined ? [] : [line.employeeId]
+            )),
+          ])].sort((left, right) => left - right);
+          if (serviceInputs.some((line) => line.employeeId === undefined)
+            || (operation.kind !== 'branch_transfer'
+              && productInputs.some((line) => line.employeeId === undefined))
+            || (employeeIds.length > 0 && operation.assertEmployees === undefined)) {
             throw new SaleError('SALE_VALIDATION_FAILED');
           }
           // A shift is spent once it passes its sixteen hours, whether or not the
@@ -95,42 +98,21 @@ export const createSaleRepositoryComplete = (
           if (!account || !account.active || account.role !== operation.actingAccountRole) {
             throw new SaleError('CASHIER_SESSION_NOT_OPEN');
           }
-          // The seller must still be on the branch roster when the sale settles.
-          // A transfer between branches has none: no person sold anything, and
-          // products earn no commission, so the invoice records no seller.
-          const seller = input.sellerEmployeeId === undefined ? null
-            : (await transaction.select({
-              id: employees.id,
-              fullName: employees.fullName,
-              employeeCode: employees.employeeCode,
-            }).from(branchCashierRoster).innerJoin(employees, and(
-              eq(employees.id, branchCashierRoster.employeeId),
-              eq(employees.branchId, branchCashierRoster.branchId),
-            )).where(and(
-              eq(branchCashierRoster.branchId, input.branchId),
-              eq(branchCashierRoster.employeeId, input.sellerEmployeeId),
-              eq(employees.employmentStatus, 'active'),
-              isNull(employees.deletedAt),
-            )).for('update').limit(1))[0];
-          if (input.sellerEmployeeId !== undefined && !seller) {
-            throw new SaleError('SELLER_NOT_ON_ROSTER');
-          }
           if (payroll) {
-            // Lock a product seller conservatively before product rows are read.
+            // Lock every assigned employee conservatively before rows are read.
             // The final projection below still includes only employees who
             // actually earned commission from the authoritative locked rows.
-            const lockEmployeeIds = [...new Set([
-              ...employeeIds,
-              ...(seller && productInputs.length ? [seller.id] : []),
-            ])].sort((left, right) => left - right);
-            for (const employeeId of lockEmployeeIds) {
+            for (const employeeId of employeeIds) {
               await payroll.lockCommissionEmployee(employeeId, transaction);
             }
           }
-          const assignedEmployees = serviceInputs.length
+          const assignedEmployees = employeeIds.length
             ? await operation.assertEmployees!(transaction)
             : [];
           const employeeById = new Map(assignedEmployees.map((row) => [row.id, row]));
+          if (employeeIds.some((id) => !employeeById.has(id))) {
+            throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
+          }
           const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs, true);
           const quotedProducts = await quoteProducts(
             transaction, input.branchId, productInputs, true, operation.pricing,
@@ -181,13 +163,21 @@ export const createSaleRepositoryComplete = (
               balanceBefore: undefined,
             };
           });
-          const calculatedProducts = quotedProducts.map((line) => ({
-            ...line,
-            employee: seller && Number(line.commissionPercent ?? 0) > 0 ? { id: seller.id, fullName: seller.fullName, employeeCode: seller.employeeCode } : null,
-            commissionRule: seller && Number(line.commissionPercent ?? 0) > 0 ? 'service_default' as const : 'none' as const,
-            commissionRate: seller && Number(line.commissionPercent ?? 0) > 0 ? line.commissionPercent : '0.00',
-            commissionAmount: seller && Number(line.commissionPercent ?? 0) > 0 ? calculateCommission(line.lineTotal, line.commissionPercent) : '0.00',
-          }));
+          const calculatedProducts = quotedProducts.map((line, index) => {
+            // A zero-commission product still records who sold it; assignment and
+            // earning commission are separate facts.
+            const employee = productInputs[index]!.employeeId === undefined
+              ? null
+              : employeeById.get(productInputs[index]!.employeeId) ?? null;
+            const earns = employee !== null && Number(line.commissionPercent ?? 0) > 0;
+            return {
+              ...line,
+              employee,
+              commissionRule: earns ? 'service_default' as const : 'none' as const,
+              commissionRate: earns ? line.commissionPercent : '0.00',
+              commissionAmount: earns ? calculateCommission(line.lineTotal, line.commissionPercent) : '0.00',
+            };
+          });
           const byKey = keyedQueues([...calculatedServices, ...calculatedProducts]);
           const calculatedLines = input.lines.map((line) => byKey.get(`${line.itemType}:${line.itemType === 'service' ? line.serviceId : line.productId}`)!.shift()!);
           const projectedEmployeeIds = [...new Set(calculatedLines.flatMap((line) => (
@@ -217,7 +207,7 @@ export const createSaleRepositoryComplete = (
           const inserted = await transaction.insert(invoices).values({
             branchId: input.branchId,
             clientId: input.clientId,
-            sellerEmployeeId: seller?.id ?? null,
+            sellerEmployeeId: null,
             actingAccountId: operation.actingAccountId,
             cashierSessionId: input.cashierSessionId,
             invoiceNumber: operation.invoiceNumber,
@@ -225,7 +215,7 @@ export const createSaleRepositoryComplete = (
             kind: operation.kind ?? 'sale',
             clientNameSnapshot: client.fullName,
             clientPhoneSnapshot: client.phone,
-            sellerNameSnapshot: seller?.fullName ?? null,
+            sellerNameSnapshot: null,
             authorizedBySnapshot: account.username,
             subtotal: totals.subtotal,
             discountKind: input.discount?.kind ?? null,
@@ -336,7 +326,6 @@ export const createSaleRepositoryComplete = (
               branchId: input.branchId,
               clientId: input.clientId,
               ...(employeeIds.length ? { employeeIds: employeeIds.join(',') } : {}),
-              ...(seller ? { sellerEmployeeId: seller.id } : {}),
               cashierSessionId: input.cashierSessionId,
             },
             createdAt: operation.soldAt,

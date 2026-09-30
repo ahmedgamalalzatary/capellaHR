@@ -4,9 +4,8 @@ import { saleCheckoutBlockers } from '../src/features/sales/components/sale-prim
 
 const ready = {
   hasClient: true,
-  sellerOnRoster: true,
   hasLines: true,
-  serviceLinesAssigned: true,
+  linesAssigned: true,
   servicePricesValid: true,
   quoteReady: true,
   remaining: BigInt(0),
@@ -17,26 +16,25 @@ describe('saleCheckoutBlockers', () => {
   it('lists every missing till field so Complete is never silent', () => {
     expect(saleCheckoutBlockers({
       hasClient: false,
-      sellerOnRoster: false,
       hasLines: false,
-      serviceLinesAssigned: true,
+      linesAssigned: true,
       servicePricesValid: true,
       quoteReady: false,
       remaining: null,
       hasServiceLines: false,
-    })).toEqual(['اختر العميل', 'اختر الكاشير', 'أضف خدمة أو منتجًا']);
+    })).toEqual(['اختر العميل', 'أضف خدمة أو منتجًا']);
   });
 
   it('names an unassigned service and an open price before payment', () => {
     expect(saleCheckoutBlockers({
       ...ready,
-      serviceLinesAssigned: false,
+      linesAssigned: false,
       servicePricesValid: false,
       quoteReady: false,
       remaining: null,
     })).toEqual([
       'أدخل سعرًا صالحًا لكل خدمة مفتوحة السعر',
-      'عيّن موظفًا لكل خدمة',
+      'عيّن موظفًا لكل بند',
     ]);
   });
 
@@ -54,4 +52,9 @@ describe('saleCheckoutBlockers', () => {
       remaining: BigInt(50),
     })).toEqual([]);
   });
+});
+
+it('blocks product checkout until every product has an assigned employee', () => {
+  expect(saleCheckoutBlockers({ ...ready, hasServiceLines: false, linesAssigned: false }))
+    .toEqual(['عيّن موظفًا لكل بند']);
 });

@@ -1,6 +1,7 @@
 import {
   accounts,
   erpProductStocks,
+  invoiceLines,
   invoicePayments,
   invoices,
 } from '@capella/database/schema';
@@ -47,7 +48,7 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const request = operation(data, crypto.randomUUID());
-    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
     delete request.input.discount;
     delete request.input.tax;
     request.input.payments = [{ method: 'cash', amount: '10.00' }];
@@ -90,22 +91,41 @@ describe('ERP sale repository MySQL integration', () => {
       .rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
   });
 
-  it('maps a sellerless legacy idempotency row to a deterministic conflict', async () => {
+  it('maps a legacy row whose lines predate per-line assignment to a deterministic conflict', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
-    const completed = await repository.complete(operation(data, crypto.randomUUID()));
-    const stored = (await database.select().from(invoices)
-      .where(eq(invoices.id, completed.id)).limit(1))[0]!;
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{
+      itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId,
+    }];
+    request.input.payments = [{ method: 'cash', amount: '50.00' }];
+    const completed = await repository.complete(request);
+    // Build a historical employee-free product invoice while it is still a
+    // draft; completed facts must remain immutable, including in fixtures.
+    const { id: oldInvoiceId, ...oldInvoice } = (await database.select().from(invoices)
+      .where(eq(invoices.id, completed.id)))[0]!;
+    expect(oldInvoiceId).toBe(completed.id);
     const legacyKey = crypto.randomUUID();
-    await database.insert(invoices).values({
-      ...stored,
-      id: undefined,
-      status: 'draft',
-      invoiceNumber: `${stored.invoiceNumber}-LEGACY`,
-      idempotencyKey: legacyKey,
-      sellerEmployeeId: null,
-      sellerNameSnapshot: null,
+    const legacyId = Number((await database.insert(invoices).values({
+      ...oldInvoice, status: 'draft', idempotencyKey: legacyKey,
+      invoiceNumber: `${oldInvoice.invoiceNumber}-legacy`,
+    }))[0].insertId);
+    const { id: oldLineId, ...oldLine } = (await database.select().from(invoiceLines)
+      .where(eq(invoiceLines.invoiceId, completed.id)))[0]!;
+    expect(oldLineId).toBe(completed.lines[0]!.id);
+    await database.insert(invoiceLines).values({
+      ...oldLine, invoiceId: legacyId,
+      employeeId: null, employeeNameSnapshot: null, employeeCodeSnapshot: null,
     });
+    const payments = await database.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, completed.id));
+    for (const { id: oldPaymentId, ...payment } of payments) {
+      expect(oldPaymentId).toBeGreaterThan(0);
+      await database.insert(invoicePayments).values({
+        ...payment, invoiceId: legacyId, operationReference: crypto.randomUUID(),
+      });
+    }
+    await database.update(invoices).set({ status: 'completed' }).where(eq(invoices.id, legacyId));
     await expect(repository.findByIdempotencyKey(legacyKey, {
       actingAccountId: data.accountId,
       actingAccountRole: 'cashier',
@@ -143,7 +163,7 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const request = operation(data, crypto.randomUUID());
-    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
     delete request.input.discount; delete request.input.tax;
     request.input.payments = [{ method: 'cash', amount: '50.00' }];
     await database.execute(sql.raw("CREATE TRIGGER `erp13_fail_movement` BEFORE INSERT ON `erp_stock_movements` FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'forced ERP 13 rollback'"));

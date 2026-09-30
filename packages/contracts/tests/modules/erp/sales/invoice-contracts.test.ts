@@ -14,12 +14,11 @@ import {
 const validDraft = {
   branchId: 2,
   clientId: 5,
-  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
   lines: [
     { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 },
-    { itemType: 'product' as const, productId: 34, quantity: 2 },
+    { itemType: 'product' as const, productId: 34, quantity: 2, employeeId: 9 },
   ],
   discount: { kind: 'percentage' as const, value: '10' },
   tax: { kind: 'fixed' as const, value: '5.00' },

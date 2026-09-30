@@ -18,7 +18,8 @@ export type SaleDraft = {
   bookingId?: number;
   client: Client | null;
   employee: AssignableEmployee | null;
-  seller: BranchCashierRosterMember | null;
+  /** Historical drafts may still contain the old cashier selection. */
+  seller?: BranchCashierRosterMember | null;
   lines: Array<{
     service: ServiceListItem | ProductSaleItem;
     quantity: number;

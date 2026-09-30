@@ -89,18 +89,30 @@ export const refundedQueueAmount = sql`ROUND(reversal_line.total * ${refundedQue
   / reversal_line.quantity, 2)`;
 
 /**
- * An invoice no longer names one employee: each service line names its own, so
+ * An invoice no longer names one employee: each sale line names its own, so
  * invoice-level columns list every distinct name (or code) behind the sale.
  */
 export const invoiceEmployeeList = (invoiceAlias: string, column: 'name' | 'code') => {
   const invoice = sql.raw(invoiceAlias);
-  const field = sql.raw(column === 'name' ? 'full_name' : 'employee_code');
+  const serviceField = sql.raw(column === 'name' ? 'employee.full_name' : 'employee.employee_code');
+  const productField = column === 'name'
+    ? sql`COALESCE(product_line.employee_name_snapshot, product_invoice.seller_name_snapshot)`
+    : sql`COALESCE(product_line.employee_code_snapshot, seller.employee_code)`;
   return sql`(
-    SELECT GROUP_CONCAT(DISTINCT assigned_employee.${field} ORDER BY assigned_employee.${field} SEPARATOR ' | ')
-    FROM erp_service_queue_entries assigned_queue
-    INNER JOIN employees assigned_employee ON assigned_employee.id = assigned_queue.employee_id
-    WHERE assigned_queue.invoice_id = ${invoice}.id
-      AND assigned_queue.branch_id = ${invoice}.branch_id
+    SELECT GROUP_CONCAT(DISTINCT assigned.value ORDER BY assigned.value SEPARATOR ' | ')
+    FROM (
+      SELECT queue.invoice_id, queue.branch_id, ${serviceField} value
+      FROM erp_service_queue_entries queue
+      INNER JOIN employees employee ON employee.id = queue.employee_id
+      UNION ALL
+      SELECT product_line.invoice_id, product_line.branch_id, ${productField} value
+      FROM erp_invoice_lines product_line
+      INNER JOIN erp_invoices product_invoice ON product_invoice.id = product_line.invoice_id
+        AND product_invoice.branch_id = product_line.branch_id
+      LEFT JOIN employees seller ON seller.id = product_invoice.seller_employee_id
+      WHERE product_line.item_type = 'product' AND product_invoice.kind = 'sale'
+    ) assigned
+    WHERE assigned.invoice_id = ${invoice}.id AND assigned.branch_id = ${invoice}.branch_id
   )`;
 };
 

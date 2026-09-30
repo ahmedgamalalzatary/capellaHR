@@ -303,11 +303,12 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   });
   expect(unauthenticatedStatuses).toEqual([401, 401, 401]);
   await page.getByLabel('اسم المستخدم').fill('cashier.one');
-  await page.getByLabel('كلمة المرور').fill('correct-horse-battery-staple');
-  await page.getByRole('button', { name: 'تسجيل الدخول' }).click();
+  await page.locator('#cashier-password').fill('correct-horse-battery-staple');
+  await page.locator('form').filter({ has: page.locator('#cashier-password') }).getByRole('button', { name: 'تسجيل الدخول' }).click();
 
   await expect(page.getByRole('heading', { name: 'وردية الكاشير' })).toBeVisible();
   await page.getByRole('button', { name: 'فتح الوردية' }).click();
+  await page.getByRole('button', { name: 'تأكيد فتح الوردية' }).click();
   await expect(page.getByText('مفتوحة', { exact: true })).toBeVisible();
 
   await page.reload();
@@ -319,7 +320,6 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: /صبغة شعر/ }).click();
   await page.getByRole('button', { name: /شامبو/ }).click();
-  await page.getByLabel('الكاشير').selectOption('17');
   await page.getByRole('button', { name: /سارة علي/ }).click();
   await expect(page.getByText('تم سداد الإجمالي بالكامل')).toBeVisible();
   await page.evaluate(() => {
@@ -357,11 +357,10 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   expect(completedSaleRequests).toBe(1);
   expect(completedSale).toMatchObject({
     clientId: 5,
-    sellerEmployeeId: 17,
     cashierSessionId: 14,
     lines: [
       { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 18 },
-      { itemType: 'product', productId: 31, quantity: 1 },
+      { itemType: 'product', productId: 31, quantity: 1, employeeId: 18 },
     ],
     payments: [{ method: 'cash', amount: '250.00' }],
   });
@@ -370,7 +369,7 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByLabel('ابحث عن العميل برقم الهاتف أو الاسم').fill('منى');
   await page.getByRole('button', { name: /منى أحمد/ }).click();
   await page.getByRole('button', { name: /شامبو/ }).click();
-  await page.getByLabel('الكاشير').selectOption('17');
+  await page.getByRole('button', { name: /سارة علي/ }).click();
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'تم بيع آخر وحدة من شامبو' })).toBeVisible();
   expect(completedSaleRequests).toBe(2);

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Search, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 
 import { Badge, Button, Card, EmptyState, Field, Input, Label, Modal, MonthPicker, SmartPagination } from '@capella/ui';
 
@@ -83,7 +83,7 @@ function AdjustmentCreateForm({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<CreateFormInput, unknown, AdjustmentCreateFormValues>({
     resolver: zodResolver(
@@ -94,8 +94,7 @@ function AdjustmentCreateForm({
     defaultValues: { employeeId: '', amount: '', days: '', payrollMonth: '', reason: '' },
   });
 
-  const watchedDays = watch('days');
-  const watchedAmount = watch('amount');
+  const watchedDays = useWatch({ control, name: 'days' });
 
   /** A day count replaces a typed amount, so the two can never both claim to price it. */
   const chooseDays = (days: number) => {
@@ -248,7 +247,7 @@ function AdjustmentEditForm({
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<AdjustmentUpdateFormValues>({
     resolver: zodResolver(
@@ -266,7 +265,7 @@ function AdjustmentEditForm({
     },
   });
 
-  const watchedDays = watch('days');
+  const watchedDays = useWatch({ control, name: 'days' });
 
   const chooseDays = (days: number) => {
     setValue('days', String(days), { shouldValidate: true, shouldDirty: true });

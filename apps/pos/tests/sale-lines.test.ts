@@ -1,9 +1,11 @@
+import type { ProductSaleItem } from '../src/features/products';
 import { describe, expect, it } from 'vitest';
 
 import type { ServiceListItem } from '../src/features/catalog';
 import type { AssignableEmployee } from '../src/features/employee-assignment';
 import {
   appendServiceLine,
+  appendProductLine,
   decrementLine,
   incrementLine,
   removeLine,
@@ -142,4 +144,24 @@ describe('restoredLines', () => {
     expect(line!.lineId).toBe('current-line');
     expect(line!.employee).toBeNull();
   });
+});
+
+describe('product assignment restoration', () => {
+  it('preserves the employee on each product unit after restoring a parked sale', () => {
+    const lines = restoredLines({ employee: employeeA, lines: [
+      serviceLine({ lineId: 'product-a', itemType: 'product', quantity: 2, employee: employeeB }),
+    ] });
+    expect(lines).toHaveLength(2);
+    expect(lines.map((line) => line.quantity)).toEqual([1, 1]);
+    expect(lines.every((line) => line.employee === employeeB)).toBe(true);
+  });
+});
+
+it('adds independently assigned product units and enforces their combined stock limit', () => {
+  const product = { ...service, quantityAvailable: 2 } as unknown as ProductSaleItem;
+  const first = appendProductLine([], product, employeeA, () => 'product-1');
+  const second = appendProductLine(first, product, employeeB, () => 'product-2');
+  expect(second.map((line) => line.employee?.id)).toEqual([8, 11]);
+  expect(second.map((line) => line.quantity)).toEqual([1, 1]);
+  expect(appendProductLine(second, product, employeeA, () => 'product-3')).toBe(second);
 });

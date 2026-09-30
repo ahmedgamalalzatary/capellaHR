@@ -170,8 +170,8 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   productId: int('product_id'),
   itemNameSnapshot: varchar('item_name_snapshot', { length: 255 }).notNull(),
   /**
-   * The employee who performed this service, so one invoice can pay commission
-   * to several people. A product line names nobody and earns nothing.
+   * The employee who performed the service or sold the product, so one invoice
+   * can pay commission to several people. Historical products may be unassigned.
    */
   employeeId: int('employee_id'),
   employeeNameSnapshot: varchar('employee_name_snapshot', { length: 255 }),
@@ -195,8 +195,8 @@ export const invoiceLines = mysqlTable('erp_invoice_lines', {
   index('erp_invoice_lines_service_idx').on(table.serviceId),
   index('erp_invoice_lines_product_idx').on(table.productId),
   index('erp_invoice_lines_employee_idx').on(table.employeeId),
-  // A product names nobody. A service names one employee with both snapshots,
-  // and may only be employee-free while its invoice is still a draft.
+  // Employee identity and snapshots are either all present or all absent.
+  // New sales require assignment; historical products and transfers may omit it.
   check(
     'erp_invoice_lines_employee_consistent',
     sql`((item_type in ('product','service')) and ((employee_id is null and employee_name_snapshot is null and employee_code_snapshot is null) or (employee_id is not null and employee_name_snapshot is not null and employee_code_snapshot > 0)))`,

@@ -29,11 +29,17 @@ const moneyFromCents = (value: bigint) => (
 
 /**
  * A sale posted from inside the system rather than from a request: a transfer
- * between branches has no seller, because nobody sold anything and products
- * carry no commission. Every request-driven sale still names one.
+ * between branches has no employees, because nobody sold anything. Every
+ * request-driven sale names one employee per line.
  */
-export type InternalCompleteSaleInput = Omit<CompleteSaleInput, 'sellerEmployeeId'>
-  & { sellerEmployeeId?: number };
+export type InternalCompleteSaleInput = Omit<CompleteSaleInput, 'lines'> & {
+  lines: Array<CompleteSaleInput['lines'][number] | {
+    itemType: 'product';
+    productId: number;
+    quantity: number;
+    employeeId?: undefined;
+  }>;
+};
 
 export type ResolvedCompleteSaleInput = InternalCompleteSaleInput & { branchId: number };
 
@@ -48,7 +54,7 @@ export type CompleteSaleOperation = {
   invoiceNumber: string;
   soldAt: Date;
   /**
-   * Rechecks attendance for every employee the invoice's service lines name,
+   * Rechecks attendance for every employee the invoice's lines name,
    * in ascending id order so concurrent sales lock them the same way.
    */
   assertEmployees?(context: unknown): Promise<AssignableEmployee[]>;
@@ -262,7 +268,7 @@ export const createSaleService = (dependencies: {
       const number = await invoiceNumbers.allocate();
       try {
         const employeeIds = [...new Set(resolved.lines.flatMap((line) => (
-          line.itemType === 'service' ? [line.employeeId] : []
+          line.employeeId === undefined ? [] : [line.employeeId]
         )))].sort((left, right) => left - right);
         const bookingHandover = resolved.bookingId === undefined ? undefined
           : async (transaction: SaleTransaction, invoice: InvoiceDto) => {

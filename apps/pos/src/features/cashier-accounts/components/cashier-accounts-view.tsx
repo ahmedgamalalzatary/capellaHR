@@ -23,15 +23,9 @@ const serverErrorMessage = (error: unknown): string | null => {
 const columns = [
   { key: 'username', label: 'اسم المستخدم' },
   { key: 'branch', label: 'الفرع' },
-  { key: 'employees', label: 'الموظفون المسموح لهم بالبيع' },
   { key: 'status', label: 'الحالة' },
   { key: 'actions', label: 'إجراءات' },
 ] as const;
-
-function AccountEmployees({ employees }: { employees: CashierAccount['employees'] }) {
-  const names = employees.map(({ fullName }) => fullName);
-  return <span className="block max-w-64 truncate text-muted" title={names.join('، ')}>{names.join('، ') || 'لا يوجد موظفون محددون'}</span>;
-}
 
 export function CashierAccountsView() {
   const queryClient = useQueryClient();
@@ -76,7 +70,7 @@ export function CashierAccountsView() {
     <section className="space-y-6">
       <PageHeader
         title="حسابات كاشير الفروع"
-        description="إدارة حساب كل فرع والموظفين المسموح لهم بالبيع من خلاله."
+        description="إدارة حساب كل فرع وبيانات الدخول الخاصة به."
         actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة حساب كاشير</Button>}
       />
 
@@ -100,7 +94,7 @@ export function CashierAccountsView() {
         ) : items.length === 0 ? (
           <EmptyState
             title="لا توجد حسابات فروع بعد"
-            description="أضف حساب كاشير وحدد الموظفين المسموح لهم بالبيع."
+            description="أضف حساب كاشير للفرع."
             action={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة أول حساب</Button>}
           />
         ) : (
@@ -113,7 +107,6 @@ export function CashierAccountsView() {
                 <TR key={account.id}>
                   <TD className="font-medium">{account.username}</TD>
                   <TD className="text-muted">{account.branchName}</TD>
-                  <TD><AccountEmployees employees={account.employees} /></TD>
                   <TD>
                     {account.active ? (
                       <Badge variant="success">نشط</Badge>

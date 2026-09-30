@@ -53,10 +53,7 @@ describe('ERP sale repository MySQL integration', () => {
     );
     const completed = await repository.complete(operation(data, crypto.randomUUID()));
 
-    expect(completed.seller).toMatchObject({
-      id: data.sellerEmployeeId,
-      name: `Seller ${data.marker}`,
-    });
+    expect(completed.seller).toBeNull();
     expect(await database.select().from(erpCommissionPayrollInputs).where(
       eq(erpCommissionPayrollInputs.employeeId, data.employeeId),
     )).toEqual([expect.objectContaining({

@@ -20,8 +20,8 @@ import type { AssignableEmployee } from '@/features/employee-assignment';
 import { LineEmployeeSelect } from './line-employee-select';
 import {
   appendServiceLine,
+  appendProductLine,
   decrementLine,
-  incrementLine,
   removeLine,
   type Line,
 } from './sale-primitives';
@@ -57,21 +57,9 @@ export function SaleBasketStep({
           // service can be performed — and commissioned — by a different employee.
           <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setLines((current) => appendServiceLine(current, service, employee, createUuid))} onAvailabilityChange={onServicesAvailability} />
           ) : null}
-          {hasProducts ? <ProductPicker {...(branchId === undefined ? {} : { branchId })} onSelect={(product) => setLines((current) => {
-            const found = current.find(({ service: item, itemType }) => itemType === 'product' && item.id === product.id);
-            return found
-              ? incrementLine(current, found.lineId).map((line) => line.lineId === found.lineId
-                ? { ...line, quantity: Math.min(line.quantity, product.quantityAvailable) }
-                : line)
-              : [...current, {
-                  lineId: createUuid(),
-                  service: product,
-                  quantity: 1,
-                  unitPrice: product.price,
-                  itemType: 'product',
-                  employee: null,
-                }];
-          })} onAvailabilityChange={onProductsAvailability} /> : null}
+          {hasProducts ? <ProductPicker {...(branchId === undefined ? {} : { branchId })}
+            onSelect={(product) => setLines((current) => appendProductLine(current, product, employee, createUuid))}
+            onAvailabilityChange={onProductsAvailability} /> : null}
         </div>
 
         {lines.length > 0 ? (
@@ -100,7 +88,7 @@ export function SaleBasketStep({
                     <span className="tabular text-[13px] text-muted">{line.service.price} ج.م</span>
                   )}
                 </span>
-                {line.itemType !== 'product' ? (
+                {(
                   <LineEmployeeSelect
                     line={line}
                     {...(branchId === undefined ? {} : { branchId })}
@@ -110,14 +98,14 @@ export function SaleBasketStep({
                         : item
                     )))}
                   />
-                ) : null}
+                )}
                 {/* The most-tapped control in the app: kept at a 44px touch target. */}
                 <span className="flex items-center gap-1 rounded-control border border-line bg-paper p-0.5">
                   <Button variant="ghost" className="size-11 px-0" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => (line.quantity > 1 ? decrementLine(current, line.lineId) : removeLine(current, line.lineId)))}><Minus className="size-4" aria-hidden /></Button>
                   <span className="tabular w-8 text-center text-sm font-semibold">{line.quantity}</span>
-                  <Button variant="ghost" className="size-11 px-0" disabled={line.itemType === 'product' && line.quantity >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => (
+                  <Button variant="ghost" className="size-11 px-0" disabled={line.itemType === 'product' && lines.filter((item) => item.itemType === 'product' && item.service.id === line.service.id).reduce((sum, item) => sum + item.quantity, 0) >= (line.service as ProductSaleItem).quantityAvailable} aria-label={`زيادة ${line.service.name}`} onClick={() => setLines((current) => (
                     line.itemType === 'product'
-                      ? incrementLine(current, line.lineId)
+                      ? appendProductLine(current, line.service as ProductSaleItem, line.employee ?? null, createUuid)
                       : appendServiceLine(current, line.service as ServiceListItem, line.employee ?? null, createUuid)
                   ))}><Plus className="size-4" aria-hidden /></Button>
                   <Button variant="ghost" className="size-11 px-0" aria-label={`حذف ${line.service.name}`} onClick={() => setLines((current) => removeLine(current, line.lineId))}><Trash2 className="size-4" aria-hidden /></Button>

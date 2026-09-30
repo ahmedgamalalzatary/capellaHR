@@ -185,7 +185,8 @@ export const serviceFacts = (filters: ReportFilters) => {
 export const productFacts = (filters: ReportFilters) => saleLineEvents(filters, 'product', (args) => sql`
   SELECT ${args.id} id, ${args.eventDate} eventDate, ${sql.raw(args.branch)}.name branchName,
     ${sql.raw(args.invoice)}.invoice_number invoiceNumber,
-    ${sql.raw(args.invoice)}.seller_name_snapshot employeeName,
+    COALESCE(${sql.raw(args.line)}.employee_name_snapshot,
+      ${sql.raw(args.invoice)}.seller_name_snapshot) employeeName,
     ${sql.raw(args.line)}.item_name_snapshot productName, 'individual' rowType,
     ${args.eventType} eventType,
     ${args.quantity} quantity, ${sql.raw(args.line)}.unit_price unitPrice,
@@ -370,8 +371,8 @@ const employeeEventFacts = (filters: ReportFilters) => sql`
   UNION ALL
   SELECT CONCAT('product-sale-', invoice.id) id, invoice.sold_at eventDate,
     branch.name branchName, invoice.invoice_number invoiceNumber,
-    invoice.seller_employee_id employeeId, employee.employee_code employeeCode,
-    invoice.seller_name_snapshot employeeName, 'product' activityType,
+    COALESCE(line.employee_id, invoice.seller_employee_id) employeeId, COALESCE(line.employee_code_snapshot, employee.employee_code) employeeCode,
+    COALESCE(line.employee_name_snapshot, invoice.seller_name_snapshot) employeeName, 'product' activityType,
     0 serviceQuantity, SUM(line.quantity) productQuantity,
     0 serviceAmount,
     SUM(
@@ -382,26 +383,26 @@ const employeeEventFacts = (filters: ReportFilters) => sql`
   FROM erp_invoice_lines line
   INNER JOIN erp_invoices invoice
     ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
-  INNER JOIN employees employee ON employee.id = invoice.seller_employee_id
+  INNER JOIN employees employee ON employee.id = COALESCE(line.employee_id, invoice.seller_employee_id)
   INNER JOIN branches branch ON branch.id = invoice.branch_id
   ${condition([
     sql`invoice.status <> 'draft'`, sql`invoice.kind = 'sale'`,
-    sql`line.item_type = 'product'`, sql`invoice.seller_employee_id IS NOT NULL`,
+    sql`line.item_type = 'product'`, sql`COALESCE(line.employee_id, invoice.seller_employee_id) IS NOT NULL`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'invoice.sold_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'invoice.seller_name_snapshot',
-      'CAST(employee.employee_code AS CHAR)',
+      'invoice.invoice_number', 'COALESCE(line.employee_name_snapshot, invoice.seller_name_snapshot)',
+      'CAST(COALESCE(line.employee_code_snapshot, employee.employee_code) AS CHAR)',
     ]),
   ])}
   GROUP BY invoice.id, branch.name, invoice.invoice_number, invoice.sold_at,
     invoice.discount_amount, invoice.tax_amount, invoice.subtotal,
-    invoice.seller_employee_id, employee.employee_code, invoice.seller_name_snapshot
+    COALESCE(line.employee_id, invoice.seller_employee_id), COALESCE(line.employee_code_snapshot, employee.employee_code), COALESCE(line.employee_name_snapshot, invoice.seller_name_snapshot)
   UNION ALL
   SELECT CONCAT('product-', reversal.type, '-', reversal.id) id,
     reversal.created_at eventDate, branch.name branchName,
-    invoice.invoice_number invoiceNumber, invoice.seller_employee_id employeeId,
-    employee.employee_code employeeCode, invoice.seller_name_snapshot employeeName,
+    invoice.invoice_number invoiceNumber, COALESCE(original_line.employee_id, invoice.seller_employee_id) employeeId,
+    COALESCE(original_line.employee_code_snapshot, employee.employee_code) employeeCode, COALESCE(original_line.employee_name_snapshot, invoice.seller_name_snapshot) employeeName,
     'product' activityType, 0 serviceQuantity,
     -SUM(reversal_line.quantity) productQuantity, 0 serviceAmount,
     -SUM(reversal_line.total) productAmount
@@ -416,21 +417,21 @@ const employeeEventFacts = (filters: ReportFilters) => sql`
     AND original_line.branch_id = reversal_line.branch_id
   INNER JOIN erp_invoices invoice
     ON invoice.id = reversal.invoice_id AND invoice.branch_id = reversal.branch_id
-  INNER JOIN employees employee ON employee.id = invoice.seller_employee_id
+  INNER JOIN employees employee ON employee.id = COALESCE(original_line.employee_id, invoice.seller_employee_id)
   INNER JOIN branches branch ON branch.id = reversal.branch_id
   ${condition([
     sql`reversal.status = 'finalized'`, sql`invoice.kind = 'sale'`,
-    sql`original_line.item_type = 'product'`, sql`invoice.seller_employee_id IS NOT NULL`,
+    sql`original_line.item_type = 'product'`, sql`COALESCE(original_line.employee_id, invoice.seller_employee_id) IS NOT NULL`,
     ...branchFilter(filters, 'reversal.branch_id'),
     ...timestampFilter(filters, 'reversal.created_at'),
     ...searchFilter(filters, [
-      'invoice.invoice_number', 'invoice.seller_name_snapshot',
-      'CAST(employee.employee_code AS CHAR)',
+      'invoice.invoice_number', 'COALESCE(original_line.employee_name_snapshot, invoice.seller_name_snapshot)',
+      'CAST(COALESCE(original_line.employee_code_snapshot, employee.employee_code) AS CHAR)',
     ]),
   ])}
   GROUP BY reversal.id, reversal.type, reversal.created_at, branch.name,
-    invoice.invoice_number, invoice.seller_employee_id, employee.employee_code,
-    invoice.seller_name_snapshot
+    invoice.invoice_number, COALESCE(original_line.employee_id, invoice.seller_employee_id), COALESCE(original_line.employee_code_snapshot, employee.employee_code),
+    COALESCE(original_line.employee_name_snapshot, invoice.seller_name_snapshot)
 `;
 
 export const commissionFacts = (filters: ReportFilters) => sql`

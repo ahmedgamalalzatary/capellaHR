@@ -26,9 +26,8 @@ export const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
 
 export type SaleCheckoutState = {
   hasClient: boolean;
-  sellerOnRoster: boolean;
   hasLines: boolean;
-  serviceLinesAssigned: boolean;
+  linesAssigned: boolean;
   servicePricesValid: boolean;
   quoteReady: boolean;
   remaining: bigint | null;
@@ -39,12 +38,11 @@ export type SaleCheckoutState = {
 export function saleCheckoutBlockers(state: SaleCheckoutState): string[] {
   const blockers: string[] = [];
   if (!state.hasClient) blockers.push('اختر العميل');
-  if (!state.sellerOnRoster) blockers.push('اختر الكاشير');
   if (!state.hasLines) blockers.push('أضف خدمة أو منتجًا');
   if (state.hasLines && !state.servicePricesValid) {
     blockers.push('أدخل سعرًا صالحًا لكل خدمة مفتوحة السعر');
   }
-  if (state.hasLines && !state.serviceLinesAssigned) blockers.push('عيّن موظفًا لكل خدمة');
+  if (state.hasLines && !state.linesAssigned) blockers.push('عيّن موظفًا لكل بند');
   if (state.hasLines && state.servicePricesValid && !state.quoteReady) {
     blockers.push('انتظر حساب الإجمالي');
   }
@@ -64,7 +62,7 @@ export type Line = {
   quantity: number;
   unitPrice: string;
   itemType?: 'service' | 'product';
-  /** Who performed this service. A product line names nobody. */
+  /** Who performed the service or sold the product. */
   employee?: AssignableEmployee | null;
 };
 
@@ -89,6 +87,23 @@ export const appendServiceLine = (
     employee,
   },
 ];
+
+/** Product units stay independently assignable; stock is shared by all units. */
+export const appendProductLine = (
+  lines: Line[],
+  product: ProductSaleItem,
+  employee: AssignableEmployee | null,
+  nextLineId: () => string,
+): Line[] => {
+  const quantity = lines.reduce((sum, line) => (
+    line.itemType === 'product' && line.service.id === product.id ? sum + line.quantity : sum
+  ), 0);
+  if (quantity >= product.quantityAvailable) return lines;
+  return [...lines, {
+    lineId: nextLineId(), service: product, quantity: 1, unitPrice: product.price,
+    itemType: 'product', employee,
+  }];
+};
 
 /** Updates only the addressed line; sibling units of the same service are untouched. */
 const updateLine = (lines: Line[], lineId: string, change: (line: Line) => Line): Line[] => (
@@ -117,11 +132,8 @@ export const removeLine = (lines: Line[], lineId: string): Line[] => (
 export const restoredLines = (draft: { employee: AssignableEmployee | null; lines: Array<Omit<Line, 'lineId'> & { lineId?: string }> }): Line[] => (
   draft.lines.flatMap<Line>((line) => {
     const employee = line.itemType === 'product'
-      ? null
+      ? line.employee ?? null
       : line.lineId === undefined ? line.employee ?? draft.employee : line.employee ?? null;
-    if (line.itemType === 'product') {
-      return [{ ...line, lineId: line.lineId ?? createUuid(), employee }];
-    }
     return Array.from({ length: line.quantity }, (_, index) => ({
       ...line,
       lineId: index === 0 && line.lineId ? line.lineId : createUuid(),

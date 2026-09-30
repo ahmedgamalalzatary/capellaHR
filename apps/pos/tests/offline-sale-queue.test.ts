@@ -29,7 +29,6 @@ const owner: OfflineSaleOwner = {
 
 const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   clientId: 5,
-  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey,
   lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -202,13 +201,12 @@ describe('offline sale queue', () => {
     expect(localStorage.getItem(`capella:pending-sale:${second.idempotencyKey}`)).toBeNull();
   });
 
-  it('durably stores a product-only sale without an employee assignment', () => {
+  it('durably stores a product-only sale with its employee assignment', () => {
     const input: CompleteSaleInput = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+      lines: [{ itemType: 'product', productId: 31, quantity: 1, employeeId: 8 }],
       payments: [{ method: 'cash', amount: '50.00' }],
     };
 
@@ -223,10 +221,9 @@ describe('offline sale queue', () => {
       owner,
       input: {
         clientId: 5,
-        sellerEmployeeId: 9,
         cashierSessionId: 13,
         idempotencyKey,
-        lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+        lines: [{ itemType: 'product', productId: 31, quantity: 1, employeeId: 8 }],
         payments: [{ method: 'cash', amount: '50.00' }],
       },
       state: 'pending',

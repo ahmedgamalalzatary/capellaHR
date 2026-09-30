@@ -75,13 +75,12 @@ const saleLineSchema = z.discriminatedUnion('itemType', [
 ]);
 
 /**
- * On a posted sale each service names the one employee who performed it, so a
- * single invoice can pay commission to several people. Products earn none and
- * therefore name nobody.
+ * On a posted sale every line — service or product — names the one employee who
+ * performed or sold it, so a single invoice can pay commission to several people.
  */
 const completeSaleLineSchema = z.discriminatedUnion('itemType', [
   serviceSaleLineSchema.extend({ employeeId: positiveMysqlIntSchema }).strict(),
-  productSaleLineSchema.strict(),
+  productSaleLineSchema.extend({ employeeId: positiveMysqlIntSchema }).strict(),
 ]);
 
 export const paymentSchema = z.object({
@@ -231,7 +230,6 @@ export const paymentBreakdownSchema = z.object({
 export const completeSaleSchema = z.object({
   branchId: positiveMysqlIntSchema.optional(),
   clientId: positiveMysqlIntSchema,
-  sellerEmployeeId: positiveMysqlIntSchema,
   cashierSessionId: positiveMysqlIntSchema,
   bookingId: positiveMysqlIntSchema.optional(),
   idempotencyKey: z.string().uuid(),

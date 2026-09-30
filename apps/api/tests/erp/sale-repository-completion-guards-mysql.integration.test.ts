@@ -68,13 +68,13 @@ describe('ERP sale repository MySQL integration', () => {
       input: {
         branchId: data.branchId,
         clientId: data.clientId,
-        sellerEmployeeId: data.sellerEmployeeId,
         cashierSessionId: data.cashierSessionId,
         idempotencyKey: crypto.randomUUID(),
         lines: [{ itemType: 'product' as const, productId: data.productId, quantity: 2 }],
-        payments: [{ method: 'cash' as const, amount: '60.00' }],
+        payments: [],
       },
       pricing: 'cost',
+      kind: 'branch_transfer',
       afterInvoice: async (transaction, completed) => {
         visited.push(completed.invoiceNumber);
         await transaction.update(erpProducts).set({ lowStockThreshold: 7 })
@@ -98,13 +98,13 @@ describe('ERP sale repository MySQL integration', () => {
       input: {
         branchId: data.branchId,
         clientId: data.clientId,
-        sellerEmployeeId: data.sellerEmployeeId,
         cashierSessionId: data.cashierSessionId,
         idempotencyKey: crypto.randomUUID(),
         lines: [{ itemType: 'product' as const, productId: data.productId, quantity: 2 }],
-        payments: [{ method: 'cash' as const, amount: '60.00' }],
+        payments: [],
       },
       pricing: 'cost',
+      kind: 'branch_transfer',
       afterInvoice: async () => { throw new Error('destination stock refused'); },
     })).rejects.toThrow('destination stock refused');
 
@@ -127,7 +127,7 @@ describe('ERP sale repository MySQL integration', () => {
       .toHaveLength(0);
   });
 
-  it('rejects a sale when the seller left the branch roster before the transaction', async () => {
+  it('allows a sale without branch cashier roster membership', async () => {
     const data = await fixture();
     await database.delete(branchCashierRoster).where(and(
       eq(branchCashierRoster.branchId, data.branchId),
@@ -136,9 +136,20 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
 
     await expect(repository.complete(operation(data, crypto.randomUUID())))
-      .rejects.toMatchObject({ code: 'SELLER_NOT_ON_ROSTER' });
-    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId)))
-      .toHaveLength(0);
+      .resolves.toMatchObject({ status: 'completed', seller: null });
+  });
+
+  it('rejects a product when employee validation does not return its assigned employee', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '50.00' }];
+    request.assertEmployees = async () => [];
+    await expect(repository.complete(request)).rejects.toMatchObject({ code: 'EMPLOYEE_NOT_ASSIGNABLE' });
+    expect(await database.select().from(invoices).where(eq(invoices.branchId, data.branchId))).toHaveLength(0);
   });
 
   it('allows an Admin to sell through the selected branch open Cashier session', async () => {

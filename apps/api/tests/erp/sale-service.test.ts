@@ -11,7 +11,6 @@ import { ErpAssignmentError } from '../../src/modules/erp/assignment/assignment-
 const actor = { role: 'cashier' as const, accountId: 3, branchId: 2 };
 const input: CompleteSaleInput = {
   clientId: 5,
-  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
   lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -22,10 +21,9 @@ const input: CompleteSaleInput = {
 
 const productInput: CompleteSaleInput = {
   clientId: 5,
-  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631',
-  lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+  lines: [{ itemType: 'product', productId: 31, quantity: 1, employeeId: 8 }],
   payments: [{ method: 'cash', amount: '200.00' }],
 };
 
@@ -441,7 +439,7 @@ describe('ERP sale service', () => {
         { itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 11 },
         { itemType: 'service', serviceId: 22, quantity: 1, unitPrice: '150.00', employeeId: 8 },
         { itemType: 'service', serviceId: 23, quantity: 1, unitPrice: '100.00', employeeId: 11 },
-        { itemType: 'product', productId: 31, quantity: 1 },
+        { itemType: 'product', productId: 31, quantity: 1, employeeId: 12 },
       ],
     });
     const operation = completeRepository.mock.calls[0]![0];
@@ -450,28 +448,19 @@ describe('ERP sale service', () => {
     await expect(operation.assertEmployees!(transaction)).resolves.toEqual([
       expect.objectContaining({ id: 8 }),
       expect.objectContaining({ id: 11 }),
+      expect.objectContaining({ id: 12 }),
     ]);
-    expect(assertAssignable).toHaveBeenCalledTimes(2);
-    expect(assertAssignable).toHaveBeenNthCalledWith(
-      1, actor, { employeeId: 8, branchId: 2 }, transaction,
-    );
-    expect(assertAssignable).toHaveBeenNthCalledWith(
-      2, actor, { employeeId: 11, branchId: 2 }, transaction,
-    );
+    expect(assertAssignable).toHaveBeenCalledTimes(3);
   });
 
-  it('completes a product-only invoice without employee assignment or attendance checks', async () => {
-    const completeRepository = vi.fn<SaleRepository['complete']>().mockResolvedValue(productInvoice);
-    const { service, assertAssignable } = setup({ complete: completeRepository });
-
-    await expect(service.complete(actor, productInput)).resolves.toMatchObject({
-      lines: [expect.objectContaining({ employee: null })],
-    });
-
+  it('rechecks attendance for the employee a product line names, too', async () => {
+    const { service, completeRepository, assertAssignable } = setup();
+    await service.complete(actor, productInput);
     const operation = completeRepository.mock.calls[0]![0];
-    expect(operation.input).toEqual({ ...productInput, branchId: 2 });
-    expect(Reflect.get(operation, 'assertEmployees')).toBeUndefined();
-    expect(assertAssignable).not.toHaveBeenCalled();
+    await operation.assertEmployees!({ id: 'transaction' });
+    expect(assertAssignable).toHaveBeenCalledWith(
+      actor, { employeeId: 8, branchId: 2 }, { id: 'transaction' },
+    );
   });
 
   it('maps an attendance race to the stable sale error', async () => {

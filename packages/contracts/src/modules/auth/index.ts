@@ -34,20 +34,15 @@ export const upsertBranchCashierSchema = z.object({
   password: z.string().min(1).max(1024),
 }).strict();
 
-const cashierEmployeeIdsSchema = z.array(positiveMysqlIntSchema).max(100, 'يمكن اختيار 100 موظف كحد أقصى')
-  .refine((ids) => new Set(ids).size === ids.length, { message: 'Duplicate employees' });
-
-/** A single atomic save for the account and its branch's permitted sellers. */
+/** A single atomic save for branch cashier credentials. */
 export const saveCashierAccountSchema = z.discriminatedUnion('mode', [
   upsertBranchCashierSchema.extend({
     mode: z.literal('create'),
-    employeeIds: cashierEmployeeIdsSchema,
   }),
   upsertBranchCashierSchema.extend({
     mode: z.literal('edit'),
     accountId: positiveMysqlIntSchema,
     password: z.string().min(1).max(1024).optional(),
-    employeeIds: cashierEmployeeIdsSchema,
   }),
 ]);
 
@@ -78,7 +73,6 @@ export const publicCashierAccountSchema = z.object({
   branchId: positiveMysqlIntSchema,
   branchName: z.string().min(1).max(255),
   active: z.boolean(),
-  employees: z.array(publicCashierAccountEmployeeSchema),
 }).strict();
 
 export const accountSessionActorSchema = z.discriminatedUnion('type', [

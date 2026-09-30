@@ -103,7 +103,6 @@ vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
 });
 
 import { SalesView } from '../src/features/sales/components/sales-view';
-import { cashierAccountQueryKeys } from '../src/features/cashier-accounts/query-keys';
 import {
   enqueueOfflineSale,
   markOfflineSaleFailed,
@@ -139,7 +138,6 @@ const buildDraft = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
   fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
-  fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
   await screen.findByText('تم سداد الإجمالي بالكامل');
 };
 
@@ -208,7 +206,6 @@ describe('ERP service-sale view', () => {
     renderView();
     const blockers = await screen.findByRole('list', { name: 'ما ينقص لإتمام البيع' });
     expect(within(blockers).getByText('اختر العميل')).toBeDefined();
-    expect(within(blockers).getByText('اختر الكاشير')).toBeDefined();
     expect(within(blockers).getByText('أضف خدمة أو منتجًا')).toBeDefined();
     expect((screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }) as HTMLButtonElement).disabled)
       .toBe(true);
@@ -265,7 +262,6 @@ describe('ERP service-sale view', () => {
     fireEvent.change(selects[0]!, { target: { value: '8' } });
     fireEvent.change(selects[1]!, { target: { value: '11' } });
 
-    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
     await screen.findByText('تم سداد الإجمالي بالكامل');
     // Reveal any lingering blocker before expecting the button to arm.
     await waitFor(() => {
@@ -299,7 +295,6 @@ describe('ERP service-sale view', () => {
     expect(within(savedCard).getByText(invoice.invoiceNumber)).toBeDefined();
     expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       lines: [{
         itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8,
@@ -365,7 +360,7 @@ describe('ERP service-sale view', () => {
     expect(document.querySelectorAll('[data-customer-receipt]')).toHaveLength(1);
   });
 
-  it('completes a product-only invoice without selecting or submitting an employee', async () => {
+  it('requires and submits an assigned employee on a product-only invoice', async () => {
     mocks.quoteSale.mockResolvedValue({
       lines: [{
         itemType: 'product', sourceId: 31, name: 'شامبو', quantity: 1,
@@ -381,10 +376,9 @@ describe('ERP service-sale view', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(await screen.findByRole('button', { name: /شامبو/ }));
-    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
     await screen.findByText('تم سداد الإجمالي بالكامل');
 
-    expect(screen.queryByRole('button', { name: 'اختر الموظف' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
     const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
     await waitFor(() => expect(review).toHaveProperty('disabled', false));
     fireEvent.click(review);
@@ -392,12 +386,11 @@ describe('ERP service-sale view', () => {
     await screen.findByText('تم حفظ الفاتورة');
     expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
-      lines: [{ itemType: 'product', productId: 31, quantity: 1 }],
+      lines: [{ itemType: 'product', productId: 31, quantity: 1, employeeId: 8 }],
       payments: [{ method: 'cash', amount: '50.00' }],
     }));
-    expect(mocks.completeSale.mock.calls[0]?.[0].lines[0]).not.toHaveProperty('employeeId');
+    expect(mocks.completeSale.mock.calls[0]?.[0].lines[0]).toHaveProperty('employeeId', 8);
   });
 
   it('submits a product-only sale with a balance left open', async () => {
@@ -412,7 +405,7 @@ describe('ERP service-sale view', () => {
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(await screen.findByRole('button', { name: /شامبو/ }));
-    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
     fireEvent.change(await screen.findByLabelText('المبلغ'), { target: { value: '20.00' } });
     const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
     await waitFor(() => expect(review).toHaveProperty('disabled', false));
@@ -421,50 +414,6 @@ describe('ERP service-sale view', () => {
     await waitFor(() => expect(mocks.completeSale).toHaveBeenCalledWith(
       expect.objectContaining({ payments: [{ method: 'cash', amount: '20.00' }] }),
     ));
-  });
-
-  it('blocks submission until a roster seller is chosen', async () => {
-    renderView();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
-    fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
-    fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
-    await screen.findByText('تم سداد الإجمالي بالكامل');
-
-    const seller = await screen.findByLabelText('الكاشير') as HTMLSelectElement;
-    expect(within(seller).getByText('أحمد جمال')).toBeDefined();
-    expect(within(seller).getByText('منى سعيد')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
-      .toHaveProperty('disabled', true);
-
-    fireEvent.change(seller, { target: { value: '10' } });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }))
-      .toHaveProperty('disabled', false));
-  });
-
-  it('uses the shared roster cache key and shows load failures', async () => {
-    mocks.listBranchCashierRoster.mockRejectedValue(new ApiError(500, {
-      code: 'UNEXPECTED_ERROR',
-      message: 'roster unavailable',
-    }));
-    const queryClient = renderView();
-
-    expect(await screen.findByText('roster unavailable')).toBeDefined();
-    expect(document.querySelector('#sale-seller')).toHaveProperty('disabled', true);
-    expect(queryClient.getQueryState(cashierAccountQueryKeys.roster(2))).toBeDefined();
-  });
-
-  it('blocks a restored sale when its selected seller leaves the roster', async () => {
-    const queryClient = renderView();
-    await buildDraft();
-    const review = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
-    await waitFor(() => expect(review).toHaveProperty('disabled', false));
-
-    queryClient.setQueryData(cashierAccountQueryKeys.roster(2), [
-      { id: 10, employeeCode: 1010, fullName: 'منى سعيد' },
-    ]);
-
-    await waitFor(() => expect(review).toHaveProperty('disabled', true));
   });
 
   it('requires and submits a positive unit price for an open-price service', async () => {
@@ -630,7 +579,6 @@ describe('ERP service-sale view', () => {
       owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
       input: {
         clientId: 6,
-        sellerEmployeeId: 9,
         cashierSessionId: 13,
         idempotencyKey: otherIdempotencyKey,
         lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -667,7 +615,6 @@ describe('ERP service-sale view', () => {
       owner: { accountId: 3, role: 'cashier', branchId: 2, cashierSessionId: 13 },
       input: {
         clientId: 6,
-        sellerEmployeeId: 9,
         cashierSessionId: 13,
         idempotencyKey: otherIdempotencyKey,
         lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -697,7 +644,6 @@ describe('ERP service-sale view', () => {
   it('shows and retries a failed predecessor before completing the active queued draft', async () => {
     const predecessor = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -743,7 +689,6 @@ describe('ERP service-sale view', () => {
   it('keeps a delayed failed-sale retry when draft state reruns synchronization', async () => {
     const predecessor = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],

@@ -1,7 +1,7 @@
 'use client';
 
 import type { PaymentMethod } from '@capella/contracts';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useCallback,
   useEffect,
@@ -13,10 +13,8 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
-import { cashierAccountQueryKeys, listBranchCashierRoster } from '@/features/cashier-accounts';
 import { type Client } from '@/features/clients';
 import { type AssignableEmployee } from '@/features/employee-assignment';
-import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 import { createUuid } from '@/lib/uuid';
 
 import { removeOfflineSale, type OfflineSaleQueueItem } from '../offline-sale-queue';
@@ -24,7 +22,6 @@ import { removeSaleDraft } from '../sale-draft-storage';
 import { DiscardPendingSaleModal } from './discard-pending-sale-modal';
 import { SaleAdjustmentsStep } from './sale-adjustments-step';
 import { SaleBasketStep } from './sale-basket-step';
-import { SaleCashierStep } from './sale-cashier-step';
 import { SaleClientStep } from './sale-client-step';
 import { SaleCompletedCard } from './sale-completed-card';
 import { SaleDefaultEmployeeStep } from './sale-default-employee-step';
@@ -88,15 +85,6 @@ export function SaleWorkspace({
   const [activeBookingId, setActiveBookingId] = useState<number>();
   const [bookingPrefillError, setBookingPrefillError] = useState<string>();
   const [employee, setEmployee] = useState<AssignableEmployee | null>(null);
-  const [seller, setSeller] = useState<BranchCashierRosterMember | null>(null);
-  const roster = useQuery({
-    queryKey: cashierAccountQueryKeys.roster(workspaceBranchId),
-    queryFn: () => listBranchCashierRoster({ branchId: workspaceBranchId }),
-  });
-  const sellerOnRoster = Boolean(
-    seller && roster.data?.some((member) => member.id === seller.id),
-  );
-  if (roster.isSuccess && seller && !sellerOnRoster) setSeller(null);
   const [lines, setLines] = useState<Line[]>([]);
   const [hasServices, setHasServices] = useState(true);
   const [hasProducts, setHasProducts] = useState(true);
@@ -129,7 +117,6 @@ export function SaleWorkspace({
     mountIntent,
     client,
     employee,
-    seller,
     lines,
     discountKind,
     discountValue,
@@ -142,7 +129,6 @@ export function SaleWorkspace({
     setClient,
     setEmployee,
     setActiveBookingId,
-    setSeller,
     setLines,
     setDiscountKind,
     setDiscountValue,
@@ -208,9 +194,8 @@ export function SaleWorkspace({
     return validServiceUnitPrice(line.unitPrice);
   });
   const hasServiceLines = lines.some((line) => line.itemType !== 'product');
-  /** Every service must name the employee who performed it before the sale posts. */
-  const serviceLinesAssigned = lines.every((line) => line.itemType === 'product' || line.employee);
-  if (!hasServiceLines && employee !== null) setEmployee(null);
+  /** Every line must name its assigned employee before the sale posts. */
+  const linesAssigned = lines.every((line) => Boolean(line.employee));
 
   const { quoteInput, quote } = useSaleQuote({
     ...(branchId === undefined ? {} : { branchId }),
@@ -249,8 +234,6 @@ export function SaleWorkspace({
     workspaceOwner,
     client,
     employee,
-    seller,
-    sellerOnRoster,
     lines,
     discountKind,
     discountValue,
@@ -261,7 +244,7 @@ export function SaleWorkspace({
     idempotencyKey,
     activeBookingId,
     hasServiceLines,
-    serviceLinesAssigned,
+    linesAssigned,
     remaining,
     quote,
     quoteInput,
@@ -271,7 +254,6 @@ export function SaleWorkspace({
     applyDraft,
     setEmployee,
     setActiveBookingId,
-    setSeller,
     setLines,
     setPayments,
     setPaymentsTouched,
@@ -285,9 +267,8 @@ export function SaleWorkspace({
   });
   const blockers = saleCheckoutBlockers({
     hasClient: Boolean(client),
-    sellerOnRoster,
     hasLines: lines.length > 0,
-    serviceLinesAssigned,
+    linesAssigned,
     servicePricesValid,
     quoteReady: Boolean(quote.data) && !quote.isFetching,
     remaining,
@@ -369,7 +350,7 @@ export function SaleWorkspace({
               selectClient={selectClient}
             />
 
-            {hasServices && (hasServiceLines || lines.length === 0) ? (
+            {hasServices || hasProducts ? (
               <SaleDefaultEmployeeStep
                 {...(branchId === undefined ? {} : { branchId })}
                 employee={employee}
@@ -391,12 +372,6 @@ export function SaleWorkspace({
           </div>
 
           <div className="scroll-thin min-w-0 space-y-4 md:sticky md:top-20 md:max-h-[calc(100dvh-6rem)] md:overflow-y-auto">
-            <SaleCashierStep
-              seller={seller}
-              setSeller={setSeller}
-              roster={roster}
-            />
-
             <SaleAdjustmentsStep
               discountKind={discountKind}
               discountValue={discountValue}

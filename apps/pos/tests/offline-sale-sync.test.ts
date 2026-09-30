@@ -21,7 +21,6 @@ const owner: OfflineSaleOwner = {
 
 const sale = (idempotencyKey = crypto.randomUUID()): CompleteSaleInput => ({
   clientId: 5,
-  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey,
   lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],

@@ -93,7 +93,7 @@ describe('ERP sale repository MySQL integration', () => {
     }))[0].insertId);
 
     const partial = operation(data, crypto.randomUUID());
-    partial.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    partial.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
     partial.input.discount = undefined;
     partial.input.tax = undefined;
     partial.input.payments = [{ method: 'cash', amount: '20.00' }];
@@ -172,7 +172,7 @@ describe('ERP sale repository MySQL integration', () => {
       .resolves.toEqual([settled.id]);
 
     await expect(list({ employeeId: data.employeeId }).then((result) => ids(result.items)))
-      .resolves.toEqual([settled.id]);
+      .resolves.toEqual([open.id, settled.id]);
 
     await expect(list({ orderBy: 'total', orderDir: 'asc' }).then((result) => ids(result.items)))
       .resolves.toEqual([open.id, settled.id, voided.id]);

@@ -12,7 +12,7 @@ import {
 import { type Line } from './sale-primitives';
 
 /**
- * Who performed one service. The default picker fills this for lines added after
+ * Who performed one service or sold one product. The default picker fills this for lines added after
  * it, and the counter overrides it here when two people share an invoice.
  */
 export function LineEmployeeSelect({

@@ -116,15 +116,9 @@ export const createSaleRepositorySupport = (database: Database, payroll?: ErpPay
     const row = (await database.select({
       id: invoices.id,
       kind: invoices.kind,
-      sellerEmployeeId: invoices.sellerEmployeeId,
     }).from(invoices)
       .where(predicate).limit(1))[0];
     if (!row) return null;
-    // A sale without a seller is either a branch transfer, which replays like
-    // any other, or a row that predates sellers and can no longer be replayed.
-    if (row.sellerEmployeeId === null && row.kind === 'sale') {
-      throw new SaleError('IDEMPOTENCY_CONFLICT');
-    }
     const invoice = await hydrateInvoice(database, row.id);
     if (!invoice) return null;
     return { input: await reconstructInput(database, row.id), invoice };

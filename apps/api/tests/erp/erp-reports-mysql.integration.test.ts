@@ -105,12 +105,11 @@ beforeAll(async () => {
   }))[0].insertId);
   const operation: CompleteSaleOperation = {
     input: {
-      branchId, clientId, sellerEmployeeId: employeeId,
-      cashierSessionId,
+      branchId, clientId, cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
       lines: [
         { itemType: 'service', serviceId, quantity: 1, unitPrice: '200.00', employeeId },
-        { itemType: 'product', productId, quantity: 1 },
+        { itemType: 'product', productId, quantity: 1, employeeId },
       ],
       discount: { kind: 'percentage', value: '10.00' },
       tax: { kind: 'fixed', value: '5.00' },
@@ -135,16 +134,16 @@ beforeAll(async () => {
     input: {
       branchId,
       clientId,
-      sellerEmployeeId: employeeId,
       cashierSessionId,
       idempotencyKey: crypto.randomUUID(),
-      lines: [{ itemType: 'product', productId, quantity: 1 }],
+      lines: [{ itemType: 'product', productId, quantity: 1, employeeId }],
       payments: [{ method: 'cash', amount: '50.00' }],
     },
     actingAccountId: cashierId,
     actingAccountRole: 'cashier',
     invoiceNumber: 'INV.2026.07.09.0001',
     soldAt: new Date('2026-07-09T09:00:00.000Z'),
+    assertEmployees: async (context) => operation.assertEmployees!(context),
   });
   productOnlyInvoiceId = productOnly.id;
   // Internal trade between branches: a real invoice, priced at cost, no seller.
@@ -320,7 +319,7 @@ describe('ERP reports MySQL reader', () => {
     expect(reversal).toMatchObject({ kind: 'success', total: 2 });
   });
 
-  it('credits products to the cashier and services to their assigned employee', async () => {
+  it('credits products and services to their assigned employee', async () => {
     const reader = createErpReportsModule(database).reader;
     const filters = { branchId, dateFrom: '2026-07-01', dateTo: '2026-09-30' };
 
@@ -333,7 +332,7 @@ describe('ERP reports MySQL reader', () => {
 
     // Two customer sales plus the branch transfer, which is a sale too.
     expect(sales).toMatchObject({ kind: 'success', total: 3 });
-    // The same person performed the service and acted as cashier, so their
+    // The same person is assigned to the service and products, so their
     // service and product activity is combined into one employee row.
     expect(employees).toMatchObject({ kind: 'success', total: 1 });
     if (employees.kind === 'success') {
@@ -602,8 +601,7 @@ describe('ERP reports MySQL reader', () => {
     const invoiceNumber = 'INV.2026.08.10.QUEUE-REPORT';
     const invoice = await sales.complete({
       input: {
-        branchId, clientId: originalInvoice.clientId, sellerEmployeeId: employeeId,
-        cashierSessionId: session.id,
+        branchId, clientId: originalInvoice.clientId, cashierSessionId: session.id,
         idempotencyKey: crypto.randomUUID(),
         lines: [{ itemType: 'service', serviceId: originalLine.serviceId!,
           quantity: 3, unitPrice: '200.00', employeeId }],
@@ -707,6 +705,17 @@ describe('ERP reports MySQL reader', () => {
     }
   });
 
+  it('shows product-only invoice employees in sales and client reports', async () => {
+    const reader = createErpReportsModule(database).reader;
+    for (const reportType of ['erp-sales', 'erp-client-history'] as const) {
+      const result = await reader.read(reportType,
+        { branchId, search: 'INV.2026.07.09.0001', dateFrom: '2026-07-01', dateTo: '2026-07-31' }, { mode: 'all' },
+        { page: 1, pageSize: 20 }, reversedAt);
+      expect(result).toMatchObject({ kind: 'success', total: 1,
+        snapshot: { rows: [expect.objectContaining({ employeeName: 'موظف التقرير' })] } });
+    }
+  });
+
   it('counts each invoice paid amount once across product lines', async () => {
     const originalInvoice = (await database.select().from(invoices)
       .where(eq(invoices.id, invoiceId)))[0]!;
@@ -730,15 +739,16 @@ describe('ERP reports MySQL reader', () => {
     const invoiceNumber = 'INV.2026.08.11.TWO-PRODUCTS';
     await sales.complete({
       input: {
-        branchId, clientId: originalInvoice.clientId, sellerEmployeeId: employeeId,
-        cashierSessionId: session.id, idempotencyKey: crypto.randomUUID(),
+        branchId, clientId: originalInvoice.clientId, cashierSessionId: session.id, idempotencyKey: crypto.randomUUID(),
         lines: [
-          { itemType: 'product', productId: firstPaidProductId, quantity: 1 },
-          { itemType: 'product', productId: secondPaidProductId, quantity: 1 },
+          { itemType: 'product', productId: firstPaidProductId, quantity: 1, employeeId },
+          { itemType: 'product', productId: secondPaidProductId, quantity: 1, employeeId },
         ],
         payments: [{ method: 'cash', amount: '100.00' }],
       },
       actingAccountId: adminId, actingAccountRole: 'admin', invoiceNumber, soldAt,
+      assertEmployees: async () => [{ id: employeeId, employeeCode: 1_919_001,
+        fullName: 'موظف التقرير', branchId }],
     });
     const result = await createErpReportsModule(database).reader.read(
       'erp-products', { branchId, search: invoiceNumber },

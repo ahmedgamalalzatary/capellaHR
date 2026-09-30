@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getClient, type Client } from '@/features/clients';
 import { type AssignableEmployee } from '@/features/employee-assignment';
-import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 
 import {
   acquireSaleDraftTab,
@@ -28,7 +27,6 @@ export function useSaleWorkspaceDraft({
   mountIntent,
   client,
   employee,
-  seller,
   lines,
   discountKind,
   discountValue,
@@ -41,7 +39,6 @@ export function useSaleWorkspaceDraft({
   setClient,
   setEmployee,
   setActiveBookingId,
-  setSeller,
   setLines,
   setDiscountKind,
   setDiscountValue,
@@ -56,7 +53,6 @@ export function useSaleWorkspaceDraft({
   mountIntent: SaleOpenIntent;
   client: Client | null;
   employee: AssignableEmployee | null;
-  seller: BranchCashierRosterMember | null;
   lines: Line[];
   discountKind: AdjustmentKind;
   discountValue: string;
@@ -69,7 +65,6 @@ export function useSaleWorkspaceDraft({
   setClient: (value: Client | null) => void;
   setEmployee: (value: AssignableEmployee | null) => void;
   setActiveBookingId: (value: number | undefined) => void;
-  setSeller: (value: BranchCashierRosterMember | null) => void;
   setLines: (value: Line[]) => void;
   setDiscountKind: (value: AdjustmentKind) => void;
   setDiscountValue: (value: string) => void;
@@ -107,7 +102,6 @@ export function useSaleWorkspaceDraft({
   const applyDraft = useCallback((draft: StoredSaleDraft) => {
     setEmployee(draft.employee);
     setActiveBookingId(draft.bookingId);
-    setSeller(draft.seller ?? null);
     setLines(restoredLines(draft));
     setDiscountKind(draft.discountKind);
     setDiscountValue(draft.discountValue);
@@ -128,10 +122,14 @@ export function useSaleWorkspaceDraft({
       .finally(() => {
         if (mounted.current && clientLookup.current === lookup) setRestoringClient(false);
       });
-  }, [branchId, selectClient]);
+  }, [
+    branchId, selectClient, setActiveBookingId, setClient, setDiscountKind,
+    setDiscountValue, setEmployee, setIdempotencyKey, setLines, setPayments,
+    setPaymentsTouched, setTaxKind, setTaxValue,
+  ]);
   const [draftStorageError, setDraftStorageError] = useState(false);
   const hasDraftProgress = Boolean(
-    client || employee || seller || lines.length > 0 || discountValue || taxValue
+    client || employee || lines.length > 0 || discountValue || taxValue
       || paymentsTouched || restoringClient,
   );
   const mounted = useRef(true);
@@ -181,7 +179,6 @@ export function useSaleWorkspaceDraft({
       ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
       client,
       employee,
-      seller,
       lines,
       discountKind,
       discountValue,
@@ -205,7 +202,6 @@ export function useSaleWorkspaceDraft({
     payments,
     paymentsTouched,
     restoringClient,
-    seller,
     taxKind,
     taxValue,
     workspaceOwner,

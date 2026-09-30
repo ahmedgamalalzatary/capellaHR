@@ -52,20 +52,20 @@ function setup(options: { current?: boolean; employeeValid?: boolean; failRoster
 
 const input = {
   username: 'nasr', role: 'cashier' as const, branchId: 3, employeeId: null,
-  createdAt: new Date(), updatedAt: new Date(), employeeIds: [7],
+  createdAt: new Date(), updatedAt: new Date(),
   management: { mode: 'edit' as const, accountId: 5 },
 };
 
 describe('atomic cashier account management', () => {
-  it('keeps password, disabled status and sessions when only employees change', async () => {
+  it('keeps password, disabled status and sessions when credentials are unchanged', async () => {
     const { repository, writes } = setup();
     await repository.upsert(input);
     const accountWrite = writes.find(({ table }) => table === accounts)?.values;
     expect(accountWrite).not.toHaveProperty('passwordHash');
     expect(accountWrite).not.toHaveProperty('active');
     expect(writes.some(({ table }) => table === authSessions)).toBe(false);
-    expect(writes).toContainEqual({ table: branchCashierRoster, values: [{ branchId: 3, employeeId: 7, createdAt: input.updatedAt }] });
-    expect(writes.filter(({ table }) => table === auditEvents)).toHaveLength(2);
+    expect(writes.some(({ table }) => table === branchCashierRoster)).toBe(false);
+    expect(writes.filter(({ table }) => table === auditEvents)).toHaveLength(1);
   });
   it('revokes sessions when the username or password changes', async () => {
     for (const change of [{ username: 'new-name' }, { passwordHash: 'new-hash' }]) {
@@ -73,11 +73,6 @@ describe('atomic cashier account management', () => {
       await repository.upsert({ ...input, ...change });
       expect(writes.some(({ table }) => table === authSessions)).toBe(true);
     }
-  });
-  it('rejects an employee outside the active branch before changing credentials', async () => {
-    const { repository, writes } = setup({ employeeValid: false });
-    expect(await repository.upsert(input)).toEqual({ kind: 'employee_not_in_branch' });
-    expect(writes).toEqual([]);
   });
   it('does not overwrite an existing login when creating', async () => {
     const { repository, writes } = setup();
@@ -91,22 +86,16 @@ describe('atomic cashier account management', () => {
       .toEqual({ kind: 'not_found' });
     expect(writes).toEqual([]);
   });
-  it('rolls back credential changes if roster storage fails', async () => {
-    const { repository, writes } = setup({ failRoster: true });
-    await expect(repository.upsert({ ...input, username: 'new-name' })).rejects.toThrow('roster storage failed');
-    expect(writes).toEqual([]);
-  });
-  it('returns persisted roster members on the public account after save and list', async () => {
+  it('returns account credentials after save and list', async () => {
     const { repository } = setup();
     const saved = await repository.upsert(input);
     expect(saved).toMatchObject({
       kind: 'updated',
-      account: { id: 5, employees: [{ id: 9, fullName: 'ليلى حسن' }] },
+      account: { id: 5 },
     });
     expect(await repository.listCashiers({ page: 1, pageSize: 20 })).toEqual({
       items: [{
         id: 5, username: 'nasr', role: 'cashier', branchId: 3, branchName: 'Nasr', active: false,
-        employees: [{ id: 9, fullName: 'ليلى حسن' }],
       }],
       total: 1,
     });

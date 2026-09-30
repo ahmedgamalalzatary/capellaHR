@@ -11,7 +11,6 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { type AssignableEmployee } from '@/features/employee-assignment';
-import type { BranchCashierRosterMember } from '@/features/cashier-accounts';
 import { ApiError } from '@/lib/api/client';
 import { notifySuccess } from '@/lib/notify';
 import { createUuid } from '@/lib/uuid';
@@ -42,8 +41,6 @@ export function useSaleWorkspaceCheckout({
   workspaceOwner,
   client,
   employee,
-  seller,
-  sellerOnRoster,
   lines,
   discountKind,
   discountValue,
@@ -54,7 +51,7 @@ export function useSaleWorkspaceCheckout({
   idempotencyKey,
   activeBookingId,
   hasServiceLines,
-  serviceLinesAssigned,
+  linesAssigned,
   remaining,
   quote,
   quoteInput,
@@ -64,7 +61,6 @@ export function useSaleWorkspaceCheckout({
   applyDraft,
   setEmployee,
   setActiveBookingId,
-  setSeller,
   setLines,
   setPayments,
   setPaymentsTouched,
@@ -81,8 +77,6 @@ export function useSaleWorkspaceCheckout({
   workspaceOwner: PendingSaleOwner;
   client: Client | null;
   employee: AssignableEmployee | null;
-  seller: BranchCashierRosterMember | null;
-  sellerOnRoster: boolean;
   lines: Line[];
   discountKind: AdjustmentKind;
   discountValue: string;
@@ -93,7 +87,7 @@ export function useSaleWorkspaceCheckout({
   idempotencyKey: string;
   activeBookingId: number | undefined;
   hasServiceLines: boolean;
-  serviceLinesAssigned: boolean;
+  linesAssigned: boolean;
   remaining: bigint | null;
   quote: { data: { totals: { total: string } } | undefined };
   quoteInput: QuoteSaleInput;
@@ -103,7 +97,6 @@ export function useSaleWorkspaceCheckout({
   applyDraft: (draft: StoredSaleDraft) => void;
   setEmployee: (value: AssignableEmployee | null) => void;
   setActiveBookingId: (value: number | undefined) => void;
-  setSeller: (value: BranchCashierRosterMember | null) => void;
   setLines: (value: Line[]) => void;
   setPayments: (value: Record<PaymentMethod, string>) => void;
   setPaymentsTouched: (value: boolean) => void;
@@ -182,7 +175,7 @@ export function useSaleWorkspaceCheckout({
   }, [completePending, completionPending, pendingInput]);
 
   const makeInput = (): CompleteSaleInput | null => {
-    if (!client || !seller || !sellerOnRoster || !serviceLinesAssigned
+    if (!client || !linesAssigned
       || !quote.data || remaining === null || remaining < BigInt(0)
       || (hasServiceLines && remaining !== BigInt(0))) return null;
     const paymentRows = paymentMethods.flatMap(({ method }) => {
@@ -192,13 +185,12 @@ export function useSaleWorkspaceCheckout({
     return {
       ...(branchId === undefined ? {} : { branchId }),
       clientId: client.id,
-      sellerEmployeeId: seller.id,
       cashierSessionId,
       ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
       idempotencyKey,
       lines: lines.map(({ service, quantity, unitPrice, itemType, employee: performer }) => (
         itemType === 'product'
-          ? { itemType: 'product' as const, productId: service.id, quantity }
+          ? { itemType: 'product' as const, productId: service.id, quantity, employeeId: performer!.id }
           : {
               itemType: 'service' as const,
               serviceId: service.id,
@@ -225,8 +217,7 @@ export function useSaleWorkspaceCheckout({
       recoveryDraft: {
         ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
         client,
-        employee: hasServiceLines ? employee : null,
-        seller,
+        employee,
         lines,
         discountKind,
         discountValue,
@@ -288,7 +279,6 @@ export function useSaleWorkspaceCheckout({
     selectClient(null);
     setEmployee(null);
     setActiveBookingId(undefined);
-    setSeller(null);
     setLines([]);
     setPayments({ cash: '', visa: '', instapay: '', vodafone_cash: '' });
     setPaymentsTouched(false);

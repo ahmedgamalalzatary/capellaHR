@@ -17,7 +17,7 @@ export function listCashierAccounts(params: ListCashierAccountsParams = {}) {
   return api.getPage<CashierAccount>(`/auth/cashier-accounts${suffix}`);
 }
 
-/** Credentials and permitted employees are committed together. */
+/** Branch cashier credentials are saved together. */
 export function saveCashierAccount(input: SaveCashierAccountInput) {
   return api.put<CashierAccount>('/auth/cashier-accounts', input);
 }

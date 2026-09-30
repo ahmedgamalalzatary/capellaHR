@@ -6,7 +6,7 @@ import { PresentEmployeePicker, type AssignableEmployee } from '@/features/emplo
 
 import { type Line } from './sale-primitives';
 
-/** The employee credited for any service line left unassigned. */
+/** The employee assigned to any line left unassigned. */
 export function SaleDefaultEmployeeStep({
   branchId,
   employee,
@@ -23,17 +23,17 @@ export function SaleDefaultEmployeeStep({
       <CardHeader><CardTitle>الموظف الافتراضي</CardTitle></CardHeader>
       <CardContent className="p-5">
         <p className="mb-3 text-[13px] text-muted">
-          يُسند تلقائيًا للخدمات التي لم يُحدد لها موظف، ويمكن تغيير موظف كل خدمة من قائمتها.
+          يُسند تلقائيًا للبنود التي لم يُحدد لها موظف، ويمكن تغيير موظف كل بند من قائمته.
         </p>
         <PresentEmployeePicker
           selected={employee}
           onSelect={(next) => {
             setEmployee(next);
-            // Fills the services nobody has been assigned to yet; a line
+            // Fills the lines nobody has been assigned to yet; a line
             // the counter set by hand keeps its own employee.
             if (next) {
               setLines((current) => current.map((line) => (
-                line.itemType !== 'product' && !line.employee
+                !line.employee
                   ? { ...line, employee: next }
                   : line
               )));

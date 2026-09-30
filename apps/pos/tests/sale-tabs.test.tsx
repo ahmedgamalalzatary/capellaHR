@@ -172,7 +172,6 @@ const buildSale = async (secondService = false) => {
     name: secondService ? 'أضف خدمة أخرى' : 'أضف الخدمة',
   }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
-  fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
   await awaitReady();
 };
 

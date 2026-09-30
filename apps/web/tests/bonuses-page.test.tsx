@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -382,5 +385,27 @@ describe('BonusesView', () => {
     const retry = await screen.findByRole('button', { name: 'إعادة المحاولة' });
     fireEvent.click(retry);
     expect(await screen.findByText('أحمد جمال')).toBeDefined();
+  });
+
+  test('adjustment form uses useWatch instead of watch() so React Compiler can memoize', () => {
+    const source = readFileSync(
+      path.resolve(import.meta.dirname, '../src/features/financial-adjustments/components/adjustment-view.tsx'),
+      'utf8',
+    );
+    // React Hook Form's watch() is an incompatible-library API for React Compiler.
+    expect(source).not.toMatch(/[^A-Za-z]watch\s*\(\s*['"]days['"]/);
+    expect(source).not.toMatch(/[^A-Za-z]watch\s*\(\s*['"]amount['"]/);
+    expect(source).toMatch(/useWatch/);
+  });
+
+  test('clicking a day preset marks it pressed in the create form', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
+    await screen.findByRole('option', { name: /أحمد جمال/ });
+    const preset = screen.getByRole('button', { name: 'نصف شهر' });
+    expect(preset.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(preset);
+    expect(screen.getByRole('button', { name: 'نصف شهر' }).getAttribute('aria-pressed')).toBe('true');
   });
 });

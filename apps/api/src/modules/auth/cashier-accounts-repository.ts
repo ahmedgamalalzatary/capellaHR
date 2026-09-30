@@ -1,6 +1,6 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, authSessions, branches, branchCashierRoster, employees } from '@capella/database/schema';
-import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { accounts, authSessions, branches } from '@capella/database/schema';
+import { and, count, eq, isNull, ne } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import type { CashierAccountRepository } from './cashier-accounts-service.js';
@@ -47,25 +47,6 @@ const toPublic = (row: {
   ? { ...row, role: 'cashier' as const, branchId: row.branchId }
   : null;
 
-const loadEmployeesByBranch = async (executor: Executor, branchIds: number[]) => {
-  const grouped = new Map<number, Array<{ id: number; fullName: string }>>();
-  if (branchIds.length === 0) return grouped;
-  const rows = await executor.select({
-    branchId: branchCashierRoster.branchId,
-    id: branchCashierRoster.employeeId,
-    fullName: employees.fullName,
-  }).from(branchCashierRoster)
-    .leftJoin(employees, eq(employees.id, branchCashierRoster.employeeId))
-    .where(inArray(branchCashierRoster.branchId, branchIds))
-    .orderBy(branchCashierRoster.employeeId);
-  for (const row of rows) {
-    const members = grouped.get(row.branchId) ?? [];
-    members.push({ id: row.id, fullName: row.fullName?.trim() || `موظف ${row.id}` });
-    grouped.set(row.branchId, members);
-  }
-  return grouped;
-};
-
 const selectPublic = async (executor: Executor, accountId: number) => {
   const row = (await executor.select({
     id: accounts.id,
@@ -78,8 +59,7 @@ const selectPublic = async (executor: Executor, accountId: number) => {
     .where(and(eq(accounts.id, accountId), branchCashier)).limit(1))[0];
   const account = row ? toPublic(row) : null;
   if (!account) return null;
-  const employeesByBranch = await loadEmployeesByBranch(executor, [account.branchId]);
-  return { ...account, employees: employeesByBranch.get(account.branchId) ?? [] };
+  return account;
 };
 
 export const createDrizzleCashierAccountRepository = (
@@ -103,15 +83,6 @@ export const createDrizzleCashierAccountRepository = (
         return { kind: 'not_found' as const };
       }
 
-      // Validate before any credential write, under the same transaction locks.
-      if (input.employeeIds?.length) {
-        const members = await tx.select({ id: employees.id }).from(employees).where(and(
-          inArray(employees.id, input.employeeIds), eq(employees.branchId, input.branchId),
-          eq(employees.employmentStatus, 'active'), isNull(employees.deletedAt),
-        )).for('update');
-        if (members.length !== input.employeeIds.length) return { kind: 'employee_not_in_branch' as const };
-      }
-
       // A retired login still stores the name it used, but no longer owns it.
       const usernameOwner = (await tx.select({ id: accounts.id }).from(accounts).where(and(
         eq(accounts.username, input.username),
@@ -121,22 +92,6 @@ export const createDrizzleCashierAccountRepository = (
       if (usernameOwner) return { kind: 'username_taken' as const };
 
       const persist = async (kind: 'created' | 'updated', accountId: number) => {
-        if (input.employeeIds !== undefined) {
-          const before = await tx.select({ id: branchCashierRoster.employeeId }).from(branchCashierRoster)
-            .where(eq(branchCashierRoster.branchId, input.branchId));
-          await tx.delete(branchCashierRoster).where(eq(branchCashierRoster.branchId, input.branchId));
-          if (input.employeeIds.length) {
-            await tx.insert(branchCashierRoster).values(input.employeeIds.map((employeeId) => ({
-              branchId: input.branchId, employeeId, createdAt: input.updatedAt,
-            })));
-          }
-          await writeAudit(tx, {
-            module: 'erp_cashier_roster', action: 'replace', entityType: 'branch_cashier_roster',
-            entityId: input.branchId, beforeState: { members: before.map(({ id }) => id) },
-            afterState: { members: input.employeeIds }, relatedIds: { branchId: input.branchId },
-            createdAt: input.updatedAt,
-          });
-        }
         const account = await selectPublic(tx, accountId);
         await writeAudit(tx, {
           module: 'auth',
@@ -196,15 +151,8 @@ export const createDrizzleCashierAccountRepository = (
         const account = toPublic(row);
         return account ? [account] : [];
       });
-      const employeesByBranch = await loadEmployeesByBranch(
-        database,
-        publicItems.map(({ branchId }) => branchId),
-      );
       return {
-        items: publicItems.map((item) => ({
-          ...item,
-          employees: employeesByBranch.get(item.branchId) ?? [],
-        })),
+        items: publicItems,
         total: totals[0]?.total ?? 0,
       };
     },

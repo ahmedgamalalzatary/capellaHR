@@ -14,12 +14,11 @@ import {
 const validDraft = {
   branchId: 2,
   clientId: 5,
-  sellerEmployeeId: 9,
   cashierSessionId: 13,
   idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
   lines: [
     { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 },
-    { itemType: 'product' as const, productId: 34, quantity: 2 },
+    { itemType: 'product' as const, productId: 34, quantity: 2, employeeId: 9 },
   ],
   discount: { kind: 'percentage' as const, value: '10' },
   tax: { kind: 'fixed' as const, value: '5.00' },
@@ -39,7 +38,6 @@ describe('ERP complete-sale contracts', () => {
   it('accepts an optional booking handover', () => {
     const parsed = completeSaleSchema.parse({
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       bookingId: 22,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
@@ -54,7 +52,7 @@ describe('ERP complete-sale contracts', () => {
   it('allows empty payments on sale commands; full payment for services is enforced at completion', () => {
     const productOnly = {
       ...validDraft,
-      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2, employeeId: 9 }],
       payments: [],
     };
     expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
@@ -187,19 +185,19 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(false);
   });
 
-  it('requires an employee on every service line and rejects one on a product line', () => {
-    expect(completeSaleSchema.safeParse({
-      ...validDraft,
-      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
-    }).success).toBe(true);
+  it('requires an employee on every line', () => {
     expect(completeSaleSchema.safeParse({
       ...validDraft,
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200' }],
     }).success).toBe(false);
     expect(completeSaleSchema.safeParse({
       ...validDraft,
-      lines: [{ itemType: 'product', productId: 34, quantity: 2, employeeId: 8 }],
+      lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
     }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      lines: [{ itemType: 'product', productId: 34, quantity: 2, employeeId: 8 }],
+    }).success).toBe(true);
   });
 
   it('lets each service line name its own employee', () => {
@@ -208,11 +206,10 @@ describe('ERP complete-sale contracts', () => {
       lines: [
         { itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200', employeeId: 8 },
         { itemType: 'service' as const, serviceId: 22, quantity: 1, unitPrice: '150', employeeId: 11 },
-        { itemType: 'product' as const, productId: 34, quantity: 2 },
+        { itemType: 'product' as const, productId: 34, quantity: 2, employeeId: 12 },
       ],
     });
-    expect(parsed.lines.map((line) => ('employeeId' in line ? line.employeeId : null)))
-      .toEqual([8, 11, null]);
+    expect(parsed.lines.map((line) => line.employeeId)).toEqual([8, 11, 12]);
     expect(parsed).not.toHaveProperty('assignedEmployeeId');
   });
 
@@ -221,18 +218,27 @@ describe('ERP complete-sale contracts', () => {
       .toBe(false);
   });
 
-  it('requires the selling cashier on every sale, services and products alike', () => {
-    const { sellerEmployeeId, ...withoutSeller } = validDraft;
-    expect(sellerEmployeeId).toBeDefined();
-    expect(completeSaleSchema.safeParse(withoutSeller).success).toBe(false);
-
-    const productOnly = {
-      ...withoutSeller,
-      sellerEmployeeId,
+  it('requires an employee on every product line, like services', () => {
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
       lines: [{ itemType: 'product' as const, productId: 34, quantity: 2 }],
-    };
-    expect(completeSaleSchema.safeParse(productOnly).success).toBe(true);
-    expect(completeSaleSchema.safeParse({ ...productOnly, sellerEmployeeId: 0 }).success).toBe(false);
+    }).success).toBe(false);
+    const parsed = completeSaleSchema.parse({
+      ...validDraft,
+      lines: [
+        { itemType: 'product' as const, productId: 34, quantity: 1, employeeId: 8 },
+        { itemType: 'product' as const, productId: 34, quantity: 1, employeeId: 11 },
+      ],
+    });
+    expect(parsed.lines.map((line) => ('employeeId' in line ? line.employeeId : null)))
+      .toEqual([8, 11]);
+  });
+
+  it('no longer names a selling cashier on the sale', () => {
+    expect(completeSaleSchema.safeParse({
+      ...validDraft,
+      sellerEmployeeId: 9,
+    }).success).toBe(false);
   });
 
   it('requires and normalizes a positive unit price for every service sale line', () => {

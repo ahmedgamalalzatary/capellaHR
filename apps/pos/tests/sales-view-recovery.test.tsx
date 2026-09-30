@@ -140,7 +140,6 @@ const buildDraft = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
   fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
-  fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
   await screen.findByText('تم سداد الإجمالي بالكامل');
 };
 
@@ -195,7 +194,6 @@ describe('ERP service-sale view', () => {
   it('replays a failed sale once across an online-offline-online connectivity flap', async () => {
     const predecessor = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -235,7 +233,6 @@ describe('ERP service-sale view', () => {
   it('updates the pending queue label from connectivity events', async () => {
     const input = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -374,7 +371,6 @@ describe('ERP service-sale view', () => {
   it('replays a durable pending request after the app reloads online', async () => {
     const pending = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -392,7 +388,6 @@ describe('ERP service-sale view', () => {
   it('replays every queued request for the current workspace in creation order', async () => {
     const first = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: '11111111-1111-4111-8111-111111111111',
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -416,7 +411,6 @@ describe('ERP service-sale view', () => {
   it('recovers the matching workspace request when another owner record sorts first', async () => {
     const matching = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -440,7 +434,6 @@ describe('ERP service-sale view', () => {
   it('recovers a committed pending sale after its Cashier session has closed', async () => {
     const pending = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -461,7 +454,6 @@ describe('ERP service-sale view', () => {
   it('replays every queued sale for the cashier even after the session has closed', async () => {
     const first = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: '33333333-3333-4333-8333-333333333333',
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -482,7 +474,6 @@ describe('ERP service-sale view', () => {
   it('retries a closed-session queued sale when connectivity returns', async () => {
     const pending = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 13,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -508,7 +499,6 @@ describe('ERP service-sale view', () => {
   it('replays an older-session queue in the background after a new session opens', async () => {
     const pending = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
         lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -538,7 +528,6 @@ describe('ERP service-sale view', () => {
   it('reopens an older-session conflict under the current session with a fresh key', async () => {
     const oldInput = {
       clientId: 5,
-      sellerEmployeeId: 9,
       cashierSessionId: 12,
       idempotencyKey: crypto.randomUUID(),
       lines: [{ itemType: 'service' as const, serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -604,7 +593,6 @@ describe('ERP service-sale view', () => {
       owner: { accountId: 4, role: 'cashier', branchId: 2, cashierSessionId: 12 },
       input: {
         clientId: 5,
-        sellerEmployeeId: 9,
         cashierSessionId: 12,
         idempotencyKey: crypto.randomUUID(),
         lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
@@ -730,7 +718,6 @@ describe('ERP service-sale view', () => {
     // The default fills the services already waiting and every one added after.
     fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
     fireEvent.click(screen.getByRole('button', { name: 'أضف خدمة بسعر مفتوح' }));
-    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
     const openPrice = screen.getByLabelText('سعر بروتين الشعر') as HTMLInputElement;
     fireEvent.change(openPrice, { target: { value: '150.00' } });
 
@@ -764,7 +751,6 @@ describe('ERP service-sale view', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
     fireEvent.click(await screen.findByRole('button', { name: 'اختر الموظف' }));
-    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
     await screen.findByText('تم سداد الإجمالي بالكامل');
 
     const lineEmployee = await screen.findByLabelText('موظف صبغة شعر') as HTMLSelectElement;
@@ -788,7 +774,6 @@ describe('ERP service-sale view', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'اختر العميل' }));
     fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
-    fireEvent.change(await screen.findByLabelText('الكاشير'), { target: { value: '9' } });
     await screen.findByText('تم سداد الإجمالي بالكامل');
 
     // Added before any employee was chosen, so the line still names nobody.

@@ -38,7 +38,7 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
-    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2, employeeId: data.employeeId }];
     sale.input.discount = undefined;
     sale.input.tax = undefined;
     sale.input.payments = [{ method: 'cash', amount: '100.00' }];
@@ -71,8 +71,8 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
     sale.input.lines = [
-      { itemType: 'product', productId: data.productId, quantity: 1 },
-      { itemType: 'product', productId: data.productId, quantity: 1 },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
     ];
     sale.input.discount = undefined;
     sale.input.tax = undefined;
@@ -199,7 +199,7 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
-    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
     sale.input.discount = undefined;
     sale.input.tax = undefined;
     sale.input.payments = [{ method: 'cash', amount: '50.00' }];
@@ -239,7 +239,7 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
-    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
     sale.input.discount = undefined;
     sale.input.tax = undefined;
     sale.input.payments = [{ method: 'cash', amount: '50.00' }];

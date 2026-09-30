@@ -1,4 +1,4 @@
-import { completeSaleSchema } from '@capella/contracts';
+import { completeSaleSchema, type CompleteSaleInput } from '@capella/contracts';
 import { type createDatabase } from '@capella/database';
 import {
   accounts, employees, erpBookings, erpCategories, erpProducts, erpProductStocks,
@@ -272,9 +272,6 @@ export const reconstructInput = async (executor: Executor, invoiceId: number) =>
   const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
-    ...(invoice.sellerEmployeeId === null ? {} : {
-      sellerEmployeeId: invoice.sellerEmployeeId,
-    }),
     cashierSessionId: invoice.cashierSessionId,
     ...(booking ? { bookingId: booking.id } : {}),
     idempotencyKey: invoice.idempotencyKey,
@@ -288,7 +285,14 @@ export const reconstructInput = async (executor: Executor, invoiceId: number) =>
           // employee; the contract below rejects replaying it, as it should.
           employeeId: line.employeeId!,
         }
-      : { itemType: 'product' as const, productId: line.productId!, quantity: line.quantity }),
+      : {
+          itemType: 'product' as const,
+          productId: line.productId!,
+          quantity: line.quantity,
+          // A product predating per-line assignment names nobody; only that
+          // case is rejected, by the parse below.
+          ...(line.employeeId === null ? {} : { employeeId: line.employeeId }),
+        }),
     ...(invoice.discountKind ? {
       discount: { kind: invoice.discountKind, value: invoice.discountValue! },
     } : {}),
@@ -297,13 +301,16 @@ export const reconstructInput = async (executor: Executor, invoiceId: number) =>
     } : {}),
     payments: payments.map(({ method, amount }) => ({ method, amount })),
   };
-  // The sale contract requires a seller, and a branch transfer has none. These
-  // rows are our own writes, so re-validating them buys nothing there; every
-  // request-driven sale still goes through the contract.
-  const reconstructed = invoice.sellerEmployeeId === null
-    ? candidate
-    : completeSaleSchema.parse(candidate);
-  return { ...reconstructed, branchId: invoice.branchId };
+  // A branch transfer is our own write with no employees at all, outside the
+  // sale contract; everything else must match the contract or is unreplayable.
+  if (invoice.kind === 'branch_transfer') {
+    return { ...(candidate as CompleteSaleInput), branchId: invoice.branchId };
+  }
+  try {
+    return { ...completeSaleSchema.parse(candidate), branchId: invoice.branchId };
+  } catch {
+    throw new SaleError('IDEMPOTENCY_CONFLICT');
+  }
 };
 
 export const quoteServices = async (

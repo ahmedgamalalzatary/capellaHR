@@ -131,7 +131,6 @@ export const createSaleRepositoryMysqlFixtures = () => {
   input: {
     branchId: data.branchId,
     clientId: data.clientId,
-    sellerEmployeeId: data.sellerEmployeeId,
     cashierSessionId: data.cashierSessionId,
     idempotencyKey: key,
     lines: [{

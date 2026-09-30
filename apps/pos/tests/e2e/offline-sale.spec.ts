@@ -26,7 +26,6 @@ test('offline sale survives reload, reconnects once, and resolves a permanent co
   const owner = { accountId: 8, role: 'cashier', branchId: 3, cashierSessionId: 14 } as const;
   const input = {
     clientId: 5,
-    sellerEmployeeId: 17,
     cashierSessionId: 14,
     idempotencyKey: originalKey,
     lines: [{

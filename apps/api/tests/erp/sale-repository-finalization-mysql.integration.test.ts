@@ -170,7 +170,6 @@ const operation = (data: Awaited<ReturnType<typeof fixture>>, key: string): Comp
   input: {
     branchId: data.branchId,
     clientId: data.clientId,
-    sellerEmployeeId: data.sellerEmployeeId,
     cashierSessionId: data.cashierSessionId,
     idempotencyKey: key,
     lines: [{
@@ -338,8 +337,8 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
     sale.input.lines = [
-      { itemType: 'product', productId: data.productId, quantity: 1 },
-      { itemType: 'product', productId: data.productId, quantity: 1 },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
     ];
     sale.input.discount = { kind: 'fixed', value: '0.01' };
     sale.input.tax = undefined;
@@ -386,7 +385,7 @@ describe('ERP sale repository MySQL integration', () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const sale = operation(data, crypto.randomUUID());
-    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+    sale.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
     sale.input.discount = undefined;
     sale.input.tax = undefined;
     sale.input.payments = [{ method: 'cash', amount: '50.00' }];
@@ -458,7 +457,7 @@ describe('ERP sale repository MySQL integration', () => {
     ]));
   });
 
-  it('decrements product stock, snapshots cost, records movement, and earns seller commission', async () => {
+  it('decrements product stock, snapshots cost, records movement, and earns assigned employee commission', async () => {
     const data = await fixture();
     await database.update(erpProducts).set({ commissionPercent: '10.00' }).where(eq(erpProducts.id, data.productId));
     const repository = createDrizzleSaleRepository(
@@ -470,17 +469,16 @@ describe('ERP sale repository MySQL integration', () => {
       lines: [{ itemType: 'product', commissionPercent: '10.00' }],
     });
     const request = operation(data, crypto.randomUUID());
-    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
-    delete request.assertEmployees;
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2, employeeId: data.employeeId }];
     delete request.input.discount;
     delete request.input.tax;
     request.input.payments = [{ method: 'cash', amount: '100.00' }];
     const result = await repository.complete(request);
 
-    expect(result.lines[0]).toMatchObject({ sourceId: data.productId, employee: expect.objectContaining({ id: data.sellerEmployeeId }), productCostBasis: '30.00', commissionRule: 'service_default', commissionRate: '10.00', commissionAmount: '10.00' });
+    expect(result.lines[0]).toMatchObject({ sourceId: data.productId, employee: expect.objectContaining({ id: data.employeeId }), productCostBasis: '30.00', commissionRule: 'service_default', commissionRate: '10.00', commissionAmount: '10.00' });
     expect((await database.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, result.id)))[0])
       .toMatchObject({
-        employeeId: data.sellerEmployeeId,
+        employeeId: data.employeeId,
       });
     expect((await database.select().from(erpProductStocks).where(eq(erpProductStocks.productId, data.productId)))[0]?.quantity).toBe(0);
     expect(await database.select().from(erpStockMovements).where(and(
@@ -491,18 +489,18 @@ describe('ERP sale repository MySQL integration', () => {
     ]);
     expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(1);
     expect(await database.select().from(erpCommissionPayrollInputs).where(
-      eq(erpCommissionPayrollInputs.employeeId, data.sellerEmployeeId),
+      eq(erpCommissionPayrollInputs.employeeId, data.employeeId),
     )).toEqual([expect.objectContaining({ amount: '10.00' })]);
     await expect(repository.listInvoices(data.branchId, { page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc' }))
       .resolves.toMatchObject({
         items: expect.arrayContaining([
-          expect.objectContaining({ id: result.id, employees: [{ id: data.sellerEmployeeId, name: expect.any(String) }] }),
+          expect.objectContaining({ id: result.id, employees: [{ id: data.employeeId, name: expect.any(String) }] }),
         ]),
       });
     await expect(repository.listClientVisits(data.branchId, data.clientId, { page: 1, pageSize: 20 }))
       .resolves.toMatchObject({
         items: expect.arrayContaining([
-          expect.objectContaining({ id: result.id, employees: [{ id: data.sellerEmployeeId, name: expect.any(String) }] }),
+          expect.objectContaining({ id: result.id, employees: [{ id: data.employeeId, name: expect.any(String) }] }),
         ]),
       });
     await expect(repository.findByIdempotencyKey(request.input.idempotencyKey, {
@@ -514,7 +512,7 @@ describe('ERP sale repository MySQL integration', () => {
     });
   });
 
-  it('reverses seller commission and payroll when a commissioned product is refunded', async () => {
+  it('reverses assigned employee commission and payroll when a commissioned product is refunded', async () => {
     const data = await fixture();
     await database.update(erpProducts).set({ commissionPercent: '10.00' })
       .where(eq(erpProducts.id, data.productId));
@@ -522,8 +520,7 @@ describe('ERP sale repository MySQL integration', () => {
       database, createErpAuditCapability(), createErpPayrollCapability(database),
     );
     const request = operation(data, crypto.randomUUID());
-    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2 }];
-    delete request.assertEmployees;
+    request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 2, employeeId: data.employeeId }];
     delete request.input.discount;
     delete request.input.tax;
     request.input.payments = [{ method: 'cash', amount: '100.00' }];
@@ -548,11 +545,11 @@ describe('ERP sale repository MySQL integration', () => {
       eq(commissionLedgerEntries.invoiceId, completed.id),
       eq(commissionLedgerEntries.entryType, 'reversal'),
     ))).toEqual([expect.objectContaining({
-      employeeId: data.sellerEmployeeId,
+      employeeId: data.employeeId,
       amount: '-10.00',
     })]);
     expect(await database.select().from(erpCommissionPayrollInputs).where(
-      eq(erpCommissionPayrollInputs.employeeId, data.sellerEmployeeId),
+      eq(erpCommissionPayrollInputs.employeeId, data.employeeId),
     )).toEqual([expect.objectContaining({ amount: '0.00' })]);
   });
 
@@ -562,7 +559,7 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const productOperation = (key: string) => {
       const request = operation(data, key);
-      request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1 }];
+      request.input.lines = [{ itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId }];
       delete request.input.discount;
       delete request.input.tax;
       request.input.payments = [{ method: 'cash', amount: '50.00' }];
@@ -584,8 +581,8 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
     const request = operation(data, crypto.randomUUID());
     request.input.lines = [
-      { itemType: 'product', productId: data.productId, quantity: 1 },
-      { itemType: 'product', productId: data.productId, quantity: 2 },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
+      { itemType: 'product', productId: data.productId, quantity: 2, employeeId: data.employeeId },
     ];
     delete request.input.discount; delete request.input.tax;
     request.input.payments = [{ method: 'cash', amount: '150.00' }];

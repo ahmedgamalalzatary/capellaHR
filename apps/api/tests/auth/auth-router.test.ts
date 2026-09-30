@@ -83,7 +83,7 @@ const makeApp = () => {
 
 describe('authentication HTTP API', () => {
   it('saves the complete account through the admin-only endpoint without an edit password', async () => {
-    const payload = { mode: 'edit', accountId: 21, branchId: 3, username: ' New.Name ', employeeIds: [7] };
+    const payload = { mode: 'edit', accountId: 21, branchId: 3, username: ' New.Name ' };
     expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts').send(payload)).status).toBe(401);
     expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts')
       .set('Cookie', 'capella_session=cashier-token').send(payload)).status).toBe(403);
