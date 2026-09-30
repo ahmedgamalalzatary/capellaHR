@@ -2,7 +2,6 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
 import { Button, Field, Input } from '@capella/ui';
@@ -10,12 +9,12 @@ import { Button, Field, Input } from '@capella/ui';
 import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { updateEmployee, type Employee } from '../api/employees-api';
-import { updateBaseSalary } from '../../payroll/api/payroll-api';
 import {
   employeeUpdateFormSchema,
   type EmployeeUpdateFormValues,
 } from '../schemas/employee-form';
 import { employeeQueryKeys } from '../query-keys';
+import { payrollQueryKeys } from '../../payroll/query-keys';
 import { EmployeeFaceCapture } from './employee-face-capture';
 import {
   IMAGE_FIELDS,
@@ -55,22 +54,21 @@ export function EditEmployeeForm({
       address: employee.address,
       branchId: employee.branchId,
       shiftDurationMinutes: employee.shiftDurationMinutes,
+      monthlyBaseSalary: employee.monthlyBaseSalary,
       pin: '',
     },
   });
 
-  const [salary, setSalary] = useState(employee.monthlyBaseSalary);
-
   const save = useMutation({
     mutationFn: async (values: EmployeeUpdateFormValues) => {
-      const salaryChanged = salary !== employee.monthlyBaseSalary;
-      if (salaryChanged) {
-        await updateBaseSalary(employee.id, { amount: salary });
-      }
-      return updateEmployee(employee.id, values);
+      const { monthlyBaseSalary, ...fields } = values;
+      const salaryChanged = monthlyBaseSalary !== undefined
+        && Number(monthlyBaseSalary) !== Number(employee.monthlyBaseSalary);
+      return updateEmployee(employee.id, { ...fields, ...(salaryChanged ? { monthlyBaseSalary } : {}) });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
+      await queryClient.invalidateQueries({ queryKey: payrollQueryKeys.all });
       notifySuccess('تم حفظ التعديل بنجاح.');
       onDone();
     },
@@ -121,13 +119,12 @@ export function EditEmployeeForm({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
-        <Field label="الراتب الأساسي" htmlFor="employee-edit-salary" required>
+        <Field label="الراتب الأساسي" htmlFor="employee-edit-salary" required error={errors.monthlyBaseSalary?.message}>
           <Input
             id="employee-edit-salary"
             inputMode="decimal"
             className="tabular"
-            value={salary}
-            onChange={(event) => setSalary(event.target.value)}
+            {...register('monthlyBaseSalary')}
           />
         </Field>
       </div>

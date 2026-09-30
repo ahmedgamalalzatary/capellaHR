@@ -1,6 +1,8 @@
 import { createDatabase } from '@capella/database';
 import { attendanceDailyRecords, attendanceJobs, auditEvents, authSessions, branchCashierRoster, branches, deviceHistory, devicePairingRequests, devices, employeeBranchAssignments, employeeCodeSequence, employeeEmploymentPeriods, employeeImages, employeeOutstandingDebts, employeePendingDeactivations, employeeTerminations, employeePhoneReservations, employees } from '@capella/database/schema';
 import { asc, eq } from 'drizzle-orm';
+import { employeeSalaryPeriods, financialAuditEvents } from '@capella/database/schema';
+import { createDrizzlePayrollRepository } from '../../src/modules/payroll/payroll-repository.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBranchesModule } from '../../src/modules/branches/index.js';
 import { createDrizzleAuthRepositories } from '../../src/modules/auth/index.js';
@@ -16,8 +18,69 @@ const employee = (branchId: number, phone: string) => ({ fullName: 'موظف', p
 // fields and only the deactivation itself is under test.
 const deactivation = { reason: 'استقالة', lastWorkingDay: '2026-08-19', advanceDecision: 'sum_all', negativeBalanceDecision: 'record_debt', expectedUnpaidInstallmentCount: 0, expectedUnpaidAdvanceAmount: '0.00', expectedProjectedNetSalary: '0.00', expectedAmountOwed: '0.00' } as const;
 
-beforeEach(async () => { await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(branchCashierRoster); await database.delete(employeeTerminations); await database.delete(employeePendingDeactivations); await database.delete(employeeOutstandingDebts); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
+beforeEach(async () => { await database.delete(employeeSalaryPeriods); await database.delete(financialAuditEvents); await database.delete(auditEvents); await database.delete(attendanceDailyRecords); await database.delete(attendanceJobs); await database.delete(deviceHistory); await database.delete(devices); await database.delete(devicePairingRequests); await database.delete(authSessions); await database.delete(branchCashierRoster); await database.delete(employeeTerminations); await database.delete(employeePendingDeactivations); await database.delete(employeeOutstandingDebts); await database.delete(employeeImages); await database.delete(employeePhoneReservations); await database.delete(employeeBranchAssignments); await database.delete(employeeEmploymentPeriods); await database.delete(employees); await database.delete(employeeCodeSequence); await database.delete(branches); });
 describe('MySQL-backed employees', () => {
+  const salaryFixture = async () => {
+    const branch = await branchModule.service.create({ name: 'Salary branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
+    const repository = createDrizzleEmployeeRepository(database, () => new Date('2026-07-01T10:00:00Z'));
+    const payroll = createDrizzlePayrollRepository(database, { now: () => new Date('2026-09-15T10:00:00Z') });
+    const service = createEmployeeService(repository, undefined, undefined, undefined, undefined, payroll);
+    const created = await service.create(employee(branch.id, '01012345678'));
+    return { repository, payroll, service, created };
+  };
+
+  it('saves employee fields with salary history and the original financial audit amount', async () => {
+    const { service, created } = await salaryFixture();
+    const result = await service.update(created.id, { fullName: 'Updated name', monthlyBaseSalary: '7000.00' });
+
+    expect(result.employee).toMatchObject({ fullName: 'Updated name', monthlyBaseSalary: '7000.00' });
+    expect(await database.select({ month: employeeSalaryPeriods.effectiveMonth, amount: employeeSalaryPeriods.baseSalary })
+      .from(employeeSalaryPeriods).where(eq(employeeSalaryPeriods.employeeId, created.id)).orderBy(asc(employeeSalaryPeriods.effectiveMonth)))
+      .toEqual([{ month: '2026-07-01', amount: '5000.00' }, { month: '2026-09-01', amount: '7000.00' }]);
+    expect(await database.select().from(financialAuditEvents)).toEqual([
+      expect.objectContaining({ entityType: 'salary', action: 'update', beforeState: { amount: '5000.00' }, afterState: expect.objectContaining({ amount: '7000.00' }) }),
+    ]);
+    expect(await database.select().from(auditEvents).where(eq(auditEvents.module, 'payroll'))).toHaveLength(1);
+  });
+
+  it('rolls back employee fields and payroll writes when payroll fails', async () => {
+    const { repository, payroll, created } = await salaryFixture();
+    const service = createEmployeeService(repository, undefined, undefined, undefined, undefined, {
+      async updateBaseSalary(...args: Parameters<typeof payroll.updateBaseSalary>) {
+        await payroll.updateBaseSalary(...args);
+        throw new Error('Payroll failed');
+      },
+    });
+
+    await expect(service.update(created.id, { fullName: 'Must roll back', monthlyBaseSalary: '7000.00' })).rejects.toThrow('Payroll failed');
+    expect(await repository.findActiveById(created.id)).toMatchObject({ fullName: created.fullName, monthlyBaseSalary: '5000.00' });
+    expect(await database.select().from(employeeSalaryPeriods)).toHaveLength(0);
+    expect(await database.select().from(financialAuditEvents)).toHaveLength(0);
+    expect(await database.select().from(auditEvents).where(eq(auditEvents.action, 'update'))).toHaveLength(0);
+  });
+
+  it('rolls back salary history and audit when a later employee image write fails', async () => {
+    const { payroll, repository, created } = await salaryFixture();
+    let salaryWritten = false;
+    const service = createEmployeeService(repository, undefined, undefined, undefined, undefined, {
+      async updateBaseSalary(...args: Parameters<typeof payroll.updateBaseSalary>) {
+        const result = await payroll.updateBaseSalary(...args);
+        salaryWritten = result.kind === 'success';
+        return result;
+      },
+    });
+    await expect(service.update(created.id, {
+      fullName: 'Must roll back', monthlyBaseSalary: '7000.00',
+      images: { personal: { ...image('replacement'), sizeBytes: 0 } },
+    })).rejects.toThrow();
+
+    expect(salaryWritten).toBe(true);
+    expect(await repository.findActiveById(created.id)).toMatchObject({ fullName: created.fullName, monthlyBaseSalary: '5000.00' });
+    expect(await database.select().from(employeeSalaryPeriods)).toHaveLength(0);
+    expect(await database.select().from(financialAuditEvents)).toHaveLength(0);
+    expect(await database.select().from(auditEvents).where(eq(auditEvents.action, 'update'))).toHaveLength(0);
+  });
+
   it('atomically reassigns a checked-out employee and preserves branch history', async () => {
     const oldBranch = await branchModule.service.create({ name: 'Old branch', location: 'Cairo', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });
     const newBranch = await branchModule.service.create({ name: 'New branch', location: 'Giza', latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 50 });

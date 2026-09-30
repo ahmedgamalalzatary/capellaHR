@@ -73,8 +73,7 @@ const pageOf = (items: unknown[], meta: Partial<Record<string, number>> = {}) =>
   meta: { page: 1, pageSize: 20, total: items.length, totalPages: 1, ...meta },
 });
 
-function renderView() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderView(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={queryClient}>
       <EmployeesView />
@@ -335,9 +334,8 @@ describe('EmployeesView', () => {
     expect((mocks.updateEmployee.mock.calls[0]?.[1] as Record<string, unknown>)['pin']).toBeUndefined();
   });
 
-  test('edits an employee base salary via the payroll endpoint', async () => {
+  test('edits an employee base salary atomically with the employee update', async () => {
     mocks.updateEmployee.mockResolvedValue(employee);
-    mocks.updateBaseSalary.mockResolvedValue({ employeeId: 1, amount: '7000.00' });
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
@@ -347,7 +345,10 @@ describe('EmployeesView', () => {
     fireEvent.change(salaryInput, { target: { value: '7000' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
 
-    await waitFor(() => expect(mocks.updateBaseSalary).toHaveBeenCalledWith(1, { amount: '7000' }));
+    await waitFor(() => expect(mocks.updateEmployee).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ monthlyBaseSalary: '7000' }),
+    ));
   });
 
   test('edit form no longer says salary is not editable', async () => {
@@ -355,6 +356,42 @@ describe('EmployeesView', () => {
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
     expect(screen.queryByText(/غير قابلين للتعديل/)).toBeNull();
+  });
+
+  test('invalidates cached payroll after an employee salary edit', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const payrollKey = ['payroll', 'list', { month: '2026-09' }];
+    queryClient.setQueryData(payrollKey, { baseSalary: '6500.00' });
+    mocks.updateEmployee.mockResolvedValue({ ...employee, monthlyBaseSalary: '7000.00' });
+    renderView(queryClient);
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: '7000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
+
+    await waitFor(() => expect(queryClient.getQueryState(payrollKey)?.isInvalidated).toBe(true));
+  });
+
+  test('validates the edited salary before submitting', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    fireEvent.change(screen.getByLabelText(/الراتب الأساسي/), { target: { value: 'invalid' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
+
+    expect(await screen.findByText('أدخل مبلغًا صالحًا بالجنيه')).toBeDefined();
+    expect(mocks.updateEmployee).not.toHaveBeenCalled();
+  });
+
+  test('omits an unchanged salary when editing employee details', async () => {
+    mocks.updateEmployee.mockResolvedValue(employee);
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
+
+    await waitFor(() => expect(mocks.updateEmployee).toHaveBeenCalled());
+    expect(mocks.updateEmployee.mock.calls[0]?.[1]).not.toHaveProperty('monthlyBaseSalary');
   });
 
   test('deletes only after confirmation and surfaces the checked-in error', async () => {

@@ -385,8 +385,8 @@ export const createDrizzlePayrollRepository = (
     findFinalized(employeeId, month) {
       return rawFinalized(database, employeeId, month, timeZone).then(exposeFinalized);
     },
-    updateBaseSalary(employeeId, amount) {
-      return database.transaction(async (transaction) => {
+    updateBaseSalary(employeeId, amount, transactionContext) {
+      const update = async (transaction: Transaction) => {
         const employee = await lockEmployee(transaction, employeeId);
         if (!employee) return { kind: 'employee_not_found' as const };
         if (employee.deletedAt || employee.employmentStatus === 'inactive') return { kind: 'employee_deleted' as const };
@@ -409,7 +409,10 @@ export const createDrizzlePayrollRepository = (
           beforeState: { amount: employee.monthlyBaseSalary }, afterState: salary, createdAt: at,
         });
         return { kind: 'success' as const, salary };
-      });
+      };
+      return transactionContext === undefined
+        ? database.transaction(update)
+        : update(transactionContext as Transaction);
     },
     async list(query: ListPayrollMonthsQuery, attendance) {
       if (query.month > context.currentMonth()) return { kind: 'month_not_ended' as const };

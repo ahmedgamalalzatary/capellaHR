@@ -74,7 +74,7 @@ describe('employee service', () => {
 
     await createEmployeeService(repo, attendance).update(1, { branchId: 2 });
 
-    expect(repo.update).toHaveBeenCalledWith(1, { branchId: 2 }, false, expect.any(Function));
+    expect(repo.update).toHaveBeenCalledWith(1, { branchId: 2 }, false, expect.any(Function), undefined);
     const check = vi.mocked(repo.update).mock.calls[0]![3]!;
     const context = { transaction: true };
     await check(1, context);

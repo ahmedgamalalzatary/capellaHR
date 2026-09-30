@@ -1,4 +1,4 @@
-import { createEmployeeFieldsSchema, employeeDeactivationSchema, employeeDebtParamsSchema, employeeIdParamsSchema, employeeImageParamsSchema, listEmployeesQuerySchema, updateEmployeeFieldsSchema } from '@capella/contracts';
+import { createEmployeeFieldsSchema, employeeDeactivationSchema, employeeDebtParamsSchema, employeeIdParamsSchema, employeeImageParamsSchema, listEmployeesQuerySchema, updateEmployeeWithSalarySchema } from '@capella/contracts';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { ZodError } from 'zod';
@@ -96,8 +96,8 @@ export const createEmployeesRouter = (service: EmployeeService, authService: Pic
       if (hasUploads && !store) throw new EmployeeUploadError('INVALID_IMAGE', 'مخزن الصور غير متاح');
       if (store) for (const kind of ['personal', 'idFront', 'idBack'] as const) if (files?.[kind]?.[0]) { images[kind] = await store.save(files[kind][0]); saved.push(images[kind].storagePath); }
       const body: unknown = req.body; const hasBodyFields = body !== null && typeof body === 'object' && Object.keys(body).length > 0;
-      const parsed = hasBodyFields ? updateEmployeeFieldsSchema.parse(body) : {};
-      if (!hasBodyFields && Object.keys(images).length === 0) updateEmployeeFieldsSchema.parse({});
+      const parsed = hasBodyFields ? updateEmployeeWithSalarySchema.parse(body) : {};
+      if (!hasBodyFields && Object.keys(images).length === 0) updateEmployeeWithSalarySchema.parse({});
       const personal = files?.personal?.[0];
       const enrollment = personal && enrollFace ? await enrollFace(String(id), personal.buffer) : null;
       if (enrollment && enrollment.kind !== 'enrolled') throw enrollmentError(enrollment);

@@ -25,7 +25,9 @@ export const createEmployeeFieldsSchema = z.object({
   age: coercedMysqlIntSchema, address: z.string().trim().min(1).max(1000),
   branchId: coercedMysqlIntSchema, shiftDurationMinutes: coercedShiftDurationMinutesSchema, monthlyBaseSalary: money,
 }).strict();
-export const updateEmployeeFieldsSchema = createEmployeeFieldsSchema.omit({ monthlyBaseSalary: true }).partial().strict().refine((value) => Object.keys(value).length > 0);
+const updateEmployeeFieldsBase = createEmployeeFieldsSchema.omit({ monthlyBaseSalary: true }).partial().strict();
+export const updateEmployeeFieldsSchema = updateEmployeeFieldsBase.refine((value) => Object.keys(value).length > 0);
+export const updateEmployeeWithSalarySchema = updateEmployeeFieldsBase.extend({ monthlyBaseSalary: money.optional() }).refine((value) => Object.keys(value).length > 0);
 export const employeeIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
 export const employeeDebtParamsSchema = employeeIdParamsSchema.extend({ debtId: coercedMysqlIntSchema });
 export const employeeImageParamsSchema = employeeIdParamsSchema.extend({ kind: z.enum(['personal', 'idFront', 'idBack']) });
@@ -63,6 +65,7 @@ export const employeeDeactivationSchema = z.object({
 }).strict();
 export type CreateEmployeeFields = z.infer<typeof createEmployeeFieldsSchema>;
 export type UpdateEmployeeFields = z.infer<typeof updateEmployeeFieldsSchema>;
+export type UpdateEmployeeWithSalaryInput = z.infer<typeof updateEmployeeWithSalarySchema>;
 export type ListEmployeesQuery = z.infer<typeof listEmployeesQuerySchema>;
 export type EmployeeDeactivationInput = z.infer<typeof employeeDeactivationSchema>;
 export type EmployeeDebtParams = z.infer<typeof employeeDebtParamsSchema>;

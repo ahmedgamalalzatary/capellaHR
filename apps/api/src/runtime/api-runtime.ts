@@ -194,6 +194,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
         openQueueTickets: 0,
       }),
     } : undefined,
+    payrollModule?.repository,
   );
   applyPendingDeactivation = async (employeeId, at, context) => {
     await employeeModule.service.applyPendingDeactivation(employeeId, at, context);

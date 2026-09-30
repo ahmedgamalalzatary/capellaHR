@@ -140,7 +140,7 @@ export const createDrizzleEmployeeRepository = (
     const totals = await database.select({ value: count() }).from(employees).where(where);
     return { items: await Promise.all(rows.map((row) => hydrate(database, row))), total: totals[0]?.value ?? 0 };
   },
-  async update(id, changes, revokeSessions = false, hasOpenSession) {
+  async update(id, changes, revokeSessions = false, hasOpenSession, updateSalary) {
     return database.transaction(async (tx) => {
       const current = (await tx.select().from(employees).where(and(eq(employees.id, id), isNull(employees.deletedAt))).for('update').limit(1))[0]; if (!current) return null;
       const before = await hydrate(tx, current);
@@ -190,6 +190,7 @@ export const createDrizzleEmployeeRepository = (
         ? await tx.select({ id: authSessions.id }).from(authSessions)
           .where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt))).for('update')
         : [];
+      await updateSalary?.(id, tx);
       await tx.update(employees).set({ ...fields, ...(revokeSessions ? { credentialVersion: sql`${employees.credentialVersion} + 1` } : {}), updatedAt }).where(and(eq(employees.id, id), isNull(employees.deletedAt)));
       if (revokeSessions) await tx.update(authSessions).set({ revokedAt: updatedAt }).where(and(eq(authSessions.employeeId, id), isNull(authSessions.revokedAt)));
       for (const session of sessions) await writeAudit(tx, {

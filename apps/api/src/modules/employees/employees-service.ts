@@ -1,4 +1,4 @@
-import type { CreateEmployeeFields, EmployeeDeactivationInput, ListEmployeesQuery, UpdateEmployeeFields } from '@capella/contracts';
+import type { CreateEmployeeFields, EmployeeDeactivationInput, ListEmployeesQuery, UpdateEmployeeWithSalaryInput } from '@capella/contracts';
 import { hash } from 'argon2';
 export type ImageKind = 'personal' | 'idFront' | 'idBack';
 export type ImageMetadata = { storagePath: string; originalName: string; mimeType: string; sizeBytes: number };
@@ -6,6 +6,11 @@ export type EmployeeImages = Partial<Record<ImageKind, ImageMetadata>>;
 export type EmployeeRecord = Omit<CreateEmployeeFields, 'pin'> & { id: number; employeeCode: number; pinHash: string; credentialVersion: number; faceEmbedding?: string | null; employmentStatus: 'active' | 'inactive'; images: EmployeeImages; deletedAt: Date | null; createdAt: Date; updatedAt: Date };
 export type PublicEmployee = Omit<EmployeeRecord, 'pinHash' | 'credentialVersion' | 'faceEmbedding'>;
 export type EmployeeTransactionContext = unknown;
+export type EmployeePayrollRepository = {
+  updateBaseSalary(employeeId: number, amount: string, context: EmployeeTransactionContext): Promise<
+    { kind: 'success'; salary: unknown } | { kind: 'employee_not_found' | 'employee_deleted' }
+  >;
+};
 /**
  * Money the employee still owed when they left. `settledAt` is stamped when an admin records
  * that they came back and paid; the row is never deleted, so the history of what was owed
@@ -84,7 +89,7 @@ export interface EmployeeRepository {
   findPhoneOwner(phone: string, excludeId?: number): Promise<{ id: number } | null>;
   branchExists(id: number): Promise<boolean>;
   list(query: ListEmployeesQuery): Promise<{ items: EmployeeRecord[]; total: number }>;
-  update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'createdAt' | 'updatedAt' | 'deletedAt'>>, revokeSessions?: boolean, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<EmployeeUpdateResult | null>;
+  update(id: number, changes: Partial<Omit<EmployeeRecord, 'id' | 'employeeCode' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'monthlyBaseSalary'>>, revokeSessions?: boolean, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, updateSalary?: (id: number, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeUpdateResult | null>;
   softDeleteIfAttendanceClosed(id: number, revokeSessions: boolean, hasOpenSession: (id: number, context: EmployeeTransactionContext) => Promise<boolean>, cleanupDevices?: (id: number, context: EmployeeTransactionContext) => Promise<void>, prepareFinancials?: (id: number, deletedAt: Date, context: EmployeeTransactionContext) => Promise<void>): Promise<EmployeeDeleteResult>;
   previewDeactivation(id: number): Promise<{ kind: 'success' } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
   deactivate(id: number, decisions: EmployeeDeactivationDecisions, prepareFinancials?: (id: number, at: Date, decisions: EmployeeDeactivationDecisions, context: EmployeeTransactionContext) => Promise<EmployeeSettlementFigures>, hasOpenSession?: (id: number, context: EmployeeTransactionContext) => Promise<boolean>): Promise<{ kind: 'success' | 'pending'; record: EmployeeRecord } | { kind: 'not_found' } | { kind: 'already_inactive' }>;
@@ -99,7 +104,7 @@ export interface EmployeeRepository {
 export class EmployeeError extends Error { constructor(public readonly code: 'EMPLOYEE_NOT_FOUND' | 'EMPLOYEE_PHONE_EXISTS' | 'EMPLOYEE_BRANCH_NOT_FOUND' | 'EMPLOYEE_CHECKED_IN' | 'EMPLOYEE_ATTENDANCE_UNAVAILABLE' | 'EMPLOYEE_FINANCIALS_UNAVAILABLE' | 'EMPLOYEE_ALREADY_ACTIVE' | 'EMPLOYEE_ALREADY_INACTIVE' | 'EMPLOYEE_DEACTIVATION_PREVIEW_CHANGED' | 'EMPLOYEE_PAYROLL_FINALIZED' | 'EMPLOYEE_PAYROLL_BLOCKED' | 'EMPLOYEE_NEGATIVE_BALANCE_DECISION_REQUIRED' | 'EMPLOYEE_ZERO_SALARY_NOT_ALLOWED' | 'EMPLOYEE_DEBT_NOT_FOUND' | 'EMPLOYEE_DEBT_ALREADY_SETTLED' | 'EMPLOYEE_NOT_TERMINATED' | 'EMPLOYEE_HAS_OPEN_WORK', message: string) { super(message); } }
 const expose = ({ pinHash, credentialVersion, faceEmbedding, ...employee }: EmployeeRecord): PublicEmployee => { void pinHash; void credentialVersion; void faceEmbedding; return employee; };
 const isDuplicate = (error: unknown) => typeof error === 'object' && error !== null && (Reflect.get(error, 'code') === 'ER_DUP_ENTRY' || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY');
-export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: EmployeeFinancialLifecycle, openWork?: EmployeeOpenWorkCapability) => ({
+export const createEmployeeService = (repository: EmployeeRepository, attendance?: { hasOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean>; hasAnyOpenSession(id: number, context?: EmployeeTransactionContext): Promise<boolean> }, deviceLifecycle?: { revokeEmployee(id: number, context?: EmployeeTransactionContext): Promise<void> }, financialLifecycle?: EmployeeFinancialLifecycle, openWork?: EmployeeOpenWorkCapability, payrollRepository?: EmployeePayrollRepository) => ({
   async create(input: CreateEmployeeFields & { images: EmployeeImages; faceEmbedding?: string | null }) {
     if (!await repository.branchExists(input.branchId)) throw new EmployeeError('EMPLOYEE_BRANCH_NOT_FOUND', 'الفرع غير موجود');
     for (const phone of new Set([input.personalPhone, input.whatsappPhone])) if (await repository.findPhoneOwner(phone)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
@@ -113,10 +118,16 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
   },
   async get(id: number) { const found = await repository.findActiveById(id); if (!found) throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود'); return expose(found); },
   async list(query: ListEmployeesQuery) { const result = await repository.list(query); return { ...result, items: result.items.map(expose) }; },
-  async update(id: number, input: UpdateEmployeeFields & { images?: Partial<EmployeeImages>; faceEmbedding?: string | null }) {
+  async update(id: number, input: UpdateEmployeeWithSalaryInput & { images?: Partial<EmployeeImages>; faceEmbedding?: string | null }) {
     await this.get(id);
     for (const phone of new Set([input.personalPhone, input.whatsappPhone].filter((x): x is string => Boolean(x)))) if (await repository.findPhoneOwner(phone, id)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل');
-    const { pin, ...rawChanges } = input;
+    const { pin, monthlyBaseSalary, ...rawChanges } = input;
+    if (monthlyBaseSalary !== undefined && !payrollRepository) throw new EmployeeError('EMPLOYEE_FINANCIALS_UNAVAILABLE', 'تعذر تحديث الراتب');
+    const updateSalary = monthlyBaseSalary === undefined ? undefined : async (employeeId: number, context: EmployeeTransactionContext) => {
+      const result = await payrollRepository!.updateBaseSalary(employeeId, monthlyBaseSalary, context);
+      if (result.kind === 'employee_not_found') throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');
+      if (result.kind === 'employee_deleted') throw new EmployeeError('EMPLOYEE_ALREADY_INACTIVE', 'لا يمكن تعديل راتب موظف غير نشط');
+    };
     const changes = Object.fromEntries(Object.entries(rawChanges).filter(([, value]) => value !== undefined));
     const branchSubmitted = input.branchId !== undefined;
     if (branchSubmitted && !attendance) throw new EmployeeError('EMPLOYEE_ATTENDANCE_UNAVAILABLE', 'تعذر التحقق من حالة الحضور');
@@ -128,6 +139,7 @@ export const createEmployeeService = (repository: EmployeeRepository, attendance
       branchSubmitted
         ? (employeeId, context) => attendance!.hasAnyOpenSession(employeeId, context)
         : undefined,
+      updateSalary,
     ); }
     catch (error) { if (isDuplicate(error)) throw new EmployeeError('EMPLOYEE_PHONE_EXISTS', 'رقم الهاتف مستخدم بالفعل'); throw error; }
     if (!stored) throw new EmployeeError('EMPLOYEE_NOT_FOUND', 'الموظف غير موجود');

@@ -1,6 +1,6 @@
 import { createApp } from '../../src/app.js';
 import type { AuthService } from '../../src/modules/auth/auth-service.js';
-import { EmployeeError, type EmployeeService } from '../../src/modules/employees/employees-service.js';
+import { createEmployeeService, EmployeeError, type EmployeeRepository, type EmployeeService } from '../../src/modules/employees/employees-service.js';
 import type { EmployeeUploadStore } from '../../src/modules/employees/employee-upload-store.js';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
@@ -317,5 +317,37 @@ describe('employee router', () => {
     })).post('/api/v1/employees/3/debts/7/settle');
 
     expect(response.status).toBe(404);
+  });
+
+  it('passes a normalized multipart salary to the employee service', async () => {
+    const update = vi.fn(async () => ({ employee: { id: 1, monthlyBaseSalary: '7000.00' }, replacedImages: {} }));
+    const updateService = { update } as unknown as EmployeeService;
+
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: updateService,
+      employeeUploadMaxBytes: 16_777_216,
+    })).patch('/api/v1/employees/1').field('monthlyBaseSalary', '7000');
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(1, expect.objectContaining({ monthlyBaseSalary: '7000.00' }));
+  });
+
+  it('rejects salary update when payroll repository is unavailable', async () => {
+    const update = vi.fn(async () => ({ record: { id: 1, monthlyBaseSalary: '7000.00' }, replacedImages: {} }));
+    const repository = {
+      findActiveById: vi.fn(async () => ({ id: 1, monthlyBaseSalary: '5000.00' })),
+      findPhoneOwner: vi.fn(async () => null),
+      update,
+    } as unknown as EmployeeRepository;
+    const response = await request(createApp({
+      authService: auth,
+      employeeService: createEmployeeService(repository),
+      employeeUploadMaxBytes: 16_777_216,
+    })).patch('/api/v1/employees/1').send({ monthlyBaseSalary: '7000.00' });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('EMPLOYEE_FINANCIALS_UNAVAILABLE');
+    expect(update).not.toHaveBeenCalled();
   });
 });

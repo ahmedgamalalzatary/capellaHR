@@ -90,7 +90,7 @@ type BranchPayrollResult =
 export interface PayrollRepository {
   getBaseSalary(employeeId: number): Promise<BaseSalaryRecord | null>;
   findFinalized(employeeId: number, month: string): Promise<PayrollRecord | null>;
-  updateBaseSalary(employeeId: number, amount: string): Promise<
+  updateBaseSalary(employeeId: number, amount: string, context?: PayrollTransactionContext): Promise<
     { kind: 'success'; salary: BaseSalaryRecord } | { kind: 'employee_not_found' | 'employee_deleted' }
   >;
   list(query: ListPayrollMonthsQuery, attendance: PayrollAttendanceGateway): Promise<PayrollListResult>;

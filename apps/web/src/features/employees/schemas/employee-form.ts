@@ -69,10 +69,11 @@ export const employeeCreateFormSchema = z.object({
   idBack: imageFile.optional(),
 });
 
-/** Salary remains immutable; branch is required and pin/images are optional. */
+/** Salary is editable; branch is required and pin/images are optional. */
 export const employeeUpdateFormSchema = z.object({
   ...editableFields,
   branchId: requiredNumber('اختر الفرع').pipe(z.number().int('اختر الفرع').positive('اختر الفرع')),
+  monthlyBaseSalary: salary.optional(),
   pin: z.preprocess((value) => (value === '' || value === null ? undefined : value), pin.optional()),
   personal: imageFile.optional(),
   idFront: imageFile.optional(),
