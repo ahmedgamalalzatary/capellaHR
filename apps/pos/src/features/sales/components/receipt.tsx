@@ -310,6 +310,9 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
                     {assignment.queueNumber} · {assignment.employee.name}
                   </span>
                 ))}
+                {line.itemType === 'product' && line.employee ? (
+                  <span className="block text-[10px]">{line.employee.name}</span>
+                ) : null}
                 {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
                   <span className="block text-[10px] text-muted">
                     مُسند أصلاً إلى {line.originalEmployee.name}

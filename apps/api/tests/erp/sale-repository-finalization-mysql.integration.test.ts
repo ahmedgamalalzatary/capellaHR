@@ -34,6 +34,7 @@ import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 import type { CompleteSaleOperation } from '../../src/modules/erp/sales/sale-service.js';
 import { createErpPayrollCapability } from '../../src/modules/payroll/index.js';
+import { createDrizzleCommissionRepository } from '../../src/modules/erp/commissions/commission-repository.js';
 
 const database = createMysqlIntegrationDatabase();
 const erp17Migration = readFileSync(path.resolve(
@@ -487,7 +488,8 @@ describe('ERP sale repository MySQL integration', () => {
     ))).toEqual([
       expect.objectContaining({ productId: data.productId, reason: 'sale', quantityDelta: -2, balanceAfter: 0 }),
     ]);
-    expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id))).toHaveLength(1);
+    expect(await database.select().from(commissionLedgerEntries).where(eq(commissionLedgerEntries.invoiceId, result.id)))
+      .toEqual([expect.objectContaining({ employeeId: data.employeeId, amount: '10.00' })]);
     expect(await database.select().from(erpCommissionPayrollInputs).where(
       eq(erpCommissionPayrollInputs.employeeId, data.employeeId),
     )).toEqual([expect.objectContaining({ amount: '10.00' })]);
@@ -510,6 +512,47 @@ describe('ERP sale repository MySQL integration', () => {
       input: request.input,
       invoice: { id: result.id },
     });
+  });
+
+  it('credits separate employees for separately assigned units of the same product', async () => {
+    const data = await fixture();
+    await database.update(erpProducts).set({ commissionPercent: '10.00' })
+      .where(eq(erpProducts.id, data.productId));
+    const audit = createErpAuditCapability();
+    const repository = createDrizzleSaleRepository(database, audit, createErpPayrollCapability(database));
+    const request = operation(data, crypto.randomUUID());
+    request.input.lines = [
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.employeeId },
+      { itemType: 'product', productId: data.productId, quantity: 1, employeeId: data.sellerEmployeeId },
+    ];
+    request.assertEmployees = async () => database.select({
+      id: employees.id, employeeCode: employees.employeeCode,
+      fullName: employees.fullName, branchId: employees.branchId,
+    }).from(employees).where(eq(employees.branchId, data.branchId));
+    delete request.input.discount;
+    delete request.input.tax;
+    request.input.payments = [{ method: 'cash', amount: '100.00' }];
+    const completed = await repository.complete(request);
+    expect(completed.seller).toBeNull();
+    expect(completed.lines.map((line) => line.employee?.id))
+      .toEqual([data.employeeId, data.sellerEmployeeId]);
+    const commissions = createDrizzleCommissionRepository(database, { audit });
+    const list = await commissions.list(data.branchId, { month: '2026-08', page: 1, pageSize: 20 });
+    expect(list.total).toBe(2);
+    for (const [index, employeeId] of [data.employeeId, data.sellerEmployeeId].entries()) {
+      expect(list.items).toContainEqual(expect.objectContaining({
+        employeeId, earnedAmount: '5.00', netAmount: '5.00', availableAmount: '5.00',
+      }));
+      await expect(commissions.detail(data.branchId, employeeId, '2026-08')).resolves.toMatchObject({
+        entries: [expect.objectContaining({
+          invoiceId: completed.id, invoiceLineId: completed.lines[index]!.id,
+          baseAmount: '50.00', commissionRate: '10.00', amount: '5.00',
+        })],
+      });
+      expect(await database.select().from(erpCommissionPayrollInputs)
+        .where(eq(erpCommissionPayrollInputs.employeeId, employeeId)))
+        .toEqual([expect.objectContaining({ amount: '5.00' })]);
+    }
   });
 
   it('reverses assigned employee commission and payroll when a commissioned product is refunded', async () => {
