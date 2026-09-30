@@ -154,12 +154,13 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '250' } });
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'أداء استثنائي' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '250' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب المكافأة/), { target: { value: 'أداء استثنائي' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createBonus).toHaveBeenCalledWith({
         employeeId: 1,
@@ -174,12 +175,13 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '0' } });
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
-    expect(await screen.findByText('أدخل مبلغًا أكبر من صفر')).toBeDefined();
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '0' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
+    expect(await within(dialog).findByText('أدخل مبلغًا أكبر من صفر')).toBeDefined();
     expect(mocks.createBonus).not.toHaveBeenCalled();
   });
 
@@ -187,12 +189,13 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '250' } });
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
-    expect(await screen.findByText('أدخل سبب المكافأة')).toBeDefined();
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '250' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
+    expect(await within(dialog).findByText('أدخل سبب المكافأة')).toBeDefined();
     expect(mocks.createBonus).not.toHaveBeenCalled();
   });
 
@@ -201,10 +204,11 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
-    expect(screen.queryByLabelText(/الموظف/)).toBeNull();
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '300' } });
-    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'تحقيق الهدف' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل المكافأة/ });
+    expect(within(dialog).queryByLabelText(/الموظف/)).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '300' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب المكافأة/), { target: { value: 'تحقيق الهدف' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.updateBonus).toHaveBeenCalledWith(5, {
         amount: '300',
@@ -219,18 +223,19 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
 
     // The business sets awards in days, not in money, so the common sizes are one tap.
     for (const name of ['يوم واحد', 'يومان', '5 أيام', 'نصف شهر']) {
-      expect(screen.getByRole('button', { name })).toBeDefined();
+      expect(within(dialog).getByRole('button', { name })).toBeDefined();
     }
 
-    fireEvent.click(screen.getByRole('button', { name: 'نصف شهر' }));
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'مكافأة نصف شهر' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'نصف شهر' }));
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب المكافأة/), { target: { value: 'مكافأة نصف شهر' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
 
     // The server prices the day count; the form must not invent a money figure.
     await waitFor(() =>
@@ -249,15 +254,16 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '250' } });
-    fireEvent.change(screen.getByLabelText('أو بالأيام'), { target: { value: '3' } });
-    expect((screen.getByLabelText('أو بالأيام') as HTMLInputElement).value).toBe('3');
-    expect((screen.getByLabelText(/المبلغ/) as HTMLInputElement).value).toBe('');
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'عمل إضافي' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '250' } });
+    fireEvent.change(within(dialog).getByLabelText('أو بالأيام'), { target: { value: '3' } });
+    expect((within(dialog).getByLabelText('أو بالأيام') as HTMLInputElement).value).toBe('3');
+    expect((within(dialog).getByLabelText(/المبلغ/) as HTMLInputElement).value).toBe('');
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب المكافأة/), { target: { value: 'عمل إضافي' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() => expect(mocks.createBonus).toHaveBeenCalledWith({
       employeeId: 1, days: 3, payrollMonth: '2026-06', reason: 'عمل إضافي',
     }));
@@ -294,12 +300,13 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'سبب' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
-    expect(await screen.findByText('حدد المبلغ أو عدد الأيام، أحدهما فقط')).toBeDefined();
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب المكافأة/), { target: { value: 'سبب' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
+    expect(await within(dialog).findByText('حدد المبلغ أو عدد الأيام، أحدهما فقط')).toBeDefined();
     expect(mocks.createBonus).not.toHaveBeenCalled();
   });
 
@@ -330,13 +337,14 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '10' } });
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب المكافأة/), { target: { value: 'أداء استثنائي' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
-    expect(await screen.findByRole('alert')).toHaveProperty(
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '10' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب المكافأة/), { target: { value: 'أداء استثنائي' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
+    expect(await within(dialog).findByRole('alert')).toHaveProperty(
       'textContent',
       'تعذر تنفيذ عملية الراتب',
     );
@@ -349,14 +357,15 @@ describe('BonusesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة مكافأة' }));
-    expect(await screen.findByText('تعذر تحميل الموظفين')).toBeDefined();
-    expect(screen.getByLabelText(/الموظف/)).toHaveProperty('disabled', true);
+    const dialog = await screen.findByRole('dialog', { name: 'مكافأة جديدة' });
+    expect(await within(dialog).findByText('تعذر تحميل الموظفين')).toBeDefined();
+    expect(within(dialog).getByLabelText(/الموظف/)).toHaveProperty('disabled', true);
     mocks.listEmployees.mockResolvedValue(
       pageOf([{ id: 1, employeeCode: 1001, fullName: 'أحمد جمال' }]),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
-    expect(await screen.findByRole('option', { name: /أحمد جمال/ })).toBeDefined();
-    expect(screen.getByLabelText(/الموظف/)).toHaveProperty('disabled', false);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await within(dialog).findByRole('option', { name: /أحمد جمال/ })).toBeDefined();
+    expect(within(dialog).getByLabelText(/الموظف/)).toHaveProperty('disabled', false);
   });
 
   test('shows an Arabic empty state when no bonuses exist', async () => {
@@ -385,6 +394,34 @@ describe('BonusesView', () => {
     const retry = await screen.findByRole('button', { name: 'إعادة المحاولة' });
     fireEvent.click(retry);
     expect(await screen.findByText('أحمد جمال')).toBeDefined();
+  });
+
+  test('filters by employee', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '1' } });
+    await waitFor(() => {
+      expect(mocks.listBonuses).toHaveBeenLastCalledWith(
+        expect.objectContaining({ employeeId: 1, page: 1 }),
+      );
+    });
+  });
+
+  test('clears employee filter', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const employeeSelect = screen.getByLabelText('تصفية حسب الموظف');
+    fireEvent.change(employeeSelect, { target: { value: '1' } });
+    await waitFor(() => {
+      expect(mocks.listBonuses).toHaveBeenLastCalledWith(
+        expect.objectContaining({ employeeId: 1 }),
+      );
+    });
+    fireEvent.change(employeeSelect, { target: { value: '' } });
+    await waitFor(() => {
+      const params = mocks.listBonuses.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).not.toHaveProperty('employeeId');
+    });
   });
 
   test('adjustment form uses useWatch instead of watch() so React Compiler can memoize', () => {

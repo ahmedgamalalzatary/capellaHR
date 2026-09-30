@@ -276,6 +276,7 @@ export function AdvancesView() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
+  const [employeeFilter, setEmployeeFilter] = useState<number | null>(null);
   const [monthFilter, setMonthFilter] = useState('');
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
@@ -284,11 +285,12 @@ export function AdvancesView() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const advancesQuery = useQuery({
-    queryKey: advanceQueryKeys.list({ search, branchFilter, monthFilter, page }),
+    queryKey: advanceQueryKeys.list({ search, branchFilter, employeeFilter, monthFilter, page }),
     queryFn: () =>
       listAdvances({
         ...(search ? { search } : {}),
         ...(branchFilter !== null ? { branchId: branchFilter } : {}),
+        ...(employeeFilter !== null ? { employeeId: employeeFilter } : {}),
         ...(monthFilter ? { payrollMonth: monthFilter } : {}),
         page,
       }),
@@ -299,6 +301,12 @@ export function AdvancesView() {
     queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage })),
   });
   const branches = branchesQuery.data ?? [];
+
+  const employeesQuery = useQuery({
+    queryKey: employeeQueryKeys.list({ status: 'all' }),
+    queryFn: () => fetchAllPages((optionsPage) => listEmployees({ page: optionsPage, status: 'all' })),
+  });
+  const employees = employeesQuery.data ?? [];
 
   const removal = useMutation({
     mutationFn: (id: number) => deleteAdvance(id),
@@ -358,6 +366,29 @@ export function AdvancesView() {
             {branches.map((branch) => (
               <option key={branch.id} value={branch.id}>
                 {branch.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="advance-employee-filter">الموظف</Label>
+          <select
+            id="advance-employee-filter"
+            aria-label="تصفية حسب الموظف"
+            disabled={employeesQuery.isPending || employeesQuery.isError}
+            className="h-9 rounded-control border border-line bg-paper px-3 text-sm disabled:cursor-not-allowed disabled:bg-surface disabled:opacity-70"
+            value={employeeFilter ?? ''}
+            onChange={(event) => {
+              setPage(1);
+              setEmployeeFilter(event.target.value === '' ? null : Number(event.target.value));
+            }}
+          >
+            <option value="">
+              {employeesQuery.isPending ? 'جارٍ تحميل الموظفين…' : 'كل الموظفين'}
+            </option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.employeeCode} — {employee.fullName}
               </option>
             ))}
           </select>

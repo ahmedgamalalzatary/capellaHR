@@ -138,13 +138,14 @@ describe('AdvancesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة سلفة' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '1000' } });
-    fireEvent.change(screen.getByLabelText(/عدد الأقساط/), { target: { value: '3' } });
-    fireEvent.change(screen.getByLabelText(/شهر البداية/), { target: { value: '2026-07' } });
-    fireEvent.change(screen.getByLabelText(/سبب السلفة/), { target: { value: 'احتياج شخصي' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'سلفة جديدة' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '1000' } });
+    fireEvent.change(within(dialog).getByLabelText(/عدد الأقساط/), { target: { value: '3' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر البداية/), { target: { value: '2026-07' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب السلفة/), { target: { value: 'احتياج شخصي' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createAdvance).toHaveBeenCalledWith({
         employeeId: 1,
@@ -170,10 +171,11 @@ describe('AdvancesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعديل' }));
-    expect(screen.queryByLabelText(/الموظف/)).toBeNull();
-    fireEvent.change(screen.getByLabelText(/سبب السلفة/), { target: { value: 'علاج' } });
-    fireEvent.change(screen.getByLabelText(/عدد الأقساط/), { target: { value: '2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    const dialog = await screen.findByRole('dialog', { name: /تعديل سلفة/ });
+    expect(within(dialog).queryByLabelText(/الموظف/)).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText(/سبب السلفة/), { target: { value: 'علاج' } });
+    fireEvent.change(within(dialog).getByLabelText(/عدد الأقساط/), { target: { value: '2' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.updateAdvance).toHaveBeenCalledWith(4, {
         amount: '1000.00',
@@ -225,14 +227,15 @@ describe('AdvancesView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة سلفة' }));
-    expect(await screen.findByText('تعذر تحميل الموظفين')).toBeDefined();
-    expect(screen.getByLabelText(/الموظف/)).toHaveProperty('disabled', true);
+    const dialog = await screen.findByRole('dialog', { name: 'سلفة جديدة' });
+    expect(await within(dialog).findByText('تعذر تحميل الموظفين')).toBeDefined();
+    expect(within(dialog).getByLabelText(/الموظف/)).toHaveProperty('disabled', true);
     mocks.listEmployees.mockResolvedValue(
       pageOf([{ id: 1, employeeCode: 1001, fullName: 'أحمد جمال' }]),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
-    expect(await screen.findByRole('option', { name: /أحمد جمال/ })).toBeDefined();
-    expect(screen.getByLabelText(/الموظف/)).toHaveProperty('disabled', false);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await within(dialog).findByRole('option', { name: /أحمد جمال/ })).toBeDefined();
+    expect(within(dialog).getByLabelText(/الموظف/)).toHaveProperty('disabled', false);
   });
 
   test('shows an Arabic empty state when no advances exist', async () => {
@@ -279,6 +282,34 @@ describe('AdvancesView', () => {
       expect(mocks.listAdvances).toHaveBeenLastCalledWith(
         expect.not.objectContaining({ payrollMonth: expect.anything() }),
       );
+    });
+  });
+
+  test('filters by employee', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '1' } });
+    await waitFor(() => {
+      expect(mocks.listAdvances).toHaveBeenLastCalledWith(
+        expect.objectContaining({ employeeId: 1, page: 1 }),
+      );
+    });
+  });
+
+  test('clears employee filter', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const employeeSelect = screen.getByLabelText('تصفية حسب الموظف');
+    fireEvent.change(employeeSelect, { target: { value: '1' } });
+    await waitFor(() => {
+      expect(mocks.listAdvances).toHaveBeenLastCalledWith(
+        expect.objectContaining({ employeeId: 1 }),
+      );
+    });
+    fireEvent.change(employeeSelect, { target: { value: '' } });
+    await waitFor(() => {
+      const params = mocks.listAdvances.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).not.toHaveProperty('employeeId');
     });
   });
 });

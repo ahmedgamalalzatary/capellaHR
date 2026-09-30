@@ -165,6 +165,45 @@ describe('WeeklyDayOffView', () => {
     });
   });
 
+  test('filters by search text', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('بحث'), { target: { value: 'أحمد' } });
+    await waitFor(() => {
+      expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'أحمد', page: 1 }),
+      );
+    });
+  });
+
+  test('filters by withoutPermission', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByLabelText('بدون إذن فقط'));
+    await waitFor(() => {
+      expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
+        expect.objectContaining({ withoutPermission: true, page: 1 }),
+      );
+    });
+  });
+
+  test('clears withoutPermission filter', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const checkbox = screen.getByLabelText('بدون إذن فقط');
+    fireEvent.click(checkbox);
+    await waitFor(() => {
+      expect(mocks.listWeeklyDayRecords).toHaveBeenLastCalledWith(
+        expect.objectContaining({ withoutPermission: true }),
+      );
+    });
+    fireEvent.click(checkbox);
+    await waitFor(() => {
+      const params = mocks.listWeeklyDayRecords.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).not.toHaveProperty('withoutPermission');
+    });
+  });
+
   test('converts an absence into a weekly day off', async () => {
     mocks.convertWeeklyDayRecord.mockResolvedValue({ ...absence, status: 'weekly_day_off' });
     renderView();

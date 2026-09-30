@@ -122,6 +122,7 @@ const redundantIdentifier = (event: AuditEventDto) =>
   || event.actorIdentifier.trim().toLowerCase() === event.actorType.toLowerCase();
 
 const MODULE_OPTIONS = Object.entries(MODULE_LABELS);
+const ACTION_OPTIONS = Object.entries(ACTION_LABELS);
 
 const SELECT_CLASS =
   'h-9 w-full rounded-control border border-line bg-paper px-3 text-sm text-ink';
@@ -146,6 +147,10 @@ export function AuditView() {
   const [search, setSearch] = useState('');
   const [actorType, setActorType] = useState<AuditActorType | null>(null);
   const [module, setModule] = useState('');
+  const [action, setAction] = useState('');
+  const [entityType, setEntityType] = useState('');
+  const [entityId, setEntityId] = useState('');
+  const [requestId, setRequestId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
@@ -155,6 +160,10 @@ export function AuditView() {
     ...(search ? { search } : {}),
     ...(actorType ? { actorType } : {}),
     ...(module ? { module } : {}),
+    ...(action ? { action } : {}),
+    ...(entityType ? { entityType } : {}),
+    ...(entityId ? { entityId } : {}),
+    ...(requestId ? { requestId } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
     page,
@@ -168,13 +177,19 @@ export function AuditView() {
   const meta = eventsQuery.data?.meta;
 
   const activeFilterCount =
-    (search ? 1 : 0) + (actorType ? 1 : 0) + (module ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
+    (search ? 1 : 0) + (actorType ? 1 : 0) + (module ? 1 : 0) + (action ? 1 : 0)
+    + (entityType ? 1 : 0) + (entityId ? 1 : 0) + (requestId ? 1 : 0)
+    + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   const resetFilters = () => {
     setSearchInput('');
     setSearch('');
     setActorType(null);
     setModule('');
+    setAction('');
+    setEntityType('');
+    setEntityId('');
+    setRequestId('');
     setDateFrom('');
     setDateTo('');
     setPage(1);
@@ -248,6 +263,62 @@ export function AuditView() {
                   <option key={value} value={value}>{label}</option>
                 ))}
               </select>
+            </label>
+
+            <label className={FILTER_LABEL_CLASS}>
+              الإجراء
+              <Input
+                type="text"
+                aria-label="الإجراء"
+                className="w-full tabular"
+                value={action}
+                onChange={(changeEvent) => {
+                  setPage(1);
+                  setAction(changeEvent.target.value);
+                }}
+              />
+            </label>
+
+            <label className={FILTER_LABEL_CLASS}>
+              نوع الكيان
+              <Input
+                type="text"
+                aria-label="نوع الكيان"
+                className="w-full tabular"
+                value={entityType}
+                onChange={(changeEvent) => {
+                  setPage(1);
+                  setEntityType(changeEvent.target.value);
+                }}
+              />
+            </label>
+
+            <label className={FILTER_LABEL_CLASS}>
+              معرّف الكيان
+              <Input
+                type="text"
+                aria-label="معرّف الكيان"
+                className="w-full tabular"
+                value={entityId}
+                onChange={(changeEvent) => {
+                  setPage(1);
+                  setEntityId(changeEvent.target.value);
+                }}
+              />
+            </label>
+
+            <label className={FILTER_LABEL_CLASS}>
+              معرّف الطلب
+              <Input
+                type="text"
+                aria-label="معرّف الطلب"
+                className="w-full tabular"
+                value={requestId}
+                onChange={(changeEvent) => {
+                  setPage(1);
+                  setRequestId(changeEvent.target.value);
+                }}
+              />
             </label>
 
             <label className={FILTER_LABEL_CLASS}>

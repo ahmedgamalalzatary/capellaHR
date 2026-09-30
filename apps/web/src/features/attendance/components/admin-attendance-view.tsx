@@ -100,7 +100,7 @@ function Pagination({ meta, onPage, persistenceKey }: { meta: { page: number; to
 
 function Filters({
   searchLabel, searchInput, setSearchInput, onSearch, branchId, setBranchId,
-  dateFrom, setDateFrom, dateTo, setDateTo, reset, children,
+  employeeId, setEmployeeId, dateFrom, setDateFrom, dateTo, setDateTo, reset, children,
 }: {
   searchLabel: string;
   searchInput: string;
@@ -108,6 +108,8 @@ function Filters({
   onSearch: () => void;
   branchId: number | undefined;
   setBranchId: (value: number | undefined) => void;
+  employeeId: number | undefined;
+  setEmployeeId: (value: number | undefined) => void;
   dateFrom: string;
   setDateFrom: (value: string) => void;
   dateTo: string;
@@ -118,6 +120,11 @@ function Filters({
   const branches = useQuery({
     queryKey: ['branches', 'attendance-options'],
     queryFn: () => fetchAllPages((page) => listBranches({ page })),
+    retry: false,
+  });
+  const employees = useQuery({
+    queryKey: ['employees', 'attendance-options'],
+    queryFn: () => fetchAllPages((page) => listEmployees({ page })),
     retry: false,
   });
   return (
@@ -133,6 +140,12 @@ function Filters({
           <select id={`${searchLabel}-branch`} aria-label="تصفية حسب الفرع" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={branchId ?? ''} onChange={(event) => setBranchId(event.target.value ? Number(event.target.value) : undefined)} disabled={branches.isPending || branches.isError}>
             <option value="">كل الفروع</option>
             {(branches.data ?? []).map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+          </select>
+        </Field>
+        <Field label="الموظف" htmlFor={`${searchLabel}-employee`}>
+          <select id={`${searchLabel}-employee`} aria-label="تصفية حسب الموظف" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={employeeId ?? ''} onChange={(event) => setEmployeeId(event.target.value ? Number(event.target.value) : undefined)} disabled={employees.isPending || employees.isError}>
+            <option value="">كل الموظفين</option>
+            {(employees.data ?? []).map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeCode} — {employee.fullName}</option>)}
           </select>
         </Field>
         <Field label="من تاريخ" htmlFor={`${searchLabel}-from`}><Input id={`${searchLabel}-from`} aria-label="من تاريخ" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></Field>
@@ -217,7 +230,7 @@ function SessionSection() {
   const items = query.data?.items ?? [];
   return (
     <div className="space-y-4">
-      <Filters searchLabel="بحث في سجلات الحضور" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
+      <Filters searchLabel="بحث في سجلات الحضور" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} employeeId={filters.employeeId} setEmployeeId={(employeeId) => update({ employeeId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
         <Field label="الحالة" htmlFor="attendance-session-state"><select id="attendance-session-state" aria-label="حالة الجلسة" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.state ?? ''} onChange={(event) => update({ state: event.target.value ? event.target.value as 'open' | 'closed' | 'absent' : undefined })}><option value="">كل الحالات</option><option value="open">مفتوحة</option><option value="closed">مغلقة</option><option value="absent">لم يحضر</option></select></Field>
       </Filters>
       {editorValidationError || correction.error ? <p role="alert" className="text-[13px] text-danger">{editorValidationError ?? errorMessage(correction.error)}</p> : null}
@@ -285,7 +298,7 @@ function DeniedSection() {
   const reset = () => { setSearchInput(''); setFilters({ approvalState: 'pending', page: 1 }); };
   const items = query.data?.items ?? [];
   return <div className="space-y-4">
-    <Filters searchLabel="بحث في المحاولات المرفوضة" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
+    <Filters searchLabel="بحث في المحاولات المرفوضة" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} employeeId={filters.employeeId} setEmployeeId={(employeeId) => update({ employeeId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
       <Field label="نوع الحدث" htmlFor="denied-event"><select id="denied-event" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.eventType ?? ''} onChange={(event) => update({ eventType: event.target.value ? event.target.value as AttendanceEventType : undefined })}><option value="">الكل</option><option value="check_in">حضور</option><option value="check_out">انصراف</option></select></Field>
       <Field label="المراجعة" htmlFor="denied-state"><select id="denied-state" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.approvalState ?? ''} onChange={(event) => update({ approvalState: event.target.value ? event.target.value as AttendanceDeniedFilters['approvalState'] : undefined })}><option value="">كل الحالات</option><option value="pending">تحتاج مراجعة</option><option value="approved">معتمدة</option><option value="dismissed">مرفوضة نهائيًا</option></select></Field>
       <Field label="نوع المحاولة" htmlFor="denied-suspicious"><select id="denied-suspicious" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.suspicious === undefined ? '' : String(filters.suspicious)} onChange={(event) => update({ suspicious: event.target.value === '' ? undefined : event.target.value === 'true' })}><option value="">كل المحاولات</option><option value="true">مشتبه بها</option><option value="false">عادية</option></select></Field>
@@ -334,6 +347,7 @@ function AbsenceSection() {
   type AbsenceFilters = {
     search?: string | undefined;
     branchId?: number | undefined;
+    employeeId?: number | undefined;
     status?: ListWeeklyDayRecordsParams['status'] | undefined;
     dateFrom?: string | undefined;
     dateTo?: string | undefined;
@@ -346,6 +360,7 @@ function AbsenceSection() {
     queryFn: () => listWeeklyDayRecords({
       ...(filters.search ? { search: filters.search } : {}),
       ...(filters.branchId !== undefined ? { branchId: filters.branchId } : {}),
+      ...(filters.employeeId !== undefined ? { employeeId: filters.employeeId } : {}),
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.dateFrom ? { dateFrom: filters.dateFrom } : {}),
       ...(filters.dateTo ? { dateTo: filters.dateTo } : {}),
@@ -357,7 +372,7 @@ function AbsenceSection() {
   const update = (next: Partial<AbsenceFilters>) => setFilters((current) => ({ ...current, ...next, page: 1 }));
   const reset = () => { setSearchInput(''); setFilters({ page: 1 }); };
   return <div className="space-y-4">
-    <Filters searchLabel="بحث في سجل الغياب" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
+    <Filters searchLabel="بحث في سجل الغياب" searchInput={searchInput} setSearchInput={setSearchInput} onSearch={() => update({ search: searchInput.trim() || undefined })} branchId={filters.branchId} setBranchId={(branchId) => update({ branchId })} employeeId={filters.employeeId} setEmployeeId={(employeeId) => update({ employeeId })} dateFrom={filters.dateFrom ?? ''} setDateFrom={(dateFrom) => update({ dateFrom: dateFrom || undefined })} dateTo={filters.dateTo ?? ''} setDateTo={(dateTo) => update({ dateTo: dateTo || undefined })} reset={reset}>
       <Field label="الحالة" htmlFor="absence-state"><select id="absence-state" aria-label="حالة الغياب" className="h-9 rounded-control border border-line bg-paper px-3 text-sm" value={filters.status ?? ''} onChange={(event) => update({ status: event.target.value ? event.target.value as ListWeeklyDayRecordsParams['status'] : undefined })}><option value="">كل الحالات</option><option value="absence">غياب</option><option value="weekly_day_off">يوم راحة</option></select></Field>
     </Filters>
     <Card><QueryState pending={query.isPending} error={query.error} empty={!items.length} emptyTitle="لا توجد سجلات غياب أو أيام راحة" onRetry={() => void query.refetch()}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-line text-[12px] text-muted"><th className="px-4 py-2.5 text-start font-medium">الموظف</th><th className="px-4 py-2.5 text-start font-medium">الفرع</th><th className="px-4 py-2.5 text-start font-medium">التاريخ</th><th className="px-4 py-2.5 text-start font-medium">الحالة</th><th className="px-4 py-2.5 text-start font-medium">الدقائق المطلوبة</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b border-line/60 last:border-0"><td className="px-4 py-3"><span className="font-medium">{item.employeeName}</span><span className="ms-2 tabular text-muted">{item.employeeCode}</span></td><td className="px-4 py-3 text-muted">{item.branchName}</td><td className="tabular px-4 py-3">{item.attendanceDate}</td><td className="px-4 py-3"><div className="flex flex-wrap gap-1"><Badge variant={item.status === 'absence' ? 'danger' : 'success'}>{item.status === 'absence' ? 'غياب' : 'يوم راحة'}</Badge>{item.withoutPermissionAt ? <Badge variant="danger">بدون إذن</Badge> : null}</div></td><td className="tabular px-4 py-3">{formatDuration(item.requiredMinutes)}</td></tr>)}</tbody></table></div></QueryState></Card>

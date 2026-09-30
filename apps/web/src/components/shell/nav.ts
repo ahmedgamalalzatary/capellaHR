@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   Users,
   Smartphone,
-  Clock,
   CalendarOff,
   CalendarCheck,
   Wallet,
@@ -42,7 +41,6 @@ export const ADMIN_NAV: NavGroup[] = [
   {
     label: 'الوقت',
     items: [
-      { href: '/shifts', label: 'الورديات', icon: Clock },
       { href: '/weekly-day-off', label: 'الإجازة الأسبوعية', icon: CalendarOff },
       { href: '/attendance', label: 'الحضور والغياب', icon: CalendarCheck },
     ],

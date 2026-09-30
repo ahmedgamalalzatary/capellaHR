@@ -41,19 +41,23 @@ export function WeeklyDayOffView() {
   const [employeeFilter, setEmployeeFilter] = useState<number | null>(null);
   const [branchFilter, setBranchFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<'absence' | 'weekly_day_off' | null>(null);
+  const [search, setSearch] = useState('');
+  const [withoutPermission, setWithoutPermission] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
 
   const recordsQuery = useQuery({
     queryKey: weeklyDayOffQueryKeys.list({
-      employeeFilter, branchFilter, statusFilter, dateFrom, dateTo, page,
+      employeeFilter, branchFilter, statusFilter, search, withoutPermission, dateFrom, dateTo, page,
     }),
     queryFn: () =>
       listWeeklyDayRecords({
         ...(employeeFilter !== null ? { employeeId: employeeFilter } : {}),
         ...(branchFilter !== null ? { branchId: branchFilter } : {}),
         ...(statusFilter !== null ? { status: statusFilter } : {}),
+        ...(search ? { search } : {}),
+        ...(withoutPermission ? { withoutPermission: true } : {}),
         ...(dateFrom ? { dateFrom } : {}),
         ...(dateTo ? { dateTo } : {}),
         page,
@@ -105,6 +109,16 @@ export function WeeklyDayOffView() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-2">
+        <Input
+          aria-label="بحث"
+          className="h-9 w-48"
+          placeholder="بحث…"
+          value={search}
+          onChange={(event) => {
+            setPage(1);
+            setSearch(event.target.value);
+          }}
+        />
         <div className="flex flex-col gap-1">
           <label htmlFor="weekly-day-off-employee" className="text-[12px] text-muted">
             الموظف
@@ -174,6 +188,19 @@ export function WeeklyDayOffView() {
           <option value="absence">غياب</option>
           <option value="weekly_day_off">يوم راحة</option>
         </select>
+        <label className="flex items-center gap-1 text-sm text-muted">
+          <input
+            type="checkbox"
+            aria-label="بدون إذن فقط"
+            className="size-4"
+            checked={withoutPermission}
+            onChange={(event) => {
+              setPage(1);
+              setWithoutPermission(event.target.checked);
+            }}
+          />
+          بدون إذن فقط
+        </label>
         <label className="flex items-center gap-1 text-sm text-muted">
           من تاريخ
           <Input

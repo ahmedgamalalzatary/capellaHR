@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
 import { Button, Field, Input } from '@capella/ui';
@@ -9,6 +10,7 @@ import { Button, Field, Input } from '@capella/ui';
 import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { updateEmployee, type Employee } from '../api/employees-api';
+import { updateBaseSalary } from '../../payroll/api/payroll-api';
 import {
   employeeUpdateFormSchema,
   type EmployeeUpdateFormValues,
@@ -57,8 +59,16 @@ export function EditEmployeeForm({
     },
   });
 
+  const [salary, setSalary] = useState(employee.monthlyBaseSalary);
+
   const save = useMutation({
-    mutationFn: (values: EmployeeUpdateFormValues) => updateEmployee(employee.id, values),
+    mutationFn: async (values: EmployeeUpdateFormValues) => {
+      const salaryChanged = salary !== employee.monthlyBaseSalary;
+      if (salaryChanged) {
+        await updateBaseSalary(employee.id, { amount: salary });
+      }
+      return updateEmployee(employee.id, values);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all });
       notifySuccess('تم حفظ التعديل بنجاح.');
@@ -74,7 +84,7 @@ export function EditEmployeeForm({
     <form noValidate onSubmit={handleSubmit((values) => save.mutate(values))} className="space-y-4">
       <p className="text-[13px] text-muted">
         كود الموظف <span className="tabular">{employee.employeeCode}</span>
-        {' '}— الكود والراتب الأساسي غير قابلين للتعديل
+        {' '}— الكود غير قابل للتعديل
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -111,6 +121,15 @@ export function EditEmployeeForm({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <TextField form={form} name="shiftDurationMinutes" label="مدة الوردية (دقيقة)" />
+        <Field label="الراتب الأساسي" htmlFor="employee-edit-salary" required>
+          <Input
+            id="employee-edit-salary"
+            inputMode="decimal"
+            className="tabular"
+            value={salary}
+            onChange={(event) => setSalary(event.target.value)}
+          />
+        </Field>
       </div>
 
       <Field label="استبدال صورة الوجه" htmlFor="employee-face-capture" error={errors.personal?.message}>

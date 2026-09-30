@@ -122,6 +122,34 @@ describe('DevicesView', () => {
     });
   });
 
+  test('filters by search text', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('بحث'), { target: { value: 'أحمد' } });
+    await waitFor(() => {
+      expect(mocks.listDevices).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'أحمد', page: 1 }),
+      );
+    });
+  });
+
+  test('clears search text', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const searchInput = screen.getByLabelText('بحث');
+    fireEvent.change(searchInput, { target: { value: 'أحمد' } });
+    await waitFor(() => {
+      expect(mocks.listDevices).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'أحمد' }),
+      );
+    });
+    fireEvent.change(searchInput, { target: { value: '' } });
+    await waitFor(() => {
+      const params = mocks.listDevices.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).not.toHaveProperty('search');
+    });
+  });
+
   test('opens the pairing form in a dialog instead of inline', async () => {
     renderView();
     await screen.findByText('أحمد جمال');

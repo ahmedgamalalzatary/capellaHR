@@ -127,4 +127,40 @@ describe('AuditPage', () => {
       expect(params).not.toHaveProperty('pageSize');
     });
   });
+
+  test('filters by action', async () => {
+    renderPage();
+    await screen.findByText('إعادة تعيين الرقم السري');
+    fireEvent.change(screen.getByLabelText('الإجراء'), { target: { value: 'create' } });
+    await waitFor(() => expect(mocks.listAuditEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'create', page: 1 }),
+    ));
+  });
+
+  test('filters by entityType', async () => {
+    renderPage();
+    await screen.findByText('إعادة تعيين الرقم السري');
+    fireEvent.change(screen.getByLabelText('نوع الكيان'), { target: { value: 'employee' } });
+    await waitFor(() => expect(mocks.listAuditEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ entityType: 'employee', page: 1 }),
+    ));
+  });
+
+  test('filters by entityId', async () => {
+    renderPage();
+    await screen.findByText('إعادة تعيين الرقم السري');
+    fireEvent.change(screen.getByLabelText('معرّف الكيان'), { target: { value: '17' } });
+    await waitFor(() => expect(mocks.listAuditEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ entityId: '17', page: 1 }),
+    ));
+  });
+
+  test('filters by requestId', async () => {
+    renderPage();
+    await screen.findByText('إعادة تعيين الرقم السري');
+    fireEvent.change(screen.getByLabelText('معرّف الطلب'), { target: { value: 'request-17' } });
+    await waitFor(() => expect(mocks.listAuditEvents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ requestId: 'request-17', page: 1 }),
+    ));
+  });
 });

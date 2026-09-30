@@ -342,30 +342,6 @@ describe('PayrollView', () => {
     );
   });
 
-  test('edits an employee base salary from the base-salary section', async () => {
-    mocks.updateBaseSalary.mockResolvedValue({ employeeId: 1, amount: '7000.00' });
-    renderView();
-    fireEvent.click(screen.getByRole('tab', { name: 'الرواتب الأساسية' }));
-    const row = (await screen.findByText(/6000\.00/)).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'تعديل الراتب' }));
-    fireEvent.change(screen.getByLabelText(/الراتب الأساسي الشهري/), {
-      target: { value: '7000' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ الراتب' }));
-    await waitFor(() => expect(mocks.updateBaseSalary).toHaveBeenCalledWith(1, { amount: '7000' }));
-  });
-
-  test('rejects an invalid base salary before calling the API', async () => {
-    renderView();
-    fireEvent.click(screen.getByRole('tab', { name: 'الرواتب الأساسية' }));
-    const row = (await screen.findByText(/6000\.00/)).closest('tr')!;
-    fireEvent.click(within(row).getByRole('button', { name: 'تعديل الراتب' }));
-    fireEvent.change(screen.getByLabelText(/الراتب الأساسي الشهري/), { target: { value: '0' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ الراتب' }));
-    expect(await screen.findByText('أدخل مبلغًا أكبر من صفر')).toBeDefined();
-    expect(mocks.updateBaseSalary).not.toHaveBeenCalled();
-  });
-
   test('shows an empty state when the month has no payrolls', async () => {
     mocks.listPayrollMonths.mockResolvedValue(pageOf([]));
     renderView();

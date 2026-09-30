@@ -97,12 +97,13 @@ describe('DeductionsView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة خصم' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '75' } });
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب الخصم/), { target: { value: 'Late arrival' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'خصم جديد' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '75' } });
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب الخصم/), { target: { value: 'Late arrival' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createDeduction).toHaveBeenCalledWith({
         employeeId: 1,
@@ -132,15 +133,16 @@ describe('DeductionsView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة خصم' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
+    const dialog = await screen.findByRole('dialog', { name: 'خصم جديد' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
 
     // The same day sizes a bonus uses, so a penalty is stated the way an award is.
-    expect(screen.getByRole('button', { name: 'يومان' })).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: 'يومان' }));
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب الخصم/), { target: { value: 'تأخير' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    expect(within(dialog).getByRole('button', { name: 'يومان' })).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'يومان' }));
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب الخصم/), { target: { value: 'تأخير' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
 
     await waitFor(() =>
       expect(mocks.createDeduction).toHaveBeenCalledWith({
@@ -157,16 +159,17 @@ describe('DeductionsView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة خصم' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '75' } });
-    fireEvent.click(screen.getByRole('button', { name: 'نصف شهر' }));
+    const dialog = await screen.findByRole('dialog', { name: 'خصم جديد' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '75' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'نصف شهر' }));
 
     // Both prices filled at once would be ambiguous, so the preset takes the amount's place.
-    expect(screen.getByLabelText(/المبلغ/)).toHaveProperty('value', '');
-    fireEvent.change(screen.getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
-    fireEvent.change(screen.getByLabelText(/سبب الخصم/), { target: { value: 'سبب' } });
-    fireEvent.click(screen.getByRole('button', { name: 'حفظ' }));
+    expect(within(dialog).getByLabelText(/المبلغ/)).toHaveProperty('value', '');
+    fireEvent.change(within(dialog).getByLabelText(/شهر الراتب/), { target: { value: '2026-06' } });
+    fireEvent.change(within(dialog).getByLabelText(/سبب الخصم/), { target: { value: 'سبب' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ' }));
     await waitFor(() =>
       expect(mocks.createDeduction).toHaveBeenCalledWith(expect.objectContaining({ days: 15 })),
     );
@@ -177,12 +180,13 @@ describe('DeductionsView', () => {
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(screen.getByRole('button', { name: 'إضافة خصم' }));
-    await screen.findByRole('option', { name: /أحمد جمال/ });
-    fireEvent.change(screen.getByLabelText(/الموظف/), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: '5 أيام' }));
-    expect(screen.getByLabelText(/أو بالأيام/)).toHaveProperty('value', '5');
-    fireEvent.change(screen.getByLabelText(/المبلغ/), { target: { value: '75' } });
-    expect(screen.getByLabelText(/أو بالأيام/)).toHaveProperty('value', '');
+    const dialog = await screen.findByRole('dialog', { name: 'خصم جديد' });
+    await within(dialog).findByRole('option', { name: /أحمد جمال/ });
+    fireEvent.change(within(dialog).getByLabelText(/الموظف/), { target: { value: '1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '5 أيام' }));
+    expect(within(dialog).getByLabelText(/أو بالأيام/)).toHaveProperty('value', '5');
+    fireEvent.change(within(dialog).getByLabelText(/المبلغ/), { target: { value: '75' } });
+    expect(within(dialog).getByLabelText(/أو بالأيام/)).toHaveProperty('value', '');
   });
 
   test('shows the day count a deduction was priced from', async () => {
@@ -196,5 +200,33 @@ describe('DeductionsView', () => {
     mocks.listDeductions.mockResolvedValue(pageOf([]));
     renderView();
     expect(await screen.findByText('لا توجد خصومات')).toBeDefined();
+  });
+
+  test('filters by employee', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '1' } });
+    await waitFor(() => {
+      expect(mocks.listDeductions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ employeeId: 1, page: 1 }),
+      );
+    });
+  });
+
+  test('clears employee filter', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const employeeSelect = screen.getByLabelText('تصفية حسب الموظف');
+    fireEvent.change(employeeSelect, { target: { value: '1' } });
+    await waitFor(() => {
+      expect(mocks.listDeductions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ employeeId: 1 }),
+      );
+    });
+    fireEvent.change(employeeSelect, { target: { value: '' } });
+    await waitFor(() => {
+      const params = mocks.listDeductions.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(params).not.toHaveProperty('employeeId');
+    });
   });
 });

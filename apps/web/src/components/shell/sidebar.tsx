@@ -13,7 +13,7 @@ export function Sidebar({ open = false, onNavigate }: { open?: boolean; onNaviga
     ? ADMIN_NAV.map((group) => ({
         ...group,
         items: group.items.filter((item) => [
-          '/employees', '/devices', '/shifts', '/attendance',
+          '/employees', '/devices', '/attendance',
           '/branches', '/audit',
         ].includes(item.href)),
       })).filter((group) => group.items.length > 0)

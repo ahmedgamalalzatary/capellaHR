@@ -259,6 +259,7 @@ export function DevicesView() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<DeviceStatus | ''>('');
   const [typeFilter, setTypeFilter] = useState<DeviceAssignmentType | ''>('');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pairingOpen, setPairingOpen] = useState(false);
   const [pairingCreated, setPairingCreated] = useState(false);
@@ -266,11 +267,12 @@ export function DevicesView() {
   const [historyId, setHistoryId] = useState<number | null>(null);
 
   const devicesQuery = useQuery({
-    queryKey: deviceQueryKeys.list({ statusFilter, typeFilter, page }),
+    queryKey: deviceQueryKeys.list({ statusFilter, typeFilter, search, page }),
     queryFn: () =>
       listDevices({
         ...(statusFilter ? { status: statusFilter } : {}),
         ...(typeFilter ? { assignmentType: typeFilter } : {}),
+        ...(search ? { search } : {}),
         page,
       }),
   });
@@ -318,6 +320,16 @@ export function DevicesView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
+          <Input
+            aria-label="بحث"
+            className="h-9 w-48"
+            placeholder="بحث…"
+            value={search}
+            onChange={(event) => {
+              setPage(1);
+              setSearch(event.target.value);
+            }}
+          />
           <select
             aria-label="تصفية حسب الحالة"
             className="h-9 rounded-control border border-line bg-paper px-3 text-sm"

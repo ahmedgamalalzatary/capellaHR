@@ -8,6 +8,7 @@ import { Button, Card, ConfirmDialog, EmptyState, Input, Modal, SmartPagination 
 
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { formatDuration } from '@/lib/utils/format';
 
 import { DeactivationDialog, type EmployeeDeparture } from './deactivation-dialog';
 import { EmployeeSettlementPanel } from './employee-settlement-panel';
@@ -300,7 +301,9 @@ export function EmployeesView() {
                       {branchNameOf(employee.branchId) ?? '—'}
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell">
-                      <span className="tabular">{employee.shiftDurationMinutes} د</span>
+                      <span className="tabular">
+                        {Math.floor(employee.shiftDurationMinutes / 60)} ساعات {employee.shiftDurationMinutes % 60} دقائق ({employee.shiftDurationMinutes} دقيقة)
+                      </span>
                     </td>
                     <td className="hidden px-4 py-3 lg:table-cell">
                       <span className="tabular">{employee.monthlyBaseSalary} ج</span>

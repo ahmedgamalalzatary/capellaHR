@@ -155,6 +155,8 @@ function installFetch() {
     if (url.includes('/weekly-day-offs')) return response(page([dailyRecord]));
     if (url.includes('/employees')) return response(page([{
       id: 7, employeeCode: 42, fullName: 'أحمد سالم', branchId: 3,
+    }, {
+      id: 8, employeeCode: 43, fullName: 'منى علي', branchId: 3,
     }]));
     if (url.includes('/branches')) return response(page([{ id: 3, name: 'فرع القاهرة' }]));
     return response({ data: null });
@@ -495,6 +497,40 @@ describe('AttendancePage', () => {
     renderPage();
     expect(screen.queryByRole('tab', { name: 'غياب بدون إذن' })).toBeNull();
     expect(screen.getAllByRole('tab')).toHaveLength(4);
+  });
+
+  it('filters sessions by employee', async () => {
+    renderPage();
+    await screen.findByText('أحمد سالم');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '7' } });
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('employeeId=7'),
+      expect.anything(),
+    ));
+  });
+
+  it('filters denied attempts by employee', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'المحاولات المرفوضة' }));
+    await screen.findByText('خارج نطاق الفرع');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '7' } });
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('employeeId=7'),
+      expect.anything(),
+    ));
+  });
+
+  it('filters absence by employee', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'الغياب وأيام الراحة' }));
+    await screen.findByText('منى علي');
+    const employeeSelect = screen.getByLabelText('تصفية حسب الموظف') as HTMLSelectElement;
+    await waitFor(() => expect(employeeSelect.disabled).toBe(false));
+    fireEvent.change(employeeSelect, { target: { value: '8' } });
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('employeeId=8'),
+      expect.anything(),
+    ));
   });
 
   it('still flags a marked absence inside the general absence register', async () => {

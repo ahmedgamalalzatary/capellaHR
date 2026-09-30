@@ -24,6 +24,7 @@ export interface ListDevicesParams {
   assignmentType?: DeviceAssignmentType;
   assignmentId?: number;
   status?: DeviceStatus;
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -39,6 +40,7 @@ export function listDevices(params: ListDevicesParams = {}) {
   if (params.assignmentType) query.set('assignmentType', params.assignmentType);
   if (params.assignmentId !== undefined) query.set('assignmentId', String(params.assignmentId));
   if (params.status) query.set('status', params.status);
+  if (params.search) query.set('search', params.search);
   if (params.page !== undefined) query.set('page', String(params.page));
   if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
   const suffix = query.size > 0 ? `?${query.toString()}` : '';

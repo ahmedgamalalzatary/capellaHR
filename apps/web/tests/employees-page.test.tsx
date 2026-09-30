@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listEmployees: vi.fn(),
   createEmployee: vi.fn(),
   updateEmployee: vi.fn(),
+  updateBaseSalary: vi.fn(),
   deleteEmployee: vi.fn(),
   previewEmployeeDeactivation: vi.fn(),
   deactivateEmployee: vi.fn(),
@@ -24,6 +25,11 @@ vi.mock('../src/features/employees/api/employees-api', async (importOriginal) =>
   previewEmployeeDeactivation: mocks.previewEmployeeDeactivation,
   deactivateEmployee: mocks.deactivateEmployee,
   activateEmployee: mocks.activateEmployee,
+}));
+
+vi.mock('../src/features/payroll/api/payroll-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  updateBaseSalary: mocks.updateBaseSalary,
 }));
 
 vi.mock('../src/features/branches/api/branches-api', () => ({
@@ -329,6 +335,28 @@ describe('EmployeesView', () => {
     expect((mocks.updateEmployee.mock.calls[0]?.[1] as Record<string, unknown>)['pin']).toBeUndefined();
   });
 
+  test('edits an employee base salary via the payroll endpoint', async () => {
+    mocks.updateEmployee.mockResolvedValue(employee);
+    mocks.updateBaseSalary.mockResolvedValue({ employeeId: 1, amount: '7000.00' });
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+
+    const salaryInput = screen.getByLabelText(/الراتب الأساسي/) as HTMLInputElement;
+    expect(salaryInput.value).toBe('6500.00');
+    fireEvent.change(salaryInput, { target: { value: '7000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموظف' }));
+
+    await waitFor(() => expect(mocks.updateBaseSalary).toHaveBeenCalledWith(1, { amount: '7000' }));
+  });
+
+  test('edit form no longer says salary is not editable', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
+    expect(screen.queryByText(/غير قابلين للتعديل/)).toBeNull();
+  });
+
   test('deletes only after confirmation and surfaces the checked-in error', async () => {
     mocks.deleteEmployee.mockRejectedValue(
       new ApiError(409, { code: 'EMPLOYEE_CHECKED_IN', message: 'يجب تسجيل خروج الموظف أولاً' }),
@@ -554,7 +582,7 @@ describe('EmployeesView row details', () => {
   test('shows shift duration and salary in the table', async () => {
     renderView();
     const row = (await screen.findByText('أحمد جمال')).closest('tr')!;
-    expect(within(row).getByText(/480/)).toBeDefined();
+    expect(within(row).getByText('8 ساعات 0 دقائق (480 دقيقة)')).toBeDefined();
     expect(within(row).getByText(/6500\.00/)).toBeDefined();
   });
 });
