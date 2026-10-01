@@ -18,6 +18,15 @@ const runtimeFor = (edition: string | undefined) => createApiRuntime({
 });
 
 describe('API edition runtime', () => {
+  it('excludes pre-launch payroll months in the API runtime', async () => {
+    const runtime = createApiRuntime({
+      database: {} as ReturnType<typeof createDatabase>,
+      edition: resolveEdition('full'), logger: pino({ level: 'silent' }),
+      timeZone: 'Africa/Cairo', maxEmployeeImageBytes: 16_777_216, payrollStartMonth: '2026-09',
+    });
+    await expect(runtime.dependencies.payrollService!.list({ month: '2026-08', page: 1, pageSize: 20 }))
+      .resolves.toEqual({ items: [], total: 0 });
+  });
   it('constructs only the core services when EDITION is missing', () => {
     const runtime = runtimeFor(undefined);
 

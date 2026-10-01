@@ -537,6 +537,9 @@ Device registration is a separate post-creation workflow and is not an employee-
 - Branch-wide finalization is atomic: if any employee is blocked, nobody in that branch is finalized.
 - The UI lists all employees blocking a branch finalization.
 - Payroll months must be finalized chronologically per employee.
+- Payroll starts in September 2026 (`PAYROLL_START_MONTH=2026-09`, shared by API and worker).
+- Months before payroll start are excluded from payroll lists, previews, reports, and finalization. Their historical records remain stored.
+- Chronological approval and prior salary/commission balances begin at payroll start; earlier months cannot block approval or contribute carryovers. Salary and employment history still determine the correct salary and eligibility from September onward.
 - A newer employee-month cannot be finalized while any older employee-month remains unfinalized.
 - Branch-wide finalization applies the same chronological validation to every employee in the branch.
 - Every attendance session belonging to the employee-month must be closed before finalization.

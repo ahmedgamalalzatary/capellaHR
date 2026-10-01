@@ -26,8 +26,15 @@ const payrollBlockerQuery = (
   timeZone: string,
   currentDate: string,
   selection: 'count' | 'details',
+  startMonth?: string,
 ) => {
   const monthStart = `${month}-01`;
+  const employeeCreationMonth = sql`cast(date_format(coalesce(
+    convert_tz(employee.created_at, 'UTC', ${timeZone}), employee.created_at
+  ), '%Y-%m-01') as date)`;
+  const firstPayrollMonth = startMonth
+    ? sql`greatest(${employeeCreationMonth}, cast(${`${startMonth}-01`} as date))`
+    : employeeCreationMonth;
   const nextMonthStart = `${nextMonth(month)}-01`;
   const [year, monthNumber] = month.split('-').map(Number) as [number, number];
   const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
@@ -113,22 +120,17 @@ const payrollBlockerQuery = (
           select case when prior.net_salary < 0 then prior.net_salary else 0.00 end
           from payroll_months prior
           where prior.employee_id = employee.id and prior.payroll_month < ${monthStart}
+            ${startMonth ? sql`and prior.payroll_month >= ${`${startMonth}-01`}` : sql``}
           order by prior.payroll_month desc limit 1
         ), 0.00) prior_negative_carry,
         greatest(period_diff(
           extract(year_month from cast(${monthStart} as date)),
-          extract(year_month from coalesce(
-            convert_tz(employee.created_at, 'UTC', ${timeZone}),
-            employee.created_at
-          ))
+          extract(year_month from ${firstPayrollMonth})
         ), 0) expected_prior_months,
         (
           select count(*) from payroll_months history
           where history.employee_id = employee.id
-            and history.payroll_month >= cast(date_format(coalesce(
-              convert_tz(employee.created_at, 'UTC', ${timeZone}),
-              employee.created_at
-            ), '%Y-%m-01') as date)
+            and history.payroll_month >= ${firstPayrollMonth}
             and history.payroll_month < ${monthStart}
         ) finalized_prior_months
       from employees employee
@@ -242,12 +244,14 @@ export const payrollBlockers = async (
   month: string,
   timeZone: string,
   currentDate: string,
+  startMonth?: string,
 ) => {
+  if (startMonth && month < startMonth) return { total: 0, items: [] };
   const [totalRow] = await rawRows<{ value: number }>(transaction.execute(
-    payrollBlockerQuery(month, timeZone, currentDate, 'count'),
+    payrollBlockerQuery(month, timeZone, currentDate, 'count', startMonth),
   ));
   const detailRows = await rawRows<PayrollBlockerClassification>(transaction.execute(
-    payrollBlockerQuery(month, timeZone, currentDate, 'details'),
+    payrollBlockerQuery(month, timeZone, currentDate, 'details', startMonth),
   ));
   return {
     total: Number(totalRow?.value ?? 0),

@@ -84,7 +84,7 @@ type PayrollListResult =
   | { kind: 'blocked'; reasons: string[] };
 type BranchPayrollResult =
   | { kind: 'success'; payrolls: PayrollRecord[] }
-  | { kind: 'branch_not_found' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
+  | { kind: 'branch_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
   | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
 
 export interface PayrollRepository {
@@ -185,6 +185,7 @@ export const createPayrollService = (
       const result = await repository.finalizeBranch(branchId, month, requireAttendance());
       if (result.kind === 'success') return result.payrolls;
       if (result.kind === 'branch_not_found') throw error('PAYROLL_BRANCH_NOT_FOUND');
+      if (result.kind === 'month_not_eligible') throw error('PAYROLL_MONTH_NOT_ELIGIBLE');
       if (result.kind === 'month_not_ended') throw error('PAYROLL_MONTH_NOT_ENDED');
       if (result.kind === 'already_finalized') throw error('PAYROLL_ALREADY_FINALIZED');
       if (result.kind === 'chronology_conflict') throw error('PAYROLL_CHRONOLOGY_CONFLICT');

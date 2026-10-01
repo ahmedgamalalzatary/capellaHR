@@ -8,6 +8,7 @@ export const createDashboardModule = (
   options: {
     now?: () => Date;
     timeZone?: string;
+    payrollStartMonth?: string;
   },
 ) => {
   const repository = createDrizzleDashboardRepository(database, options);

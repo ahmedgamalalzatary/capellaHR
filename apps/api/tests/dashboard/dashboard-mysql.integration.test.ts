@@ -279,6 +279,19 @@ const createModule = (now: Date) => {
 };
 
 describe('MySQL-backed Dashboard snapshot', () => {
+  it('ignores chronology before payroll launch but requires September for October', async () => {
+    await seed();
+    const snapshotFor = (now: Date) => createDashboardModule(database, {
+      now: () => now, timeZone: 'Africa/Cairo', payrollStartMonth: '2026-09',
+    }).service.getSnapshot();
+    const before = await snapshotFor(new Date('2026-09-20T09:00:00.000Z'));
+    expect(before.payrollBlockers).toEqual({ total: 0, items: [] });
+    const september = await snapshotFor(new Date('2026-10-20T09:00:00.000Z'));
+    expect(september.payrollBlockers.items.length).toBeGreaterThan(0);
+    expect(september.payrollBlockers.items.every((item) => !item.reasons.includes('PAYROLL_CHRONOLOGY_CONFLICT'))).toBe(true);
+    const october = await snapshotFor(new Date('2026-11-20T09:00:00.000Z'));
+    expect(october.payrollBlockers.items.some((item) => item.reasons.includes('PAYROLL_CHRONOLOGY_CONFLICT'))).toBe(true);
+  });
   it('aggregates every locked operational summary without leaking secrets', async () => {
     await seed();
     const snapshot = await createModule(fixedNow).service.getSnapshot();

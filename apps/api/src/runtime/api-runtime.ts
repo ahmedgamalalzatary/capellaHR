@@ -48,6 +48,7 @@ export interface ApiRuntimeOptions {
   edition: ResolvedEdition;
   logger: Logger;
   timeZone: string;
+  payrollStartMonth?: string;
   maxEmployeeImageBytes: number;
   reportFilesRoot?: string;
   employeeUploadsRoot?: string;
@@ -131,6 +132,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
 
   const payrollModule = enabled('payroll') ? createPayrollModule(database, {
     timeZone,
+    ...(options.payrollStartMonth ? { startMonth: options.payrollStartMonth } : {}),
     attendance: required(attendanceModule, 'attendance').repository,
   }) : undefined;
   if (payrollModule) payrollForAttendance.current = payrollModule.service;
@@ -317,7 +319,10 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     ...(commissionModule ? { commissions: commissionModule.selfService } : {}),
   }) : undefined;
   const dashboardModule = enabled('dashboard')
-    ? createDashboardModule(database, { timeZone })
+    ? createDashboardModule(database, {
+      timeZone,
+      ...(options.payrollStartMonth ? { payrollStartMonth: options.payrollStartMonth } : {}),
+    })
     : undefined;
 
   const dependencies: AppDependencies = {

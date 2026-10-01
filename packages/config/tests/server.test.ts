@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
 
 describe('server environment', () => {
+  it('validates the shared payroll start month for API and worker', async () => {
+    vi.stubEnv('DATABASE_URL', 'mysql://user:password@localhost/capella_hr-test');
+    vi.stubEnv('ADMIN_EMAIL', 'admin@capella.test');
+    vi.stubEnv('ADMIN_PASSWORD', 'password');
+    const { parseServerEnv } = await import('../src/server.js');
+    const { parseWorkerEnv } = await import('../src/worker.js');
+    const base = { DATABASE_URL: 'mysql://user:password@localhost/capella_hr-test', ADMIN_EMAIL: 'admin@capella.test', ADMIN_PASSWORD: 'password' };
+    for (const parse of [parseServerEnv, parseWorkerEnv]) {
+      expect(parse({ ...base, PAYROLL_START_MONTH: '2026-09' })).toHaveProperty('PAYROLL_START_MONTH', '2026-09');
+      expect(() => parse({ ...base, PAYROLL_START_MONTH: '2026-13' })).toThrow();
+      expect(() => parse({ ...base, PAYROLL_START_MONTH: '2026-00' })).toThrow();
+      expect(() => parse({ ...base, PAYROLL_START_MONTH: '2026-09-01' })).toThrow();
+    }
+  });
   it('accepts a plain admin password instead of an Argon2 hash', async () => {
     vi.stubEnv('DATABASE_URL', 'mysql://user:password@localhost/capella_hr-test');
     vi.stubEnv('ADMIN_EMAIL', 'admin@capella.test');

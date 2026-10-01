@@ -231,5 +231,21 @@ describe('ERP payroll public capability', () => {
         commissionCarryAmount: '0.00', netSalary: '15.00',
       },
     });
+
+    const fromSeptember = createDrizzlePayrollRepository(database, {
+      now: () => new Date('2026-10-01T09:00:00.000Z'), startMonth: '2026-09',
+    });
+    expect(await fromSeptember.preview(employeeId, '2026-09', {
+      readPayrollFacts: async () => ({
+        kind: 'ready',
+        facts: { fullMonthWorkdays: 0, eligibleWorkdays: 0, requiredMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0 },
+      }),
+    })).toMatchObject({
+      kind: 'success',
+      payroll: {
+        commissionAmount: '45.00', commissionDeductionAmount: '0.00',
+        commissionCarryAmount: '0.00', netSalary: '45.00',
+      },
+    });
   });
 });

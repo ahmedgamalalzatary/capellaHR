@@ -10,9 +10,9 @@ import {
 
 export const createAttendanceJobsRuntime = (
   database: ReturnType<typeof createDatabase>,
-  options: { now?: () => Date; timeZone?: string; payrollEnabled?: boolean } = {},
+  options: { now?: () => Date; timeZone?: string; payrollEnabled?: boolean; payrollStartMonth?: string } = {},
 ) => {
-  const { payrollEnabled = true, ...runtimeOptions } = options;
+  const { payrollEnabled = true, payrollStartMonth, ...runtimeOptions } = options;
   let isFinanciallyLocked: Parameters<typeof createDrizzleAttendanceRepository>[1]['isFinanciallyLocked'] = (
     () => Promise.resolve(false)
   );
@@ -34,7 +34,10 @@ export const createAttendanceJobsRuntime = (
     ),
   });
   const payroll = payrollEnabled
-    ? createPayrollModule(database, { ...runtimeOptions, attendance: repository })
+    ? createPayrollModule(database, {
+      ...runtimeOptions, attendance: repository,
+      ...(payrollStartMonth ? { startMonth: payrollStartMonth } : {}),
+    })
     : undefined;
   if (payroll) {
     isFinanciallyLocked = (employeeId, attendanceDate, context) => (

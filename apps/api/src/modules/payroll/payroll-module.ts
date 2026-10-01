@@ -6,7 +6,7 @@ import { createErpPayrollCapability } from './erp-payroll-capability.js';
 
 export const createPayrollModule = (
   database: ReturnType<typeof createDatabase>,
-  options: { now?: () => Date; timeZone?: string; attendance?: PayrollAttendanceGateway } = {},
+  options: { now?: () => Date; timeZone?: string; startMonth?: string; attendance?: PayrollAttendanceGateway } = {},
 ) => {
   const repository = createDrizzlePayrollRepository(database, options);
   return {

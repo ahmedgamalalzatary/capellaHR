@@ -44,6 +44,7 @@ DATABASE_URL=mysql://capella_hr:replace_with_a_long_random_database_password@db:
 
 LOG_LEVEL=info
 APP_TIME_ZONE=Africa/Cairo
+PAYROLL_START_MONTH=2026-09
 APP_LOCALE=ar-EG-u-nu-latn
 MAX_EMPLOYEE_IMAGE_BYTES=16777216
 TRUST_PROXY_HOPS=1

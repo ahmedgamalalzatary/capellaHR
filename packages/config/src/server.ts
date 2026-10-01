@@ -34,6 +34,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   LOG_LEVEL: z.string().default('info'),
   APP_TIME_ZONE: timeZoneSchema.default('Africa/Cairo'),
+  PAYROLL_START_MONTH: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/).default('2026-09'),
   APP_LOCALE: localeSchema.default('ar-EG-u-nu-latn'),
   MAX_EMPLOYEE_IMAGE_BYTES: z.coerce.number().int().positive().max(16_777_216).default(16_777_216),
   REPORT_WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),

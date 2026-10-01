@@ -40,6 +40,7 @@ export const createDrizzleDashboardRepository = (
   options: {
     now?: () => Date;
     timeZone?: string;
+    payrollStartMonth?: string;
   },
 ): DashboardRepository => {
   const now = options.now ?? (() => new Date());
@@ -241,6 +242,7 @@ export const createDrizzleDashboardRepository = (
         payrollMonth,
         timeZone,
         cairoDate,
+        options.payrollStartMonth,
       );
 
       const attendanceItem = (row: typeof currentRows[number]) => ({

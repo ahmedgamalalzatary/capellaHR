@@ -34,6 +34,7 @@ const database = createDatabase(env.DATABASE_URL);
 const attendance = createAttendanceJobsRuntime(database, {
   timeZone: env.APP_TIME_ZONE,
   payrollEnabled: plan.payroll,
+  payrollStartMonth: env.PAYROLL_START_MONTH,
 });
 const erpReports = plan.erpReports ? createErpReportsModule(database) : undefined;
 const sweepCashierSessions = plan.erpSales

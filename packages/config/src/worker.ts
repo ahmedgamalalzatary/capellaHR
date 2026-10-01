@@ -7,6 +7,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   LOG_LEVEL: z.string().default('info'),
   APP_TIME_ZONE: z.literal('Africa/Cairo').default('Africa/Cairo'),
+  PAYROLL_START_MONTH: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/).default('2026-09'),
   REPORT_WORKER_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
   REPORT_FILES_ROOT: z.string().trim().min(1).max(500).optional(),
 }).strip();

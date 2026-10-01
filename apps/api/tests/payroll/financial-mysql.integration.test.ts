@@ -143,6 +143,68 @@ const createEmployee = async (
 }))[0].insertId);
 
 describe('MySQL-backed salary domain', () => {
+  it('starts employee and branch approval in September while requiring September before October', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1, new Date('2026-07-30T21:25:05.399Z'));
+    const payroll = createPayrollModule(database, {
+      now: () => new Date('2026-11-01T09:00:00.000Z'), attendance, startMonth: '2026-09',
+    });
+    await expect(payroll.service.finalize(employeeId, '2026-10'))
+      .rejects.toMatchObject({ code: 'PAYROLL_CHRONOLOGY_CONFLICT' });
+    await expect(payroll.service.finalizeBranch(branchId, '2026-09'))
+      .resolves.toMatchObject([expect.objectContaining({ employeeId, status: 'finalized' })]);
+    await expect(payroll.service.finalize(employeeId, '2026-10'))
+      .resolves.toMatchObject({ status: 'finalized' });
+  });
+
+  it('excludes pre-start months from payroll lists, previews, reports and approval', async () => {
+    const branchId = await createBranch();
+    const employeeId = await createEmployee(branchId, 1);
+    const payroll = createPayrollModule(database, {
+      now: () => new Date('2026-10-01T09:00:00.000Z'), attendance, startMonth: '2026-09',
+    });
+    await expect(payroll.service.list({ month: '2026-08', page: 1, pageSize: 20 }))
+      .resolves.toEqual({ items: [], total: 0 });
+    await expect(payroll.service.preview(employeeId, '2026-08'))
+      .rejects.toMatchObject({ code: 'PAYROLL_MONTH_NOT_ELIGIBLE' });
+    await expect(payroll.service.finalize(employeeId, '2026-08'))
+      .rejects.toMatchObject({ code: 'PAYROLL_MONTH_NOT_ELIGIBLE' });
+    await expect(payroll.service.finalizeBranch(branchId, '2026-08'))
+      .rejects.toMatchObject({ code: 'PAYROLL_MONTH_NOT_ELIGIBLE' });
+    await database.transaction(async (context) => {
+      expect(await payroll.repository.previewInContext(employeeId, '2026-08', attendance, context))
+        .toEqual({ kind: 'month_not_eligible' });
+    });
+  });
+
+  it('ignores a legacy negative payroll balance but carries September debt into October', async () => {
+    const employeeId = await createEmployee(await createBranch(), 1, new Date('2026-08-01T09:00:00.000Z'));
+    const at = new Date('2026-10-01T09:00:00.000Z');
+    await database.insert(deductions).values({
+      employeeId, payrollMonth: '2026-08-01', amount: '7000.00', createdAt: at, updatedAt: at,
+    });
+    await createPayrollModule(database, { now: () => at, attendance }).service.finalize(employeeId, '2026-08');
+    await database.update(payrollMonths).set({ commissionCarryAmount: '30.00' })
+      .where(eq(payrollMonths.employeeId, employeeId));
+    const payroll = createPayrollModule(database, {
+      now: () => new Date('2026-11-01T09:00:00.000Z'), attendance, startMonth: '2026-09',
+    });
+    await expect(payroll.service.preview(employeeId, '2026-09'))
+      .resolves.toMatchObject({ priorNegativeCarry: '0.00', commissionDeductionAmount: '0.00' });
+    await database.transaction(async (context) => {
+      expect(await payroll.repository.previewInContext(employeeId, '2026-09', attendance, context))
+        .toMatchObject({ kind: 'success', payroll: { priorNegativeCarry: '0.00', commissionDeductionAmount: '0.00' } });
+    });
+    await expect(payroll.repository.findFinalized(employeeId, '2026-08')).resolves.toBeNull();
+    await database.insert(deductions).values({
+      employeeId, payrollMonth: '2026-09-01', amount: '7000.00', createdAt: at, updatedAt: at,
+    });
+    const september = await payroll.service.finalize(employeeId, '2026-09');
+    expect(september.netSalary.startsWith('-')).toBe(true);
+    await expect(payroll.service.preview(employeeId, '2026-10'))
+      .resolves.toMatchObject({ priorNegativeCarry: september.netSalary });
+  });
+
   it('rejects adjustment pricing with neither an amount nor days', async () => {
     const employeeId = await createEmployee(await createBranch(), 1);
     await expect(resolveAdjustmentAmount(database, {
