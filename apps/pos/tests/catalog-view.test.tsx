@@ -551,6 +551,94 @@ describe('CatalogView services', () => {
   });
 });
 
+describe('CatalogView list filters', () => {
+  test('filters categories by type and status and returns to the first page', async () => {
+    mocks.listCategories.mockResolvedValue(pageOf([hairCategory], { total: 2, totalPages: 2 }));
+    renderView();
+    await pickBranch();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.listCategories)
+      .toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب نوع التصنيف'), { target: { value: 'service' } });
+    fireEvent.change(screen.getByLabelText('تصفية حسب حالة التصنيف'), { target: { value: 'inactive' } });
+
+    await waitFor(() => expect(mocks.listCategories).toHaveBeenLastCalledWith({
+      branchId: 3, type: 'service', isActive: false, page: 1, pageSize: 20,
+    }));
+  });
+
+  test('filters services by category and status and returns to the first page', async () => {
+    mocks.listServices.mockResolvedValue(pageOf([colouring], { total: 2, totalPages: 2 }));
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.listServices)
+      .toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب التصنيف'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('تصفية حسب حالة الخدمة'), { target: { value: 'active' } });
+
+    await waitFor(() => expect(mocks.listServices).toHaveBeenLastCalledWith({
+      branchId: 3, categoryId: 1, isActive: true, page: 1, pageSize: 20,
+    }));
+  });
+
+  test('clears the service category filter when the admin switches branch', async () => {
+    mocks.listCatalogBranches.mockResolvedValue(pageOf([
+      { id: 3, name: 'الفرع الرئيسي' }, { id: 4, name: 'فرع آخر' },
+    ]));
+    renderView();
+    await pickBranch();
+    await screen.findByText('شعر');
+    openServicesTab();
+    fireEvent.change(await screen.findByLabelText('تصفية حسب التصنيف'), { target: { value: '1' } });
+    await waitFor(() => expect(mocks.listServices)
+      .toHaveBeenLastCalledWith(expect.objectContaining({ categoryId: 1 })));
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '4' } });
+
+    await waitFor(() => expect(mocks.listServices).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ categoryId: expect.anything() }),
+    ));
+    expect(mocks.listServices.mock.calls.at(-1)?.[0]).toMatchObject({ branchId: 4, page: 1 });
+  });
+
+  test('offers the add-service action when a category filter hides every category row', async () => {
+    mocks.listCategories.mockImplementation(async ({ search, pageSize }: { search?: string; pageSize?: number }) => (
+      pageSize === 100
+        // The service form's option list is never filtered.
+        ? pageOf([hairCategory])
+        : pageOf(search ? [] : [hairCategory])
+    ));
+    mocks.listServices.mockResolvedValue(pageOf([]));
+    renderView();
+    await pickBranch();
+    fireEvent.change(await screen.findByLabelText('بحث في التصنيفات'), { target: { value: 'ززز' } });
+    await waitFor(() => expect(screen.queryByText('شعر')).toBeNull());
+
+    openServicesTab();
+
+    expect(await screen.findByText('ابدأ بإضافة أول خدمة.')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'إضافة أول خدمة' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'أضف تصنيفًا أولًا' })).toBeNull();
+  });
+
+  test('shows the filtered empty state instead of the first-run prompt', async () => {
+    mocks.listCategories.mockResolvedValue(pageOf([]));
+    renderView();
+    await pickBranch();
+    fireEvent.change(await screen.findByLabelText('تصفية حسب حالة التصنيف'), { target: { value: 'inactive' } });
+
+    expect(await screen.findByText('لا يوجد تصنيف مطابق')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'إضافة أول تصنيف' })).toBeNull();
+  });
+});
+
 describe('CatalogView employee commission overrides', () => {
   const openOverrides = async () => {
     renderView();

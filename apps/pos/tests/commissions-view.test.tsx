@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   branches: vi.fn(),
   createPayout: vi.fn(),
   getSession: vi.fn(),
+  employees: vi.fn(),
 }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
@@ -22,6 +23,9 @@ vi.mock('../src/features/commissions/api/commissions-api', () => ({
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.branches,
+}));
+vi.mock('../src/features/employee-assignment/api/assignable-employees-api', () => ({
+  listAssignableEmployees: mocks.employees,
 }));
 
 import { CommissionsView } from '../src/features/commissions/components/commissions-view';
@@ -102,6 +106,9 @@ beforeEach(() => {
     meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
   });
   mocks.detail.mockResolvedValue(detail);
+  mocks.employees.mockResolvedValue([
+    { id: 7, employeeCode: 1007, fullName: 'سارة أحمد', branchId: 2 },
+  ]);
 });
 
 afterEach(() => {
@@ -110,6 +117,41 @@ afterEach(() => {
 });
 
 describe('CommissionsView', () => {
+  it('filters commissions by employee and resets to the first page', async () => {
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByRole('cell', { name: 'سارة أحمد' });
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '7' } });
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 2, employeeId: 7, page: 1 }),
+    ));
+  });
+
+  it('clears the employee filter when the admin switches branch', async () => {
+    mocks.branches.mockResolvedValue({
+      items: [{ id: 2, name: 'الرئيسي' }, { id: 3, name: 'فرع ثانٍ' }],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByRole('cell', { name: 'سارة أحمد' });
+    fireEvent.change(screen.getByLabelText('تصفية حسب الموظف'), { target: { value: '7' } });
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith(
+      expect.objectContaining({ employeeId: 7 }),
+    ));
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+
+    // Employees belong to one branch: a stale pick would empty the new branch's list.
+    await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ employeeId: 7 }),
+    ));
+    expect(screen.getByLabelText('تصفية حسب الموظف')).toHaveProperty('value', '');
+  });
+
   it('lets a cashier view and pay commissions from their own branch without selecting one', async () => {
     mocks.getSession.mockResolvedValue({ actor: { type: 'cashier', accountId: 8 } });
     mocks.createPayout.mockResolvedValue({
@@ -123,7 +165,7 @@ describe('CommissionsView', () => {
     mount();
 
     expect(screen.queryByLabelText('الفرع')).toBeNull();
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     expect(mocks.branches).not.toHaveBeenCalled();
     expect(mocks.list.mock.calls[0]?.[0]).not.toHaveProperty('branchId');
     fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
@@ -190,7 +232,7 @@ describe('CommissionsView', () => {
       month: targetMonth,
       page: 1,
     })));
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     expect(within(row).getByText(/250\.00/)).toBeDefined();
     expect(within(row).getByText(/300\.00/)).toBeDefined();
     expect(within(row).getByText(/^50\.00/)).toBeDefined();
@@ -210,7 +252,7 @@ describe('CommissionsView', () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
 
     const dialog = await screen.findByRole('dialog', { name: /تفاصيل عمولة سارة أحمد/ });
@@ -230,7 +272,7 @@ describe('CommissionsView', () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
 
     expect(within(row).getByText(/40\.00/)).toBeDefined();
     expect(within(row).getByText(/210\.00/)).toBeDefined();
@@ -254,7 +296,7 @@ describe('CommissionsView', () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'إلغاء' }));
@@ -273,7 +315,7 @@ describe('CommissionsView', () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
     const details = await screen.findByRole('dialog');
     fireEvent.click(within(details).getByRole('button', { name: 'صرف عمولة' }));
@@ -289,7 +331,7 @@ describe('CommissionsView', () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'التفاصيل' }));
     const details = await screen.findByRole('dialog');
     fireEvent.click(within(details).getByRole('button', { name: 'صرف عمولة' }));
@@ -303,7 +345,7 @@ describe('CommissionsView', () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
-    const row = (await screen.findByText('سارة أحمد')).closest('tr')!;
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'صرف عمولة' }));
     const dialog = await screen.findByRole('dialog', { name: /صرف عمولة سارة أحمد/ });
     fireEvent.change(within(dialog).getByLabelText('المبلغ'), { target: { value: '00.00' } });

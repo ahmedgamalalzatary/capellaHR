@@ -3,12 +3,13 @@
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 
-import { Badge, Button, Card, CardContent, EmptyState } from '@capella/ui';
+import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@capella/ui';
 
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError } from '@/components/feedback/notice';
+import { Select } from '@/components/form/select';
 import { SectionHeading } from '@/components/layout/page-header';
 
 import { type Supplier } from '../api/suppliers-api';
@@ -18,6 +19,10 @@ export function SupplierListSection({
   suppliers,
   supplierPage,
   setSupplierPage,
+  supplierSearch,
+  setSupplierSearch,
+  supplierStatus,
+  setSupplierStatus,
   branchScope,
   commandPending,
   toggleSupplier,
@@ -28,6 +33,10 @@ export function SupplierListSection({
   suppliers: UseQueryResult<{ items: Supplier[]; meta: { totalPages: number } }>;
   supplierPage: number;
   setSupplierPage: (value: number | ((page: number) => number)) => void;
+  supplierSearch: string;
+  setSupplierSearch: (value: string) => void;
+  supplierStatus: string;
+  setSupplierStatus: (value: string) => void;
   branchScope: object;
   commandPending: boolean;
   toggleSupplier: { isError: boolean; error: unknown; mutate: (supplier: Supplier) => void };
@@ -43,6 +52,31 @@ export function SupplierListSection({
           description="المورد الموقوف يبقى في السجل ولا يظهر في مشتريات جديدة."
         />
         {toggleSupplier.isError ? <FieldError>{errorText(toggleSupplier.error)}</FieldError> : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="supplier-search">بحث في الموردين</Label>
+            <Input
+              id="supplier-search"
+              aria-label="بحث في الموردين"
+              placeholder="اسم المورد أو الهاتف"
+              value={supplierSearch}
+              onChange={(event) => setSupplierSearch(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="supplier-status">حالة المورد</Label>
+            <Select
+              id="supplier-status"
+              aria-label="تصفية حسب حالة المورد"
+              value={supplierStatus}
+              onChange={(event) => setSupplierStatus(event.target.value)}
+            >
+              <option value="">كل الحالات</option>
+              <option value="active">نشط</option>
+              <option value="inactive">متوقف</option>
+            </Select>
+          </div>
+        </div>
       </CardContent>
 
       {suppliers.isError ? (

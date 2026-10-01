@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Plus, Printer, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
-import { Button, Badge, Card, EmptyState, Input, Label, Modal } from '@capella/ui';
+import { Button, Badge, Card, CardContent, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { DataTable, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
@@ -83,6 +83,9 @@ export function StockTransfersView() {
   const [formError, setFormError] = useState<string>();
   const [successMessage, setSuccessMessage] = useState<string>();
   const [page, setPage] = useState(1);
+  const [transferProduct, setTransferProduct] = useState('');
+  const [transferFrom, setTransferFrom] = useState('');
+  const [transferTo, setTransferTo] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [printTransfer, setPrintTransfer] = useState<StockTransfer | null>(null);
@@ -104,11 +107,26 @@ export function StockTransfersView() {
     enabled: effectiveSourceBranchId !== undefined,
   });
   const transfers = useQuery({
-    queryKey: stockTransferQueryKeys.list({ page, branchId: cashierBranchId }),
+    queryKey: stockTransferQueryKeys.list({
+      page,
+      ...(cashierBranchId === undefined ? {} : { branchId: cashierBranchId }),
+      ...(transferProduct ? { productId: Number(transferProduct) } : {}),
+      ...(transferFrom ? { from: transferFrom } : {}),
+      ...(transferTo ? { to: transferTo } : {}),
+    }),
     queryFn: () => listStockTransfers({
       page,
       ...(cashierBranchId === undefined ? {} : { branchId: cashierBranchId }),
+      ...(transferProduct ? { productId: Number(transferProduct) } : {}),
+      ...(transferFrom ? { from: transferFrom } : {}),
+      ...(transferTo ? { to: transferTo } : {}),
     }),
+    enabled: actor?.type === 'admin' || cashierBranchId !== undefined,
+  });
+  const historyProducts = useQuery({
+    // Scoped exactly like `transfers` above: admins see every branch, a cashier theirs.
+    queryKey: ['erp-stock-transfers', 'history-products', cashierBranchId ?? null],
+    queryFn: () => listAllProducts(cashierBranchId === undefined ? {} : { branchId: cashierBranchId }),
     enabled: actor?.type === 'admin' || cashierBranchId !== undefined,
   });
 
@@ -335,6 +353,44 @@ export function StockTransfersView() {
 
       <div className="space-y-3">
         <SectionHeading title="التحويلات السابقة" />
+        <Card className="shadow-card">
+          <CardContent className="grid gap-3 p-4 sm:grid-cols-3 sm:p-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="transfer-filter-product">تصفية حسب المنتج</Label>
+              <Select
+                id="transfer-filter-product"
+                aria-label="تصفية حسب المنتج"
+                value={transferProduct}
+                onChange={(event) => { setTransferProduct(event.target.value); setPage(1); }}
+              >
+                <option value="">كل المنتجات</option>
+                {(historyProducts.data?.items ?? []).map((product) => (
+                  <option key={product.id} value={product.id}>{product.name}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="transfer-filter-from">من تاريخ</Label>
+              <Input
+                id="transfer-filter-from"
+                aria-label="من تاريخ"
+                type="date"
+                value={transferFrom}
+                onChange={(event) => { setTransferFrom(event.target.value); setPage(1); }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="transfer-filter-to">إلى تاريخ</Label>
+              <Input
+                id="transfer-filter-to"
+                aria-label="إلى تاريخ"
+                type="date"
+                value={transferTo}
+                onChange={(event) => { setTransferTo(event.target.value); setPage(1); }}
+              />
+            </div>
+          </CardContent>
+        </Card>
         <Card className="overflow-hidden shadow-card">
           {transfers.isPending ? (
             <LoadingState label="جارٍ تحميل التحويلات…" className="py-16" />

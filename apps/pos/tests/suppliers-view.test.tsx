@@ -64,6 +64,24 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
     await waitFor(() => expect(mocks.listSuppliers).toHaveBeenCalledWith({ branchId: 2, page: 2, pageSize: 20 }));
   });
+  it('searches suppliers and resets to the first page', async () => {
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByRole('cell', { name: 'مورد النيل' });
+
+    fireEvent.change(screen.getByLabelText('بحث في الموردين'), { target: { value: 'نيل' } });
+    await waitFor(() => expect(mocks.listSuppliers).toHaveBeenCalledWith({ branchId: 2, search: 'نيل', page: 1, pageSize: 20 }));
+  });
+
+  it('filters suppliers by status and resets to the first page', async () => {
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب حالة المورد'), { target: { value: 'inactive' } });
+    await waitFor(() => expect(mocks.listSuppliers).toHaveBeenCalledWith({ branchId: 2, isActive: false, page: 1, pageSize: 20 }));
+  });
 
   it('loads complete supplier options separately from the paginated table', async () => {
     const secondSupplier = { ...supplier, id: 8, name: 'مورد الصفحة الثانية' };

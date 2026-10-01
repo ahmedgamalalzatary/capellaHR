@@ -17,6 +17,8 @@ import {
 } from '@capella/ui';
 import { useEffect, useState } from 'react';
 
+import type { ErpCategoryType } from '@capella/contracts';
+
 import { DataTable, RowActions, TD, TH, THead, TR } from '@/components/data/data-table';
 import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
@@ -68,6 +70,10 @@ export function CatalogView() {
   const [tab, setTab] = useState<Tab>('categories');
   const [categorySearch, setCategorySearch] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
+  const [categoryType, setCategoryType] = useState<'' | ErpCategoryType>('');
+  const [categoryStatus, setCategoryStatus] = useState('');
+  const [serviceCategoryId, setServiceCategoryId] = useState('');
+  const [serviceStatus, setServiceStatus] = useState('');
   const [categoryPage, setCategoryPage] = useState(1);
   const [servicePage, setServicePage] = useState(1);
   const [creatingCategory, setCreatingCategory] = useState(false);
@@ -92,14 +98,17 @@ export function CatalogView() {
   });
 
   const trimmedCategorySearch = categorySearch.trim();
+  const categoryParams = {
+    ...branchScope,
+    ...(trimmedCategorySearch ? { search: trimmedCategorySearch } : {}),
+    ...(categoryType ? { type: categoryType } : {}),
+    ...(categoryStatus ? { isActive: categoryStatus === 'active' } : {}),
+    page: categoryPage,
+    pageSize: 20,
+  };
   const categoriesQuery = useQuery({
-    queryKey: catalogQueryKeys.categories({ branchId, search: trimmedCategorySearch, page: categoryPage }),
-    queryFn: () => listCategories({
-      ...branchScope,
-      ...(trimmedCategorySearch ? { search: trimmedCategorySearch } : {}),
-      page: categoryPage,
-      pageSize: 20,
-    }),
+    queryKey: catalogQueryKeys.categories(categoryParams),
+    queryFn: () => listCategories(categoryParams),
     enabled: scopeReady,
   });
 
@@ -110,14 +119,17 @@ export function CatalogView() {
   });
 
   const trimmedServiceSearch = serviceSearch.trim();
+  const serviceParams = {
+    ...branchScope,
+    ...(trimmedServiceSearch ? { search: trimmedServiceSearch } : {}),
+    ...(serviceCategoryId ? { categoryId: Number(serviceCategoryId) } : {}),
+    ...(serviceStatus ? { isActive: serviceStatus === 'active' } : {}),
+    page: servicePage,
+    pageSize: 20,
+  };
   const servicesQuery = useQuery({
-    queryKey: catalogQueryKeys.services({ branchId, search: trimmedServiceSearch, page: servicePage }),
-    queryFn: () => listServices({
-      ...branchScope,
-      ...(trimmedServiceSearch ? { search: trimmedServiceSearch } : {}),
-      page: servicePage,
-      pageSize: 20,
-    }),
+    queryKey: catalogQueryKeys.services(serviceParams),
+    queryFn: () => listServices(serviceParams),
     enabled: scopeReady,
   });
 
@@ -146,6 +158,8 @@ export function CatalogView() {
   const categories = categoriesQuery.data?.items ?? [];
   const categoryOptions = categoryOptionsQuery.data ?? [];
   const services = servicesQuery.data?.items ?? [];
+  const categoryFiltered = Boolean(trimmedCategorySearch || categoryType || categoryStatus);
+  const serviceFiltered = Boolean(trimmedServiceSearch || serviceCategoryId || serviceStatus);
   const visibleTabs = tabs;
 
   useEffect(() => {
@@ -173,6 +187,11 @@ export function CatalogView() {
               onChange={(event) => {
                 if (commandPending) return;
                 setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
+                // Category ids belong to one branch only; a stale pick would hide everything.
+                setCategoryType('');
+                setCategoryStatus('');
+                setServiceCategoryId('');
+                setServiceStatus('');
                 setCategoryPage(1);
                 setServicePage(1);
               }}
@@ -275,6 +294,38 @@ export function CatalogView() {
                     إضافة تصنيف
                   </Button>
                 </div>
+                <div className="flex flex-wrap gap-3 border-b border-line/70 p-3 sm:p-4">
+                  <div className="w-full max-w-56 space-y-1.5">
+                    <Label htmlFor="catalog-category-type">تصفية حسب نوع التصنيف</Label>
+                    <Select
+                      id="catalog-category-type"
+                      aria-label="تصفية حسب نوع التصنيف"
+                      value={categoryType}
+                      onChange={(event) => {
+                        setCategoryType(event.target.value as '' | ErpCategoryType);
+                        setCategoryPage(1);
+                      }}
+                    >
+                      <option value="">كل الأنواع</option>
+                      {Object.entries(CATEGORY_TYPE_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="w-full max-w-56 space-y-1.5">
+                    <Label htmlFor="catalog-category-status">تصفية حسب حالة التصنيف</Label>
+                    <Select
+                      id="catalog-category-status"
+                      aria-label="تصفية حسب حالة التصنيف"
+                      value={categoryStatus}
+                      onChange={(event) => { setCategoryStatus(event.target.value); setCategoryPage(1); }}
+                    >
+                      <option value="">كل الحالات</option>
+                      <option value="active">نشط</option>
+                      <option value="inactive">موقوف</option>
+                    </Select>
+                  </div>
+                </div>
 
                 {categoriesQuery.isPending ? (
                   <LoadingState label="جارٍ تحميل التصنيفات…" className="px-6 py-16" />
@@ -290,10 +341,14 @@ export function CatalogView() {
                   />
                 ) : categories.length === 0 ? (
                   <EmptyState
-                    title={trimmedCategorySearch ? 'لا يوجد تصنيف مطابق' : 'لا توجد تصنيفات بعد'}
-                    description={trimmedCategorySearch ? 'جرب اسمًا آخر.' : 'ابدأ بإضافة أول تصنيف.'}
+                    title={categoryFiltered ? 'لا يوجد تصنيف مطابق' : 'لا توجد تصنيفات بعد'}
+                    description={
+                      trimmedCategorySearch ? 'جرب اسمًا آخر.'
+                        : categoryFiltered ? 'جرّب تصفية أخرى.'
+                          : 'ابدأ بإضافة أول تصنيف.'
+                    }
                     action={
-                      trimmedCategorySearch ? undefined : (
+                      categoryFiltered ? undefined : (
                         <Button size="sm" disabled={commandPending} onClick={() => { setCreatingCategory(true); setEditingCategory(null); }}>
                           <Plus className="size-4" aria-hidden />
                           إضافة أول تصنيف
@@ -361,7 +416,7 @@ export function CatalogView() {
                     </tbody>
                   </DataTable>
                 )}
-                <Pagination summary={<>صفحة <span className="tabular">{categoryPage}</span></>} previousDisabled={categoryPage <= 1} nextDisabled={categoryPage >= (categoriesQuery.data?.meta.totalPages ?? 1)} onPrevious={() => setCategoryPage((page) => page - 1)} onNext={() => setCategoryPage((page) => page + 1)} page={categoryPage} totalPages={categoriesQuery.data?.meta.totalPages ?? 1} onPage={setCategoryPage} persistenceKey="pos:catalog:categories" resultSetKey={JSON.stringify({ branchId, search: trimmedCategorySearch })} />
+                <Pagination summary={<>صفحة <span className="tabular">{categoryPage}</span></>} previousDisabled={categoryPage <= 1} nextDisabled={categoryPage >= (categoriesQuery.data?.meta.totalPages ?? 1)} onPrevious={() => setCategoryPage((page) => page - 1)} onNext={() => setCategoryPage((page) => page + 1)} page={categoryPage} totalPages={categoriesQuery.data?.meta.totalPages ?? 1} onPage={setCategoryPage} persistenceKey="pos:catalog:categories" resultSetKey={JSON.stringify({ branchId, search: trimmedCategorySearch, type: categoryType, status: categoryStatus })} />
               </Card>
 
               {toggleCategory.isError ? (
@@ -458,6 +513,35 @@ export function CatalogView() {
                     إضافة خدمة
                   </Button>
                 </div>
+                <div className="flex flex-wrap gap-3 border-b border-line/70 p-3 sm:p-4">
+                  <div className="w-full max-w-56 space-y-1.5">
+                    <Label htmlFor="catalog-service-category">تصفية حسب التصنيف</Label>
+                    <Select
+                      id="catalog-service-category"
+                      aria-label="تصفية حسب التصنيف"
+                      value={serviceCategoryId}
+                      onChange={(event) => { setServiceCategoryId(event.target.value); setServicePage(1); }}
+                    >
+                      <option value="">كل التصنيفات</option>
+                      {categoryOptions.map((category) => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="w-full max-w-56 space-y-1.5">
+                    <Label htmlFor="catalog-service-status">تصفية حسب حالة الخدمة</Label>
+                    <Select
+                      id="catalog-service-status"
+                      aria-label="تصفية حسب حالة الخدمة"
+                      value={serviceStatus}
+                      onChange={(event) => { setServiceStatus(event.target.value); setServicePage(1); }}
+                    >
+                      <option value="">كل الحالات</option>
+                      <option value="active">نشط</option>
+                      <option value="inactive">موقوف</option>
+                    </Select>
+                  </div>
+                </div>
 
                 {servicesQuery.isPending ? (
                   <LoadingState label="جارٍ تحميل الخدمات…" className="px-6 py-16" />
@@ -473,16 +557,17 @@ export function CatalogView() {
                   />
                 ) : services.length === 0 ? (
                   <EmptyState
-                    title={trimmedServiceSearch ? 'لا توجد خدمة مطابقة' : 'لا توجد خدمات بعد'}
+                    title={serviceFiltered ? 'لا توجد خدمة مطابقة' : 'لا توجد خدمات بعد'}
                     description={
-                      trimmedServiceSearch
-                        ? 'جرب اسمًا آخر.'
-                        : categories.length === 0
+                      serviceFiltered
+                        ? trimmedServiceSearch ? 'جرب اسمًا آخر.' : 'جرّب تصفية أخرى.'
+                        // The category filters belong to the other tab; the prerequisite is the real list.
+                        : categoryOptions.length === 0
                           ? 'أضف تصنيفًا قبل إضافة خدمة.'
                           : 'ابدأ بإضافة أول خدمة.'
                     }
                     action={
-                      trimmedServiceSearch ? undefined : categories.length === 0 ? (
+                      serviceFiltered ? undefined : categoryOptions.length === 0 ? (
                         <Button size="sm" onClick={() => setTab('categories')}>أضف تصنيفًا أولًا</Button>
                       ) : (
                         <Button size="sm" disabled={commandPending} onClick={() => { setCreatingService(true); setEditingService(null); }}>
@@ -576,7 +661,7 @@ export function CatalogView() {
                     </tbody>
                   </DataTable>
                 )}
-                <Pagination summary={<>صفحة <span className="tabular">{servicePage}</span></>} previousDisabled={servicePage <= 1} nextDisabled={servicePage >= (servicesQuery.data?.meta.totalPages ?? 1)} onPrevious={() => setServicePage((page) => page - 1)} onNext={() => setServicePage((page) => page + 1)} page={servicePage} totalPages={servicesQuery.data?.meta.totalPages ?? 1} onPage={setServicePage} persistenceKey="pos:catalog:services" resultSetKey={JSON.stringify({ branchId, search: trimmedServiceSearch })} />
+                <Pagination summary={<>صفحة <span className="tabular">{servicePage}</span></>} previousDisabled={servicePage <= 1} nextDisabled={servicePage >= (servicesQuery.data?.meta.totalPages ?? 1)} onPrevious={() => setServicePage((page) => page - 1)} onNext={() => setServicePage((page) => page + 1)} page={servicePage} totalPages={servicesQuery.data?.meta.totalPages ?? 1} onPage={setServicePage} persistenceKey="pos:catalog:services" resultSetKey={JSON.stringify({ branchId, search: trimmedServiceSearch, categoryId: serviceCategoryId, status: serviceStatus })} />
               </Card>
 
               {toggleService.isError ? (

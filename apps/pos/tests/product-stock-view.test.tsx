@@ -18,6 +18,12 @@ const product = {
   lastPurchaseCost: '60.00', lowStockThreshold: 2, isActive: true, quantity: 5, barcode: null as string | null,
   createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
 };
+const movement = {
+  id: 9, productId: 4, branchId: 2, reason: 'sale', sourceType: 'invoice', sourceId: 77,
+  quantityDelta: -1, balanceAfter: 4, actingAccountId: 1, note: null,
+  createdAt: '2026-08-02T09:00:00Z', productName: 'شامبو', productBarcode: '2000000000041',
+  actingUsername: 'admin',
+};
 vi.mock('../src/features/catalog', () => ({
   listCatalogBranches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }, { id: 3, name: 'الفرع الثاني' }], totalPages: 1 })),
 }));
@@ -61,7 +67,7 @@ describe('ProductStockView', () => {
   });
 
   it('keeps pagination available when a saved page has no product rows', async () => {
-    sessionStorage.setItem(`capella:pagination:pos:products:list:${JSON.stringify({ branchId: 2, search: '', lowStock: false })}`, '2');
+    sessionStorage.setItem(`capella:pagination:pos:products:list:${JSON.stringify({ branchId: 2, search: '', lowStock: false, status: '' })}`, '2');
     mocks.listProducts.mockResolvedValue({
       items: [], meta: { page: 2, pageSize: 20, total: 1, totalPages: 2 },
     });
@@ -155,9 +161,12 @@ describe('ProductStockView', () => {
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 
-    await screen.findByText('بيع');
+    // The reason label also appears as an option in the movements reason filter,
+    // so wait for the movement row before scoping every lookup to its table.
+    await screen.findByText(/٢٠٢٦/);
     const table = screen.getAllByRole('table')
       .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'الوقت' }))!;
+    await within(table).findByText('بيع');
     const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent);
     const cells = within(within(table).getAllByRole('row')[1]!).getAllByRole('cell').map((cell) => cell.textContent);
     expect(cells).toHaveLength(headers.length);
@@ -360,11 +369,51 @@ describe('ProductStockView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
     fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
     fireEvent.change(screen.getByLabelText('تصفية الحركات حسب المنتج'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('تصفية الحركات حسب السبب'), { target: { value: 'sale' } });
+    fireEvent.change(screen.getByLabelText('تصفية حسب حالة المنتج'), { target: { value: 'inactive' } });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
 
     expect(screen.queryByRole('button', { name: 'حفظ التعديل' })).toBeNull();
     expect(screen.queryByLabelText('الكمية بعد الجرد')).toBeNull();
     expect((screen.getByLabelText('تصفية الحركات حسب المنتج') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('تصفية الحركات حسب السبب') as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText('تصفية حسب حالة المنتج') as HTMLSelectElement).value).toBe('');
+  });
+
+  it('filters products by status and returns to the first page', async () => {
+    mocks.listProducts.mockResolvedValue({
+      items: [product], meta: { page: 1, pageSize: 20, total: 2, totalPages: 2 },
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.listProducts)
+      .toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب حالة المنتج'), { target: { value: 'inactive' } });
+
+    await waitFor(() => expect(mocks.listProducts).toHaveBeenLastCalledWith({
+      branchId: 2, isActive: false, page: 1, pageSize: 20,
+    }));
+  });
+
+  it('filters stock movements by reason and returns to the first page', async () => {
+    mocks.movements.mockResolvedValue({ items: [movement], totalPages: 2 });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
+    await waitFor(() => expect(mocks.movements)
+      .toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));
+
+    fireEvent.change(screen.getByLabelText('تصفية الحركات حسب السبب'), { target: { value: 'wastage' } });
+
+    await waitFor(() => expect(mocks.movements).toHaveBeenLastCalledWith({
+      branchId: 2, reason: 'wastage', page: 1, pageSize: 20,
+    }));
   });
 
   it('saves the supplier code the admin scanned into the barcode field', async () => {

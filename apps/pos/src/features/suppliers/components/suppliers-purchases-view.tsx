@@ -67,6 +67,8 @@ export function SuppliersPurchasesView() {
   const [idempotencyKey, setIdempotencyKey] = useState(createUuid);
   const [correctionOf, setCorrectionOf] = useState<number>();
   const [supplierPage, setSupplierPage] = useState(1);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [supplierStatus, setSupplierStatus] = useState('');
   const [page, setPage] = useState(1);
   const [historySupplier, setHistorySupplier] = useState('');
   const [historyProduct, setHistoryProduct] = useState('');
@@ -82,7 +84,14 @@ export function SuppliersPurchasesView() {
     enabled: isAdmin,
   });
   const branchScope = branchId === undefined ? {} : { branchId };
-  const supplierParams = { ...branchScope, page: supplierPage, pageSize: 20 };
+  const trimmedSupplierSearch = supplierSearch.trim();
+  const supplierParams = {
+    ...branchScope,
+    ...(trimmedSupplierSearch ? { search: trimmedSupplierSearch } : {}),
+    ...(supplierStatus ? { isActive: supplierStatus === 'active' } : {}),
+    page: supplierPage,
+    pageSize: 20,
+  };
   const suppliers = useQuery({
     queryKey: supplierQueryKeys.suppliers(supplierParams),
     queryFn: () => listSuppliers(supplierParams),
@@ -156,7 +165,7 @@ export function SuppliersPurchasesView() {
     if (saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending) return;
     setSelectedBranchId(value ? Number(value) : undefined);
     clearSupplier(); resetDraft(); setPurchasePanelOpen(false); setHistorySupplier(''); setHistoryProduct(''); setStatus('');
-    setPage(1); setSupplierPage(1); setConfirmingToggle(null); setCancelling(null); setReason('');
+    setPage(1); setSupplierPage(1); setSupplierSearch(''); setSupplierStatus(''); setConfirmingToggle(null); setCancelling(null); setReason('');
   };
   const updateLine = (key: number, changes: Partial<DraftLine>) => {
     if (commandPending) return;
@@ -326,6 +335,10 @@ export function SuppliersPurchasesView() {
             suppliers={suppliers}
             supplierPage={supplierPage}
             setSupplierPage={setSupplierPage}
+            supplierSearch={supplierSearch}
+            setSupplierSearch={(value) => { setSupplierSearch(value); setSupplierPage(1); }}
+            supplierStatus={supplierStatus}
+            setSupplierStatus={(value) => { setSupplierStatus(value); setSupplierPage(1); }}
             branchScope={branchScope}
             commandPending={commandPending}
             toggleSupplier={toggleSupplier}

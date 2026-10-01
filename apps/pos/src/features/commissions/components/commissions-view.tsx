@@ -14,6 +14,7 @@ import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import { listAssignableEmployees } from '@/features/employee-assignment';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -135,6 +136,7 @@ export function CommissionsView() {
   const scopeReady = isAdmin ? branchId !== undefined : actor?.type === 'cashier';
   const [month, setMonth] = useState(currentCairoMonth);
   const [page, setPage] = useState(1);
+  const [employeeId, setEmployeeId] = useState('');
   const [selected, setSelected] = useState<CommissionSummary | null>(null);
   const [payoutOpen, setPayoutOpen] = useState(false);
   const [payoutFromDetails, setPayoutFromDetails] = useState(false);
@@ -145,10 +147,20 @@ export function CommissionsView() {
     queryFn: () => fetchAllPages((branchPage) => listCashierSessionBranches(branchPage)),
     enabled: isAdmin,
   });
-  const filters = { branchId, month, page, pageSize: 20 };
+  const employees = useQuery({
+    queryKey: ['erp-commissions', 'employees', branchId ?? null],
+    queryFn: () => listAssignableEmployees(branchId === undefined ? {} : { branchId }),
+    enabled: scopeReady,
+  });
+  const employeeFilter = employeeId ? Number(employeeId) : undefined;
+  const filters = { branchId, month, page, pageSize: 20, ...(employeeFilter === undefined ? {} : { employeeId: employeeFilter }) };
   const commissions = useQuery({
     queryKey: commissionQueryKeys.list(filters),
-    queryFn: () => listCommissions({ ...(branchId === undefined ? {} : { branchId }), month, page, pageSize: 20 }),
+    queryFn: () => listCommissions({
+      ...(branchId === undefined ? {} : { branchId }),
+      month, page, pageSize: 20,
+      ...(employeeFilter === undefined ? {} : { employeeId: employeeFilter }),
+    }),
     enabled: scopeReady && Boolean(month),
   });
   const openPayout = (summary: CommissionSummary, fromDetails = false) => {
@@ -218,6 +230,8 @@ export function CommissionsView() {
                     setPage(1);
                     setSelected(null);
                     setPayoutOpen(false);
+                    // Employees belong to one branch, so the pick cannot survive the switch.
+                    setEmployeeId('');
                   }}
                 >
                   <option value="">اختر الفرع</option>
@@ -227,6 +241,21 @@ export function CommissionsView() {
                 </Select>
               </div>
             )}
+          <div className="space-y-1.5">
+            <Label htmlFor="commissions-employee">تصفية حسب الموظف</Label>
+            <Select
+              id="commissions-employee"
+              aria-label="تصفية حسب الموظف"
+              className="w-full"
+              value={employeeId}
+              onChange={(event) => { setEmployeeId(event.target.value); setPage(1); setSelected(null); setPayoutOpen(false); }}
+            >
+              <option value="">كل الموظفين</option>
+              {(employees.data ?? []).map((employee) => (
+                <option key={employee.id} value={employee.id}>{employee.fullName}</option>
+              ))}
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="commissions-month">شهر العمولة</Label>
             <MonthPicker

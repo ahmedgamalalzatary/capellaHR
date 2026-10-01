@@ -33,6 +33,7 @@ import {
   listStockMovements,
   updateProduct,
   type Product,
+  type StockMovementReason,
 } from '../api/products-api';
 import { productQueryKeys } from '../query-keys';
 import { ProductLabelSheet } from './product-label-sheet';
@@ -69,6 +70,7 @@ export function ProductStockView() {
   const scopeReady = session.isSuccess && (!isAdmin || selectedBranchId !== undefined);
   const [search, setSearch] = useState('');
   const [lowStock, setLowStock] = useState(false);
+  const [productStatus, setProductStatus] = useState('');
   const [productPage, setProductPage] = useState(1);
   const [editing, setEditing] = useState<Product | null>(null);
   const [confirmingToggle, setConfirmingToggle] = useState<Product | null>(null);
@@ -89,6 +91,7 @@ export function ProductStockView() {
   const [reason, setReason] = useState<'count_correction' | 'wastage' | 'damage'>('count_correction');
   const [note, setNote] = useState('');
   const [movementProductId, setMovementProductId] = useState<number>();
+  const [movementReason, setMovementReason] = useState<'' | StockMovementReason>('');
   const [movementPage, setMovementPage] = useState(1);
   const [successMessage, setSuccessMessage] = useState<string>();
 
@@ -96,12 +99,14 @@ export function ProductStockView() {
     ...(branchId === undefined ? {} : { branchId }),
     ...(search.trim() ? { search: search.trim() } : {}),
     ...(lowStock ? { lowStock: true } : {}),
+    ...(productStatus ? { isActive: productStatus === 'active' } : {}),
     page: productPage,
     pageSize: 20,
   };
   const movementParams = {
     ...(branchId === undefined ? {} : { branchId }),
     ...(movementProductId === undefined ? {} : { productId: movementProductId }),
+    ...(movementReason ? { reason: movementReason } : {}),
     page: movementPage, pageSize: 20,
   };
   const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listProducts(productParams), enabled: scopeReady });
@@ -239,7 +244,8 @@ export function ProductStockView() {
                     setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
                     setEditing(null); setCreateOpen(false); setConfirmingToggle(null); setAdjusting(null);
                     setLabelling(null);
-                    setMovementProductId(undefined); setMovementPage(1); setProductPage(1);
+                    setMovementProductId(undefined); setMovementReason(''); setProductStatus('');
+                    setMovementPage(1); setProductPage(1);
                   }}
                 >
                   <option value="">اختر الفرع</option>
@@ -362,9 +368,21 @@ export function ProductStockView() {
 
           <Card className="overflow-hidden shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
-              <div className="relative w-full max-w-xs">
-                <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
-                <Input aria-label="بحث في المنتجات" placeholder="بحث" className="ps-9" value={search} onChange={(event) => { setSearch(event.target.value); setProductPage(1); }} />
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                <div className="relative w-full max-w-xs">
+                  <Search className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted" aria-hidden />
+                  <Input aria-label="بحث في المنتجات" placeholder="بحث" className="ps-9" value={search} onChange={(event) => { setSearch(event.target.value); setProductPage(1); }} />
+                </div>
+                <Select
+                  aria-label="تصفية حسب حالة المنتج"
+                  className="w-auto min-w-40 max-w-full"
+                  value={productStatus}
+                  onChange={(event) => { setProductStatus(event.target.value); setProductPage(1); }}
+                >
+                  <option value="">كل الحالات</option>
+                  <option value="active">نشط</option>
+                  <option value="inactive">موقوف</option>
+                </Select>
               </div>
               <Button
                 variant={lowStock ? 'primary' : 'secondary'}
@@ -381,10 +399,15 @@ export function ProductStockView() {
               : products.isError ? <EmptyState title="تعذر تحميل المنتجات" action={<Button onClick={() => void products.refetch()}>إعادة المحاولة</Button>} />
                 : products.data?.meta.total === 0 ? (
                   <EmptyState
-                    title={lowStock || search.trim() ? 'لا توجد منتجات مطابقة' : 'لا توجد منتجات'}
-                    description={lowStock ? 'لا يوجد منتج تحت حد المخزون المنخفض.' : search.trim() ? 'جرّب بحثًا آخر.' : 'أضف أول منتج لهذا الفرع.'}
+                    title={lowStock || search.trim() || productStatus ? 'لا توجد منتجات مطابقة' : 'لا توجد منتجات'}
+                    description={
+                      lowStock ? 'لا يوجد منتج تحت حد المخزون المنخفض.'
+                        : search.trim() ? 'جرّب بحثًا آخر.'
+                          : productStatus ? 'جرّب تصفية أخرى.'
+                            : 'أضف أول منتج لهذا الفرع.'
+                    }
                     action={
-                      !lowStock && !search.trim() ? (
+                      !lowStock && !search.trim() && !productStatus ? (
                         <Button size="sm" disabled={commandPending} onClick={() => setCreateOpen(true)}>
                           <Plus className="size-4" aria-hidden />
                           إضافة أول منتج
@@ -438,7 +461,7 @@ export function ProductStockView() {
                         ))}
                       </tbody>
                     </DataTable>
-                    <Pagination summary={<>صفحة <span className="tabular">{productPage}</span></>} previousDisabled={productPage <= 1} nextDisabled={productPage >= (products.data?.meta.totalPages ?? 1)} onPrevious={() => setProductPage((page) => page - 1)} onNext={() => setProductPage((page) => page + 1)} page={productPage} totalPages={products.data?.meta.totalPages} onPage={setProductPage} persistenceKey="pos:products:list" resultSetKey={JSON.stringify({ branchId, search: search.trim(), lowStock })} />
+                    <Pagination summary={<>صفحة <span className="tabular">{productPage}</span></>} previousDisabled={productPage <= 1} nextDisabled={productPage >= (products.data?.meta.totalPages ?? 1)} onPrevious={() => setProductPage((page) => page - 1)} onNext={() => setProductPage((page) => page + 1)} page={productPage} totalPages={products.data?.meta.totalPages} onPage={setProductPage} persistenceKey="pos:products:list" resultSetKey={JSON.stringify({ branchId, search: search.trim(), lowStock, status: productStatus })} />
                     </>
                   )}
           </Card>
@@ -487,15 +510,31 @@ export function ProductStockView() {
           <Card className="overflow-hidden shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
               <SectionHeading title="سجل حركات المخزون" />
-              <Select
-                aria-label="تصفية الحركات حسب المنتج"
-                className="w-auto min-w-48 max-w-full"
-                value={movementProductId ?? ''}
-                onChange={(event) => { setMovementProductId(event.target.value ? Number(event.target.value) : undefined); setMovementPage(1); }}
-              >
-                <option value="">كل المنتجات</option>
-                {(catalogProducts.data?.items ?? products.data?.items ?? []).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-              </Select>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  aria-label="تصفية الحركات حسب المنتج"
+                  className="w-auto min-w-48 max-w-full"
+                  value={movementProductId ?? ''}
+                  onChange={(event) => { setMovementProductId(event.target.value ? Number(event.target.value) : undefined); setMovementPage(1); }}
+                >
+                  <option value="">كل المنتجات</option>
+                  {(catalogProducts.data?.items ?? products.data?.items ?? []).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                </Select>
+                <Select
+                  aria-label="تصفية الحركات حسب السبب"
+                  className="w-auto min-w-48 max-w-full"
+                  value={movementReason}
+                  onChange={(event) => {
+                    setMovementReason(event.target.value as '' | StockMovementReason);
+                    setMovementPage(1);
+                  }}
+                >
+                  <option value="">كل الأسباب</option>
+                  {Object.entries(reasonLabels).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </Select>
+              </div>
             </div>
 
             {movements.isError ? <EmptyState title="تعذر تحميل الحركات" action={<Button onClick={() => void movements.refetch()}>إعادة المحاولة</Button>} />
@@ -541,9 +580,14 @@ export function ProductStockView() {
                       totalPages={movements.data.totalPages}
                       onPage={setMovementPage}
                       persistenceKey="pos:products:movements"
+                      resultSetKey={JSON.stringify({ branchId, productId: movementProductId ?? null, reason: movementReason })}
                     />
                   </>
-                ) : <EmptyState title="لا توجد حركات بعد" />}
+                ) : (
+                  <EmptyState
+                    title={movementProductId !== undefined || movementReason ? 'لا توجد حركات مطابقة' : 'لا توجد حركات بعد'}
+                  />
+                )}
           </Card>
         </>
       )}

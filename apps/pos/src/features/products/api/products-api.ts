@@ -1,4 +1,4 @@
-import type { CreateProductInput, StockAdjustmentReason, UpdateProductInput } from '@capella/contracts';
+import type { CreateProductInput, ListStockMovementsQuery, StockAdjustmentReason, UpdateProductInput } from '@capella/contracts';
 import { api } from '@/lib/api/client';
 
 export interface Product {
@@ -18,7 +18,8 @@ export interface StockMovement {
 const query = (params: Record<string, string | number | boolean | undefined>) => {
   const value = new URLSearchParams();
   for (const [key, entry] of Object.entries(params)) if (entry !== undefined && entry !== '') value.set(key, String(entry));
-  return value.size ? `?${value}` : '';
+  const serialized = value.toString();
+  return serialized ? `?${serialized}` : '';
 };
 export const listProducts = (params: { branchId?: number; search?: string; isActive?: boolean; lowStock?: boolean; page?: number; pageSize?: number } = {}) => api.getPage<Product>(`/erp/products${query(params)}`);
 export const listAllProducts = async (params: { branchId?: number; search?: string; isActive?: boolean; lowStock?: boolean } = {}) => {
@@ -43,7 +44,8 @@ export const lookupProductByBarcode = (code: string, params: { branchId?: number
 export const generateProductBarcode = (id: number, params: { branchId?: number } = {}) => (
   api.post<Product>(`/erp/products/${id}/barcode`, params)
 );
-export const listStockMovements = async (params: { branchId?: number; productId?: number; page?: number; pageSize?: number } = {}) => {
+export type StockMovementReason = NonNullable<ListStockMovementsQuery['reason']>;
+export const listStockMovements = async (params: { branchId?: number; productId?: number; reason?: StockMovementReason; page?: number; pageSize?: number } = {}) => {
   const result = await api.getPage<StockMovement>(`/erp/products/movements${query(params)}`);
   return { ...result, totalPages: result.meta.totalPages };
 };

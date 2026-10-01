@@ -76,6 +76,7 @@ const openTransferDialog = async () => {
   if (!screen.queryByLabelText('الفرع المُرسِل')) {
     fireEvent.click(await screen.findByRole('button', { name: 'تحويل جديد' }));
   }
+  return within(screen.getByRole('dialog', { name: 'تحويل جديد' }));
 };
 
 const sourceOptionsReady = async () => {
@@ -85,7 +86,6 @@ const sourceOptionsReady = async () => {
     expect(within(source).getByRole('option', { name: 'فرع مدينة نصر' })).toBeDefined();
   });
 };
-
 const fillTransfer = async () => {
   await sourceOptionsReady();
   fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
@@ -95,7 +95,7 @@ const fillTransfer = async () => {
   });
   fireEvent.change(screen.getByLabelText('الفرع المستلم'), { target: { value: '3' } });
   fireEvent.click(screen.getByLabelText('المنتج 1'));
-  fireEvent.click(screen.getByRole('option', { name: /شامبو الأرغان/ }));
+  fireEvent.click((await openTransferDialog()).getByRole('option', { name: /شامبو الأرغان/ }));
   fireEvent.change(screen.getByLabelText('الكمية 1'), { target: { value: '4' } });
 };
 
@@ -146,7 +146,7 @@ describe('StockTransfersView', () => {
     mount();
 
     await openTransferDialog();
-    const source = screen.getAllByRole('combobox')[0]!;
+    const source = within(screen.getByRole('dialog', { name: 'تحويل جديد' })).getAllByRole('combobox')[0]!;
     await waitFor(() => expect(source).toHaveProperty('value', '2'));
     expect(source).toHaveProperty('disabled', true);
     await waitFor(() => expect(mocks.products).toHaveBeenCalledWith(
@@ -194,7 +194,8 @@ describe('StockTransfersView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'إضافة منتج' }));
     fireEvent.click(screen.getByLabelText('المنتج 1'));
-    fireEvent.click(screen.getByRole('option', { name: /بلسم/ }));
+    const dialog = await openTransferDialog();
+    fireEvent.click(dialog.getByRole('option', { name: /بلسم/ }));
     fireEvent.change(screen.getByLabelText('الكمية 1'), { target: { value: '2' } });
     // 4 × 30.00 plus 2 × 12.50 on one transfer.
     expect((await screen.findByText(/إجمالي تكلفة التحويل/)).textContent).toContain('145.00');
@@ -223,8 +224,8 @@ describe('StockTransfersView', () => {
     const search = screen.getByRole('searchbox', { name: 'بحث عن المنتج 1' });
     fireEvent.change(search, { target: { value: '62210002' } });
 
-    expect(screen.queryByRole('option', { name: /شامبو الأرغان/ })).toBeNull();
-    fireEvent.click(screen.getByRole('option', { name: /بلسم/ }));
+    expect((await openTransferDialog()).queryByRole('option', { name: /شامبو الأرغان/ })).toBeNull();
+    fireEvent.click((await openTransferDialog()).getByRole('option', { name: /بلسم/ }));
     expect(picker.textContent).toContain('بلسم');
   });
 
@@ -238,7 +239,7 @@ describe('StockTransfersView', () => {
     fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
     await waitFor(() => expect(screen.getByLabelText('المنتج 1')).not.toHaveProperty('disabled', true));
     fireEvent.click(screen.getByLabelText('المنتج 1'));
-    fireEvent.click(screen.getByRole('option', { name: /شامبو الأرغان/ }));
+    fireEvent.click((await openTransferDialog()).getByRole('option', { name: /شامبو الأرغان/ }));
     fireEvent.click(screen.getByRole('button', { name: 'إضافة منتج' }));
 
     const productFields = screen.getAllByRole('combobox', { name: /المنتج \d+/ });
@@ -260,7 +261,7 @@ describe('StockTransfersView', () => {
 
     const first = screen.getByLabelText('المنتج 1');
     fireEvent.click(first);
-    expect(screen.queryByRole('option', { name: /شامبو الأرغان/ })).toBeNull();
+    expect((await openTransferDialog()).queryByRole('option', { name: /شامبو الأرغان/ })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'حذف البند 1' }));
     expect(screen.getAllByRole('combobox', { name: /المنتج \d+/ })).toHaveLength(1);
@@ -403,6 +404,39 @@ describe('StockTransfersView', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: /إغلاق|رجوع/ }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /تفاصيل التحويل/ })).toBeNull());
+  });
+
+  it('filters transfers by product and date range, resetting to the first page', async () => {
+    mocks.products.mockResolvedValue(page([
+      { id: 7, name: 'شامبو الأرغان', quantity: 10, lastPurchaseCost: '30.00', isActive: true },
+      { id: 9, name: 'بلسم', quantity: 5, lastPurchaseCost: '12.00', isActive: true },
+    ]));
+    mount();
+    await screen.findByText('INV.2026.08.17.0001');
+
+    fireEvent.change(screen.getByLabelText('تصفية حسب المنتج'), { target: { value: '9' } });
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ page: 1, productId: 9 }));
+
+    fireEvent.change(screen.getByLabelText('من تاريخ'), { target: { value: '2026-08-01' } });
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ page: 1, productId: 9, from: '2026-08-01' }));
+
+    fireEvent.change(screen.getByLabelText('إلى تاريخ'), { target: { value: '2026-08-31' } });
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ page: 1, productId: 9, from: '2026-08-01', to: '2026-08-31' }));
+  });
+
+  it('scopes the history product filter like the transfers list, not the form source branch', async () => {
+    mount();
+    await sourceOptionsReady();
+    fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
+    await waitFor(() => expect(mocks.products).toHaveBeenCalledWith(
+      { branchId: 2, isActive: true },
+    ));
+
+    // The form's own product list stays branch-scoped; the history filter must not follow it.
+    const historyCalls = mocks.products.mock.calls
+      .map(([params]) => params as Record<string, unknown>)
+      .filter((params) => !('isActive' in params));
+    expect(historyCalls.at(-1)).toEqual({});
   });
 
   it('prints the selected transfer with every product and its totals', async () => {
