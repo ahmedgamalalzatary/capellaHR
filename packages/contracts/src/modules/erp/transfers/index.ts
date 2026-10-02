@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { packageBatchSelectionsSchema } from '../stock/batches.ts';
 
 import {
   coercedMysqlIntSchema,
@@ -11,6 +12,7 @@ const optionalNote = z.string().refine((value) => codePoints(value) <= 500, 'Ø§Ù
   .transform((value) => value.trim() || null);
 
 const transferLineSchema = z.object({
+  batches: packageBatchSelectionsSchema.optional(),
   productId: coercedMysqlIntSchema,
   quantity: z.number().int().positive().max(2_147_483_647),
 }).strict();

@@ -1,5 +1,6 @@
 'use client';
 
+import { isBatchSelectionComplete } from '@capella/contracts';
 import type { PaymentMethod } from '@capella/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -196,6 +197,7 @@ export function SaleWorkspace({
   const hasServiceLines = lines.some((line) => line.itemType !== 'product');
   /** Every line must name its assigned employee before the sale posts. */
   const linesAssigned = lines.every((line) => Boolean(line.employee));
+  const batchSelectionsValid = lines.every((line) => isBatchSelectionComplete(line.batches, String(line.quantity), true));
 
   const { quoteInput, quote } = useSaleQuote({
     ...(branchId === undefined ? {} : { branchId }),
@@ -266,6 +268,7 @@ export function SaleWorkspace({
     setBackgroundSyncCount,
   });
   const blockers = saleCheckoutBlockers({
+    batchSelectionsValid,
     hasClient: Boolean(client),
     hasLines: lines.length > 0,
     linesAssigned,

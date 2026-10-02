@@ -1,9 +1,11 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, erpProducts, erpProductStocks, erpStockMovements } from '@capella/database/schema';
+import { accounts, erpProducts, erpProductStocks, erpStockMovements, erpStockBatches, erpStockBatchBalances } from '@capella/database/schema';
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { ProductStockError, type ProductStockRecord, type ProductStockRepository } from './product-stock-service.js';
+
+import { readStockBatches, createStockBatch, ensureLegacyBatch, takeBatchQuantities, addBatchQuantities, StockBatchError } from './stock-batches.js';
 
 type Database = ReturnType<typeof createDatabase>;
 const productSelection = {
@@ -21,6 +23,18 @@ export const createDrizzleProductStockRepository = (
   audit: ErpAuditCapability,
   now: () => Date = () => new Date(),
 ): ProductStockRepository => ({
+  listBatches(id, branchId) { return readStockBatches(database, id, branchId); },
+  updateBatchExpiry(id, branchId, batchId, expiryDate, accountId) {
+    return database.transaction(async (tx) => {
+      const before = (await tx.select().from(erpStockBatches).innerJoin(erpStockBatchBalances, eq(erpStockBatchBalances.batchId, erpStockBatches.id))
+        .where(and(eq(erpStockBatches.id, batchId), eq(erpStockBatchBalances.productId, id), eq(erpStockBatchBalances.branchId, branchId))).for('update').limit(1))[0];
+      if (!before) throw new StockBatchError('الدفعة غير موجودة في هذا الفرع');
+      const at = now();
+      await tx.update(erpStockBatches).set({ expiryDate, updatedAt: at }).where(eq(erpStockBatches.id, batchId));
+      await audit.record(tx, { module: 'erp-stock', action: 'expiry_update', entityType: 'stock-batch', entityId: batchId, beforeState: before.erp_stock_batches, afterState: { expiryDate }, relatedIds: { branchId, productId: id, actingAccountId: accountId }, createdAt: at });
+      return readStockBatches(tx, id, branchId);
+    });
+  },
   async create(input, actingAccountId) {
     return database.transaction(async (tx) => {
       const at = now();
@@ -36,9 +50,10 @@ export const createDrizzleProductStockRepository = (
     });
   },
   async findById(id) {
-    return (await database.select(productSelection).from(erpProducts).innerJoin(
+    const row = (await database.select(productSelection).from(erpProducts).innerJoin(
       erpProductStocks, and(eq(erpProductStocks.productId, erpProducts.id), eq(erpProductStocks.branchId, erpProducts.branchId)),
-    ).where(eq(erpProducts.id, id)).limit(1))[0] as ProductStockRecord | undefined ?? null;
+    ).where(eq(erpProducts.id, id)).limit(1))[0] as ProductStockRecord | undefined;
+    return row ? { ...row, batches: await readStockBatches(database, id, row.branchId) } : null;
   },
   async findByNormalizedName(branchId, nameNormalized) {
     return (await database.select(productSelection).from(erpProducts).innerJoin(
@@ -93,9 +108,23 @@ export const createDrizzleProductStockRepository = (
       if (!stock) throw new ProductStockError('PRODUCT_NOT_FOUND', 'رصيد المنتج غير موجود');
       const balanceAfter = stock.quantity + input.quantityDelta;
       if (balanceAfter < 0) throw new ProductStockError('INSUFFICIENT_STOCK', 'الكمية المتاحة غير كافية');
+      await ensureLegacyBatch(tx, id, branchId, stock.quantity, '0.000', at);
+      const batches = input.quantityDelta < 0
+        ? await takeBatchQuantities(tx, id, branchId, `${-input.quantityDelta}.000`, 'quantity', at, input.batches)
+        : input.batches?.map((batch) => ({ ...batch, expiryDate: null }))
+          ?? [{ batchId: await createStockBatch(tx, id, branchId, input.expiryDate ?? null, at), expiryDate: input.expiryDate ?? null, quantity: `${input.quantityDelta}.000` }];
+      if (input.quantityDelta > 0) {
+        if (batches.reduce((sum, batch) => sum + Number(batch.quantity), 0) !== input.quantityDelta) throw new StockBatchError();
+        if (input.batches) {
+          const owned = await readStockBatches(tx, id, branchId, true);
+          if (batches.some((batch) => !owned.some((row) => row.batchId === batch.batchId))) throw new StockBatchError();
+          for (const batch of batches) batch.expiryDate = owned.find((row) => row.batchId === batch.batchId)!.expiryDate;
+        }
+        await addBatchQuantities(tx, id, branchId, batches, 'quantity', at);
+      }
       await tx.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: at }).where(stockScope);
       const inserted = await tx.insert(erpStockMovements).values({
-        productId: id, branchId, reason: input.reason, sourceType: 'adjustment', sourceId: null,
+        batches, productId: id, branchId, reason: input.reason, sourceType: 'adjustment', sourceId: null,
         quantityDelta: input.quantityDelta, balanceAfter, actingAccountId, note: input.note ?? null, createdAt: at,
       });
       const movementId = Number(inserted[0].insertId);
@@ -113,7 +142,7 @@ export const createDrizzleProductStockRepository = (
       id: erpStockMovements.id, productId: erpStockMovements.productId,
       branchId: erpStockMovements.branchId, reason: erpStockMovements.reason,
       sourceType: erpStockMovements.sourceType, sourceId: erpStockMovements.sourceId,
-      quantityDelta: erpStockMovements.quantityDelta, balanceAfter: erpStockMovements.balanceAfter,
+      batches: erpStockMovements.batches, quantityDelta: erpStockMovements.quantityDelta, balanceAfter: erpStockMovements.balanceAfter,
       actingAccountId: erpStockMovements.actingAccountId, note: erpStockMovements.note,
       createdAt: erpStockMovements.createdAt, productName: erpProducts.name,
       actingUsername: accounts.username,

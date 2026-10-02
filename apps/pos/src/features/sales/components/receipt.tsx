@@ -200,6 +200,9 @@ export function EmployeeReceipt({
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">
                 <span>{line.name}</span>
+                {line.itemType === 'product' ? (line.batches?.length ? line.batches.map((batch) => <span key={batch.batchId} className="block text-[10px]">
+                  دفعة #{batch.batchId} × {Number(batch.quantity)} · صلاحية {batch.expiryDate ?? 'غير محددة'}
+                </span>) : <span className="block text-[10px]">الصلاحية غير محددة</span>) : null}
                 {line.queueNumbers?.length ? (
                   <span className="block text-[10px]">أرقام الدور: {line.queueNumbers.join('، ')}</span>
                 ) : null}
@@ -302,6 +305,9 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">
                 <span>{line.name}</span>
+                {line.itemType === 'product' ? (line.batches?.length ? line.batches.map((batch) => <span key={batch.batchId} className="block text-[10px]">
+                  دفعة #{batch.batchId} × {Number(batch.quantity)} · صلاحية {batch.expiryDate ?? 'غير محددة'}
+                </span>) : <span className="block text-[10px]">الصلاحية غير محددة</span>) : null}
                 {line.queueNumbers?.length ? (
                   <span className="block text-[10px]">أرقام الدور: {line.queueNumbers.join('، ')}</span>
                 ) : null}

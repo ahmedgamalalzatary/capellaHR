@@ -6,6 +6,7 @@ import type {
   PaymentMethod,
   QuoteSaleInput,
 } from '@capella/contracts';
+import { isBatchSelectionComplete } from '@capella/contracts';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
@@ -176,6 +177,7 @@ export function useSaleWorkspaceCheckout({
 
   const makeInput = (): CompleteSaleInput | null => {
     if (!client || !linesAssigned
+      || lines.some((line) => !isBatchSelectionComplete(line.batches, String(line.quantity), true))
       || !quote.data || remaining === null || remaining < BigInt(0)
       || (hasServiceLines && remaining !== BigInt(0))) return null;
     const paymentRows = paymentMethods.flatMap(({ method }) => {
@@ -188,9 +190,9 @@ export function useSaleWorkspaceCheckout({
       cashierSessionId,
       ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
       idempotencyKey,
-      lines: lines.map(({ service, quantity, unitPrice, itemType, employee: performer }) => (
+      lines: lines.map(({ service, quantity, unitPrice, itemType, batches, employee: performer }) => (
         itemType === 'product'
-          ? { itemType: 'product' as const, productId: service.id, quantity, employeeId: performer!.id }
+          ? { ...(batches === undefined ? {} : { batches }), itemType: 'product' as const, productId: service.id, quantity, employeeId: performer!.id }
           : {
               itemType: 'service' as const,
               serviceId: service.id,

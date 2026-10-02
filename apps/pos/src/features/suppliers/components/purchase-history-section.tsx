@@ -116,7 +116,7 @@ export function PurchaseHistorySection({
                     <TD>
                       {purchase.lines.map((line) => (
                         <span key={line.id} className="block text-[13px]">
-                          {line.productNameSnapshot}: {line.quantity} × {line.unitCost} = {line.lineTotal}
+                          {line.productNameSnapshot} · صلاحية {line.expiryDate ?? 'غير محددة'}: {line.quantity} × {line.unitCost} = {line.lineTotal}
                         </span>
                       ))}
                     </TD>

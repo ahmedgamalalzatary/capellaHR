@@ -1,7 +1,7 @@
 import {
   accounts, branches, cashierSessions, clients, commissionLedgerEntries, employees, erpCategories,
   erpConsumableBalances, erpConsumableConfigurations, erpConsumableLedgerEntries, erpProducts, erpProductStocks,
-  erpServices, erpStockMovements, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
+  erpServices, erpStockMovements, erpStockBatches, erpStockBatchBalances, invoiceLines, invoicePayments, invoices, serviceConsumptionReports,
   serviceConsumptionUsages, serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, eq } from 'drizzle-orm';
@@ -33,6 +33,18 @@ const fixture = async () => {
 };
 
 describe('consumables MySQL inventory integration', () => {
+  it('keeps original expiry when opening packages and returning them to stock', async () => {
+    const data = await fixture();
+    const batchId = Number((await database.insert(erpStockBatches).values({ originProductId: data.productId, originBranchId: data.branchId,
+      expiryDate: '2027-01-01', createdAt: at, updatedAt: at }))[0].insertId);
+    await database.insert(erpStockBatchBalances).values({ ...data, batchId, quantity: 10, updatedAt: at });
+    const repository = createDrizzleConsumablesRepository(database, createErpAuditCapability(), () => at);
+    await repository.configure(data.productId, data.branchId, 'ml', '150.000', accountId);
+    await repository.transfer({ ...data, direction: 'reserve', packages: 2, accountId });
+    expect((await database.select().from(erpConsumableLedgerEntries))[0]).toMatchObject({ batches: [{ batchId, expiryDate: '2027-01-01', quantity: '300.000' }] });
+    await repository.transfer({ ...data, direction: 'return', packages: 1, accountId });
+    expect((await database.select().from(erpStockBatchBalances).where(eq(erpStockBatchBalances.batchId, batchId)))[0]).toMatchObject({ quantity: 9, consumableQuantity: '150.000' });
+  });
   it('reserves and returns only whole packages without duplicating sellable stock', async () => {
     const data = await fixture();
     const repository = createDrizzleConsumablesRepository(database, createErpAuditCapability(), () => at);
@@ -111,6 +123,7 @@ describe('consumables MySQL inventory integration', () => {
       .rejects.toMatchObject({ code: 'CONSUMABLE_UNIT_MISMATCH' });
 
     expect((await database.select().from(erpConsumableBalances).where(eq(erpConsumableBalances.productId, data.productId)).limit(1))[0]?.quantity).toBe('280.000');
+    expect((await database.select().from(erpStockBatchBalances).where(eq(erpStockBatchBalances.productId, data.productId)))[0]).toMatchObject({ consumableQuantity: '280.000' });
     expect((await database.select().from(serviceConsumptionReports)).map((report) => [report.revision, report.isCurrent, report.completionKind])).toEqual(expect.arrayContaining([[1, false, 'consumables'], [1, true, 'consumables'], [1, true, 'none'], [2, true, 'consumables']]));
     expect((await database.select({ unit: serviceConsumptionUsages.unit }).from(serviceConsumptionUsages)).every(({ unit }) => unit === 'ml')).toBe(true);
     expect((await database.select().from(serviceQueueEntries)).every((entry) => entry.status === 'completed')).toBe(true);

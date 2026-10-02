@@ -7,6 +7,8 @@ import type { ErpAccountIdentity, ErpBranchCapability } from '../hr-capabilities
 import type { SaleTransaction } from '../sales/index.js';
 
 export type StockTransferLineRecord = {
+  batches?: import("@capella/contracts").BatchAllocation[] | null;
+  requestedBatches?: import("@capella/contracts").BatchSelection[] | null;
   sourceProductId: number;
   destinationProductId: number;
   productName: string;
@@ -48,7 +50,7 @@ export type ApplyDestinationInput = {
   transferDate: string;
   note: string | null;
   postedAt: Date;
-  lines: Array<{ productId: number; productName: string; quantity: number; unitCost: string }>;
+  lines: Array<{ productId: number; productName: string; quantity: number; unitCost: string; batches?: import("@capella/contracts").BatchAllocation[] }>;
 };
 
 export interface StockTransferRepository {
@@ -138,6 +140,9 @@ const sameTransfer = (record: StockTransferRecord, input: CreateStockTransferInp
   // some stored line of the same length settles both sides.
   && input.lines.every((line) => record.lines.some((stored) => (
     stored.sourceProductId === line.productId && stored.quantity === line.quantity
+      && (line.batches === undefined ? stored.requestedBatches == null
+        : line.batches.length === stored.requestedBatches?.length
+          && line.batches.every((batch) => stored.requestedBatches?.some((row) => row.batchId === batch.batchId && row.quantity === batch.quantity)))
   )))
 );
 
@@ -145,6 +150,7 @@ const sameTransfer = (record: StockTransferRecord, input: CreateStockTransferInp
 type PostedInvoice = {
   id: number;
   lines: Array<{
+    batches?: import("@capella/contracts").BatchAllocation[] | undefined;
     itemType: 'service' | 'product';
     sourceId: number;
     name: string;
@@ -217,6 +223,7 @@ export const createStockTransferService = (dependencies: {
         if (toCents(product.unitCost) <= 0n) throw new StockTransferError('TRANSFER_COST_REQUIRED');
         if (product.quantity < line.quantity) throw new StockTransferError('INSUFFICIENT_STOCK');
         return {
+          batches: line.batches,
           productId: product.id,
           productName: product.name,
           quantity: line.quantity,
@@ -237,6 +244,7 @@ export const createStockTransferService = (dependencies: {
           cashierSessionId: session.id,
           idempotencyKey: input.idempotencyKey,
           lines: lines.map((line) => ({
+            ...(line.batches === undefined ? {} : { batches: line.batches }),
             itemType: 'product' as const,
             productId: line.productId,
             quantity: line.quantity,
@@ -262,6 +270,7 @@ export const createStockTransferService = (dependencies: {
               lines: invoice.lines
                 .filter((line) => line.itemType === 'product')
                 .map((line) => ({
+                  ...(line.batches ? { batches: line.batches.map(({ batchId, expiryDate, quantity }) => ({ batchId, expiryDate, quantity })) } : {}),
                   productId: line.sourceId,
                   productName: line.name,
                   quantity: line.quantity,

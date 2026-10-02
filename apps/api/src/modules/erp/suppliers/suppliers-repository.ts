@@ -5,16 +5,18 @@ import { and, asc, count, desc, eq, gte, inArray, lte, ne, or, sql } from 'drizz
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { isSupplierDuplicateEntryError, purchaseError, type PurchaseLineRecord, type PurchaseRecord, type SupplierPurchaseRepository } from './suppliers-service.js';
 
+import { createStockBatch, addBatchQuantities, ensureLegacyBatch, takeBatchQuantities, StockBatchError } from '../stock/index.js';
+
 type Database = ReturnType<typeof createDatabase>;
 const supplierScope = (id: number, branchId: number) => and(eq(erpSuppliers.id, id), eq(erpSuppliers.branchId, branchId));
 const purchaseSelection = { id: erpPurchases.id, branchId: erpPurchases.branchId, supplierId: erpPurchases.supplierId, supplierName: erpPurchases.supplierNameSnapshot, status: erpPurchases.status, purchaseDate: erpPurchases.purchaseDate, total: erpPurchases.total, actingAccountId: erpPurchases.actingAccountId, actingUsername: accounts.username, cancelledAt: erpPurchases.cancelledAt, cancelledByAccountId: erpPurchases.cancelledByAccountId, cancellationReason: erpPurchases.cancellationReason, correctsPurchaseId: erpPurchases.correctsPurchaseId, createdAt: erpPurchases.createdAt };
-const lineSelection = { id: erpPurchaseLines.id, purchaseId: erpPurchaseLines.purchaseId, branchId: erpPurchaseLines.branchId, productId: erpPurchaseLines.productId, productNameSnapshot: erpPurchaseLines.productNameSnapshot, quantity: erpPurchaseLines.quantity, unitCost: erpPurchaseLines.unitCost, previousUnitCost: erpPurchaseLines.previousUnitCost, lineTotal: erpPurchaseLines.lineTotal };
+const lineSelection = { batchId: erpPurchaseLines.batchId, expiryDate: erpPurchaseLines.expiryDate, id: erpPurchaseLines.id, purchaseId: erpPurchaseLines.purchaseId, branchId: erpPurchaseLines.branchId, productId: erpPurchaseLines.productId, productNameSnapshot: erpPurchaseLines.productNameSnapshot, quantity: erpPurchaseLines.quantity, unitCost: erpPurchaseLines.unitCost, previousUnitCost: erpPurchaseLines.previousUnitCost, lineTotal: erpPurchaseLines.lineTotal };
 
 export const createDrizzleSupplierPurchaseRepository = (database: Database, audit: ErpAuditCapability, now: () => Date = () => new Date()): SupplierPurchaseRepository => {
   const hydrate = async (rows: Array<Omit<PurchaseRecord, 'lines' | 'correctedByPurchaseId'>>, executor: Pick<Database, 'select'> = database) => {
     if (!rows.length) return [];
     const lines = await executor.select(lineSelection).from(erpPurchaseLines).where(inArray(erpPurchaseLines.purchaseId, rows.map((row) => row.id))).orderBy(asc(erpPurchaseLines.id)) as Array<Omit<PurchaseLineRecord, 'postedBalanceAfter' | 'cancellationBalanceAfter'>>;
-    const movements = await executor.select({ sourceId: erpStockMovements.sourceId, productId: erpStockMovements.productId, sourceType: erpStockMovements.sourceType, balanceAfter: erpStockMovements.balanceAfter }).from(erpStockMovements).where(and(
+    const movements = await executor.select({ sourceId: erpStockMovements.sourceId, productId: erpStockMovements.productId, batches: erpStockMovements.batches, sourceType: erpStockMovements.sourceType, balanceAfter: erpStockMovements.balanceAfter }).from(erpStockMovements).where(and(
       inArray(erpStockMovements.sourceId, rows.map((row) => row.id)),
       inArray(erpStockMovements.sourceType, ['purchase', 'purchase_cancellation']),
     ));
@@ -24,8 +26,8 @@ export const createDrizzleSupplierPurchaseRepository = (database: Database, audi
       correctedByPurchaseId: corrections.find((entry) => entry.correctsPurchaseId === row.id)?.id ?? null,
       lines: lines.filter((line) => line.purchaseId === row.id).map((line) => ({
         ...line,
-        postedBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase')?.balanceAfter ?? null,
-        cancellationBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase_cancellation')?.balanceAfter ?? null,
+        postedBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase' && (line.batchId === null || entry.batches?.some((batch) => batch.batchId === line.batchId)))?.balanceAfter ?? null,
+        cancellationBalanceAfter: movements.find((entry) => entry.sourceId === row.id && entry.productId === line.productId && entry.sourceType === 'purchase_cancellation' && (line.batchId === null || entry.batches?.some((batch) => batch.batchId === line.batchId)))?.balanceAfter ?? null,
       })),
     }));
   };
@@ -52,7 +54,11 @@ export const createDrizzleSupplierPurchaseRepository = (database: Database, audi
         const supplier = (await tx.select().from(erpSuppliers).where(supplierScope(input.supplierId, input.branchId)).for('update').limit(1))[0]; if (!supplier) throw purchaseError('SUPPLIER_NOT_FOUND'); if (!supplier.isActive) throw purchaseError('SUPPLIER_INACTIVE');
         if (input.correctsPurchaseId !== null) { const original = (await tx.select().from(erpPurchases).where(and(eq(erpPurchases.id, input.correctsPurchaseId), eq(erpPurchases.branchId, input.branchId))).for('update').limit(1))[0]; if (!original || original.status !== 'cancelled' || original.supplierId !== input.supplierId) throw purchaseError('PURCHASE_CORRECTION_INVALID'); const used = (await tx.select({ id: erpPurchases.id }).from(erpPurchases).where(and(eq(erpPurchases.branchId, input.branchId), eq(erpPurchases.correctsPurchaseId, input.correctsPurchaseId))).limit(1))[0]; if (used) throw purchaseError('PURCHASE_CORRECTION_INVALID'); }
         const at = now(); const inserted = await tx.insert(erpPurchases).values({ branchId: input.branchId, supplierId: input.supplierId, supplierNameSnapshot: supplier.name, idempotencyKey: input.idempotencyKey, idempotencyFingerprint: input.idempotencyFingerprint, status: 'posting', purchaseDate: input.purchaseDate, total: input.total, actingAccountId, correctsPurchaseId: input.correctsPurchaseId, createdAt: at }); const purchaseId = Number(inserted[0].insertId);
-        for (const line of [...input.lines].sort((a, b) => a.productId - b.productId)) { const product = (await tx.select().from(erpProducts).where(and(eq(erpProducts.id, line.productId), eq(erpProducts.branchId, input.branchId))).for('update').limit(1))[0]; if (!product) throw purchaseError('PURCHASE_PRODUCT_NOT_FOUND'); if (!product.isActive) throw purchaseError('PURCHASE_PRODUCT_INACTIVE'); const stockScope = and(eq(erpProductStocks.productId, line.productId), eq(erpProductStocks.branchId, input.branchId)); const stock = (await tx.select().from(erpProductStocks).where(stockScope).for('update').limit(1))[0]; if (!stock) throw purchaseError('PURCHASE_PRODUCT_NOT_FOUND'); if (line.quantity > 2_147_483_647 - stock.quantity) throw purchaseError('PURCHASE_STOCK_OVERFLOW'); const balanceAfter = stock.quantity + line.quantity; await tx.insert(erpPurchaseLines).values({ purchaseId, branchId: input.branchId, productId: line.productId, productNameSnapshot: product.name, quantity: line.quantity, unitCost: line.unitCost, previousUnitCost: product.lastPurchaseCost, lineTotal: line.lineTotal }); await tx.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: at }).where(stockScope); await tx.update(erpProducts).set({ lastPurchaseCost: line.unitCost, updatedAt: at }).where(and(eq(erpProducts.id, line.productId), eq(erpProducts.branchId, input.branchId))); await tx.insert(erpStockMovements).values({ productId: line.productId, branchId: input.branchId, reason: 'purchase', sourceType: 'purchase', sourceId: purchaseId, quantityDelta: line.quantity, balanceAfter, actingAccountId, createdAt: at }); }
+        for (const line of [...input.lines].sort((a, b) => a.productId - b.productId)) { const product = (await tx.select().from(erpProducts).where(and(eq(erpProducts.id, line.productId), eq(erpProducts.branchId, input.branchId))).for('update').limit(1))[0]; if (!product) throw purchaseError('PURCHASE_PRODUCT_NOT_FOUND'); if (!product.isActive) throw purchaseError('PURCHASE_PRODUCT_INACTIVE'); const stockScope = and(eq(erpProductStocks.productId, line.productId), eq(erpProductStocks.branchId, input.branchId)); const stock = (await tx.select().from(erpProductStocks).where(stockScope).for('update').limit(1))[0]; if (!stock) throw purchaseError('PURCHASE_PRODUCT_NOT_FOUND'); if (line.quantity > 2_147_483_647 - stock.quantity) throw purchaseError('PURCHASE_STOCK_OVERFLOW'); await ensureLegacyBatch(tx, line.productId, input.branchId, stock.quantity, '0.000', at);
+          const batchId = await createStockBatch(tx, line.productId, input.branchId, line.expiryDate, at);
+          const batches = [{ batchId, expiryDate: line.expiryDate, quantity: `${line.quantity}.000` }];
+          await addBatchQuantities(tx, line.productId, input.branchId, batches, 'quantity', at);
+          const balanceAfter = stock.quantity + line.quantity; await tx.insert(erpPurchaseLines).values({ batchId, expiryDate: line.expiryDate, purchaseId, branchId: input.branchId, productId: line.productId, productNameSnapshot: product.name, quantity: line.quantity, unitCost: line.unitCost, previousUnitCost: product.lastPurchaseCost, lineTotal: line.lineTotal }); await tx.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: at }).where(stockScope); await tx.update(erpProducts).set({ lastPurchaseCost: line.unitCost, updatedAt: at }).where(and(eq(erpProducts.id, line.productId), eq(erpProducts.branchId, input.branchId))); await tx.insert(erpStockMovements).values({ productId: line.productId, branchId: input.branchId, batches, reason: 'purchase', sourceType: 'purchase', sourceId: purchaseId, quantityDelta: line.quantity, balanceAfter, actingAccountId, createdAt: at }); }
         await tx.update(erpPurchases).set({ status: 'posted' }).where(eq(erpPurchases.id, purchaseId));
         const postedRow = (await tx.select(purchaseSelection).from(erpPurchases).innerJoin(accounts, eq(accounts.id, erpPurchases.actingAccountId)).where(and(eq(erpPurchases.id, purchaseId), eq(erpPurchases.branchId, input.branchId))).limit(1))[0] as Omit<PurchaseRecord, 'lines' | 'correctedByPurchaseId'>;
         const posted = (await hydrate([postedRow], tx))[0]!;
@@ -75,6 +81,11 @@ export const createDrizzleSupplierPurchaseRepository = (database: Database, audi
           const stockScope = and(eq(erpProductStocks.productId, line.productId), eq(erpProductStocks.branchId, branchId));
           const stock = (await tx.select().from(erpProductStocks).where(stockScope).for('update').limit(1))[0];
           if (!product || !stock || stock.quantity < line.quantity) throw purchaseError('PURCHASE_CANCELLATION_UNSAFE');
+          await ensureLegacyBatch(tx, line.productId, branchId, stock.quantity, '0.000', at);
+          let batches;
+          try { batches = await takeBatchQuantities(tx, line.productId, branchId, `${line.quantity}.000`, 'quantity', at,
+            line.batchId === null ? undefined : [{ batchId: line.batchId, quantity: `${line.quantity}.000` }], line.batchId === null); }
+          catch (cause) { if (cause instanceof StockBatchError) throw purchaseError('PURCHASE_CANCELLATION_UNSAFE'); throw cause; }
           const balanceAfter = stock.quantity - line.quantity;
           const latestRemaining = (await tx.select({ unitCost: erpPurchaseLines.unitCost }).from(erpPurchaseLines).innerJoin(
             erpPurchases,
@@ -82,17 +93,17 @@ export const createDrizzleSupplierPurchaseRepository = (database: Database, audi
           ).where(and(
             eq(erpPurchaseLines.productId, line.productId), eq(erpPurchaseLines.branchId, branchId),
             eq(erpPurchases.status, 'posted'), ne(erpPurchases.id, id),
-          )).orderBy(desc(erpPurchases.createdAt), desc(erpPurchases.id)).limit(1))[0];
+          )).orderBy(desc(erpPurchases.createdAt), desc(erpPurchases.id), desc(erpPurchaseLines.id)).limit(1))[0];
           const baseline = latestRemaining ? undefined : (await tx.select({ value: erpPurchaseLines.previousUnitCost }).from(erpPurchaseLines).innerJoin(
             erpPurchases,
             and(eq(erpPurchases.id, erpPurchaseLines.purchaseId), eq(erpPurchases.branchId, erpPurchaseLines.branchId)),
           ).where(and(eq(erpPurchaseLines.productId, line.productId), eq(erpPurchaseLines.branchId, branchId)))
-            .orderBy(asc(erpPurchases.createdAt), asc(erpPurchases.id)).limit(1))[0];
+            .orderBy(asc(erpPurchases.createdAt), asc(erpPurchases.id), asc(erpPurchaseLines.id)).limit(1))[0];
           await tx.update(erpProductStocks).set({ quantity: balanceAfter, updatedAt: at }).where(stockScope);
           if (product.lastPurchaseCost === line.unitCost) {
             await tx.update(erpProducts).set({ lastPurchaseCost: latestRemaining?.unitCost ?? baseline?.value ?? line.previousUnitCost, updatedAt: at }).where(productScope);
           }
-          await tx.insert(erpStockMovements).values({ productId: line.productId, branchId, reason: 'purchase_cancellation', sourceType: 'purchase_cancellation', sourceId: id, quantityDelta: -line.quantity, balanceAfter, actingAccountId, note: reason, createdAt: at });
+          await tx.insert(erpStockMovements).values({ productId: line.productId, branchId, batches, reason: 'purchase_cancellation', sourceType: 'purchase_cancellation', sourceId: id, quantityDelta: -line.quantity, balanceAfter, actingAccountId, note: reason, createdAt: at });
         }
         await tx.update(erpPurchases).set({ status: 'cancelled', cancelledAt: at, cancelledByAccountId: actingAccountId, cancellationReason: reason }).where(eq(erpPurchases.id, id));
         await audit.record(tx, { module: 'erp-purchases', action: 'cancel', entityType: 'purchase', entityId: id, beforeState: purchase, afterState: { ...purchase, status: 'cancelled', cancellationReason: reason }, relatedIds: { branchId, actingAccountId }, createdAt: at });

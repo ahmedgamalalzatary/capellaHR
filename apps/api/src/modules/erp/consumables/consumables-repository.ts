@@ -21,6 +21,9 @@ import { and, asc, count, desc, eq, inArray, isNull, like, or, sql } from 'drizz
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { ConsumablesError, type ConsumablesRepository } from './consumables-service.js';
 
+import { allocateBatchQuantities, type BatchAllocation } from '@capella/contracts';
+import { readStockBatches, ensureLegacyBatch, takeBatchQuantities, addBatchQuantities, legacyRestoration, StockBatchError } from '../stock/index.js';
+
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -122,6 +125,23 @@ export const createDrizzleConsumablesRepository = (
       if (input.direction === 'return' && current < amount) {
         return fail('CONSUMABLE_INSUFFICIENT_BALANCE', 'رصيد المستهلكات غير كافٍ لإرجاع هذه العبوات');
       }
+      await ensureLegacyBatch(tx, input.productId, input.branchId, stock.quantity, balance.quantity, at);
+      let packageBatches: BatchAllocation[];
+      let batches: BatchAllocation[];
+      if (input.direction === 'reserve') {
+        packageBatches = await takeBatchQuantities(tx, input.productId, input.branchId, `${input.packages}.000`, 'quantity', at, input.batches);
+        batches = packageBatches.map((batch) => ({ ...batch, quantity: fromMilli(milli(configuration.packageSize) * (milli(batch.quantity) / 1000n)) }));
+        await addBatchQuantities(tx, input.productId, input.branchId, batches, 'consumableQuantity', at);
+      } else {
+        const available = await readStockBatches(tx, input.productId, input.branchId, true);
+        try { packageBatches = allocateBatchQuantities(available.map((batch) => ({ batchId: batch.batchId, expiryDate: batch.expiryDate,
+          quantity: `${milli(batch.consumableQuantity) / milli(configuration.packageSize)}.000`,
+        })), `${input.packages}.000`, input.batches); } catch { throw new StockBatchError('لا توجد عبوات كاملة كافية في الدفعات المختارة'); }
+        if (packageBatches.some((batch) => milli(batch.quantity) % 1000n !== 0n)) throw new StockBatchError();
+        const selected = packageBatches.map((batch) => ({ ...batch, quantity: fromMilli(milli(configuration.packageSize) * (milli(batch.quantity) / 1000n)) }));
+        batches = await takeBatchQuantities(tx, input.productId, input.branchId, fromMilli(amount), 'consumableQuantity', at, selected);
+        await addBatchQuantities(tx, input.productId, input.branchId, packageBatches, 'quantity', at);
+      }
       const next = input.direction === 'reserve' ? current + amount : current - amount;
       const sellableAfter = input.direction === 'reserve' ? stock.quantity - input.packages : stock.quantity + input.packages;
       const unitCost = input.direction === 'reserve'
@@ -140,6 +160,7 @@ export const createDrizzleConsumablesRepository = (
         eq(erpProductStocks.productId, input.productId), eq(erpProductStocks.branchId, input.branchId),
       ));
       const ledgerInsert = await tx.insert(erpConsumableLedgerEntries).values({
+        batches,
         productId: input.productId, branchId: input.branchId,
         entryType: input.direction === 'reserve' ? 'reserve' : 'return',
         quantityDelta: fromMilli(input.direction === 'reserve' ? amount : -amount), balanceAfter: fromMilli(next),
@@ -148,6 +169,7 @@ export const createDrizzleConsumablesRepository = (
       });
       const ledgerId = Number(ledgerInsert[0].insertId);
       await tx.insert(erpStockMovements).values({
+        batches: packageBatches,
         productId: input.productId, branchId: input.branchId,
         reason: input.direction === 'reserve' ? 'consumable_reserve' : 'consumable_return',
         sourceType: 'consumable_transfer', sourceId: ledgerId,
@@ -175,7 +197,9 @@ export const createDrizzleConsumablesRepository = (
       .where(where).orderBy(asc(erpProducts.name)).limit(query.pageSize).offset((query.page - 1) * query.pageSize);
     const totals = await database.select({ value: count() }).from(erpConsumableConfigurations)
       .innerJoin(erpProducts, eq(erpProducts.id, erpConsumableConfigurations.productId)).where(where);
-    return { items, total: totals[0]?.value ?? 0 };
+    const withBatches = [];
+    for (const item of items) withBatches.push({ ...item, batches: await readStockBatches(database, item.productId, branchId) });
+    return { items: withBatches, total: totals[0]?.value ?? 0 };
   },
 
   async listServices(branchId, query, openedByAccountId) {
@@ -306,7 +330,9 @@ export const createDrizzleConsumablesRepository = (
           const amount = milli(usage.quantity);
           const next = state.current - amount;
           const totalCost = costMoney(amount, state.unitCost);
+          const batches = await takeBatchQuantities(tx, usage.productId, input.branchId, usage.quantity, 'consumableQuantity', at, usage.batches);
           const ledgerInsert = await tx.insert(erpConsumableLedgerEntries).values({
+            batches,
             productId: usage.productId, branchId: input.branchId, entryType: 'consume',
             quantityDelta: fromMilli(-amount), balanceAfter: fromMilli(next), unitCostSnapshot: fromMicros(state.unitCost),
             totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: null, createdAt: at,
@@ -351,7 +377,11 @@ export const createDrizzleConsumablesRepository = (
         const state = states.get(usage.productId)!;
         const amount = milli(usage.quantity);
         state.current += amount;
-        await tx.insert(erpConsumableLedgerEntries).values({ productId: usage.productId, branchId: input.branchId, entryType: 'correction_restore', quantityDelta: usage.quantity, balanceAfter: fromMilli(state.current), unitCostSnapshot: usage.unitCostSnapshot, totalCost: usage.totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: input.reason, createdAt: at });
+        const previousLedger = (await tx.select().from(erpConsumableLedgerEntries).where(eq(erpConsumableLedgerEntries.id, usage.ledgerEntryId)).limit(1))[0];
+        const batches = previousLedger?.batches
+          ?? await legacyRestoration(tx, usage.productId, input.branchId, usage.quantity, at);
+        await addBatchQuantities(tx, usage.productId, input.branchId, batches, 'consumableQuantity', at);
+        await tx.insert(erpConsumableLedgerEntries).values({ batches, productId: usage.productId, branchId: input.branchId, entryType: 'correction_restore', quantityDelta: usage.quantity, balanceAfter: fromMilli(state.current), unitCostSnapshot: usage.unitCostSnapshot, totalCost: usage.totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: input.reason, createdAt: at });
       }
       for (const usage of input.usages) {
         const state = states.get(usage.productId)!;
@@ -363,7 +393,8 @@ export const createDrizzleConsumablesRepository = (
         const next = state.current - amount;
         const unitCost = await valuation(tx, usage.productId, input.branchId, state.current);
         const totalCost = costMoney(amount, unitCost);
-        const ledgerInsert = await tx.insert(erpConsumableLedgerEntries).values({ productId: usage.productId, branchId: input.branchId, entryType: 'correction_consume', quantityDelta: fromMilli(-amount), balanceAfter: fromMilli(next), unitCostSnapshot: fromMicros(unitCost), totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: input.reason, createdAt: at });
+        const batches = await takeBatchQuantities(tx, usage.productId, input.branchId, usage.quantity, 'consumableQuantity', at, usage.batches);
+        const ledgerInsert = await tx.insert(erpConsumableLedgerEntries).values({ batches, productId: usage.productId, branchId: input.branchId, entryType: 'correction_consume', quantityDelta: fromMilli(-amount), balanceAfter: fromMilli(next), unitCostSnapshot: fromMicros(unitCost), totalCost, sourceType: 'service_report', sourceId: reportId, actingAccountId: input.accountId, note: input.reason, createdAt: at });
         await tx.insert(serviceConsumptionUsages).values({ reportId, productId: usage.productId, branchId: input.branchId, quantity: usage.quantity, unit: state.unit, unitCostSnapshot: fromMicros(unitCost), totalCost, ledgerEntryId: Number(ledgerInsert[0].insertId) });
         state.current = next;
       }

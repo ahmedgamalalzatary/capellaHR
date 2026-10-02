@@ -37,12 +37,12 @@ export class ConsumablesError extends Error {
 
 export interface ConsumablesRepository {
   configure(productId: number, branchId: number, unit: 'ml' | 'gm', packageSize: string, accountId: number): Promise<unknown>;
-  transfer(input: { productId: number; branchId: number; direction: 'reserve' | 'return'; packages: number; note?: string; accountId: number }): Promise<unknown>;
+  transfer(input: { productId: number; branchId: number; direction: 'reserve' | 'return'; packages: number; batches?: import("@capella/contracts").BatchSelection[] | undefined; note?: string; accountId: number }): Promise<unknown>;
   listBalances(branchId: number, query: ListConsumableBalancesQuery): Promise<{ items: unknown[]; total: number }>;
   listServices(branchId: number, query: ListConsumableServicesQuery, openedByAccountId?: number): Promise<{ items: unknown[]; total: number }>;
   updateStatus(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryIds: number[]; status: 'pending' | 'in_progress' | 'completed' }): Promise<unknown>;
-  record(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryIds: number[]; usages: Array<{ productId: number; quantity: string }> }): Promise<unknown>;
-  correct(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryId: number; reason: string; usages: Array<{ productId: number; quantity: string }> }): Promise<unknown>;
+  record(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryIds: number[]; usages: Array<{ productId: number; quantity: string; batches?: import("@capella/contracts").BatchSelection[] | undefined }> }): Promise<unknown>;
+  correct(input: { branchId: number; accountId: number; accountRole: 'admin' | 'cashier'; serviceQueueEntryId: number; reason: string; usages: Array<{ productId: number; quantity: string; batches?: import("@capella/contracts").BatchSelection[] | undefined }> }): Promise<unknown>;
 }
 
 export const createConsumablesService = (dependencies: {
@@ -65,6 +65,7 @@ export const createConsumablesService = (dependencies: {
       const context = await adminContext(actor, input.branchId);
       return dependencies.repository.transfer({
         productId, branchId: context.branchId, direction: input.direction,
+        ...(input.batches ? { batches: input.batches } : {}),
         packages: input.packages, ...(input.note ? { note: input.note } : {}), accountId: context.accountId,
       });
     },

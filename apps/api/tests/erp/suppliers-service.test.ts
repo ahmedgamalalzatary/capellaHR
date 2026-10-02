@@ -36,19 +36,19 @@ describe('ERP supplier and purchase service', () => {
     await expect(service().listPurchases(cashier, { page: 1, pageSize: 20 })).resolves.toMatchObject({ total: 1 });
     await expect(service().postPurchase(cashier, {
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1631', supplierId: 3, purchaseDate: '2026-08-05',
-      lines: [{ productId: 11, quantity: 1, unitCost: '10.00' }],
+      lines: [{ expiryDate: '2027-01-01', productId: 11, quantity: 1, unitCost: '10.00' }],
     })).resolves.toMatchObject({ id: 9 });
   });
 
   it('calculates exact line totals and posts through one repository transaction', async () => {
     const repo = repository();
     await service(repo).postPurchase(admin, { branchId: 2, idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630', supplierId: 3, purchaseDate: '2026-08-05', lines: [
-      { productId: 11, quantity: 2, unitCost: '10.25' }, { productId: 12, quantity: 3, unitCost: '1.50' },
+      { expiryDate: '2027-01-01', productId: 11, quantity: 2, unitCost: '10.25' }, { expiryDate: '2027-01-01', productId: 12, quantity: 3, unitCost: '1.50' },
     ] });
     expect(vi.mocked(Reflect.get(repo, 'postPurchase'))).toHaveBeenCalledWith(expect.objectContaining({
       branchId: 2, idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630', idempotencyFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/), total: '25.00', lines: [
-        { productId: 11, quantity: 2, unitCost: '10.25', lineTotal: '20.50' },
-        { productId: 12, quantity: 3, unitCost: '1.50', lineTotal: '4.50' },
+        { expiryDate: '2027-01-01', productId: 11, quantity: 2, unitCost: '10.25', lineTotal: '20.50' },
+        { expiryDate: '2027-01-01', productId: 12, quantity: 3, unitCost: '1.50', lineTotal: '4.50' },
       ],
     }), 7);
   });
@@ -59,14 +59,14 @@ describe('ERP supplier and purchase service', () => {
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
       supplierId: 3,
       purchaseDate: '2026-08-05',
-      lines: [{ productId: 11, quantity: 1, unitCost: '12' }],
+      lines: [{ expiryDate: '2027-01-01', productId: 11, quantity: 1, unitCost: '12' }],
     })).rejects.toThrow();
     await expect(service().postPurchase(admin, {
       branchId: 2,
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
       supplierId: 3,
       purchaseDate: '2026-08-05',
-      lines: [{ productId: 11, quantity: 1, unitCost: '12.5' }],
+      lines: [{ expiryDate: '2027-01-01', productId: 11, quantity: 1, unitCost: '12.5' }],
     })).rejects.toThrow();
   });
 

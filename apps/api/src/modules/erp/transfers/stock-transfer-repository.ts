@@ -9,6 +9,7 @@ import {
   erpStockTransferLines,
   erpStockTransfers,
   invoices,
+  invoiceLines,
 } from '@capella/database/schema';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 
@@ -23,6 +24,8 @@ import {
 
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Database | SaleTransaction;
+
+import { addBatchQuantities, ensureLegacyBatch } from '../stock/index.js';
 
 const AUDIT_MODULE = 'erp-stock-transfers';
 const isDuplicateEntry = (error: unknown) => {
@@ -63,6 +66,8 @@ const hydrate = async (
     .where(inArray(branches.id, [row.sourceBranchId, row.destinationBranchId])))
     .map((branch) => [branch.id, branch.name]));
   const lines = await executor.select({
+    requestedBatches: invoiceLines.requestedBatches,
+    batches: erpStockTransferLines.batches,
     sourceProductId: erpStockTransferLines.sourceProductId,
     destinationProductId: erpStockTransferLines.destinationProductId,
     productName: erpStockTransferLines.productNameSnapshot,
@@ -70,6 +75,7 @@ const hydrate = async (
     unitCost: erpStockTransferLines.unitCost,
     lineTotal: erpStockTransferLines.lineTotal,
   }).from(erpStockTransferLines)
+    .leftJoin(invoiceLines, and(eq(invoiceLines.invoiceId, row.invoiceId), eq(invoiceLines.productId, erpStockTransferLines.sourceProductId), eq(invoiceLines.branchId, row.sourceBranchId)))
     .where(eq(erpStockTransferLines.transferId, transferId))
     .orderBy(asc(erpStockTransferLines.id));
 
@@ -227,6 +233,7 @@ export const createDrizzleStockTransferRepository = (
       const stock = (await transaction.select({ quantity: erpProductStocks.quantity })
         .from(erpProductStocks).where(stockScope).for('update').limit(1))[0];
       const balanceAfter = (stock?.quantity ?? 0) + line.quantity;
+      await ensureLegacyBatch(transaction, destination.id, input.destinationBranchId, stock?.quantity ?? 0, '0.000', input.postedAt);
       if (stock) {
         await transaction.update(erpProductStocks)
           .set({ quantity: balanceAfter, updatedAt: input.postedAt }).where(stockScope);
@@ -239,12 +246,14 @@ export const createDrizzleStockTransferRepository = (
           updatedAt: input.postedAt,
         });
       }
+      await addBatchQuantities(transaction, destination.id, input.destinationBranchId, line.batches ?? [], 'quantity', input.postedAt);
       // The receiving branch's cost follows the goods; its price does not.
       await transaction.update(erpProducts)
         .set({ lastPurchaseCost: line.unitCost, updatedAt: input.postedAt })
         .where(eq(erpProducts.id, destination.id));
 
       await transaction.insert(erpStockTransferLines).values({
+        batches: line.batches ?? null,
         transferId,
         sourceBranchId: input.sourceBranchId,
         destinationBranchId: input.destinationBranchId,
@@ -257,6 +266,7 @@ export const createDrizzleStockTransferRepository = (
         lineTotal: fromCents(toCents(line.unitCost) * BigInt(line.quantity)),
       });
       await transaction.insert(erpStockMovements).values({
+        batches: line.batches ?? null,
         productId: destination.id,
         branchId: input.destinationBranchId,
         reason: 'transfer_in',

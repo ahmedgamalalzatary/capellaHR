@@ -36,6 +36,9 @@ import {
   type StockMovementReason,
 } from '../api/products-api';
 import { productQueryKeys } from '../query-keys';
+import { BatchManagement } from './batch-management';
+import { BatchPicker } from './batch-picker';
+import type { BatchSelection } from '@capella/contracts';
 import { ProductLabelSheet } from './product-label-sheet';
 
 const reasonLabels: Record<string, string> = {
@@ -86,6 +89,9 @@ export function ProductStockView() {
   const [labelJob, setLabelJob] = useState<Product[] | null>(null);
   const labelCount = Number(labelCopies);
   const validLabelCount = Number.isInteger(labelCount) && labelCount >= 1 && labelCount <= 1000;
+  const [managingBatches, setManagingBatches] = useState<Product | null>(null);
+  const [adjustmentBatches, setAdjustmentBatches] = useState<BatchSelection[] | undefined>();
+  const [adjustmentExpiry, setAdjustmentExpiry] = useState('');
   const [adjusting, setAdjusting] = useState<Product | null>(null);
   const [counted, setCounted] = useState('');
   const [reason, setReason] = useState<'count_correction' | 'wastage' | 'damage'>('count_correction');
@@ -189,7 +195,7 @@ export function ProductStockView() {
             : null;
   const adjustBlocked = !wholeUnits || quantityDelta === 0 || (destructiveReason && quantityDelta > 0);
   const adjust = useMutation({
-    mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta, reason, ...(note.trim() ? { note: note.trim() } : {}) }),
+    mutationFn: () => adjustProductStock(adjusting!.id, { ...(branchId === undefined ? {} : { branchId }), quantityDelta, reason, ...(quantityDelta < 0 && adjustmentBatches ? { batches: adjustmentBatches } : {}), ...(quantityDelta > 0 && adjustmentExpiry ? { expiryDate: adjustmentExpiry } : {}), ...(note.trim() ? { note: note.trim() } : {}) }),
     onSuccess: async () => { setAdjusting(null); setCounted(''); setNote(''); setSuccessMessage('تم حفظ تسوية المخزون.'); notifySuccess('تم حفظ تسوية المخزون.'); await refresh(); },
     onError: (error: unknown) => notifyError(error),
   });
@@ -243,6 +249,7 @@ export function ProductStockView() {
                     if (commandPending) return;
                     setSelectedBranchId(event.target.value ? Number(event.target.value) : undefined);
                     setEditing(null); setCreateOpen(false); setConfirmingToggle(null); setAdjusting(null);
+                    setManagingBatches(null);
                     setLabelling(null);
                     setMovementProductId(undefined); setMovementReason(''); setProductStatus('');
                     setMovementPage(1); setProductPage(1);
@@ -330,6 +337,7 @@ export function ProductStockView() {
             </Modal>
           ) : null}
 
+          {managingBatches ? <BatchManagement product={managingBatches} branchId={branchId} isAdmin={isAdmin} onClose={() => setManagingBatches(null)} /> : null}
           {adjusting ? (
             <Modal
               title={`تسوية مخزون ${adjusting.name}`}
@@ -357,6 +365,10 @@ export function ProductStockView() {
                   </div>
                 </div>
                 {adjustHint ? <p className="text-[13px] text-muted">{adjustHint}</p> : null}
+                {quantityDelta < 0 ? <BatchPicker disabled={commandPending} productId={adjusting.id} branchId={branchId} quantity={`${-quantityDelta}.000`} selected={adjustmentBatches} onChange={setAdjustmentBatches} /> : quantityDelta > 0 ? <div className="space-y-1.5">
+                  <Label htmlFor="adjustment-expiry">صلاحية الدفعة المضافة (اختياري)</Label>
+                  <Input id="adjustment-expiry" type="date" value={adjustmentExpiry} onChange={(event) => setAdjustmentExpiry(event.target.value)} />
+                </div> : null}
                 <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
                   <Button disabled={adjustBlocked || commandPending} onClick={() => { if (!commandPending && !adjustBlocked) adjust.mutate(); }}>حفظ</Button>
                   <Button variant="ghost" disabled={commandPending} onClick={() => setAdjusting(null)}>إلغاء</Button>
@@ -447,10 +459,11 @@ export function ProductStockView() {
                             <TD pinned>
                               <RowActions>
                                 {isAdmin ? <Link className="rounded-control px-2.5 py-1.5 text-sm font-medium hover:bg-surface" href={`/consumables?productId=${product.id}&branchId=${product.branchId}`}>ربط كمستهلك</Link> : null}
-                                {isAdmin ? <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjusting(product); }}>تسوية</Button> : null}
+                                {isAdmin ? <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjustmentBatches(undefined); setAdjustmentExpiry(''); setAdjusting(product); }}>تسوية</Button> : null}
                                 {product.barcode
                                   ? <Button variant="ghost" size="sm" disabled={commandPending || labelJob !== null} onClick={() => { setLabelCopies('1'); setLabelling(product); }}>طباعة ملصق</Button>
                                   : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}
+                                <Button variant="ghost" size="sm" onClick={() => setManagingBatches(product)}>دفعات الصلاحية</Button>
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => beginEdit(product)}>تعديل</Button>
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => product.isActive ? setConfirmingToggle(product) : toggle.mutate(product)}>
                                   {product.isActive ? 'إيقاف' : 'تفعيل'}
@@ -553,7 +566,7 @@ export function ProductStockView() {
                       <tbody>
                         {movements.data.items.map((movement) => (
                           <TR key={movement.id}>
-                            <TD className="font-medium">{movement.productName}</TD>
+                            <TD className="font-medium">{movement.productName}{movement.batches?.map((batch) => <p key={batch.batchId} className="text-xs text-muted">دفعة #{batch.batchId} × {Number(batch.quantity)} · صلاحية {batch.expiryDate ?? 'غير محددة'}</p>)}</TD>
                             <TD>
                               {reasonLabels[movement.reason] ?? movement.reason}
                               {movement.note ? <span className="block text-xs text-muted">{movement.note}</span> : null}

@@ -3,6 +3,7 @@ import type { CreateStockTransferInput } from '@capella/contracts';
 import { api } from '@/lib/api/client';
 
 export interface StockTransferLine {
+  batches?: import("@capella/contracts").BatchAllocation[] | null;
   sourceProductId: number;
   destinationProductId: number;
   productName: string;

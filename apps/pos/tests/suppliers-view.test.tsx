@@ -26,9 +26,10 @@ const renderView = () => {
   render(<QueryClientProvider client={queryClient}><SuppliersPurchasesView /></QueryClientProvider>);
   return queryClient;
 };
-const openPurchaseForm = async () => {
+const openPurchaseForm = async (withExpiry = true) => {
   fireEvent.click(await screen.findByRole('button', { name: 'إضافة فاتورة مشتريات' }));
   await screen.findByLabelText('المورد للمشتريات');
+  if (withExpiry) fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2027-01-01' } });
 };
 const pickInvoiceProduct = (name: string | RegExp) => {
   fireEvent.click(screen.getByLabelText('المنتج'));
@@ -40,6 +41,19 @@ beforeEach(() => { sessionStorage.clear(); actor.current = 'admin'; mocks.listSu
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('SuppliersPurchasesView', () => {
+  it('requires purchase batch expiry and warns without blocking an expired batch', async () => {
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await openPurchaseForm(false);
+    fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } });
+    pickInvoiceProduct(/شامبو/);
+    fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
+    expect((screen.getByRole('button', { name: 'ترحيل المشتريات' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2020-01-01' } });
+    expect(screen.getByText('هذه الدفعة منتهية الصلاحية. يمكن متابعة العملية.')).toBeDefined();
+    expect((screen.getByRole('button', { name: 'ترحيل المشتريات' }) as HTMLButtonElement).disabled).toBe(false);
+  });
   it('runs suppliers and purchases for a cashier branch without asking which branch', async () => {
     actor.current = 'cashier';
     renderView();
@@ -119,7 +133,7 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } }); pickInvoiceProduct(/شامبو/);
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
     expect(screen.getByText('الإجمالي: 25.00 ج.م')).toBeDefined(); fireEvent.click(screen.getByRole('button', { name: 'ترحيل المشتريات' }));
-    await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, supplierId: 3, lines: [{ productId: 4, quantity: 2, unitCost: '12.50' }] })));
+    await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, supplierId: 3, lines: [{ expiryDate: '2027-01-01', productId: 4, quantity: 2, unitCost: '12.50' }] })));
     expect(await screen.findByRole('status', { name: 'تم ترحيل المشتريات إلى المخزون.' })).toBeDefined();
     await waitFor(() => expect(mocks.listProducts.mock.calls.filter(([params]) => params.isActive === true)).toHaveLength(2));
     expect(queryClient.getQueryState(['erp-reports', 'existing'])?.isInvalidated).toBe(true);
@@ -147,6 +161,7 @@ describe('SuppliersPurchasesView', () => {
     mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2027-01-01' } });
     const purchaseSupplier = screen.getByLabelText('المورد للمشتريات');
     const purchaseDate = screen.getByLabelText('تاريخ المشتريات') as HTMLInputElement;
     fireEvent.change(purchaseDate, { target: { value: '2020-01-01' } });
@@ -173,6 +188,7 @@ describe('SuppliersPurchasesView', () => {
     mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2027-01-01' } });
     expect(screen.getByText('تصحيح للمشتريات #9')).toBeDefined(); pickInvoiceProduct(/شامبو/); fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } }); fireEvent.click(screen.getByRole('button', { name: 'ترحيل التصحيح' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({ correctsPurchaseId: 9 })));
   });
@@ -183,6 +199,7 @@ describe('SuppliersPurchasesView', () => {
     mocks.postPurchase.mockReturnValue(new Promise(() => undefined));
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2027-01-01' } });
     pickInvoiceProduct(/شامبو/);
     fireEvent.change(screen.getByLabelText('الكمية'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('تكلفة الوحدة'), { target: { value: '12.50' } });
@@ -285,6 +302,7 @@ describe('SuppliersPurchasesView', () => {
     mocks.listPurchases.mockResolvedValue({ items: [{ ...purchase, status: 'cancelled', cancellationReason: 'خطأ' }], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     renderView(); await screen.findByRole('option', { name: 'الرئيسي' }); fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
     fireEvent.click(await screen.findByRole('button', { name: 'إنشاء تصحيح' }));
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2027-01-01' } });
     fireEvent.change(screen.getByLabelText('تصفية حسب المورد'), { target: { value: '3' } });
     expect(screen.getByText('تصحيح للمشتريات #9')).toBeDefined();
 
@@ -367,7 +385,7 @@ describe('SuppliersPurchasesView', () => {
     expect((screen.getByLabelText('سبب الإلغاء') as HTMLInputElement).value).toBe('خطأ في الكمية');
   });
 
-  it('hides products chosen in other lines while keeping each line’s own pick', async () => {
+  it('allows the same product in two purchase batches with different expiry dates', async () => {
     mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({
       items: params.isActive
         ? [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'بلسم', isActive: true }]
@@ -384,8 +402,8 @@ describe('SuppliersPurchasesView', () => {
 
     fireEvent.click(screen.getAllByRole('combobox', { name: 'المنتج' })[1]!);
     const secondLine = within(screen.getByRole('listbox'));
-    expect(secondLine.queryByRole('option', { name: 'شامبو' })).toBeNull();
-    fireEvent.click(secondLine.getByRole('option', { name: 'بلسم' }));
+    expect(secondLine.getByRole('option', { name: 'شامبو' })).toBeDefined();
+    fireEvent.click(secondLine.getByRole('option', { name: 'شامبو' }));
 
     fireEvent.change(screen.getByLabelText('المورد للمشتريات'), { target: { value: '3' } });
     const quantities = screen.getAllByLabelText('الكمية');
@@ -394,16 +412,18 @@ describe('SuppliersPurchasesView', () => {
     fireEvent.change(costs[0]!, { target: { value: '10.00' } });
     fireEvent.change(quantities[1]!, { target: { value: '2' } });
     fireEvent.change(costs[1]!, { target: { value: '5.00' } });
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 1'), { target: { value: '2027-01-01' } });
+    fireEvent.change(screen.getByLabelText('تاريخ صلاحية البند 2'), { target: { value: '2027-02-01' } });
     fireEvent.click(screen.getByRole('button', { name: 'ترحيل المشتريات' }));
     await waitFor(() => expect(mocks.postPurchase).toHaveBeenCalledWith(expect.objectContaining({
       lines: expect.arrayContaining([
-        { productId: 4, quantity: 1, unitCost: '10.00' },
-        { productId: 8, quantity: 2, unitCost: '5.00' },
+        { expiryDate: '2027-01-01', productId: 4, quantity: 1, unitCost: '10.00' },
+        { expiryDate: '2027-02-01', productId: 4, quantity: 2, unitCost: '5.00' },
       ]),
     })));
   });
 
-  it('blocks posting when a restored draft repeats a product across lines', async () => {
+  it('requires missing expiry dates on restored purchase draft batches', async () => {
     sessionStorage.setItem('capella:form-draft:purchase:2', JSON.stringify({
       supplierId: '3',
       purchaseDate: '2026-08-05',

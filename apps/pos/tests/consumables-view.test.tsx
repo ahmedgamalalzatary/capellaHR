@@ -15,7 +15,13 @@ vi.mock('../src/features/consumables/api/consumables-api', () => ({
 }));
 vi.mock('../src/features/auth', () => ({ useSession: mocks.session }));
 vi.mock('../src/features/catalog', () => ({ listCatalogBranches: mocks.branches }));
-vi.mock('../src/features/products', () => ({ listAllProducts: mocks.products }));
+vi.mock('../src/features/products', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/features/products')>(), listAllProducts: mocks.products,
+}));
+vi.mock('../src/features/products/api/products-api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/features/products/api/products-api')>(),
+  getProductBatches: vi.fn(async () => []),
+}));
 
 import { ConsumablesView } from '../src/features/consumables/components/consumables-view';
 

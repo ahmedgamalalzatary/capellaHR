@@ -1,5 +1,9 @@
 'use client';
 
+import { BatchPicker, BatchExpiry } from '@/features/products';
+import { isBatchSelectionComplete } from '@capella/contracts';
+import type { BatchSelection } from '@capella/contracts';
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Clock3, PackageOpen } from 'lucide-react';
 import { type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react';
@@ -26,7 +30,7 @@ import {
 } from '../api/consumables-api';
 
 type Tab = 'status' | 'consumables' | 'stock';
-type Usage = { productId: number | ''; quantity: string };
+type Usage = { batches?: BatchSelection[] | undefined; productId: number | ''; quantity: string };
 const emptyUsages = (): Usage[] => [{ productId: '', quantity: '' }];
 const errorText = (error: unknown) => error instanceof ApiError || error instanceof Error
   ? error.message : 'تعذر تنفيذ العملية.';
@@ -81,9 +85,9 @@ function CompletionPanel({ selected, balances, branchId, onCompleted, onClose }:
     if (!Number.isFinite(Number(entry.quantity)) || Number(entry.quantity) <= 0) return `صف المستهلك ${index + 1}: أدخل كمية أكبر من صفر`;
     return null;
   });
-  const validUsages = usages.filter((entry): entry is { productId: number; quantity: string } => typeof entry.productId === 'number' && Number(entry.quantity) > 0);
+  const validUsages = usages.filter((entry): entry is { productId: number; quantity: string; batches?: BatchSelection[] | undefined } => typeof entry.productId === 'number' && Number(entry.quantity) > 0);
   const validationError = usageErrors.filter(Boolean).join('، ');
-  const hasUsage = validUsages.length > 0 && !validationError;
+  const hasUsage = validUsages.length > 0 && !validationError && validUsages.every((usage) => isBatchSelectionComplete(usage.batches, usage.quantity));
   const complete = useMutation({
     mutationFn: () => recordServiceConsumptions({
       ...(branchId === undefined ? {} : { branchId }), serviceQueueEntryIds: selected,
@@ -98,6 +102,9 @@ function CompletionPanel({ selected, balances, branchId, onCompleted, onClose }:
     {!noConsumables ? <div className="space-y-2">{usages.map((usage, index) => <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_10rem_auto]" key={index}>
       <Select aria-label={`المستهلك ${index + 1}`} value={usage.productId} onChange={(event) => setUsages((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, productId: event.target.value ? Number(event.target.value) : '' } : row))}><option value="">اختر المستهلك</option>{balances.map((item) => <option key={item.productId} value={item.productId}>{item.productName} ({item.consumableQuantity} {item.unit})</option>)}</Select>
       <Input aria-label={index === 0 ? 'كمية المستهلك' : `كمية المستهلك ${index + 1}`} type="number" min="0.001" step="0.001" placeholder="الكمية" value={usage.quantity} onChange={(event) => setUsages((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: event.target.value } : row))} />
+      {typeof usage.productId === 'number' ? <BatchPicker productId={usage.productId} branchId={branchId} quantity={usage.quantity || '0'} pool="consumable"
+        available={balances.find((item) => item.productId === usage.productId)?.batches} selected={usage.batches}
+        onChange={(batches) => setUsages((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, batches } : row))} /> : null}
       {usages.length > 1 ? <Button variant="ghost" onClick={() => setUsages((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>حذف</Button> : <span />}
     </div>)}<Button variant="secondary" onClick={() => setUsages((rows) => [...rows, { productId: '', quantity: '' }])}>إضافة مستهلك</Button></div> : <Notice tone="info">سيُحفظ أن الخدمة اكتملت دون استهلاك منتجات.</Notice>}
     {validationError && !noConsumables ? <FieldError>{validationError}</FieldError> : null}
@@ -115,10 +122,11 @@ function StockPanel({ branchId, balances, allBalances, meta, onPage, refresh, is
   const [transferOpen, setTransferOpen] = useState(false);
   const [unit, setUnit] = useState<'ml' | 'gm'>('ml'); const [packageSize, setPackageSize] = useState('');
   const [transferProductId, setTransferProductId] = useState<number | ''>(''); const [direction, setDirection] = useState<'reserve' | 'return'>('reserve'); const [packages, setPackages] = useState('1');
+  const [transferBatches, setTransferBatches] = useState<BatchSelection[] | undefined>();
   const params = branchId === undefined ? {} : { branchId };
   const products = useQuery({ queryKey: ['consumables-products', branchId], queryFn: () => listAllProducts(params), enabled: isAdmin });
   const configure = useMutation({ mutationFn: () => configureConsumable(Number(configProductId), { ...params, unit, packageSize }), onSuccess: async () => { setConfigOpen(false); notifySuccess('تم حفظ إعداد المستهلك.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
-  const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages) }), onSuccess: async () => { setTransferOpen(false); notifySuccess('تم تنفيذ التحويل.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
+  const transfer = useMutation({ mutationFn: () => transferConsumableStock(Number(transferProductId), { ...params, direction, packages: Number(packages), ...(transferBatches === undefined ? {} : { batches: transferBatches }) }), onSuccess: async () => { setTransferOpen(false); notifySuccess('تم تنفيذ التحويل.'); await refresh(); }, onError: (error: unknown) => notifyError(error) });
   const pending = configure.isPending || transfer.isPending;
   const [sort, setSort] = useState<SortState | null>(null);
   const ordered = useMemo(() => {
@@ -150,7 +158,10 @@ function StockPanel({ branchId, balances, allBalances, meta, onPage, refresh, is
     ) : null}
     {transferOpen ? (
       <Modal title="تحويل عبوات كاملة" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => { if (!pending) setTransferOpen(false); }}>
-        <Select aria-label="منتج التحويل" value={transferProductId} onChange={(event) => setTransferProductId(event.target.value ? Number(event.target.value) : '')}><option value="">اختر المستهلك</option>{allBalances.map((item) => <option key={item.productId} value={item.productId}>{item.productName}</option>)}</Select><div className="flex gap-2"><Select aria-label="اتجاه التحويل" value={direction} onChange={(event) => setDirection(event.target.value as 'reserve' | 'return')}><option value="reserve">حجز من مخزون البيع</option><option value="return">إرجاع لمخزون البيع</option></Select><Input aria-label="عدد العبوات" type="number" min="1" step="1" value={packages} onChange={(event) => setPackages(event.target.value)} /></div>
+        <Select aria-label="منتج التحويل" value={transferProductId} onChange={(event) => (() => { setTransferBatches(undefined); setTransferProductId(event.target.value ? Number(event.target.value) : ''); })()}><option value="">اختر المستهلك</option>{allBalances.map((item) => <option key={item.productId} value={item.productId}>{item.productName}</option>)}</Select><div className="flex gap-2"><Select aria-label="اتجاه التحويل" value={direction} onChange={(event) => (() => { setTransferBatches(undefined); setDirection(event.target.value as 'reserve' | 'return'); })()}><option value="reserve">حجز من مخزون البيع</option><option value="return">إرجاع لمخزون البيع</option></Select><Input aria-label="عدد العبوات" type="number" min="1" step="1" value={packages} onChange={(event) => setPackages(event.target.value)} /></div>
+        {typeof transferProductId === 'number' ? <BatchPicker productId={transferProductId} branchId={branchId} quantity={packages || '0'}
+          pool={direction === 'reserve' ? 'stock' : 'return'} packageSize={allBalances.find((item) => item.productId === transferProductId)?.packageSize}
+          available={allBalances.find((item) => item.productId === transferProductId)?.batches} selected={transferBatches} onChange={setTransferBatches} /> : null}
         {transfer.error ? <FieldError>{errorText(transfer.error)}</FieldError> : null}
         <div className="flex flex-wrap gap-2">
           <Button disabled={!transferProductId || !Number(packages) || pending} onClick={() => transfer.mutate()}>تنفيذ التحويل</Button>
@@ -159,7 +170,7 @@ function StockPanel({ branchId, balances, allBalances, meta, onPage, refresh, is
       </Modal>
     ) : null}
   </> : null}
-    <Card><CardContent className="p-4"><SectionHeading title="أرصدة المستهلكات" /><DataTable><THead><SortableTH label="المنتج" sortKey="product" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="مخزون البيع" sortKey="sellable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="رصيد المستهلك" sortKey="consumable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><TH>حجم العبوة</TH></THead><tbody>{ordered.map((item) => <TR key={item.productId}><TD>{item.productName}</TD><TD>{item.sellableQuantity}</TD><TD>{item.consumableQuantity} {item.unit}</TD><TD>{item.packageSize} {item.unit}</TD></TR>)}</tbody></DataTable><Pagination summary={<>صفحة <span className="tabular">{meta.page}</span></>} previousDisabled={meta.page <= 1} nextDisabled={meta.page >= meta.totalPages} onPrevious={() => onPage(meta.page - 1)} onNext={() => onPage(meta.page + 1)} page={meta.page} totalPages={meta.totalPages} onPage={onPage} persistenceKey="pos:consumables:stock" resultSetKey={JSON.stringify({ branchId })} /></CardContent></Card></div>;
+    <Card><CardContent className="p-4"><SectionHeading title="أرصدة المستهلكات" /><DataTable><THead><SortableTH label="المنتج" sortKey="product" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="مخزون البيع" sortKey="sellable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><SortableTH label="رصيد المستهلك" sortKey="consumable" sort={sort} onSort={setSort} className="whitespace-nowrap px-2 py-2.5 text-[12px] font-semibold tracking-wide" /><TH>حجم العبوة</TH></THead><tbody>{ordered.map((item) => <TR key={item.productId}><TD>{item.productName}<div className="space-y-1 text-xs">{item.batches?.filter((batch) => batch.quantity > 0 || Number(batch.consumableQuantity) > 0).map((batch) => <p key={batch.batchId}>#{batch.batchId} · <BatchExpiry expiryDate={batch.expiryDate} /> · {batch.quantity} عبوة / {batch.consumableQuantity} {item.unit}</p>)}</div></TD><TD>{item.sellableQuantity}</TD><TD>{item.consumableQuantity} {item.unit}</TD><TD>{item.packageSize} {item.unit}</TD></TR>)}</tbody></DataTable><Pagination summary={<>صفحة <span className="tabular">{meta.page}</span></>} previousDisabled={meta.page <= 1} nextDisabled={meta.page >= meta.totalPages} onPrevious={() => onPage(meta.page - 1)} onNext={() => onPage(meta.page + 1)} page={meta.page} totalPages={meta.totalPages} onPage={onPage} persistenceKey="pos:consumables:stock" resultSetKey={JSON.stringify({ branchId })} /></CardContent></Card></div>;
 }
 
 export function ConsumablesView() {
@@ -189,7 +200,7 @@ export function ConsumablesView() {
   const balances = useQuery({ queryKey: ['consumables-balances', branchId, stockPage], queryFn: () => listConsumableBalances({ ...params, page: stockPage, pageSize: 20 }), enabled: ready });
   const balanceOptions = useQuery({ queryKey: ['consumables-balance-options', branchId], queryFn: () => fetchAllPages((page) => listConsumableBalances({ ...params, page, pageSize: 100 }), (balance) => balance.productId), enabled: ready });
   const services = useQuery({ queryKey: ['consumables-services', branchId, tab, cashierSessionId, tab === 'status' ? statusPage : consumablesPage], queryFn: () => listConsumableServices({ ...params, ...(cashierSessionId ? { cashierSessionId } : {}), status: tab === 'consumables' ? 'completed' : 'operational', page: tab === 'consumables' ? consumablesPage : statusPage, pageSize: 20 }), enabled: ready && tab !== 'stock' });
-  const refresh = async () => { await Promise.all([cache.invalidateQueries({ queryKey: ['consumables-balances'] }), cache.invalidateQueries({ queryKey: ['consumables-services'] })]); };
+  const refresh = async () => { await Promise.all([cache.invalidateQueries({ queryKey: ['product-batches'] }), cache.invalidateQueries({ queryKey: ['erp-products'] }), cache.invalidateQueries({ queryKey: ['consumables-balance-options'] }), cache.invalidateQueries({ queryKey: ['erp-reports'] }),cache.invalidateQueries({ queryKey: ['consumables-balances'] }), cache.invalidateQueries({ queryKey: ['consumables-services'] })]); };
   const statusMutation = useMutation({
     mutationFn: ({ item, status }: { item: ConsumableServiceExecution; status: 'pending' | 'in_progress' | 'completed' }) => updateServiceExecutionStatus({
       ...params, serviceQueueEntryIds: [item.id], status,

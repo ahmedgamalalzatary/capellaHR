@@ -7,6 +7,7 @@ import {
   commissionLedgerEntries,
   erpProducts,
   erpProductStocks,
+  erpStockBatchBalances,
   erpStockMovements,
   erpStockTransferLines,
   erpStockTransfers,
@@ -98,6 +99,7 @@ const service = () => {
 };
 
 describe('ERP stock transfer MySQL integration', () => {
+
   it('sells the stock to the receiving branch, which gains it at the same cost', async () => {
     const data = await fixture();
 
@@ -226,6 +228,8 @@ describe('ERP stock transfer MySQL integration', () => {
     expect((await database.select({ quantity: erpProductStocks.quantity })
       .from(erpProductStocks).where(eq(erpProductStocks.productId, existing)).limit(1))[0]
       ?.quantity).toBe(5);
+    expect((await database.select().from(erpStockBatchBalances).where(eq(erpStockBatchBalances.productId, existing)))
+      .reduce((sum, batch) => sum + batch.quantity, 0)).toBe(5);
     expect((await database.select({ previous: erpStockTransferLines.previousDestinationCost })
       .from(erpStockTransferLines)
       .where(eq(erpStockTransferLines.transferId, transfer.id)).limit(1))[0]?.previous)
@@ -457,4 +461,16 @@ describe('ERP stock transfer MySQL integration', () => {
       invoiceNumber: transfer.invoiceNumber,
     });
   });
+  it('rejects a retry that drops the original manual batch selection', async () => {
+    const data = await fixture();
+    const stock = (await service().transfer(admin, { idempotencyKey: crypto.randomUUID(), sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId, lines: [{ productId: data.productId, quantity: 1 }],
+    })).lines[0]!;
+    const input = { idempotencyKey: crypto.randomUUID(), sourceBranchId: data.sourceBranchId, destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1, batches: [{ batchId: stock.batches![0]!.batchId, quantity: '1.000' }] }],
+    };
+    await service().transfer(admin, input);
+    await expect(service().transfer(admin, { ...input, lines: [{ productId: data.productId, quantity: 1 }] })).rejects.toMatchObject({ code: 'TRANSFER_KEY_REUSED' });
+  });
+
 });

@@ -39,6 +39,14 @@ export interface ErpReportRepository {
 }
 
 const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }> = {
+  'erp-expiry-data': {
+    title: 'بيانات الصلاحية',
+    columns: [ ['branchName', 'الفرع'], ['productName', 'المنتج'], ['batchId', 'الدفعة'],
+      ['expiryDate', 'تاريخ الصلاحية'], ['expiryStatus', 'حالة الصلاحية'], ['daysRemaining', 'الأيام المتبقية'],
+      ['availableQuantity', 'العبوات المتبقية'], ['consumableQuantity', 'رصيد المستهلك'], ['consumableUnit', 'الوحدة'],
+      ['stockHistory', 'حركات العبوات'], ['consumableHistory', 'حركات المستهلك'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
   'erp-sales': {
     title: 'تقرير المبيعات',
     columns: [
@@ -228,7 +236,7 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     title: 'فاتورة مبيعات',
     columns: [
       ['id', 'المعرف'], ['lineNumber', 'البند'], ['itemName', 'الصنف'], ['itemType', 'النوع'],
-      ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'], ['lineTotal', 'الإجمالي'],
+      ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'], ['lineTotal', 'الإجمالي'], ['batchExpiry', 'الدفعات والصلاحية'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
 };

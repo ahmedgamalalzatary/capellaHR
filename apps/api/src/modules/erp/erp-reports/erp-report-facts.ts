@@ -2,6 +2,7 @@ import type { ReportFilters, ReportSelection } from '@capella/contracts';
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { ErpReportType } from './erp-report-reader.js';
+import { expiryFacts } from './erp-report-expiry-facts.js';
 import {
   consumableLedgerFacts,
   consumableUsageFacts,
@@ -51,6 +52,7 @@ export const factsFor = (
     case 'erp-purchases': return purchaseFacts(filters);
     case 'erp-transfers': return transferFacts(filters);
     case 'erp-stock': return stockFacts(filters);
+    case 'erp-expiry-data': return expiryFacts(filters);
     case 'erp-profit': return profitFacts(filters);
     case 'erp-client-history': return clientFacts(filters);
     case 'erp-receivables': return receivableFacts(filters);
@@ -102,6 +104,8 @@ export const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-purchases': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetPurchases')}`;
     case 'erp-transfers': return sql`COUNT(*) totalRecords, ${sum('quantity', 'totalQuantity')}, ${sum('totalCost', 'totalTransferCost')}`;
     case 'erp-stock': return sql`COUNT(*) totalRecords, ${sum('availableQuantity', 'totalAvailableQuantity')}, ${sum('inventoryValue', 'totalInventoryValue')}`;
+    case 'erp-expiry-data': return sql`COUNT(*) totalRecords, ${sum('availableQuantity', 'totalAvailableQuantity')},
+      SUM(expiryStatus = 'expired') expiredBatches, SUM(expiryStatus = 'soon') expiringSoonBatches, SUM(expiryStatus = 'unknown') unknownExpiryBatches`;
     case 'erp-profit': return sql`COUNT(*) totalRecords, ${sum('revenue', 'totalRevenue')}, ${sum('cost', 'totalCost')}, ${sum('profit', 'totalProfit')}`;
     case 'erp-client-history': return sql`COUNT(*) totalRecords, ${sum('amount', 'totalNetSales')}`;
     case 'erp-receivables': return sql`COUNT(*) totalRecords, ${sum('balanceDue', 'totalBalanceDue')}`;

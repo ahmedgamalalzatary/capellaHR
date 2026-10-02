@@ -36,6 +36,9 @@ import { hydrateInvoice, keyedQueues, quoteProducts, quoteServices } from './sal
 import { isDuplicateEntryError, signedMoney } from './sale-repository-money.js';
 import type { createSaleRepositorySupport } from './sale-repository-support.js';
 
+import { ensureLegacyBatch, takeBatchQuantities } from '../stock/index.js';
+import type { BatchAllocation } from '@capella/contracts';
+
 type Database = ReturnType<typeof createDatabase>;
 type Support = Pick<ReturnType<typeof createSaleRepositorySupport>,
   'projectCommission' | 'findByIdempotencyKey'>;
@@ -204,6 +207,22 @@ export const createSaleRepositoryComplete = (
             throw new SaleError('PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES');
           }
 
+          // Explicit choices reserve their batches first, so an automatic sibling
+          // cannot take the batch the cashier deliberately chose later in the basket.
+          const batchesByLine = new Map<number, BatchAllocation[]>();
+          for (const productId of [...new Set(quotedProducts.map((line) => line.sourceId))].sort((a, b) => a - b)) {
+            const originalBalance = Math.max(...quotedProducts.filter((line) => line.sourceId === productId).map((line) => line.balanceBefore));
+            await ensureLegacyBatch(transaction, productId, input.branchId, originalBalance, '0.000', operation.soldAt);
+          }
+          const batchOrder = input.lines.map((line, index) => ({ line, index }))
+            .filter((entry) => entry.line.itemType === 'product')
+            .sort((a, b) => Number(b.line.itemType === 'product' && b.line.batches !== undefined)
+              - Number(a.line.itemType === 'product' && a.line.batches !== undefined) || a.index - b.index);
+          for (const { line, index } of batchOrder) {
+            if (line.itemType === 'product') batchesByLine.set(index, await takeBatchQuantities(
+              transaction, line.productId, input.branchId, `${line.quantity}.000`, 'quantity', operation.soldAt, line.batches,
+            ));
+          }
           const inserted = await transaction.insert(invoices).values({
             branchId: input.branchId,
             clientId: input.clientId,
@@ -234,7 +253,11 @@ export const createSaleRepositoryComplete = (
           });
           const invoiceId = Number(inserted[0].insertId);
           for (const [index, line] of calculatedLines.entries()) {
+            const batches = batchesByLine.get(index) ?? null;
+            const requested = input.lines[index]!;
             const insertedLine = await transaction.insert(invoiceLines).values({
+              batches,
+              requestedBatches: requested.itemType === 'product' ? requested.batches ?? null : null,
               invoiceId,
               branchId: input.branchId,
               lineNumber: index + 1,
@@ -284,7 +307,7 @@ export const createSaleRepositoryComplete = (
                 eq(erpProductStocks.productId, line.sourceId), eq(erpProductStocks.branchId, input.branchId),
               ));
               await transaction.insert(erpStockMovements).values({
-                productId: line.sourceId, branchId: input.branchId, reason: 'sale', sourceType: 'sale', sourceId: invoiceId,
+                batches, productId: line.sourceId, branchId: input.branchId, reason: 'sale', sourceType: 'sale', sourceId: invoiceId,
                 quantityDelta: -line.quantity, balanceAfter, actingAccountId: operation.actingAccountId, createdAt: operation.soldAt,
               });
             }

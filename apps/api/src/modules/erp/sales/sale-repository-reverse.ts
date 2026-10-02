@@ -41,6 +41,9 @@ import { hydrateInvoice } from './sale-repository-read.js';
 import { commissionCents, isDuplicateEntryError, signedMoney } from './sale-repository-money.js';
 import type { createSaleRepositorySupport } from './sale-repository-support.js';
 
+import { allocateBatchQuantities, batchMilli, formatBatchQuantity, type BatchAllocation } from '@capella/contracts';
+import { addBatchQuantities, ensureLegacyBatch, legacyRestoration, StockBatchError } from '../stock/index.js';
+
 type Database = ReturnType<typeof createDatabase>;
 type Support = Pick<ReturnType<typeof createSaleRepositorySupport>,
   'projectCommission' | 'existingReversal'>;
@@ -131,6 +134,7 @@ export const createSaleRepositoryReversals = (
           const originalLines = await transaction.select().from(invoiceLines)
             .where(eq(invoiceLines.invoiceId, original.id)).orderBy(asc(invoiceLines.lineNumber));
           const priorLines = await transaction.select({
+            batches: invoiceReversalLines.batches,
             invoiceLineId: invoiceReversalLines.invoiceLineId,
             quantity: invoiceReversalLines.quantity,
           }).from(invoiceReversalLines).innerJoin(
@@ -166,6 +170,24 @@ export const createSaleRepositoryReversals = (
               throw new SaleError('REFUND_QUANTITY_EXCEEDED');
             }
             throw error;
+          }
+
+          const returnedBatches = new Map<number, BatchAllocation[]>();
+          for (const selection of selected) {
+            const originalLine = originalLines.find((line) => line.id === selection.invoiceLineId);
+            if (!originalLine || originalLine.itemType !== 'product' || !originalLine.batches?.length) continue;
+            const available = originalLine.batches.map((batch) => ({ ...batch,
+              quantity: formatBatchQuantity(batchMilli(batch.quantity) - priorLines.filter((row) => row.invoiceLineId === originalLine.id)
+                .flatMap((row) => row.batches ?? []).filter((row) => row.batchId === batch.batchId)
+                .reduce((sum, row) => sum + batchMilli(row.quantity), 0n)),
+            })).filter((batch) => batchMilli(batch.quantity) > 0n);
+            const requested = operation.type === 'refund' ? operation.input.lines.find((line) => line.invoiceLineId === selection.invoiceLineId)?.batches : undefined;
+            const remaining = originalLine.quantity - (refundedByLine.get(originalLine.id) ?? 0);
+            if (operation.type === 'refund' && selection.quantity < remaining && requested === undefined) {
+              throw new StockBatchError('اختر دفعات المنتجات المرتجعة قبل الاسترداد الجزئي');
+            }
+            try { returnedBatches.set(originalLine.id, allocateBatchQuantities(available, `${selection.quantity}.000`, requested)); }
+            catch { throw new StockBatchError('كمية الدفعة المرتجعة تتجاوز الكمية المتبقية في الفاتورة'); }
           }
 
           const originalPayments = await transaction.select().from(invoicePayments)
@@ -277,6 +299,8 @@ export const createSaleRepositoryReversals = (
           });
           const reversalId = Number(inserted[0].insertId);
           await transaction.insert(invoiceReversalLines).values(allocation.lines.map((line) => ({
+            batches: returnedBatches.get(line.invoiceLineId) ?? null,
+            requestedBatches: operation.type === 'refund' ? operation.input.lines.find((row) => row.invoiceLineId === line.invoiceLineId)?.batches ?? null : null,
             reversalId,
             invoiceId: original.id,
             invoiceLineId: line.invoiceLineId,
@@ -365,6 +389,10 @@ export const createSaleRepositoryReversals = (
               const quantity = selectedByLine.get(line.id)!;
               const balanceBefore = balanceByProduct.get(line.productId!);
               if (balanceBefore === undefined) throw new SaleError('PRODUCT_UNAVAILABLE');
+              await ensureLegacyBatch(transaction, line.productId!, original.branchId, balanceBefore, '0.000', operation.reversedAt);
+              const batches = returnedBatches.get(line.id)
+                ?? await legacyRestoration(transaction, line.productId!, original.branchId, `${quantity}.000`, operation.reversedAt);
+              await addBatchQuantities(transaction, line.productId!, original.branchId, batches, 'quantity', operation.reversedAt);
               const balanceAfter = balanceBefore + quantity;
               balanceByProduct.set(line.productId!, balanceAfter);
               await transaction.update(erpProductStocks).set({
@@ -374,7 +402,7 @@ export const createSaleRepositoryReversals = (
                 eq(erpProductStocks.branchId, original.branchId),
               ));
               await transaction.insert(erpStockMovements).values({
-                productId: line.productId!, branchId: original.branchId,
+                batches, productId: line.productId!, branchId: original.branchId,
                 reason: operation.type, sourceType: operation.type, sourceId: reversalId,
                 quantityDelta: quantity, balanceAfter,
                 actingAccountId: operation.actingAccountId, createdAt: operation.reversedAt,

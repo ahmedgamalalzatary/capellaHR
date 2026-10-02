@@ -38,6 +38,7 @@ export type InternalCompleteSaleInput = Omit<CompleteSaleInput, 'lines'> & {
     productId: number;
     quantity: number;
     employeeId?: undefined;
+    batches?: import("@capella/contracts").BatchSelection[] | undefined;
   }>;
 };
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { expiryDateSchema } from '../stock/batches.ts';
 
 import { coercedMysqlIntSchema, paginationPageSchema, paginationPageSizeSchema } from '../../../common/index.ts';
 
@@ -43,6 +44,7 @@ export const listSuppliersQuerySchema = z.object({
 }).strict();
 
 const purchaseLineSchema = z.object({
+  expiryDate: expiryDateSchema,
   productId: coercedMysqlIntSchema,
   quantity: z.number().int().positive().max(2_147_483_647),
   unitCost: exactMoney,
@@ -55,11 +57,8 @@ export const createPurchaseSchema = z.object({
   correctsPurchaseId: coercedMysqlIntSchema.optional(),
   ...branchScope,
 }).strict().superRefine((value, context) => {
-  const seen = new Set<number>();
   let total = BigInt(0);
   value.lines.forEach((line, index) => {
-    if (seen.has(line.productId)) context.addIssue({ code: 'custom', path: ['lines', index, 'productId'], message: 'لا يمكن تكرار المنتج' });
-    seen.add(line.productId);
     const lineTotal = BigInt(line.unitCost.replace('.', '')) * BigInt(line.quantity);
     total += lineTotal;
     if (lineTotal > BigInt('999999999999')) context.addIssue({ code: 'custom', path: ['lines', index, 'unitCost'], message: 'إجمالي البند يتجاوز الحد المالي' });

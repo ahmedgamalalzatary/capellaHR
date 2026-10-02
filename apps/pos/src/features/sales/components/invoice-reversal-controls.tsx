@@ -1,5 +1,9 @@
 'use client';
 
+import { isBatchSelectionComplete } from '@capella/contracts';
+import type { BatchSelection } from '@capella/contracts';
+import { BatchPicker } from '@/features/products';
+
 import type { PaymentMethod, PublicInvoiceDto, RefundQuote } from '@capella/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
@@ -98,6 +102,7 @@ export function InvoiceReversalControls({
   const [mode, setMode] = useState<'refund' | 'void' | null>(null);
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<number, string>>({});
+  const [returnBatches, setReturnBatches] = useState<Record<number, BatchSelection[] | undefined>>({});
   const [quoted, setQuoted] = useState<RefundQuote | null>(null);
   const [tenderAmounts, setTenderAmounts] = useState<Partial<Record<PaymentMethod, string>>>({});
   /**
@@ -130,10 +135,13 @@ export function InvoiceReversalControls({
   const selectedLines = invoice.lines.flatMap((line) => {
     const quantity = Number(quantities[line.id] ?? 0);
     return Number.isInteger(quantity) && quantity > 0 && quantity <= line.refundableQuantity
-      ? [{ invoiceLineId: line.id, quantity }]
+      ? [{ ...(returnBatches[line.id] === undefined ? {} : { batches: returnBatches[line.id] }), invoiceLineId: line.id, quantity }]
       : [];
   });
+  const requiresBatchSelection = invoice.lines.some((line) => line.itemType === 'product' && line.batches?.length
+    && Number(quantities[line.id]) > 0 && Number(quantities[line.id]) < line.refundableQuantity && returnBatches[line.id] === undefined);
   const hasInvalidQuantity = invoice.lines.some((line) => {
+    if (!isBatchSelectionComplete(returnBatches[line.id], quantities[line.id] || '0', true)) return true;
     const raw = quantities[line.id];
     if (raw === undefined || raw === '') return false;
     const quantity = Number(raw);
@@ -169,7 +177,7 @@ export function InvoiceReversalControls({
   if (mode !== null && lastMode !== mode) setLastMode(mode);
   const draft = useFormDraft(
     `reversal:${invoice.id}`,
-    { mode: mode ?? lastMode, quantities, reason },
+    { mode: mode ?? lastMode, quantities, reason, returnBatches },
     reason.trim() !== '' || Object.values(quantities).some((value) => value !== ''),
   );
   const quote = useMutation({
@@ -250,6 +258,7 @@ export function InvoiceReversalControls({
       draft.clear();
       setReason('');
       setQuantities({});
+      setReturnBatches({});
     }
     setMode(null);
     setQuoted(null);
@@ -336,6 +345,7 @@ export function InvoiceReversalControls({
             setMode(stored.mode);
             setQuantities(stored.quantities);
             setReason(stored.reason);
+            setReturnBatches(stored.returnBatches ?? {});
           }}
           onDiscard={draft.discard}
         />
@@ -397,7 +407,7 @@ export function InvoiceReversalControls({
         >
           <div className="space-y-2">
             {invoice.lines.filter((line) => line.refundableQuantity > 0).map((line) => (
-              <label
+              <div
                 key={line.id}
                 className="grid items-center gap-2 rounded-control border border-line bg-surface/50 p-3 sm:grid-cols-[1fr_7rem]"
               >
@@ -419,13 +429,18 @@ export function InvoiceReversalControls({
                     setTenderAmounts({});
                   }}
                 />
-              </label>
+                {line.itemType === 'product' && Boolean(line.batches?.length) && Number(quantities[line.id]) > 0 ? <BatchPicker disabled={quote.isPending || reversalPending} productId={line.sourceId} branchId={branchId}
+                  quantity={quantities[line.id]!} selected={returnBatches[line.id]}
+                  available={line.batches!.map((batch) => ({ batchId: batch.batchId, expiryDate: batch.expiryDate, quantity: Number(batch.refundableQuantity ?? batch.quantity), consumableQuantity: '0.000' }))}
+                  onChange={(batches) => { setReturnBatches((current) => ({ ...current, [line.id]: batches })); setQuoted(null); }} /> : null}
+              </div>
             ))}
           </div>
 
+          {requiresBatchSelection ? <p role="alert" className="text-sm text-danger">اختر دفعات المنتجات المرتجعة قبل الاسترداد الجزئي.</p> : null}
           <Button
             className="w-full"
-            disabled={!selectedLines.length || hasInvalidQuantity || quote.isPending}
+            disabled={!selectedLines.length || hasInvalidQuantity || requiresBatchSelection || quote.isPending}
             onClick={() => quote.mutate()}
           >
             {quote.isPending ? 'جارٍ الحساب…' : 'احسب الاسترداد'}

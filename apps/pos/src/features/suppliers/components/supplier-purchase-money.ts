@@ -1,7 +1,7 @@
 import { ApiError } from '@/lib/api/client';
 
-export type DraftLine = { key: number; productId: string; quantity: string; unitCost: string };
-export const blankLine = (key: number): DraftLine => ({ key, productId: '', quantity: '1', unitCost: '' });
+export type DraftLine = { key: number; productId: string; quantity: string; unitCost: string; expiryDate: string };
+export const blankLine = (key: number): DraftLine => ({ key, productId: '', quantity: '1', unitCost: '', expiryDate: '' });
 export const todayInCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
 export const errorText = (error: unknown) => error instanceof ApiError ? error.message : 'تعذر تنفيذ العملية. حاول مرة أخرى.';
 export const cents = (value: string) => /^\d+(?:\.\d{0,2})?$/.test(value)

@@ -11,6 +11,8 @@ const product = {
 };
 
 const repository = (): ProductStockRepository => ({
+  listBatches: vi.fn(async () => []),
+  updateBatchExpiry: vi.fn(async () => []),
   create: vi.fn(async () => product),
   findById: vi.fn(async () => product),
   findByNormalizedName: vi.fn(async () => null),

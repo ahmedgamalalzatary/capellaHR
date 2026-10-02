@@ -4,6 +4,8 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { Plus, Trash2, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
+import { batchExpiryStatus } from '@capella/contracts';
+import { batchToday } from '@/features/products';
 import { Button, EmptyState, Input, Label } from '@capella/ui';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
@@ -42,7 +44,6 @@ export function PurchaseInvoicePanel({
   openNewSupplier,
   lines,
   lineKey,
-  chosenProductIds,
   updateLine,
   validLines,
   post,
@@ -66,7 +67,6 @@ export function PurchaseInvoicePanel({
   openNewSupplier: () => void;
   lines: DraftLine[];
   lineKey: number;
-  chosenProductIds: Set<string>;
   updateLine: (key: number, changes: Partial<DraftLine>) => void;
   validLines: boolean;
   post: { isError: boolean; error: unknown; mutate: () => void };
@@ -167,10 +167,7 @@ export function PurchaseInvoicePanel({
                             label="المنتج"
                             value={line.productId}
                             disabled={commandPending}
-                            products={(activeProducts.data?.items ?? []).filter((product) => (
-                              String(product.id) === line.productId
-                              || !chosenProductIds.has(String(product.id))
-                            ))}
+                            products={activeProducts.data?.items ?? []}
                             onChange={(productId) => { if (!commandPending) updateLine(line.key, { productId }); }}
                           />
                         </div>
@@ -185,6 +182,12 @@ export function PurchaseInvoicePanel({
                         <div className="space-y-1">
                           <p className="text-sm font-medium">إجمالي السعر</p>
                           <p className="flex h-9 items-center rounded-control border border-line bg-surface/50 px-3 tabular text-sm">{lineAmount(line)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`purchase-expiry-${line.key}`}>تاريخ الصلاحية</Label>
+                          <Input id={`purchase-expiry-${line.key}`} aria-label={`تاريخ صلاحية البند ${index + 1}`} type="date" required disabled={commandPending}
+                            value={line.expiryDate ?? ''} onChange={(event) => { if (!commandPending) updateLine(line.key, { expiryDate: event.target.value }); }} />
+                          {line.expiryDate && batchExpiryStatus(line.expiryDate, batchToday()) === 'expired' ? <p className="text-xs text-danger">هذه الدفعة منتهية الصلاحية. يمكن متابعة العملية.</p> : null}
                         </div>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2 text-[12px] text-muted">

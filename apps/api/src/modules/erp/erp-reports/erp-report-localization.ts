@@ -21,6 +21,7 @@ const paymentLabels: Record<string, string> = {
   cash: 'نقدي', visa: 'فيزا', instapay: 'إنستا باي', vodafone_cash: 'فودافون كاش',
 };
 const stockReasonLabels: Record<string, string> = {
+  transfer_in: 'تحويل وارد', consumable_reserve: 'حجز مستهلك', consumable_return: 'إرجاع مستهلك',
   opening_stock: 'رصيد افتتاحي', count_correction: 'تصحيح جرد', wastage: 'هالك',
   damage: 'تالف', sale: 'بيع', purchase: 'شراء', purchase_cancellation: 'إلغاء شراء',
   refund: 'استرداد', void: 'إلغاء',
@@ -46,6 +47,12 @@ export const localizeErpReportRow = (
 ): Record<string, ReportCell> => Object.fromEntries(
   Object.entries(row).map(([key, raw]) => {
     const value = normalizeCell(raw);
+    if ((key === 'stockHistory' || key === 'consumableHistory') && typeof value === 'string') {
+      const labels = key === 'stockHistory' ? stockReasonLabels : consumableEntryLabels;
+      return [key, value.replace(/\b[a-z_]+\b/g, (word) => labels[word] ?? word)];
+    }
+    if (key === 'expiryStatus' && typeof value === 'string') return [key,
+      ({ expired: 'منتهية', soon: 'تنتهي خلال 30 يوماً', unknown: 'غير محددة', valid: 'سارية' } as Record<string, string>)[value] ?? value];
     if (key === 'rowType' && typeof value === 'string') {
       return [key, value === 'combined' ? 'مجمع' : 'فردي'];
     }

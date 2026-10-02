@@ -4,6 +4,7 @@ import { boolean, check, date, decimal, foreignKey, index, int, mysqlEnum, mysql
 import { accounts } from '../../auth/index.js';
 import { branches } from '../../organization/index.js';
 import { erpProducts } from '../catalog/index.js';
+import { erpStockBatches } from '../stock/batches.js';
 
 export const erpSuppliers = mysqlTable('erp_suppliers', {
   id: int('id').autoincrement().primaryKey(), branchId: int('branch_id').notNull().references(() => branches.id),
@@ -38,6 +39,8 @@ export const erpPurchases = mysqlTable('erp_purchases', {
 ]);
 
 export const erpPurchaseLines = mysqlTable('erp_purchase_lines', {
+  batchId: int('batch_id').references(() => erpStockBatches.id),
+  expiryDate: date('expiry_date', { mode: 'string' }),
   id: int('id').autoincrement().primaryKey(), purchaseId: int('purchase_id').notNull(), branchId: int('branch_id').notNull(),
   productId: int('product_id').notNull(), productNameSnapshot: varchar('product_name_snapshot', { length: 255 }).notNull(),
   quantity: int('quantity').notNull(), unitCost: decimal('unit_cost', { precision: 12, scale: 2 }).notNull(),
@@ -46,7 +49,7 @@ export const erpPurchaseLines = mysqlTable('erp_purchase_lines', {
 }, (table) => [
   foreignKey({ name: 'erp_purchase_lines_purchase_branch_fk', columns: [table.purchaseId, table.branchId], foreignColumns: [erpPurchases.id, erpPurchases.branchId] }),
   foreignKey({ name: 'erp_purchase_lines_product_branch_fk', columns: [table.productId, table.branchId], foreignColumns: [erpProducts.id, erpProducts.branchId] }),
-  uniqueIndex('erp_purchase_lines_purchase_product_unique').on(table.purchaseId, table.productId),
+  index('erp_purchase_lines_purchase_product_idx').on(table.purchaseId, table.productId),
   index('erp_purchase_lines_product_idx').on(table.productId, table.purchaseId),
   check('erp_purchase_lines_quantity_positive', sql`${table.quantity} > 0`), check('erp_purchase_lines_unit_cost_positive', sql`${table.unitCost} > 0`),
   check('erp_purchase_lines_previous_cost_nonnegative', sql`${table.previousUnitCost} >= 0`),

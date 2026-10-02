@@ -34,6 +34,8 @@ vi.mock('../src/features/products/api/products-api', () => ({
   updateProduct: mocks.update,
   adjustProductStock: mocks.adjust,
   generateProductBarcode: mocks.generateBarcode,
+  getProductBatches: vi.fn(async () => []),
+  updateProductBatchExpiry: vi.fn(async () => []),
 }));
 
 import { ProductStockView } from '../src/features/products';
@@ -54,6 +56,22 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('closes batch management when the selected branch changes', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'دفعات الصلاحية' }));
+    expect(await screen.findByRole('dialog', { name: 'دفعات شامبو' })).toBeDefined();
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+    expect(screen.queryByRole('dialog', { name: 'دفعات شامبو' })).toBeNull();
+  });
+  it('shows the expiry snapshot on batch stock movements', async () => {
+    mocks.movements.mockResolvedValue({ items: [{ ...movement, batches: [{ batchId: 12, expiryDate: '2027-01-01', quantity: '1.000' }] }], totalPages: 1 });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    expect(await screen.findByText(/دفعة #12.*2027-01-01/)).toBeDefined();
+  });
   it('paginates the main products table', async () => {
     mocks.listProducts.mockResolvedValue({
       items: [product], meta: { page: 1, pageSize: 20, total: 2, totalPages: 2 },

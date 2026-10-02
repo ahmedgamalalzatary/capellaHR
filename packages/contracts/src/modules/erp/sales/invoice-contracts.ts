@@ -1,5 +1,6 @@
 
 import { z } from 'zod';
+import { batchSnapshotSchema } from '../stock/batches.ts';
 
 import {
   coercedMysqlIntSchema,
@@ -153,6 +154,7 @@ const invoiceLineReassignmentSchema = z.object({
 }).strict();
 
 const invoiceLineSchema = z.object({
+  batches: z.array(batchSnapshotSchema.extend({ refundableQuantity: z.string().optional() })).optional(),
   id: positiveMysqlIntSchema,
   lineNumber: positiveMysqlIntSchema,
   itemType: saleItemTypeSchema,
@@ -257,6 +259,7 @@ export const invoiceReversalSchema = z.object({
     username: z.string().min(1).max(255),
   }).strict().nullable(),
   lines: z.array(z.object({
+    batches: z.array(batchSnapshotSchema).optional(),
     invoiceLineId: positiveMysqlIntSchema,
     lineNumber: positiveMysqlIntSchema,
     itemType: saleItemTypeSchema,
@@ -482,6 +485,7 @@ export const saleErrorSchema = z.object({
     'PRICE_CHANGED',
     'PRODUCT_UNAVAILABLE',
     'INSUFFICIENT_STOCK',
+    'BATCH_SELECTION_INVALID',
     'PAYMENT_TOTAL_MISMATCH',
     'IDEMPOTENCY_CONFLICT',
     'INVOICE_NOT_FOUND',

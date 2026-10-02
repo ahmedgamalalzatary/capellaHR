@@ -2,6 +2,7 @@ import {
   createStockTransferSchema,
   listStockTransfersQuerySchema,
 } from '@capella/contracts';
+import { StockBatchError } from '../stock/index.js';
 import { Router, type Response } from 'express';
 import { ZodError } from 'zod';
 
@@ -45,6 +46,10 @@ const statuses: Record<StockTransferErrorCode, number> = {
 };
 
 const handle = (cause: unknown, response: Response) => {
+  if (cause instanceof StockBatchError) {
+    response.status(409).json({ error: { code: cause.code, message: cause.message, requestId: responseRequestId(response) } });
+    return;
+  }
   if (cause instanceof ZodError) {
     const fieldErrors: Record<string, string[]> = {};
     for (const issue of cause.issues) {

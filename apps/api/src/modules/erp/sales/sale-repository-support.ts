@@ -156,6 +156,7 @@ export const createSaleRepositorySupport = (database: Database, payroll?: ErpPay
           input: {
             branchId: row.branchId, idempotencyKey: row.idempotencyKey, reason: row.reason,
             lines: lines.map((line) => ({
+              ...(line.requestedBatches === null ? {} : { batches: line.requestedBatches }),
               invoiceLineId: line.invoiceLineId, quantity: line.quantity,
             })),
             payments: payments.filter((payment) => payment.cashAmount !== '0.00')

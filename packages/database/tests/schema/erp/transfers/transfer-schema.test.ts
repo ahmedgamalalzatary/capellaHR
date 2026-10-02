@@ -33,7 +33,7 @@ describe('ERP stock transfer schema', () => {
     const config = getTableConfig(erpStockTransferLines);
 
     expect(config.columns.map((column) => column.name)).toEqual([
-      'id', 'transfer_id', 'source_branch_id', 'destination_branch_id',
+      'batches', 'id', 'transfer_id', 'source_branch_id', 'destination_branch_id',
       'source_product_id', 'destination_product_id', 'product_name_snapshot',
       'quantity', 'unit_cost', 'previous_destination_cost', 'line_total',
     ]);

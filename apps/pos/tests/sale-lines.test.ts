@@ -89,6 +89,14 @@ describe('per-line quantity and removal', () => {
 });
 
 describe('restoredLines', () => {
+  it('splits saved product batch choices across restored units without duplicating quantities', () => {
+    const lines = restoredLines({ employee: employeeA, lines: [{ service, itemType: 'product', employee: employeeA,
+      quantity: 2, unitPrice: '200.00', batches: [{ batchId: 1, quantity: '1.000' }, { batchId: 2, quantity: '1.000' }],
+    }] });
+    expect(lines.map((line) => line.batches)).toEqual([
+      [{ batchId: 1, quantity: '1.000' }], [{ batchId: 2, quantity: '1.000' }],
+    ]);
+  });
   // Stored drafts predate per-line identity, so they carry no lineId.
   const stored = (overrides: Record<string, unknown> = {}) => ({
     service,

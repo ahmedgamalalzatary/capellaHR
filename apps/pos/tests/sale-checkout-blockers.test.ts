@@ -13,6 +13,10 @@ const ready = {
 };
 
 describe('saleCheckoutBlockers', () => {
+  it('explains an invalid batch allocation independently of employee assignment', () => {
+    const state = { ...ready, batchSelectionsValid: false };
+    expect(saleCheckoutBlockers(state)).toEqual(['راجع اختيار وكميات دفعات المنتجات']);
+  });
   it('lists every missing till field so Complete is never silent', () => {
     expect(saleCheckoutBlockers({
       hasClient: false,

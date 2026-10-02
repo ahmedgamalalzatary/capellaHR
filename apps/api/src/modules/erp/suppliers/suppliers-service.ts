@@ -6,7 +6,7 @@ import { normalizeCatalogName } from '../catalog/index.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 
 export type SupplierRecord = { id: number; branchId: number; name: string; phone: string | null; notes: string | null; isActive: boolean; createdAt: Date; updatedAt: Date };
-export type PurchaseLineRecord = { id: number; purchaseId: number; branchId: number; productId: number; productNameSnapshot: string; quantity: number; unitCost: string; previousUnitCost: string; lineTotal: string; postedBalanceAfter: number | null; cancellationBalanceAfter: number | null };
+export type PurchaseLineRecord = { id: number; purchaseId: number; branchId: number; productId: number; productNameSnapshot: string; batchId?: number | null; expiryDate?: string | null; quantity: number; unitCost: string; previousUnitCost: string; lineTotal: string; postedBalanceAfter: number | null; cancellationBalanceAfter: number | null };
 export type PurchaseRecord = {
   id: number; branchId: number; supplierId: number; supplierName: string; status: 'posted' | 'cancelled'; purchaseDate: string; total: string;
   actingAccountId: number; actingUsername: string; cancelledAt: Date | null; cancelledByAccountId: number | null;
@@ -14,7 +14,7 @@ export type PurchaseRecord = {
 };
 export type PurchasePostWrite = {
   branchId: number; idempotencyKey: string; idempotencyFingerprint: string; supplierId: number; purchaseDate: string; total: string; correctsPurchaseId: number | null;
-  lines: Array<{ productId: number; quantity: number; unitCost: string; lineTotal: string }>;
+  lines: Array<{ productId: number; expiryDate: string; quantity: number; unitCost: string; lineTotal: string }>;
 };
 export interface SupplierPurchaseRepository {
   createSupplier(input: { branchId: number; name: string; nameNormalized: string; phone: string | null; notes: string | null }, actingAccountId: number): Promise<SupplierRecord>;
@@ -80,7 +80,7 @@ export const createSupplierPurchaseService = ({ repository, resolveBranchContext
       const branch = await context(actor, input.branchId);
       const lines = input.lines.map((line) => ({ ...line, lineTotal: money(cents(line.unitCost) * BigInt(line.quantity)) }));
       const total = money(lines.reduce((sum, line) => sum + cents(line.lineTotal), 0n));
-      const fingerprintFacts = { branchId: branch.branchId, supplierId: input.supplierId, purchaseDate: input.purchaseDate, total, correctsPurchaseId: input.correctsPurchaseId ?? null, lines: [...lines].sort((a, b) => a.productId - b.productId) };
+      const fingerprintFacts = { branchId: branch.branchId, supplierId: input.supplierId, purchaseDate: input.purchaseDate, total, correctsPurchaseId: input.correctsPurchaseId ?? null, lines: [...lines].sort((a, b) => a.productId - b.productId || a.expiryDate.localeCompare(b.expiryDate)) };
       const idempotencyFingerprint = createHash('sha256').update(JSON.stringify(fingerprintFacts)).digest('hex');
       return repository.postPurchase({ ...fingerprintFacts, idempotencyKey: input.idempotencyKey, idempotencyFingerprint }, branch.accountId);
     },

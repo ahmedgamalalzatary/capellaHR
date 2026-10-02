@@ -70,7 +70,7 @@ export function StockTransferReceipt({ transfer, onPrinted, onPrintError }: {
           <tbody>
             {transfer.lines.map((line) => (
               <tr key={`${line.sourceProductId}-${line.destinationProductId}`}>
-                <td className="border border-line px-1 py-1.5 text-start">{line.productName}</td>
+                <td className="border border-line px-1 py-1.5 text-start">{line.productName}{line.batches?.map((batch) => <span key={batch.batchId} className="block text-[10px]">دفعة #{batch.batchId} × {Number(batch.quantity)} · صلاحية {batch.expiryDate ?? 'غير محددة'}</span>)}</td>
                 <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
                 <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitCost}</td>
                 <td className="border border-line px-1 py-1.5 text-center tabular">{line.lineTotal}</td>

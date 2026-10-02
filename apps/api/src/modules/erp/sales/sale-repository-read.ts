@@ -21,6 +21,8 @@ type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Transaction;
 
+import { batchMilli, formatBatchQuantity } from '@capella/contracts';
+
 const asIso = (value: Date) => value.toISOString();
 const signedMoney = (value: bigint) => {
   const sign = value < 0n ? '-' : '';
@@ -143,6 +145,11 @@ export const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
         : null;
       return ({
       id: line.id,
+      batches: (line.batches ?? []).map((batch) => ({ ...batch,
+        refundableQuantity: formatBatchQuantity(batchMilli(batch.quantity) - reversalLines.filter((row) => row.invoiceLineId === line.id)
+          .flatMap((row) => row.batches ?? []).filter((row) => row.batchId === batch.batchId)
+          .reduce((sum, row) => sum + batchMilli(row.quantity), 0n)),
+      })),
       lineNumber: line.lineNumber,
       itemType: line.itemType,
       sourceId: line.serviceId ?? line.productId!,
@@ -226,6 +233,7 @@ export const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       lines: reversalLines.filter((line) => line.reversalId === reversal.id).map((line) => {
         const originalLine = lineById.get(line.invoiceLineId)!;
         return {
+          batches: line.batches ?? [],
           invoiceLineId: line.invoiceLineId,
           lineNumber: originalLine.lineNumber,
           itemType: originalLine.itemType,
@@ -287,6 +295,7 @@ export const reconstructInput = async (executor: Executor, invoiceId: number) =>
         }
       : {
           itemType: 'product' as const,
+          ...(line.requestedBatches === null ? {} : { batches: line.requestedBatches }),
           productId: line.productId!,
           quantity: line.quantity,
           // A product predating per-line assignment names nobody; only that

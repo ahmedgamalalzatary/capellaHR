@@ -8,6 +8,7 @@ import {
   transferConsumableStockSchema,
   updateServiceExecutionStatusSchema,
 } from '@capella/contracts';
+import { StockBatchError } from '../stock/index.js';
 import { Router, type Response } from 'express';
 import { z, ZodError } from 'zod';
 
@@ -24,6 +25,10 @@ const actorFrom = (response: Response): ErpAccountIdentity => {
 };
 const failure = (response: Response, status: number, code: string, message: string) => response.status(status).json({ error: { code, message, requestId: responseRequestId(response) } });
 const handle = (cause: unknown, response: Response) => {
+  if (cause instanceof StockBatchError) {
+    response.status(409).json({ error: { code: cause.code, message: cause.message, requestId: responseRequestId(response) } });
+    return;
+  }
   if (cause instanceof ZodError) return failure(response, 400, 'VALIDATION_ERROR', 'بيانات الطلب غير صالحة');
   if (cause instanceof ConsumablesError) {
     if (cause.code === 'CONSUMABLE_SERVICE_NOT_COMPLETED') {

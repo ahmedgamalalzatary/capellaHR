@@ -13,6 +13,7 @@ import {
   recordInvoicePaymentSchema,
   voidInvoiceSchema,
 } from '@capella/contracts';
+import { StockBatchError } from '../stock/index.js';
 import { Router, type NextFunction, type Response } from 'express';
 import { ZodError } from 'zod';
 
@@ -49,6 +50,10 @@ const failure = (
 });
 
 const handleError = (error: unknown, response: Response, next: NextFunction) => {
+  if (error instanceof StockBatchError) {
+    response.status(409).json({ error: { code: error.code, message: error.message, requestId: responseRequestId(response) } });
+    return;
+  }
   if (error instanceof ZodError) {
     const fieldErrors: Record<string, string[]> = {};
     for (const issue of error.issues) {

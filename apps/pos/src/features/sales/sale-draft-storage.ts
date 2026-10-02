@@ -1,3 +1,4 @@
+import { batchSelectionSchema } from '@capella/contracts';
 import type { PaymentMethod } from '@capella/contracts';
 
 import type { ServiceListItem } from '@/features/catalog';
@@ -21,6 +22,7 @@ export type SaleDraft = {
   /** Historical drafts may still contain the old cashier selection. */
   seller?: BranchCashierRosterMember | null;
   lines: Array<{
+    batches?: import("@capella/contracts").BatchSelection[] | undefined;
     service: ServiceListItem | ProductSaleItem;
     quantity: number;
     unitPrice: string;
@@ -165,6 +167,7 @@ const isSaleDraft = (value: unknown): value is StoredSaleDraft => {
       && typeof value.seller.fullName === 'string'))
     && Array.isArray(value.lines)
     && value.lines.every((line) => isRecord(line)
+      && (line.batches === undefined || (Array.isArray(line.batches) && line.batches.every((batch) => batchSelectionSchema.safeParse(batch).success)))
       && Number.isInteger(line.quantity)
       && Number(line.quantity) > 0
       && (line.itemType === undefined || line.itemType === 'service' || line.itemType === 'product')

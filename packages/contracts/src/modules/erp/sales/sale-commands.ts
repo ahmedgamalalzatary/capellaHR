@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { packageBatchSelectionsSchema } from '../stock/batches.ts';
 
 import {
   coercedMysqlIntSchema,
@@ -63,6 +64,7 @@ const serviceSaleLineSchema = z.object({
 });
 
 const productSaleLineSchema = z.object({
+  batches: packageBatchSelectionsSchema.optional(),
   itemType: z.literal('product'),
   productId: positiveMysqlIntSchema,
   quantity: positiveMysqlIntSchema,
@@ -99,6 +101,7 @@ const reversalCommandBaseSchema = z.object({
 export const voidInvoiceSchema = reversalCommandBaseSchema.strict();
 
 const refundLineSelectionSchema = z.object({
+  batches: packageBatchSelectionsSchema.optional(),
   invoiceLineId: positiveMysqlIntSchema,
   quantity: positiveMysqlIntSchema,
 }).strict();

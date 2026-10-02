@@ -1,4 +1,6 @@
 import { sql } from 'drizzle-orm';
+import { json } from 'drizzle-orm/mysql-core';
+import type { BatchSnapshot } from '../stock/batches.js';
 import {
   check,
   boolean,
@@ -161,6 +163,8 @@ export const branchCashierRoster = mysqlTable('erp_branch_cashier_roster', {
 ]);
 
 export const invoiceLines = mysqlTable('erp_invoice_lines', {
+  batches: json('batches').$type<BatchSnapshot[]>(),
+  requestedBatches: json('requested_batches').$type<Array<{ batchId: number; quantity: string }>>(),
   id: int('id').autoincrement().primaryKey(),
   invoiceId: int('invoice_id').notNull(),
   branchId: int('branch_id').notNull(),
@@ -463,6 +467,8 @@ export const invoiceReversals = mysqlTable('erp_invoice_reversals', {
 ]);
 
 export const invoiceReversalLines = mysqlTable('erp_invoice_reversal_lines', {
+  batches: json('batches').$type<BatchSnapshot[]>(),
+  requestedBatches: json('requested_batches').$type<Array<{ batchId: number; quantity: string }>>(),
   id: int('id').autoincrement().primaryKey(),
   reversalId: int('reversal_id').notNull(),
   invoiceId: int('invoice_id').notNull(),

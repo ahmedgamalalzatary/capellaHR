@@ -1,5 +1,7 @@
 'use client';
 
+import { expiryDateSchema } from '@capella/contracts';
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -182,6 +184,7 @@ export function SuppliersPurchasesView() {
       productId: String(line.productId),
       quantity: String(line.quantity),
       unitCost: line.unitCost,
+      expiryDate: line.expiryDate ?? '',
     })));
     setLineKey((value) => value + purchase.lines.length);
     setPurchasePanelOpen(true);
@@ -219,7 +222,7 @@ export function SuppliersPurchasesView() {
     mutationFn: () => postPurchase({
       ...branchScope, idempotencyKey, supplierId: Number(supplierId), purchaseDate,
       lines: lines.map((line) => ({
-        productId: Number(line.productId), quantity: Number(line.quantity), unitCost: line.unitCost,
+        productId: Number(line.productId), quantity: Number(line.quantity), unitCost: line.unitCost, expiryDate: line.expiryDate,
       })),
       ...(correctionOf === undefined ? {} : { correctsPurchaseId: correctionOf }),
     }),
@@ -231,9 +234,8 @@ export function SuppliersPurchasesView() {
     onSuccess: async () => { closeCancellation(); setSuccessMessage('تم إلغاء المشتريات وعكس أثر المخزون.'); notifySuccess('تم إلغاء المشتريات وعكس أثر المخزون.'); await refreshPurchase(); },
     onError: (error: unknown) => notifyError(error),
   });
-  const chosenProductIds = new Set(lines.map((line) => line.productId));
-  const validLines = lines.length > 0 && chosenProductIds.size === lines.length && lines.every((line) => (
-    Number(line.productId) && quantityValue(line.quantity) !== null && cents(line.unitCost) > BigInt(0)
+  const validLines = lines.length > 0 && lines.every((line) => (
+    Number(line.productId) && quantityValue(line.quantity) !== null && cents(line.unitCost) > BigInt(0) && expiryDateSchema.safeParse(line.expiryDate).success
   ));
   const activeSuppliers = allSuppliers.data?.filter((supplier: Supplier) => supplier.isActive) ?? [];
   const commandPending = saveSupplier.isPending || toggleSupplier.isPending || post.isPending || cancel.isPending;
@@ -365,7 +367,6 @@ export function SuppliersPurchasesView() {
               openNewSupplier={openNewSupplier}
               lines={lines}
               lineKey={lineKey}
-              chosenProductIds={chosenProductIds}
               updateLine={updateLine}
               validLines={validLines}
               post={post}

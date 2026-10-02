@@ -26,8 +26,13 @@ vi.mock('../src/features/cashier-sessions', () => ({
     current: () => ['cashier-sessions', 'current', 'cashier'],
   },
 }));
-vi.mock('../src/features/products', () => ({
+vi.mock('../src/features/products', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/features/products')>(),
   listAllProducts: mocks.products,
+}));
+vi.mock('../src/features/products/api/products-api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../src/features/products/api/products-api')>(),
+  getProductBatches: vi.fn(async () => []),
 }));
 vi.mock('../src/features/auth', () => ({
   useSession: () => ({ data: { actor: mocks.actor.current } }),

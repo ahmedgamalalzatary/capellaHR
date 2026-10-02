@@ -34,7 +34,7 @@ describe('ERP product stock schema', () => {
   it('records immutable movement facts with the resulting balance', () => {
     const config = getTableConfig(erpStockMovements);
     expect(config.columns.map((column) => column.name)).toEqual([
-      'id', 'product_id', 'branch_id', 'reason', 'source_type', 'source_id',
+      'batches', 'id', 'product_id', 'branch_id', 'reason', 'source_type', 'source_id',
       'quantity_delta', 'balance_after', 'acting_account_id', 'note', 'created_at',
     ]);
     expect(config.checks.map((entry) => entry.name)).toEqual(expect.arrayContaining([
@@ -67,7 +67,7 @@ describe('ERP product stock schema', () => {
   it('keeps an immutable valued ledger for every consumables balance change', () => {
     const config = getTableConfig(erpConsumableLedgerEntries);
     expect(config.columns.map((column) => column.name)).toEqual([
-      'id', 'product_id', 'branch_id', 'entry_type', 'quantity_delta', 'balance_after',
+      'batches', 'id', 'product_id', 'branch_id', 'entry_type', 'quantity_delta', 'balance_after',
       'unit_cost_snapshot', 'total_cost', 'source_type', 'source_id',
       'acting_account_id', 'note', 'created_at',
     ]);

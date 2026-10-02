@@ -21,6 +21,7 @@ const reportTypes = [
   'erp-transfers', 'erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables',
   'erp-service-queue', 'erp-service-completions', 'erp-consumable-usage',
   'erp-consumable-ledger', 'erp-service-exceptions', 'erp-invoice',
+  'erp-expiry-data',
 ] as const;
 
 export const reportExports = mysqlTable('report_exports', {

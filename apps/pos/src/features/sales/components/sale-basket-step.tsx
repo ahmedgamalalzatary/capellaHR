@@ -14,6 +14,7 @@ import {
 } from '@capella/ui';
 
 import { ServicePicker, type ServiceListItem } from '@/features/catalog';
+import { BatchPicker } from '@/features/products';
 import { ProductPicker, type ProductSaleItem } from '@/features/products';
 import type { AssignableEmployee } from '@/features/employee-assignment';
 
@@ -99,6 +100,10 @@ export function SaleBasketStep({
                     )))}
                   />
                 )}
+                {line.itemType === 'product' ? <BatchPicker productId={line.service.id} branchId={branchId} quantity={`${line.quantity}.000`} selected={line.batches}
+                  reserved={lines.filter((other) => other.lineId !== line.lineId && other.itemType === 'product' && other.service.id === line.service.id).flatMap((other) => other.batches ?? [])}
+                  priorQuantity={`${lines.slice(0, lines.findIndex((other) => other.lineId === line.lineId)).filter((other) => other.itemType === 'product' && other.service.id === line.service.id && other.batches === undefined).reduce((sum, other) => sum + other.quantity, 0)}.000`}
+                  onChange={(batches) => setLines((current) => current.map((entry) => entry.lineId === line.lineId ? { ...entry, batches } : entry))} /> : null}
                 {/* The most-tapped control in the app: kept at a 44px touch target. */}
                 <span className="flex items-center gap-1 rounded-control border border-line bg-paper p-0.5">
                   <Button variant="ghost" className="size-11 px-0" aria-label={`تقليل ${line.service.name}`} onClick={() => setLines((current) => (line.quantity > 1 ? decrementLine(current, line.lineId) : removeLine(current, line.lineId)))}><Minus className="size-4" aria-hidden /></Button>

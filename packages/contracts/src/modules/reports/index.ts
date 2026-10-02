@@ -22,6 +22,7 @@ export const erpTabReportTypes = [
   'erp-purchases',
   'erp-transfers',
   'erp-stock',
+  'erp-expiry-data',
   'erp-profit',
   'erp-client-history',
   'erp-receivables',
@@ -72,6 +73,7 @@ const idListSchema = z.preprocess(
 );
 
 const reportFilterShape = {
+  expiryStatus: z.enum(['expired', 'soon', 'unknown', 'valid']).optional(),
   search: z.string().trim().min(1).max(255).optional(),
   branchId: coercedMysqlIntSchema.optional(),
   sourceBranchId: coercedMysqlIntSchema.optional(),
@@ -124,6 +126,7 @@ const allowedFilters: Record<ReportType, ReadonlySet<keyof z.infer<typeof report
     ReadonlySet<keyof z.infer<typeof reportFiltersSchema>>
   >),
   'erp-transfers': new Set(['search', 'sourceBranchId', 'destinationBranchId', 'dateFrom', 'dateTo']),
+  'erp-expiry-data': new Set(['search', 'branchId', 'dateFrom', 'dateTo', 'expiryStatus']),
   'erp-invoice': new Set(['branchId']),
 };
 

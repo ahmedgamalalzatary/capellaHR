@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { batchSelectionsSchema, packageBatchSelectionsSchema } from '../stock/batches.ts';
 
 import {
   coercedMysqlIntSchema,
@@ -29,6 +30,7 @@ export const configureConsumableSchema = z.object({
 }).strict();
 
 export const transferConsumableStockSchema = z.object({
+  batches: packageBatchSelectionsSchema.optional(),
   direction: z.enum(['reserve', 'return']),
   packages: z.number().int().positive().max(2_147_483_647),
   note: z.string().trim().min(1).max(500).optional(),
@@ -36,6 +38,7 @@ export const transferConsumableStockSchema = z.object({
 }).strict();
 
 const usageSchema = z.object({
+  batches: batchSelectionsSchema.optional(),
   productId: coercedMysqlIntSchema,
   quantity,
 }).strict();

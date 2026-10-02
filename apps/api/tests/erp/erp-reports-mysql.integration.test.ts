@@ -9,6 +9,7 @@ import {
   erpCategories,
   erpProducts,
   erpProductStocks,
+  erpStockBatchBalances,
   erpStockTransferLines,
   erpStockTransfers,
   erpServiceCommissionOverrides,
@@ -149,6 +150,7 @@ beforeAll(async () => {
   // Internal trade between branches: a real invoice, priced at cost, no seller.
   await database.update(erpProductStocks).set({ quantity: 5, updatedAt: soldAt })
     .where(eq(erpProductStocks.productId, productId));
+  await database.update(erpStockBatchBalances).set({ quantity: 5, updatedAt: soldAt }).where(eq(erpStockBatchBalances.productId, productId));
   transferInvoiceId = (await sales.complete({
     input: {
       branchId,

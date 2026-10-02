@@ -659,7 +659,9 @@ export const invoiceFacts = (filters: ReportFilters, selection: ReportSelection)
   return sql`
     SELECT line.id id, line.line_number lineNumber, line.item_name_snapshot itemName,
       line.item_type itemType, line.quantity quantity, line.unit_price unitPrice,
-      line.line_total lineTotal
+      line.line_total lineTotal,
+      (SELECT GROUP_CONCAT(CONCAT('#', detail.batchId, ' × ', detail.quantity, ' / ', COALESCE(detail.expiryDate, 'غير محددة')) SEPARATOR ' | ')
+        FROM JSON_TABLE(line.batches, '$[*]' COLUMNS(batchId INT PATH '$.batchId', quantity VARCHAR(32) PATH '$.quantity', expiryDate VARCHAR(10) PATH '$.expiryDate')) detail) batchExpiry
     FROM erp_invoice_lines line
     INNER JOIN erp_invoices invoice
       ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id

@@ -799,6 +799,13 @@
       "when": 1790742175207,
       "tag": "0113_seller_free_sales",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "5",
+      "when": 1790941573190,
+      "tag": "0114_stock_batch_expiry",
+      "breakpoints": true
     }
   ]
 }

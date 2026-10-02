@@ -58,6 +58,7 @@ describe('report contracts', () => {
       'erp-purchases',
       'erp-transfers',
       'erp-stock',
+      'erp-expiry-data',
       'erp-profit',
       'erp-client-history',
       'erp-receivables',

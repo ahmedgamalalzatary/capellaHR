@@ -52,7 +52,7 @@ export function RefundReceipt({
         <tbody>
           {reversal.lines.map((line) => (
             <tr key={line.invoiceLineId}>
-              <td className="border border-line px-1.5 py-1.5 text-start">{line.name}</td>
+              <td className="border border-line px-1.5 py-1.5 text-start">{line.name}{line.batches?.map((batch) => <span key={batch.batchId} className="block text-[10px]">دفعة #{batch.batchId} × {Number(batch.quantity)} · صلاحية {batch.expiryDate ?? 'غير محددة'}</span>)}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.total}</td>
             </tr>

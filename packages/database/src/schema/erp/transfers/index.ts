@@ -1,4 +1,6 @@
 import { sql } from 'drizzle-orm';
+import { json } from 'drizzle-orm/mysql-core';
+import type { BatchSnapshot } from '../stock/batches.js';
 import {
   check,
   date,
@@ -62,6 +64,7 @@ export const erpStockTransfers = mysqlTable('erp_stock_transfers', {
 ]);
 
 export const erpStockTransferLines = mysqlTable('erp_stock_transfer_lines', {
+  batches: json('batches').$type<BatchSnapshot[]>(),
   id: int('id').autoincrement().primaryKey(),
   transferId: int('transfer_id').notNull(),
   sourceBranchId: int('source_branch_id').notNull(),

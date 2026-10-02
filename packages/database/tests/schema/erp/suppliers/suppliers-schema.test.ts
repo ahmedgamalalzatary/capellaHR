@@ -20,7 +20,7 @@ describe('ERP suppliers and purchases schema', () => {
     expect(getTableConfig(erpPurchases).indexes.some((entry) => entry.config.name === 'erp_purchases_idempotency_unique')).toBe(true);
     const line = getTableConfig(erpPurchaseLines);
     expect(line.columns.map((column) => column.name)).toEqual([
-      'id', 'purchase_id', 'branch_id', 'product_id', 'product_name_snapshot', 'quantity', 'unit_cost', 'previous_unit_cost', 'line_total',
+      'batch_id', 'expiry_date', 'id', 'purchase_id', 'branch_id', 'product_id', 'product_name_snapshot', 'quantity', 'unit_cost', 'previous_unit_cost', 'line_total',
     ]);
     expect(line.checks.map((entry) => entry.name)).toEqual(expect.arrayContaining([
       'erp_purchase_lines_quantity_positive', 'erp_purchase_lines_unit_cost_positive', 'erp_purchase_lines_total_positive',

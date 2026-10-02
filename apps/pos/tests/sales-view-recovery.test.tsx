@@ -69,6 +69,7 @@ vi.mock('../src/features/catalog', () => ({
   },
 }));
 vi.mock('../src/features/products/api/products-api', async (importOriginal) => ({
+  getProductBatches: vi.fn(async () => []),
   ...(await importOriginal<object>()),
   listSellableProducts: mocks.listSellableProducts,
 }));

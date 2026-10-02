@@ -1,5 +1,8 @@
 'use client';
 
+import { isBatchSelectionComplete } from '@capella/contracts';
+import { BatchPicker, BatchExpiry } from '@/features/products';
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, Plus, Printer, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -52,7 +55,7 @@ const toCents = (value: string) => {
 };
 const money = (cents: number) => `${Math.trunc(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 
-type TransferLine = { key: string; productId: number | undefined; quantity: string };
+type TransferLine = { batches?: import("@capella/contracts").BatchSelection[] | undefined; key: string; productId: number | undefined; quantity: string };
 const emptyLine = (): TransferLine => ({
   key: crypto.randomUUID(), productId: undefined, quantity: '1',
 });
@@ -144,7 +147,7 @@ export function StockTransfersView() {
 
   const updateLine = (key: string, changes: Partial<TransferLine>) => {
     setLines((current) => current.map((line) => (
-      line.key === key ? { ...line, ...changes } : line
+      line.key === key ? { ...line, ...(changes.productId !== undefined && changes.productId !== line.productId ? { batches: undefined } : {}), ...changes } : line
     )));
   };
 
@@ -166,9 +169,9 @@ export function StockTransfersView() {
   const submit = () => {
     const filled = lines.flatMap((line) => {
       const count = Number(line.quantity);
-      return line.productId === undefined || !Number.isInteger(count) || count < 1
+      return line.productId === undefined || !Number.isInteger(count) || count < 1 || !isBatchSelectionComplete(line.batches, String(count), true)
         ? []
-        : [{ productId: line.productId, quantity: count }];
+        : [{ ...(line.batches === undefined ? {} : { batches: line.batches }), productId: line.productId, quantity: count }];
     });
     if (effectiveSourceBranchId === undefined || destinationBranchId === undefined || !filled.length
       || filled.length !== lines.length) {
@@ -305,6 +308,8 @@ export function StockTransfersView() {
                         onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
                       />
                     </div>
+                    {line.productId ? <BatchPicker disabled={transfer.isPending} productId={line.productId} branchId={effectiveSourceBranchId} quantity={line.quantity || '0'} selected={line.batches}
+                      onChange={(batches) => updateLine(line.key, { batches })} /> : null}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -516,7 +521,7 @@ export function StockTransfersView() {
                 <tbody>
                   {selected.lines.map((line) => (
                     <TR key={`${line.sourceProductId}-${line.destinationProductId}`}>
-                      <TD className="font-medium">{line.productName}</TD>
+                      <TD className="font-medium">{line.productName}<div className="space-y-1 text-xs">{line.batches?.map((batch) => <p key={batch.batchId}>#{batch.batchId} × {Number(batch.quantity)} · <BatchExpiry expiryDate={batch.expiryDate} /></p>)}</div></TD>
                       <TD className="tabular">× {line.quantity}</TD>
                       <TD className="tabular text-muted">{line.unitCost}</TD>
                       <TD className="tabular font-semibold">{line.lineTotal}</TD>

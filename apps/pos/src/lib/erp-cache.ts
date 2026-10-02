@@ -1,6 +1,10 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 const roots = {
+  batches: ['product-batches'],
+  consumables: ['consumables-balances'],
+  consumableOptions: ['consumables-balance-options'],
+  transferProducts: ['erp-stock-transfers', 'products'],
   catalog: ['catalog'],
   sales: ['erp-sales'],
   clients: ['clients'],
@@ -26,11 +30,11 @@ export type ErpMutationEffect =
 const affected: Record<ErpMutationEffect, ReadonlyArray<keyof typeof roots>> = {
   catalog: ['catalog', 'reports'],
   client: ['clients', 'reports'],
-  sale: ['sales', 'clients', 'products', 'commissions', 'reports', 'bookings', 'cashierSessions'],
-  reversal: ['sales', 'clients', 'products', 'commissions', 'reports', 'cashierSessions'],
-  purchase: ['suppliers', 'products', 'reports'],
+  sale: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'sales', 'clients', 'products', 'commissions', 'reports', 'bookings', 'cashierSessions'],
+  reversal: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'sales', 'clients', 'products', 'commissions', 'reports', 'cashierSessions'],
+  purchase: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'suppliers', 'products', 'reports'],
   expense: ['expenses', 'reports', 'cashierSessions'],
-  product: ['products', 'reports'],
+  product: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'products', 'reports'],
   commission: ['commissions', 'expenses', 'reports', 'cashierSessions'],
 };
 

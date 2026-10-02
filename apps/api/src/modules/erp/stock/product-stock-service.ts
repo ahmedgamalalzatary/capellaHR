@@ -9,9 +9,12 @@ import {
 
 import type { ErpBranchContextResolver } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
+import { ErpBranchContextError } from '../branch-context.js';
+import type { StockBatch } from '@capella/contracts';
 import { normalizeCatalogName } from '../catalog/index.js';
 
 export type ProductStockRecord = {
+  batches?: StockBatch[];
   id: number;
   branchId: number;
   name: string;
@@ -33,6 +36,7 @@ export type ProductStockWrite = Omit<ProductStockRecord, 'id' | 'quantity' | 'cr
 export type ProductStockChanges = Partial<Pick<ProductStockWrite,
   'name' | 'nameNormalized' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'commissionPercent' | 'lowStockThreshold' | 'barcode' | 'isActive'>>;
 export type StockMovementRecord = {
+  batches?: import('@capella/contracts').BatchAllocation[] | null;
   id: number; productId: number; branchId: number; reason: string; sourceType: string;
   sourceId: number | null; quantityDelta: number; balanceAfter: number;
   actingAccountId: number; note: string | null; createdAt: Date;
@@ -40,6 +44,8 @@ export type StockMovementRecord = {
 };
 
 export interface ProductStockRepository {
+  listBatches(id: number, branchId: number): Promise<StockBatch[]>;
+  updateBatchExpiry(id: number, branchId: number, batchId: number, expiryDate: string | null, accountId: number): Promise<StockBatch[]>;
   create(input: ProductStockWrite, actingAccountId: number): Promise<ProductStockRecord>;
   findById(id: number): Promise<ProductStockRecord | null>;
   findByNormalizedName(branchId: number, nameNormalized: string): Promise<ProductStockRecord | null>;
@@ -88,6 +94,17 @@ export const createProductStockService = (dependencies: {
     if (existing && existing.id !== allowedId) throw error('PRODUCT_NAME_EXISTS', existing.id);
   };
   return {
+    async batches(actor: ErpAccountIdentity, id: number, requestedBranchId?: number) {
+      const context = await resolveBranchContext(actor, requestedBranchId);
+      await inBranch(context.branchId, id);
+      return repository.listBatches(id, context.branchId);
+    },
+    async updateBatchExpiry(actor: ErpAccountIdentity, id: number, batchId: number, input: { expiryDate: string | null; branchId?: number | undefined }) {
+      if (actor.role !== 'admin') throw new ErpBranchContextError('ERP_BRANCH_FORBIDDEN', 'تعديل الصلاحية متاح للمسؤول فقط');
+      const context = await resolveBranchContext(actor, input.branchId);
+      await inBranch(context.branchId, id);
+      return repository.updateBatchExpiry(id, context.branchId, batchId, input.expiryDate, context.accountId);
+    },
     async create(actor: ErpAccountIdentity, input: {
       branchId?: number | undefined; name: string; description?: string | null | undefined; sellingPrice: string;
       lastPurchaseCost: string; commissionPercent?: string; lowStockThreshold: number; barcode?: string | null | undefined;

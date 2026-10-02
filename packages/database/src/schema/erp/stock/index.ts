@@ -1,4 +1,7 @@
 import { sql } from 'drizzle-orm';
+import { json } from 'drizzle-orm/mysql-core';
+import type { BatchSnapshot } from './batches.js';
+export * from './batches.js';
 import {
   check,
   decimal,
@@ -39,6 +42,7 @@ export const erpProductStocks = mysqlTable('erp_product_stocks', {
 ]);
 
 export const erpStockMovements = mysqlTable('erp_stock_movements', {
+  batches: json('batches').$type<BatchSnapshot[]>(),
   id: int('id').autoincrement().primaryKey(),
   productId: int('product_id').notNull(),
   branchId: int('branch_id').notNull(),
@@ -145,6 +149,7 @@ export const erpConsumableTransfers = mysqlTable('erp_consumable_transfers', {
 ]);
 
 export const erpConsumableLedgerEntries = mysqlTable('erp_consumable_ledger_entries', {
+  batches: json('batches').$type<BatchSnapshot[]>(),
   id: int('id').autoincrement().primaryKey(),
   productId: int('product_id').notNull(),
   branchId: int('branch_id').notNull(),

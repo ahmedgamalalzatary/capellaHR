@@ -23,7 +23,7 @@ describe('ERP supplier and purchase HTTP API', () => {
   });
 
   it('posts and cancels purchases with stable validation', async () => {
-    await request(app()).post('/suppliers/purchases').send({ branchId: 2, idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630', supplierId: 3, purchaseDate: '2026-08-05', lines: [{ productId: 11, quantity: 2, unitCost: '10' }] }).expect(201);
+    await request(app()).post('/suppliers/purchases').send({ branchId: 2, idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630', supplierId: 3, purchaseDate: '2026-08-05', lines: [{ expiryDate: '2027-01-01', productId: 11, quantity: 2, unitCost: '10' }] }).expect(201);
     await request(app()).post('/suppliers/purchases/9/cancel').send({ branchId: 2, reason: 'خطأ' }).expect(200);
     await request(app()).post('/suppliers/purchases/9/cancel').send({ branchId: 2, reason: '' }).expect(400);
   });

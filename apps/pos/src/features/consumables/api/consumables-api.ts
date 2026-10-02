@@ -1,7 +1,7 @@
 import type { ConfigureConsumableInput, CorrectServiceExecutionInput, RecordServiceConsumptionsInput, TransferConsumableStockInput, UpdateServiceExecutionStatusInput } from '@capella/contracts';
 import { api } from '@/lib/api/client';
 const query = (params: Record<string, string | number | undefined>) => { const value = new URLSearchParams(); Object.entries(params).forEach(([key, entry]) => { if (entry !== undefined && entry !== '') value.set(key, String(entry)); }); return value.size ? `?${value}` : ''; };
-export interface ConsumableBalance { productId: number; productName: string; unit: 'ml' | 'gm'; packageSize: string; consumableQuantity: string; sellableQuantity: number; lastPurchaseCost: string }
+export interface ConsumableBalance { batches?: import("@capella/contracts").StockBatch[]; productId: number; productName: string; unit: 'ml' | 'gm'; packageSize: string; consumableQuantity: string; sellableQuantity: number; lastPurchaseCost: string }
 export interface ConsumableServiceExecution { id: number; status: 'pending' | 'in_progress' | 'completed' | 'overdue' | 'canceled'; consumptionRecorded: boolean; queueNumber: number; cashierSessionId: number; invoiceId: number; invoiceNumber: string; clientName: string | null; clientPhone: string | null; serviceId: number; serviceName: string; employeeId: number | null; employeeName: string | null; createdAt: string; completedAt: string | null }
 export const listConsumableBalances = (params: { branchId?: number; search?: string; page?: number; pageSize?: number } = {}) => api.getPage<ConsumableBalance>(`/erp/consumables${query(params)}`);
 export const configureConsumable = (productId: number, input: ConfigureConsumableInput) => api.put(`/erp/consumables/products/${productId}/configuration`, input);

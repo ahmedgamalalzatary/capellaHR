@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { packageBatchSelectionsSchema, expiryDateSchema } from './batches.ts';
+export * from './batches.ts';
 
 import {
   coercedMysqlIntSchema,
@@ -124,6 +126,8 @@ export const listProductsQuerySchema = z.object({
 }).strict();
 export const stockAdjustmentReasonSchema = z.enum(['count_correction', 'wastage', 'damage']);
 export const adjustProductStockSchema = z.object({
+  batches: packageBatchSelectionsSchema.optional(),
+  expiryDate: expiryDateSchema.nullable().optional(),
   quantityDelta: z.number().int().min(-2_147_483_648).max(2_147_483_647).refine((value) => value !== 0, {
     message: 'تغيير الكمية يجب ألا يساوي صفرًا',
   }),

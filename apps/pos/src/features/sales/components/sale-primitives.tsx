@@ -4,6 +4,7 @@
  * One module because each part is a handful of lines and they always travel together.
  */
 import type { CompleteSaleInput, PaymentMethod } from '@capella/contracts';
+import { allocateBatchQuantities, batchMilli, formatBatchQuantity, isBatchSelectionComplete } from '@capella/contracts';
 
 import type { ServiceListItem } from '@/features/catalog';
 import type { AssignableEmployee } from '@/features/employee-assignment';
@@ -25,6 +26,7 @@ export const paymentMethods: Array<{ method: PaymentMethod; label: string }> = [
 ];
 
 export type SaleCheckoutState = {
+  batchSelectionsValid?: boolean;
   hasClient: boolean;
   hasLines: boolean;
   linesAssigned: boolean;
@@ -43,6 +45,7 @@ export function saleCheckoutBlockers(state: SaleCheckoutState): string[] {
     blockers.push('أدخل سعرًا صالحًا لكل خدمة مفتوحة السعر');
   }
   if (state.hasLines && !state.linesAssigned) blockers.push('عيّن موظفًا لكل بند');
+  if (state.hasLines && state.batchSelectionsValid === false) blockers.push('راجع اختيار وكميات دفعات المنتجات');
   if (state.hasLines && state.servicePricesValid && !state.quoteReady) {
     blockers.push('انتظر حساب الإجمالي');
   }
@@ -58,6 +61,7 @@ export function saleCheckoutBlockers(state: SaleCheckoutState): string[] {
 export type Line = {
   /** Stable per-line identity, so two units of the same service stay independent. */
   lineId: string;
+  batches?: import("@capella/contracts").BatchSelection[] | undefined;
   service: ServiceListItem | ProductSaleItem;
   quantity: number;
   unitPrice: string;
@@ -134,12 +138,22 @@ export const restoredLines = (draft: { employee: AssignableEmployee | null; line
     const employee = line.itemType === 'product'
       ? line.employee ?? null
       : line.lineId === undefined ? line.employee ?? draft.employee : line.employee ?? null;
-    return Array.from({ length: line.quantity }, (_, index) => ({
-      ...line,
-      lineId: index === 0 && line.lineId ? line.lineId : createUuid(),
-      quantity: 1,
-      employee,
-    }));
+    if (line.itemType === 'product' && !isBatchSelectionComplete(line.batches, String(line.quantity), true)) {
+      // Keep an unfinished choice editable; never discard it or duplicate its quantities.
+      return [{ ...line, lineId: line.lineId ?? createUuid(), employee }];
+    }
+    const remaining = line.batches?.map((batch) => ({ ...batch, expiryDate: null }));
+    return Array.from({ length: line.quantity }, (_, index) => {
+      const allocated = line.itemType === 'product' && remaining ? allocateBatchQuantities(remaining, '1.000') : undefined;
+      for (const batch of allocated ?? []) {
+        const source = remaining!.find((row) => row.batchId === batch.batchId)!;
+        source.quantity = formatBatchQuantity(batchMilli(source.quantity) - batchMilli(batch.quantity));
+      }
+      return { ...line,
+        ...(allocated ? { batches: allocated.map(({ batchId, quantity }) => ({ batchId, quantity })) } : {}),
+        lineId: index === 0 && line.lineId ? line.lineId : createUuid(), quantity: 1, employee,
+      };
+    });
   })
 );
 

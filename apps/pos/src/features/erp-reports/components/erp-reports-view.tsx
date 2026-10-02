@@ -71,6 +71,7 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-expenses': 'تقرير المصروفات',
   'erp-purchases': 'تقرير المشتريات',
   'erp-transfers': 'تقرير التحويلات بين الفروع',
+  'erp-expiry-data': 'بيانات الصلاحية',
   'erp-stock': 'تقرير المخزون',
   'erp-profit': 'تقرير الأرباح',
   'erp-client-history': 'تقرير سجل العملاء',
@@ -83,6 +84,7 @@ const tabLabels: Record<ErpTabReportType, string> = {
 };
 
 const summaryLabels: Record<string, string> = {
+  expiredBatches: 'دفعات منتهية', expiringSoonBatches: 'تنتهي خلال 30 يوماً', unknownExpiryBatches: 'دفعات غير محددة الصلاحية',
   totalBalanceDue: 'إجمالي الأرصدة المستحقة',
   totalRecords: 'إجمالي السجلات', totalSales: 'إجمالي المبيعات',
   totalDiscount: 'إجمالي الخصومات', totalTax: 'إجمالي الضرائب',
@@ -348,11 +350,12 @@ export function ErpReportsView() {
   const { branchId: branchInput, setBranchId: setBranchInput } = useAdminBranch();
   const [sourceBranchInput, setSourceBranchInput] = useState<number>();
   const [destinationBranchInput, setDestinationBranchInput] = useState<number>();
-  const [dateFromInput, setDateFromInput] = useState(dates.dateFrom);
-  const [dateToInput, setDateToInput] = useState(dates.dateTo);
+  const [dateFromInput, setDateFromInput] = useState(reportType === 'erp-expiry-data' ? '' : dates.dateFrom);
+  const [dateToInput, setDateToInput] = useState(reportType === 'erp-expiry-data' ? '' : dates.dateTo);
+  const [expiryStatus, setExpiryStatus] = useState<NonNullable<ReportFilters['expiryStatus']> | ''>('');
   const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState<ReportFilters>({
-    dateFrom: dates.dateFrom, dateTo: dates.dateTo,
+    ...(reportType === 'erp-expiry-data' ? {} : { dateFrom: dates.dateFrom, dateTo: dates.dateTo }),
   });
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string | number>>(new Set());
@@ -381,6 +384,7 @@ export function ErpReportsView() {
   const applyFilters = () => {
     if (dateFromInput && dateToInput && dateFromInput > dateToInput) return;
     setFilters({
+      ...(reportType === 'erp-expiry-data' && expiryStatus ? { expiryStatus } : {}),
       ...(reportType === 'erp-transfers'
         ? {
           ...(sourceBranchInput === undefined ? {} : { sourceBranchId: sourceBranchInput }),
@@ -396,6 +400,26 @@ export function ErpReportsView() {
   };
   const switchReportTab = (nextType: ErpTabReportType) => {
     selectStoredReportTab(nextType);
+    setExpiryStatus('');
+    const nextFilters = { ...filters };
+    delete nextFilters.expiryStatus;
+    if (nextType === 'erp-transfers') delete nextFilters.branchId;
+    else {
+      delete nextFilters.sourceBranchId;
+      delete nextFilters.destinationBranchId;
+    }
+    if (nextType === 'erp-expiry-data') {
+      setDateFromInput('');
+      setDateToInput('');
+      delete nextFilters.dateFrom;
+      delete nextFilters.dateTo;
+    } else if (reportType === 'erp-expiry-data') {
+      setDateFromInput(dates.dateFrom);
+      setDateToInput(dates.dateTo);
+      nextFilters.dateFrom = dates.dateFrom;
+      nextFilters.dateTo = dates.dateTo;
+    }
+    setFilters(nextFilters);
     setPage(1);
     setSelectedIds(new Set());
   };
@@ -419,7 +443,7 @@ export function ErpReportsView() {
         {([
           ['مبيعات', ['erp-sales', 'erp-payment-methods', 'erp-services', 'erp-products', 'erp-employees', 'erp-commissions', 'erp-discounts']],
           ['عكس وقيود', ['erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases', 'erp-transfers']],
-          ['مخزون وأرباح', ['erp-stock', 'erp-profit', 'erp-client-history', 'erp-receivables']],
+          ['مخزون وأرباح', ['erp-stock', 'erp-expiry-data', 'erp-profit', 'erp-client-history', 'erp-receivables']],
           ['أرضية الصالون', ['erp-service-queue', 'erp-service-completions', 'erp-consumable-usage', 'erp-consumable-ledger', 'erp-service-exceptions']],
         ] as const).map(([group, types]) => (
           <fieldset key={group} className="space-y-1.5">
@@ -494,6 +518,10 @@ export function ErpReportsView() {
               </Select>
             </div>
           )}
+          {reportType === 'erp-expiry-data' ? <div className="space-y-1.5"><Label htmlFor="expiry-status">حالة الصلاحية</Label>
+            <Select id="expiry-status" value={expiryStatus} onChange={(event) => setExpiryStatus(event.target.value as typeof expiryStatus)}>
+              <option value="">كل الحالات</option><option value="expired">منتهية</option><option value="soon">تنتهي خلال 30 يوماً</option><option value="unknown">غير محددة</option><option value="valid">سارية</option>
+            </Select></div> : null}
           <div className="space-y-1.5">
             <Label htmlFor="report-from">من تاريخ</Label>
             <Input id="report-from" aria-label="من تاريخ" type="date" value={dateFromInput} onChange={(event) => {

@@ -1,5 +1,6 @@
 import {
   adjustProductStockSchema,
+  updateBatchExpirySchema,
   generateProductBarcodeSchema,
   createProductSchema,
   listProductsQuerySchema,
@@ -8,6 +9,7 @@ import {
   productIdParamsSchema,
   updateProductSchema,
 } from '@capella/contracts';
+import { StockBatchError } from './stock-batches.js';
 import { Router, type Response } from 'express';
 import { ZodError } from 'zod';
 
@@ -26,6 +28,10 @@ const actorFrom = (response: Response): ErpAccountIdentity => {
   return actor;
 };
 const handle = (cause: unknown, response: Response) => {
+  if (cause instanceof StockBatchError) {
+    response.status(409).json({ error: { code: cause.code, message: cause.message, requestId: responseRequestId(response) } });
+    return;
+  }
   if (cause instanceof ZodError) {
     const fieldErrors: Record<string, string[]> = {};
     for (const issue of cause.issues) (fieldErrors[issue.path.join('.') || '_root'] ??= []).push(issue.message);
@@ -55,6 +61,16 @@ export const createErpProductsRouter = (service: ProductStockService) => {
   // a supplier's code may contain a slash, which a path segment cannot carry.
   router.get('/by-barcode', async (request, response) => { try { response.json({ data: await service.findByBarcode(actorFrom(response), productBarcodeLookupSchema.parse(request.query)) }); } catch (cause) { handle(cause, response); } });
   router.post('/:id/barcode', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); response.json({ data: await service.generateBarcode(actorFrom(response), id, generateProductBarcodeSchema.parse(request.body ?? {})) }); } catch (cause) { handle(cause, response); } });
+  router.get('/:id/batches', async (request, response) => { try {
+    const { id } = productIdParamsSchema.parse(request.params);
+    const query = listProductsQuerySchema.parse(request.query);
+    response.json({ data: await service.batches(actorFrom(response), id, query.branchId) });
+  } catch (cause) { handle(cause, response); } });
+  router.patch('/:id/batches/:batchId', async (request, response) => { try {
+    const { id } = productIdParamsSchema.parse(request.params);
+    const { id: batchId } = productIdParamsSchema.parse({ id: request.params.batchId });
+    response.json({ data: await service.updateBatchExpiry(actorFrom(response), id, batchId, updateBatchExpirySchema.parse(request.body)) });
+  } catch (cause) { handle(cause, response); } });
   router.get('/:id', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); const branchId = request.query.branchId === undefined ? undefined : listProductsQuerySchema.parse({ branchId: request.query.branchId }).branchId; response.json({ data: await service.get(actorFrom(response), id, branchId) }); } catch (cause) { handle(cause, response); } });
   router.patch('/:id', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); response.json({ data: await service.update(actorFrom(response), id, updateProductSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });
   router.post('/:id/adjustments', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); response.json({ data: await service.adjust(actorFrom(response), id, adjustProductStockSchema.parse(request.body)) }); } catch (cause) { handle(cause, response); } });

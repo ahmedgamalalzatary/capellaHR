@@ -111,6 +111,16 @@ afterEach(() => {
 });
 
 describe('ErpReportsView', () => {
+  it('drops a branch stock filter when leaving expiry data for transfer reports', async () => {
+    mount();
+    await screen.findByText('عميل التقرير');
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
+    fireEvent.click(screen.getByRole('button', { name: 'بيانات الصلاحية' }));
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith('erp-expiry-data', expect.objectContaining({ branchId: 2 })));
+    fireEvent.click(screen.getByRole('button', { name: 'تقرير التحويلات بين الفروع' }));
+    await waitFor(() => expect(mocks.view).toHaveBeenLastCalledWith('erp-transfers', expect.not.objectContaining({ branchId: 2 })));
+  });
   it('announces loading report data', async () => {
     mocks.view.mockReturnValue(new Promise(() => undefined));
     mount();
@@ -129,7 +139,7 @@ describe('ErpReportsView', () => {
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
     const selector = await screen.findByRole('group', { name: 'أنواع تقارير ERP' });
-    expect(within(selector).getAllByRole('button')).toHaveLength(21);
+    expect(within(selector).getAllByRole('button')).toHaveLength(22);
     expect(within(selector).getByRole('button', { name: 'تقرير التحويلات بين الفروع' })).toBeDefined();
     expect(within(selector).queryByRole('button', { name: 'تقرير الضرائب' })).toBeNull();
     expect(within(selector).getByRole('button', { name: 'الدفعات الجزئية' })).toBeDefined();
