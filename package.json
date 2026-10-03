@@ -10,6 +10,18 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:api": "pnpm --filter @capella/api test",
+    "test:api:unit": "pnpm --filter @capella/api test:unit",
+    "test:api:db": "pnpm --filter @capella/api test:db",
+    "test:web": "pnpm --filter @capella/web test",
+    "test:pos": "pnpm --filter @capella/pos test",
+    "test:worker": "pnpm --filter @capella/worker test",
+    "test:database": "pnpm --filter @capella/database test",
+    "test:contracts": "pnpm --filter @capella/contracts test",
+    "test:config": "pnpm --filter @capella/config test",
+    "test:ui": "pnpm --filter @capella/ui test",
+    "test:unit": "pnpm --filter @capella/api test:unit",
+    "test:db": "pnpm --filter @capella/api test:db",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {

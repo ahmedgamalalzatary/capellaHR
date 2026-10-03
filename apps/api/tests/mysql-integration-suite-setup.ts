@@ -7,7 +7,7 @@ import {
 } from './mysql-integration-database.js';
 
 const isMysqlIntegrationFile = () =>
-  expect.getState().testPath?.endsWith('.mysql.integration.test.ts') ?? false;
+  expect.getState().testPath?.endsWith('-mysql.integration.test.ts') ?? false;
 
 let database: ReturnType<typeof createMysqlIntegrationDatabase> | undefined;
 

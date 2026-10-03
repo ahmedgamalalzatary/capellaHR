@@ -35,6 +35,8 @@
     "start": "node --env-file=../../.env dist/server.js",
     "lint": "eslint .",
     "test": "vitest run && pnpm test:runtime:development",
+    "test:unit": "vitest run --project unit",
+    "test:db": "vitest run --project database",
     "test:runtime": "node --env-file=../../.env.test production-runtime-smoke.mjs",
     "test:runtime:development": "tsx --conditions=development --env-file=../../.env.test production-runtime-smoke.mjs",
     "typecheck": "tsc --noEmit",
