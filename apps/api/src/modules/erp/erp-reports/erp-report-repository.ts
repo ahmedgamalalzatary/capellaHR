@@ -20,6 +20,13 @@ import {
   type Transaction,
 } from './erp-report-sql.js';
 
+// MySQL caps GROUP_CONCAT at group_concat_max_len (1024 bytes by default), which
+// silently truncated long batch/movement histories in the reports. Raise the
+// documented session limit to 16 MiB on every report connection, comfortably below
+// the 64 MiB max_allowed_packet, so a complete history always fits.
+const GROUP_CONCAT_MAX_LEN = 16 * 1024 * 1024;
+const groupConcatLimit = sql`SET SESSION group_concat_max_len = ${sql.raw(String(GROUP_CONCAT_MAX_LEN))}`;
+
 const moneySummaryKeys = new Set([
   'totalSales', 'totalDiscount', 'totalTax', 'totalRevenue', 'totalNetPayments',
   'totalNetSales', 'totalServiceSales', 'totalProductSales',
@@ -134,6 +141,7 @@ const displayTotal = async (
 export const createDrizzleErpReportRepository = (database: Database): ErpReportRepository => ({
   readPage(reportType, filters, selection, pagination) {
     return database.transaction(async (transaction): Promise<ErpReportPage> => {
+      await transaction.execute(groupConcatLimit);
       const base = factsFor(reportType, filters, selection);
       const summary = await normalizedSummary(transaction, reportType, filters, selection, base);
       return {
@@ -145,6 +153,7 @@ export const createDrizzleErpReportRepository = (database: Database): ErpReportR
   },
   readBatches(reportType, filters, selection, batchSize, onBatch) {
     return database.transaction(async (transaction) => {
+      await transaction.execute(groupConcatLimit);
       const base = factsFor(reportType, filters, selection);
       const summary = await normalizedSummary(transaction, reportType, filters, selection, base);
       const total = await displayTotal(transaction, reportType, base, Number(summary.totalRecords ?? 0));

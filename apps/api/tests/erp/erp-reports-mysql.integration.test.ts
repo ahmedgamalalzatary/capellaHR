@@ -10,6 +10,8 @@ import {
   erpProducts,
   erpProductStocks,
   erpStockBatchBalances,
+  erpStockBatches,
+  erpStockMovements,
   erpStockTransferLines,
   erpStockTransfers,
   erpServiceCommissionOverrides,
@@ -541,6 +543,42 @@ describe('ERP reports MySQL reader', () => {
       'erp-invoice', { branchId: otherBranchId }, { mode: 'selected', ids: [invoiceId] },
       { page: 1, pageSize: 20 }, reversedAt,
     )).resolves.toMatchObject({ kind: 'success', total: 0 });
+  });
+
+  it('keeps the full batch movement history past MySQL\'s default group_concat limit', async () => {
+    const historyProductName = 'منتج حركات تاريخية طويلة';
+    const historyProductId = Number((await database.insert(erpProducts).values({
+      branchId, name: historyProductName, nameNormalized: 'long-history-product',
+      sellingPrice: '10.00', lastPurchaseCost: '5.00', lowStockThreshold: 1,
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    const historyBatchId = Number((await database.insert(erpStockBatches).values({
+      originProductId: historyProductId, originBranchId: branchId,
+      expiryDate: '2030-01-01', createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    await database.insert(erpStockBatchBalances).values({
+      batchId: historyBatchId, productId: historyProductId, branchId, quantity: 1, updatedAt: soldAt,
+    });
+    // Each entry is roughly 34 bytes, so 60 movements exceed the default 1024-byte
+    // group_concat_max_len that used to chop the history silently.
+    const movementCount = 60;
+    await database.insert(erpStockMovements).values(Array.from({ length: movementCount }, (_, index) => ({
+      batches: [{ batchId: historyBatchId, expiryDate: '2030-01-01', quantity: '1.000' }],
+      productId: historyProductId, branchId, reason: 'opening_stock' as const,
+      sourceType: 'adjustment' as const, sourceId: null,
+      quantityDelta: 1, balanceAfter: index + 1, actingAccountId: adminId,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    })));
+
+    const result = await createErpReportsModule(database).reader.read(
+      'erp-expiry-data', { branchId, search: historyProductName }, { mode: 'all' },
+      { page: 1, pageSize: 20 }, reversedAt,
+    );
+    expect(result).toMatchObject({ kind: 'success', total: 1 });
+    if (result.kind === 'success') {
+      const history = String(result.snapshot.rows[0]!.stockHistory);
+      expect(history.split(' | ')).toHaveLength(movementCount);
+    }
   });
 
   // Deliberately last: it refunds a line the earlier tests read as unreversed. The
