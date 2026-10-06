@@ -44,6 +44,8 @@ const report = {
   collectedPayments: '20.00',
   collectedPaymentLines: [],
   creditSales: '100.00',
+  bookingPayments: { total: '0.00', lines: [] },
+  bookingRefunds: { total: '0.00', lines: [] },
   netByMethod: { cash: '320.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
 };
 
@@ -61,7 +63,12 @@ const setup = () => {
     list: vi.fn(async () => ({ items: [summary], total: 1, page: 1, pageSize: 20 })),
     summary: vi.fn(async () => summary),
     report: vi.fn(async () => report),
-    detail: vi.fn(async () => ({ summary, invoices: [] })),
+    detail: vi.fn(async () => ({
+      summary,
+      invoices: [],
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
+    })),
     recoveryClose: vi.fn(async () => ({
       ...session,
       closedAt: now,

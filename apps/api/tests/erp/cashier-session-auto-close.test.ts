@@ -41,8 +41,13 @@ const setup = (current: typeof session | null = session) => {
         discount: '0.00', tax: '0.00', net: '0.00',
       },
       expenses: '0.00', collectedPayments: '0.00', collectedPaymentLines: [], creditSales: '0.00',
+      bookingPayments: { total: '0.00', lines: [] }, bookingRefunds: { total: '0.00', lines: [] },
     })),
     listInvoices: vi.fn(async () => []),
+    bookingMoney: vi.fn(async () => ({
+      payments: { total: '0.00', lines: [] },
+      refunds: { total: '0.00', lines: [] },
+    })),
   };
   const resolveBranchContext = vi.fn(async (
     actor: { role: 'admin' | 'cashier'; accountId: number },

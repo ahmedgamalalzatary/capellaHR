@@ -66,8 +66,14 @@ const setup = () => {
       collectedPayments: '20.00',
       collectedPaymentLines: [],
       creditSales: '100.00',
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
     })),
     listInvoices: vi.fn<CashierSessionRepository['listInvoices']>(async () => []),
+    bookingMoney: vi.fn<CashierSessionRepository['bookingMoney']>(async () => ({
+      payments: { total: '0.00', lines: [] },
+      refunds: { total: '0.00', lines: [] },
+    })),
   };
   const resolveBranchContext = vi.fn(async (actor: { role: 'admin' | 'cashier'; accountId: number }, branchId?: number) => ({
     accountId: actor.accountId,
@@ -282,6 +288,8 @@ describe('ERP Cashier-session service', () => {
     await expect(service.detail({ role: 'admin', accountId: 1 }, 14)).resolves.toEqual({
       summary: expect.objectContaining({ id: 14, expenses: '30.00', net: '320.00' }),
       invoices: [invoice],
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
     });
     expect(repository.listInvoices).toHaveBeenCalledWith(14);
   });
@@ -291,6 +299,42 @@ describe('ERP Cashier-session service', () => {
     repository.close.mockResolvedValueOnce({ kind: 'unfinished_services', count: 3 });
     await expect(service.close({ role: 'cashier', accountId: 8, branchId: 3 }))
       .rejects.toMatchObject({ code: 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES' });
+  });
+
+  it('blocks manual shift close while bookings still need a resolution', async () => {
+    const { repository, service } = setup();
+    repository.close.mockResolvedValueOnce({ kind: 'unresolved_bookings', count: 2 });
+    await expect(service.close({ role: 'cashier', accountId: 8, branchId: 3 }))
+      .rejects.toMatchObject({
+        code: 'ERP_CASHIER_SESSION_UNRESOLVED_BOOKINGS',
+        message: 'يجب معالجة 2 حجز قبل إغلاق الوردية',
+      });
+  });
+
+  it('hands the detail the booking money blocks next to the invoices', async () => {
+    const { repository, service } = setup();
+    const invoice = {
+      id: 41,
+      invoiceNumber: 'INV-2026.08.01-12.00-3',
+      status: 'completed' as const,
+      client: { id: 5, name: 'عميل', phone: null },
+      total: '185.00',
+      takenInShift: '185.00',
+      refundedInShift: '0.00',
+      soldAt: now,
+    };
+    repository.listInvoices.mockResolvedValue([invoice]);
+    repository.bookingMoney.mockResolvedValue({
+      payments: { total: '100.00', lines: [] },
+      refunds: { total: '0.00', lines: [] },
+    });
+
+    await expect(service.detail({ role: 'admin', accountId: 1 }, 14)).resolves.toEqual({
+      summary: expect.objectContaining({ id: 14, expenses: '30.00', net: '320.00' }),
+      invoices: [invoice],
+      bookingPayments: { total: '100.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
+    });
   });
 
   it('builds the full report after applying the same shift ownership check', async () => {

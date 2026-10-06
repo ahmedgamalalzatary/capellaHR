@@ -323,8 +323,8 @@ pnpm --filter @capella/database db:generate      # then review the generated SQL
 - [x] P4 `applySale` subset rule; services marked sold
 - [x] P4 idempotent replay fixed; void/refund handled; concurrency test
 - [x] P5 cancel services + refund; cancel/no-show + refund; reschedule; delete rules
-- [ ] P6 shift money (taken/refunded/listInvoices/report lines); credit excluded
-- [ ] P6 close blocked by unresolved bookings; auto/recovery close untouched
+- [x] P6 shift money (taken/refunded/listInvoices/report lines); credit excluded
+- [x] P6 close blocked by unresolved bookings; auto/recovery close untouched
 - [ ] P7 payment-methods report updated; bookings report (contracts, DB enum, facts, summary, metadata, localization)
 - [ ] P8 diary card states + money + pay/refund dialogs
 - [ ] P8 sales workspace partial selection + credit + offline handling + leftover dialog

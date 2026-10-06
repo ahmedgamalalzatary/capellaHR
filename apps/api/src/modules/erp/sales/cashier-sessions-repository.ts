@@ -4,7 +4,9 @@ import {
   authSessions,
   branches,
   cashierSessions,
+  clients,
   erpBookingPayments,
+  erpBookings,
   erpExpenses,
   invoicePayments,
   invoiceReversalPayments,
@@ -19,6 +21,8 @@ import { signedMoney } from './sale-repository-money.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import {
   CASHIER_SESSION_MAX_DURATION_MS,
+  type CashierSessionBookingMoneyBlock,
+  type CashierSessionBookingMoneyLine,
   type CashierSessionInvoiceRecord,
   type CashierSessionMoneyByMethod,
   type CashierSessionMoneyRecord,
@@ -239,6 +243,86 @@ const isDuplicateOpenError = (error: unknown) => {
     || (typeof cause === 'object' && cause !== null && duplicate(cause));
 };
 
+const emptyBookingBlock = (): CashierSessionBookingMoneyBlock => ({ total: '0.00', lines: [] });
+
+const bookingMoneyFor = async (
+  executor: Executor,
+  sessionIds: number[],
+): Promise<{ payments: CashierSessionBookingMoneyBlock; refunds: CashierSessionBookingMoneyBlock }> => {
+  if (sessionIds.length === 0) {
+    return { payments: emptyBookingBlock(), refunds: emptyBookingBlock() };
+  }
+  const rows = await executor.select({
+    bookingId: erpBookingPayments.bookingId,
+    kind: erpBookingPayments.kind,
+    method: erpBookingPayments.method,
+    amount: erpBookingPayments.amount,
+    at: erpBookingPayments.createdAt,
+    clientId: clients.id,
+    clientName: clients.fullName,
+    clientPhone: clients.phone,
+  }).from(erpBookingPayments)
+    .innerJoin(erpBookings, eq(erpBookings.id, erpBookingPayments.bookingId))
+    .innerJoin(clients, eq(clients.id, erpBookings.clientId))
+    .where(inArray(erpBookingPayments.cashierSessionId, sessionIds))
+    .orderBy(erpBookingPayments.createdAt, erpBookingPayments.id);
+  const blocks = {
+    payment: emptyBookingBlock(),
+    refund: emptyBookingBlock(),
+  };
+  for (const row of rows) {
+    const block = blocks[row.kind];
+    block.lines.push({
+      bookingId: row.bookingId,
+      client: { id: row.clientId, name: row.clientName, phone: row.clientPhone },
+      method: row.method,
+      amount: row.amount,
+      at: row.at,
+    } satisfies CashierSessionBookingMoneyLine);
+  }
+  for (const block of Object.values(blocks)) {
+    block.total = fromCents(block.lines.reduce(
+      (total, line) => total + toCents(line.amount),
+      BigInt(0),
+    ));
+  }
+  return { payments: blocks.payment, refunds: blocks.refund };
+};
+
+// A shift cannot end while the branch still owes a booking resolution: an
+// arrived client nobody handled, an appointment whose time has passed with
+// services nobody sold or cancelled, or money held above what is still pending
+// (a checkout discount or price change can leave that behind).
+const unresolvedBookingsCount = (executor: Transaction, input: {
+  branchId: number;
+  closedAt: Date;
+}) => executor.select({ value: sql<number>`count(*)` }).from(erpBookings).where(and(
+  eq(erpBookings.branchId, input.branchId),
+  sql`(
+    (
+      ${erpBookings.status} in ('booked', 'arrived')
+      and exists (
+        select 1 from erp_booking_services pending
+        where pending.booking_id = ${erpBookings.id} and pending.status = 'pending'
+      )
+      and (
+        ${erpBookings.status} = 'arrived'
+        or ${erpBookings.scheduledAt} <= ${input.closedAt}
+      )
+    )
+    or (
+      (select coalesce(sum(case when p.kind = 'payment' then p.amount else -p.amount end), 0)
+        from erp_booking_payments p where p.booking_id = ${erpBookings.id})
+      - (select coalesce(sum(ip.amount), 0)
+        from erp_invoice_payments ip where ip.booking_id = ${erpBookings.id})
+      > (select coalesce(sum(s.price), 0)
+        from erp_booking_services pending
+        join erp_services s on s.id = pending.service_id
+        where pending.booking_id = ${erpBookings.id} and pending.status = 'pending')
+    )
+  )`,
+));
+
 export const createDrizzleCashierSessionRepository = (
   database: Database,
   audit: ErpAuditCapability,
@@ -339,6 +423,7 @@ export const createDrizzleCashierSessionRepository = (
       - toCents(returnsRow?.discount ?? '0.00');
     const tax = toCents(salesRow?.tax ?? '0.00') - toCents(returnsRow?.tax ?? '0.00');
     const total = gross - returns;
+    const bookingMoney = await bookingMoneyFor(database, [input.sessionId]);
     return {
       sales: {
         gross: fromCents(gross),
@@ -360,6 +445,8 @@ export const createDrizzleCashierSessionRepository = (
         paidAt: payment.paidAt,
       })),
       creditSales: fromCents(toCents(salesRow?.creditSales ?? '0.00')),
+      bookingPayments: bookingMoney.payments,
+      bookingRefunds: bookingMoney.refunds,
     } satisfies CashierSessionReportAccountingRecord;
   },
 
@@ -453,6 +540,10 @@ export const createDrizzleCashierSessionRepository = (
     return findOpenByBranch(database, branchId);
   },
 
+  bookingMoney(sessionId) {
+    return bookingMoneyFor(database, [sessionId]);
+  },
+
   close(input) {
     return database.transaction(async (transaction) => {
       const current = (await transaction.select().from(cashierSessions).where(and(
@@ -471,6 +562,12 @@ export const createDrizzleCashierSessionRepository = (
         ));
       const unfinishedCount = Number(unfinished[0]?.value ?? 0);
       if (unfinishedCount > 0) return { kind: 'unfinished_services' as const, count: unfinishedCount };
+      const [unresolved] = await unresolvedBookingsCount(transaction, {
+        branchId: input.branchId,
+        closedAt: input.closedAt,
+      });
+      const unresolvedCount = Number(unresolved?.value ?? 0);
+      if (unresolvedCount > 0) return { kind: 'unresolved_bookings' as const, count: unresolvedCount };
       await transaction.update(cashierSessions).set({
         closedAt: input.closedAt,
         closedByAccountId: input.closedByAccountId,

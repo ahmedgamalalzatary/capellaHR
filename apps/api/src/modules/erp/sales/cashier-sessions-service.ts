@@ -91,6 +91,8 @@ export type CashierSessionReportAccountingRecord = {
     paidAt: Date;
   }>;
   creditSales: string;
+  bookingPayments: CashierSessionBookingMoneyBlock;
+  bookingRefunds: CashierSessionBookingMoneyBlock;
 };
 
 export type CashierSessionInvoiceRecord = {
@@ -126,6 +128,10 @@ export interface CashierSessionRepository {
     closedAt: Date;
   }): Promise<CashierSessionReportAccountingRecord>;
   listInvoices(sessionId: number): Promise<CashierSessionInvoiceRecord[]>;
+  bookingMoney(sessionId: number): Promise<{
+    payments: CashierSessionBookingMoneyBlock;
+    refunds: CashierSessionBookingMoneyBlock;
+  }>;
   open(input: {
     branchId: number;
     openedByAccountId: number;
@@ -144,6 +150,7 @@ export interface CashierSessionRepository {
     | { kind: 'not_open' }
     | { kind: 'not_owner'; session: CashierSessionRecord }
     | { kind: 'unfinished_services'; count: number }
+    | { kind: 'unresolved_bookings'; count: number }
   >;
   recoveryClose(input: {
     sessionId: number;
@@ -172,6 +179,7 @@ export type CashierSessionErrorCode =
   | 'ERP_CASHIER_SESSION_NOT_CLOSED'
   | 'ERP_CASHIER_SESSION_ALREADY_CLOSED'
   | 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES'
+  | 'ERP_CASHIER_SESSION_UNRESOLVED_BOOKINGS'
   | 'ERP_CASHIER_SESSION_INVALID_RECOVERY_REASON';
 
 export class CashierSessionError extends Error {
@@ -266,7 +274,13 @@ export const createCashierSessionService = (dependencies: {
 
     async detail(actor: ErpAccountIdentity, sessionId: number) {
       const summary = await readable(actor, sessionId);
-      return { summary, invoices: await dependencies.repository.listInvoices(sessionId) };
+      const bookingMoney = await dependencies.repository.bookingMoney(sessionId);
+      return {
+        summary,
+        invoices: await dependencies.repository.listInvoices(sessionId),
+        bookingPayments: bookingMoney.payments,
+        bookingRefunds: bookingMoney.refunds,
+      };
     },
 
     async report(actor: ErpAccountIdentity, sessionId: number) {
@@ -343,6 +357,12 @@ export const createCashierSessionService = (dependencies: {
         throw new CashierSessionError(
           'ERP_CASHIER_SESSION_UNFINISHED_SERVICES',
           `يجب إنهاء تقارير ${result.count} خدمة قبل إغلاق الوردية`,
+        );
+      }
+      if (result.kind === 'unresolved_bookings') {
+        throw new CashierSessionError(
+          'ERP_CASHIER_SESSION_UNRESOLVED_BOOKINGS',
+          `يجب معالجة ${result.count} حجز قبل إغلاق الوردية`,
         );
       }
       return result.session;
