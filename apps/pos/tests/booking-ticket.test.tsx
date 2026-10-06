@@ -8,8 +8,15 @@ describe('booking ticket', () => {
     render(<BookingTicket booking={{
       id: 9, branchId: 2,
       client: { id: 11, fullName: 'منى', phone: '01000000000' },
-      scheduledAt: '2026-08-25T07:30:00.000Z', status: 'booked', note: null, invoiceId: null,
-      services: [{ serviceId: 3, serviceName: 'صبغة', servicePrice: '200.00', preferredEmployee: null }],
+      scheduledAt: '2026-08-25T07:30:00.000Z', status: 'booked', note: null,
+      money: {
+        paid: '0.00', refunded: '0.00', applied: '0.00', held: '0.00',
+        pendingValue: '200.00', maxPayable: '200.00', excess: '0.00',
+      },
+      services: [{
+        serviceId: 3, serviceName: 'صبغة', servicePrice: '200.00', preferredEmployee: null,
+        status: 'pending', invoiceId: null, invoiceNumber: null, queueStatus: null,
+      }],
       createdAt: '2026-08-24T08:00:00.000Z', updatedAt: '2026-08-24T08:00:00.000Z',
     }} />);
     expect(screen.getByText('منى')).toBeDefined();

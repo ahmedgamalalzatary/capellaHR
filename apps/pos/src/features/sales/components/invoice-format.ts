@@ -7,6 +7,12 @@ export const paymentLabels: Record<PaymentMethod, string> = {
   vodafone_cash: 'فودافون كاش',
 };
 
+/** A stored invoice payment may settle from held booking money; never a till input. */
+export const storedPaymentLabels: Record<PaymentMethod | 'booking_credit', string> = {
+  ...paymentLabels,
+  booking_credit: 'مدفوع من المقدم',
+};
+
 export const formatCairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'Africa/Cairo',
   dateStyle: 'medium',

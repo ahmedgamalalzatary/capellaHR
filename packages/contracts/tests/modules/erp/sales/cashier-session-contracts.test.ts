@@ -149,17 +149,31 @@ describe('ERP Cashier-session contracts', () => {
       }],
     };
 
-    expect(contracts.cashierSessionDetailSchema.parse(detail)).toEqual(detail);
+    expect(contracts.cashierSessionDetailSchema.parse({
+      ...detail,
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
+    })).toEqual({
+      ...detail,
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
+    });
     expect(contracts.cashierSessionDetailSchema.safeParse({
       ...detail,
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
       invoices: [{
         ...detail.invoices[0],
         total: '0.00',
         takenInShift: '0.00',
       }],
     }).success).toBe(true);
-    expect(contracts.cashierSessionDetailSchema.safeParse({ ...detail, invoices: [] }).success)
-      .toBe(true);
+    expect(contracts.cashierSessionDetailSchema.safeParse({
+      ...detail,
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
+      invoices: [],
+    }).success).toBe(true);
   });
 
   it('defines an internally consistent full shift-ending report', () => {
@@ -205,14 +219,100 @@ describe('ERP Cashier-session contracts', () => {
       },
     };
 
-    expect(contracts.cashierSessionReportSchema.parse(report)).toEqual(report);
+    const emptyBookingMoney = {
+      bookingPayments: { total: '0.00', lines: [] },
+      bookingRefunds: { total: '0.00', lines: [] },
+    };
+
+    expect(contracts.cashierSessionReportSchema.parse({ ...report, ...emptyBookingMoney }))
+      .toEqual({ ...report, ...emptyBookingMoney });
     expect(contracts.cashierSessionReportSchema.safeParse({
-      ...report,
+      ...report, ...emptyBookingMoney,
       sales: { ...report.sales, net: '431.00' },
     }).success).toBe(false);
     expect(contracts.cashierSessionReportSchema.safeParse({
-      ...report,
+      ...report, ...emptyBookingMoney,
       netByMethod: { cash: '350.00' },
     }).success).toBe(false);
+  });
+});
+
+describe('shift booking money', () => {
+  const baseReport = {
+    summary: {
+      id: 12,
+      branchId: 3,
+      branchName: 'الفرع الرئيسي',
+      openedByAccountId: 8,
+      openedByUsername: 'cashier.one',
+      openedAt: '2026-08-01T09:00:00.000Z',
+      closedAt: '2026-08-01T17:00:00.000Z',
+      closedByAccountId: 8,
+      closedByUsername: 'cashier.one',
+      autoClosedAt: null,
+      durationMinutes: 480,
+      saleCount: 2,
+      taken: { cash: '400.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00' },
+      refunded: { cash: '150.00', visa: '0.00', instapay: '0.00', vodafone_cash: '0.00' },
+      takenTotal: '500.00',
+      refundedTotal: '150.00',
+      expenses: '30.00',
+      net: '320.00',
+    },
+    sales: {
+      gross: '500.00',
+      returns: '50.00',
+      total: '450.00',
+      discount: '25.00',
+      tax: '5.00',
+      net: '430.00',
+    },
+    expenses: '30.00',
+    collectedPayments: '20.00',
+    collectedPaymentLines: [{
+      invoiceNumber: 'INV-2026.08.01-10.30-7',
+      client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      method: 'visa' as const, amount: '20.00', paidAt: '2026-08-01T12:00:00.000Z',
+    }],
+    creditSales: '100.00',
+    netByMethod: {
+      cash: '220.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',
+    },
+    bookingPayments: {
+      total: '100.00',
+      lines: [{
+        bookingId: 9,
+        client: { id: 11, name: 'منى', phone: '01000000000' },
+        method: 'cash' as const,
+        amount: '100.00',
+        at: '2026-08-01T10:00:00.000Z',
+      }],
+    },
+    bookingRefunds: {
+      total: '100.00',
+      lines: [{
+        bookingId: 9,
+        client: { id: 11, name: 'منى', phone: '01000000000' },
+        method: 'cash' as const,
+        amount: '100.00',
+        at: '2026-08-01T15:00:00.000Z',
+      }],
+    },
+  };
+
+  it('shows booking up-front payments and refunds in the shift report with their lines', () => {
+    expect(contracts.cashierSessionReportSchema.parse(baseReport).bookingPayments?.total)
+      .toBe('100.00');
+  });
+
+  it('shows booking money lines in the shift detail too', () => {
+    const detail = {
+      summary: baseReport.summary,
+      invoices: [],
+      bookingPayments: baseReport.bookingPayments,
+      bookingRefunds: baseReport.bookingRefunds,
+    };
+    expect(contracts.cashierSessionDetailSchema.parse(detail).bookingRefunds?.total)
+      .toBe('100.00');
   });
 });

@@ -1,7 +1,7 @@
 import { completeSaleSchema, type CompleteSaleInput } from '@capella/contracts';
 import { type createDatabase } from '@capella/database';
 import {
-  accounts, employees, erpBookings, erpCategories, erpProducts, erpProductStocks,
+  accounts, employees, erpBookingServices, erpBookings, erpCategories, erpProducts, erpProductStocks,
   erpServices, invoiceLines, invoiceLineReassignments, invoicePayments,
   invoiceReversalLines, invoiceReversalPayments, invoiceReversals, invoices,
   serviceQueueEntries,
@@ -271,17 +271,27 @@ export const reconstructInput = async (executor: Executor, invoiceId: number) =>
     .where(eq(invoices.id, invoiceId)).limit(1))[0]!;
   const lines = await executor.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoiceId)).orderBy(asc(invoiceLines.lineNumber));
-  const payments = await executor.select().from(invoicePayments)
+  const initialPayments = await executor.select().from(invoicePayments)
     .where(and(
       eq(invoicePayments.invoiceId, invoiceId), eq(invoicePayments.isInitial, true),
     )).orderBy(asc(invoicePayments.id));
+  // Booking credit is how held up-front money was spent, not what the client
+  // handed over, so replays rebuild it separately from the cash payments.
+  const creditPayments = initialPayments.filter((payment) => payment.method === 'booking_credit');
+  const payments = initialPayments.filter((payment) => payment.method !== 'booking_credit');
   const booking = (await executor.select({ id: erpBookings.id }).from(erpBookings)
-    .where(eq(erpBookings.invoiceId, invoiceId)).limit(1))[0];
+    .innerJoin(erpBookingServices, eq(erpBookingServices.bookingId, erpBookings.id))
+    .where(eq(erpBookingServices.invoiceId, invoiceId)).limit(1))[0];
+  const bookingCreditCents = creditPayments.reduce(
+    (total, payment) => total + toCents(payment.amount),
+    0n,
+  );
   const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
     cashierSessionId: invoice.cashierSessionId,
     ...(booking ? { bookingId: booking.id } : {}),
+    ...(bookingCreditCents > 0n ? { bookingCredit: signedMoney(bookingCreditCents) } : {}),
     idempotencyKey: invoice.idempotencyKey,
     lines: lines.map((line) => line.itemType === 'service'
       ? {

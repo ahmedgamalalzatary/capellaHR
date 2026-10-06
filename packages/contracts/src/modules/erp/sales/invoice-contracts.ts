@@ -13,6 +13,7 @@ import {
   commissionRuleSchema,
   exactMoneySchema,
   invoiceNumberSchema,
+  invoicePaymentMethodSchema,
   isoDateTimeSchema,
   paymentBreakdownSchema,
   paymentMethodSchema,
@@ -238,6 +239,7 @@ const invoiceLineSchema = z.object({
  * still owes back is governed by the line quantities and by `eligibility`.
  */
 const storedInvoicePaymentSchema = paymentSchema.extend({
+  method: invoicePaymentMethodSchema,
   refundedAmount: exactMoneySchema,
   refundableAmount: exactMoneySchema,
 }).strict().superRefine((value, context) => {

@@ -1,7 +1,11 @@
 import type {
+  BookingRefundInput,
   BookingStatus,
+  CancelBookingServicesInput,
   CreateBookingInput,
   ListBookingsQuery,
+  RecordBookingPaymentInput,
+  RescheduleBookingInput,
   UpdateBookingStatusInput,
   UpdateBookingServicePreferenceInput,
 } from '@capella/contracts';
@@ -9,6 +13,7 @@ import type {
 import type { ErpBranchContextResolver } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 import type { SaleTransaction } from '../sales/index.js';
+import type { BookingMoneySummary } from './booking-money.js';
 
 export type BookingRecord = {
   id: number;
@@ -17,12 +22,16 @@ export type BookingRecord = {
   scheduledAt: Date;
   status: BookingStatus;
   note: string | null;
-  invoiceId: number | null;
+  money: BookingMoneySummary;
   services: Array<{
     serviceId: number;
     serviceName: string;
     servicePrice: string | null;
     preferredEmployee: { id: number; name: string } | null;
+    status: 'pending' | 'sold' | 'cancelled';
+    invoiceId: number | null;
+    invoiceNumber: string | null;
+    queueStatus: 'pending' | 'in_progress' | 'completed' | 'overdue' | 'canceled' | null;
   }>;
   createdAt: Date;
   updatedAt: Date;
@@ -52,7 +61,7 @@ export interface BookingRepository {
     changedAt: Date,
   ): Promise<BookingRecord | null>;
   countFutureForEmployee(employeeId: number, now: Date): Promise<number>;
-  convert(transaction: SaleTransaction, input: BookingConversionInput): Promise<void>;
+  applySale(transaction: SaleTransaction, input: BookingConversionInput): Promise<void>;
   listActiveEmployees(branchId: number): Promise<Array<{ id: number; name: string }>>;
   updatePreference(
     branchId: number,
@@ -61,14 +70,52 @@ export interface BookingRepository {
     employeeId: number | null,
     changedAt: Date,
   ): Promise<BookingRecord | null>;
+  recordPayment(input: BookingPaymentWrite): Promise<BookingRecord>;
+  cancelServices(input: BookingLeftoverWrite & { serviceIds: number[] }): Promise<BookingRecord>;
+  finalizeCancellation(
+    input: BookingLeftoverWrite & { status: 'cancelled' | 'no_show' },
+  ): Promise<BookingRecord | null>;
+  reschedule(input: {
+    bookingId: number;
+    branchId: number;
+    scheduledAt: Date;
+    at: Date;
+  }): Promise<BookingRecord | null>;
 }
+
+export type BookingRefundWrite = {
+  cashierSessionId: number;
+  payments: Array<BookingRefundInput['payments'][number]>;
+  operationReference: string;
+};
+
+export type BookingLeftoverWrite = {
+  bookingId: number;
+  branchId: number;
+  actorAccountId: number;
+  actorRole: 'admin' | 'cashier';
+  refund?: BookingRefundWrite | undefined;
+  at: Date;
+};
+
+export type BookingPaymentWrite = {
+  bookingId: number;
+  branchId: number;
+  cashierSessionId: number;
+  actorAccountId: number;
+  actorRole: 'admin' | 'cashier';
+  method: RecordBookingPaymentInput['method'];
+  amount: string;
+  operationReference: string;
+  at: Date;
+};
 
 export type BookingConversionInput = {
   bookingId: number;
   branchId: number;
   clientId: number;
   invoiceId: number;
-  serviceIds: number[];
+  services: Array<{ serviceId: number; invoiceLineId: number; quantity: number }>;
   convertedAt: Date;
 };
 
@@ -77,8 +124,13 @@ export type BookingErrorCode =
   | 'BOOKING_ALREADY_HANDLED'
   | 'BOOKING_CLIENT_NOT_FOUND'
   | 'BOOKING_SERVICE_NOT_FOUND'
-  | 'BOOKING_EMPLOYEE_NOT_FOUND';
-  
+  | 'BOOKING_EMPLOYEE_NOT_FOUND'
+  | 'BOOKING_CASHIER_SESSION_NOT_OPEN'
+  | 'BOOKING_PAYMENT_EXCEEDS_CAP'
+  | 'BOOKING_OPERATION_CONFLICT'
+  | 'BOOKING_REFUND_REQUIRED'
+  | 'BOOKING_REFUND_AMOUNT_MISMATCH';
+
 
 const messages: Record<BookingErrorCode, string> = {
   BOOKING_NOT_FOUND: 'الحجز غير موجود',
@@ -86,10 +138,19 @@ const messages: Record<BookingErrorCode, string> = {
   BOOKING_CLIENT_NOT_FOUND: 'العميل غير موجود في هذا الفرع',
   BOOKING_SERVICE_NOT_FOUND: 'إحدى الخدمات غير متاحة في هذا الفرع',
   BOOKING_EMPLOYEE_NOT_FOUND: 'الموظف المفضل غير متاح في هذا الفرع',
+  BOOKING_CASHIER_SESSION_NOT_OPEN: 'لا توجد وردية مفتوحة صالحة لهذا الفرع',
+  BOOKING_PAYMENT_EXCEEDS_CAP: 'المبلغ يتجاوز الحد المتبقي من قيمة خدمات الحجز',
+  BOOKING_OPERATION_CONFLICT: 'تم استخدام مرجع العملية مسبقاً بتفاصيل مختلفة',
+  BOOKING_REFUND_REQUIRED: 'يجب رد المبلغ الزائد للعميل من الدرج',
+  BOOKING_REFUND_AMOUNT_MISMATCH: 'مبلغ الرد لا يطابق المبلغ المستحق للعميل',
 };
 
 export class BookingError extends Error {
-  constructor(public readonly code: BookingErrorCode, message = messages[code]) {
+  constructor(
+    public readonly code: BookingErrorCode,
+    message = messages[code],
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'BookingError';
   }
@@ -150,6 +211,21 @@ export const createBookingService = (dependencies: {
       input: UpdateBookingStatusInput & { branchId?: number | undefined },
     ) {
       const { branchId } = await resolveBranchContext(actor, input.branchId);
+      if (input.status === 'cancelled' || input.status === 'no_show') {
+        // Cancelling (or a no-show) spends every pending service and hands back
+        // any held money beyond what remains, out of an open shift's drawer.
+        const booking = await repository.finalizeCancellation({
+          bookingId: id,
+          branchId,
+          status: input.status,
+          actorAccountId: actor.accountId,
+          actorRole: actor.role,
+          ...(input.refund ? { refund: input.refund } : {}),
+          at: new Date(),
+        });
+        if (!booking) throw new BookingError('BOOKING_ALREADY_HANDLED');
+        return booking;
+      }
       const booking = await repository.transition(
         branchId,
         id,
@@ -157,6 +233,31 @@ export const createBookingService = (dependencies: {
         input.status,
         new Date(),
       );
+      if (!booking) throw new BookingError('BOOKING_ALREADY_HANDLED');
+      return booking;
+    },
+
+    async cancelServices(actor: ErpAccountIdentity, bookingId: number, input: CancelBookingServicesInput) {
+      const { branchId } = await resolveBranchContext(actor, input.branchId);
+      return repository.cancelServices({
+        bookingId,
+        branchId,
+        serviceIds: input.serviceIds,
+        actorAccountId: actor.accountId,
+        actorRole: actor.role,
+        ...(input.refund ? { refund: input.refund } : {}),
+        at: new Date(),
+      });
+    },
+
+    async reschedule(actor: ErpAccountIdentity, bookingId: number, input: RescheduleBookingInput) {
+      const { branchId } = await resolveBranchContext(actor, input.branchId);
+      const booking = await repository.reschedule({
+        bookingId,
+        branchId,
+        scheduledAt: new Date(input.scheduledAt),
+        at: new Date(),
+      });
       if (!booking) throw new BookingError('BOOKING_ALREADY_HANDLED');
       return booking;
     },
@@ -175,6 +276,21 @@ export const createBookingService = (dependencies: {
       return booking;
     },
 
+    async recordPayment(actor: ErpAccountIdentity, bookingId: number, input: RecordBookingPaymentInput) {
+      const { branchId } = await resolveBranchContext(actor, input.branchId);
+      return repository.recordPayment({
+        bookingId,
+        branchId,
+        cashierSessionId: input.cashierSessionId,
+        actorAccountId: actor.accountId,
+        actorRole: actor.role,
+        method: input.method,
+        amount: input.amount,
+        operationReference: input.operationReference,
+        at: new Date(),
+      });
+    },
+
     async remove(
       actor: ErpAccountIdentity,
       id: number,
@@ -183,7 +299,7 @@ export const createBookingService = (dependencies: {
       const { branchId } = await resolveBranchContext(actor, requestedBranchId);
       const existing = await repository.findById(branchId, id);
       if (!existing) throw new BookingError('BOOKING_NOT_FOUND');
-      if (existing.invoiceId !== null || !['booked', 'cancelled', 'no_show'].includes(existing.status)) {
+      if (!['booked', 'cancelled', 'no_show'].includes(existing.status)) {
         throw new BookingError('BOOKING_ALREADY_HANDLED');
       }
       const deleted = await repository.remove(branchId, id);

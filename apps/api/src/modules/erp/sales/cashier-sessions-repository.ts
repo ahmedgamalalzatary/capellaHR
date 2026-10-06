@@ -4,6 +4,7 @@ import {
   authSessions,
   branches,
   cashierSessions,
+  erpBookingPayments,
   erpExpenses,
   invoicePayments,
   invoiceReversalPayments,
@@ -11,9 +12,10 @@ import {
   invoices,
   serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/mysql-core';
 
+import { signedMoney } from './sale-repository-money.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import {
   CASHIER_SESSION_MAX_DURATION_MS,
@@ -118,9 +120,29 @@ const moneyBySession = async (executor: Executor, sessions: CashierSessionRecord
     .where(and(
       inArray(invoicePayments.cashierSessionId, sessionIds),
       eq(invoices.kind, 'sale'),
+      // Held booking money was already taken at the booking; it is not drawer income.
+      ne(invoicePayments.method, 'booking_credit'),
     ))
     .groupBy(invoicePayments.cashierSessionId, invoicePayments.method);
-  for (const row of takenRows) taken.get(row.sessionId)![row.method] = row.amount;
+  for (const row of takenRows) {
+    if (row.method !== 'booking_credit') taken.get(row.sessionId)![row.method] = row.amount;
+  }
+
+  // Up-front booking payments count in the drawers by the method they were taken on.
+  const bookingPaymentRows = await executor.select({
+    sessionId: erpBookingPayments.cashierSessionId,
+    method: erpBookingPayments.method,
+    amount: sql<string>`sum(${erpBookingPayments.amount})`,
+  }).from(erpBookingPayments)
+    .where(and(
+      inArray(erpBookingPayments.cashierSessionId, sessionIds),
+      eq(erpBookingPayments.kind, 'payment'),
+    ))
+    .groupBy(erpBookingPayments.cashierSessionId, erpBookingPayments.method);
+  for (const row of bookingPaymentRows) {
+    const drawer = taken.get(row.sessionId)!;
+    drawer[row.method] = signedMoney(toCents(drawer[row.method]) + toCents(row.amount));
+  }
 
   // Voids hand money back exactly as refunds do, so both count against the till.
   const refundedRows = await executor.select({
@@ -135,6 +157,22 @@ const moneyBySession = async (executor: Executor, sessions: CashierSessionRecord
     ))
     .groupBy(invoiceReversals.cashierSessionId, invoiceReversalPayments.methodSnapshot);
   for (const row of refundedRows) refunded.get(row.sessionId!)![row.method] = row.amount;
+
+  // Booking refunds leave the drawer on the method they were handed back on.
+  const bookingRefundRows = await executor.select({
+    sessionId: erpBookingPayments.cashierSessionId,
+    method: erpBookingPayments.method,
+    amount: sql<string>`sum(${erpBookingPayments.amount})`,
+  }).from(erpBookingPayments)
+    .where(and(
+      inArray(erpBookingPayments.cashierSessionId, sessionIds),
+      eq(erpBookingPayments.kind, 'refund'),
+    ))
+    .groupBy(erpBookingPayments.cashierSessionId, erpBookingPayments.method);
+  for (const row of bookingRefundRows) {
+    const drawer = refunded.get(row.sessionId)!;
+    drawer[row.method] = signedMoney(toCents(drawer[row.method]) + toCents(row.amount));
+  }
 
   // Sales are counted where they were rung up, which answers "how busy was this
   // shift" rather than "whose money was it".
@@ -291,6 +329,7 @@ export const createDrizzleCashierSessionRepository = (
         eq(invoicePayments.cashierSessionId, input.sessionId),
         eq(invoicePayments.isInitial, false),
         eq(invoices.kind, 'sale'),
+        ne(invoicePayments.method, 'booking_credit'),
       ))
       .orderBy(invoicePayments.paidAt, invoicePayments.id);
 
@@ -311,7 +350,9 @@ export const createDrizzleCashierSessionRepository = (
       },
       expenses: fromCents(toCents(expenseRow?.amount ?? '0.00')),
       collectedPayments: fromCents(toCents(collectedRow?.amount ?? '0.00')),
-      collectedPaymentLines: collectedPaymentLines.map((payment) => ({
+      collectedPaymentLines: collectedPaymentLines
+        .filter((payment): payment is typeof payment & { method: 'cash' | 'visa' | 'instapay' | 'vodafone_cash' } => payment.method !== 'booking_credit')
+        .map((payment) => ({
         invoiceNumber: payment.invoiceNumber,
         client: { id: payment.clientId, name: payment.clientName, phone: payment.clientPhone },
         method: payment.method,

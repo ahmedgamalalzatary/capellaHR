@@ -806,6 +806,13 @@
       "when": 1790941573190,
       "tag": "0114_stock_batch_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "5",
+      "when": 1791307042377,
+      "tag": "0115_next_sentinel",
+      "breakpoints": true
     }
   ]
 }

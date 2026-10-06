@@ -33,6 +33,9 @@ const purchaseStatusLabels: Record<string, string> = {
 const serviceStatusLabels: Record<string, string> = {
   pending: 'لم تبدأ', in_progress: 'قيد التنفيذ', completed: 'مكتملة', overdue: 'متأخرة',
 };
+const bookingStatusLabels: Record<string, string> = {
+  booked: 'محجوز', arrived: 'حضر', converted: 'تم البيع', cancelled: 'ملغي', no_show: 'لم يحضر',
+};
 const completionKindLabels: Record<string, string> = {
   consumables: 'بمستهلكات', none: 'بدون مستهلكات', unrecorded: 'لم تسجل المستهلكات',
 };
@@ -74,6 +77,9 @@ export const localizeErpReportRow = (
     if ((reportType === 'erp-service-queue' || reportType === 'erp-service-completions'
       || reportType === 'erp-service-exceptions') && key === 'status' && typeof value === 'string') {
       return [key, serviceStatusLabels[value] ?? value];
+    }
+    if (reportType === 'erp-bookings' && key === 'status' && typeof value === 'string') {
+      return [key, bookingStatusLabels[value] ?? value];
     }
     if (reportType === 'erp-service-completions' && key === 'completionKind' && typeof value === 'string') {
       return [key, completionKindLabels[value] ?? value];

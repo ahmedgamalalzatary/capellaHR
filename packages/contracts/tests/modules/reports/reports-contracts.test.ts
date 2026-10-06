@@ -67,6 +67,7 @@ describe('report contracts', () => {
       'erp-consumable-usage',
       'erp-consumable-ledger',
       'erp-service-exceptions',
+      'erp-bookings',
       'erp-invoice',
     ]);
   });
@@ -165,5 +166,12 @@ describe('report contracts', () => {
       filters: { monthFrom: '2026-01' },
       selection: { mode: 'all' },
     }).success).toBe(false);
+  });
+});
+
+describe('bookings report contract', () => {
+  it('publishes the bookings report as a tab report type', () => {
+    expect(erpTabReportTypes).toContain('erp-bookings');
+    expect(reportTypeSchema.parse('erp-bookings')).toBe('erp-bookings');
   });
 });

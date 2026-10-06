@@ -159,7 +159,7 @@ describe('ERP sale service', () => {
           allocatedAt: new Date(invoice.soldAt),
         }),
       },
-      bookings: { convert: converted },
+      bookings: { applySale: converted },
     });
     await service.complete(actor, { ...input, bookingId: 22 });
     const operation = setupResult.completeRepository.mock.calls[0]![0];
@@ -171,7 +171,7 @@ describe('ERP sale service', () => {
         branchId: 2,
         clientId: 5,
         invoiceId: 44,
-        serviceIds: [21],
+        services: [{ serviceId: 21, invoiceLineId: 81, quantity: 1 }],
       }),
     );
   });

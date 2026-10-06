@@ -6,6 +6,7 @@ import { expiryFacts } from './erp-report-expiry-facts.js';
 import {
   consumableLedgerFacts,
   consumableUsageFacts,
+  bookingsFacts,
   expenseFacts,
   profitFacts,
   purchaseFacts,
@@ -61,6 +62,7 @@ export const factsFor = (
     case 'erp-consumable-usage': return consumableUsageFacts(filters);
     case 'erp-consumable-ledger': return consumableLedgerFacts(filters);
     case 'erp-service-exceptions': return serviceExceptionFacts(filters);
+    case 'erp-bookings': return bookingsFacts(filters);
       case 'erp-invoice': return invoiceFacts(filters, selection);
     }
   })();
@@ -114,6 +116,7 @@ export const summaryProjection = (reportType: ErpReportType): SQL => {
     case 'erp-consumable-usage': return sql`COUNT(*) totalRecords, ${sum('quantity', 'totalQuantity')}, ${sum('cost', 'totalCost')}`;
     case 'erp-consumable-ledger': return sql`COUNT(*) totalRecords, ${sum('quantityDelta', 'netQuantityChange')}, ${sum('totalCost', 'totalCost')}`;
     case 'erp-service-exceptions': return sql`COUNT(*) totalRecords`;
+    case 'erp-bookings': return sql`COUNT(*) totalRecords, ${sum('paid', 'totalPaid')}, ${sum('applied', 'totalApplied')}, ${sum('refunded', 'totalRefunded')}, ${sum('held', 'totalHeld')}`;
     case 'erp-invoice': return sql`COUNT(*) totalRecords, ${sum('lineTotal', 'lineSubtotal')}`;
   }
 };

@@ -210,11 +210,14 @@ export const createSaleRepositoryReversals = (
               (reversedByPayment.get(payment.invoicePaymentId) ?? 0n) + toCents(payment.cashAmount),
             );
           }
-          const voidPaymentByMethod = new Map<typeof originalPayments[number]['method'], bigint>();
+          const voidPaymentByMethod = new Map<Exclude<typeof originalPayments[number]['method'], 'booking_credit'>, bigint>();
           for (const payment of originalPayments) {
+            // A voided booking's up-front portion is handed back from the drawer
+            // like any refund — there is no booking_credit drawer to return to.
+            const method = payment.method === 'booking_credit' ? 'cash' as const : payment.method;
             voidPaymentByMethod.set(
-              payment.method,
-              (voidPaymentByMethod.get(payment.method) ?? 0n) + toCents(payment.amount),
+              method,
+              (voidPaymentByMethod.get(method) ?? 0n) + toCents(payment.amount),
             );
           }
           const requestedPayments = operation.type === 'void'

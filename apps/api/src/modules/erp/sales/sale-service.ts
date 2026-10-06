@@ -164,7 +164,9 @@ type SaleErrorCode =
   | 'REASSIGN_ADMIN_REQUIRED'
   | 'PAYMENT_EXCEEDS_BALANCE'
   | 'PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES'
-  | 'INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID';
+  | 'INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID'
+  | 'BOOKING_NOT_PENDING'
+  | 'BOOKING_CREDIT_MISMATCH';
 
 const messages: Record<SaleErrorCode, string> = {
   REASSIGN_ADMIN_REQUIRED: 'يمكن للمسؤول فقط تغيير موظف خدمة مكتملة.',
@@ -191,6 +193,8 @@ const messages: Record<SaleErrorCode, string> = {
   INVOICE_NOT_REASSIGNABLE: 'لا يمكن تغيير موظف هذه الخدمة في حالتها الحالية.',
   PAYMENT_EXCEEDS_BALANCE: 'الدفعة أكبر من الرصيد المستحق',
   PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES: 'فواتير الخدمات يجب سدادها بالكامل',
+  BOOKING_NOT_PENDING: 'الحجز غير متاح للبيع',
+  BOOKING_CREDIT_MISMATCH: 'المبلغ المقدم تغيّر، حدّث الصفحة',
   INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID: 'لا يمكن إلغاء فاتورة مدفوعة جزئيًا؛ استخدم الاسترداد',
 };
 
@@ -215,14 +219,14 @@ export const createSaleService = (dependencies: {
     allocate(): Promise<{ invoiceNumber: string; allocatedAt: Date }>;
   };
   bookings?: {
-    convert(
+    applySale(
       transaction: SaleTransaction,
       input: {
         bookingId: number;
         branchId: number;
         clientId: number;
         invoiceId: number;
-        serviceIds: number[];
+        services: Array<{ serviceId: number; invoiceLineId: number; quantity: number }>;
         convertedAt: Date;
       },
     ): Promise<void>;
@@ -274,13 +278,17 @@ export const createSaleService = (dependencies: {
         const bookingHandover = resolved.bookingId === undefined ? undefined
           : async (transaction: SaleTransaction, invoice: InvoiceDto) => {
               if (!bookings) throw new SaleError('SALE_VALIDATION_FAILED');
-              await bookings.convert(transaction, {
+              await bookings.applySale(transaction, {
                 bookingId: resolved.bookingId!,
                 branchId: resolved.branchId,
                 clientId: resolved.clientId,
                 invoiceId: invoice.id,
-                serviceIds: resolved.lines.flatMap((line) => (
-                  line.itemType === 'service' ? [line.serviceId] : []
+                services: invoice.lines.flatMap((line) => (
+                  line.itemType === 'service' ? [{
+                    serviceId: line.sourceId,
+                    invoiceLineId: line.id,
+                    quantity: line.quantity,
+                  }] : []
                 )),
                 convertedAt: number.allocatedAt,
               });

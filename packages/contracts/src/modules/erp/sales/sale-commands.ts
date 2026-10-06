@@ -45,6 +45,10 @@ export const percentageAmount = (base: string, percentage: string) => {
 };
 
 export const paymentMethodSchema = z.enum(['cash', 'visa', 'instapay', 'vodafone_cash']);
+/** Stored invoice payments may also settle from held booking money; never a till input. */
+export const invoicePaymentMethodSchema = z.enum([
+  ...paymentMethodSchema.options, 'booking_credit',
+] as [string, ...string[]]);
 export const saleItemTypeSchema = z.enum(['service', 'product']);
 export const adjustmentKindSchema = z.enum(['percentage', 'fixed']);
 export const commissionRuleSchema = z.enum(['service_default', 'employee_override', 'none']);
@@ -240,6 +244,7 @@ export const completeSaleSchema = z.object({
   discount: adjustmentSchema.optional(),
   tax: adjustmentSchema.optional(),
   payments: z.array(paymentSchema).max(paymentMethodSchema.options.length),
+  bookingCredit: positiveMoneySchema.optional(),
 }).strict().superRefine((value, context) => {
   const seen = new Set<string>();
   value.payments.forEach((payment, index) => {
@@ -252,6 +257,13 @@ export const completeSaleSchema = z.object({
     }
     seen.add(payment.method);
   });
+  if (value.bookingCredit !== undefined && value.bookingId === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['bookingCredit'],
+      message: 'لا يمكن استخدام مقدم الحجز بدون رقم حجز',
+    });
+  }
 });
 
 export const quoteSaleInputSchema = z.object({

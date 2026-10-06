@@ -9,7 +9,7 @@ import { Barcode } from '@/lib/barcode/render-barcode';
 import { RECEIPT_PAGE_RULE } from '@/lib/print/hardware';
 import { PrintPageRule } from '@/lib/print/page-rule';
 
-import { formatCairoDateTime, paymentLabels } from './invoice-format';
+import { formatCairoDateTime, storedPaymentLabels } from './invoice-format';
 
 const CAPELLA_INSTAGRAM_URL =
   'https://www.instagram.com/capellacare?igsh=aDllZTVycjc4ZjJw&utm_source=qr';
@@ -369,7 +369,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         </div>
         {invoice.payments.map((payment, index) => (
           <div key={`${payment.method}-${index}`} className="flex justify-between">
-            <span>{paymentLabels[payment.method]}</span>
+            <span>{storedPaymentLabels[payment.method as keyof typeof storedPaymentLabels]}</span>
             <span className="tabular">{payment.amount} ج.م</span>
           </div>
         ))}

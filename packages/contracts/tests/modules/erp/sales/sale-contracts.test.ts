@@ -288,3 +288,40 @@ describe('ERP complete-sale contracts', () => {
     }).success).toBe(true);
   });
 });
+
+describe('ERP booking-credit sale contract', () => {
+  const base = {
+    clientId: 5,
+    cashierSessionId: 13,
+    bookingId: 22,
+    idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+    lines: [{
+      itemType: 'service' as const, serviceId: 21, quantity: 1,
+      unitPrice: '200.00', employeeId: 8,
+    }],
+    payments: [{ method: 'cash' as const, amount: '150.00' }],
+  };
+
+  it('lets a booking sale settle part of the total from held up-front money', () => {
+    expect(completeSaleSchema.parse({
+      ...base,
+      bookingCredit: '50.00',
+    })).toMatchObject({ bookingCredit: '50.00', bookingId: 22 });
+  });
+
+  it('allows bookingCredit only together with a booking', () => {
+    const withoutBooking = { ...base, bookingId: undefined };
+    delete (withoutBooking as { bookingId?: number }).bookingId;
+    expect(completeSaleSchema.safeParse({
+      ...withoutBooking,
+      bookingCredit: '50.00',
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('rejects malformed booking credit amounts', () => {
+    expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '50' }).success).toBe(true);
+    expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '-50.00' }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '0.00' }).success).toBe(false);
+  });
+});

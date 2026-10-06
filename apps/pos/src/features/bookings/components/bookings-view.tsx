@@ -271,11 +271,9 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     ) : null}
     {deleting ? (
       <ConfirmDialog
-        title={deleting.invoiceId === null ? 'حذف الموعد' : 'حذف حجز مدفوع'}
-        description={deleting.invoiceId === null
-          ? 'سيُحذف هذا الموعد نهائيًا ولا يمكن التراجع.'
-          : 'هذا الحجز مرتبط بمبلغ مدفوع. هل أعدت المبلغ للعميل؟ لا تحذف قبل رد المبلغ.'}
-        confirmLabel={deleting.invoiceId === null ? 'تأكيد الحذف' : 'نعم، أعدت المبلغ — احذف'}
+        title="حذف الموعد"
+        description="سيُحذف هذا الموعد نهائيًا ولا يمكن التراجع. لا يمكن الحذف إذا دُفع مقدم أو بِيعت إحدى خدماته."
+        confirmLabel="تأكيد الحذف"
         tone="danger"
         pending={removal.isPending}
         onConfirm={() => {

@@ -81,6 +81,7 @@ const tabLabels: Record<ErpTabReportType, string> = {
   'erp-consumable-usage': 'استخدام المستهلكات',
   'erp-consumable-ledger': 'سجل مخزون المستهلكات',
   'erp-service-exceptions': 'الخدمات المتأخرة',
+  'erp-bookings': 'تقرير الحجوزات',
 };
 
 const summaryLabels: Record<string, string> = {
@@ -445,6 +446,7 @@ export function ErpReportsView() {
           ['عكس وقيود', ['erp-refunds', 'erp-voids', 'erp-expenses', 'erp-purchases', 'erp-transfers']],
           ['مخزون وأرباح', ['erp-stock', 'erp-expiry-data', 'erp-profit', 'erp-client-history', 'erp-receivables']],
           ['أرضية الصالون', ['erp-service-queue', 'erp-service-completions', 'erp-consumable-usage', 'erp-consumable-ledger', 'erp-service-exceptions']],
+          ['الحجوزات', ['erp-bookings']],
         ] as const).map(([group, types]) => (
           <fieldset key={group} className="space-y-1.5">
             <legend className="text-[12px] font-medium text-muted">{group}</legend>

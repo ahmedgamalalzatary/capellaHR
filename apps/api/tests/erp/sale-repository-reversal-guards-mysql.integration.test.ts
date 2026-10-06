@@ -184,7 +184,7 @@ describe('ERP sale repository MySQL integration', () => {
       reversalId: pendingId,
       invoiceId: completed.id,
       invoicePaymentId: payment.id,
-      methodSnapshot: payment.method,
+      methodSnapshot: payment.method === 'booking_credit' ? 'cash' : payment.method,
       amount: '185.00',
       cashAmount: '185.00',
     });

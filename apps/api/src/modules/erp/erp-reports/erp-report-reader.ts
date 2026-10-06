@@ -39,6 +39,16 @@ export interface ErpReportRepository {
 }
 
 const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }> = {
+  'erp-bookings': {
+    title: 'تقرير الحجوزات',
+    columns: [
+      ['id', 'المعرف'], ['eventDate', 'الموعد'], ['branchName', 'الفرع'],
+      ['clientName', 'العميل'], ['clientPhone', 'الهاتف'], ['status', 'الحالة'],
+      ['servicesTotal', 'عدد الخدمات'], ['servicesSold', 'تمت'], ['servicesCancelled', 'ملغاة'],
+      ['servicesPending', 'لم تبدأ'], ['paid', 'مدفوع مقدماً'], ['applied', 'مستخدم'],
+      ['refunded', 'مسترد'], ['held', 'المتبقي لدينا'], ['invoiceNumbers', 'الفواتير'],
+    ].map(([key, label]) => ({ key: key!, label: label! })),
+  },
   'erp-expiry-data': {
     title: 'بيانات الصلاحية',
     columns: [ ['branchName', 'الفرع'], ['productName', 'المنتج'], ['batchId', 'الدفعة'],

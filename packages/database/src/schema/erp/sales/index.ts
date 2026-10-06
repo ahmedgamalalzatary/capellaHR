@@ -20,7 +20,9 @@ import { accounts } from '../../auth/index.js';
 import { employees } from '../../employees/index.js';
 import { branches } from '../../organization/index.js';
 import { erpProducts, erpServices } from '../catalog/index.js';
+import { erpBookings } from '../bookings/index.js';
 import { clients } from '../clients/index.js';
+import { erpPaymentMethods, invoicePaymentMethods } from './payment-methods.js';
 import { consumableUnits, erpConsumableLedgerEntries } from '../stock/index.js';
 
 export { erpProducts } from '../catalog/index.js';
@@ -60,7 +62,7 @@ export const invoiceKinds = ['sale', 'branch_transfer'] as const;
 export const invoiceAdjustmentKinds = ['percentage', 'fixed'] as const;
 export const invoiceItemTypes = ['service', 'product'] as const;
 export const commissionRules = ['service_default', 'employee_override', 'none'] as const;
-export const erpPaymentMethods = ['cash', 'visa', 'instapay', 'vodafone_cash'] as const;
+export { erpPaymentMethods, invoicePaymentMethods } from './payment-methods.js';
 export const invoiceSettlementStatuses = ['settled', 'open'] as const;
 
 export const invoices = mysqlTable('erp_invoices', {
@@ -403,10 +405,12 @@ export const invoiceLineReassignments = mysqlTable('erp_invoice_line_reassignmen
 export const invoicePayments = mysqlTable('erp_invoice_payments', {
   id: int('id').autoincrement().primaryKey(),
   invoiceId: int('invoice_id').notNull(),
-  method: mysqlEnum('method', erpPaymentMethods).notNull(),
+  method: mysqlEnum('method', invoicePaymentMethods).notNull(),
   amount: decimal('amount', { precision: 14, scale: 2 }).notNull(),
   operationReference: varchar('operation_reference', { length: 36 }).notNull(),
   isInitial: boolean('is_initial').notNull().default(true),
+  /** Set only when the method is `booking_credit`: the booking whose held money this spends. */
+  bookingId: int('booking_id'),
   /**
    * The shift that actually took this money, the account that took it, and when.
    * Today they always match the invoice, but once an invoice can be paid in
@@ -421,6 +425,7 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   foreignKey({ name: 'erp_invoice_payments_invoice_fk', columns: [table.invoiceId], foreignColumns: [invoices.id] }),
   foreignKey({ name: 'erp_invoice_payments_session_fk', columns: [table.cashierSessionId], foreignColumns: [cashierSessions.id] }),
   foreignKey({ name: 'erp_invoice_payments_account_fk', columns: [table.actingAccountId], foreignColumns: [accounts.id] }),
+  foreignKey({ name: 'erp_invoice_payments_booking_fk', columns: [table.bookingId], foreignColumns: [erpBookings.id] }),
   uniqueIndex('erp_invoice_payments_invoice_reference_unique')
     .on(table.invoiceId, table.operationReference),
   // Lets a refund line point at a payment and its invoice together, so it cannot name a
@@ -428,6 +433,7 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   uniqueIndex('erp_invoice_payments_id_invoice_unique').on(table.id, table.invoiceId),
   index('erp_invoice_payments_session_paid_idx').on(table.cashierSessionId, table.paidAt),
   check('erp_invoice_payments_amount_positive', sql`${table.amount} > 0`),
+  check('erp_invoice_payments_booking_credit_consistent', sql`(${table.method} = 'booking_credit') = (${table.bookingId} is not null)`),
 ]);
 
 export const invoiceReversals = mysqlTable('erp_invoice_reversals', {

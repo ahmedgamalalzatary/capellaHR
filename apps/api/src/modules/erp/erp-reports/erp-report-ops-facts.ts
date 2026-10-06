@@ -204,3 +204,38 @@ export const serviceExceptionFacts = (filters: ReportFilters) => sql`
     ...searchFilter(filters, ['invoice.invoice_number', 'invoice.client_name_snapshot', 'line.item_name_snapshot', currentQueueEmployeeName]),
   ])}
 `;
+
+export const bookingsFacts = (filters: ReportFilters) => sql`
+  SELECT booking.id id, booking.scheduled_at eventDate, branch.name branchName,
+    client.full_name clientName, client.phone clientPhone, booking.status status,
+    COUNT(service.id) servicesTotal,
+    COALESCE(SUM(service.status = 'sold'), 0) servicesSold,
+    COALESCE(SUM(service.status = 'cancelled'), 0) servicesCancelled,
+    COALESCE(SUM(service.status = 'pending'), 0) servicesPending,
+    COALESCE((SELECT SUM(pay.amount) FROM erp_booking_payments pay
+      WHERE pay.booking_id = booking.id AND pay.kind = 'payment'), 0) paid,
+    COALESCE((SELECT SUM(refund.amount) FROM erp_booking_payments refund
+      WHERE refund.booking_id = booking.id AND refund.kind = 'refund'), 0) refunded,
+    COALESCE((SELECT SUM(credit.amount) FROM erp_invoice_payments credit
+      WHERE credit.booking_id = booking.id), 0) applied,
+    COALESCE((SELECT SUM(pay.amount) FROM erp_booking_payments pay
+      WHERE pay.booking_id = booking.id AND pay.kind = 'payment'), 0)
+      - COALESCE((SELECT SUM(refund.amount) FROM erp_booking_payments refund
+        WHERE refund.booking_id = booking.id AND refund.kind = 'refund'), 0)
+      - COALESCE((SELECT SUM(credit.amount) FROM erp_invoice_payments credit
+        WHERE credit.booking_id = booking.id), 0) held,
+    COALESCE(GROUP_CONCAT(DISTINCT invoice.invoice_number SEPARATOR '، '), '') invoiceNumbers
+  FROM erp_bookings booking
+  INNER JOIN branches branch ON branch.id = booking.branch_id
+  INNER JOIN clients client ON client.id = booking.client_id
+  LEFT JOIN erp_booking_services service ON service.booking_id = booking.id
+  LEFT JOIN erp_invoices invoice
+    ON invoice.id = service.invoice_id AND invoice.branch_id = service.branch_id
+  ${condition([
+    ...branchFilter(filters, 'booking.branch_id'),
+    ...timestampFilter(filters, 'booking.scheduled_at'),
+    ...searchFilter(filters, ['client.full_name', 'client.phone']),
+  ])}
+  GROUP BY booking.id, booking.scheduled_at, branch.name, client.full_name, client.phone, booking.status
+  ORDER BY booking.scheduled_at DESC, booking.id DESC
+`;

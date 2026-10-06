@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   clientVisitSummarySchema,
   completeSaleSchema,
+  invoicePaymentMethodSchema,
+  paymentMethodSchema,
+  paymentSchema,
   invoiceSchema,
   invoiceTotalsSchema,
   paymentBreakdownSchema,
@@ -347,5 +350,14 @@ describe('ERP complete-sale contracts', () => {
       totals: { subtotal: '200.00', discountAmount: '200.00', taxAmount: '0.00', total: '0.00' },
     }).success).toBe(true);
     expect(completeSaleSchema.safeParse({ ...validDraft, payments: [] }).success).toBe(true);
+  });
+});
+
+describe('stored invoice payment methods', () => {
+  it('accepts booking_credit only as a stored method, never as till input', () => {
+    expect(invoicePaymentMethodSchema.options).toContain('booking_credit');
+    expect(paymentMethodSchema.options).not.toContain('booking_credit');
+    expect(paymentSchema.safeParse({ method: 'booking_credit', amount: '50.00' }).success)
+      .toBe(false);
   });
 });

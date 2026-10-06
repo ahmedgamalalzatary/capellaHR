@@ -15,8 +15,14 @@ const booking: BookingRecord = {
   scheduledAt: new Date('2026-08-25T07:30:00.000Z'),
   status: 'booked',
   note: null,
-  invoiceId: null,
-  services: [{ serviceId: 3, serviceName: 'Hair', servicePrice: '200.00', preferredEmployee: null }],
+  money: {
+    paid: '0.00', refunded: '0.00', applied: '0.00', held: '0.00',
+    pendingValue: '200.00', maxPayable: '200.00', excess: '0.00',
+  },
+  services: [{
+    serviceId: 3, serviceName: 'Hair', servicePrice: '200.00', preferredEmployee: null,
+    status: 'pending' as const, invoiceId: null, invoiceNumber: null, queueStatus: null,
+  }],
   createdAt: new Date('2026-08-24T08:00:00.000Z'),
   updatedAt: new Date('2026-08-24T08:00:00.000Z'),
 };
@@ -29,14 +35,22 @@ const setup = () => {
   const updatePreference = vi.fn().mockResolvedValue(booking);
   const findById = vi.fn().mockResolvedValue(booking);
   const remove = vi.fn().mockResolvedValue(booking);
+  const recordPayment = vi.fn().mockResolvedValue(booking);
+  const cancelServices = vi.fn().mockResolvedValue(booking);
+  const finalizeCancellation = vi.fn().mockResolvedValue(booking);
+  const reschedule = vi.fn().mockResolvedValue(booking);
   const repository: BookingRepository = {
     create,
     findById,
     listDay,
     remove,
+    recordPayment,
+    cancelServices,
+    finalizeCancellation,
+    reschedule,
     transition,
     countFutureForEmployee: vi.fn().mockResolvedValue(0),
-    convert: vi.fn().mockResolvedValue(undefined),
+    applySale: vi.fn().mockResolvedValue(undefined),
     listActiveEmployees,
     updatePreference,
   };
@@ -44,7 +58,7 @@ const setup = () => {
     repository,
     resolveBranchContext: vi.fn().mockResolvedValue({ branchId: 2, accountId: 3 }),
   });
-  return { service, create, listDay, transition, listActiveEmployees, updatePreference, findById, remove };
+  return { service, create, listDay, transition, listActiveEmployees, updatePreference, findById, remove, recordPayment, cancelServices, finalizeCancellation, reschedule };
 };
 
 describe('ERP booking service', () => {
@@ -77,15 +91,15 @@ describe('ERP booking service', () => {
   });
 
   it('allows cancellation after booking or arrival and no-show only before arrival', async () => {
-    const { service, transition } = setup();
+    const { service, finalizeCancellation } = setup();
     await service.updateStatus(actor, 9, { status: 'cancelled' });
-    expect(transition).toHaveBeenLastCalledWith(
-      2, 9, ['booked', 'arrived'], 'cancelled', expect.any(Date),
-    );
+    expect(finalizeCancellation).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9, branchId: 2, status: 'cancelled',
+    }));
     await service.updateStatus(actor, 9, { status: 'no_show' });
-    expect(transition).toHaveBeenLastCalledWith(
-      2, 9, ['booked'], 'no_show', expect.any(Date),
-    );
+    expect(finalizeCancellation).toHaveBeenLastCalledWith(expect.objectContaining({
+      bookingId: 9, branchId: 2, status: 'no_show',
+    }));
   });
 
   it('reports when another staff member won the transition', async () => {
@@ -133,5 +147,67 @@ describe('ERP booking service', () => {
     await expect(service.remove(actor, 9)).rejects.toEqual(
       new BookingError('BOOKING_ALREADY_HANDLED'),
     );
+  });
+});
+
+describe('ERP booking payments service', () => {
+  it('records an up-front payment through the repository with the acting account', async () => {
+    const { service, recordPayment } = setup();
+    await service.recordPayment(actor, 9, {
+      cashierSessionId: 13,
+      method: 'cash',
+      amount: '100.00',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+    });
+    expect(recordPayment).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9,
+      branchId: 2,
+      actorAccountId: 3,
+      actorRole: 'cashier',
+      cashierSessionId: 13,
+      method: 'cash',
+      amount: '100.00',
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+    }));
+  });
+});
+
+describe('ERP booking leftovers service', () => {
+  it('cancels chosen services through the branch-scoped repository with the refund block', async () => {
+    const { service, cancelServices } = setup();
+    const refund = {
+      cashierSessionId: 13,
+      payments: [{ method: 'cash' as const, amount: '50.00' }],
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+    };
+    await service.cancelServices(actor, 9, { serviceIds: [3], refund });
+    expect(cancelServices).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9, branchId: 2, serviceIds: [3], actorAccountId: 3, actorRole: 'cashier', refund,
+    }));
+  });
+
+  it('routes cancelling and no-show through the finalize path with an optional refund', async () => {
+    const { service, finalizeCancellation } = setup();
+    await service.updateStatus(actor, 9, { status: 'cancelled' });
+    expect(finalizeCancellation).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9, branchId: 2, status: 'cancelled', actorRole: 'cashier',
+    }));
+    const refund = {
+      cashierSessionId: 13,
+      payments: [{ method: 'cash' as const, amount: '100.00' }],
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+    };
+    await service.updateStatus(actor, 9, { status: 'no_show', refund });
+    expect(finalizeCancellation).toHaveBeenLastCalledWith(expect.objectContaining({
+      bookingId: 9, status: 'no_show', refund,
+    }));
+  });
+
+  it('reschedules through the branch-scoped repository', async () => {
+    const { service, reschedule } = setup();
+    await service.reschedule(actor, 9, { scheduledAt: '2026-08-30T10:30:00+03:00' });
+    expect(reschedule).toHaveBeenCalledWith(expect.objectContaining({
+      bookingId: 9, branchId: 2, scheduledAt: new Date('2026-08-30T07:30:00.000Z'),
+    }));
   });
 });

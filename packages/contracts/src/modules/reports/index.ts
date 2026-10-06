@@ -31,6 +31,7 @@ export const erpTabReportTypes = [
   'erp-consumable-usage',
   'erp-consumable-ledger',
   'erp-service-exceptions',
+  'erp-bookings',
 ] as const;
 
 export const erpReportTypes = [...erpTabReportTypes, 'erp-invoice'] as const;

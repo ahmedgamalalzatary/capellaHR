@@ -4,6 +4,7 @@ import {
   cashierSessions,
   clients,
   commissionLedgerEntries,
+  erpBookings,
   erpProductStocks,
   erpStockMovements,
   erpServiceCommissionOverrides,
@@ -37,6 +38,7 @@ import { isDuplicateEntryError, signedMoney } from './sale-repository-money.js';
 import type { createSaleRepositorySupport } from './sale-repository-support.js';
 
 import { ensureLegacyBatch, takeBatchQuantities } from '../stock/index.js';
+import { readBookingCreditContext } from '../bookings/index.js';
 import type { BatchAllocation } from '@capella/contracts';
 
 type Database = ReturnType<typeof createDatabase>;
@@ -115,6 +117,19 @@ export const createSaleRepositoryComplete = (
           const employeeById = new Map(assignedEmployees.map((row) => [row.id, row]));
           if (employeeIds.some((id) => !employeeById.has(id))) {
             throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
+          }
+          // Held booking money is settled inside this sale, so the booking row
+          // locks here — after session, account and employees — before any
+          // money row or queue ticket is written. A booking not waiting for its
+          // client can never be sold.
+          if (input.bookingId !== undefined) {
+            const booking = (await transaction.select().from(erpBookings).where(and(
+              eq(erpBookings.id, input.bookingId),
+              eq(erpBookings.branchId, input.branchId),
+            )).for('update').limit(1))[0];
+            if (!booking || booking.clientId !== input.clientId || booking.status !== 'arrived') {
+              throw new SaleError('BOOKING_NOT_PENDING');
+            }
           }
           const quotedLines = await quoteServices(transaction, input.branchId, serviceInputs, true);
           const quotedProducts = await quoteProducts(
@@ -200,10 +215,23 @@ export const createSaleRepositoryComplete = (
             }
             throw error;
           }
-          if (toCents(totals.paymentTotal) > toCents(totals.total)) {
+          // Up-front money is used first and automatically: the credit must be
+          // exactly min(held, total), read under the booking's lock.
+          const bookingCreditCents = input.bookingId === undefined
+            ? 0n
+            : toCents(input.bookingCredit ?? '0.00');
+          if (input.bookingId !== undefined) {
+            const { heldCents } = await readBookingCreditContext(transaction, input.bookingId);
+            const expected = heldCents < toCents(totals.total) ? heldCents : toCents(totals.total);
+            if (bookingCreditCents !== expected) {
+              throw new SaleError('BOOKING_CREDIT_MISMATCH');
+            }
+          }
+          const paidCents = toCents(totals.paymentTotal) + bookingCreditCents;
+          if (paidCents > toCents(totals.total)) {
             throw new SaleError('PAYMENT_TOTAL_MISMATCH');
           }
-          if (serviceInputs.length && totals.paymentTotal !== totals.total) {
+          if (serviceInputs.length && paidCents !== toCents(totals.total)) {
             throw new SaleError('PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES');
           }
 
@@ -244,10 +272,10 @@ export const createSaleRepositoryComplete = (
             taxValue: input.tax?.value ?? null,
             taxAmount: totals.taxAmount,
             total: totals.total,
-            amountPaid: operation.kind === 'branch_transfer' ? '0.00' : totals.paymentTotal,
+            amountPaid: operation.kind === 'branch_transfer' ? '0.00' : signedMoney(paidCents),
             creditedAmount: operation.kind === 'branch_transfer' ? totals.total : '0.00',
             settlementStatus: operation.kind === 'branch_transfer'
-              || totals.paymentTotal === totals.total ? 'settled' : 'open',
+              || paidCents === toCents(totals.total) ? 'settled' : 'open',
             soldAt: operation.soldAt,
             createdAt: operation.soldAt,
           });
@@ -325,7 +353,24 @@ export const createSaleRepositoryComplete = (
             paidAt: operation.soldAt,
             createdAt: operation.soldAt,
           })));
-          const amountPaid = input.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n);
+          // Held booking money spent here is a stored payment fact on the invoice,
+          // not cash that entered the drawer at the till.
+          if (bookingCreditCents > 0n) {
+            await transaction.insert(invoicePayments).values({
+              invoiceId,
+              method: 'booking_credit',
+              amount: signedMoney(bookingCreditCents),
+              operationReference: randomUUID(),
+              isInitial: true,
+              bookingId: input.bookingId!,
+              cashierSessionId: input.cashierSessionId,
+              actingAccountId: operation.actingAccountId,
+              paidAt: operation.soldAt,
+              createdAt: operation.soldAt,
+            });
+          }
+          const amountPaid = input.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n)
+            + bookingCreditCents;
           await transaction.update(invoices).set({
             status: 'completed',
             amountPaid: operation.kind === 'branch_transfer' ? '0.00' : signedMoney(amountPaid),

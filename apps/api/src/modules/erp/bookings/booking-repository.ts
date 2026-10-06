@@ -1,29 +1,163 @@
 import { type createDatabase } from '@capella/database';
 import {
+  cashierSessions,
   clients,
   employees,
+  erpBookingPayments,
   erpBookingServices,
   erpBookings,
   erpServices,
+  invoicePayments,
+  invoices,
+  serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, asc, countDistinct, eq, gt, gte, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
-import {
-  BookingError,
-  type BookingConversionInput,
-  type BookingRecord,
-  type BookingRepository,
+import { CASHIER_SESSION_MAX_DURATION_MS, toCents } from '../sales/index.js';
+import { signedMoney } from '../sales/sale-repository-money.js';
+import { BookingError } from './booking-service.js';
+import type {
+  BookingConversionInput,
+  BookingLeftoverWrite,
+  BookingPaymentWrite,
+  BookingRecord,
+  BookingRefundWrite,
+  BookingRepository,
 } from './booking-service.js';
+import { buildBookingMoney, sumServicePrices } from './booking-money.js';
 
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 const AUDIT_MODULE = 'erp-bookings';
 
 const nextDate = (date: string) => {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+};
+
+const lockOpenSession = (
+  transaction: Transaction,
+  input: {
+    cashierSessionId: number;
+    branchId: number;
+    actorAccountId: number;
+    actorRole: 'admin' | 'cashier';
+    at: Date;
+  },
+) => {
+  if (input.cashierSessionId <= 0) throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+  return transaction.select().from(cashierSessions).where(and(
+    eq(cashierSessions.id, input.cashierSessionId),
+    eq(cashierSessions.branchId, input.branchId),
+    isNull(cashierSessions.closedAt),
+    // Strictly after the limit: the sweep spends a shift that reaches it.
+    gt(
+      cashierSessions.openedAt,
+      new Date(input.at.getTime() - CASHIER_SESSION_MAX_DURATION_MS),
+    ),
+  )).for('update').limit(1).then(([session]) => {
+    if (!session || (input.actorRole === 'cashier'
+      && session.openedByAccountId !== input.actorAccountId)) {
+      throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+    }
+    return session;
+  });
+};
+
+const refundRowsForReference = (transaction: Transaction, bookingId: number, reference: string) => transaction.select({
+  amount: erpBookingPayments.amount,
+}).from(erpBookingPayments).where(and(
+  eq(erpBookingPayments.bookingId, bookingId),
+  sql`(${erpBookingPayments.operationReference} = ${reference} or ${erpBookingPayments.operationReference} like ${`${reference}-%`})`,
+));
+
+const insertRefundRows = async (
+  transaction: Transaction,
+  input: {
+    bookingId: number;
+    branchId: number;
+    cause: 'service_cancelled' | 'booking_cancelled' | 'no_show';
+    actorAccountId: number;
+    at: Date;
+    refund: BookingRefundWrite;
+  },
+) => {
+  // One ledger row per payment method; the operation reference identifies the
+  // command and the suffix keeps the per-row uniqueness intact.
+  await transaction.insert(erpBookingPayments).values(input.refund.payments.map((payment, index) => ({
+    bookingId: input.bookingId,
+    branchId: input.branchId,
+    kind: 'refund' as const,
+    method: payment.method,
+    amount: payment.amount,
+    refundCause: input.cause,
+    cashierSessionId: input.refund.cashierSessionId,
+    actingAccountId: input.actorAccountId,
+    operationReference: index === 0
+      ? input.refund.operationReference
+      : `${input.refund.operationReference}-${index + 1}`,
+    createdAt: input.at,
+  })));
+};
+
+const assertRefundCoversExcess = (
+  refund: BookingRefundWrite,
+  excessCents: bigint,
+) => {
+  const offered = refund.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n);
+  if (offered !== excessCents) {
+    throw new BookingError('BOOKING_REFUND_AMOUNT_MISMATCH');
+  }
+};
+
+const pendingValueOf = async (transaction: Transaction, bookingId: number) => {
+  const pending = await transaction.select({ price: erpServices.price })
+    .from(erpBookingServices)
+    .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
+    .where(and(
+      eq(erpBookingServices.bookingId, bookingId),
+      eq(erpBookingServices.status, 'pending'),
+    ));
+  return sumServicePrices(pending.map((service) => service.price));
+};
+
+type MoneyTotals = { paymentsTotal: bigint; refundsTotal: bigint; appliedTotal: bigint };
+
+const bookingPaymentsTotals = async (
+  executor: Executor,
+  branchId: number | null,
+  bookingIds: number[],
+): Promise<Map<number, MoneyTotals>> => {
+  const totals = new Map<number, MoneyTotals>();
+  if (bookingIds.length === 0) return totals;
+  const rows = await executor.select({
+    bookingId: erpBookingPayments.bookingId,
+    kind: erpBookingPayments.kind,
+    total: sql<string>`coalesce(sum(${erpBookingPayments.amount}), 0)`,
+  }).from(erpBookingPayments).where(and(
+    ...(branchId === null ? [] : [eq(erpBookingPayments.branchId, branchId)]),
+    inArray(erpBookingPayments.bookingId, bookingIds),
+  )).groupBy(erpBookingPayments.bookingId, erpBookingPayments.kind);
+  for (const row of rows) {
+    const entry = totals.get(row.bookingId) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
+    if (row.kind === 'payment') entry.paymentsTotal += toCents(row.total);
+    else entry.refundsTotal += toCents(row.total);
+    totals.set(row.bookingId, entry);
+  }
+  const appliedRows = await executor.select({
+    bookingId: invoicePayments.bookingId,
+    total: sql<string>`coalesce(sum(${invoicePayments.amount}), 0)`,
+  }).from(invoicePayments).where(inArray(invoicePayments.bookingId, bookingIds))
+    .groupBy(invoicePayments.bookingId);
+  for (const row of appliedRows) {
+    const entry = totals.get(row.bookingId!) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
+    entry.appliedTotal += toCents(row.total);
+    totals.set(row.bookingId!, entry);
+  }
+  return totals;
 };
 
 const hydrate = async (
@@ -40,7 +174,6 @@ const hydrate = async (
     scheduledAt: erpBookings.scheduledAt,
     status: erpBookings.status,
     note: erpBookings.note,
-    invoiceId: erpBookings.invoiceId,
     createdAt: erpBookings.createdAt,
     updatedAt: erpBookings.updatedAt,
   }).from(erpBookings).innerJoin(clients, eq(clients.id, erpBookings.clientId))
@@ -52,10 +185,21 @@ const hydrate = async (
     servicePrice: erpServices.price,
     employeeId: employees.id,
     employeeName: employees.fullName,
+    status: erpBookingServices.status,
+    invoiceId: erpBookingServices.invoiceId,
+    invoiceNumber: invoices.invoiceNumber,
+    queueStatus: serviceQueueEntries.status,
   }).from(erpBookingServices)
     .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
     .leftJoin(employees, eq(employees.id, erpBookingServices.preferredEmployeeId))
+    .leftJoin(invoices, and(
+      eq(invoices.id, erpBookingServices.invoiceId),
+      eq(invoices.branchId, erpBookingServices.branchId),
+    ))
+    .leftJoin(serviceQueueEntries, eq(serviceQueueEntries.invoiceLineId, erpBookingServices.invoiceLineId))
     .where(eq(erpBookingServices.bookingId, id)).orderBy(asc(erpBookingServices.id));
+  const totals = (await bookingPaymentsTotals(executor, branchId, [id])).get(id)
+    ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
   return {
     id: row.id,
     branchId: row.branchId,
@@ -63,7 +207,12 @@ const hydrate = async (
     scheduledAt: row.scheduledAt,
     status: row.status,
     note: row.note,
-    invoiceId: row.invoiceId,
+    money: buildBookingMoney({
+      ...totals,
+      pendingValueTotal: sumServicePrices(
+        services.filter((service) => service.status === 'pending').map((service) => service.servicePrice),
+      ),
+    }),
     services: services.map((service) => ({
       serviceId: service.serviceId,
       serviceName: service.serviceName,
@@ -72,6 +221,10 @@ const hydrate = async (
         id: service.employeeId,
         name: service.employeeName ?? '',
       },
+      status: service.status,
+      invoiceId: service.invoiceId,
+      invoiceNumber: service.invoiceNumber,
+      queueStatus: service.queueStatus,
     })),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -161,7 +314,6 @@ export const createDrizzleBookingRepository = (
       scheduledAt: erpBookings.scheduledAt,
       status: erpBookings.status,
       note: erpBookings.note,
-      invoiceId: erpBookings.invoiceId,
       createdAt: erpBookings.createdAt,
       updatedAt: erpBookings.updatedAt,
     }).from(erpBookings).innerJoin(clients, eq(clients.id, erpBookings.clientId)).where(and(
@@ -170,6 +322,7 @@ export const createDrizzleBookingRepository = (
       lt(erpBookings.scheduledAt, end),
     )).orderBy(asc(erpBookings.scheduledAt), asc(erpBookings.id));
     if (rows.length === 0) return [];
+    const bookingIds = rows.map(({ id }) => id);
     const services = await database.select({
       bookingId: erpBookingServices.bookingId,
       serviceId: erpBookingServices.serviceId,
@@ -177,10 +330,19 @@ export const createDrizzleBookingRepository = (
       servicePrice: erpServices.price,
       employeeId: employees.id,
       employeeName: employees.fullName,
+      status: erpBookingServices.status,
+      invoiceId: erpBookingServices.invoiceId,
+      invoiceNumber: invoices.invoiceNumber,
+      queueStatus: serviceQueueEntries.status,
     }).from(erpBookingServices)
       .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
       .leftJoin(employees, eq(employees.id, erpBookingServices.preferredEmployeeId))
-      .where(and(eq(erpBookingServices.branchId, branchId), inArray(erpBookingServices.bookingId, rows.map(({ id }) => id))))
+      .leftJoin(invoices, and(
+        eq(invoices.id, erpBookingServices.invoiceId),
+        eq(invoices.branchId, erpBookingServices.branchId),
+      ))
+      .leftJoin(serviceQueueEntries, eq(serviceQueueEntries.invoiceLineId, erpBookingServices.invoiceLineId))
+      .where(and(eq(erpBookingServices.branchId, branchId), inArray(erpBookingServices.bookingId, bookingIds)))
       .orderBy(asc(erpBookingServices.id));
     const servicesByBooking = new Map<number, typeof services>();
     for (const service of services) {
@@ -188,23 +350,36 @@ export const createDrizzleBookingRepository = (
       list.push(service);
       servicesByBooking.set(service.bookingId, list);
     }
-    return rows.map((row) => ({
-      id: row.id,
-      branchId: row.branchId,
-      client: { id: row.clientId, fullName: row.clientName, phone: row.clientPhone },
-      scheduledAt: row.scheduledAt,
-      status: row.status,
-      note: row.note,
-      invoiceId: row.invoiceId,
-      services: (servicesByBooking.get(row.id) ?? []).map((service) => ({
-        serviceId: service.serviceId,
-        serviceName: service.serviceName,
-        servicePrice: service.servicePrice,
-        preferredEmployee: service.employeeId === null ? null : { id: service.employeeId, name: service.employeeName ?? '' },
-      })),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    const totalsByBooking = await bookingPaymentsTotals(database, branchId, bookingIds);
+    return rows.map((row) => {
+      const bookingServices = servicesByBooking.get(row.id) ?? [];
+      return {
+        id: row.id,
+        branchId: row.branchId,
+        client: { id: row.clientId, fullName: row.clientName, phone: row.clientPhone },
+        scheduledAt: row.scheduledAt,
+        status: row.status,
+        note: row.note,
+        money: buildBookingMoney({
+          ...(totalsByBooking.get(row.id) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n }),
+          pendingValueTotal: sumServicePrices(
+            bookingServices.filter((service) => service.status === 'pending').map((service) => service.servicePrice),
+          ),
+        }),
+        services: bookingServices.map((service) => ({
+          serviceId: service.serviceId,
+          serviceName: service.serviceName,
+          servicePrice: service.servicePrice,
+          preferredEmployee: service.employeeId === null ? null : { id: service.employeeId, name: service.employeeName ?? '' },
+          status: service.status,
+          invoiceId: service.invoiceId,
+          invoiceNumber: service.invoiceNumber,
+          queueStatus: service.queueStatus,
+        })),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
+    });
   },
 
   async hasAny(branchId) {
@@ -261,7 +436,7 @@ export const createDrizzleBookingRepository = (
       )).orderBy(asc(employees.fullName), asc(employees.id));
   },
 
-  async convert(transaction, input: BookingConversionInput) {
+  async applySale(transaction, input: BookingConversionInput) {
     const scope = and(
       eq(erpBookings.id, input.bookingId),
       eq(erpBookings.branchId, input.branchId),
@@ -271,24 +446,52 @@ export const createDrizzleBookingRepository = (
     const booking = (await transaction.select().from(erpBookings).where(scope)
       .for('update').limit(1))[0];
     if (!booking) throw new BookingError('BOOKING_ALREADY_HANDLED');
-    const bookedServices = await transaction.select({ serviceId: erpBookingServices.serviceId })
-      .from(erpBookingServices).where(eq(erpBookingServices.bookingId, input.bookingId));
-    const expected = [...new Set(bookedServices.map(({ serviceId }) => serviceId))].sort();
-    const actual = [...new Set(input.serviceIds)].sort();
-    if (expected.length !== actual.length
-      || expected.some((serviceId, index) => serviceId !== actual[index])) {
+    const pending = await transaction.select({
+      id: erpBookingServices.id,
+      serviceId: erpBookingServices.serviceId,
+    }).from(erpBookingServices).where(and(
+      eq(erpBookingServices.bookingId, input.bookingId),
+      eq(erpBookingServices.status, 'pending'),
+    ));
+    const pendingByServiceId = new Map(pending.map((row) => [row.serviceId, row.id]));
+    // Only booked services sell, each booked unit once, one quantity per service.
+    const seen = new Set<number>();
+    for (const line of input.services) {
+      if (line.quantity !== 1 || !pendingByServiceId.has(line.serviceId) || seen.has(line.serviceId)) {
+        throw new BookingError('BOOKING_SERVICE_NOT_FOUND', 'خدمات البيع لا تطابق خدمات الحجز');
+      }
+      seen.add(line.serviceId);
+    }
+    if (seen.size === 0) {
       throw new BookingError('BOOKING_SERVICE_NOT_FOUND', 'خدمات البيع لا تطابق خدمات الحجز');
     }
-    const result = await transaction.update(erpBookings).set({
-      status: 'converted',
-      invoiceId: input.invoiceId,
-      updatedAt: input.convertedAt,
-    }).where(scope);
-    if (result[0].affectedRows !== 1) throw new BookingError('BOOKING_ALREADY_HANDLED');
+    for (const serviceId of seen) {
+      await transaction.update(erpBookingServices).set({
+        status: 'sold',
+        invoiceId: input.invoiceId,
+        invoiceLineId: input.services.find((line) => line.serviceId === serviceId)!.invoiceLineId,
+        changedAt: input.convertedAt,
+      }).where(and(
+        eq(erpBookingServices.bookingId, input.bookingId),
+        eq(erpBookingServices.serviceId, serviceId),
+      ));
+    }
+    // With nothing left pending the booking is spent; otherwise the cashier
+    // must still choose keep / move / cancel for the leftovers.
+    if (seen.size === pending.length) {
+      await transaction.update(erpBookings).set({
+        status: 'converted',
+        updatedAt: input.convertedAt,
+      }).where(scope);
+    } else {
+      await transaction.update(erpBookings).set({
+        updatedAt: input.convertedAt,
+      }).where(scope);
+    }
     const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
     await audit.record(transaction, {
       module: AUDIT_MODULE,
-      action: 'convert',
+      action: 'apply-sale',
       entityType: 'booking',
       entityId: input.bookingId,
       beforeState: booking,
@@ -300,27 +503,37 @@ export const createDrizzleBookingRepository = (
 
   async remove(branchId, id) {
     return database.transaction(async (transaction) => {
-      const scope = and(
+      const booking = (await transaction.select().from(erpBookings).where(and(
         eq(erpBookings.id, id),
         eq(erpBookings.branchId, branchId),
         inArray(erpBookings.status, ['booked', 'cancelled', 'no_show']),
-        isNull(erpBookings.invoiceId),
-      );
-      const before = (await transaction.select().from(erpBookings).where(scope)
-        .for('update').limit(1))[0];
-      if (!before) return null;
+      )).for('update').limit(1))[0];
+      if (!booking) return null;
+      // A booking that ever held money or sold a service is part of the books.
+      const money = await transaction.select({ id: erpBookingPayments.id })
+        .from(erpBookingPayments).where(eq(erpBookingPayments.bookingId, id)).limit(1);
+      if (money.length) return null;
+      const sold = await transaction.select({ id: erpBookingServices.id })
+        .from(erpBookingServices).where(and(
+          eq(erpBookingServices.bookingId, id),
+          eq(erpBookingServices.status, 'sold'),
+        )).limit(1);
+      if (sold.length) return null;
       const record = (await hydrate(transaction, branchId, id))!;
       await transaction.delete(erpBookingServices).where(and(
         eq(erpBookingServices.bookingId, id),
         eq(erpBookingServices.branchId, branchId),
       ));
-      await transaction.delete(erpBookings).where(scope);
+      await transaction.delete(erpBookings).where(and(
+        eq(erpBookings.id, id),
+        eq(erpBookings.branchId, branchId),
+      ));
       await audit.record(transaction, {
         module: AUDIT_MODULE,
         action: 'delete',
         entityType: 'booking',
         entityId: id,
-        beforeState: before,
+        beforeState: booking,
         relatedIds: { branchId },
         createdAt: new Date(),
       });
@@ -365,6 +578,278 @@ export const createDrizzleBookingRepository = (
         afterState: record,
         relatedIds: { branchId, serviceId, ...(employeeId === null ? {} : { employeeId }) },
         createdAt: changedAt,
+      });
+      return record;
+    });
+  },
+
+  async recordPayment(input: BookingPaymentWrite) {
+    return database.transaction(async (transaction) => {
+      // Same lock order as the sale transaction: session first, then booking.
+      await lockOpenSession(transaction, input);
+      const booking = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId),
+        eq(erpBookings.branchId, input.branchId),
+      )).for('update').limit(1))[0];
+      if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
+      if (booking.status !== 'booked' && booking.status !== 'arrived') {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
+      }
+      // A replay must be recognized before the cap check: the first attempt
+      // already consumed the headroom the replayed amount would need.
+      const previous = (await transaction.select({
+        kind: erpBookingPayments.kind,
+        method: erpBookingPayments.method,
+        amount: erpBookingPayments.amount,
+      }).from(erpBookingPayments).where(and(
+        eq(erpBookingPayments.bookingId, input.bookingId),
+        eq(erpBookingPayments.operationReference, input.operationReference),
+      )).limit(1))[0];
+      if (previous) {
+        if (previous.kind === 'payment' && previous.method === input.method
+          && toCents(previous.amount) === toCents(input.amount)) {
+          return (await hydrate(transaction, input.branchId, input.bookingId))!;
+        }
+        throw new BookingError('BOOKING_OPERATION_CONFLICT');
+      }
+      // The cap must be computed from data locked above, so two concurrent
+      // cashiers can never push the held money past the pending services' value.
+      const services = await transaction.select({ price: erpServices.price })
+        .from(erpBookingServices)
+        .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
+        .where(and(
+          eq(erpBookingServices.bookingId, input.bookingId),
+          eq(erpBookingServices.status, 'pending'),
+        ));
+      const totals = (await bookingPaymentsTotals(transaction, input.branchId, [input.bookingId]))
+        .get(input.bookingId) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
+      const cap = buildBookingMoney({
+        ...totals,
+        pendingValueTotal: sumServicePrices(services.map((service) => service.price)),
+      });
+      if (toCents(input.amount) > toCents(cap.maxPayable)) {
+        throw new BookingError('BOOKING_PAYMENT_EXCEEDS_CAP');
+      }
+      await transaction.insert(erpBookingPayments).values({
+        bookingId: input.bookingId,
+        branchId: input.branchId,
+        kind: 'payment',
+        method: input.method,
+        amount: input.amount,
+        cashierSessionId: input.cashierSessionId,
+        actingAccountId: input.actorAccountId,
+        operationReference: input.operationReference,
+        createdAt: input.at,
+      });
+      const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: 'record_payment',
+        entityType: 'booking',
+        entityId: input.bookingId,
+        afterState: record,
+        relatedIds: {
+          branchId: input.branchId,
+          cashierSessionId: input.cashierSessionId,
+          method: input.method,
+          amount: input.amount,
+        },
+        createdAt: input.at,
+      });
+      return record;
+    });
+  },
+
+  async cancelServices(input) {
+    return database.transaction(async (transaction) => {
+      // Same lock order as payments: an open shift locks first when money moves.
+      if (input.refund) await lockOpenSession(transaction, {
+        cashierSessionId: input.refund.cashierSessionId,
+        branchId: input.branchId,
+        actorAccountId: input.actorAccountId,
+        actorRole: input.actorRole,
+        at: input.at,
+      });
+      const booking = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId),
+        eq(erpBookings.branchId, input.branchId),
+      )).for('update').limit(1))[0];
+      if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
+      if (booking.status !== 'booked' && booking.status !== 'arrived') {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
+      }
+      const requested = await transaction.select({
+        id: erpBookingServices.id,
+        status: erpBookingServices.status,
+      }).from(erpBookingServices).where(and(
+        eq(erpBookingServices.bookingId, input.bookingId),
+        inArray(erpBookingServices.serviceId, input.serviceIds),
+      )).for('update');
+      if (requested.length !== new Set(input.serviceIds).size) {
+        throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
+      }
+      // A replay of the same refund command is recognized instead of cancelling twice.
+      if (input.refund) {
+        const previous = await refundRowsForReference(
+          transaction, input.bookingId, input.refund.operationReference,
+        );
+        const allCancelled = requested.every((row) => row.status === 'cancelled');
+        if (previous.length && allCancelled
+          && input.refund.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n)
+            === previous.reduce((sum, row) => sum + toCents(row.amount), 0n)) {
+          return (await hydrate(transaction, input.branchId, input.bookingId))!;
+        }
+      }
+      if (requested.some((row) => row.status !== 'pending')) {
+        throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
+      }
+      await transaction.update(erpBookingServices).set({
+        status: 'cancelled',
+        changedAt: input.at,
+      }).where(and(
+        eq(erpBookingServices.bookingId, input.bookingId),
+        inArray(erpBookingServices.serviceId, input.serviceIds),
+      ));
+      const totals = (await bookingPaymentsTotals(transaction, input.branchId, [input.bookingId]))
+        .get(input.bookingId) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
+      const held = totals.paymentsTotal - totals.refundsTotal - totals.appliedTotal;
+      const pendingValue = await pendingValueOf(transaction, input.bookingId);
+      const excess = held > pendingValue ? held - pendingValue : 0n;
+      if (excess > 0n) {
+        if (!input.refund) {
+          throw new BookingError('BOOKING_REFUND_REQUIRED', undefined, {
+            amount: signedMoney(excess),
+          });
+        }
+        assertRefundCoversExcess(input.refund, excess);
+        await insertRefundRows(transaction, {
+          bookingId: input.bookingId,
+          branchId: input.branchId,
+          cause: 'service_cancelled',
+          actorAccountId: input.actorAccountId,
+          at: input.at,
+          refund: input.refund,
+        });
+      }
+      const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      await transaction.update(erpBookings).set({
+        status: record.services.every((service) => service.status === 'cancelled')
+          ? 'cancelled'
+          : record.services.some((service) => service.status === 'sold')
+            ? 'converted'
+            : booking.status,
+        updatedAt: input.at,
+      }).where(eq(erpBookings.id, input.bookingId));
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: 'cancel-services',
+        entityType: 'booking',
+        entityId: input.bookingId,
+        afterState: (await hydrate(transaction, input.branchId, input.bookingId))!,
+        relatedIds: {
+          branchId: input.branchId,
+          serviceIds: input.serviceIds.join(','),
+          ...(input.refund ? { refunded: record.money.refunded } : {}),
+        },
+        createdAt: input.at,
+      });
+      return (await hydrate(transaction, input.branchId, input.bookingId))!;
+    });
+  },
+
+  async finalizeCancellation(input) {
+    return database.transaction(async (transaction) => {
+      if (input.refund) await lockOpenSession(transaction, {
+        cashierSessionId: input.refund.cashierSessionId,
+        branchId: input.branchId,
+        actorAccountId: input.actorAccountId,
+        actorRole: input.actorRole,
+        at: input.at,
+      });
+      const booking = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId),
+        eq(erpBookings.branchId, input.branchId),
+      )).for('update').limit(1))[0];
+      if (!booking) return null;
+      if (booking.status !== 'booked' && booking.status !== 'arrived') return null;
+      // A no-show can only be recorded once the appointment time has passed.
+      if (input.status === 'no_show' && booking.scheduledAt >= input.at) return null;
+      await transaction.update(erpBookingServices).set({
+        status: 'cancelled',
+        changedAt: input.at,
+      }).where(and(
+        eq(erpBookingServices.bookingId, input.bookingId),
+        eq(erpBookingServices.status, 'pending'),
+      ));
+      const totals = (await bookingPaymentsTotals(transaction, input.branchId, [input.bookingId]))
+        .get(input.bookingId) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
+      const held = totals.paymentsTotal - totals.refundsTotal - totals.appliedTotal;
+      const pendingValue = await pendingValueOf(transaction, input.bookingId);
+      const excess = held > pendingValue ? held - pendingValue : 0n;
+      if (excess > 0n) {
+        if (!input.refund) {
+          throw new BookingError('BOOKING_REFUND_REQUIRED', undefined, {
+            amount: signedMoney(excess),
+          });
+        }
+        assertRefundCoversExcess(input.refund, excess);
+        await insertRefundRows(transaction, {
+          bookingId: input.bookingId,
+          branchId: input.branchId,
+          cause: input.status === 'no_show' ? 'no_show' : 'booking_cancelled',
+          actorAccountId: input.actorAccountId,
+          at: input.at,
+          refund: input.refund,
+        });
+      }
+      const anySold = ((await transaction.select({ id: erpBookingServices.id })
+        .from(erpBookingServices).where(and(
+          eq(erpBookingServices.bookingId, input.bookingId),
+          eq(erpBookingServices.status, 'sold'),
+        )).limit(1)).length) > 0;
+      const finalStatus = anySold ? 'converted' : input.status;
+      await transaction.update(erpBookings).set({
+        status: finalStatus,
+        updatedAt: input.at,
+      }).where(eq(erpBookings.id, input.bookingId));
+      const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: input.status === 'no_show' ? 'no-show' : 'cancel',
+        entityType: 'booking',
+        entityId: input.bookingId,
+        beforeState: booking,
+        afterState: record,
+        relatedIds: { branchId: input.branchId },
+        createdAt: input.at,
+      });
+      return record;
+    });
+  },
+
+  async reschedule(input) {
+    return database.transaction(async (transaction) => {
+      const booking = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId),
+        eq(erpBookings.branchId, input.branchId),
+        inArray(erpBookings.status, ['booked', 'arrived']),
+      )).for('update').limit(1))[0];
+      if (!booking) return null;
+      await transaction.update(erpBookings).set({
+        scheduledAt: input.scheduledAt,
+        status: 'booked',
+        updatedAt: input.at,
+      }).where(eq(erpBookings.id, input.bookingId));
+      const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: 'reschedule',
+        entityType: 'booking',
+        entityId: input.bookingId,
+        beforeState: booking,
+        afterState: record,
+        relatedIds: { branchId: input.branchId },
+        createdAt: input.at,
       });
       return record;
     });

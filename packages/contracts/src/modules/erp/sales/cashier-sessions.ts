@@ -105,6 +105,23 @@ const signedShiftMoneyByMethodSchema = z.object({
   vodafone_cash: signedMoneySchema,
 }).strict();
 
+const bookingMoneyLineSchema = z.object({
+  bookingId: positiveMysqlIntSchema,
+  client: z.object({
+    id: positiveMysqlIntSchema,
+    name: z.string().min(1).max(255).nullable(),
+    phone: z.string().regex(/^01[0125]\d{8}$/).nullable(),
+  }).strict(),
+  method: paymentMethodSchema,
+  amount: positiveMoneySchema,
+  at: isoDateTimeSchema,
+}).strict();
+
+const bookingMoneySchema = z.object({
+  total: exactMoneySchema,
+  lines: z.array(bookingMoneyLineSchema),
+}).strict();
+
 export const cashierSessionReportSchema = z.object({
   summary: cashierSessionSummarySchema,
   sales: z.object({
@@ -130,6 +147,8 @@ export const cashierSessionReportSchema = z.object({
   }).strict()),
   creditSales: exactMoneySchema,
   netByMethod: signedShiftMoneyByMethodSchema,
+  bookingPayments: bookingMoneySchema,
+  bookingRefunds: bookingMoneySchema,
 }).strict().superRefine((value, context) => {
   const sales = value.sales;
   const expectedTotal = toCents(sales.gross) - toCents(sales.returns);
@@ -172,6 +191,8 @@ export const cashierSessionInvoiceSchema = z.object({
 export const cashierSessionDetailSchema = z.object({
   summary: cashierSessionSummarySchema,
   invoices: z.array(cashierSessionInvoiceSchema),
+  bookingPayments: bookingMoneySchema,
+  bookingRefunds: bookingMoneySchema,
 }).strict();
 
 export type CashierSessionListQuery = z.infer<typeof cashierSessionListQuerySchema>;

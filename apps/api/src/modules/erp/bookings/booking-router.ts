@@ -1,8 +1,11 @@
 import {
   bookingIdParamsSchema,
   bookingServiceParamsSchema,
+  cancelBookingServicesSchema,
   createBookingSchema,
   listBookingsQuerySchema,
+  recordBookingPaymentSchema,
+  rescheduleBookingSchema,
   updateBookingStatusSchema,
   updateBookingServicePreferenceSchema,
 } from '@capella/contracts';
@@ -41,7 +44,7 @@ const handle = (cause: unknown, response: Response) => {
   }
   if (cause instanceof BookingError) {
     const status = cause.code === 'BOOKING_NOT_FOUND' ? 404 : 409;
-    failure(response, status, cause.code, cause.message);
+    failure(response, status, cause.code, cause.message, cause.details ?? {});
     return;
   }
   if (cause instanceof ErpBranchContextError) {
@@ -91,6 +94,27 @@ export const createErpBookingsRouter = (service: BookingService) => {
       const { id } = bookingIdParamsSchema.parse(request.params);
       const input = updateBookingStatusSchema.parse(request.body);
       response.json({ data: await service.updateStatus(actorFrom(response), id, input) });
+    } catch (cause) { handle(cause, response); }
+  });
+  router.post('/:id/payments', async (request, response) => {
+    try {
+      const { id } = bookingIdParamsSchema.parse(request.params);
+      const input = recordBookingPaymentSchema.parse(request.body);
+      response.json({ data: await service.recordPayment(actorFrom(response), id, input) });
+    } catch (cause) { handle(cause, response); }
+  });
+  router.post('/:id/services/cancel', async (request, response) => {
+    try {
+      const { id } = bookingIdParamsSchema.parse(request.params);
+      const input = cancelBookingServicesSchema.parse(request.body);
+      response.json({ data: await service.cancelServices(actorFrom(response), id, input) });
+    } catch (cause) { handle(cause, response); }
+  });
+  router.patch('/:id/schedule', async (request, response) => {
+    try {
+      const { id } = bookingIdParamsSchema.parse(request.params);
+      const input = rescheduleBookingSchema.parse(request.body);
+      response.json({ data: await service.reschedule(actorFrom(response), id, input) });
     } catch (cause) { handle(cause, response); }
   });
   router.patch('/:id/services/:serviceId/preference', async (request, response) => {

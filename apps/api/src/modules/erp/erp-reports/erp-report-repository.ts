@@ -36,6 +36,7 @@ const moneySummaryKeys = new Set([
   'totalNetCashPayments', 'totalNetVisaPayments', 'totalNetInstapayPayments',
   'totalNetVodafoneCashPayments',
   'totalInventoryValue',
+  'totalPaid', 'totalApplied', 'totalRefunded', 'totalHeld',
 ]);
 
 const invoiceSummary = async (

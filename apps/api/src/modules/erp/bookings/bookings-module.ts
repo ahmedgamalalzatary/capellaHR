@@ -12,7 +12,7 @@ export const createErpBookingsModule = (
   const repository = createDrizzleBookingRepository(database, capabilities.audit);
   return {
     repository,
-    conversion: { convert: repository.convert.bind(repository) },
+    conversion: { applySale: repository.applySale.bind(repository) },
     service: createBookingService({
       repository,
       resolveBranchContext: createErpBranchContextResolver(capabilities),

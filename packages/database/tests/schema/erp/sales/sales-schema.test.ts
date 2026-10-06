@@ -265,6 +265,24 @@ describe('ERP sales persistence foundation', () => {
     );
   });
 
+  it('lets an invoice payment settle from a booking credit without widening drawer methods', () => {
+    expect(salesSchema.erpPaymentMethods).not.toContain('booking_credit');
+    expect(salesSchema.invoicePaymentMethods).toEqual([
+      'cash', 'visa', 'instapay', 'vodafone_cash', 'booking_credit',
+    ]);
+    const payments = table('invoicePayments');
+    const config = getTableConfig(payments);
+    expect(Object.keys(payments)).toEqual(expect.arrayContaining(['bookingId']));
+    const columnsByName = new Map(config.columns.map((column) => [column.name, column]));
+    expect(columnsByName.get('booking_id')!.notNull).toBe(false);
+    const method = columnsByName.get('method') as unknown as { enumValues: string[] };
+    expect(method.enumValues).toEqual(salesSchema.invoicePaymentMethods);
+    expect(config.foreignKeys.map((value) => value.getName()))
+      .toContain('erp_invoice_payments_booking_fk');
+    expect(config.checks.map((value) => value.name))
+      .toContain('erp_invoice_payments_booking_credit_consistent');
+  });
+
   it('stores invoice settlement totals and enforces their consistency', () => {
     const invoices = table('invoices');
     expect(Object.keys(invoices)).toEqual(expect.arrayContaining([
