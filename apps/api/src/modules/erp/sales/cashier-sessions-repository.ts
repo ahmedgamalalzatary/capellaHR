@@ -370,9 +370,11 @@ export const createDrizzleCashierSessionRepository = (
     // Written out rather than interpolated: drizzle drops the table qualifier
     // from a column used inside a selected expression, which reads as ambiguous.
     const invoiceId = sql`\`erp_invoices\`.\`id\``;
+    // Held booking money is not drawer income, so it never counts as taken here.
     const takenInShift = sql<string | null>`(
       select sum(p.amount) from erp_invoice_payments p
       where p.invoice_id = ${invoiceId} and p.cashier_session_id = ${sessionId}
+        and p.method <> 'booking_credit'
     )`;
     const refundedInShift = sql<string | null>`(
       select sum(rp.amount) from erp_invoice_reversal_payments rp

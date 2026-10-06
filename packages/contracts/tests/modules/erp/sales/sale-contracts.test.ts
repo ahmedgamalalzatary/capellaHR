@@ -310,8 +310,8 @@ describe('ERP booking-credit sale contract', () => {
   });
 
   it('allows bookingCredit only together with a booking', () => {
-    const withoutBooking = { ...base, bookingId: undefined };
-    delete (withoutBooking as { bookingId?: number }).bookingId;
+    const withoutBooking: Record<string, unknown> = { ...base };
+    delete withoutBooking['bookingId'];
     expect(completeSaleSchema.safeParse({
       ...withoutBooking,
       bookingCredit: '50.00',
@@ -323,5 +323,20 @@ describe('ERP booking-credit sale contract', () => {
     expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '50' }).success).toBe(true);
     expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '-50.00' }).success).toBe(false);
     expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '0.00' }).success).toBe(false);
+  });
+});
+
+describe('void payment methods contract', () => {
+  it('lets the cashier pick how a void hands money back', () => {
+    expect(voidInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'إلغاء فاتورة',
+      payments: [{ method: 'visa', amount: '185.00' }],
+    }).success).toBe(true);
+    expect(voidInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+      reason: 'إلغاء فاتورة',
+      payments: [{ method: 'booking_credit', amount: '185.00' }],
+    }).success).toBe(false);
   });
 });

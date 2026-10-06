@@ -369,7 +369,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         </div>
         {invoice.payments.map((payment, index) => (
           <div key={`${payment.method}-${index}`} className="flex justify-between">
-            <span>{storedPaymentLabels[payment.method as keyof typeof storedPaymentLabels]}</span>
+            <span>{storedPaymentLabels[payment.method]}</span>
             <span className="tabular">{payment.amount} ج.م</span>
           </div>
         ))}

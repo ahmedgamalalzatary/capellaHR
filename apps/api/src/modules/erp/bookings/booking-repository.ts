@@ -15,12 +15,10 @@ import { and, asc, countDistinct, eq, gt, gte, inArray, isNull, lt, sql } from '
 
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
-import { CASHIER_SESSION_MAX_DURATION_MS, toCents } from '../sales/index.js';
-import { signedMoney } from '../sales/sale-repository-money.js';
+import { CASHIER_SESSION_MAX_DURATION_MS, signedMoney, toCents } from '../sales/index.js';
 import { BookingError } from './booking-service.js';
 import type {
   BookingConversionInput,
-  BookingLeftoverWrite,
   BookingPaymentWrite,
   BookingRecord,
   BookingRefundWrite,
@@ -67,12 +65,9 @@ const lockOpenSession = (
   });
 };
 
-const refundRowsForReference = (transaction: Transaction, bookingId: number, reference: string) => transaction.select({
-  amount: erpBookingPayments.amount,
-}).from(erpBookingPayments).where(and(
-  eq(erpBookingPayments.bookingId, bookingId),
-  sql`(${erpBookingPayments.operationReference} = ${reference} or ${erpBookingPayments.operationReference} like ${`${reference}-%`})`,
-));
+const refundRowReference = (reference: string, index: number) => (
+  index === 0 ? reference : `${reference.slice(0, 33)}-${index + 1}`
+);
 
 const insertRefundRows = async (
   transaction: Transaction,
@@ -96,9 +91,7 @@ const insertRefundRows = async (
     refundCause: input.cause,
     cashierSessionId: input.refund.cashierSessionId,
     actingAccountId: input.actorAccountId,
-    operationReference: index === 0
-      ? input.refund.operationReference
-      : `${input.refund.operationReference}-${index + 1}`,
+    operationReference: refundRowReference(input.refund.operationReference, index),
     createdAt: input.at,
   })));
 };
@@ -585,18 +578,8 @@ export const createDrizzleBookingRepository = (
 
   async recordPayment(input: BookingPaymentWrite) {
     return database.transaction(async (transaction) => {
-      // Same lock order as the sale transaction: session first, then booking.
-      await lockOpenSession(transaction, input);
-      const booking = (await transaction.select().from(erpBookings).where(and(
-        eq(erpBookings.id, input.bookingId),
-        eq(erpBookings.branchId, input.branchId),
-      )).for('update').limit(1))[0];
-      if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
-      if (booking.status !== 'booked' && booking.status !== 'arrived') {
-        throw new BookingError('BOOKING_ALREADY_HANDLED');
-      }
-      // A replay must be recognized before the cap check: the first attempt
-      // already consumed the headroom the replayed amount would need.
+      // A retry must be recognized from the ledger before any guard, so a
+      // dropped connection replays cleanly even when the shift has since closed.
       const previous = (await transaction.select({
         kind: erpBookingPayments.kind,
         method: erpBookingPayments.method,
@@ -611,6 +594,16 @@ export const createDrizzleBookingRepository = (
           return (await hydrate(transaction, input.branchId, input.bookingId))!;
         }
         throw new BookingError('BOOKING_OPERATION_CONFLICT');
+      }
+      // Same lock order as the sale transaction: session first, then booking.
+      await lockOpenSession(transaction, input);
+      const booking = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId),
+        eq(erpBookings.branchId, input.branchId),
+      )).for('update').limit(1))[0];
+      if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
+      if (booking.status !== 'booked' && booking.status !== 'arrived') {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
       }
       // The cap must be computed from data locked above, so two concurrent
       // cashiers can never push the held money past the pending services' value.
@@ -688,17 +681,10 @@ export const createDrizzleBookingRepository = (
       if (requested.length !== new Set(input.serviceIds).size) {
         throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
       }
-      // A replay of the same refund command is recognized instead of cancelling twice.
-      if (input.refund) {
-        const previous = await refundRowsForReference(
-          transaction, input.bookingId, input.refund.operationReference,
-        );
-        const allCancelled = requested.every((row) => row.status === 'cancelled');
-        if (previous.length && allCancelled
-          && input.refund.payments.reduce((sum, payment) => sum + toCents(payment.amount), 0n)
-            === previous.reduce((sum, row) => sum + toCents(row.amount), 0n)) {
-          return (await hydrate(transaction, input.branchId, input.bookingId))!;
-        }
+      // A replay of the same cancel command is recognized instead of cancelling twice.
+      const allCancelled = requested.every((row) => row.status === 'cancelled');
+      if (allCancelled) {
+        return (await hydrate(transaction, input.branchId, input.bookingId))!;
       }
       if (requested.some((row) => row.status !== 'pending')) {
         throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
@@ -732,12 +718,14 @@ export const createDrizzleBookingRepository = (
         });
       }
       const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      // The booking is only spent when nothing is left waiting; leftover
+      // services stay sellable, cancellable, and movable.
       await transaction.update(erpBookings).set({
-        status: record.services.every((service) => service.status === 'cancelled')
-          ? 'cancelled'
+        status: record.services.some((service) => service.status === 'pending')
+          ? booking.status
           : record.services.some((service) => service.status === 'sold')
             ? 'converted'
-            : booking.status,
+            : 'cancelled',
         updatedAt: input.at,
       }).where(eq(erpBookings.id, input.bookingId));
       await audit.record(transaction, {
@@ -771,9 +759,19 @@ export const createDrizzleBookingRepository = (
         eq(erpBookings.branchId, input.branchId),
       )).for('update').limit(1))[0];
       if (!booking) return null;
-      if (booking.status !== 'booked' && booking.status !== 'arrived') return null;
-      // A no-show can only be recorded once the appointment time has passed.
-      if (input.status === 'no_show' && booking.scheduledAt >= input.at) return null;
+      // A retry after a dropped connection replays the recorded outcome instead
+      // of answering "already handled".
+      if (booking.status === 'cancelled' || booking.status === 'no_show'
+        || booking.status === 'converted') {
+        return booking.status === input.status || booking.status === 'converted'
+          ? (await hydrate(transaction, input.branchId, input.bookingId))
+          : null;
+      }
+      // A no-show can only be recorded once the appointment time has passed,
+      // and only for a client who never arrived.
+      if (input.status === 'no_show' && (booking.status !== 'booked' || booking.scheduledAt >= input.at)) {
+        return null;
+      }
       await transaction.update(erpBookingServices).set({
         status: 'cancelled',
         changedAt: input.at,

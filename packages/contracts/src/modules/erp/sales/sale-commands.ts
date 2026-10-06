@@ -46,9 +46,11 @@ export const percentageAmount = (base: string, percentage: string) => {
 
 export const paymentMethodSchema = z.enum(['cash', 'visa', 'instapay', 'vodafone_cash']);
 /** Stored invoice payments may also settle from held booking money; never a till input. */
-export const invoicePaymentMethodSchema = z.enum([
-  ...paymentMethodSchema.options, 'booking_credit',
-] as [string, ...string[]]);
+const invoicePaymentMethodValues = [
+  'cash', 'visa', 'instapay', 'vodafone_cash', 'booking_credit',
+] as const;
+export const invoicePaymentMethodSchema = z.enum(invoicePaymentMethodValues);
+export type InvoicePaymentMethod = (typeof invoicePaymentMethodValues)[number];
 export const saleItemTypeSchema = z.enum(['service', 'product']);
 export const adjustmentKindSchema = z.enum(['percentage', 'fixed']);
 export const commissionRuleSchema = z.enum(['service_default', 'employee_override', 'none']);
@@ -102,7 +104,11 @@ const reversalCommandBaseSchema = z.object({
     .max(1000, 'سبب الإلغاء أو الاسترداد طويل جدًا'),
 });
 
-export const voidInvoiceSchema = reversalCommandBaseSchema.strict();
+export const voidInvoiceSchema = reversalCommandBaseSchema.extend({
+  // How the voided money goes back is the cashier's call; omitted means the
+  // system allocates it the way the invoice was paid.
+  payments: z.array(paymentSchema).max(paymentMethodSchema.options.length).optional(),
+}).strict();
 
 const refundLineSelectionSchema = z.object({
   batches: packageBatchSelectionsSchema.optional(),

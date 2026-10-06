@@ -221,7 +221,9 @@ export const createSaleRepositoryReversals = (
             );
           }
           const requestedPayments = operation.type === 'void'
-            ? [...voidPaymentByMethod].map(([method, amount]) => ({ method, amount: signedMoney(amount) }))
+            ? (operation.input.payments?.length
+              ? operation.input.payments
+              : [...voidPaymentByMethod].map(([method, amount]) => ({ method, amount: signedMoney(amount) })))
             : operation.input.payments;
           const cashPayoutCents = toCents(allocation.total) > toCents(original.balanceDue!)
             ? toCents(allocation.total) - toCents(original.balanceDue!)

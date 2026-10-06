@@ -53,9 +53,8 @@ export const createSaleRepositoryComplete = (
 ): Pick<SaleRepository, 'complete'> => ({
     async complete(operation: CompleteSaleOperation) {
       try {
-        return await database.transaction(async (transaction) => {
-          const { input } = operation;
-          const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
+        const outcome = await database.transaction(async (transaction) => {
+          const { input } = operation;          const serviceInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'service' }> => line.itemType === 'service');
           const productInputs = input.lines.filter((line): line is Extract<typeof line, { itemType: 'product' }> => line.itemType === 'product');
           // Every line names the employee who performed or sold it; the invoice as
           // a whole names none, so one sale can pay several people. A transfer
@@ -128,6 +127,15 @@ export const createSaleRepositoryComplete = (
               eq(erpBookings.branchId, input.branchId),
             )).for('update').limit(1))[0];
             if (!booking || booking.clientId !== input.clientId || booking.status !== 'arrived') {
+              // The concurrent twin of this exact request may have just stored
+              // the invoice; a locking read sees past this transaction's snapshot.
+              const storedNow = (await transaction.select({ id: invoices.id }).from(invoices)
+                .where(eq(invoices.idempotencyKey, input.idempotencyKey)).for('update').limit(1))[0];
+              if (storedNow) {
+                // Hydrate outside this transaction: its snapshot predates the
+                // twin's commit, so it cannot see the stored invoice's rows.
+                return { replayId: storedNow.id };
+              }
               throw new SaleError('BOOKING_NOT_PENDING');
             }
           }
@@ -403,6 +411,12 @@ export const createSaleRepositoryComplete = (
           await operation.afterInvoice?.(transaction, completed);
           return completed;
         });
+        if (outcome && typeof outcome === 'object' && 'replayId' in outcome) {
+          const replay = await hydrateInvoice(database, outcome.replayId);
+          if (!replay) throw new SaleError('IDEMPOTENCY_CONFLICT');
+          return replay;
+        }
+        return outcome;
       } catch (error) {
         if (!isDuplicateEntryError(error)) throw error;
         const existing = await findByIdempotencyKey(operation.input.idempotencyKey, {

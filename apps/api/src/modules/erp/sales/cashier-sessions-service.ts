@@ -59,6 +59,19 @@ export type CashierSessionSummaryRecord = CashierSessionMoneyRecord & {
   durationMinutes: number;
 };
 
+export type CashierSessionBookingMoneyLine = {
+  bookingId: number;
+  client: { id: number; name: string | null; phone: string | null };
+  method: 'cash' | 'visa' | 'instapay' | 'vodafone_cash';
+  amount: string;
+  at: Date;
+};
+
+export type CashierSessionBookingMoneyBlock = {
+  total: string;
+  lines: CashierSessionBookingMoneyLine[];
+};
+
 export type CashierSessionReportAccountingRecord = {
   sales: {
     gross: string;

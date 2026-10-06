@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import {
   clientVisitSummarySchema,
@@ -359,5 +360,15 @@ describe('stored invoice payment methods', () => {
     expect(paymentMethodSchema.options).not.toContain('booking_credit');
     expect(paymentSchema.safeParse({ method: 'booking_credit', amount: '50.00' }).success)
       .toBe(false);
+  });
+});
+
+describe('stored invoice payment method typing', () => {
+  it('narrows booking_credit to the exact literal union', () => {
+    type StoredMethod = z.infer<typeof invoicePaymentMethodSchema>;
+    const method = 'booking_credit' as StoredMethod;
+    expect(method).toBe('booking_credit');
+    const options: readonly string[] = invoicePaymentMethodSchema.options;
+    expect(options).toEqual(['cash', 'visa', 'instapay', 'vodafone_cash', 'booking_credit']);
   });
 });

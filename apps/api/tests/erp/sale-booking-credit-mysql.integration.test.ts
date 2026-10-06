@@ -1,5 +1,5 @@
-import { accounts, erpBookingServices, erpBookings, erpCategories, erpServices, invoicePayments } from '@capella/database/schema';
-import { and, eq } from 'drizzle-orm';
+import { accounts, cashierSessions, erpBookingServices, erpBookings, erpCategories, erpServices, invoicePayments, invoiceReversalPayments } from '@capella/database/schema';
+import { and, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
@@ -12,7 +12,7 @@ import { createSaleRepositoryMysqlFixtures } from './sale-repository-mysql-fixtu
 const { database, fixture } = createSaleRepositoryMysqlFixtures();
 let invoiceSequence = 0;
 
-const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>) => {
+const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>, options: { soldToday?: boolean } = {}) => {
   const audit = createErpAuditCapability();
   const bookingRepository = createDrizzleBookingRepository(database, audit);
   const saleRepository = createDrizzleSaleRepository(database, audit);
@@ -37,13 +37,13 @@ const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>) => {
         invoiceSequence += 1;
         return {
           invoiceNumber: `INV-2026.08.03-14.35-${invoiceSequence}`,
-          allocatedAt: new Date(data.at.getTime() + counter),
+          allocatedAt: options.soldToday ? new Date() : new Date(data.at.getTime() + counter),
         };
       },
     },
     bookings: { applySale: bookingRepository.applySale.bind(bookingRepository) },
   });
-  return { service, bookingRepository };
+  return { service, bookingRepository, saleRepository };
 };
 
 const bookingOf = async (bookingId: number) => (await database.select()
@@ -301,5 +301,94 @@ describe('ERP sale with booking credit MySQL integration', () => {
     expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
     expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
     expect((await bookingOf(booking.id)).status).toBe('converted');
+  });
+
+  it('returns the original invoice when the same booking sale races itself', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }], createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '100.00', operationReference: crypto.randomUUID(), at: data.at,
+    });
+    const actor = { role: 'cashier' as const, accountId: data.accountId, branchId: data.branchId };
+    const input = {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      bookingCredit: '100.00',
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [{ method: 'cash' as const, amount: '100.00' }],
+    };
+    // Offline sync plus a manual retry of the same request at the same moment.
+    const results = await Promise.all([service.complete(actor, input), service.complete(actor, input)]);
+    expect(results[0].id).toBe(results[1].id);
+  });
+
+  it('hands a voided booking invoice back on the methods the cashier chose', async () => {
+    const data = await fixture();
+    const { service, bookingRepository, saleRepository } = buildSaleService(data, { soldToday: true });
+    // A void is only valid on the sale's own Cairo day, so the sale runs in a
+    // fresh shift opened "now" and is voided in the same Cairo day.
+    const today = new Date();
+    // A branch holds one open shift at a time; retire the fixture's shift first.
+    await database.update(cashierSessions).set({
+      closedAt: data.at, closedByAccountId: data.accountId,
+    }).where(and(
+      eq(cashierSessions.branchId, data.branchId), isNull(cashierSessions.closedAt),
+    ));
+    const todaySessionId = Number((await database.insert(cashierSessions).values({
+      branchId: data.branchId, openedByAccountId: data.accountId, openedAt: today,
+    }))[0].insertId);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }], createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: todaySessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '100.00', operationReference: crypto.randomUUID(), at: today,
+    });
+    const invoice = await service.complete({ role: 'cashier', accountId: data.accountId, branchId: data.branchId }, {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: todaySessionId,
+      bookingId: booking.id,
+      bookingCredit: '100.00',
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [{ method: 'cash' as const, amount: '100.00' }],
+    });
+    await saleRepository.reverse({
+      invoiceId: invoice.id,
+      actingAccountId: data.adminAccountId,
+      actingAccountRole: 'admin',
+      reversedAt: today,
+      type: 'void',
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'إلغاء فاتورة الحجز',
+        payments: [{ method: 'visa', amount: '200.00' }],
+      },
+    });
+    const snapshots = await database.select({ method: invoiceReversalPayments.methodSnapshot, amount: invoiceReversalPayments.amount })
+      .from(invoiceReversalPayments)
+      .where(eq(invoiceReversalPayments.invoiceId, invoice.id));
+    expect(snapshots).toEqual([{ method: 'visa', amount: '200.00' }]);
   });
 });

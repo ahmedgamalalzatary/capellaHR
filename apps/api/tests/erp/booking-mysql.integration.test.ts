@@ -285,13 +285,15 @@ describe('MySQL-backed ERP booking leftovers', () => {
     }))[0].insertId);
   }, 60_000);
 
-  const arrangeBooking = async (services: number[], paid: string) => {
+  const arrangeBooking = async (services: number[], paid: string, arrive = true) => {
     const booking = await repository.create({
       branchId, clientId, actingAccountId: accountId,
       scheduledAt: new Date('2026-09-01T07:30:00.000Z'),
       note: null, services: services.map((serviceId) => ({ serviceId })), createdAt: at,
     });
-    await repository.transition(branchId, booking.id, ['booked'], 'arrived', at);
+    if (arrive) {
+      await repository.transition(branchId, booking.id, ['booked'], 'arrived', at);
+    }
     if (paid !== '0.00') {
       await repository.recordPayment({
         bookingId: booking.id, branchId, cashierSessionId: leftoverSessionId,
@@ -329,8 +331,8 @@ describe('MySQL-backed ERP booking leftovers', () => {
         operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1720',
       },
     });
-    expect(record!.services.find((line) => line.serviceId === serviceId)!.status).toBe('cancelled');
-    expect(record!.money).toMatchObject({
+    expect(record.services.find((line) => line.serviceId === serviceId)!.status).toBe('cancelled');
+    expect(record.money).toMatchObject({
       paid: '150.00', refunded: '50.00', held: '100.00', maxPayable: '0.00',
     });
     // A replay of the same refund is recognized instead of duplicating the money.
@@ -343,7 +345,7 @@ describe('MySQL-backed ERP booking leftovers', () => {
         operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1720',
       },
     });
-    expect(replay!.money).toMatchObject({ refunded: '50.00' });
+    expect(replay.money).toMatchObject({ refunded: '50.00' });
   });
 
   it('cancels with zero held money without any refund block', async () => {
@@ -352,8 +354,8 @@ describe('MySQL-backed ERP booking leftovers', () => {
       bookingId, branchId, serviceIds: [serviceId],
       actorAccountId: accountId, actorRole: 'admin', at,
     });
-    expect(record!.money).toMatchObject({ paid: '0.00', refunded: '0.00' });
-    expect(record!.status).toBe('arrived');
+    expect(record.money).toMatchObject({ paid: '0.00', refunded: '0.00' });
+    expect(record.status).toBe('arrived');
   });
 
   it('changes nothing when the refund shift is not open for the cashier', async () => {
@@ -373,7 +375,8 @@ describe('MySQL-backed ERP booking leftovers', () => {
   });
 
   it('cancels the whole booking through the no-show path with a full-excess refund', async () => {
-    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '150.00');
+    // The client never came: the booking stays booked and the time passes.
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '150.00', false);
     const past = new Date('2026-08-20T07:30:00.000Z');
     await database.update(erpBookings).set({ scheduledAt: past }).where(eq(erpBookings.id, bookingId));
     const record = await repository.finalizeCancellation({
@@ -420,5 +423,114 @@ describe('MySQL-backed ERP booking leftovers', () => {
       actorAccountId: accountId, actorRole: 'admin', at,
     });
     await expect(repository.remove(branchId, cleanId)).resolves.toMatchObject({ id: cleanId });
+  });
+
+  it('splits a refund across two methods without overflowing the reference', async () => {
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '150.00');
+    const record = await repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+      refund: {
+        cashierSessionId: leftoverSessionId,
+        payments: [{ method: 'cash', amount: '30.00' }, { method: 'visa', amount: '20.00' }],
+        operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1730',
+      },
+    });
+    expect(record.money).toMatchObject({ refunded: '50.00' });
+  });
+
+  it('keeps the booking alive when cancelling only part of the leftovers after a partial sale', async () => {
+    const cheap2Id = Number((await database.insert(erpServices).values({
+      branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, branchId)))[0]!.id,
+      name: 'Cheap second', nameNormalized: 'cheap-second', price: '100.00',
+      commissionPercent: '10.00', createdAt: at, updatedAt: at,
+    }))[0].insertId);
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId, cheap2Id], '0.00');
+    const invoiceId = Number((await database.insert(invoices).values({
+      branchId, clientId, sellerEmployeeId: employeeId, actingAccountId: accountId,
+      cashierSessionId: leftoverSessionId, invoiceNumber: 'INV-2026.08.24-11.00-60',
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1731',
+      clientNameSnapshot: 'Mona', sellerNameSnapshot: 'Sara', authorizedBySnapshot: 'booking-admin',
+      subtotal: '200.00', total: '200.00', amountPaid: '200.00', settlementStatus: 'settled',
+      soldAt: at, createdAt: at,
+    }))[0].insertId);
+    const lineId = Number((await database.insert(invoiceLines).values({
+      invoiceId, branchId, lineNumber: 1, itemType: 'service', serviceId,
+      itemNameSnapshot: 'Colour', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+      employeeId, employeeNameSnapshot: 'Sara', employeeCodeSnapshot: 900001,
+      commissionRuleSnapshot: 'service_default', commissionRateSnapshot: '10.00',
+      commissionAmountSnapshot: '20.00',
+    }))[0].insertId);
+    await database.transaction((transaction) => repository.applySale(transaction, {
+      bookingId, branchId, clientId, invoiceId,
+      services: [{ serviceId, invoiceLineId: lineId, quantity: 1 }], convertedAt: at,
+    }));
+    // Cancel one leftover, keep the other waiting.
+    const record = await repository.cancelServices({
+      bookingId, branchId, serviceIds: [cheapServiceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    expect(record.status).toBe('arrived');
+    // The remaining service can still be paid for.
+    const paid = await repository.recordPayment({
+      bookingId, branchId, cashierSessionId: leftoverSessionId,
+      actorAccountId: accountId, actorRole: 'admin',
+      method: 'cash', amount: '50.00', operationReference: crypto.randomUUID(), at,
+    });
+    expect(paid.money.maxPayable).toBe('50.00');
+  });
+
+  it('forbids a no-show on an arrived booking and replays a recorded no-show', async () => {
+    const arrivedId = await arrangeBooking([serviceId], '0.00');
+    await expect(repository.finalizeCancellation({
+      bookingId: arrivedId, branchId, status: 'no_show',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    })).resolves.toBeNull();
+    // A booked booking whose time passed records the no-show once…
+    const bookedId = await arrangeBooking([cheapServiceId], '0.00', false);
+    await database.update(erpBookings).set({
+      scheduledAt: new Date('2026-08-20T07:30:00.000Z'),
+    }).where(eq(erpBookings.id, bookedId));
+    const recorded = await repository.finalizeCancellation({
+      bookingId: bookedId, branchId, status: 'no_show',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    expect(recorded!.status).toBe('no_show');
+    // …and the retry after a dropped connection succeeds instead of conflicting.
+    const replay = await repository.finalizeCancellation({
+      bookingId: bookedId, branchId, status: 'no_show',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    expect(replay!.status).toBe('no_show');
+  });
+
+  it('replays a cancelled service without a refund and an up-front payment after the shift closed', async () => {
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '0.00');
+    await repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    // Retry after a dropped connection succeeds instead of "already handled".
+    await expect(repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    })).resolves.toBeDefined();
+    // A payment whose shift closed in between replays from the ledger.
+    const reference = '018f47a6-7b2f-7c41-91e9-a5dd1d8e1732';
+    const payBooking = await arrangeBooking([serviceId], '0.00');
+    await repository.recordPayment({
+      bookingId: payBooking, branchId, cashierSessionId: leftoverSessionId,
+      actorAccountId: accountId, actorRole: 'admin',
+      method: 'cash', amount: '100.00', operationReference: reference, at,
+    });
+    await database.update(cashierSessions).set({
+      closedAt: at, closedByAccountId: accountId,
+    }).where(eq(cashierSessions.id, leftoverSessionId));
+    await expect(repository.recordPayment({
+      bookingId: payBooking, branchId, cashierSessionId: leftoverSessionId,
+      actorAccountId: accountId, actorRole: 'admin',
+      method: 'cash', amount: '100.00', operationReference: reference, at,
+    })).resolves.toMatchObject({ id: payBooking });
   });
 });
