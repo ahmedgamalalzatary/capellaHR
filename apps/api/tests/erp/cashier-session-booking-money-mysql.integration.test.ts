@@ -113,7 +113,7 @@ const openSession = async (branchId: number, accountId: number) => {
 const makeBooking = async (
   data: { branchId: number; clientId: number; accountId: number; sessionId: number },
   input: {
-    status?: 'booked' | 'arrived' | 'converted';
+    status?: 'booked' | 'arrived' | 'converted' | 'cancelled' | 'no_show';
     scheduledAt: Date;
     pendingServiceIds?: number[];
     payments?: Array<{
@@ -384,6 +384,31 @@ describe('ERP shift booking money (MySQL)', () => {
     await expect(repo.close({
       branchId: data.branchId, closedByAccountId: data.accountId, closedAt,
     })).resolves.toMatchObject({ kind: 'unresolved_bookings', count: 2 });
+  });
+
+  it('still blocks close for a finished booking that still holds money', async () => {
+    const data = await fixture();
+    const repo = repository();
+    const sessionId = await openSession(data.branchId, data.accountId);
+    // Finished, nothing waiting, yet 30.00 was taken and never given back: the
+    // close looks only at active and money-holding bookings, so this one counts.
+    await makeBooking(
+      { branchId: data.branchId, clientId: data.clientId, accountId: data.accountId, sessionId },
+      {
+        status: 'cancelled', scheduledAt: at,
+        payments: [{ kind: 'payment', method: 'cash', amount: '30.00' }],
+      },
+    );
+    // A finished booking with nothing held is none of the close's business.
+    await makeBooking(
+      { branchId: data.branchId, clientId: data.clientId, accountId: data.accountId, sessionId },
+      { status: 'cancelled', scheduledAt: at },
+    );
+
+    const closedAt = new Date(at.getTime() + 60 * 60_000);
+    await expect(repo.close({
+      branchId: data.branchId, closedByAccountId: data.accountId, closedAt,
+    })).resolves.toMatchObject({ kind: 'unresolved_bookings', count: 1 });
   });
 
   it('closes normally once the bookings are resolved', async () => {

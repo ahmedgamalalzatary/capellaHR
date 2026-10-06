@@ -1,6 +1,8 @@
 import { type createDatabase } from '@capella/database';
 import { erpBookingPayments, erpBookingServices, erpServices, invoicePayments } from '@capella/database/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, like, or, sql } from 'drizzle-orm';
+
+import type { PaymentMethod } from '@capella/contracts';
 
 import { signedMoney, toCents } from '../sales/index.js';
 
@@ -54,6 +56,70 @@ export const sumServicePrices = (prices: Array<string | null>) => prices.reduce(
 
 type Database = ReturnType<typeof createDatabase>;
 type CreditExecutor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * One ledger row per payment method; the operation reference identifies the
+ * command and the suffix keeps the per-row uniqueness intact.
+ */
+export const bookingRefundRowReference = (reference: string, index: number) => (
+  index === 0 ? reference : `${reference.slice(0, 33)}-${index + 1}`
+);
+
+/**
+ * The money a booking sale did not use, handed back in that same sale. A
+ * checkout discount or a price change can leave the booking holding more than
+ * its invoice is worth, and a fully sold booking has no other refund path — so
+ * it must go back here or the shift could never be closed by hand.
+ */
+export const recordBookingCheckoutExcessRefund = async (
+  executor: CreditExecutor,
+  input: {
+    bookingId: number;
+    branchId: number;
+    cashierSessionId: number;
+    actingAccountId: number;
+    at: Date;
+    /** The sale's own idempotency key, so a replay can find these rows again. */
+    operationReference: string;
+    payments: Array<{ method: PaymentMethod; amount: string }>;
+  },
+) => {
+  await executor.insert(erpBookingPayments).values(input.payments.map((payment, index) => ({
+    bookingId: input.bookingId,
+    branchId: input.branchId,
+    kind: 'refund' as const,
+    method: payment.method,
+    amount: payment.amount,
+    refundCause: 'checkout_excess' as const,
+    cashierSessionId: input.cashierSessionId,
+    actingAccountId: input.actingAccountId,
+    operationReference: bookingRefundRowReference(input.operationReference, index),
+    createdAt: input.at,
+  })));
+};
+
+/**
+ * The checkout-excess refunds one sale recorded, rebuilt in the order they were
+ * written so a replay of the same command compares equal.
+ */
+export const readBookingCheckoutExcessRefund = async (
+  executor: CreditExecutor,
+  input: { bookingId: number; operationReference: string },
+): Promise<Array<{ method: PaymentMethod; amount: string }>> => {
+  const rows = await executor.select({
+    method: erpBookingPayments.method,
+    amount: erpBookingPayments.amount,
+  }).from(erpBookingPayments).where(and(
+    eq(erpBookingPayments.bookingId, input.bookingId),
+    eq(erpBookingPayments.kind, 'refund'),
+    eq(erpBookingPayments.refundCause, 'checkout_excess'),
+    or(
+      eq(erpBookingPayments.operationReference, input.operationReference),
+      like(erpBookingPayments.operationReference, `${input.operationReference.slice(0, 33)}-%`),
+    ),
+  )).orderBy(asc(erpBookingPayments.id));
+  return rows.map(({ method, amount }) => ({ method, amount }));
+};
 
 /**
  * The up-front money context a sale settles against: what the booking still

@@ -271,11 +271,11 @@ export const createSaleRepositoryReversals = (
             return rows;
           });
 
-          const beforeState = await hydrateInvoice(transaction, original.id);
+const beforeState = await hydrateInvoice(transaction, original.id);
           // The money goes back out of whichever till is open now, which is not the
-          // till that sold the invoice. An admin may refund with no till open at
-          // all, and a shift past its sixteen hours is spent whether or not the
-          // sweep has written its close, so both cases leave this null.
+          // till that sold the invoice. An admin may refund days later with no
+          // till open at all, and a shift past its sixteen hours is spent whether
+          // or not the sweep has written the close, so both leave this null.
           const payingSession = (await transaction.select({ id: cashierSessions.id })
             .from(cashierSessions).where(and(
               eq(cashierSessions.branchId, original.branchId),
@@ -285,6 +285,13 @@ export const createSaleRepositoryReversals = (
                 new Date(operation.reversedAt.getTime() - CASHIER_SESSION_MAX_DURATION_MS),
               ),
             )).limit(1))[0];
+          // A void is only valid on the sale's own Cairo day, so it is always a
+          // correction at the till: handing that money back with no drawer open
+          // would take it out of a branch nobody is counting. A refund may
+          // legitimately land days later with no till open, so it stays allowed.
+          if (operation.type === 'void' && cashPayoutCents > 0n && !payingSession) {
+            throw new SaleError('CASHIER_SESSION_NOT_OPEN');
+          }
 
           const inserted = await transaction.insert(invoiceReversals).values({
             invoiceId: original.id,

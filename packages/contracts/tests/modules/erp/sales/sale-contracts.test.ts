@@ -324,9 +324,52 @@ describe('ERP booking-credit sale contract', () => {
     expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '-50.00' }).success).toBe(false);
     expect(completeSaleSchema.safeParse({ ...base, bookingCredit: '0.00' }).success).toBe(false);
   });
+
+  it('lets the cashier hand back the checkout excess in the same sale', () => {
+    expect(completeSaleSchema.parse({
+      ...base,
+      bookingRefund: { payments: [{ method: 'cash', amount: '20.00' }] },
+    })).toMatchObject({
+      bookingRefund: { payments: [{ method: 'cash', amount: '20.00' }] },
+    });
+  });
+
+  it('requires the checkout excess refund to name a booking and distinct methods', () => {
+    const withoutBooking: Record<string, unknown> = { ...base };
+    delete withoutBooking['bookingId'];
+    expect(completeSaleSchema.safeParse({
+      ...withoutBooking,
+      bookingRefund: { payments: [{ method: 'cash', amount: '20.00' }] },
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...base,
+      bookingRefund: {
+        payments: [
+          { method: 'cash', amount: '10.00' },
+          { method: 'cash', amount: '10.00' },
+        ],
+      },
+    }).success).toBe(false);
+    expect(completeSaleSchema.safeParse({
+      ...base,
+      bookingRefund: { payments: [] },
+    }).success).toBe(false);
+  });
 });
 
 describe('void payment methods contract', () => {
+  it('forbids paying the same void method back twice', () => {
+    expect(voidInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+      reason: 'إلغاء فاتورة',
+      payments: [{ method: 'cash', amount: '10.00' }, { method: 'cash', amount: '15.00' }],
+    }).success).toBe(false);
+    expect(voidInvoiceSchema.safeParse({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1634',
+      reason: 'إلغاء فاتورة',
+      payments: [{ method: 'cash', amount: '15.00' }, { method: 'visa', amount: '10.00' }],
+    }).success).toBe(true);
+  });
   it('lets the cashier pick how a void hands money back', () => {
     expect(voidInvoiceSchema.safeParse({
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',

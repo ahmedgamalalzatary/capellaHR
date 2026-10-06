@@ -1,0 +1,1 @@
+CREATE INDEX `erp_invoice_payments_booking_idx` ON `erp_invoice_payments` (`booking_id`);

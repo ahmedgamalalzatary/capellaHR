@@ -11,7 +11,7 @@ import {
   invoices,
   serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, asc, countDistinct, eq, gt, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm';
 
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -36,34 +36,35 @@ const nextDate = (date: string) => {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 };
 
-const lockOpenSession = (
+// The shift row is locked on its own, without the "still open" filter, so a
+// caller can tell "the shift already closed" from "the shift is fine" before
+// deciding whether a retry may still be replayed.
+const lockShiftRow = (
   transaction: Transaction,
-  input: {
-    cashierSessionId: number;
-    branchId: number;
-    actorAccountId: number;
-    actorRole: 'admin' | 'cashier';
-    at: Date;
-  },
+  input: { cashierSessionId: number; branchId: number },
 ) => {
   if (input.cashierSessionId <= 0) throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
   return transaction.select().from(cashierSessions).where(and(
     eq(cashierSessions.id, input.cashierSessionId),
     eq(cashierSessions.branchId, input.branchId),
-    isNull(cashierSessions.closedAt),
-    // Strictly after the limit: the sweep spends a shift that reaches it.
-    gt(
-      cashierSessions.openedAt,
-      new Date(input.at.getTime() - CASHIER_SESSION_MAX_DURATION_MS),
-    ),
-  )).for('update').limit(1).then(([session]) => {
-    if (!session || (input.actorRole === 'cashier'
-      && session.openedByAccountId !== input.actorAccountId)) {
-      throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
-    }
-    return session;
-  });
+  )).for('update').limit(1).then(([session]) => session ?? null);
 };
+
+const assertShiftOwnedBy = (
+  session: { openedByAccountId: number },
+  input: { actorAccountId: number; actorRole: 'admin' | 'cashier' },
+) => {
+  if (input.actorRole === 'cashier' && session.openedByAccountId !== input.actorAccountId) {
+    throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+  }
+};
+
+// Strictly after the limit: the sweep spends a shift that reaches it.
+const shiftStillTakesMoney = (
+  session: { closedAt: Date | null; openedAt: Date },
+  at: Date,
+) => session.closedAt === null
+  && session.openedAt.getTime() > at.getTime() - CASHIER_SESSION_MAX_DURATION_MS;
 
 const refundRowReference = (reference: string, index: number) => (
   index === 0 ? reference : `${reference.slice(0, 33)}-${index + 1}`
@@ -578,30 +579,47 @@ export const createDrizzleBookingRepository = (
 
   async recordPayment(input: BookingPaymentWrite) {
     return database.transaction(async (transaction) => {
-      // A retry must be recognized from the ledger before any guard, so a
-      // dropped connection replays cleanly even when the shift has since closed.
-      const previous = (await transaction.select({
-        kind: erpBookingPayments.kind,
-        method: erpBookingPayments.method,
-        amount: erpBookingPayments.amount,
-      }).from(erpBookingPayments).where(and(
-        eq(erpBookingPayments.bookingId, input.bookingId),
-        eq(erpBookingPayments.operationReference, input.operationReference),
-      )).limit(1))[0];
-      if (previous) {
+      const findRecorded = (locking: boolean) => {
+        const query = transaction.select({
+          kind: erpBookingPayments.kind,
+          method: erpBookingPayments.method,
+          amount: erpBookingPayments.amount,
+        }).from(erpBookingPayments).where(and(
+          eq(erpBookingPayments.bookingId, input.bookingId),
+          eq(erpBookingPayments.operationReference, input.operationReference),
+        )).limit(1);
+        // A locking read refreshes what the transaction sees; a plain read keeps
+        // the stored snapshot and must stay on a path that writes nothing.
+        return (locking ? query.for('update') : query).then(([row]) => row ?? null);
+      };
+      const replay = async (locking: boolean) => {
+        const previous = await findRecorded(locking);
+        if (!previous) return null;
         if (previous.kind === 'payment' && previous.method === input.method
           && toCents(previous.amount) === toCents(input.amount)) {
           return (await hydrate(transaction, input.branchId, input.bookingId))!;
         }
         throw new BookingError('BOOKING_OPERATION_CONFLICT');
-      }
+      };
       // Same lock order as the sale transaction: session first, then booking.
-      await lockOpenSession(transaction, input);
+      const session = await lockShiftRow(transaction, input);
+      if (session) assertShiftOwnedBy(session, input);
+      // A retry after the shift closed replays from the ledger and writes
+      // nothing, so the pre-lock snapshot it reads is harmless there.
+      if (!session || !shiftStillTakesMoney(session, input.at)) {
+        const stored = await replay(false);
+        if (stored) return stored;
+        throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+      }
       const booking = (await transaction.select().from(erpBookings).where(and(
         eq(erpBookings.id, input.bookingId),
         eq(erpBookings.branchId, input.branchId),
       )).for('update').limit(1))[0];
       if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
+      // The booking lock is held, so this locking read both recognizes a retry
+      // and refreshes the ledger the cap below is computed from.
+      const stored = await replay(true);
+      if (stored) return stored;
       if (booking.status !== 'booked' && booking.status !== 'arrived') {
         throw new BookingError('BOOKING_ALREADY_HANDLED');
       }
@@ -656,21 +674,20 @@ export const createDrizzleBookingRepository = (
   async cancelServices(input) {
     return database.transaction(async (transaction) => {
       // Same lock order as payments: an open shift locks first when money moves.
-      if (input.refund) await lockOpenSession(transaction, {
-        cashierSessionId: input.refund.cashierSessionId,
-        branchId: input.branchId,
-        actorAccountId: input.actorAccountId,
-        actorRole: input.actorRole,
-        at: input.at,
-      });
+      // The shift is read without its "still open" filter, because a retry of a
+      // cancel must replay even after the shift closed.
+      const session = input.refund
+        ? await lockShiftRow(transaction, {
+          cashierSessionId: input.refund.cashierSessionId,
+          branchId: input.branchId,
+        })
+        : null;
+      if (session) assertShiftOwnedBy(session, input);
       const booking = (await transaction.select().from(erpBookings).where(and(
         eq(erpBookings.id, input.bookingId),
         eq(erpBookings.branchId, input.branchId),
       )).for('update').limit(1))[0];
       if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
-      if (booking.status !== 'booked' && booking.status !== 'arrived') {
-        throw new BookingError('BOOKING_ALREADY_HANDLED');
-      }
       const requested = await transaction.select({
         id: erpBookingServices.id,
         status: erpBookingServices.status,
@@ -681,13 +698,21 @@ export const createDrizzleBookingRepository = (
       if (requested.length !== new Set(input.serviceIds).size) {
         throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
       }
-      // A replay of the same cancel command is recognized instead of cancelling twice.
+      // A replay of the same cancel command is recognized from the services
+      // themselves, so it works whether the booking is still waiting or this
+      // very cancel is what spent it, and whether or not the shift is still on.
       const allCancelled = requested.every((row) => row.status === 'cancelled');
       if (allCancelled) {
         return (await hydrate(transaction, input.branchId, input.bookingId))!;
       }
       if (requested.some((row) => row.status !== 'pending')) {
         throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
+      }
+      if (input.refund && (!session || !shiftStillTakesMoney(session, input.at))) {
+        throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+      }
+      if (booking.status !== 'booked' && booking.status !== 'arrived') {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
       }
       await transaction.update(erpBookingServices).set({
         status: 'cancelled',
@@ -747,30 +772,43 @@ export const createDrizzleBookingRepository = (
 
   async finalizeCancellation(input) {
     return database.transaction(async (transaction) => {
-      if (input.refund) await lockOpenSession(transaction, {
-        cashierSessionId: input.refund.cashierSessionId,
-        branchId: input.branchId,
-        actorAccountId: input.actorAccountId,
-        actorRole: input.actorRole,
-        at: input.at,
-      });
+      // Read without the "still open" filter so a retry of this cancel replays
+      // even when the shift has since closed.
+      const session = input.refund
+        ? await lockShiftRow(transaction, {
+          cashierSessionId: input.refund.cashierSessionId,
+          branchId: input.branchId,
+        })
+        : null;
+      if (session) assertShiftOwnedBy(session, input);
       const booking = (await transaction.select().from(erpBookings).where(and(
         eq(erpBookings.id, input.bookingId),
         eq(erpBookings.branchId, input.branchId),
       )).for('update').limit(1))[0];
       if (!booking) return null;
-      // A retry after a dropped connection replays the recorded outcome instead
-      // of answering "already handled".
-      if (booking.status === 'cancelled' || booking.status === 'no_show'
-        || booking.status === 'converted') {
-        return booking.status === input.status || booking.status === 'converted'
-          ? (await hydrate(transaction, input.branchId, input.bookingId))
-          : null;
+      const services = await transaction.select({ status: erpBookingServices.status })
+        .from(erpBookingServices).where(eq(erpBookingServices.bookingId, input.bookingId))
+        .for('update');
+      // A retry after a dropped connection replays the recorded outcome. The
+      // evidence is that a cancellation really happened: nothing is left waiting
+      // and something was cancelled. A fully sold booking has no cancelled
+      // service, so a mistaken click on it still answers "already handled".
+      const alreadyCancelled = services.some((row) => row.status === 'cancelled')
+        && services.every((row) => row.status !== 'pending');
+      if (alreadyCancelled
+        && (booking.status === input.status || booking.status === 'converted')) {
+        return (await hydrate(transaction, input.branchId, input.bookingId));
+      }
+      if (booking.status !== 'booked' && booking.status !== 'arrived') {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
       }
       // A no-show can only be recorded once the appointment time has passed,
       // and only for a client who never arrived.
       if (input.status === 'no_show' && (booking.status !== 'booked' || booking.scheduledAt >= input.at)) {
         return null;
+      }
+      if (input.refund && (!session || !shiftStillTakesMoney(session, input.at))) {
+        throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
       }
       await transaction.update(erpBookingServices).set({
         status: 'cancelled',

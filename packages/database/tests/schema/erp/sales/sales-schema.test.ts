@@ -283,6 +283,12 @@ describe('ERP sales persistence foundation', () => {
       .toContain('erp_invoice_payments_booking_credit_consistent');
   });
 
+  it('indexes invoice payments by booking so the shift close never scans them all', () => {
+    const config = getTableConfig(table('invoicePayments'));
+    expect(config.indexes.map((value) => value.config.name))
+      .toContain('erp_invoice_payments_booking_idx');
+  });
+
   it('stores invoice settlement totals and enforces their consistency', () => {
     const invoices = table('invoices');
     expect(Object.keys(invoices)).toEqual(expect.arrayContaining([

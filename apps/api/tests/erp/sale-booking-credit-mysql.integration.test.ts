@@ -1,5 +1,5 @@
-import { accounts, cashierSessions, erpBookingServices, erpBookings, erpCategories, erpServices, invoicePayments, invoiceReversalPayments } from '@capella/database/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { accounts, cashierSessions, erpBookingPayments, erpBookingServices, erpBookings, erpCategories, erpServices, invoicePayments, invoiceReversalPayments } from '@capella/database/schema';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
 
@@ -333,6 +333,172 @@ describe('ERP sale with booking credit MySQL integration', () => {
     // Offline sync plus a manual retry of the same request at the same moment.
     const results = await Promise.all([service.complete(actor, input), service.complete(actor, input)]);
     expect(results[0].id).toBe(results[1].id);
+  });
+
+  it('returns the checkout excess to the client in the same sale', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }], createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    // The client paid 100.00 up front for a 200.00 service and gets 60% off.
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '100.00', operationReference: crypto.randomUUID(), at: data.at,
+    });
+    const sale = {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      bookingCredit: '80.00',
+      idempotencyKey: crypto.randomUUID(),
+      discount: { kind: 'percentage' as const, value: '60.00' },
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [],
+    };
+    // Without the cashier naming the money, the sale must not strand 20.00 held.
+    await expect(service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId }, sale,
+    )).rejects.toMatchObject({ code: 'BOOKING_REFUND_REQUIRED' });
+    await expect(service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId },
+      { ...sale, bookingRefund: { payments: [{ method: 'cash', amount: '15.00' }] } },
+    )).rejects.toMatchObject({ code: 'BOOKING_REFUND_AMOUNT_MISMATCH' });
+
+    const invoice = await service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId },
+      { ...sale, bookingRefund: { payments: [{ method: 'cash', amount: '10.00' }, { method: 'visa', amount: '10.00' }] } },
+    );
+    expect(invoice.totals.total).toBe('80.00');
+    const refunds = await database.select().from(erpBookingPayments).where(and(
+      eq(erpBookingPayments.bookingId, booking.id), eq(erpBookingPayments.kind, 'refund'),
+    )).orderBy(asc(erpBookingPayments.id));
+    expect(refunds.map(({ method, amount, refundCause }) => ({ method, amount, refundCause }))).toEqual([
+      { method: 'cash', amount: '10.00', refundCause: 'checkout_excess' },
+      { method: 'visa', amount: '10.00', refundCause: 'checkout_excess' },
+    ]);
+    const hydrated = await bookingRepository.findById(data.branchId, booking.id);
+    expect(hydrated!.money).toMatchObject({ paid: '100.00', refunded: '20.00', held: '0.00', excess: '0.00' });
+    expect((await bookingOf(booking.id)).status).toBe('converted');
+  });
+
+  it('replays a booking sale that carried a checkout excess refund', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }], createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '100.00', operationReference: crypto.randomUUID(), at: data.at,
+    });
+    const actor = { role: 'cashier' as const, accountId: data.accountId, branchId: data.branchId };
+    const input = {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      bookingCredit: '80.00',
+      bookingRefund: { payments: [{ method: 'cash' as const, amount: '20.00' }] },
+      idempotencyKey: crypto.randomUUID(),
+      discount: { kind: 'percentage' as const, value: '60.00' },
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [],
+    };
+    const first = await service.complete(actor, input);
+    const second = await service.complete(actor, input);
+    expect(second.id).toBe(first.id);
+    const refunds = await database.select().from(erpBookingPayments).where(and(
+      eq(erpBookingPayments.bookingId, booking.id), eq(erpBookingPayments.kind, 'refund'),
+    ));
+    expect(refunds).toHaveLength(1);
+  });
+
+  it('rejects a different booking sale that reuses the same idempotency key', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }], createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    const actor = { role: 'cashier' as const, accountId: data.accountId, branchId: data.branchId };
+    const idempotencyKey = crypto.randomUUID();
+    const sale = (discount: string) => service.complete(actor, {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      idempotencyKey,
+      discount: { kind: 'percentage' as const, value: discount },
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [{ method: 'cash' as const, amount: '200.00' }],
+    });
+    // Offline sync plus a different basket pasted under the same key.
+    const results = await Promise.allSettled([sale('0.00'), sale('10.00')]);
+    const fulfilled = results.filter(({ status }) => status === 'fulfilled') as PromiseFulfilledResult<
+      { id: number }
+    >[];
+    expect(fulfilled).toHaveLength(1);
+    const rejected = results.find(({ status }) => status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+  });
+
+  it('returns the stored invoice when the same partial booking sale races itself', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const secondServiceId = Number((await database.insert(erpServices).values({
+      branchId: data.branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, data.branchId)))[0]!.id,
+      name: `Partial twin ${data.marker}`, nameNormalized: `partial-twin-${data.marker}`,
+      price: '100.00', commissionPercent: '10.00', createdAt: data.at, updatedAt: data.at,
+    }))[0].insertId);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null,
+      services: [{ serviceId: data.serviceId }, { serviceId: secondServiceId }],
+      createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '50.00', operationReference: crypto.randomUUID(), at: data.at,
+    });
+    const actor = { role: 'cashier' as const, accountId: data.accountId, branchId: data.branchId };
+    const input = {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      bookingCredit: '50.00',
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [{ method: 'cash' as const, amount: '150.00' }],
+    };
+    const results = await Promise.all([service.complete(actor, input), service.complete(actor, input)]);
+    expect(results[0].id).toBe(results[1].id);
+    // The leftover is still waiting, so the booking is not spent.
+    expect((await bookingOf(booking.id)).status).toBe('arrived');
   });
 
   it('hands a voided booking invoice back on the methods the cashier chose', async () => {

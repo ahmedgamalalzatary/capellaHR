@@ -33,12 +33,21 @@ import {
   MoneyCalculationError,
   toCents,
 } from './services/sale-calculations.js';
-import { hydrateInvoice, keyedQueues, quoteProducts, quoteServices } from './sale-repository-read.js';
+import {
+  hydrateInvoice,
+  keyedQueues,
+  quoteProducts,
+  quoteServices,
+  reconstructInput,
+} from './sale-repository-read.js';
 import { isDuplicateEntryError, signedMoney } from './sale-repository-money.js';
 import type { createSaleRepositorySupport } from './sale-repository-support.js';
 
 import { ensureLegacyBatch, takeBatchQuantities } from '../stock/index.js';
-import { readBookingCreditContext } from '../bookings/index.js';
+import {
+  readBookingCreditContext,
+  recordBookingCheckoutExcessRefund,
+} from '../bookings/index.js';
 import type { BatchAllocation } from '@capella/contracts';
 
 type Database = ReturnType<typeof createDatabase>;
@@ -126,16 +135,17 @@ export const createSaleRepositoryComplete = (
               eq(erpBookings.id, input.bookingId),
               eq(erpBookings.branchId, input.branchId),
             )).for('update').limit(1))[0];
+            // The concurrent twin of this exact request may have just stored the
+            // invoice. It is looked up under the booking's lock, before any other
+            // guard, and by key rather than by booking status — so a twin of a
+            // partial sale replays too, and the stored request is compared with
+            // this one before its invoice is handed back.
+            const storedNow = (await transaction.select({ id: invoices.id }).from(invoices)
+              .where(eq(invoices.idempotencyKey, input.idempotencyKey)).for('update').limit(1))[0];
+            if (storedNow) {
+              return { replayId: storedNow.id };
+            }
             if (!booking || booking.clientId !== input.clientId || booking.status !== 'arrived') {
-              // The concurrent twin of this exact request may have just stored
-              // the invoice; a locking read sees past this transaction's snapshot.
-              const storedNow = (await transaction.select({ id: invoices.id }).from(invoices)
-                .where(eq(invoices.idempotencyKey, input.idempotencyKey)).for('update').limit(1))[0];
-              if (storedNow) {
-                // Hydrate outside this transaction: its snapshot predates the
-                // twin's commit, so it cannot see the stored invoice's rows.
-                return { replayId: storedNow.id };
-              }
               throw new SaleError('BOOKING_NOT_PENDING');
             }
           }
@@ -228,12 +238,37 @@ export const createSaleRepositoryComplete = (
           const bookingCreditCents = input.bookingId === undefined
             ? 0n
             : toCents(input.bookingCredit ?? '0.00');
+          let bookingExcessCents = 0n;
           if (input.bookingId !== undefined) {
             const { heldCents } = await readBookingCreditContext(transaction, input.bookingId);
             const expected = heldCents < toCents(totals.total) ? heldCents : toCents(totals.total);
             if (bookingCreditCents !== expected) {
               throw new SaleError('BOOKING_CREDIT_MISMATCH');
             }
+            bookingExcessCents = heldCents - bookingCreditCents;
+          }
+          // A discount made the invoice worth less than the client paid up front.
+          // The cashier is holding that money now, so it goes back in this same
+          // sale: a booking that ends up fully sold has no other refund path, and
+          // held money above a fully sold booking blocks the shift close for good.
+          if (bookingExcessCents > 0n) {
+            const refund = input.bookingRefund;
+            if (!refund) throw new SaleError('BOOKING_REFUND_REQUIRED');
+            const offered = refund.payments.reduce(
+              (sum, payment) => sum + toCents(payment.amount), 0n,
+            );
+            if (offered !== bookingExcessCents) {
+              throw new SaleError('BOOKING_REFUND_AMOUNT_MISMATCH');
+            }
+            await recordBookingCheckoutExcessRefund(transaction, {
+              bookingId: input.bookingId!,
+              branchId: input.branchId,
+              cashierSessionId: input.cashierSessionId,
+              actingAccountId: operation.actingAccountId,
+              at: operation.soldAt,
+              operationReference: input.idempotencyKey,
+              payments: refund.payments,
+            });
           }
           const paidCents = toCents(totals.paymentTotal) + bookingCreditCents;
           if (paidCents > toCents(totals.total)) {
@@ -412,8 +447,14 @@ export const createSaleRepositoryComplete = (
           return completed;
         });
         if (outcome && typeof outcome === 'object' && 'replayId' in outcome) {
+          // Read outside this transaction: its snapshot predates the twin's
+          // commit, so it cannot see the stored invoice's rows. A stored invoice
+          // is only this request's answer when the stored request is the same.
           const replay = await hydrateInvoice(database, outcome.replayId);
           if (!replay) throw new SaleError('IDEMPOTENCY_CONFLICT');
+          if (!isDeepStrictEqual(await reconstructInput(database, replay.id), operation.input)) {
+            throw new SaleError('IDEMPOTENCY_CONFLICT');
+          }
           return replay;
         }
         return outcome;

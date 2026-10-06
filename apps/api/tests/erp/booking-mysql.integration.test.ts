@@ -5,6 +5,7 @@ import {
   clients,
   employees,
   erpBookings,
+erpBookingPayments,
   erpCategories,
   erpServices,
   invoiceLines,
@@ -348,6 +349,125 @@ describe('MySQL-backed ERP booking leftovers', () => {
     expect(replay.money).toMatchObject({ refunded: '50.00' });
   });
 
+  it('replays a cancel that already took the last waiting service', async () => {
+    const bookingId = await arrangeBooking([serviceId], '0.00');
+    await repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    expect((await repository.findById(branchId, bookingId))!.status).toBe('cancelled');
+    // The retry after a dropped connection must not answer "already handled".
+    await expect(repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    })).resolves.toMatchObject({ status: 'cancelled' });
+  });
+
+  it('replays a cancel with its refund after the shift closed', async () => {
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '150.00');
+    const closedSessionId = leftoverSessionId;
+    const cancel = (sessionId: number) => repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+      refund: {
+        cashierSessionId: sessionId,
+        payments: [{ method: 'cash', amount: '50.00' }],
+        operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1740',
+      },
+    });
+    await cancel(closedSessionId);
+    await database.update(cashierSessions).set({
+      closedAt: at, closedByAccountId: accountId,
+    }).where(eq(cashierSessions.id, closedSessionId));
+    try {
+      await expect(cancel(closedSessionId)).resolves.toMatchObject({
+        money: expect.objectContaining({ refunded: '50.00' }),
+      });
+      const rows = await database.select().from(erpBookingPayments).where(and(
+        eq(erpBookingPayments.bookingId, bookingId), eq(erpBookingPayments.kind, 'refund'),
+      ));
+      expect(rows).toHaveLength(1);
+    } finally {
+      // The branch holds one open shift at a time; later tests need one back.
+      leftoverSessionId = Number((await database.insert(cashierSessions).values({
+        branchId, openedByAccountId: accountId, openedAt: openSessionAt,
+      }))[0].insertId);
+    }
+  });
+
+  it('answers already handled when a fully sold booking is cancelled by mistake', async () => {
+    const bookingId = await arrangeBooking([serviceId], '0.00');
+    const invoiceId = Number((await database.insert(invoices).values({
+      branchId, clientId, sellerEmployeeId: employeeId, actingAccountId: accountId,
+      cashierSessionId: leftoverSessionId, invoiceNumber: 'INV-2026.08.24-11.00-71',
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1741',
+      clientNameSnapshot: 'Mona', sellerNameSnapshot: 'Sara', authorizedBySnapshot: 'booking-admin',
+      subtotal: '200.00', total: '200.00', amountPaid: '200.00', settlementStatus: 'settled',
+      soldAt: at, createdAt: at,
+    }))[0].insertId);
+    const lineId = Number((await database.insert(invoiceLines).values({
+      invoiceId, branchId, lineNumber: 1, itemType: 'service', serviceId,
+      itemNameSnapshot: 'Colour', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+      employeeId, employeeNameSnapshot: 'Sara', employeeCodeSnapshot: 900001,
+      commissionRuleSnapshot: 'service_default', commissionRateSnapshot: '10.00',
+      commissionAmountSnapshot: '20.00',
+    }))[0].insertId);
+    await database.transaction((transaction) => repository.applySale(transaction, {
+      bookingId, branchId, clientId, invoiceId,
+      services: [{ serviceId, invoiceLineId: lineId, quantity: 1 }], convertedAt: at,
+    }));
+    expect((await repository.findById(branchId, bookingId))!.status).toBe('converted');
+    // Nothing was cancelled, so this is a fresh mistaken click, not a retry.
+    await expect(repository.finalizeCancellation({
+      bookingId, branchId, status: 'no_show',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    })).rejects.toMatchObject({ code: 'BOOKING_ALREADY_HANDLED' });
+    await expect(repository.finalizeCancellation({
+      bookingId, branchId, status: 'cancelled',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    })).rejects.toMatchObject({ code: 'BOOKING_ALREADY_HANDLED' });
+  });
+
+  it('replays a whole-booking cancel that ran after a partial sale', async () => {
+    const cheap2Id = Number((await database.insert(erpServices).values({
+      branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, branchId)))[0]!.id,
+      name: 'Cheap third', nameNormalized: 'cheap-third', price: '100.00',
+      commissionPercent: '10.00', createdAt: at, updatedAt: at,
+    }))[0].insertId);
+    const bookingId = await arrangeBooking([serviceId, cheap2Id], '0.00');
+    const invoiceId = Number((await database.insert(invoices).values({
+      branchId, clientId, sellerEmployeeId: employeeId, actingAccountId: accountId,
+      cashierSessionId: leftoverSessionId, invoiceNumber: 'INV-2026.08.24-11.00-72',
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1742',
+      clientNameSnapshot: 'Mona', sellerNameSnapshot: 'Sara', authorizedBySnapshot: 'booking-admin',
+      subtotal: '200.00', total: '200.00', amountPaid: '200.00', settlementStatus: 'settled',
+      soldAt: at, createdAt: at,
+    }))[0].insertId);
+    const lineId = Number((await database.insert(invoiceLines).values({
+      invoiceId, branchId, lineNumber: 1, itemType: 'service', serviceId,
+      itemNameSnapshot: 'Colour', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+      employeeId, employeeNameSnapshot: 'Sara', employeeCodeSnapshot: 900001,
+      commissionRuleSnapshot: 'service_default', commissionRateSnapshot: '10.00',
+      commissionAmountSnapshot: '20.00',
+    }))[0].insertId);
+    await database.transaction((transaction) => repository.applySale(transaction, {
+      bookingId, branchId, clientId, invoiceId,
+      services: [{ serviceId, invoiceLineId: lineId, quantity: 1 }], convertedAt: at,
+    }));
+    const recorded = await repository.finalizeCancellation({
+      bookingId, branchId, status: 'cancelled',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    expect(recorded!.status).toBe('converted');
+    // The booking became converted because of the sold service, yet this is a
+    // retry of a cancel that really did run.
+    await expect(repository.finalizeCancellation({
+      bookingId, branchId, status: 'cancelled',
+      actorAccountId: accountId, actorRole: 'admin', at,
+    })).resolves.toMatchObject({ status: 'converted' });
+  });
+
   it('cancels with zero held money without any refund block', async () => {
     const bookingId = await arrangeBooking([serviceId, cheapServiceId], '0.00');
     const record = await repository.cancelServices({
@@ -533,4 +653,76 @@ describe('MySQL-backed ERP booking leftovers', () => {
       method: 'cash', amount: '100.00', operationReference: reference, at,
     })).resolves.toMatchObject({ id: payBooking });
   });
+});
+
+describe('MySQL-backed ERP booking payment concurrency', () => {
+  const repository = createDrizzleBookingRepository(database, createErpAuditCapability());
+  let raceSessionId = 0;
+  let raceServiceId = 0;
+
+  beforeAll(async () => {
+    await database.update(cashierSessions).set({
+      closedAt: at, closedByAccountId: accountId,
+    }).where(and(
+      eq(cashierSessions.branchId, branchId), isNull(cashierSessions.closedAt),
+    ));
+    raceSessionId = Number((await database.insert(cashierSessions).values({
+      branchId, openedByAccountId: accountId, openedAt: new Date('2026-08-24T06:00:00.000Z'),
+    }))[0].insertId);
+    // A second service priced like the first, so one booking is worth 400.00.
+    raceServiceId = Number((await database.insert(erpServices).values({
+      branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, branchId)))[0]!.id,
+      name: 'Deep clean twin', nameNormalized: 'deep-clean-twin', price: '200.00',
+      commissionPercent: '10.00', createdAt: at, updatedAt: at,
+    }))[0].insertId);
+  }, 60_000);
+
+  const arrangeBooking = async (scheduledDay: string) => {
+    const booking = await repository.create({
+      branchId, clientId, actingAccountId: accountId,
+      scheduledAt: new Date(`${scheduledDay}T07:30:00.000Z`),
+      note: null, services: [{ serviceId }, { serviceId: raceServiceId }], createdAt: at,
+    });
+    return booking.id;
+  };
+
+  const pay = (bookingId: number, amount: string, operationReference: string) => (
+    repository.recordPayment({
+      bookingId, branchId, cashierSessionId: raceSessionId,
+      actorAccountId: accountId, actorRole: 'admin',
+      method: 'cash', amount, operationReference, at,
+    })
+  );
+
+  it('lets only one of two cashiers take the money left on the booking', async () => {
+    const bookingId = await arrangeBooking('2026-09-10');
+    const results = await Promise.allSettled([
+      pay(bookingId, '300.00', '018f47a6-7b2f-7c41-91e9-a5dd1d8e2001'),
+      pay(bookingId, '300.00', '018f47a6-7b2f-7c41-91e9-a5dd1d8e2002'),
+    ]);
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find(({ status }) => status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({ code: 'BOOKING_PAYMENT_EXCEEDS_CAP' });
+    const record = await repository.findById(branchId, bookingId);
+    expect(record!.money).toMatchObject({
+      paid: '300.00', held: '300.00', maxPayable: '100.00', excess: '0.00',
+    });
+  }, 60_000);
+
+  it('answers a double-submitted payment with the stored booking, not a database error', async () => {
+    const bookingId = await arrangeBooking('2026-09-11');
+    const reference = '018f47a6-7b2f-7c41-91e9-a5dd1d8e2003';
+    const results = await Promise.allSettled([
+      pay(bookingId, '100.00', reference),
+      pay(bookingId, '100.00', reference),
+    ]);
+    expect(results.every(({ status }) => status === 'fulfilled')).toBe(true);
+    const rows = await database.select().from(erpBookingPayments).where(
+      eq(erpBookingPayments.bookingId, bookingId),
+    );
+    expect(rows).toHaveLength(1);
+    const record = await repository.findById(branchId, bookingId);
+    expect(record!.money).toMatchObject({ paid: '100.00', held: '100.00' });
+  }, 60_000);
 });

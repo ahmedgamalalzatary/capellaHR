@@ -166,7 +166,9 @@ type SaleErrorCode =
   | 'PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES'
   | 'INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID'
   | 'BOOKING_NOT_PENDING'
-  | 'BOOKING_CREDIT_MISMATCH';
+  | 'BOOKING_CREDIT_MISMATCH'
+  | 'BOOKING_REFUND_REQUIRED'
+  | 'BOOKING_REFUND_AMOUNT_MISMATCH';
 
 const messages: Record<SaleErrorCode, string> = {
   REASSIGN_ADMIN_REQUIRED: 'يمكن للمسؤول فقط تغيير موظف خدمة مكتملة.',
@@ -195,6 +197,8 @@ const messages: Record<SaleErrorCode, string> = {
   PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES: 'فواتير الخدمات يجب سدادها بالكامل',
   BOOKING_NOT_PENDING: 'الحجز غير متاح للبيع',
   BOOKING_CREDIT_MISMATCH: 'المبلغ المقدم تغيّر، حدّث الصفحة',
+  BOOKING_REFUND_REQUIRED: 'يجب إرجاع فائض مقدم الحجز في نفس عملية البيع',
+  BOOKING_REFUND_AMOUNT_MISMATCH: 'توزيع مبلغ إرجاع فائض الحجز غير صحيح',
   INVOICE_NOT_VOIDABLE_WHEN_PARTIALLY_PAID: 'لا يمكن إلغاء فاتورة مدفوعة جزئيًا؛ استخدم الاسترداد',
 };
 

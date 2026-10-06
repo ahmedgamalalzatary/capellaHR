@@ -108,7 +108,17 @@ export const voidInvoiceSchema = reversalCommandBaseSchema.extend({
   // How the voided money goes back is the cashier's call; omitted means the
   // system allocates it the way the invoice was paid.
   payments: z.array(paymentSchema).max(paymentMethodSchema.options.length).optional(),
-}).strict();
+}).strict().superRefine((value, context) => {
+  const seenMethods = new Set<PaymentMethod>();
+  value.payments?.forEach((payment, index) => {
+    if (seenMethods.has(payment.method)) {
+      context.addIssue({
+        code: 'custom', path: ['payments', index, 'method'], message: 'لا يمكن تكرار البند',
+      });
+    }
+    seenMethods.add(payment.method);
+  });
+});
 
 const refundLineSelectionSchema = z.object({
   batches: packageBatchSelectionsSchema.optional(),
@@ -251,6 +261,15 @@ export const completeSaleSchema = z.object({
   tax: adjustmentSchema.optional(),
   payments: z.array(paymentSchema).max(paymentMethodSchema.options.length),
   bookingCredit: positiveMoneySchema.optional(),
+  /**
+   * Up-front money the invoice does not use, because a checkout discount made
+   * it worth less than the client paid. The cashier is holding the money at this
+   * moment, so it goes back in the same sale; leaving it held would block the
+   * shift close forever with no way to return it.
+   */
+  bookingRefund: z.object({
+    payments: z.array(paymentSchema).min(1).max(paymentMethodSchema.options.length),
+  }).strict().optional(),
 }).strict().superRefine((value, context) => {
   const seen = new Set<string>();
   value.payments.forEach((payment, index) => {
@@ -263,13 +282,33 @@ export const completeSaleSchema = z.object({
     }
     seen.add(payment.method);
   });
-  if (value.bookingCredit !== undefined && value.bookingId === undefined) {
-    context.addIssue({
-      code: 'custom',
-      path: ['bookingCredit'],
-      message: 'لا يمكن استخدام مقدم الحجز بدون رقم حجز',
-    });
+  if (value.bookingId === undefined) {
+    if (value.bookingCredit !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['bookingCredit'],
+        message: 'لا يمكن استخدام مقدم الحجز بدون رقم حجز',
+      });
+    }
+    if (value.bookingRefund !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['bookingRefund'],
+        message: 'لا يمكن إرجاع فائض الحجز بدون رقم حجز',
+      });
+    }
   }
+  const refunded = new Set<string>();
+  value.bookingRefund?.payments.forEach((payment, index) => {
+    if (refunded.has(payment.method)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['bookingRefund', 'payments', index, 'method'],
+        message: 'لا يمكن تكرار وسيلة الدفع',
+      });
+    }
+    refunded.add(payment.method);
+  });
 });
 
 export const quoteSaleInputSchema = z.object({

@@ -173,6 +173,16 @@ Generate with `pnpm --filter @capella/database db:generate` then **review the SQ
   `PARTIAL_PAYMENT_NOT_ALLOWED_WITH_SERVICES` checks to include the credit).
 - Insert credit as an `erp_invoice_payments` row: `method='booking_credit'`, `booking_id`,
   `is_initial=true`, sale session/account/time. `amount_paid` includes it.
+- **Checkout excess is returned by the sale itself** (`checkout_excess` rows in `erp_booking_payments`):
+  a discount makes the invoice worth less than the client paid up front, and a booking that ends up
+  fully sold has no later refund path — only an automatic or recovery close would ever end that
+  shift. So when `held − bookingCredit > 0` the request must carry
+  `bookingRefund: { payments[] }` summing exactly to it (else 409 `BOOKING_REFUND_REQUIRED`, then
+  `BOOKING_REFUND_AMOUNT_MISMATCH`), the same rule the cancel paths use. Methods must be distinct
+  (max 4). **Idempotency trap:** `bookingRefund` is part of the request, so `reconstructInput` must
+  rebuild it or every retry conflicts — the refund rows are keyed by the sale's own
+  `idempotencyKey` (with the usual `-2`, `-3` suffix for split methods) precisely so that lookup is
+  exact.
 - **Idempotency trap:** `findByIdempotencyKey` rebuilds `input.payments` from initial payment rows and
   compares with `isDeepStrictEqual`. Exclude `booking_credit` rows from `payments` and rebuild
   `bookingCredit` from them; find `bookingId` via `erp_booking_services.invoice_id` (the old
@@ -225,7 +235,10 @@ Generate with `pnpm --filter @capella/database db:generate` then **review the SQ
   by reopening with the server amount.
 - **Sales workspace** (`use-booking-prefill.ts`): prefill only `pending` services and let the cashier
   remove some (at least one booked service must stay); show "مدفوع من المقدم: X" and reduce the amount
-  to collect by `min(held, total)`; send `bookingCredit`. Booking sales **must not go to the offline
+  to collect by `min(held, total)`; send `bookingCredit`. When `held > total` the workspace must also
+  show "سيتم رد X للعميل من الدرج" with a method selector (distinct methods, default cash) and send
+  `bookingRefund` with the sale; handle `BOOKING_REFUND_REQUIRED` by reopening with the server amount.
+  Booking sales **must not go to the offline
   queue** (credit can change) — or, if they do, surface `BOOKING_CREDIT_MISMATCH` clearly in pending-sale
   recovery. Check `use-sale-workspace-checkout.ts` + `offline-sale-sync.ts`.
 - **After a booking sale** with pending services left: non-dismissable dialog: إبقاء في الموعد الأصلي /
@@ -269,7 +282,8 @@ Generate with `pnpm --filter @capella/database db:generate` then **review the SQ
   (cap = remaining value − held).
 - Partial sale A+B with credit 300 on invoice 250 → credit applied 250, held 50 → still ≤ pending value
   of C (ok) or > (shift close blocked until C is cancelled/refunded).
-- Discount at checkout leaving excess with no pending services → close blocked until refund.
+- Discount at checkout leaving excess with no pending services → the sale cannot complete until the
+  cashier names the money back (`bookingRefund`), so the shift is never stranded.
 - Cancel last pending service with zero held → no refund block required.
 - Cancel with excess but no open shift → clear error, nothing changed.
 - Client never comes, time passed → close blocked; no-show with refund → unblocked.

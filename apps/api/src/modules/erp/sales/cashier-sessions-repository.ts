@@ -293,35 +293,60 @@ const bookingMoneyFor = async (
 // arrived client nobody handled, an appointment whose time has passed with
 // services nobody sold or cancelled, or money held above what is still pending
 // (a checkout discount or price change can leave that behind).
-const unresolvedBookingsCount = (executor: Transaction, input: {
+//
+// The two halves are asked separately so each can start from an index. The first
+// walks only the branch's still-open bookings, which the branch/status index
+// narrows on its own. The second starts from this branch's booking ledger, so it
+// only ever looks at bookings that took or gave back money at all, instead of
+// every booking the branch has ever had.
+const unresolvedWaitingCount = (executor: Transaction, input: {
   branchId: number;
   closedAt: Date;
 }) => executor.select({ value: sql<number>`count(*)` }).from(erpBookings).where(and(
   eq(erpBookings.branchId, input.branchId),
-  sql`(
-    (
-      ${erpBookings.status} in ('booked', 'arrived')
-      and exists (
-        select 1 from erp_booking_services pending
-        where pending.booking_id = ${erpBookings.id} and pending.status = 'pending'
-      )
-      and (
-        ${erpBookings.status} = 'arrived'
-        or ${erpBookings.scheduledAt} <= ${input.closedAt}
-      )
-    )
-    or (
-      (select coalesce(sum(case when p.kind = 'payment' then p.amount else -p.amount end), 0)
-        from erp_booking_payments p where p.booking_id = ${erpBookings.id})
-      - (select coalesce(sum(ip.amount), 0)
-        from erp_invoice_payments ip where ip.booking_id = ${erpBookings.id})
-      > (select coalesce(sum(s.price), 0)
-        from erp_booking_services pending
-        join erp_services s on s.id = pending.service_id
-        where pending.booking_id = ${erpBookings.id} and pending.status = 'pending')
-    )
+  inArray(erpBookings.status, ['booked', 'arrived']),
+  sql`exists (
+    select 1 from erp_booking_services pending
+    where pending.booking_id = ${erpBookings.id} and pending.status = 'pending'
   )`,
+  sql`(${erpBookings.status} = 'arrived' or ${erpBookings.scheduledAt} <= ${input.closedAt})`,
 ));
+
+const moneyHoldingUnresolvedCount = (executor: Transaction, input: { branchId: number }) => (
+  executor.select({ value: sql<number>`count(*)` }).from(sql`
+    (
+      select p.booking_id
+      from erp_booking_payments p
+      join erp_bookings b on b.id = p.booking_id and b.branch_id = p.branch_id
+      where p.branch_id = ${input.branchId}
+        -- A booking the waiting half already counts must not be counted twice.
+        and not (
+          b.status in ('booked', 'arrived')
+          and exists (
+            select 1 from erp_booking_services waiting
+            where waiting.booking_id = p.booking_id and waiting.status = 'pending'
+          )
+        )
+      group by p.booking_id
+      having sum(case when p.kind = 'payment' then p.amount else -p.amount end)
+        - (select coalesce(sum(ip.amount), 0)
+          from erp_invoice_payments ip where ip.booking_id = p.booking_id)
+        > (select coalesce(sum(s.price), 0)
+          from erp_booking_services pending
+          join erp_services s on s.id = pending.service_id
+          where pending.booking_id = p.booking_id and pending.status = 'pending')
+    ) holders
+  `)
+);
+
+const unresolvedBookingsCount = async (executor: Transaction, input: {
+  branchId: number;
+  closedAt: Date;
+}) => {
+  const [waiting] = await unresolvedWaitingCount(executor, input);
+  const [holding] = await moneyHoldingUnresolvedCount(executor, input);
+  return Number(waiting?.value ?? 0) + Number(holding?.value ?? 0);
+};
 
 export const createDrizzleCashierSessionRepository = (
   database: Database,
@@ -562,11 +587,10 @@ export const createDrizzleCashierSessionRepository = (
         ));
       const unfinishedCount = Number(unfinished[0]?.value ?? 0);
       if (unfinishedCount > 0) return { kind: 'unfinished_services' as const, count: unfinishedCount };
-      const [unresolved] = await unresolvedBookingsCount(transaction, {
+      const unresolvedCount = await unresolvedBookingsCount(transaction, {
         branchId: input.branchId,
         closedAt: input.closedAt,
       });
-      const unresolvedCount = Number(unresolved?.value ?? 0);
       if (unresolvedCount > 0) return { kind: 'unresolved_bookings' as const, count: unresolvedCount };
       await transaction.update(cashierSessions).set({
         closedAt: input.closedAt,

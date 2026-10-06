@@ -7,6 +7,7 @@ import {
   serviceQueueEntries,
 } from '@capella/database/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
+import { readBookingCheckoutExcessRefund } from '../bookings/index.js';
 import { SaleError, type SaleRepository } from './sale-service.js';
 import {
   calculateAdjustment,
@@ -286,12 +287,21 @@ export const reconstructInput = async (executor: Executor, invoiceId: number) =>
     (total, payment) => total + toCents(payment.amount),
     0n,
   );
+  // Money handed back at the till for the part of the up-front payment the
+  // invoice did not use; it belongs to this sale's request like the credit does.
+  const bookingRefund = booking
+    ? await readBookingCheckoutExcessRefund(executor, {
+      bookingId: booking.id,
+      operationReference: invoice.idempotencyKey,
+    })
+    : [];
   const candidate = {
     branchId: invoice.branchId,
     clientId: invoice.clientId,
     cashierSessionId: invoice.cashierSessionId,
     ...(booking ? { bookingId: booking.id } : {}),
     ...(bookingCreditCents > 0n ? { bookingCredit: signedMoney(bookingCreditCents) } : {}),
+    ...(bookingRefund.length ? { bookingRefund: { payments: bookingRefund } } : {}),
     idempotencyKey: invoice.idempotencyKey,
     lines: lines.map((line) => line.itemType === 'service'
       ? {

@@ -144,6 +144,36 @@ describe('ERP sale repository MySQL integration', () => {
       })]);
   });
 
+  it('refuses to pay money back with no drawer open', async () => {
+    const data = await fixture();
+    const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const now = new Date();
+    const sale = operation(data, crypto.randomUUID());
+    sale.soldAt = now;
+    sale.invoiceNumber = `INV-${cairoBusinessDate(now).replaceAll('-', '.')}-14.35-${data.branchId}`;
+    await database.update(cashierSessions).set({ openedAt: now })
+      .where(eq(cashierSessions.id, data.cashierSessionId));
+    const completed = await repository.complete(sale);
+    // Nobody is on the till: the drawer that takes this money back is gone.
+    await database.update(cashierSessions).set({
+      closedAt: now, closedByAccountId: data.adminAccountId,
+    }).where(eq(cashierSessions.id, data.cashierSessionId));
+    await expect(repository.reverse({
+      type: 'void',
+      invoiceId: completed.id,
+      input: {
+        branchId: data.branchId,
+        idempotencyKey: crypto.randomUUID(),
+        reason: 'Duplicate sale',
+      },
+      actingAccountId: data.adminAccountId,
+      actingAccountRole: 'admin',
+      reversedAt: now,
+    })).rejects.toMatchObject({ code: 'CASHIER_SESSION_NOT_OPEN' });
+    expect(await database.select().from(invoiceReversals)
+      .where(eq(invoiceReversals.invoiceId, completed.id))).toHaveLength(0);
+  });
+
   it('rejects a void exactly when the Cairo business date rolls over', async () => {
     const data = await fixture();
     const repository = createDrizzleSaleRepository(database, createErpAuditCapability());

@@ -432,6 +432,9 @@ export const invoicePayments = mysqlTable('erp_invoice_payments', {
   // payment that belongs to a different invoice.
   uniqueIndex('erp_invoice_payments_id_invoice_unique').on(table.id, table.invoiceId),
   index('erp_invoice_payments_session_paid_idx').on(table.cashierSessionId, table.paidAt),
+  // The shift close asks, per booking, how much held money was already spent.
+  // Without this it reads the whole payments table once per candidate booking.
+  index('erp_invoice_payments_booking_idx').on(table.bookingId),
   check('erp_invoice_payments_amount_positive', sql`${table.amount} > 0`),
   check('erp_invoice_payments_booking_credit_consistent', sql`(${table.method} = 'booking_credit') = (${table.bookingId} is not null)`),
 ]);
