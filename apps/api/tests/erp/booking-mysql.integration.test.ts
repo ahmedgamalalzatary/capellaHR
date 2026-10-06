@@ -349,6 +349,50 @@ describe('MySQL-backed ERP booking leftovers', () => {
     expect(replay.money).toMatchObject({ refunded: '50.00' });
   });
 
+  it('refuses a cancel retry whose refund does not match the money actually handed back', async () => {
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '150.00');
+    const reference = '018f47a6-7b2f-7c41-91e9-a5dd1d8e1740';
+    const refund = (payments: Array<{ method: 'cash' | 'visa'; amount: string }>, operationReference = reference) => ({
+      cashierSessionId: leftoverSessionId, payments, operationReference,
+    });
+    await repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+      refund: refund([{ method: 'cash', amount: '50.00' }]),
+    });
+    const retry = (input: ReturnType<typeof refund> | undefined) => repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+      ...(input ? { refund: input } : {}),
+    });
+    // Same command: replays.
+    await expect(retry(refund([{ method: 'cash', amount: '50.00' }]))).resolves.toBeDefined();
+    // Different body under the same reference, or a refund nobody recorded:
+    // answering success would tell the cashier money went back when it did not.
+    await expect(retry(refund([{ method: 'visa', amount: '50.00' }])))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+    await expect(retry(refund([{ method: 'cash', amount: '50.00' }], '018f47a6-7b2f-7c41-91e9-a5dd1d8e1741')))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+    expect((await repository.findById(branchId, bookingId))!.money).toMatchObject({ refunded: '50.00' });
+  });
+
+  it('refuses a no-show retry carrying a refund that was never recorded', async () => {
+    const bookingId = await arrangeBooking([cheapServiceId], '0.00', false);
+    await database.update(erpBookings).set({ scheduledAt: new Date(at.getTime() - 60_000) })
+      .where(eq(erpBookings.id, bookingId));
+    await repository.finalizeCancellation({
+      bookingId, branchId, status: 'no_show', actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    await expect(repository.finalizeCancellation({
+      bookingId, branchId, status: 'no_show', actorAccountId: accountId, actorRole: 'admin', at,
+      refund: {
+        cashierSessionId: leftoverSessionId,
+        payments: [{ method: 'cash', amount: '10.00' }],
+        operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1742',
+      },
+    })).rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+  });
+
   it('replays a cancel that already took the last waiting service', async () => {
     const bookingId = await arrangeBooking([serviceId], '0.00');
     await repository.cancelServices({

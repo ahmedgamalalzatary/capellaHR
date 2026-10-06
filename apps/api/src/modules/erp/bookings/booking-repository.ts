@@ -11,7 +11,7 @@ import {
   invoices,
   serviceQueueEntries,
 } from '@capella/database/schema';
-import { and, asc, countDistinct, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, gt, gte, inArray, like, lt, or, sql } from 'drizzle-orm';
 
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -65,6 +65,34 @@ const shiftStillTakesMoney = (
   at: Date,
 ) => session.closedAt === null
   && session.openedAt.getTime() > at.getTime() - CASHIER_SESSION_MAX_DURATION_MS;
+
+/**
+ * A retried cancel that carries a refund replays only when that exact refund was
+ * recorded under its reference. Answering success otherwise would tell the
+ * cashier money went back when it never did.
+ */
+const assertRefundReplayed = async (
+  transaction: Transaction,
+  bookingId: number,
+  refund: BookingRefundWrite | undefined,
+) => {
+  if (!refund) return;
+  const stored = await transaction.select({
+    method: erpBookingPayments.method,
+    amount: erpBookingPayments.amount,
+  }).from(erpBookingPayments).where(and(
+    eq(erpBookingPayments.bookingId, bookingId),
+    eq(erpBookingPayments.kind, 'refund'),
+    or(
+      eq(erpBookingPayments.operationReference, refund.operationReference),
+      like(erpBookingPayments.operationReference, `${refund.operationReference.slice(0, 33)}-%`),
+    ),
+  )).orderBy(asc(erpBookingPayments.id));
+  const same = stored.length === refund.payments.length
+    && stored.every((row, index) => row.method === refund.payments[index]!.method
+      && toCents(row.amount) === toCents(refund.payments[index]!.amount));
+  if (!same) throw new BookingError('BOOKING_OPERATION_CONFLICT');
+};
 
 const insertRefundRows = async (
   transaction: Transaction,
@@ -699,6 +727,7 @@ export const createDrizzleBookingRepository = (
       // very cancel is what spent it, and whether or not the shift is still on.
       const allCancelled = requested.every((row) => row.status === 'cancelled');
       if (allCancelled) {
+        await assertRefundReplayed(transaction, input.bookingId, input.refund);
         return (await hydrate(transaction, input.branchId, input.bookingId))!;
       }
       if (requested.some((row) => row.status !== 'pending')) {
@@ -793,6 +822,7 @@ export const createDrizzleBookingRepository = (
         && services.every((row) => row.status !== 'pending');
       if (alreadyCancelled
         && (booking.status === input.status || booking.status === 'converted')) {
+        await assertRefundReplayed(transaction, input.bookingId, input.refund);
         return (await hydrate(transaction, input.branchId, input.bookingId));
       }
       if (booking.status !== 'booked' && booking.status !== 'arrived') {

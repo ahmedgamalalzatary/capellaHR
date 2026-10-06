@@ -236,6 +236,16 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       </Notice>
     ) : null}
     {error ? <Notice tone="danger">{error}</Notice> : null}
+    {shift.isError ? (
+      // Not the same as "no open shift": paying and refunding stay off until the
+      // shift is known, and the cashier can ask again.
+      <Notice tone="danger" role="alert">
+        <p>تعذر التحقق من الوردية المفتوحة.</p>
+        <Button variant="secondary" size="sm" className="mt-2" onClick={() => void shift.refetch()}>
+          إعادة تحميل الوردية
+        </Button>
+      </Notice>
+    ) : null}
     <Card className="shadow-card"><CardContent className="flex items-center justify-between gap-3 p-4">
       <Button variant="secondary" aria-label="اليوم السابق" onClick={() => setDate(moveDate(date, -1))}>
         <ChevronRight className="size-4" />

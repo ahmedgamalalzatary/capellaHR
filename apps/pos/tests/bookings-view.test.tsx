@@ -228,6 +228,16 @@ describe('appointment book', () => {
     expect(await screen.findByRole('button', { name: 'دفع مقدم' })).toHaveProperty('disabled', true);
   });
 
+  it('tells the cashier when the open shift could not be loaded and lets them retry', async () => {
+    mocks.list.mockResolvedValue([paidBooking]);
+    mocks.currentSession.mockRejectedValueOnce(new Error('network'));
+    renderView();
+    expect(await screen.findByText('تعذر التحقق من الوردية المفتوحة.')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة تحميل الوردية' }));
+    await waitFor(() => expect(mocks.currentSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'دفع مقدم' })).toHaveProperty('disabled', false));
+  });
+
   it('hands the held money back from the drawer when the booking is cancelled', async () => {
     mocks.list.mockResolvedValue([paidBooking]);
     renderView();

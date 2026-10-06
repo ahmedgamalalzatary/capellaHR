@@ -345,5 +345,5 @@ pnpm --filter @capella/database db:generate      # then review the generated SQL
 - [x] P8 diary card states + money + pay/refund dialogs
 - [x] P8 sales workspace partial selection + credit + offline handling + leftover dialog
 - [x] P8 invoice/receipt label; shift screens; close error link; reports tab; cache invalidation
-- [ ] P9 everything green (lint, typecheck, build, tests — all packages)
-- [ ] Review done, findings fixed
+- [x] P9 everything green (lint, typecheck, build, tests — all packages)
+- [x] Review done, findings fixed

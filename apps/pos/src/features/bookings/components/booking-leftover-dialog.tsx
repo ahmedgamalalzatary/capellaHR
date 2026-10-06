@@ -34,6 +34,10 @@ export function BookingLeftoverDialog({ bookingId, branchId, cashierSessionId }:
   const cache = useQueryClient();
   const [step, setStep] = useState<'choose' | 'move' | 'cancel'>('choose');
   const [error, setError] = useState<string>();
+  // Right after the sale the cache still holds the booking as it was before it,
+  // listing the services just sold. The choice waits for a load that finished
+  // after this dialog opened; later background reloads keep it on screen.
+  const [openedAt] = useState(() => Date.now());
   const booking = useQuery({
     queryKey: bookingQueryKeys.detail(bookingId, branchId),
     queryFn: () => getBooking(bookingId, branchId),
@@ -71,9 +75,8 @@ export function BookingLeftoverDialog({ bookingId, branchId, cashierSessionId }:
 
   const data = booking.data;
   const waiting = data?.services.filter((service) => service.status === 'pending') ?? [];
-  // Right after the sale the cached booking still lists the services just sold;
-  // the choice is offered only on the reloaded booking.
-  if (booking.isFetching || !data || data.status !== 'arrived' || waiting.length === 0) return null;
+  const fresh = booking.dataUpdatedAt >= openedAt;
+  if (!fresh || !data || data.status !== 'arrived' || waiting.length === 0) return null;
   const waitingIds = waiting.map((service) => service.serviceId);
   const pending = keep.isPending || move.isPending || cancel.isPending;
 

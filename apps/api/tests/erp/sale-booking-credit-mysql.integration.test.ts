@@ -12,7 +12,7 @@ import { createSaleRepositoryMysqlFixtures } from './sale-repository-mysql-fixtu
 const { database, fixture } = createSaleRepositoryMysqlFixtures();
 let invoiceSequence = 0;
 
-const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>, options: { soldToday?: boolean } = {}) => {
+const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>, options: { soldAt?: Date } = {}) => {
   const audit = createErpAuditCapability();
   const bookingRepository = createDrizzleBookingRepository(database, audit);
   const saleRepository = createDrizzleSaleRepository(database, audit);
@@ -37,7 +37,7 @@ const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>, options: { 
         invoiceSequence += 1;
         return {
           invoiceNumber: `INV-2026.08.03-14.35-${invoiceSequence}`,
-          allocatedAt: options.soldToday ? new Date() : new Date(data.at.getTime() + counter),
+          allocatedAt: options.soldAt ?? new Date(data.at.getTime() + counter),
         };
       },
     },
@@ -610,10 +610,10 @@ describe('ERP sale with booking credit MySQL integration', () => {
 
   it('hands a voided booking invoice back on the methods the cashier chose', async () => {
     const data = await fixture();
-    const { service, bookingRepository, saleRepository } = buildSaleService(data, { soldToday: true });
-    // A void is only valid on the sale's own Cairo day, so the sale runs in a
-    // fresh shift opened "now" and is voided in the same Cairo day.
+    // A void is only valid on the sale's own Cairo day, so the shift, the sale
+    // and the void all share one instant taken once.
     const today = new Date();
+    const { service, bookingRepository, saleRepository } = buildSaleService(data, { soldAt: today });
     // A branch holds one open shift at a time; retire the fixture's shift first.
     await database.update(cashierSessions).set({
       closedAt: data.at, closedByAccountId: data.accountId,
