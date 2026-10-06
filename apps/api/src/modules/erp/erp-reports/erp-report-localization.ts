@@ -16,9 +16,11 @@ const normalizeCell = (value: unknown): ReportCell => {
 const eventLabels: Record<string, string> = {
   sale: 'بيع', refund: 'استرداد', void: 'إلغاء', earned: 'مستحقة', reversal: 'عكس',
   expense: 'مصروف', purchase: 'شراء', purchase_cancellation: 'إلغاء شراء',
+  booking_payment: 'دفع مقدم حجز', booking_refund: 'رد مقدم حجز',
 };
 const paymentLabels: Record<string, string> = {
   cash: 'نقدي', visa: 'فيزا', instapay: 'إنستا باي', vodafone_cash: 'فودافون كاش',
+  booking_credit: 'مدفوع من المقدم',
 };
 const stockReasonLabels: Record<string, string> = {
   transfer_in: 'تحويل وارد', consumable_reserve: 'حجز مستهلك', consumable_return: 'إرجاع مستهلك',
@@ -53,6 +55,10 @@ export const localizeErpReportRow = (
     if ((key === 'stockHistory' || key === 'consumableHistory') && typeof value === 'string') {
       const labels = key === 'stockHistory' ? stockReasonLabels : consumableEntryLabels;
       return [key, value.replace(/\b[a-z_]+\b/g, (word) => labels[word] ?? word)];
+    }
+    // The invoice snapshot lists its payments as "method: amount | …".
+    if (reportType === 'erp-invoice' && key === 'payments' && typeof value === 'string') {
+      return [key, value.replace(/\b[a-z_]+\b/g, (word) => paymentLabels[word] ?? word)];
     }
     if (key === 'expiryStatus' && typeof value === 'string') return [key,
       ({ expired: 'منتهية', soon: 'تنتهي خلال 30 يوماً', unknown: 'غير محددة', valid: 'سارية' } as Record<string, string>)[value] ?? value];

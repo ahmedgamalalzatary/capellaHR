@@ -46,9 +46,26 @@ export const paymentFacts = (filters: ReportFilters) => sql`
   ${condition([
     sql`invoice.status <> 'draft'`,
     sql`invoice.kind = 'sale'`,
+    // Up-front money used at checkout was already counted when the booking took
+    // it; counting it again here would report money the till never received.
+    sql`payment.method <> 'booking_credit'`,
     ...branchFilter(filters, 'invoice.branch_id'),
     ...timestampFilter(filters, 'payment.paid_at'),
     ...searchFilter(filters, ['invoice.invoice_number', 'payment.method']),
+  ])}
+  UNION ALL
+  -- Booking up-front money moves through the till on its own ledger, before any
+  -- invoice exists: payments in, refunds out.
+  SELECT CONCAT('booking-', ledger.kind, '-', ledger.id) id, ledger.created_at eventDate,
+    branch.name branchName, NULL invoiceNumber, CONCAT('booking_', ledger.kind) eventType,
+    ledger.method paymentMethod,
+    CASE WHEN ledger.kind = 'payment' THEN ledger.amount ELSE -ledger.amount END amount
+  FROM erp_booking_payments ledger
+  INNER JOIN branches branch ON branch.id = ledger.branch_id
+  ${condition([
+    ...branchFilter(filters, 'ledger.branch_id'),
+    ...timestampFilter(filters, 'ledger.created_at'),
+    ...searchFilter(filters, ['ledger.method']),
   ])}
   UNION ALL
   SELECT CONCAT(reversal.type, '-', reversal_payment.id) id, reversal.created_at eventDate,

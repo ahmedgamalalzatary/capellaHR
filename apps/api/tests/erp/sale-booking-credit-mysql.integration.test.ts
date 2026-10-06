@@ -389,6 +389,113 @@ describe('ERP sale with booking credit MySQL integration', () => {
     expect((await bookingOf(booking.id)).status).toBe('converted');
   });
 
+  it('keeps held money that still covers the leftover services instead of refunding it', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const leftoverServiceId = Number((await database.insert(erpServices).values({
+      branchId: data.branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, data.branchId)))[0]!.id,
+      name: `Leftover ${data.marker}`, nameNormalized: `leftover-${data.marker}`, price: '150.00',
+      commissionPercent: '10.00', createdAt: data.at, updatedAt: data.at,
+    }))[0].insertId);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null,
+      services: [{ serviceId: data.serviceId }, { serviceId: leftoverServiceId }],
+      createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    // 300.00 up front; today only the 200.00 service is sold, so 100.00 stays
+    // held for the 150.00 leftover — nothing goes back to the client.
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '300.00', operationReference: crypto.randomUUID(), at: data.at,
+    });
+    const sale = {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      bookingCredit: '200.00',
+      idempotencyKey: crypto.randomUUID(),
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [],
+    };
+    // A refund the server would not hand back is refused, not silently dropped.
+    await expect(service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId },
+      { ...sale, bookingRefund: { payments: [{ method: 'cash', amount: '100.00' }] } },
+    )).rejects.toMatchObject({ code: 'BOOKING_REFUND_AMOUNT_MISMATCH' });
+
+    const invoice = await service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId }, sale,
+    );
+    expect(invoice.totals.total).toBe('200.00');
+    const refunds = await database.select().from(erpBookingPayments).where(and(
+      eq(erpBookingPayments.bookingId, booking.id), eq(erpBookingPayments.kind, 'refund'),
+    ));
+    expect(refunds).toHaveLength(0);
+    const hydrated = await bookingRepository.findById(data.branchId, booking.id);
+    expect(hydrated!.money).toMatchObject({ held: '100.00', pendingValue: '150.00', excess: '0.00' });
+    expect((await bookingOf(booking.id)).status).toBe('arrived');
+  });
+
+  it('returns only the held money above the leftover services after a partial sale', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const leftoverServiceId = Number((await database.insert(erpServices).values({
+      branchId: data.branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, data.branchId)))[0]!.id,
+      name: `Leftover ${data.marker}`, nameNormalized: `leftover-${data.marker}`, price: '150.00',
+      commissionPercent: '10.00', createdAt: data.at, updatedAt: data.at,
+    }))[0].insertId);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId,
+      scheduledAt: data.at, note: null,
+      services: [{ serviceId: data.serviceId }, { serviceId: leftoverServiceId }],
+      createdAt: data.at,
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    await bookingRepository.recordPayment({
+      bookingId: booking.id, branchId: data.branchId, cashierSessionId: data.cashierSessionId,
+      actorAccountId: data.accountId, actorRole: 'cashier',
+      method: 'cash', amount: '350.00', operationReference: crypto.randomUUID(), at: data.at,
+    });
+    // 50% off the 200.00 service: invoice 100.00, so 250.00 stays held against a
+    // 150.00 leftover — exactly 100.00 is handed back.
+    const sale = {
+      branchId: data.branchId,
+      clientId: data.clientId,
+      cashierSessionId: data.cashierSessionId,
+      bookingId: booking.id,
+      bookingCredit: '100.00',
+      idempotencyKey: crypto.randomUUID(),
+      discount: { kind: 'percentage' as const, value: '50.00' },
+      lines: [{
+        itemType: 'service' as const, serviceId: data.serviceId, quantity: 1,
+        unitPrice: '200.00', employeeId: data.employeeId,
+      }],
+      payments: [],
+    };
+    await expect(service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId },
+      { ...sale, bookingRefund: { payments: [{ method: 'cash', amount: '250.00' }] } },
+    )).rejects.toMatchObject({ code: 'BOOKING_REFUND_AMOUNT_MISMATCH' });
+
+    await service.complete(
+      { role: 'cashier', accountId: data.accountId, branchId: data.branchId },
+      { ...sale, bookingRefund: { payments: [{ method: 'cash', amount: '100.00' }] } },
+    );
+    const hydrated = await bookingRepository.findById(data.branchId, booking.id);
+    expect(hydrated!.money).toMatchObject({
+      refunded: '100.00', held: '150.00', pendingValue: '150.00', excess: '0.00',
+    });
+  });
+
   it('replays a booking sale that carried a checkout excess refund', async () => {
     const data = await fixture();
     const { service, bookingRepository } = buildSaleService(data);

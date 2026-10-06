@@ -25,17 +25,20 @@ export type ErpMutationEffect =
   | 'purchase'
   | 'expense'
   | 'product'
-  | 'commission';
+  | 'commission'
+  | 'booking-money';
 
 const affected: Record<ErpMutationEffect, ReadonlyArray<keyof typeof roots>> = {
   catalog: ['catalog', 'reports'],
   client: ['clients', 'reports'],
   sale: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'sales', 'clients', 'products', 'commissions', 'reports', 'bookings', 'cashierSessions'],
-  reversal: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'sales', 'clients', 'products', 'commissions', 'reports', 'cashierSessions'],
+  reversal: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'sales', 'clients', 'products', 'commissions', 'reports', 'bookings', 'cashierSessions'],
   purchase: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'suppliers', 'products', 'reports'],
   expense: ['expenses', 'reports', 'cashierSessions'],
   product: ['batches', 'consumables', 'consumableOptions', 'transferProducts', 'products', 'reports'],
   commission: ['commissions', 'expenses', 'reports', 'cashierSessions'],
+  // Up-front payments and refunds move drawer money outside any invoice.
+  'booking-money': ['reports', 'bookings', 'cashierSessions'],
 };
 
 export const invalidateErpCaches = (

@@ -49,3 +49,14 @@ it('prints each queue number beside its assigned employee on the customer receip
   expect(screen.queryByText('1 · Sara')).not.toBeNull();
   expect(screen.queryByText('2 · Mona')).not.toBeNull();
 });
+
+it('names up-front booking money on the receipt instead of a till method', () => {
+  const invoice = structuredClone(saleFixtures.completedInvoice) as unknown as PublicInvoiceDto;
+  invoice.payments = [
+    { ...invoice.payments[0]!, method: 'booking_credit', amount: '100.00' },
+    { ...invoice.payments[0]!, method: 'cash', amount: '85.00' },
+  ];
+  render(<Receipt invoice={invoice} />);
+  expect(screen.getAllByText('مدفوع من المقدم').length).toBeGreaterThan(0);
+  expect(screen.queryByText('booking_credit')).toBeNull();
+});

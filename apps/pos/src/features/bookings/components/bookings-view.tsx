@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarPlus, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, Trash2, Wallet, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -10,18 +10,37 @@ import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input } fr
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
 import { PageHeader } from '@/components/layout/page-header';
+import type { BookingRefundInput, PaymentMethod } from '@capella/contracts';
+
 import { useSession } from '@/features/auth';
-import { listCashierSessionBranches } from '@/features/cashier-sessions';
+import {
+  cashierSessionQueryKeys,
+  getCurrentCashierSession,
+  listCashierSessionBranches,
+} from '@/features/cashier-sessions';
 import { Select } from '@/components/form/select';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
+import { invalidateErpCaches } from '@/lib/erp-cache';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { useTickingNow } from '@/lib/use-ticking-now';
 
-import { deleteBooking, listBookingEmployeeOptions, listBookings, updateBookingServicePreference, updateBookingStatus, type BookingDto } from '../api/bookings-api';
+import {
+  cancelBookingServices,
+  deleteBooking,
+  listBookingEmployeeOptions,
+  listBookings,
+  recordBookingPayment,
+  rescheduleBooking,
+  updateBookingServicePreference,
+  updateBookingStatus,
+  type BookingDto,
+} from '../api/bookings-api';
+import { excessAfterCancelling } from '../booking-money';
 import { isOverdueBooked, orderBookingsForDiary } from '../order-bookings';
 import { bookingQueryKeys } from '../query-keys';
 import { BookingForm } from './booking-form';
+import { BookingPaymentDialog, BookingRefundConfirm, RescheduleDialog } from './booking-money-dialogs';
 
 const moveDate = (date: string, days: number) => {
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
@@ -45,6 +64,20 @@ const statusTone = {
   no_show: 'danger',
 } as const;
 
+type BookingService = BookingDto['services'][number];
+const serviceStateLabel = (service: BookingService) => {
+  if (service.status === 'cancelled') return 'ملغاة';
+  if (service.status === 'pending') return 'لم تبدأ';
+  return ({
+    pending: 'لم تبدأ', in_progress: 'قيد التنفيذ', completed: 'تمت', overdue: 'متأخرة', canceled: 'ملغاة',
+  } as const)[service.queueStatus ?? 'pending'];
+};
+const isOpenBooking = (booking: BookingDto) => booking.status === 'booked' || booking.status === 'arrived';
+
+type Cancelling =
+  | { bookingId: number; kind: 'cancelled' | 'no_show' }
+  | { bookingId: number; kind: 'service'; serviceId: number };
+
 const cairoToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
 const dayHeading = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -58,7 +91,9 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const [creating, setCreating] = useState(false);
   const { branchId: adminBranchId, setBranchId: setAdminBranchId } = useAdminBranch();
   const [error, setError] = useState<string>();
-  const [confirming, setConfirming] = useState<{ id: number; next: 'cancelled' | 'no_show' } | null>(null);
+  const [confirming, setConfirming] = useState<Cancelling | null>(null);
+  const [paying, setPaying] = useState<number | null>(null);
+  const [moving, setMoving] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<BookingDto | null>(null);
 
   const branchId = actor?.type === 'admin' ? adminBranchId : undefined;
@@ -77,19 +112,68 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     queryFn: () => listBookingEmployeeOptions(branchId),
     enabled: actor?.type === 'cashier' || branchId !== undefined,
   });
+  // Money moves through the open shift's drawer; without one, paying and
+  // refunding are unavailable.
+  const shift = useQuery({
+    queryKey: cashierSessionQueryKeys.current(branchId),
+    queryFn: () => getCurrentCashierSession(branchId),
+    enabled: actor?.type === 'cashier' || branchId !== undefined,
+  });
+  const cashierSessionId = shift.data?.id ?? null;
+  const branchScope = branchId === undefined ? {} : { branchId };
+  const failed = (fallback: string) => async (cause: unknown) => {
+    const message = cause instanceof ApiError ? cause.message : fallback;
+    setError(message);
+    notifyError(cause, message);
+    // The server answers from fresh money; reload so the next try shows it.
+    await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+  };
   const status = useMutation({
-    mutationFn: ({ id, next }: { id: number; next: 'arrived' | 'booked' | 'cancelled' | 'no_show' }) => (
-      updateBookingStatus(id, { status: next, ...(branchId === undefined ? {} : { branchId }) })
+    mutationFn: ({ id, next, refund }: {
+      id: number;
+      next: 'arrived' | 'booked' | 'cancelled' | 'no_show';
+      refund?: BookingRefundInput | undefined;
+    }) => (
+      updateBookingStatus(id, { status: next, ...branchScope, ...(refund ? { refund } : {}) })
+    ),
+    onSuccess: async (_, { refund }) => {
+      if (refund) await invalidateErpCaches(cache, 'booking-money');
+      else await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      notifySuccess('تم تحديث حالة الحجز.');
+    },
+    onError: failed('تعذر تحديث الحجز.'),
+  });
+  const cancelService = useMutation({
+    mutationFn: ({ id, serviceId, refund }: {
+      id: number; serviceId: number; refund?: BookingRefundInput | undefined;
+    }) => cancelBookingServices(id, {
+      ...branchScope, serviceIds: [serviceId], ...(refund ? { refund } : {}),
+    }),
+    onSuccess: async () => {
+      await invalidateErpCaches(cache, 'booking-money');
+      notifySuccess('تم إلغاء الخدمة.');
+    },
+    onError: failed('تعذر إلغاء الخدمة.'),
+  });
+  const payment = useMutation({
+    mutationFn: ({ id, ...input }: {
+      id: number; method: PaymentMethod; amount: string; operationReference: string;
+    }) => recordBookingPayment(id, { ...branchScope, cashierSessionId: cashierSessionId!, ...input }),
+    onSuccess: async () => {
+      await invalidateErpCaches(cache, 'booking-money');
+      notifySuccess('تم تسجيل الدفع المقدم.');
+    },
+    onError: failed('تعذر تسجيل الدفع المقدم.'),
+  });
+  const reschedule = useMutation({
+    mutationFn: ({ id, scheduledAt }: { id: number; scheduledAt: string }) => (
+      rescheduleBooking(id, { ...branchScope, scheduledAt })
     ),
     onSuccess: async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
-      notifySuccess('تم تحديث حالة الحجز.');
+      notifySuccess('تم تغيير الموعد.');
     },
-    onError: (cause: unknown) => {
-      const message = cause instanceof ApiError ? cause.message : 'تعذر تحديث الحجز.';
-      setError(message);
-      notifyError(cause, message);
-    },
+    onError: failed('تعذر تغيير الموعد.'),
   });
   const preference = useMutation({
     mutationFn: ({ bookingId, serviceId, employeeId }: {
@@ -120,6 +204,10 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const now = useTickingNow();
   const overdueCount = diary.data?.filter((booking) => isOverdueBooked(booking, now)).length ?? 0;
   const orderedBookings = diary.data ? orderBookingsForDiary(diary.data, now) : [];
+  // Dialogs read the booking from the latest diary data, so a refetch after a
+  // refused refund shows the server's current amount.
+  const confirmingBooking = confirming ? diary.data?.find(({ id }) => id === confirming.bookingId) : undefined;
+  const payingBooking = paying === null ? undefined : diary.data?.find(({ id }) => id === paying);
 
   if (session.isPending) return <LoadingState label="جارٍ تحميل دفتر المواعيد…" />;
   if (session.isError) return <EmptyState title="تعذر التحقق من الجلسة" action={<Button onClick={() => void session.refetch()}>إعادة المحاولة</Button>} />;
@@ -202,17 +290,26 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                     && !options.some((employee) => employee.id === service.preferredEmployee?.id);
                   return (
                   <li key={service.serviceId} className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current opacity-40" />
                       <span className="truncate text-sm font-medium">{service.serviceName}</span>
                       {service.servicePrice !== null ? <span className="tabular shrink-0 text-[13px] text-muted">{service.servicePrice} ج</span> : null}
+                      <Badge variant={service.status === 'cancelled' ? 'danger' : service.status === 'sold' ? 'success' : 'warning'}>
+                        {serviceStateLabel(service)}
+                      </Badge>
+                      {service.invoiceNumber ? <span className="font-mono text-[12px] text-muted">{service.invoiceNumber}</span> : null}
                     </div>
-                    {(booking.status === 'booked' || booking.status === 'arrived') ? (
-                      <Select className="sm:w-48" aria-label={`الموظف المفضل لخدمة ${service.serviceName}`} value={service.preferredEmployee?.id ?? ''} disabled={preference.isPending} onChange={(event) => preference.mutate({ bookingId: booking.id, serviceId: service.serviceId, employeeId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">بدون موظف مفضل</option>
-                        {preferredMissing ? <option value={service.preferredEmployee?.id}>{service.preferredEmployee?.name}</option> : null}
-                        {options.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-                      </Select>
+                    {isOpenBooking(booking) && service.status === 'pending' ? (
+                      <div className="flex items-center gap-2">
+                        <Select className="sm:w-48" aria-label={`الموظف المفضل لخدمة ${service.serviceName}`} value={service.preferredEmployee?.id ?? ''} disabled={preference.isPending} onChange={(event) => preference.mutate({ bookingId: booking.id, serviceId: service.serviceId, employeeId: event.target.value ? Number(event.target.value) : null })}>
+                          <option value="">بدون موظف مفضل</option>
+                          {preferredMissing ? <option value={service.preferredEmployee?.id}>{service.preferredEmployee?.name}</option> : null}
+                          {options.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+                        </Select>
+                        <Button variant="ghost" size="sm" aria-label={`إلغاء خدمة ${service.serviceName}`} disabled={cancelService.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'service', serviceId: service.serviceId })}>
+                          <X className="size-4" />
+                        </Button>
+                      </div>
                     ) : service.preferredEmployee ? (
                       <span className="text-[13px] text-muted">مع {service.preferredEmployee.name}</span>
                     ) : null}
@@ -227,12 +324,25 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                   : null}
               </p>
               {booking.note ? <p className="rounded-control bg-surface px-3 py-2 text-sm">{booking.note}</p> : null}
+              <ul aria-label="أموال الحجز" className="grid grid-cols-2 gap-2 text-[13px] sm:grid-cols-4">
+                {([
+                  ['مدفوع مقدم', booking.money.paid],
+                  ['مستخدم', booking.money.applied],
+                  ['مسترد', booking.money.refunded],
+                  ['المتبقي لدينا', booking.money.held],
+                ] as const).map(([label, value]) => (
+                  <li key={label} className="rounded-control border border-line px-3 py-2">
+                    <span className="block text-muted">{label}</span>
+                    <span className="tabular font-semibold">{value} ج</span>
+                  </li>
+                ))}
+              </ul>
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
                 {booking.status === 'booked' ? <>
                   <Button disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'arrived' })}>وصل العميل</Button>
-                  {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'no_show' })}>لم يحضر</Button> : null}
+                  {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'no_show' })}>لم يحضر</Button> : null}
                 </> : null}
-                {booking.status === 'arrived' ? <>
+                {booking.status === 'arrived' && booking.services.some((service) => service.status === 'pending') ? <>
                   <Link
                     href={`/sales?bookingId=${booking.id}`}
                     className="inline-flex h-9 items-center justify-center rounded-control bg-ink px-4 text-sm font-medium text-paper"
@@ -241,8 +351,22 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                   </Link>
                   <Button variant="secondary" disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'booked' })}>إرجاع إلى محجوز</Button>
                 </> : null}
-                {(booking.status === 'booked' || booking.status === 'arrived') ? <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ id: booking.id, next: 'cancelled' })}>إلغاء</Button> : null}
-                {(booking.status === 'booked' || booking.status === 'cancelled' || booking.status === 'no_show') ? (
+                {isOpenBooking(booking) ? <>
+                  <Button
+                    variant="secondary"
+                    disabled={payment.isPending || cashierSessionId === null || booking.money.maxPayable === '0.00'}
+                    title={cashierSessionId === null ? 'افتح وردية أولًا' : undefined}
+                    onClick={() => setPaying(booking.id)}
+                  >
+                    <Wallet className="size-4" />دفع مقدم
+                  </Button>
+                  <Button variant="ghost" disabled={reschedule.isPending} onClick={() => setMoving(booking.id)}>
+                    <CalendarClock className="size-4" />تغيير الموعد
+                  </Button>
+                  <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'cancelled' })}>إلغاء</Button>
+                </> : null}
+                {(booking.status === 'booked' || booking.status === 'cancelled' || booking.status === 'no_show')
+                  && booking.money.paid === '0.00' && booking.services.every((service) => service.status !== 'sold') ? (
                   <Button variant="ghost" className="ms-auto text-danger hover:bg-danger/10 hover:text-danger" disabled={removal.isPending} onClick={() => setDeleting(booking)}>
                     <Trash2 className="size-4" />حذف
                   </Button>
@@ -254,19 +378,62 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     {creating ? <BookingForm {...(branchId === undefined ? {} : { branchId })} onClose={() => setCreating(false)} onSaved={async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
     }} /> : null}
-    {confirming ? (
-      <ConfirmDialog
-        title={confirming.next === 'cancelled' ? 'إلغاء الموعد' : 'تسجيل عدم الحضور'}
-        description={confirming.next === 'cancelled'
-          ? 'سيُلغى هذا الموعد ولن يظهر كحجز قائم.'
-          : 'سيُسجَّل أن العميل لم يحضر.'}
-        confirmLabel={confirming.next === 'cancelled' ? 'تأكيد الإلغاء' : 'تأكيد عدم الحضور'}
-        tone="danger"
-        pending={status.isPending}
-        onConfirm={() => {
-          status.mutate(confirming, { onSettled: () => setConfirming(null) });
-        }}
-        onCancel={() => setConfirming(null)}
+    {confirmingBooking && confirming ? (() => {
+      const pendingIds = confirmingBooking.services
+        .filter((service) => service.status === 'pending').map((service) => service.serviceId);
+      const serviceName = confirming.kind === 'service'
+        ? confirmingBooking.services.find((service) => service.serviceId === confirming.serviceId)?.serviceName
+        : undefined;
+      const amount = excessAfterCancelling(
+        confirmingBooking,
+        confirming.kind === 'service' ? [confirming.serviceId] : pendingIds,
+      );
+      const close = () => setConfirming(null);
+      return (
+        <BookingRefundConfirm
+          key={`${confirming.kind}-${amount}`}
+          title={confirming.kind === 'service' ? `إلغاء خدمة ${serviceName ?? ''}`
+            : confirming.kind === 'cancelled' ? 'إلغاء الموعد' : 'تسجيل عدم الحضور'}
+          description={confirming.kind === 'service'
+            ? 'ستُلغى هذه الخدمة من الحجز وتبقى بقية الخدمات.'
+            : confirming.kind === 'cancelled'
+              ? 'سيُلغى هذا الموعد ولن يظهر كحجز قائم.'
+              : 'سيُسجَّل أن العميل لم يحضر.'}
+          confirmLabel={confirming.kind === 'service' ? 'تأكيد إلغاء الخدمة'
+            : confirming.kind === 'cancelled' ? 'تأكيد الإلغاء' : 'تأكيد عدم الحضور'}
+          amount={amount}
+          cashierSessionId={cashierSessionId}
+          pending={status.isPending || cancelService.isPending}
+          onConfirm={(refund) => {
+            if (confirming.kind === 'service') {
+              cancelService.mutate(
+                { id: confirming.bookingId, serviceId: confirming.serviceId, refund },
+                { onSuccess: close },
+              );
+            } else {
+              status.mutate(
+                { id: confirming.bookingId, next: confirming.kind, refund },
+                { onSuccess: close },
+              );
+            }
+          }}
+          onCancel={close}
+        />
+      );
+    })() : null}
+    {payingBooking ? (
+      <BookingPaymentDialog
+        maxPayable={payingBooking.money.maxPayable}
+        pending={payment.isPending}
+        onSubmit={(input) => payment.mutate({ id: payingBooking.id, ...input }, { onSuccess: () => setPaying(null) })}
+        onClose={() => setPaying(null)}
+      />
+    ) : null}
+    {moving !== null ? (
+      <RescheduleDialog
+        pending={reschedule.isPending}
+        onSubmit={(scheduledAt) => reschedule.mutate({ id: moving, scheduledAt }, { onSuccess: () => setMoving(null) })}
+        onClose={() => setMoving(null)}
       />
     ) : null}
     {deleting ? (

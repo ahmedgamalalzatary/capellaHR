@@ -71,7 +71,9 @@ export function useBookingPrefill({
         bookingEmployees.data.map((item) => [item.id, item]),
       );
       setClient(savedClient);
-      setLines(booking.data.services.map((bookedService) => ({
+      // Only services still waiting can be sold; the cashier removes any the
+      // client is not taking today.
+      setLines(booking.data.services.filter((bookedService) => bookedService.status === 'pending').map((bookedService) => ({
         lineId: createUuid(),
         itemType: 'service' as const,
         quantity: 1,

@@ -13,6 +13,23 @@ vi.mock('../src/features/cashier-sessions/api/cashier-sessions-api', async (impo
 
 import { ShiftDetailView } from '../src/features/cashier-sessions';
 
+const bookingMoney = {
+  bookingPayments: {
+    total: '300.00',
+    lines: [{
+      bookingId: 9, client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      method: 'cash' as const, amount: '300.00', at: '2026-08-01T10:00:00.000Z',
+    }],
+  },
+  bookingRefunds: {
+    total: '100.00',
+    lines: [{
+      bookingId: 9, client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      method: 'visa' as const, amount: '100.00', at: '2026-08-01T15:00:00.000Z',
+    }],
+  },
+};
+
 const detail = {
   summary: {
     id: 14,
@@ -44,6 +61,8 @@ const detail = {
     refundedInShift: '0.00',
     soldAt: '2026-08-01T12:00:00.000Z',
   }],
+  bookingPayments: { total: '0.00', lines: [] as Array<never> },
+  bookingRefunds: { total: '0.00', lines: [] as Array<never> },
 };
 
 function renderView(sessionId = 14) {
@@ -125,4 +144,14 @@ describe('ShiftDetailView', () => {
 
     expect(await screen.findByText('لا توجد مبيعات في هذه الوردية')).toBeDefined();
   });
+});
+
+test('lists the booking up-front payments and refunds of the shift', async () => {
+  mocks.getCashierSessionDetail.mockResolvedValue({ ...detail, ...bookingMoney });
+  renderView();
+  const payments = await screen.findByRole('region', { name: 'مقدم الحجوزات' });
+  expect(within(payments).getByText(/منى أحمد/)).toBeDefined();
+  expect(within(payments).getAllByText(/300.00/).length).toBeGreaterThan(0);
+  const refunds = screen.getByRole('region', { name: 'رد مقدم الحجوزات' });
+  expect(within(refunds).getAllByText(/100.00/).length).toBeGreaterThan(0);
 });

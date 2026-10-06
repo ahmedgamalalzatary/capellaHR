@@ -7,7 +7,7 @@ import { useEffect, useMemo } from 'react';
 import { quoteSale } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
 
-import { type AdjustmentKind, type Line } from './sale-primitives';
+import { money, toCents, type AdjustmentKind, type Line } from './sale-primitives';
 
 /**
  * Owns the server-priced quote for the current basket, and seeds the cash
@@ -23,6 +23,7 @@ export function useSaleQuote({
   servicePricesValid,
   paymentsTouched,
   setPayments,
+  bookingHeldCents,
 }: {
   branchId?: number;
   lines: Line[];
@@ -33,6 +34,8 @@ export function useSaleQuote({
   servicePricesValid: boolean;
   paymentsTouched: boolean;
   setPayments: (update: (current: Record<PaymentMethod, string>) => Record<PaymentMethod, string>) => void;
+  /** Money the booking holds; it pays first (up to the total), so the till asks only for the rest. */
+  bookingHeldCents?: bigint | null;
 }) {
   const quoteInput = useMemo<QuoteSaleInput>(() => ({
     ...(branchId === undefined ? {} : { branchId }),
@@ -51,9 +54,16 @@ export function useSaleQuote({
 
   useEffect(() => {
     if (quote.data && !paymentsTouched) {
-      setPayments((current) => ({ ...current, cash: quote.data!.totals.total }));
+      // Held booking money pays first, so the till only asks for the rest.
+      const total = toCents(quote.data.totals.total) ?? BigInt(0);
+      const held = bookingHeldCents ?? BigInt(0);
+      const credit = held < total ? held : total;
+      setPayments((current) => ({
+        ...current,
+        cash: money(total > credit ? total - credit : BigInt(0)),
+      }));
     }
-  }, [paymentsTouched, quote.data, setPayments]);
+  }, [bookingHeldCents, paymentsTouched, quote.data, setPayments]);
 
   return { quoteInput, quote };
 }

@@ -129,7 +129,9 @@ export const readBookingCheckoutExcessRefund = async (
 export const readBookingCreditContext = async (
   executor: CreditExecutor,
   bookingId: number,
-): Promise<{ heldCents: bigint; pendingValueCents: bigint }> => {
+  /** Services this sale is selling; what stays pending after it excludes them. */
+  sellingServiceIds: number[] = [],
+): Promise<{ heldCents: bigint; pendingValueCents: bigint; leftoverValueCents: bigint }> => {
   const [ledger] = await executor.select({
     payments: sql<string>`coalesce(sum(case when ${erpBookingPayments.kind} = 'payment' then ${erpBookingPayments.amount} else 0 end), 0)`,
     refunds: sql<string>`coalesce(sum(case when ${erpBookingPayments.kind} = 'refund' then ${erpBookingPayments.amount} else 0 end), 0)`,
@@ -137,7 +139,10 @@ export const readBookingCreditContext = async (
   const [applied] = await executor.select({
     total: sql<string>`coalesce(sum(${invoicePayments.amount}), 0)`,
   }).from(invoicePayments).where(eq(invoicePayments.bookingId, bookingId));
-  const pending = await executor.select({ price: erpServices.price })
+  const pending = await executor.select({
+    serviceId: erpBookingServices.serviceId,
+    price: erpServices.price,
+  })
     .from(erpBookingServices)
     .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
     .where(and(
@@ -150,5 +155,8 @@ export const readBookingCreditContext = async (
   return {
     heldCents: heldCents < 0n ? 0n : heldCents,
     pendingValueCents: sumServicePrices(pending.map((service) => service.price)),
+    leftoverValueCents: sumServicePrices(pending
+      .filter((service) => !sellingServiceIds.includes(service.serviceId))
+      .map((service) => service.price)),
   };
 };

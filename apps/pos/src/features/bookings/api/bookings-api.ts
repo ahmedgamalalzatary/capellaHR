@@ -1,7 +1,10 @@
 import type {
   BookingDto,
+  CancelBookingServicesInput,
   CreateBookingInput,
   ListBookingsQuery,
+  RecordBookingPaymentInput,
+  RescheduleBookingInput,
   UpdateBookingStatusInput,
   UpdateBookingServicePreferenceInput,
 } from '@capella/contracts';
@@ -45,6 +48,16 @@ export const updateBookingServicePreference = (
   input: UpdateBookingServicePreferenceInput,
 ) => api.patch<BookingDto>(
   `/erp/bookings/${bookingId}/services/${serviceId}/preference`, input,
+);
+
+export const recordBookingPayment = (id: number, input: RecordBookingPaymentInput) => (
+  api.post<BookingDto>(`/erp/bookings/${id}/payments`, input)
+);
+export const cancelBookingServices = (id: number, input: CancelBookingServicesInput) => (
+  api.post<BookingDto>(`/erp/bookings/${id}/services/cancel`, input)
+);
+export const rescheduleBooking = (id: number, input: RescheduleBookingInput) => (
+  api.patch<BookingDto>(`/erp/bookings/${id}/schedule`, input)
 );
 
 export type { BookingDto };

@@ -135,6 +135,18 @@ describe('CashierSessionView', () => {
     expect(link.getAttribute('href')).toBe('/consumables?cashierSessionId=14');
     expect(mocks.push).not.toHaveBeenCalled();
   });
+  test('links a shift close blocked by unresolved bookings to the appointment book', async () => {
+    mocks.getCurrentCashierSession.mockResolvedValue(session);
+    mocks.closeCashierSession.mockRejectedValue(new ApiError(409, {
+      code: 'ERP_CASHIER_SESSION_UNRESOLVED_BOOKINGS', message: 'يجب معالجة 2 حجز قبل إغلاق الوردية', requestId: 'test',
+    }));
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إغلاق الوردية' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إغلاق الوردية' }));
+    const dialog = screen.getByRole('dialog');
+    const link = await within(dialog).findByRole('link', { name: 'معالجة الحجوزات' });
+    expect(link.getAttribute('href')).toBe('/bookings');
+  });
   test('announces cashier-session loading', async () => {
     mocks.getCurrentCashierSession.mockReturnValue(new Promise(() => undefined));
     renderView();

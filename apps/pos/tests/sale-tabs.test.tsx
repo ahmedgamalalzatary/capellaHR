@@ -87,9 +87,9 @@ vi.mock('../src/features/employee-assignment', () => ({
     present: (branchId?: number) => ['erp-assignable-employees', branchId ?? 'own'],
   },
 }));
-vi.mock('../src/features/bookings', () => ({
+vi.mock('../src/features/bookings/api/bookings-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   getBooking: mocks.getBooking,
-  bookingQueryKeys: { detail: (id: number) => ['erp-bookings', 'detail', id, 'own'] },
 }));
 
 import { SalesView } from '../src/features/sales/components/sales-view';
@@ -373,12 +373,19 @@ describe('sales parked side by side at one till', () => {
       scheduledAt: '2026-09-02T07:30:00.000Z',
       status: 'arrived',
       note: null,
-      invoiceId: null,
+      money: {
+        paid: '0.00', refunded: '0.00', applied: '0.00', held: '0.00',
+        pendingValue: '200.00', maxPayable: '200.00', excess: '0.00',
+      },
       services: [{
         serviceId: 21,
         serviceName: 'صبغة شعر',
         servicePrice: '200.00',
         preferredEmployee: { id: 8, name: 'سارة علي' },
+        status: 'pending',
+        invoiceId: null,
+        invoiceNumber: null,
+        queueStatus: null,
       }],
       createdAt: '',
       updatedAt: '',

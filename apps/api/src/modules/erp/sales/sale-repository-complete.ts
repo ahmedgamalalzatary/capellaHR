@@ -240,17 +240,29 @@ export const createSaleRepositoryComplete = (
             : toCents(input.bookingCredit ?? '0.00');
           let bookingExcessCents = 0n;
           if (input.bookingId !== undefined) {
-            const { heldCents } = await readBookingCreditContext(transaction, input.bookingId);
+            const { heldCents, leftoverValueCents } = await readBookingCreditContext(
+              transaction, input.bookingId, serviceInputs.map(({ serviceId }) => serviceId),
+            );
             const expected = heldCents < toCents(totals.total) ? heldCents : toCents(totals.total);
             if (bookingCreditCents !== expected) {
               throw new SaleError('BOOKING_CREDIT_MISMATCH');
             }
-            bookingExcessCents = heldCents - bookingCreditCents;
+            // Held money still covering the services left waiting stays held; only
+            // what goes beyond them is excess.
+            const heldAfterCents = heldCents - bookingCreditCents;
+            bookingExcessCents = heldAfterCents > leftoverValueCents
+              ? heldAfterCents - leftoverValueCents
+              : 0n;
           }
           // A discount made the invoice worth less than the client paid up front.
           // The cashier is holding that money now, so it goes back in this same
           // sale: a booking that ends up fully sold has no other refund path, and
           // held money above a fully sold booking blocks the shift close for good.
+          // A refund the server would not hand back is refused, never dropped:
+          // the replay could not rebuild it and every retry would conflict.
+          if (bookingExcessCents === 0n && input.bookingRefund) {
+            throw new SaleError('BOOKING_REFUND_AMOUNT_MISMATCH');
+          }
           if (bookingExcessCents > 0n) {
             const refund = input.bookingRefund;
             if (!refund) throw new SaleError('BOOKING_REFUND_REQUIRED');

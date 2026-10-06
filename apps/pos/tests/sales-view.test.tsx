@@ -23,6 +23,9 @@ const mocks = vi.hoisted(() => ({
   servicePickerProps: vi.fn(),
   serviceAvailable: { current: true },
   getBooking: vi.fn(),
+  updateBookingStatus: vi.fn(),
+  cancelBookingServices: vi.fn(),
+  rescheduleBooking: vi.fn(),
 }));
 
 vi.mock('../src/features/auth', () => ({
@@ -88,9 +91,12 @@ vi.mock('../src/features/sales/api/sales-api', () => ({
   quoteSale: mocks.quoteSale,
   completeSale: mocks.completeSale,
 }));
-vi.mock('../src/features/bookings', () => ({
+vi.mock('../src/features/bookings/api/bookings-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   getBooking: mocks.getBooking,
-  bookingQueryKeys: { detail: (id: number) => ['erp-bookings', 'detail', id, 'own'] },
+  updateBookingStatus: mocks.updateBookingStatus,
+  cancelBookingServices: mocks.cancelBookingServices,
+  rescheduleBooking: mocks.rescheduleBooking,
 }));
 vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/features/sales/offline-sale-sync')>();
@@ -140,6 +146,48 @@ const buildDraft = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'أضف الخدمة' }));
   fireEvent.click(screen.getByRole('button', { name: 'اختر الموظف' }));
   await screen.findByText('تم سداد الإجمالي بالكامل');
+};
+
+const arrivedBooking = (overrides: {
+  status?: string;
+  money?: Partial<Record<'paid' | 'held' | 'pendingValue' | 'maxPayable', string>>;
+} = {}) => ({
+  id: 22, branchId: 2,
+  client: { id: 5, fullName: 'منى أحمد', phone: '01012345678' },
+  scheduledAt: '2026-08-25T07:30:00.000Z', status: overrides.status ?? 'arrived', note: null,
+  money: {
+    paid: '0.00', refunded: '0.00', applied: '0.00', held: '0.00',
+    pendingValue: '350.00', maxPayable: '350.00', excess: '0.00',
+    ...overrides.money,
+  },
+  services: [
+    {
+      serviceId: 21, serviceName: 'صبغة شعر', servicePrice: '200.00',
+      preferredEmployee: { id: 8, name: 'سارة علي' },
+      status: 'pending', invoiceId: null, invoiceNumber: null, queueStatus: null,
+    },
+    {
+      serviceId: 23, serviceName: 'قص شعر', servicePrice: '150.00',
+      preferredEmployee: { id: 11, name: 'هدى محمود' },
+      status: 'pending', invoiceId: null, invoiceNumber: null, queueStatus: null,
+    },
+    {
+      serviceId: 24, serviceName: 'مانيكير', servicePrice: '100.00', preferredEmployee: null,
+      status: 'sold', invoiceId: 3, invoiceNumber: 'INV-3', queueStatus: 'completed',
+    },
+  ],
+  createdAt: '', updatedAt: '',
+});
+
+const completeWhenReady = async () => {
+  await waitFor(() => {
+    const blockersList = screen.queryByRole('list', { name: 'ما ينقص لإتمام البيع' });
+    if (blockersList) throw new Error(`blockers: ${blockersList.textContent ?? ''}`);
+  });
+  const completeButton = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+  await waitFor(() => expect((completeButton as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(completeButton);
+  await screen.findByText('تم حفظ الفاتورة');
 };
 
 describe('ERP service-sale view', () => {
@@ -213,18 +261,74 @@ describe('ERP service-sale view', () => {
   });
 
   it('prefills an arrived booking and carries it into the sale command', async () => {
-    mocks.getBooking.mockResolvedValue({
-      id: 22, branchId: 2,
-      client: { id: 5, fullName: 'منى أحمد', phone: '01012345678' },
-      scheduledAt: '2026-08-25T07:30:00.000Z', status: 'arrived', note: null, invoiceId: null,
-      services: [{ serviceId: 21, serviceName: 'صبغة شعر', servicePrice: '200.00', preferredEmployee: { id: 8, name: 'سارة علي' } }],
-      createdAt: '', updatedAt: '',
-    });
+    mocks.getBooking.mockResolvedValue(arrivedBooking());
     renderView(22);
     await waitFor(() => expect(mocks.clientPickerProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ selected: expect.objectContaining({ id: 5 }) }),
     ));
     expect(await screen.findByText('صبغة شعر')).toBeDefined();
+  });
+
+  it('sells only the waiting services the cashier keeps and uses the up-front money first', async () => {
+    mocks.getBooking.mockResolvedValue(arrivedBooking({
+      money: { paid: '100.00', held: '100.00', pendingValue: '350.00', maxPayable: '250.00' },
+    }));
+    renderView(22);
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    // The already-sold service never comes back into the basket.
+    expect(screen.queryByText('مانيكير')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'حذف قص شعر' }));
+    expect(await screen.findByText('مدفوع من المقدم')).toBeDefined();
+    // 185.00 quoted, 100.00 already held: the till collects the other 85.00.
+    await screen.findByText('تم سداد الإجمالي بالكامل');
+    expect((screen.getByLabelText('المبلغ') as HTMLInputElement).value).toBe('85.00');
+    await completeWhenReady();
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      bookingId: 22,
+      bookingCredit: '100.00',
+      payments: [{ method: 'cash', amount: '85.00' }],
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '200.00', employeeId: 8 }],
+    }));
+    expect(mocks.completeSale.mock.calls[0]?.[0]).not.toHaveProperty('bookingRefund');
+  });
+
+  it('hands back the up-front money the invoice and the leftovers do not need', async () => {
+    mocks.getBooking.mockResolvedValue(arrivedBooking({
+      money: { paid: '350.00', held: '350.00', pendingValue: '350.00', maxPayable: '0.00' },
+    }));
+    renderView(22);
+    expect(await screen.findByText(/سيتم رد 165.00 ج.م للعميل من الدرج/)).toBeDefined();
+    fireEvent.change(screen.getByLabelText('رد نقدي'), { target: { value: '65' } });
+    fireEvent.change(screen.getByLabelText('رد فيزا'), { target: { value: '100' } });
+    await completeWhenReady();
+    expect(mocks.completeSale.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      bookingCredit: '185.00',
+      payments: [],
+      bookingRefund: { payments: [{ method: 'cash', amount: '65.00' }, { method: 'visa', amount: '100.00' }] },
+    }));
+  });
+
+  it('refuses a booking sale while the till is offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    mocks.getBooking.mockResolvedValue(arrivedBooking());
+    renderView(22);
+    const blockers = await screen.findByRole('list', { name: 'ما ينقص لإتمام البيع' });
+    await waitFor(() => expect(within(blockers).getByText('بيع الحجز يحتاج اتصالًا بالإنترنت')).toBeDefined());
+  });
+
+  it('makes the cashier decide what happens to the services left after the sale', async () => {
+    mocks.getBooking.mockResolvedValue(arrivedBooking());
+    mocks.updateBookingStatus.mockReset().mockResolvedValue(arrivedBooking({ status: 'booked' }));
+    renderView(22);
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: 'حذف قص شعر' }));
+    await completeWhenReady();
+    const dialog = await screen.findByRole('dialog', { name: 'خدمات الحجز المتبقية' });
+    expect(within(dialog).getByText(/قص شعر/)).toBeDefined();
+    expect(within(dialog).getByRole('button', { name: 'تغيير الموعد' })).toBeDefined();
+    expect(within(dialog).getByRole('button', { name: 'إلغاء الخدمات المتبقية' })).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إبقاء في الموعد الأصلي' }));
+    await waitFor(() => expect(mocks.updateBookingStatus).toHaveBeenCalledWith(22, { status: 'booked' }));
   });
 
   afterEach(() => {

@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   updateStatus: vi.fn(),
   push: vi.fn(),
   listBranches: vi.fn(),
+  currentSession: vi.fn(),
+  recordPayment: vi.fn(),
+  cancelServices: vi.fn(),
+  reschedule: vi.fn(),
   session: { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() } as any,
 }));
 
@@ -15,6 +19,11 @@ vi.mock('../src/features/auth', () => ({
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.listBranches,
+  getCurrentCashierSession: mocks.currentSession,
+  cashierSessionQueryKeys: {
+    all: ['cashier-sessions'],
+    current: (branchId?: number) => ['cashier-sessions', 'current', branchId ?? 'cashier'],
+  },
 }));
 vi.mock('../src/features/bookings/api/bookings-api', () => ({
   listBookings: mocks.list,
@@ -22,6 +31,9 @@ vi.mock('../src/features/bookings/api/bookings-api', () => ({
   createBooking: vi.fn(),
   listBookingEmployeeOptions: vi.fn().mockResolvedValue([]),
   updateBookingServicePreference: vi.fn(),
+  recordBookingPayment: mocks.recordPayment,
+  cancelBookingServices: mocks.cancelServices,
+  rescheduleBooking: mocks.reschedule,
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
 
@@ -34,12 +46,19 @@ const booking = {
   scheduledAt: '2026-08-25T07:30:00.000Z',
   status: 'booked',
   note: null,
-  invoiceId: null,
+  money: {
+    paid: '0.00', refunded: '0.00', applied: '0.00', held: '0.00',
+    pendingValue: '200.00', maxPayable: '200.00', excess: '0.00',
+  },
   services: [{
     serviceId: 3,
     serviceName: 'صبغة شعر',
     servicePrice: '200.00',
     preferredEmployee: { id: 7, name: 'سارة' },
+    status: 'pending',
+    invoiceId: null,
+    invoiceNumber: null,
+    queueStatus: null,
   }],
   createdAt: '2026-08-24T08:00:00.000Z',
   updatedAt: '2026-08-24T08:00:00.000Z',
@@ -61,6 +80,10 @@ describe('appointment book', () => {
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
     });
     mocks.push.mockReset();
+    mocks.currentSession.mockReset().mockResolvedValue({ id: 5 });
+    mocks.recordPayment.mockReset().mockResolvedValue(booking);
+    mocks.cancelServices.mockReset().mockResolvedValue(booking);
+    mocks.reschedule.mockReset().mockResolvedValue(booking);
     mocks.session = { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() };
   });
 
@@ -147,5 +170,113 @@ describe('appointment book', () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  const paidBooking = {
+    ...booking,
+    status: 'arrived',
+    money: {
+      paid: '300.00', refunded: '0.00', applied: '0.00', held: '300.00',
+      pendingValue: '350.00', maxPayable: '50.00', excess: '0.00',
+    },
+    services: [
+      { ...booking.services[0]!, serviceId: 3, servicePrice: '200.00' },
+      { ...booking.services[0]!, serviceId: 4, serviceName: 'قص شعر', servicePrice: '150.00', preferredEmployee: null },
+    ],
+  };
+
+  it('shows each service state and the booking money', async () => {
+    mocks.list.mockResolvedValue([{
+      ...paidBooking,
+      money: { ...paidBooking.money, applied: '200.00', held: '100.00', pendingValue: '0.00' },
+      services: [
+        { ...paidBooking.services[0]!, status: 'sold', invoiceId: 40, invoiceNumber: 'INV-40', queueStatus: 'in_progress' },
+        { ...paidBooking.services[1]!, status: 'cancelled' },
+      ],
+    }]);
+    renderView();
+    expect(await screen.findByText('قيد التنفيذ')).toBeDefined();
+    expect(screen.getByText('ملغاة')).toBeDefined();
+    expect(screen.getByText(/INV-40/)).toBeDefined();
+    const strip = screen.getByRole('list', { name: 'أموال الحجز' });
+    expect(strip.textContent).toContain('مدفوع مقدم');
+    expect(strip.textContent).toContain('300.00');
+    expect(strip.textContent).toContain('المتبقي لدينا');
+    expect(strip.textContent).toContain('100.00');
+  });
+
+  it('takes an up-front payment into the open shift, never above the limit', async () => {
+    mocks.list.mockResolvedValue([paidBooking]);
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'دفع مقدم' }));
+    const amount = screen.getByLabelText('مبلغ الدفع المقدم');
+    fireEvent.change(amount, { target: { value: '60' } });
+    expect(screen.getByRole('button', { name: 'تسجيل الدفع' })).toHaveProperty('disabled', true);
+    fireEvent.change(amount, { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText('طريقة الدفع المقدم'), { target: { value: 'visa' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تسجيل الدفع' }));
+    await waitFor(() => expect(mocks.recordPayment).toHaveBeenCalledWith(9, {
+      cashierSessionId: 5, method: 'visa', amount: '50.00',
+      operationReference: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    }));
+  });
+
+  it('cannot take an up-front payment without an open shift', async () => {
+    mocks.list.mockResolvedValue([paidBooking]);
+    mocks.currentSession.mockResolvedValue(null);
+    renderView();
+    expect(await screen.findByRole('button', { name: 'دفع مقدم' })).toHaveProperty('disabled', true);
+  });
+
+  it('hands the held money back from the drawer when the booking is cancelled', async () => {
+    mocks.list.mockResolvedValue([paidBooking]);
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إلغاء' }));
+    expect(await screen.findByText(/سيتم رد 300.00 ج.م للعميل من الدرج/)).toBeDefined();
+    fireEvent.change(screen.getByLabelText('رد نقدي'), { target: { value: '200' } });
+    expect(screen.getByRole('button', { name: 'تأكيد الإلغاء' })).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByLabelText('رد فيزا'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith(9, {
+      status: 'cancelled',
+      refund: {
+        cashierSessionId: 5,
+        payments: [{ method: 'cash', amount: '200.00' }, { method: 'visa', amount: '100.00' }],
+        operationReference: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      },
+    }));
+  });
+
+  it('cancels one waiting service and returns only what the rest no longer covers', async () => {
+    mocks.list.mockResolvedValue([paidBooking]);
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إلغاء خدمة صبغة شعر' }));
+    expect(await screen.findByText(/سيتم رد 150.00 ج.م للعميل من الدرج/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إلغاء الخدمة' }));
+    await waitFor(() => expect(mocks.cancelServices).toHaveBeenCalledWith(9, {
+      serviceIds: [3],
+      refund: {
+        cashierSessionId: 5,
+        payments: [{ method: 'cash', amount: '150.00' }],
+        operationReference: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      },
+    }));
+  });
+
+  it('cancels a waiting service with nothing to return after a plain confirmation', async () => {
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إلغاء خدمة صبغة شعر' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إلغاء الخدمة' }));
+    await waitFor(() => expect(mocks.cancelServices).toHaveBeenCalledWith(9, { serviceIds: [3] }));
+  });
+
+  it('moves the appointment to a new date and time', async () => {
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'تغيير الموعد' }));
+    fireEvent.change(screen.getByLabelText('الموعد الجديد'), { target: { value: '2026-08-30T14:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الموعد' }));
+    await waitFor(() => expect(mocks.reschedule).toHaveBeenCalledWith(9, {
+      scheduledAt: '2026-08-30T11:00:00.000Z',
+    }));
   });
 });

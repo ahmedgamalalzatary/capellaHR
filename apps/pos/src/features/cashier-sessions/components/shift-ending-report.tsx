@@ -54,6 +54,23 @@ function Separator() {
   return <div aria-hidden className="my-2 border-t border-dashed border-ink/70" />;
 }
 
+function BookingMoneyRows({ title, block }: {
+  title: string;
+  block: CashierSessionReport['bookingPayments'];
+}) {
+  return (
+    <>
+      <ReportRow label={title} value={formatMoney(block.total)} />
+      {block.lines.map((line, index) => (
+        <div key={`${line.bookingId}-${line.at}-${index}`} className="border-b border-dashed border-ink/30 py-1.5 last:border-0">
+          <div>حجز #{line.bookingId} · {line.client.name ?? line.client.phone}</div>
+          <div>{paymentLabels[line.method]} · {formatMoney(line.amount)} ج.م</div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function ReportDocument({ report }: { report: CashierSessionReport }) {
   const { summary } = report;
   return (
@@ -98,6 +115,16 @@ function ReportDocument({ report }: { report: CashierSessionReport }) {
                 <div>{paymentLabels[payment.method]} · {formatMoney(payment.amount)} ج.م</div>
               </div>
             ))}
+          </>
+        ) : null}
+
+        {report.bookingPayments.lines.length || report.bookingRefunds.lines.length ? (
+          <>
+            <Separator />
+            {/* Booking money moves through this drawer before any invoice exists;
+                the method totals below already include it. */}
+            <BookingMoneyRows title="مقدم الحجوزات" block={report.bookingPayments} />
+            <BookingMoneyRows title="رد مقدم الحجوزات" block={report.bookingRefunds} />
           </>
         ) : null}
 

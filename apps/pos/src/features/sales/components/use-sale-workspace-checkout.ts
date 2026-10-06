@@ -15,6 +15,7 @@ import { type AssignableEmployee } from '@/features/employee-assignment';
 import { ApiError } from '@/lib/api/client';
 import { notifySuccess } from '@/lib/notify';
 import { createUuid } from '@/lib/uuid';
+import { bookingQueryKeys } from '@/features/bookings';
 import { type Client } from '@/features/clients';
 
 import { completeSale } from '../api/sales-api';
@@ -51,6 +52,8 @@ export function useSaleWorkspaceCheckout({
   paymentsTouched,
   idempotencyKey,
   activeBookingId,
+  bookingCredit,
+  bookingRefund,
   hasServiceLines,
   linesAssigned,
   remaining,
@@ -87,6 +90,10 @@ export function useSaleWorkspaceCheckout({
   paymentsTouched: boolean;
   idempotencyKey: string;
   activeBookingId: number | undefined;
+  /** Held booking money this sale uses; null when it settles no booking money. */
+  bookingCredit: string | null;
+  /** Booking money handed back in this sale, when a discount left more held than needed. */
+  bookingRefund: Array<{ method: PaymentMethod; amount: string }> | null;
   hasServiceLines: boolean;
   linesAssigned: boolean;
   remaining: bigint | null;
@@ -154,6 +161,10 @@ export function useSaleWorkspaceCheckout({
     },
     onError: (error, input) => {
       submitting.current = false;
+      // The held money changed under this sale: reload it so the retry is right.
+      if (error instanceof ApiError && error.code.startsWith('BOOKING_')) {
+        void queryClient.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      }
       const isAuthoritativeRejection = error instanceof ApiError
         && error.status >= 400 && error.status < 500;
       setAmbiguous(!isAuthoritativeRejection);
@@ -189,6 +200,8 @@ export function useSaleWorkspaceCheckout({
       clientId: client.id,
       cashierSessionId,
       ...(activeBookingId === undefined ? {} : { bookingId: activeBookingId }),
+      ...(activeBookingId !== undefined && bookingCredit ? { bookingCredit } : {}),
+      ...(activeBookingId !== undefined && bookingRefund ? { bookingRefund: { payments: bookingRefund } } : {}),
       idempotencyKey,
       lines: lines.map(({ service, quantity, unitPrice, itemType, batches, employee: performer }) => (
         itemType === 'product'

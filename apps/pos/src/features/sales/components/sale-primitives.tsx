@@ -34,6 +34,14 @@ export type SaleCheckoutState = {
   quoteReady: boolean;
   remaining: bigint | null;
   hasServiceLines: boolean;
+  /** Present only when the sale settles a booking. */
+  booking?: {
+    loaded: boolean;
+    online: boolean;
+    keepsBookedService: boolean;
+    onlyBookedServices: boolean;
+    refundValid: boolean;
+  } | undefined;
 };
 
 /** Why Complete is disabled. Empty means the till can post. */
@@ -41,6 +49,18 @@ export function saleCheckoutBlockers(state: SaleCheckoutState): string[] {
   const blockers: string[] = [];
   if (!state.hasClient) blockers.push('اختر العميل');
   if (!state.hasLines) blockers.push('أضف خدمة أو منتجًا');
+  if (state.booking) {
+    // The held money and the waiting services come from the server; nothing
+    // about the booking can be judged until they are loaded.
+    if (!state.booking.loaded) {
+      blockers.push('انتظر تحميل بيانات الحجز');
+      return blockers;
+    }
+    if (!state.booking.online) blockers.push('بيع الحجز يحتاج اتصالًا بالإنترنت');
+    if (!state.booking.keepsBookedService) blockers.push('أبقِ خدمة واحدة على الأقل من خدمات الحجز');
+    if (!state.booking.onlyBookedServices) blockers.push('الخدمات في الفاتورة يجب أن تكون من خدمات الحجز المنتظرة');
+    if (!state.booking.refundValid) blockers.push('حدد طريقة رد فائض مقدم الحجز');
+  }
   if (state.hasLines && !state.servicePricesValid) {
     blockers.push('أدخل سعرًا صالحًا لكل خدمة مفتوحة السعر');
   }

@@ -176,9 +176,11 @@ Generate with `pnpm --filter @capella/database db:generate` then **review the SQ
 - **Checkout excess is returned by the sale itself** (`checkout_excess` rows in `erp_booking_payments`):
   a discount makes the invoice worth less than the client paid up front, and a booking that ends up
   fully sold has no later refund path — only an automatic or recovery close would ever end that
-  shift. So when `held − bookingCredit > 0` the request must carry
+  shift. Excess = `max(0, (held − bookingCredit) − value of the pending services NOT in this sale)`
+  — money still covering leftover services stays held. When excess > 0 the request must carry
   `bookingRefund: { payments[] }` summing exactly to it (else 409 `BOOKING_REFUND_REQUIRED`, then
-  `BOOKING_REFUND_AMOUNT_MISMATCH`), the same rule the cancel paths use. Methods must be distinct
+  `BOOKING_REFUND_AMOUNT_MISMATCH`), the same rule the cancel paths use; a `bookingRefund` sent when
+  excess is 0 is refused with `BOOKING_REFUND_AMOUNT_MISMATCH`. Methods must be distinct
   (max 4). **Idempotency trap:** `bookingRefund` is part of the request, so `reconstructInput` must
   rebuild it or every retry conflicts — the refund rows are keyed by the sale's own
   `idempotencyKey` (with the usual `-2`, `-3` suffix for split methods) precisely so that lookup is
@@ -236,7 +238,7 @@ Generate with `pnpm --filter @capella/database db:generate` then **review the SQ
 - **Sales workspace** (`use-booking-prefill.ts`): prefill only `pending` services and let the cashier
   remove some (at least one booked service must stay); show "مدفوع من المقدم: X" and reduce the amount
   to collect by `min(held, total)`; send `bookingCredit`. When `held > total` the workspace must also
-  show "سيتم رد X للعميل من الدرج" with a method selector (distinct methods, default cash) and send
+  show "سيتم رد X للعميل من الدرج" (X per the §4.4 excess rule, not simply `held − total`) with a method selector (distinct methods, default cash) and send
   `bookingRefund` with the sale; handle `BOOKING_REFUND_REQUIRED` by reopening with the server amount.
   Booking sales **must not go to the offline
   queue** (credit can change) — or, if they do, surface `BOOKING_CREDIT_MISMATCH` clearly in pending-sale
@@ -281,7 +283,7 @@ Generate with `pnpm --filter @capella/database db:generate` then **review the SQ
 - Pay 100+100+200 on a 400 booking ✔; a 4th payment of 0.01 ✘ (cap). Cap after one service sold
   (cap = remaining value − held).
 - Partial sale A+B with credit 300 on invoice 250 → credit applied 250, held 50 → still ≤ pending value
-  of C (ok) or > (shift close blocked until C is cancelled/refunded).
+  of C (ok, no refund) or > (the sale refunds only the part above C's value).
 - Discount at checkout leaving excess with no pending services → the sale cannot complete until the
   cashier names the money back (`bookingRefund`), so the shift is never stranded.
 - Cancel last pending service with zero held → no refund block required.
@@ -322,7 +324,7 @@ pnpm --filter @capella/database db:generate      # then review the generated SQL
 
 ## 9. Tracker
 
-- [ ] P0 baseline green recorded
+- [x] P0 baseline green recorded
 - [x] Q1 answered (open-price services & cap) — count as 0 toward the cap
 - [x] Q2 answered (void/refund of booking invoice) — up-front portion handed back from the drawer as a refund
 - [x] Q3 answered (`arrived` + pending blocks close) — choice is mandatory; `arrived` + pending blocks close
@@ -339,9 +341,9 @@ pnpm --filter @capella/database db:generate      # then review the generated SQL
 - [x] P5 cancel services + refund; cancel/no-show + refund; reschedule; delete rules
 - [x] P6 shift money (taken/refunded/listInvoices/report lines); credit excluded
 - [x] P6 close blocked by unresolved bookings; auto/recovery close untouched
-- [ ] P7 payment-methods report updated; bookings report (contracts, DB enum, facts, summary, metadata, localization)
-- [ ] P8 diary card states + money + pay/refund dialogs
-- [ ] P8 sales workspace partial selection + credit + offline handling + leftover dialog
-- [ ] P8 invoice/receipt label; shift screens; close error link; reports tab; cache invalidation
+- [x] P7 payment-methods report updated; bookings report (contracts, DB enum, facts, summary, metadata, localization)
+- [x] P8 diary card states + money + pay/refund dialogs
+- [x] P8 sales workspace partial selection + credit + offline handling + leftover dialog
+- [x] P8 invoice/receipt label; shift screens; close error link; reports tab; cache invalidation
 - [ ] P9 everything green (lint, typecheck, build, tests — all packages)
 - [ ] Review done, findings fixed

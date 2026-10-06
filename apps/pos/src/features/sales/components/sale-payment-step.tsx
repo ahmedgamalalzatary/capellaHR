@@ -1,7 +1,7 @@
 'use client';
 
 import type { PaymentMethod, SaleQuote } from '@capella/contracts';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import {
   Button,
@@ -32,6 +32,8 @@ export function SalePaymentStep({
   payments,
   onPaymentChange,
   remaining,
+  bookingCredit = null,
+  bookingRefund = null,
   completionError,
   ambiguous,
   storageError,
@@ -49,6 +51,10 @@ export function SalePaymentStep({
   payments: Record<PaymentMethod, string>;
   onPaymentChange: (method: PaymentMethod, value: string) => void;
   remaining: bigint | null;
+  /** Held booking money that pays first; the till collects only the rest. */
+  bookingCredit?: string | null;
+  /** How the booking money the invoice does not need goes back to the client. */
+  bookingRefund?: ReactNode;
   completionError: unknown;
   ambiguous: boolean;
   storageError: boolean;
@@ -100,8 +106,15 @@ export function SalePaymentStep({
               <dt className="font-semibold">الإجمالي</dt>
               <dd className="tabular text-xl font-semibold">{quoteData.totals.total} ج.م</dd>
             </div>
+            {bookingCredit ? (
+              <div className="flex items-center justify-between gap-3 text-success">
+                <dt>مدفوع من المقدم</dt>
+                <dd className="tabular">{bookingCredit} ج.م</dd>
+              </div>
+            ) : null}
           </dl>
         ) : null}
+        {bookingRefund}
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="space-y-1.5">

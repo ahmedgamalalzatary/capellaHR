@@ -24,7 +24,7 @@ import type {
   BookingRefundWrite,
   BookingRepository,
 } from './booking-service.js';
-import { buildBookingMoney, sumServicePrices } from './booking-money.js';
+import { bookingRefundRowReference, buildBookingMoney, sumServicePrices } from './booking-money.js';
 
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -66,10 +66,6 @@ const shiftStillTakesMoney = (
 ) => session.closedAt === null
   && session.openedAt.getTime() > at.getTime() - CASHIER_SESSION_MAX_DURATION_MS;
 
-const refundRowReference = (reference: string, index: number) => (
-  index === 0 ? reference : `${reference.slice(0, 33)}-${index + 1}`
-);
-
 const insertRefundRows = async (
   transaction: Transaction,
   input: {
@@ -92,7 +88,7 @@ const insertRefundRows = async (
     refundCause: input.cause,
     cashierSessionId: input.refund.cashierSessionId,
     actingAccountId: input.actorAccountId,
-    operationReference: refundRowReference(input.refund.operationReference, index),
+    operationReference: bookingRefundRowReference(input.refund.operationReference, index),
     createdAt: input.at,
   })));
 };

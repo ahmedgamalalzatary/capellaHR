@@ -88,9 +88,9 @@ vi.mock('../src/features/sales/api/sales-api', () => ({
   quoteSale: mocks.quoteSale,
   completeSale: mocks.completeSale,
 }));
-vi.mock('../src/features/bookings', () => ({
+vi.mock('../src/features/bookings/api/bookings-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   getBooking: mocks.getBooking,
-  bookingQueryKeys: { detail: (id: number) => ['erp-bookings', 'detail', id, 'own'] },
 }));
 vi.mock('../src/features/sales/offline-sale-sync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/features/sales/offline-sale-sync')>();

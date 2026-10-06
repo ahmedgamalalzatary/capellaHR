@@ -2,7 +2,7 @@
 
 import { isBatchSelectionComplete } from '@capella/contracts';
 import type { PaymentMethod } from '@capella/contracts';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useCallback,
   useEffect,
@@ -14,6 +14,16 @@ import {
 import { PageHeader } from '@/components/layout/page-header';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 
+import {
+  BookingLeftoverDialog,
+  RefundSplitFields,
+  bookingCheckout,
+  bookingQueryKeys,
+  emptyRefundSplit,
+  getBooking,
+  refundPaymentsFor,
+  type RefundSplit,
+} from '@/features/bookings';
 import { type Client } from '@/features/clients';
 import { type AssignableEmployee } from '@/features/employee-assignment';
 import { createUuid } from '@/lib/uuid';
@@ -29,6 +39,7 @@ import { SaleDefaultEmployeeStep } from './sale-default-employee-step';
 import { SaleDraftNotices } from './sale-draft-notices';
 import { SalePaymentStep } from './sale-payment-step';
 import {
+  money,
   saleCheckoutBlockers,
   toCents,
   validServiceUnitPrice,
@@ -172,6 +183,14 @@ export function SaleWorkspace({
       && (!hasDraftProgress || pendingSale.input.idempotencyKey === idempotencyKey),
   );
   const pendingInput = pendingMatchesActiveDraft ? pendingSale!.input : null;
+  // The live booking money this sale settles against. A restored draft carries
+  // its booking id even when the page was opened without one.
+  const activeBooking = useQuery({
+    queryKey: bookingQueryKeys.detail(activeBookingId ?? 0, branchId),
+    queryFn: () => getBooking(activeBookingId!, branchId),
+    enabled: activeBookingId !== undefined,
+  });
+  const bookingData = activeBookingId === undefined ? undefined : activeBooking.data;
   const { online, offlineQueueSnapshot, displayedQueueItem } = useSaleWorkspaceQueue({
     workspaceOwner,
     hasDraftProgress,
@@ -209,7 +228,26 @@ export function SaleWorkspace({
     servicePricesValid,
     paymentsTouched,
     setPayments,
+    bookingHeldCents: bookingData ? toCents(bookingData.money.held) : null,
   });
+  const bookedPendingIds = new Set(bookingData?.services
+    .filter((service) => service.status === 'pending').map((service) => service.serviceId) ?? []);
+  const serviceLineIds = lines.filter((line) => line.itemType !== 'product').map((line) => line.service.id);
+  const bookingSettlement = bookingData && quote.data
+    ? bookingCheckout(bookingData, quote.data.totals.total, serviceLineIds)
+    : null;
+  const bookingCreditCents = (bookingSettlement ? toCents(bookingSettlement.credit) : null) ?? BigInt(0);
+  const bookingExcess = bookingSettlement?.excess ?? '0.00';
+  // The amount owed back follows the basket; a split typed for another amount
+  // no longer applies, so it restarts as all cash.
+  const [refundEntry, setRefundEntry] = useState<{ amount: string; split: RefundSplit }>(
+    () => ({ amount: '0.00', split: emptyRefundSplit() }),
+  );
+  const refundSplit = refundEntry.amount === bookingExcess
+    ? refundEntry.split
+    : { ...emptyRefundSplit(), cash: bookingExcess === '0.00' ? '' : bookingExcess };
+  const setRefundSplit = (split: RefundSplit) => setRefundEntry({ amount: bookingExcess, split });
+  const bookingRefundPayments = bookingExcess === '0.00' ? null : refundPaymentsFor(refundSplit, bookingExcess);
 
   const paidCents = Object.values(payments).reduce<bigint | null>((sum, value) => {
     if (sum === null || !value) return sum;
@@ -217,7 +255,9 @@ export function SaleWorkspace({
     return cents === null ? null : sum + cents;
   }, BigInt(0));
   const totalCents = quote.data ? toCents(quote.data.totals.total) : null;
-  const remaining = paidCents === null || totalCents === null ? null : totalCents - paidCents;
+  const remaining = paidCents === null || totalCents === null
+    ? null
+    : totalCents - bookingCreditCents - paidCents;
   const {
     storageError,
     ambiguous,
@@ -245,6 +285,8 @@ export function SaleWorkspace({
     paymentsTouched,
     idempotencyKey,
     activeBookingId,
+    bookingCredit: bookingCreditCents > BigInt(0) ? money(bookingCreditCents) : null,
+    bookingRefund: bookingRefundPayments,
     hasServiceLines,
     linesAssigned,
     remaining,
@@ -276,6 +318,17 @@ export function SaleWorkspace({
     quoteReady: Boolean(quote.data) && !quote.isFetching,
     remaining,
     hasServiceLines,
+    booking: activeBookingId === undefined ? undefined : {
+      loaded: Boolean(bookingData),
+      online,
+      keepsBookedService: serviceLineIds.some((id) => bookedPendingIds.has(id)),
+      // The server sells each waiting booked service once, at quantity one, and
+      // nothing outside the booking.
+      onlyBookedServices: serviceLineIds.every((id) => bookedPendingIds.has(id))
+        && new Set(serviceLineIds).size === serviceLineIds.length
+        && lines.every((line) => line.itemType === 'product' || line.quantity === 1),
+      refundValid: bookingExcess === '0.00' || bookingRefundPayments !== null,
+    },
   });
   const ready = blockers.length === 0 && !completion.isPending && !pendingSale;
 
@@ -290,6 +343,13 @@ export function SaleWorkspace({
           onPrint={printReceipt}
           onReset={reset}
         />
+        {activeBookingId !== undefined ? (
+          <BookingLeftoverDialog
+            bookingId={activeBookingId}
+            {...(branchId === undefined ? {} : { branchId })}
+            cashierSessionId={cashierSessionId}
+          />
+        ) : null}
       </section>
     );
   }
@@ -404,6 +464,10 @@ export function SaleWorkspace({
                 setPayments((current) => ({ ...current, [method]: value }));
               }}
               remaining={remaining}
+              bookingCredit={bookingCreditCents > BigInt(0) ? money(bookingCreditCents) : null}
+              bookingRefund={bookingExcess === '0.00' ? null : (
+                <RefundSplitFields amount={bookingExcess} split={refundSplit} onChange={setRefundSplit} />
+              )}
               completionError={completion.error}
               ambiguous={ambiguous}
               storageError={storageError}

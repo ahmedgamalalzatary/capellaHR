@@ -62,3 +62,32 @@ it('blocks product checkout until every product has an assigned employee', () =>
   expect(saleCheckoutBlockers({ ...ready, hasServiceLines: false, linesAssigned: false }))
     .toEqual(['عيّن موظفًا لكل بند']);
 });
+
+describe('booking sale blockers', () => {
+  const booking = {
+    loaded: true, online: true, keepsBookedService: true, onlyBookedServices: true, refundValid: true,
+  };
+
+  it('posts a ready booking sale', () => {
+    expect(saleCheckoutBlockers({ ...ready, booking })).toEqual([]);
+  });
+
+  it('explains every booking rule the server would refuse', () => {
+    expect(saleCheckoutBlockers({
+      ...ready,
+      booking: {
+        loaded: true, online: false, keepsBookedService: false, onlyBookedServices: false, refundValid: false,
+      },
+    })).toEqual([
+      'بيع الحجز يحتاج اتصالًا بالإنترنت',
+      'أبقِ خدمة واحدة على الأقل من خدمات الحجز',
+      'الخدمات في الفاتورة يجب أن تكون من خدمات الحجز المنتظرة',
+      'حدد طريقة رد فائض مقدم الحجز',
+    ]);
+  });
+
+  it('waits for the booking money before anything else about the booking', () => {
+    expect(saleCheckoutBlockers({ ...ready, booking: { ...booking, loaded: false } }))
+      .toEqual(['انتظر تحميل بيانات الحجز']);
+  });
+});

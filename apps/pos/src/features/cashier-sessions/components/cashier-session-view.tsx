@@ -159,6 +159,8 @@ export function CashierSessionView() {
   );
   const unfinishedServices = closeMutation.error instanceof ApiError
     && closeMutation.error.code === 'ERP_CASHIER_SESSION_UNFINISHED_SERVICES';
+  const unresolvedBookings = closeMutation.error instanceof ApiError
+    && closeMutation.error.code === 'ERP_CASHIER_SESSION_UNRESOLVED_BOOKINGS';
   const ownsSession = isCashier
     && session !== null
     && session !== undefined
@@ -344,6 +346,14 @@ export function CashierSessionView() {
                       className="mt-2 block w-fit rounded-control border border-danger/30 px-3 py-1.5 font-medium hover:bg-danger-soft"
                     >
                       إكمال خدمات العملاء
+                    </Link>
+                  ) : null}
+                  {unresolvedBookings ? (
+                    <Link
+                      href="/bookings"
+                      className="mt-2 block w-fit rounded-control border border-danger/30 px-3 py-1.5 font-medium hover:bg-danger-soft"
+                    >
+                      معالجة الحجوزات
                     </Link>
                   ) : null}
                 </span>

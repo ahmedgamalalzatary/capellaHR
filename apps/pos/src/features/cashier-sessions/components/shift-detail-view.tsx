@@ -12,9 +12,10 @@ import { PageHeader } from '@/components/layout/page-header';
 import { ApiError } from '@/lib/api/client';
 import { invoiceClientLabel } from '@/lib/client-label';
 
-import { getCashierSessionDetail } from '../api/cashier-sessions-api';
+import { getCashierSessionDetail, type CashierSessionDetail } from '../api/cashier-sessions-api';
 import { cashierSessionQueryKeys } from '../query-keys';
 import { ShiftMoney, formatShiftDuration, formatShiftMoney } from './shift-money';
+import { paymentLabels } from '../../sales/components/invoice-format';
 
 const formatCairoDateTime = (value: string) => new Intl.DateTimeFormat('ar-EG', {
   timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short',
@@ -37,6 +38,40 @@ const statusTones = {
 const errorMessage = (error: unknown) => (
   error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.'
 );
+
+/** Booking up-front money this shift took or handed back, before any invoice. */
+function BookingMoneyList({ title, block, sign = '' }: {
+  title: string;
+  block: CashierSessionDetail['bookingPayments'];
+  sign?: string;
+}) {
+  if (block.lines.length === 0) return null;
+  return (
+    <section aria-label={title} className="space-y-2">
+      <h2 className="flex items-center justify-between text-sm font-semibold">
+        <span>{title}</span>
+        <span className="tabular">{sign}{formatShiftMoney(block.total)}</span>
+      </h2>
+      <ul className="space-y-2">
+        {block.lines.map((line, index) => (
+          <li key={`${line.bookingId}-${line.at}-${index}`}>
+            <Card className="shadow-card">
+              <CardContent className="flex flex-wrap items-center justify-between gap-2 p-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-ink">حجز #{line.bookingId} · {line.client.name ?? line.client.phone ?? 'عميل'}</p>
+                  <time className="block text-[13px] text-muted" dateTime={line.at}>{formatCairoDateTime(line.at)}</time>
+                </div>
+                <span className="tabular text-sm font-semibold">
+                  {paymentLabels[line.method]} · {sign}{formatShiftMoney(line.amount)}
+                </span>
+              </CardContent>
+            </Card>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 /** One shift: what it moved, and every sale that money belongs to. */
 export function ShiftDetailView({ sessionId }: { sessionId: number }) {
@@ -118,6 +153,13 @@ export function ShiftDetailView({ sessionId }: { sessionId: number }) {
             <ShiftMoney summary={summary} />
           </CardContent>
         </Card>
+      ) : null}
+
+      {detail.data ? (
+        <>
+          <BookingMoneyList title="مقدم الحجوزات" block={detail.data.bookingPayments} />
+          <BookingMoneyList title="رد مقدم الحجوزات" block={detail.data.bookingRefunds} sign="−" />
+        </>
       ) : null}
 
       {detail.data?.invoices.length === 0 ? (

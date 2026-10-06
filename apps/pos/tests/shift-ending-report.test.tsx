@@ -36,6 +36,20 @@ const fullReport = {
   netByMethod: {
     cash: '350.00', visa: '100.00', instapay: '0.00', vodafone_cash: '0.00',
   },
+  bookingPayments: {
+    total: '300.00',
+    lines: [{
+      bookingId: 9, client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      method: 'cash' as const, amount: '300.00', at: '2026-08-01T10:00:00.000Z',
+    }],
+  },
+  bookingRefunds: {
+    total: '100.00',
+    lines: [{
+      bookingId: 9, client: { id: 5, name: 'منى أحمد', phone: '01012345678' },
+      method: 'visa' as const, amount: '100.00', at: '2026-08-01T15:00:00.000Z',
+    }],
+  },
 };
 
 function renderReport() {
@@ -110,4 +124,14 @@ describe('ShiftEndingReport', () => {
 
     expect(await screen.findByText('إغلاق تلقائي بواسطة النظام')).toBeDefined();
   });
+});
+
+test('lists the booking up-front money the shift took and handed back', async () => {
+  renderReport();
+  const report = await screen.findByRole('region', { name: 'تقرير نهاية الوردية' });
+  expect(within(report).getByText('مقدم الحجوزات')).toBeDefined();
+  expect(within(report).getByText('300.00')).toBeDefined();
+  expect(within(report).getByText('رد مقدم الحجوزات')).toBeDefined();
+  expect(within(report).getAllByText(/حجز #9/).length).toBe(2);
+  expect(within(report).getByText(/فيزا · 100.00 ج.م/)).toBeDefined();
 });

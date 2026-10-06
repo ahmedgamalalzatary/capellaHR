@@ -209,9 +209,9 @@ export const bookingsFacts = (filters: ReportFilters) => sql`
   SELECT booking.id id, booking.scheduled_at eventDate, branch.name branchName,
     client.full_name clientName, client.phone clientPhone, booking.status status,
     COUNT(service.id) servicesTotal,
-    COALESCE(SUM(service.status = 'sold'), 0) servicesSold,
-    COALESCE(SUM(service.status = 'cancelled'), 0) servicesCancelled,
-    COALESCE(SUM(service.status = 'pending'), 0) servicesPending,
+    COUNT(CASE WHEN service.status = 'sold' THEN 1 END) servicesSold,
+    COUNT(CASE WHEN service.status = 'cancelled' THEN 1 END) servicesCancelled,
+    COUNT(CASE WHEN service.status = 'pending' THEN 1 END) servicesPending,
     COALESCE((SELECT SUM(pay.amount) FROM erp_booking_payments pay
       WHERE pay.booking_id = booking.id AND pay.kind = 'payment'), 0) paid,
     COALESCE((SELECT SUM(refund.amount) FROM erp_booking_payments refund
@@ -237,5 +237,4 @@ export const bookingsFacts = (filters: ReportFilters) => sql`
     ...searchFilter(filters, ['client.full_name', 'client.phone']),
   ])}
   GROUP BY booking.id, booking.scheduled_at, branch.name, client.full_name, client.phone, booking.status
-  ORDER BY booking.scheduled_at DESC, booking.id DESC
 `;

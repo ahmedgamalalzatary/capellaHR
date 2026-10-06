@@ -139,7 +139,8 @@ describe('ErpReportsView', () => {
   it('shows all report tabs and applies branch/date/search filters with full totals and pagination', async () => {
     mount();
     const selector = await screen.findByRole('group', { name: 'أنواع تقارير ERP' });
-    expect(within(selector).getAllByRole('button')).toHaveLength(22);
+    expect(within(selector).getAllByRole('button')).toHaveLength(23);
+    expect(within(selector).getByRole('button', { name: 'تقرير الحجوزات' })).toBeDefined();
     expect(within(selector).getByRole('button', { name: 'تقرير التحويلات بين الفروع' })).toBeDefined();
     expect(within(selector).queryByRole('button', { name: 'تقرير الضرائب' })).toBeNull();
     expect(within(selector).getByRole('button', { name: 'الدفعات الجزئية' })).toBeDefined();
