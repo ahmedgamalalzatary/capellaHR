@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, BadgeCheck, CalendarCheck, ChevronDown, Printer, Search, UserCheck, UserRound, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { Button, Card, ConfirmDialog, EmptyState, Input, Label, MonthPicker, SmartPagination } from '@capella/ui';
 
@@ -524,7 +525,11 @@ export function MonthlyPayrollSection() {
         )}
       </Card>
 
-      {printableRecord ? (
+      {/*
+        Mounted on <body> beside the app, so printing can remove the app outright;
+        merely hiding it keeps its height and the sheet spills onto blank pages.
+      */}
+      {printableRecord ? createPortal(
         <section className="print-statement space-y-2">
           <h3 className="text-sm font-medium">
             كشف راتب {printableRecord.employeeName} — {printableRecord.branchName}
@@ -533,7 +538,17 @@ export function MonthlyPayrollSection() {
             شهر الاستحقاق <span className="tabular">{printableRecord.payrollMonth}</span>
           </p>
           <PayrollBreakdownSheet record={printableRecord} asTable />
-        </section>
+          {/* Blank ruled lines signed by hand on the paper copy; the sheet only exists while printing. */}
+          <div className="grid grid-cols-3 gap-8 pt-16 text-[13px]">
+            {['توقيع الموظف', 'توقيع المحاسب', 'توقيع المدير'].map((label) => (
+              <div key={label} data-signature className="space-y-2 text-center">
+                <div data-signature-line className="h-10 border-b border-ink" />
+                <p>{label}</p>
+              </div>
+            ))}
+          </div>
+        </section>,
+        document.body,
       ) : null}
 
       {meta && meta.totalPages > 1 ? (

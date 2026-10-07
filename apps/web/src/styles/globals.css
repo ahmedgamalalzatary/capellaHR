@@ -79,4 +79,16 @@
     width: 100%;
     padding: 16mm;
   }
+
+  /*
+   * A sheet mounted straight on <body> takes the app out of the layout entirely: hidden
+   * content still keeps its height, which prints as trailing blank pages.
+   */
+  body:has(> .print-statement) > :not(.print-statement) {
+    display: none;
+  }
+
+  body > .print-statement {
+    position: static;
+  }
 }

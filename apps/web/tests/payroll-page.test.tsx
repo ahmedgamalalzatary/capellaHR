@@ -400,8 +400,10 @@ describe('PayrollView', () => {
 
   test('prints one employee sheet from that row and keeps the button off it', async () => {
     const printedSheets: (Element | null)[] = [];
+    const sheetParents: (Element | null)[] = [];
     const print = vi.fn(() => {
       const sheet = document.querySelector('.print-statement');
+      sheetParents.push(sheet?.parentElement ?? null);
       printedSheets.push(sheet ? sheet.cloneNode(true) as Element : null);
     });
     vi.stubGlobal('print', print);
@@ -426,6 +428,9 @@ describe('PayrollView', () => {
     expect(sheet!.textContent).toContain('الراتب الأساسي');
     expect(sheet!.textContent).toContain('صافي الراتب');
     expect(sheet!.textContent).not.toContain('منى علي');
+    // Mounted straight on <body>, so print can drop the rest of the app instead of
+    // leaving its hidden height behind as extra blank pages.
+    expect(sheetParents[0]).toBe(document.body);
 
     // It prints as a ruled table, not a loose list of label/value pairs.
     const table = sheet!.querySelector('table');
@@ -441,6 +446,24 @@ describe('PayrollView', () => {
     // Money aligns in a column, so the figures are easy to scan down the page.
     expect(table!.querySelector('td:last-child')?.className).toContain('text-end');
 
+    // The paper sheet carries a blank ruled line for each person who signs it by hand.
+    const signatures = sheet!.querySelectorAll('[data-signature]');
+    expect(Array.from(signatures, (slot) => slot.textContent)).toEqual([
+      'توقيع الموظف',
+      'توقيع المحاسب',
+      'توقيع المدير',
+    ]);
+    for (const slot of Array.from(signatures)) {
+      expect(slot.querySelector('[data-signature-line]')?.className).toContain('border-b');
+    }
+  });
+
+  test('keeps the signature lines off the screen', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    expect(screen.queryByText('توقيع الموظف')).toBeNull();
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'التفاصيل' }));
+    expect(screen.queryByText('توقيع الموظف')).toBeNull();
   });
 
   test('prints the other employee when that row is the one asked for', async () => {
