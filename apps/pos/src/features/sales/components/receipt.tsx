@@ -1,6 +1,6 @@
 'use client';
 
-import type { PublicInvoiceDto } from '@capella/contracts';
+import { batchMilli, formatBatchQuantity, type PublicInvoiceDto } from '@capella/contracts';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
@@ -110,6 +110,67 @@ const toCents = (value: string) => {
 const money = (value: bigint) => (
   `${value / HUNDRED}.${(value % HUNDRED).toString().padStart(2, '0')}`
 );
+
+type ReceiptLine = Pick<PublicInvoiceLine,
+  'id' | 'itemType' | 'name' | 'quantity' | 'lineTotal' | 'queueNumbers'
+> & {
+  unitPrices: string[];
+  batches: NonNullable<PublicInvoiceLine['batches']>;
+  queueAssignments: NonNullable<PublicInvoiceLine['queueAssignments']>;
+  employees: Array<ReceiptEmployee & { quantity: number }>;
+  originalEmployees: ReceiptEmployee[];
+};
+
+/** Presentation only: sale lines retain their identities for commissions and refunds. */
+const receiptLines = (invoice: PublicInvoiceDto): ReceiptLine[] => {
+  const groups = new Map<string, ReceiptLine>();
+  for (const line of invoice.lines) {
+    const key = `${line.itemType}:${line.sourceId}`;
+    let row = groups.get(key);
+    if (!row) {
+      row = {
+        id: line.id, itemType: line.itemType, name: line.name, unitPrices: [],
+        quantity: 0, lineTotal: '0.00', batches: [], queueNumbers: [],
+        queueAssignments: [], employees: [], originalEmployees: [],
+      };
+      groups.set(key, row);
+    }
+    row.quantity += line.quantity;
+    if (!row.unitPrices.includes(line.unitPrice)) row.unitPrices.push(line.unitPrice);
+    row.lineTotal = money(toCents(row.lineTotal) + toCents(line.lineTotal));
+    row.queueNumbers.push(...line.queueNumbers);
+    row.queueAssignments.push(...(line.queueAssignments ?? []));
+    for (const batch of line.batches ?? []) {
+      const existing = row.batches.find((entry) => (
+        entry.batchId === batch.batchId && entry.expiryDate === batch.expiryDate
+      ));
+      if (existing) {
+        existing.quantity = formatBatchQuantity(batchMilli(existing.quantity) + batchMilli(batch.quantity));
+      } else {
+        row.batches.push({ batchId: batch.batchId, quantity: batch.quantity, expiryDate: batch.expiryDate });
+      }
+    }
+    const performers = line.itemType === 'service' && line.queueAssignments?.length
+      ? line.queueAssignments.map(({ employee }) => ({ employee, quantity: 1 }))
+      : [{ employee: line.employee, quantity: line.quantity }];
+    for (const { employee, quantity } of performers) {
+      if (employee) {
+        const existing = row.employees.find((entry) => entry.id === employee.id);
+        if (existing) existing.quantity += quantity;
+        else row.employees.push({ ...employee, quantity });
+      }
+      if (line.originalEmployee && employee?.id !== line.originalEmployee.id
+        && !row.originalEmployees.some((entry) => entry.id === line.originalEmployee!.id)) {
+        row.originalEmployees.push({ ...line.originalEmployee });
+      }
+    }
+  }
+  return [...groups.values()].map((row) => ({
+    ...row, unitPrices: row.unitPrices.sort((left, right) => (
+      toCents(left) < toCents(right) ? -1 : toCents(left) > toCents(right) ? 1 : 0
+    )),
+  }));
+};
 
 /** The distinct employees who performed this invoice's services, in line order. */
 export const invoiceEmployees = (invoice: PublicInvoiceDto): ReceiptEmployee[] => {
@@ -260,6 +321,7 @@ export function ReceiptBundle({ invoice }: { invoice: PublicInvoiceDto }) {
 }
 
 export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
+  const lines = receiptLines(invoice);
   const totalQuantity = invoice.lines.reduce((sum, line) => sum + line.quantity, 0);
   return (
     <article
@@ -301,7 +363,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
           </tr>
         </thead>
         <tbody>
-          {invoice.lines.map((line) => (
+          {lines.map((line) => (
             <tr key={line.id}>
               <td className="border border-line px-1.5 py-1.5 text-start">
                 <span>{line.name}</span>
@@ -316,17 +378,19 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
                     {assignment.queueNumber} · {assignment.employee.name}
                   </span>
                 ))}
-                {line.itemType === 'product' && line.employee ? (
-                  <span className="block text-[10px]">{line.employee.name}</span>
+                {line.employees.length ? (
+                  <span className="block text-[10px]">
+                    {line.employees.map(({ name, quantity }) => `${name} × ${quantity}`).join(' - ')}
+                  </span>
                 ) : null}
-                {line.originalEmployee && line.employee?.id !== line.originalEmployee.id ? (
+                {line.originalEmployees.length ? (
                   <span className="block text-[10px] text-muted">
-                    مُسند أصلاً إلى {line.originalEmployee.name}
+                    مُسند أصلاً إلى {line.originalEmployees.map(({ name }) => name).join(' - ')}
                   </span>
                 ) : null}
               </td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.quantity}</td>
-              <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrice}</td>
+              <td className="border border-line px-1 py-1.5 text-center tabular">{line.unitPrices.join(' / ')}</td>
               <td className="border border-line px-1 py-1.5 text-center tabular">{line.lineTotal}</td>
             </tr>
           ))}
@@ -336,7 +400,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <tbody>
           <tr>
             <td>عدد الأصناف</td>
-            <td className="tabular">{invoice.lines.length}</td>
+            <td className="tabular">{lines.length}</td>
             <td>إجمالي الكميات</td>
             <td className="tabular">{totalQuantity}</td>
           </tr>

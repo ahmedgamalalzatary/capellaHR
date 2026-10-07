@@ -158,9 +158,14 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
             إعادة تحميل حالة PDF
           </Button>
         ) : exportQuery.data?.status === 'completed' && !exportQuery.data.fileDeletedAt ? (
-          <Button variant="secondary" disabled={downloadExport.isPending} onClick={() => downloadExport.mutate()}>
-            {downloadExport.isPending ? 'جارٍ التنزيل…' : 'تنزيل PDF A4'}
-          </Button>
+          <>
+            <Button variant="secondary" disabled={downloadExport.isPending} onClick={() => downloadExport.mutate()}>
+              {downloadExport.isPending ? 'جارٍ التنزيل…' : 'تنزيل PDF A4'}
+            </Button>
+            <Button variant="secondary" disabled={createExport.isPending} onClick={() => createExport.mutate()}>
+              {createExport.isPending ? 'جارٍ وضع الطلب…' : 'إنشاء PDF جديد'}
+            </Button>
+          </>
         ) : exportQuery.data?.status === 'failed' ? (
           <Button variant="secondary" disabled={retryExport.isPending} onClick={() => retryExport.mutate()}>
             {retryExport.isPending ? 'جارٍ إعادة المحاولة…' : 'إعادة محاولة PDF A4'}

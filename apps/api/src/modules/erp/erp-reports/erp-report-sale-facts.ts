@@ -674,17 +674,68 @@ export const invoiceFacts = (filters: ReportFilters, selection: ReportSelection)
     ? selection.ids[0]
     : 0;
   return sql`
-    SELECT line.id id, line.line_number lineNumber, line.item_name_snapshot itemName,
-      line.item_type itemType, line.quantity quantity, line.unit_price unitPrice,
-      line.line_total lineTotal,
-      (SELECT GROUP_CONCAT(CONCAT('#', detail.batchId, ' × ', detail.quantity, ' / ', COALESCE(detail.expiryDate, 'غير محددة')) SEPARATOR ' | ')
-        FROM JSON_TABLE(line.batches, '$[*]' COLUMNS(batchId INT PATH '$.batchId', quantity VARCHAR(32) PATH '$.quantity', expiryDate VARCHAR(10) PATH '$.expiryDate')) detail) batchExpiry
-    FROM erp_invoice_lines line
-    INNER JOIN erp_invoices invoice
-      ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
-    ${condition([
-      sql`invoice.id = ${invoiceId}`, sql`invoice.status <> 'draft'`,
-      ...branchFilter(filters, 'invoice.branch_id'),
-    ])}
+    WITH selected_lines AS (
+      SELECT line.*, COALESCE(line.service_id, line.product_id) source_id
+      FROM erp_invoice_lines line
+      INNER JOIN erp_invoices invoice
+        ON invoice.id = line.invoice_id AND invoice.branch_id = line.branch_id
+      ${condition([
+        sql`invoice.id = ${invoiceId}`, sql`invoice.status <> 'draft'`,
+        ...branchFilter(filters, 'invoice.branch_id'),
+      ])}
+    ), grouped_lines AS (
+      SELECT MIN(id) id, MIN(line_number) firstLineNumber,
+        item_type, source_id, MIN(item_name_snapshot) itemName,
+        GROUP_CONCAT(DISTINCT unit_price ORDER BY unit_price SEPARATOR ' / ') unitPrice,
+        CAST(SUM(quantity) AS UNSIGNED) quantity, SUM(line_total) lineTotal
+      FROM selected_lines GROUP BY item_type, source_id
+    ), employee_units AS (
+      SELECT line.item_type, line.source_id, line.line_number,
+        queue.employee_id, employee.full_name employeeName, 1 quantity
+      FROM selected_lines line
+      INNER JOIN erp_service_queue_entries queue
+        ON queue.invoice_line_id = line.id AND queue.branch_id = line.branch_id
+      INNER JOIN employees employee ON employee.id = queue.employee_id
+      WHERE line.item_type = 'service'
+      UNION ALL
+      SELECT line.item_type, line.source_id, line.line_number,
+        line.employee_id, line.employee_name_snapshot employeeName, line.quantity
+      FROM selected_lines line
+      WHERE line.employee_id IS NOT NULL AND (line.item_type = 'product' OR NOT EXISTS (
+        SELECT 1 FROM erp_service_queue_entries queue
+        WHERE queue.invoice_line_id = line.id AND queue.branch_id = line.branch_id
+      ))
+    ), employee_quantities AS (
+      SELECT item_type, source_id, employee_id,
+        MIN(employeeName) employeeName, MIN(line_number) firstLineNumber, SUM(quantity) quantity
+      FROM employee_units GROUP BY item_type, source_id, employee_id
+    ), employee_labels AS (
+      SELECT item_type, source_id,
+        GROUP_CONCAT(CONCAT(employeeName, ' × ', quantity)
+          ORDER BY firstLineNumber, employee_id SEPARATOR ' - ') employeeName
+      FROM employee_quantities GROUP BY item_type, source_id
+    ), batch_quantities AS (
+      SELECT line.item_type, line.source_id, detail.batchId, detail.expiryDate,
+        SUM(detail.quantity) quantity
+      FROM selected_lines line
+      CROSS JOIN JSON_TABLE(COALESCE(line.batches, JSON_ARRAY()), '$[*]' COLUMNS(
+        batchId INT PATH '$.batchId', quantity DECIMAL(18, 3) PATH '$.quantity',
+        expiryDate VARCHAR(10) PATH '$.expiryDate'
+      )) detail
+      GROUP BY line.item_type, line.source_id, detail.batchId, detail.expiryDate
+    ), batch_labels AS (
+      SELECT item_type, source_id,
+        GROUP_CONCAT(CONCAT('#', batchId, ' × ', quantity, ' / ', COALESCE(expiryDate, 'غير محددة'))
+          ORDER BY batchId SEPARATOR ' | ') batchExpiry
+      FROM batch_quantities GROUP BY item_type, source_id
+    )
+    SELECT grouped.id, ROW_NUMBER() OVER (ORDER BY grouped.firstLineNumber, grouped.id) lineNumber,
+      grouped.itemName, grouped.item_type itemType, grouped.quantity, grouped.unitPrice,
+      grouped.lineTotal, assigned.employeeName, batches.batchExpiry
+    FROM grouped_lines grouped
+    LEFT JOIN employee_labels assigned ON assigned.item_type = grouped.item_type
+      AND assigned.source_id = grouped.source_id
+    LEFT JOIN batch_labels batches ON batches.item_type = grouped.item_type
+      AND batches.source_id = grouped.source_id
   `;
 };

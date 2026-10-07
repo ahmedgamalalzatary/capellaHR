@@ -545,6 +545,90 @@ describe('ERP reports MySQL reader', () => {
     )).resolves.toMatchObject({ kind: 'success', total: 0 });
   });
 
+  it('groups invoice products and services with employee quantities without altering sale or commission lines', async () => {
+    const original = (await database.select().from(invoices).where(eq(invoices.id, invoiceId)))[0]!;
+    const service = (await database.select().from(invoiceLines).where(eq(invoiceLines.id, serviceLineId)))[0]!;
+    const sourceService = (await database.select().from(erpServices).where(eq(erpServices.id, service.serviceId!)))[0]!;
+    const groupedServiceId = Number((await database.insert(erpServices).values({
+      branchId, categoryId: sourceService.categoryId, name: 'Grouped service', nameNormalized: 'grouped-service',
+      price: null, commissionPercent: '10.00', createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    const secondEmployeeId = Number((await database.insert(employees).values({
+      employeeCode: 1_919_003, fullName: 'Second invoice worker', personalPhone: '01019190003',
+      whatsappPhone: '01119190003', pinHash: employeePinSentinel, age: 30, address: 'Cairo',
+      branchId, shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00',
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    await database.insert(branchCashierRoster).values({ branchId, employeeId: secondEmployeeId, createdAt: soldAt });
+    const groupedProductId = Number((await database.insert(erpProducts).values({
+      branchId, name: 'Grouped shampoo', nameNormalized: 'grouped-shampoo',
+      sellingPrice: '50.10', lastPurchaseCost: '20.00', commissionPercent: '20.00',
+      createdAt: soldAt, updatedAt: soldAt,
+    }))[0].insertId);
+    await database.insert(erpProductStocks).values({ productId: groupedProductId, branchId, quantity: 3, updatedAt: soldAt });
+    const sales = createDrizzleSaleRepository(database, createErpAuditCapability(), createErpPayrollCapability(database));
+    const completed = await sales.complete({
+      input: {
+        branchId, clientId: original.clientId, cashierSessionId: original.cashierSessionId,
+        idempotencyKey: crypto.randomUUID(), lines: [
+          { itemType: 'product', productId: groupedProductId, quantity: 1, employeeId },
+          { itemType: 'service', serviceId: groupedServiceId, quantity: 1, unitPrice: '200.00', employeeId },
+          { itemType: 'product', productId: groupedProductId, quantity: 2, employeeId: secondEmployeeId },
+          { itemType: 'service', serviceId: groupedServiceId, quantity: 2, unitPrice: '200.00', employeeId: secondEmployeeId },
+          { itemType: 'service', serviceId: groupedServiceId, quantity: 1, unitPrice: '100.00', employeeId },
+        ], payments: [{ method: 'cash', amount: '850.30' }],
+      }, actingAccountId: adminId, actingAccountRole: 'admin',
+      invoiceNumber: 'INV.GROUPED-ITEMS', soldAt,
+      assertEmployees: async () => [
+        { id: employeeId, employeeCode: 1_919_001, fullName: 'موظف التقرير', branchId },
+        { id: secondEmployeeId, employeeCode: 1_919_003, fullName: 'Second invoice worker', branchId },
+      ],
+    });
+    const storedLines = await database.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, completed.id));
+    const storedCommissions = await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, completed.id));
+    const module = createErpReportsModule(database);
+    const selection = { mode: 'selected' as const, ids: [completed.id] };
+    const result = await module.reader.read('erp-invoice', { branchId }, selection,
+      { page: 1, pageSize: 20 }, reversedAt);
+
+    expect(result).toMatchObject({ kind: 'success', total: 2, snapshot: {
+      columns: expect.arrayContaining([{ key: 'employeeName', label: 'الموظفون والكميات' }]),
+      rows: [
+        expect.objectContaining({ itemName: 'Grouped shampoo', quantity: 3, unitPrice: '50.10',
+          lineTotal: '150.30', employeeName: 'موظف التقرير × 1 - Second invoice worker × 2' }),
+        expect.objectContaining({ quantity: 4, unitPrice: '100.00 / 200.00', lineTotal: '700.00',
+          employeeName: 'موظف التقرير × 2 - Second invoice worker × 2' }),
+      ], summary: { totalRecords: 2, lineSubtotal: '850.30', total: '850.30' },
+    } });
+    if (result.kind !== 'success') throw new Error('Expected invoice snapshot');
+    expect(result.snapshot.rows[0]!.batchExpiry).toMatch(/#\d+ × 3\.000/);
+    const streamed: unknown[] = [];
+    await module.repository.readBatches('erp-invoice', { branchId }, selection, 1, async (batch) => { streamed.push(...batch); });
+    expect(streamed).toEqual(result.snapshot.rows);
+    expect(storedLines).toHaveLength(5);
+    expect(await database.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, completed.id))).toEqual(storedLines);
+    expect(await database.select().from(commissionLedgerEntries)
+      .where(eq(commissionLedgerEntries.invoiceId, completed.id))).toEqual(storedCommissions);
+
+    const firstServiceTicket = (await database.select().from(serviceQueueEntries)
+      .where(eq(serviceQueueEntries.invoiceLineId, completed.lines[1]!.id)))[0]!;
+    await sales.reassignQueue({
+      invoiceId: completed.id, serviceQueueEntryId: firstServiceTicket.id,
+      input: { branchId, employeeId: secondEmployeeId, reason: 'Correct invoice performer',
+        operationReference: crypto.randomUUID() },
+      actingAccountId: adminId, actingAccountRole: 'admin', reassignedAt: soldAt,
+      assertEmployee: async () => ({ id: secondEmployeeId, employeeCode: 1_919_003,
+        fullName: 'Second invoice worker', branchId }),
+    });
+    const corrected = await module.reader.read('erp-invoice', { branchId }, selection,
+      { page: 1, pageSize: 20 }, reversedAt);
+    expect(corrected).toMatchObject({ kind: 'success', snapshot: { rows: [
+      expect.objectContaining({ employeeName: 'موظف التقرير × 1 - Second invoice worker × 2' }),
+      expect.objectContaining({ quantity: 4, employeeName: 'Second invoice worker × 3 - موظف التقرير × 1' }),
+    ] } });
+  });
+
   it('keeps the full batch movement history past MySQL\'s default group_concat limit', async () => {
     const historyProductName = 'منتج حركات تاريخية طويلة';
     const historyProductId = Number((await database.insert(erpProducts).values({

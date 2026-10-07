@@ -247,6 +247,7 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     columns: [
       ['id', 'المعرف'], ['lineNumber', 'البند'], ['itemName', 'الصنف'], ['itemType', 'النوع'],
       ['quantity', 'الكمية'], ['unitPrice', 'سعر الوحدة'], ['lineTotal', 'الإجمالي'], ['batchExpiry', 'الدفعات والصلاحية'],
+      ['employeeName', 'الموظفون والكميات'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
 };

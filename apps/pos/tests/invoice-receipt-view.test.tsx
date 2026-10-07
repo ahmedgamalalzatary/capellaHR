@@ -286,7 +286,7 @@ describe('stored invoice receipt', () => {
     const rows = within(table).getAllByRole('row');
     expect(rows).toHaveLength(2);
     expect(within(rows[1]!).getAllByRole('cell').map((cell) => cell.textContent))
-      .toEqual(['صبغة شعرأرقام الدور: 1', '1', '200.00', '200.00']);
+      .toEqual(['صبغة شعرأرقام الدور: 1سارة علي × 1', '1', '200.00', '200.00']);
   });
 
   it('prints every per-shift service queue number on the customer receipt', async () => {
@@ -535,17 +535,18 @@ describe('stored invoice receipt', () => {
     expect(screen.queryByRole('button', { name: 'إنشاء PDF A4' })).toBeNull();
   });
 
-  it('recovers an existing invoice export after navigation without enqueueing a duplicate', async () => {
+  it('recovers an existing invoice export and lets the admin regenerate it with the current invoice format', async () => {
+    const existingRecord = {
+      id: 91, reportType: 'erp-invoice', status: 'completed', filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [44] }, filePath: 'reports/91.pdf',
+      fileSha256: 'a'.repeat(64), fileSizeBytes: 1200, rowCount: 1,
+      attemptCount: 1, cycleAttemptCount: 1, retryCount: 0, failureReason: null,
+      queuedAt: '2026-08-09T12:00:00.000Z', startedAt: '2026-08-09T12:00:01.000Z',
+      completedAt: '2026-08-09T12:00:02.000Z', failedAt: null, fileDeletedAt: null,
+      createdAt: '2026-08-09T12:00:00.000Z', updatedAt: '2026-08-09T12:00:02.000Z',
+    };
     reportExports.list.mockResolvedValueOnce({
-      items: [{
-        id: 91, reportType: 'erp-invoice', status: 'completed', filters: { branchId: 2 },
-        selection: { mode: 'selected', ids: [44] }, filePath: 'reports/91.pdf',
-        fileSha256: 'a'.repeat(64), fileSizeBytes: 1200, rowCount: 1,
-        attemptCount: 1, cycleAttemptCount: 1, retryCount: 0, failureReason: null,
-        queuedAt: '2026-08-09T12:00:00.000Z', startedAt: '2026-08-09T12:00:01.000Z',
-        completedAt: '2026-08-09T12:00:02.000Z', failedAt: null, fileDeletedAt: null,
-        createdAt: '2026-08-09T12:00:00.000Z', updatedAt: '2026-08-09T12:00:02.000Z',
-      }],
+      items: [existingRecord],
       meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
     });
     renderView();
@@ -553,6 +554,17 @@ describe('stored invoice receipt', () => {
 
     expect(await screen.findByRole('button', { name: 'تنزيل PDF A4' })).toBeDefined();
     expect(reportExports.create).not.toHaveBeenCalled();
+    reportExports.create.mockResolvedValueOnce({
+      ...existingRecord, id: 92, status: 'queued', filePath: null, fileSha256: null,
+      fileSizeBytes: null, rowCount: null, startedAt: null, completedAt: null,
+    });
+    reportExports.get.mockResolvedValue({ ...existingRecord, id: 92 });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء PDF جديد' }));
+    await waitFor(() => expect(reportExports.create).toHaveBeenCalledWith({
+      reportType: 'erp-invoice', filters: { branchId: 2 },
+      selection: { mode: 'selected', ids: [44] },
+    }));
+    await waitFor(() => expect(reportExports.get).toHaveBeenCalledWith(92));
   });
 
   it('recovers the newest usable invoice export from one newest-first history page', async () => {
