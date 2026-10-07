@@ -237,7 +237,10 @@ export function SaleWorkspace({
     ? bookingCheckout(bookingData, quote.data.totals.total, serviceLineIds)
     : null;
   const bookingCreditCents = (bookingSettlement ? toCents(bookingSettlement.credit) : null) ?? BigInt(0);
-  const bookingExcess = bookingSettlement?.excess ?? '0.00';
+  // The server's own figure wins: when it refused the sale it named the money it
+  // is holding, and that is what has to go back to the client.
+  const [requiredRefund, setRequiredRefund] = useState<string | null>(null);
+  const bookingExcess = requiredRefund ?? bookingSettlement?.excess ?? '0.00';
   // The amount owed back follows the basket; a split typed for another amount
   // no longer applies, so it restarts as all cash.
   const [refundEntry, setRefundEntry] = useState<{ amount: string; split: RefundSplit }>(
@@ -269,7 +272,7 @@ export function SaleWorkspace({
     submit,
     restoreConflict,
     printReceipt,
-    reset,
+    reset: resetCheckout,
   } = useSaleWorkspaceCheckout({
     ...(branchId === undefined ? {} : { branchId }),
     cashierSessionId,
@@ -294,6 +297,7 @@ export function SaleWorkspace({
     quoteInput,
     pendingSale,
     pendingInput,
+    onBookingRefundRequired: setRequiredRefund,
     selectClient,
     applyDraft,
     setEmployee,
@@ -309,6 +313,11 @@ export function SaleWorkspace({
     setDraftStorageError,
     setBackgroundSyncCount,
   });
+  // The server's refund demand belongs to the sale that asked for it.
+  const reset = () => {
+    setRequiredRefund(null);
+    resetCheckout();
+  };
   const blockers = saleCheckoutBlockers({
     batchSelectionsValid,
     hasClient: Boolean(client),

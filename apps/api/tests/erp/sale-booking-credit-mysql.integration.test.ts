@@ -363,10 +363,11 @@ describe('ERP sale with booking credit MySQL integration', () => {
       }],
       payments: [],
     };
-    // Without the cashier naming the money, the sale must not strand 20.00 held.
+    // Without the cashier naming the money, the sale must not strand 20.00 held,
+    // and it must say how much is owed so the till can reopen the refund.
     await expect(service.complete(
       { role: 'cashier', accountId: data.accountId, branchId: data.branchId }, sale,
-    )).rejects.toMatchObject({ code: 'BOOKING_REFUND_REQUIRED' });
+    )).rejects.toMatchObject({ code: 'BOOKING_REFUND_REQUIRED', details: { amount: '20.00' } });
     await expect(service.complete(
       { role: 'cashier', accountId: data.accountId, branchId: data.branchId },
       { ...sale, bookingRefund: { payments: [{ method: 'cash', amount: '15.00' }] } },

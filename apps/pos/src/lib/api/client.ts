@@ -18,6 +18,8 @@ export interface ApiErrorBody {
   message: string;
   fieldErrors?: ApiFieldErrors;
   requestId?: string;
+  /** Money the server still needs from this request, sent with a booking refund refusal. */
+  amount?: string;
 }
 
 export class ApiError extends Error {
@@ -25,6 +27,7 @@ export class ApiError extends Error {
   readonly code: string;
   readonly fieldErrors: ApiFieldErrors;
   readonly requestId: string | undefined;
+  readonly amount: string | undefined;
 
   constructor(status: number, body: ApiErrorBody) {
     super(body.message);
@@ -33,6 +36,7 @@ export class ApiError extends Error {
     this.code = body.code;
     this.fieldErrors = body.fieldErrors ?? {};
     this.requestId = body.requestId;
+    this.amount = body.amount;
   }
 }
 

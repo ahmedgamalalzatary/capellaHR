@@ -265,7 +265,13 @@ export const createSaleRepositoryComplete = (
           }
           if (bookingExcessCents > 0n) {
             const refund = input.bookingRefund;
-            if (!refund) throw new SaleError('BOOKING_REFUND_REQUIRED');
+            // The amount travels with the refusal: the cashier is holding that
+            // money now and the till needs it to reopen the refund.
+            if (!refund) {
+              throw new SaleError('BOOKING_REFUND_REQUIRED', undefined, {
+                amount: signedMoney(bookingExcessCents),
+              });
+            }
             const offered = refund.payments.reduce(
               (sum, payment) => sum + toCents(payment.amount), 0n,
             );

@@ -386,6 +386,71 @@ describe('ERP shift booking money (MySQL)', () => {
     })).resolves.toMatchObject({ kind: 'unresolved_bookings', count: 2 });
   });
 
+  it('blocks close for a future booking holding more than its pending services are worth', async () => {
+    const data = await fixture();
+    const repo = repository();
+    const sessionId = await openSession(data.branchId, data.accountId);
+    // A later appointment is not the waiting half's business, but its deposit
+    // still sits in the drawer: 250.00 taken for a 200.00 service must be given
+    // back before the drawer can be balanced.
+    await makeBooking(
+      { branchId: data.branchId, clientId: data.clientId, accountId: data.accountId, sessionId },
+      {
+        status: 'booked',
+        scheduledAt: new Date(at.getTime() + 10 * 60 * 60_000),
+        pendingServiceIds: [data.serviceId],
+        payments: [{ kind: 'payment', method: 'cash', amount: '250.00' }],
+      },
+    );
+
+    const closedAt = new Date(at.getTime() + 60 * 60_000);
+    await expect(repo.close({
+      branchId: data.branchId, closedByAccountId: data.accountId, closedAt,
+    })).resolves.toMatchObject({ kind: 'unresolved_bookings', count: 1 });
+  });
+
+  it('lets a future booking close when its deposit still covers the pending services', async () => {
+    const data = await fixture();
+    const repo = repository();
+    const sessionId = await openSession(data.branchId, data.accountId);
+    await makeBooking(
+      { branchId: data.branchId, clientId: data.clientId, accountId: data.accountId, sessionId },
+      {
+        status: 'booked',
+        scheduledAt: new Date(at.getTime() + 10 * 60 * 60_000),
+        pendingServiceIds: [data.serviceId],
+        payments: [{ kind: 'payment', method: 'cash', amount: '150.00' }],
+      },
+    );
+
+    const closedAt = new Date(at.getTime() + 60 * 60_000);
+    await expect(repo.close({
+      branchId: data.branchId, closedByAccountId: data.accountId, closedAt,
+    })).resolves.toMatchObject({ kind: 'success' });
+  });
+
+  it('counts a money-holding future booking once, not twice', async () => {
+    const data = await fixture();
+    const repo = repository();
+    const sessionId = await openSession(data.branchId, data.accountId);
+    // Past due and over-paid: the waiting half and the money half both match, and
+    // the close must still report one booking.
+    await makeBooking(
+      { branchId: data.branchId, clientId: data.clientId, accountId: data.accountId, sessionId },
+      {
+        status: 'booked',
+        scheduledAt: new Date(at.getTime() - 30 * 60_000),
+        pendingServiceIds: [data.serviceId],
+        payments: [{ kind: 'payment', method: 'cash', amount: '250.00' }],
+      },
+    );
+
+    const closedAt = new Date(at.getTime() + 60 * 60_000);
+    await expect(repo.close({
+      branchId: data.branchId, closedByAccountId: data.accountId, closedAt,
+    })).resolves.toMatchObject({ kind: 'unresolved_bookings', count: 1 });
+  });
+
   it('still blocks close for a finished booking that still holds money', async () => {
     const data = await fixture();
     const repo = repository();

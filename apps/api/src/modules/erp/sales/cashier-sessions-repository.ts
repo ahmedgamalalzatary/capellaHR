@@ -312,16 +312,22 @@ const unresolvedWaitingCount = (executor: Transaction, input: {
   sql`(${erpBookings.status} = 'arrived' or ${erpBookings.scheduledAt} <= ${input.closedAt})`,
 ));
 
-const moneyHoldingUnresolvedCount = (executor: Transaction, input: { branchId: number }) => (
+const moneyHoldingUnresolvedCount = (executor: Transaction, input: {
+  branchId: number;
+  closedAt: Date;
+}) => (
   executor.select({ value: sql<number>`count(*)` }).from(sql`
     (
       select p.booking_id
       from erp_booking_payments p
       join erp_bookings b on b.id = p.booking_id and b.branch_id = p.branch_id
       where p.branch_id = ${input.branchId}
-        -- A booking the waiting half already counts must not be counted twice.
+        -- Only a booking the waiting half actually counts is skipped, which is a
+        -- booking with something still waiting whose appointment time has come.
+        -- A later appointment holding more than it is worth is this half's work.
         and not (
           b.status in ('booked', 'arrived')
+          and (b.status = 'arrived' or b.scheduled_at <= ${input.closedAt})
           and exists (
             select 1 from erp_booking_services waiting
             where waiting.booking_id = p.booking_id and waiting.status = 'pending'

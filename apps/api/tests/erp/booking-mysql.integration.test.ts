@@ -6,6 +6,7 @@ import {
   employees,
   erpBookings,
 erpBookingPayments,
+  erpBookingServices,
   erpCategories,
   erpServices,
   invoiceLines,
@@ -219,6 +220,24 @@ describe('MySQL-backed ERP booking payments', () => {
     expect(replay.money).toMatchObject({ paid: '100.00' });
     await expect(pay(booking.id, '018f47a6-7b2f-7c41-91e9-a5dd1d8e1704', '150.00'))
       .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+  });
+
+  it('conflicts when one reference is retried against a different cashier session', async () => {
+    const booking = await repository.create({
+      branchId, clientId, actingAccountId: accountId,
+      scheduledAt: new Date('2026-08-29T09:30:00.000Z'),
+      note: null, services: [{ serviceId }], createdAt: at,
+    });
+    const reference = '018f47a6-7b2f-7c41-91e9-a5dd1d8e1708';
+    await pay(booking.id, reference);
+    // The same reference is the same payment only inside the same drawer: money
+    // taken in another shift is a different fact, so this is a conflict.
+    await expect(pay(booking.id, reference, '100.00', { cashierSessionId: closedSessionId }))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+    const rows = await database.select().from(erpBookingPayments).where(
+      eq(erpBookingPayments.bookingId, booking.id),
+    );
+    expect(rows).toHaveLength(1);
   });
 
   it('requires an open, unexpired shift owned by the acting cashier', async () => {
@@ -768,5 +787,107 @@ describe('MySQL-backed ERP booking payment concurrency', () => {
     expect(rows).toHaveLength(1);
     const record = await repository.findById(branchId, bookingId);
     expect(record!.money).toMatchObject({ paid: '100.00', held: '100.00' });
+  }, 60_000);
+});
+
+describe('MySQL-backed ERP booking sale against a concurrent cancel', () => {
+  const repository = createDrizzleBookingRepository(database, createErpAuditCapability());
+  let saleSessionId = 0;
+  let saleServiceId = 0;
+  let saleEmployeeId = 0;
+
+  beforeAll(async () => {
+    await database.update(cashierSessions).set({
+      closedAt: at, closedByAccountId: accountId,
+    }).where(and(
+      eq(cashierSessions.branchId, branchId), isNull(cashierSessions.closedAt),
+    ));
+    saleEmployeeId = Number((await database.insert(employees).values({
+      employeeCode: 900002, fullName: 'Nadia', personalPhone: '01000000004',
+      whatsappPhone: '01000000005', pinHash: 'unused', age: 27, address: 'Cairo', branchId,
+      shiftDurationMinutes: 480, monthlyBaseSalary: '5000.00', createdAt: at, updatedAt: at,
+    }))[0].insertId);
+    saleSessionId = Number((await database.insert(cashierSessions).values({
+      branchId, openedByAccountId: accountId, openedAt: new Date('2026-08-24T06:00:00.000Z'),
+    }))[0].insertId);
+    saleServiceId = Number((await database.insert(erpServices).values({
+      branchId,
+      categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, branchId)))[0]!.id,
+      name: 'Sale twin', nameNormalized: 'sale-twin', price: '200.00',
+      commissionPercent: '10.00', createdAt: at, updatedAt: at,
+    }))[0].insertId);
+  }, 60_000);
+
+  const makeInvoiceLine = async (suffix: string) => {
+    const invoiceId = Number((await database.insert(invoices).values({
+      branchId, clientId, sellerEmployeeId: employeeId, actingAccountId: accountId,
+      cashierSessionId: saleSessionId, invoiceNumber: `INV-2026.08.24-11.00-${suffix}`,
+      idempotencyKey: crypto.randomUUID(),
+      clientNameSnapshot: 'Mona', sellerNameSnapshot: 'Sara', authorizedBySnapshot: 'booking-admin',
+      subtotal: '200.00', total: '200.00', amountPaid: '0.00', settlementStatus: 'open',
+      soldAt: at, createdAt: at,
+    }))[0].insertId);
+    const lineId = Number((await database.insert(invoiceLines).values({
+      invoiceId, branchId, lineNumber: 1, itemType: 'service', serviceId,
+      itemNameSnapshot: 'Colour', quantity: 1, unitPrice: '200.00', lineTotal: '200.00',
+      employeeId, employeeNameSnapshot: 'Sara', employeeCodeSnapshot: 900001,
+      commissionRuleSnapshot: 'service_default', commissionRateSnapshot: '10.00',
+      commissionAmountSnapshot: '20.00',
+    }))[0].insertId);
+    return { invoiceId, lineId };
+  };
+
+  it('refuses to sell a service cancelled before the sale locked the booking', async () => {
+    const booking = await repository.create({
+      branchId, clientId, actingAccountId: accountId,
+      scheduledAt: new Date('2026-09-20T07:30:00.000Z'),
+      note: null, services: [{ serviceId }, { serviceId: saleServiceId }], createdAt: at,
+    });
+    await repository.transition(branchId, booking.id, ['booked'], 'arrived', at);
+    const invoice = await makeInvoiceLine('0060');
+    // Checkout reads the catalogue first and locks the booking only afterwards,
+    // so a cancel that commits in between must still be seen.
+    await expect(database.transaction(async (transaction) => {
+      await transaction.select().from(erpServices).limit(1);
+      await repository.cancelServices({
+        bookingId: booking.id, branchId, serviceIds: [serviceId],
+        actorAccountId: accountId, actorRole: 'admin', at,
+      });
+      await repository.applySale(transaction, {
+        bookingId: booking.id, branchId, clientId, invoiceId: invoice.invoiceId,
+        services: [{ serviceId, invoiceLineId: invoice.lineId, quantity: 1 }], convertedAt: at,
+      });
+    })).rejects.toMatchObject({ code: 'BOOKING_SERVICE_NOT_FOUND' });
+    const rows = await database.select().from(erpBookingServices).where(
+      eq(erpBookingServices.bookingId, booking.id),
+    );
+    expect(rows.find((row) => row.serviceId === serviceId)).toMatchObject({
+      status: 'cancelled', invoiceId: null, invoiceLineId: null,
+    });
+  }, 60_000);
+
+  it('stops counting a cancelled service as future work for its employee', async () => {
+    const booking = await repository.create({
+      branchId, clientId, actingAccountId: accountId,
+      scheduledAt: new Date('2026-12-01T07:30:00.000Z'),
+      // The employee's own service plus one nobody performs: cancelling his keeps
+      // the booking open, so only the cancelled line must stop counting as work.
+      note: null,
+      services: [
+        { serviceId, preferredEmployeeId: saleEmployeeId },
+        { serviceId: saleServiceId },
+      ],
+      createdAt: at,
+    });
+    const now = new Date('2026-08-24T08:00:00.000Z');
+    expect(await repository.countFutureForEmployee(saleEmployeeId, now)).toBe(1);
+    await repository.cancelServices({
+      bookingId: booking.id, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at: now,
+    });
+    // The booking is still open for the other service, but this employee has no
+    // work left in it, so disabling them must not be blocked.
+    expect((await repository.findById(branchId, booking.id))!.status).toBe('booked');
+    expect(await repository.countFutureForEmployee(saleEmployeeId, now)).toBe(0);
   }, 60_000);
 });

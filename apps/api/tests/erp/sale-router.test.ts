@@ -208,6 +208,26 @@ describe('ERP sales router', () => {
     expect(conflict.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
   });
 
+  it('returns the booking refund the checkout owes with the 409', async () => {
+    const response = await request(setup({
+      complete: vi.fn().mockRejectedValue(
+        new SaleError('BOOKING_REFUND_REQUIRED', undefined, { amount: '35.00' }),
+      ),
+    }).app).post('/erp/sales').send({
+      clientId: 5,
+      cashierSessionId: 13,
+      bookingId: 9,
+      bookingCredit: '200.00',
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1630',
+      lines: [{ itemType: 'service', serviceId: 21, quantity: 1, unitPrice: '165', employeeId: 8 }],
+      payments: [],
+    });
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('BOOKING_REFUND_REQUIRED');
+    // Without the amount the till cannot reopen the refund, so it travels with it.
+    expect(response.body.error.amount).toBe('35.00');
+  });
+
   it('forwards unknown errors to Express error middleware', async () => {
     const { app } = setup({ quote: vi.fn().mockRejectedValue(new Error('database secret')) });
     const response = await request(app).post('/erp/sales/quote').send({

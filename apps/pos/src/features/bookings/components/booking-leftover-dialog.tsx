@@ -76,7 +76,24 @@ export function BookingLeftoverDialog({ bookingId, branchId, cashierSessionId }:
   const data = booking.data;
   const waiting = data?.services.filter((service) => service.status === 'pending') ?? [];
   const fresh = booking.dataUpdatedAt >= openedAt;
-  if (!fresh || !data || data.status !== 'arrived' || waiting.length === 0) return null;
+  // The choice is mandatory, so the counter stays held while the booking is
+  // still loading: a sale that starts now would drop the leftover services with
+  // nobody left to decide about them.
+  if (!fresh || !data) {
+    return (
+      <Modal title="خدمات الحجز المتبقية" dismissOnBackdrop={false} onClose={() => undefined}>
+        {booking.isError ? (
+          <>
+            <p role="alert" className="text-[13px] text-danger">تعذر تحميل بيانات الحجز. أعد المحاولة قبل متابعة البيع.</p>
+            <Button variant="secondary" onClick={() => void booking.refetch()}>إعادة المحاولة</Button>
+          </>
+        ) : (
+          <p className="text-[13px] text-muted">جارٍ تحميل بيانات الحجز...</p>
+        )}
+      </Modal>
+    );
+  }
+  if (data.status !== 'arrived' || waiting.length === 0) return null;
   const waitingIds = waiting.map((service) => service.serviceId);
   const pending = keep.isPending || move.isPending || cancel.isPending;
 

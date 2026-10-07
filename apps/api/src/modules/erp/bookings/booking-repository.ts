@@ -435,11 +435,14 @@ export const createDrizzleBookingRepository = (
     });
   },
 
+  // A cancelled service is no longer work for anybody: only services still
+  // waiting keep their employee booked for a future date.
   async countFutureForEmployee(employeeId, now) {
     const rows = await database.select({ count: countDistinct(erpBookings.id) }).from(erpBookings)
       .innerJoin(erpBookingServices, eq(erpBookingServices.bookingId, erpBookings.id))
       .where(and(
         eq(erpBookingServices.preferredEmployeeId, employeeId),
+        eq(erpBookingServices.status, 'pending'),
         inArray(erpBookings.status, ['booked', 'arrived']),
         gt(erpBookings.scheduledAt, now),
       ));
@@ -464,13 +467,15 @@ export const createDrizzleBookingRepository = (
     const booking = (await transaction.select().from(erpBookings).where(scope)
       .for('update').limit(1))[0];
     if (!booking) throw new BookingError('BOOKING_ALREADY_HANDLED');
+    // Locking, so the sale sees a service cancelled since this transaction
+    // started rather than the snapshot its first read froze.
     const pending = await transaction.select({
       id: erpBookingServices.id,
       serviceId: erpBookingServices.serviceId,
     }).from(erpBookingServices).where(and(
       eq(erpBookingServices.bookingId, input.bookingId),
       eq(erpBookingServices.status, 'pending'),
-    ));
+    )).for('update');
     const pendingByServiceId = new Map(pending.map((row) => [row.serviceId, row.id]));
     // Only booked services sell, each booked unit once, one quantity per service.
     const seen = new Set<number>();
@@ -484,15 +489,20 @@ export const createDrizzleBookingRepository = (
       throw new BookingError('BOOKING_SERVICE_NOT_FOUND', 'خدمات البيع لا تطابق خدمات الحجز');
     }
     for (const serviceId of seen) {
-      await transaction.update(erpBookingServices).set({
+      // Addressing the locked row and requiring it to still be pending keeps a
+      // cancel that slipped in from being overwritten by this sale.
+      const result = await transaction.update(erpBookingServices).set({
         status: 'sold',
         invoiceId: input.invoiceId,
         invoiceLineId: input.services.find((line) => line.serviceId === serviceId)!.invoiceLineId,
         changedAt: input.convertedAt,
       }).where(and(
-        eq(erpBookingServices.bookingId, input.bookingId),
-        eq(erpBookingServices.serviceId, serviceId),
+        eq(erpBookingServices.id, pendingByServiceId.get(serviceId)!),
+        eq(erpBookingServices.status, 'pending'),
       ));
+      if (result[0].affectedRows !== 1) {
+        throw new BookingError('BOOKING_SERVICE_NOT_FOUND', 'خدمات البيع لا تطابق خدمات الحجز');
+      }
     }
     // With nothing left pending the booking is spent; otherwise the cashier
     // must still choose keep / move / cancel for the leftovers.
@@ -608,6 +618,7 @@ export const createDrizzleBookingRepository = (
           kind: erpBookingPayments.kind,
           method: erpBookingPayments.method,
           amount: erpBookingPayments.amount,
+          cashierSessionId: erpBookingPayments.cashierSessionId,
         }).from(erpBookingPayments).where(and(
           eq(erpBookingPayments.bookingId, input.bookingId),
           eq(erpBookingPayments.operationReference, input.operationReference),
@@ -619,7 +630,10 @@ export const createDrizzleBookingRepository = (
       const replay = async (locking: boolean) => {
         const previous = await findRecorded(locking);
         if (!previous) return null;
+        // The same reference is the same payment only inside the same drawer: a
+        // retry naming another cashier session is a different operation.
         if (previous.kind === 'payment' && previous.method === input.method
+          && previous.cashierSessionId === input.cashierSessionId
           && toCents(previous.amount) === toCents(input.amount)) {
           return (await hydrate(transaction, input.branchId, input.bookingId))!;
         }

@@ -39,12 +39,12 @@ const failure = (
   status: number,
   code: string,
   message: string,
-  fieldErrors?: Record<string, string[]>,
+  extra: Record<string, unknown> = {},
 ) => response.status(status).json({
   error: {
     code,
     message,
-    ...(fieldErrors ? { fieldErrors } : {}),
+    ...extra,
     requestId: responseRequestId(response),
   },
 });
@@ -60,7 +60,7 @@ const handleError = (error: unknown, response: Response, next: NextFunction) => 
       const field = issue.path.join('.') || '_root';
       (fieldErrors[field] ??= []).push(issue.message);
     }
-    failure(response, 400, 'SALE_VALIDATION_FAILED', 'بيانات البيع غير صالحة', fieldErrors);
+    failure(response, 400, 'SALE_VALIDATION_FAILED', 'بيانات البيع غير صالحة', { fieldErrors });
     return;
   }
   if (error instanceof ErpBranchContextError) {
@@ -80,8 +80,10 @@ const handleError = (error: unknown, response: Response, next: NextFunction) => 
       : error.code === 'SALE_VALIDATION_FAILED'
         ? 400
         : 409;
-    failure(response, status, error.code, error.message,
-      error.code === 'PAYMENT_TOTAL_MISMATCH' ? { payments: [error.message] } : undefined);
+    failure(response, status, error.code, error.message, {
+      ...(error.code === 'PAYMENT_TOTAL_MISMATCH' ? { payments: [error.message] } : {}),
+      ...error.details,
+    });
     return;
   }
   next(error);

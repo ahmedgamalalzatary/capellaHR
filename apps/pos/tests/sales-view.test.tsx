@@ -308,6 +308,64 @@ describe('ERP service-sale view', () => {
     }));
   });
 
+  it('reopens the refund with the amount the server asks for', async () => {
+    mocks.getBooking.mockResolvedValue(arrivedBooking({
+      money: { paid: '100.00', held: '100.00', pendingValue: '350.00', maxPayable: '250.00' },
+    }));
+    // The till worked out no refund of its own, but the server holds more money
+    // than the basket shows: it refuses and names the amount owed.
+    mocks.completeSale.mockReset()
+      .mockRejectedValueOnce(new ApiError(409, {
+        code: 'BOOKING_REFUND_REQUIRED',
+        message: 'يجب إرجاع فائض مقدم الحجز في نفس عملية البيع',
+        amount: '35.00',
+      }))
+      .mockResolvedValue(invoice);
+    renderView(22);
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: 'حذف قص شعر' }));
+    await screen.findByText('تم سداد الإجمالي بالكامل');
+    const completeButton = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect((completeButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(completeButton);
+
+    // The refused sale reopens carrying the server's own amount, ready to send back.
+    expect(await screen.findByText(/سيتم رد 35.00 ج.م للعميل من الدرج/)).toBeDefined();
+    expect((screen.getByLabelText('رد نقدي') as HTMLInputElement).value).toBe('35.00');
+    // The spent request is gone: the reopened sale submits under a new key.
+    expect(readOfflineQueue()).toEqual([]);
+    await completeWhenReady();
+    expect(mocks.completeSale.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      bookingId: 22,
+      bookingRefund: { payments: [{ method: 'cash', amount: '35.00' }] },
+    }));
+  });
+
+  it('leaves a refused booking sale recoverable after the refund is paid back', async () => {
+    mocks.getBooking.mockResolvedValue(arrivedBooking({
+      money: { paid: '100.00', held: '100.00', pendingValue: '350.00', maxPayable: '250.00' },
+    }));
+    mocks.completeSale.mockReset()
+      .mockRejectedValueOnce(new ApiError(409, {
+        code: 'BOOKING_REFUND_REQUIRED',
+        message: 'يجب إرجاع فائض مقدم الحجز في نفس عملية البيع',
+        amount: '35.00',
+      }))
+      .mockResolvedValue(invoice);
+    renderView(22);
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: 'حذف قص شعر' }));
+    await screen.findByText('تم سداد الإجمالي بالكامل');
+    const completeButton = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect((completeButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(completeButton);
+    await screen.findByText(/سيتم رد 35.00 ج.م للعميل من الدرج/);
+    await completeWhenReady();
+    // The saved sale leaves nothing behind for the next cashier to trip over.
+    expect(readOfflineQueue()).toEqual([]);
+    expect(readStoredPending()).toBeNull();
+  });
+
   it('refuses a booking sale while the till is offline', async () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     mocks.getBooking.mockResolvedValue(arrivedBooking());

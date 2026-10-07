@@ -23,6 +23,7 @@ import {
   enqueueOfflineSale,
   listOfflineSales,
   markOfflineSaleFailed,
+  removeOfflineSale,
   type OfflineSaleQueueItem,
 } from '../offline-sale-queue';
 import { synchronizeOfflineSales } from '../offline-sale-sync';
@@ -61,6 +62,7 @@ export function useSaleWorkspaceCheckout({
   quoteInput,
   pendingSale,
   pendingInput,
+  onBookingRefundRequired,
   selectClient,
   applyDraft,
   setEmployee,
@@ -101,6 +103,8 @@ export function useSaleWorkspaceCheckout({
   quoteInput: QuoteSaleInput;
   pendingSale: PendingSale | null;
   pendingInput: CompleteSaleInput | null;
+  /** Hands the server's own refund amount back, so the sale reopens around it. */
+  onBookingRefundRequired: (amount: string) => void;
   selectClient: (next: Client | null) => void;
   applyDraft: (draft: StoredSaleDraft) => void;
   setEmployee: (value: AssignableEmployee | null) => void;
@@ -144,6 +148,23 @@ export function useSaleWorkspaceCheckout({
     onSuccess: ({ invoice, queued, retryableFailure }, input) => {
       submitting.current = false;
       if (!invoice) {
+        // A refund the server demanded arrives here, not as a thrown error: the
+        // sync layer records the refusal on the queued request instead. Reopen
+        // this same sale around the amount it named, because that request is
+        // spent and a retry of it could never carry the refund.
+        const required = queued?.failure?.code === 'BOOKING_REFUND_REQUIRED'
+          ? queued.failure.amount
+          : undefined;
+        if (required !== undefined) {
+          if (!removeOfflineSale(input.idempotencyKey)) return;
+          void queryClient.invalidateQueries({ queryKey: bookingQueryKeys.all });
+          removeSaleDraft(workspaceOwner, input.idempotencyKey);
+          setPendingSale(null);
+          setAmbiguous(false);
+          setIdempotencyKey(createUuid());
+          onBookingRefundRequired(required);
+          return;
+        }
         setAmbiguous(retryableFailure || queued?.state === 'failed');
         return;
       }

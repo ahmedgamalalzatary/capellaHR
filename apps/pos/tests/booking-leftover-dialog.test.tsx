@@ -49,11 +49,36 @@ describe('leftover services after a booking sale', () => {
     mocks.getBooking.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
     renderDialog(client);
     await act(() => client.invalidateQueries({ queryKey: bookingQueryKeys.all, refetchType: 'none' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    // The stale booking still names the services just sold, so the choice waits:
+    // what blocks the counter meanwhile must not repeat them.
+    const waiting = screen.getByRole('dialog', { name: 'خدمات الحجز المتبقية' });
+    expect(waiting.textContent).not.toContain('صبغة شعر');
     await act(async () => { release(afterSale); });
     const dialog = await screen.findByRole('dialog', { name: 'خدمات الحجز المتبقية' });
     expect(dialog.textContent).toContain('قص شعر');
     expect(dialog.textContent).not.toContain('صبغة شعر');
+  });
+
+  it('holds the counter while the booking reloads so the choice cannot be skipped', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let release!: (value: unknown) => void;
+    mocks.getBooking.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    renderDialog(client);
+    // Nothing about the sale may be reachable until the leftovers are known.
+    const waiting = await screen.findByRole('dialog', { name: 'خدمات الحجز المتبقية' });
+    expect(screen.queryByRole('button', { name: 'إبقاء في الموعد الأصلي' })).toBeNull();
+    expect(waiting.textContent).toContain('جارٍ تحميل بيانات الحجز');
+    await act(async () => { release(afterSale); });
+    expect(await screen.findByRole('button', { name: 'إبقاء في الموعد الأصلي' })).toBeTruthy();
+  });
+
+  it('reports a failed load and lets the cashier try again', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mocks.getBooking.mockReturnValueOnce(Promise.reject(new Error('offline')));
+    renderDialog(client);
+    expect((await screen.findByRole('alert')).textContent).toContain('تعذر تحميل بيانات الحجز');
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await screen.findByRole('button', { name: 'إبقاء في الموعد الأصلي' })).toBeTruthy();
   });
 
   it('keeps the refund the cashier is typing through a background reload', async () => {

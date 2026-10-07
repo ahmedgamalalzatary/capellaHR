@@ -31,6 +31,8 @@ export type OfflineSaleQueueItem = {
     kind: OfflineSaleFailureKind;
     code: string;
     message: string;
+    /** Money the server still needs from this request, kept so the sale can reopen around it. */
+    amount?: string;
   } | null;
   recoveryDraft?: StoredSaleDraft;
 };
@@ -79,7 +81,12 @@ const parseFailure = (value: unknown): OfflineSaleQueueItem['failure'] => {
     || (value.kind !== 'retryable' && value.kind !== 'conflict')
     || typeof value.code !== 'string'
     || typeof value.message !== 'string') return null;
-  return { kind: value.kind, code: value.code, message: value.message };
+  return {
+    kind: value.kind,
+    code: value.code,
+    message: value.message,
+    ...(typeof value.amount === 'string' ? { amount: value.amount } : {}),
+  };
 };
 
 /**
@@ -285,11 +292,14 @@ export const markOfflineSaleFailed = (idempotencyKey: string, error: unknown) =>
     const kind = classifySaleSubmissionError(error);
     const code = error instanceof ApiError ? error.code : 'NETWORK_ERROR';
     const message = error instanceof Error ? error.message : 'تعذر إرسال البيع';
+    // A refund the server demanded outlives this attempt: the amount has to
+    // survive in the queue, or reopening the sale would have nothing to send.
+    const amount = error instanceof ApiError ? error.amount : undefined;
     return writeItem({
       ...current,
       state: kind === 'conflict' ? 'conflict' : 'failed',
       updatedAt: Date.now(),
-      failure: { kind, code, message },
+      failure: { kind, code, message, ...(amount === undefined ? {} : { amount }) },
     });
   } catch {
     return null;

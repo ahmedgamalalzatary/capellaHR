@@ -203,7 +203,12 @@ const messages: Record<SaleErrorCode, string> = {
 };
 
 export class SaleError extends Error {
-  constructor(public readonly code: SaleErrorCode, message = messages[code]) {
+  constructor(
+    public readonly code: SaleErrorCode,
+    message = messages[code],
+    /** Facts the caller must act on, such as the refund amount the sale owes. */
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'SaleError';
   }
