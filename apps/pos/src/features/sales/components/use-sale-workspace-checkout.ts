@@ -156,7 +156,12 @@ export function useSaleWorkspaceCheckout({
           ? queued.failure.amount
           : undefined;
         if (required !== undefined) {
-          if (!removeOfflineSale(input.idempotencyKey)) return;
+          // A spent request left on the queue would be replayed as a doomed
+          // retry, so say so rather than reopening a sale that cannot settle.
+          if (!removeOfflineSale(input.idempotencyKey)) {
+            setStorageError(true);
+            return;
+          }
           void queryClient.invalidateQueries({ queryKey: bookingQueryKeys.all });
           removeSaleDraft(workspaceOwner, input.idempotencyKey);
           setPendingSale(null);

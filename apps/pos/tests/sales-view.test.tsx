@@ -366,6 +366,32 @@ describe('ERP service-sale view', () => {
     expect(readStoredPending()).toBeNull();
   });
 
+  it('tells the cashier when a refused booking sale cannot be cleared from storage', async () => {
+    mocks.getBooking.mockResolvedValue(arrivedBooking({
+      money: { paid: '100.00', held: '100.00', pendingValue: '350.00', maxPayable: '250.00' },
+    }));
+    mocks.completeSale.mockReset()
+      .mockRejectedValueOnce(new ApiError(409, {
+        code: 'BOOKING_REFUND_REQUIRED',
+        message: 'يجب إرجاع فائض مقدم الحجز في نفس عملية البيع',
+        amount: '35.00',
+      }))
+      .mockResolvedValue(invoice);
+    // Storage refuses to let go of the spent request, so it stays on the queue.
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => undefined);
+    renderView(22);
+    expect(await screen.findByText('صبغة شعر')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: 'حذف قص شعر' }));
+    await screen.findByText('تم سداد الإجمالي بالكامل');
+    const completeButton = screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' });
+    await waitFor(() => expect((completeButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(completeButton);
+    // Silent recovery would leave the cashier pressing a button that does nothing.
+    expect(await screen.findByText(/تعذر حفظ طلب البيع بأمان/)).toBeDefined();
+    expect(screen.queryByText(/سيتم رد 35.00 ج.م للعميل من الدرج/)).toBeNull();
+    removeItem.mockRestore();
+  });
+
   it('refuses a booking sale while the till is offline', async () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     mocks.getBooking.mockResolvedValue(arrivedBooking());
