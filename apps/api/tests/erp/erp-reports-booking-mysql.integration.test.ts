@@ -56,6 +56,7 @@ beforeAll(async () => {
   }
   invoiceNumber = `INV-BOOKING-REPORT-${data.marker}`.slice(0, 40);
   const sales = createSaleService({
+    employees: { findActiveById: async () => null },
     repository: createDrizzleSaleRepository(database, audit),
     resolveBranchContext: async () => ({
       accountId: data.accountId, accountRole: 'cashier' as const,

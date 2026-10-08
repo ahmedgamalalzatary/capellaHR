@@ -13,9 +13,10 @@ import { notifyError, notifySuccess } from '@/lib/notify';
 import { reassignServiceQueueEntry } from '../api/sales-api';
 import { responseMessage } from './invoice-format';
 
-export function QueueReassignmentDialog({ ticket, branchId, onClose, onUpdated }: {
+export function QueueReassignmentDialog({ ticket, branchId, isAdmin, onClose, onUpdated }: {
   ticket: ConsumableServiceExecution;
   branchId?: number;
+  isAdmin: boolean;
   onClose(): void;
   onUpdated(): void;
 }) {
@@ -37,7 +38,7 @@ export function QueueReassignmentDialog({ ticket, branchId, onClose, onUpdated }
   const same = employee?.id === ticket.employeeId;
   return <Modal title={`تغيير موظف الخدمة: ${ticket.serviceName} — الدور ${ticket.queueNumber}`} onClose={onClose}>
     <p className="text-sm text-muted">الموظف الحالي: {ticket.employeeName}</p>
-    <PresentEmployeePicker selected={employee} onSelect={setEmployee} {...(branchId === undefined ? {} : { branchId })} />
+    <PresentEmployeePicker selected={employee} onSelect={setEmployee} forAdminReassignment={isAdmin} {...(branchId === undefined ? {} : { branchId })} />
     <label className="block space-y-1 text-sm">
       <span>سبب التغيير</span>
       <Textarea aria-label="سبب التغيير" maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} />

@@ -19,7 +19,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { ErpAssignmentError } from '../assignment/assignment-service.js';
 import type { ErpBranchContextResolver } from '../branch-context.js';
-import type { ErpAccountIdentity } from '../hr-capabilities.js';
+import type { ErpAccountIdentity, ErpEmployeeCapability } from '../hr-capabilities.js';
 import type { AssignableEmployee } from '../assignment/assignment-service.js';
 import { allocateReversalAmounts, MoneyCalculationError, toCents } from './services/sale-calculations.js';
 
@@ -174,7 +174,7 @@ const messages: Record<SaleErrorCode, string> = {
   REASSIGN_ADMIN_REQUIRED: 'يمكن للمسؤول فقط تغيير موظف خدمة مكتملة.',
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
   CLIENT_NOT_FOUND: 'العميل غير موجود',
-  EMPLOYEE_NOT_ASSIGNABLE: 'الموظف غير مسجل الحضور حاليًا',
+  EMPLOYEE_NOT_ASSIGNABLE: 'الموظف غير متاح للإسناد في هذا الفرع',
   SELLER_NOT_ON_ROSTER: 'الكاشير المحدد غير مضاف لوردية هذا الفرع',
   CASHIER_SESSION_NOT_OPEN: 'جلسة الكاشير غير مفتوحة',
   SERVICE_UNAVAILABLE: 'إحدى الخدمات غير متاحة',
@@ -217,6 +217,7 @@ export class SaleError extends Error {
 export const createSaleService = (dependencies: {
   repository: SaleRepository;
   resolveBranchContext: ErpBranchContextResolver;
+  employees: ErpEmployeeCapability;
   assignment: {
     assertAssignable(
       actor: ErpAccountIdentity,
@@ -241,7 +242,19 @@ export const createSaleService = (dependencies: {
     ): Promise<void>;
   };
 }) => {
-  const { repository, resolveBranchContext, assignment, invoiceNumbers, bookings } = dependencies;
+  const { repository, resolveBranchContext, employees, assignment, invoiceNumbers, bookings } = dependencies;
+  const assertReassignmentEmployee = async (
+    actor: ErpAccountIdentity, employeeId: number, branchId: number, context: unknown,
+  ): Promise<AssignableEmployee> => {
+    if (actor.role !== 'admin') {
+      return assignment.assertAssignable(actor, { employeeId, branchId }, context);
+    }
+    const employee = await employees.findActiveById(employeeId);
+    if (!employee || employee.branchId !== branchId) {
+      throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');
+    }
+    return employee;
+  };
   const resolveInput = async (actor: ErpAccountIdentity, input: InternalCompleteSaleInput) => {
     const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
     return { resolved: { ...input, branchId }, accountId };
@@ -363,10 +376,9 @@ export const createSaleService = (dependencies: {
           actingAccountId: accountId,
           actingAccountRole: actor.role,
           reassignedAt: new Date(),
-          assertEmployee: (context) => assignment.assertAssignable(actor, {
-            employeeId: input.employeeId,
-            branchId,
-          }, context),
+          assertEmployee: (context) => assertReassignmentEmployee(
+            actor, input.employeeId, branchId, context,
+          ),
         });
       } catch (error) {
         if (error instanceof ErpAssignmentError) {
@@ -389,9 +401,9 @@ export const createSaleService = (dependencies: {
           input: { ...input, branchId },
           actingAccountId: accountId, actingAccountRole: actor.role,
           reassignedAt: new Date(),
-          assertEmployee: (context) => assignment.assertAssignable(actor, {
-            employeeId: input.employeeId, branchId,
-          }, context),
+          assertEmployee: (context) => assertReassignmentEmployee(
+            actor, input.employeeId, branchId, context,
+          ),
         });
       } catch (error) {
         if (error instanceof ErpAssignmentError) throw new SaleError('EMPLOYEE_NOT_ASSIGNABLE');

@@ -75,6 +75,6 @@ export function ServiceStatusDialog({
         {mutation.isError ? <p role="alert" className="text-sm text-danger">{responseMessage(mutation.error, 'تعذر تحديث حالة الخدمة.')}</p> : null}
       </div>
     )}
-    {reassigning ? <QueueReassignmentDialog ticket={reassigning} {...(branchId === undefined ? {} : { branchId })} onClose={() => setReassigning(null)} onUpdated={() => { void services.refetch(); void cache.invalidateQueries({ queryKey: ['consumables-services'] }); void invalidateErpCaches(cache, 'sale'); }} /> : null}
+    {reassigning ? <QueueReassignmentDialog ticket={reassigning} isAdmin={isAdmin} {...(branchId === undefined ? {} : { branchId })} onClose={() => setReassigning(null)} onUpdated={() => { void services.refetch(); void cache.invalidateQueries({ queryKey: ['consumables-services'] }); void invalidateErpCaches(cache, 'sale'); }} /> : null}
   </Modal>;
 }

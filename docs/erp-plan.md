@@ -178,7 +178,7 @@ They share `packages/ui` (one design language) and `packages/contracts`, but bui
 | Clients on invoices | **Mandatory** — every invoice references a client record; no anonymous sales |
 | Payment timing | Service invoices must be paid in full. **Product-only invoices may be partially paid**, keep an open balance on the same invoice, and accept additional payments later. Deposits, prepaid packages, and service credit remain out of scope |
 | Service pricing | Optional catalog price: fixed prices are locked during sale; services without a catalog price require a positive seller-entered unit price. Admins convert modes by deleting or adding the catalog price. |
-| Assignment eligibility | **Strictly checked-in employees**, no cashier override — an unchecked-in employee checks in via HR first |
+| Assignment eligibility | **Strictly checked-in employees** for new sales and cashier reassignment. Admins may reassign an existing service to any active employee in the same branch regardless of attendance; reasons, audit history, refund restrictions, and payroll locks still apply |
 | Product commission | Configurable percentage per product; paid to the employee assigned to that product line and recorded in the same immutable commission ledger. Zero-commission products still retain their assigned employee. Branch transfers remain employee-free and commission-free |
 | Deployment model | **Per-customer installation** (own server + own MySQL) — confirmed; §4 rests on this |
 | POS sessions | **Exactly one open cashier session per branch at a time** — two cashiers can never be open simultaneously |

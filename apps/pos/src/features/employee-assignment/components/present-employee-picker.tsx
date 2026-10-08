@@ -10,7 +10,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { Notice } from '@/components/feedback/notice';
 import { ApiError } from '@/lib/api/client';
 
-import { listAssignableEmployees, type AssignableEmployee } from '../api/assignable-employees-api';
+import { listAssignableEmployees, listReassignmentEmployees, type AssignableEmployee } from '../api/assignable-employees-api';
 import { employeeAssignmentQueryKeys } from '../query-keys';
 
 const serverErrorMessage = (error: unknown): string | undefined => {
@@ -23,24 +23,29 @@ const STALE_SELECTION_MESSAGE = 'انصرف الموظف المحدد، اختر
 /**
  * Picks the one employee an invoice is assigned to.
  *
- * Eligibility is strictly live attendance with no cashier or admin override
- * (`docs/erp-plan.md` §7): this component only ever shows what the server
- * reports as present, and the server re-checks the choice when the sale is
- * completed. A selection that checked out in the meantime is dropped here so
- * the counter notices before submitting, never to replace that server check.
+ * Sales and cashier corrections require live attendance. Admin service
+ * corrections may instead show the active branch directory; the server
+ * independently checks the account role and employee eligibility.
  */
 export function PresentEmployeePicker({
   selected,
   onSelect,
   branchId,
+  forAdminReassignment = false,
 }: {
   selected?: AssignableEmployee | null;
   onSelect: (employee: AssignableEmployee | null) => void;
   branchId?: number;
+  forAdminReassignment?: boolean;
 }) {
   const presentQuery = useQuery({
-    queryKey: employeeAssignmentQueryKeys.present(branchId),
-    queryFn: () => listAssignableEmployees(branchId === undefined ? {} : { branchId }),
+    queryKey: forAdminReassignment
+      ? employeeAssignmentQueryKeys.reassignment(branchId)
+      : employeeAssignmentQueryKeys.present(branchId),
+    queryFn: () => forAdminReassignment
+      ? listReassignmentEmployees(branchId!)
+      : listAssignableEmployees(branchId === undefined ? {} : { branchId }),
+    enabled: !forAdminReassignment || branchId !== undefined,
   });
 
   const items = presentQuery.data;
@@ -57,7 +62,7 @@ export function PresentEmployeePicker({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">الموظف المسجل حضوره</p>
+        <p className="text-sm font-medium">{forAdminReassignment ? 'موظف الفرع' : 'الموظف المسجل حضوره'}</p>
         <Button
           variant="ghost"
           size="sm"
@@ -70,14 +75,14 @@ export function PresentEmployeePicker({
       </div>
 
       {staleNotice ? (
-        <Notice tone="warning">{STALE_SELECTION_MESSAGE}</Notice>
+        <Notice tone="warning">{forAdminReassignment ? 'الموظف المحدد لم يعد متاحًا في هذا الفرع، اختر موظفًا آخر.' : STALE_SELECTION_MESSAGE}</Notice>
       ) : null}
 
       {presentQuery.isPending ? (
         <LoadingState label="جارٍ تحميل الموظفين…" align="start" className="p-0" />
       ) : presentQuery.isError ? (
         <EmptyState
-          title="تعذر تحميل الموظفين المسجلين حضورًا"
+          title={forAdminReassignment ? 'تعذر تحميل موظفي الفرع' : 'تعذر تحميل الموظفين المسجلين حضورًا'}
           description={serverErrorMessage(presentQuery.error)}
           action={
             <Button variant="secondary" size="sm" onClick={() => void presentQuery.refetch()}>
@@ -87,8 +92,8 @@ export function PresentEmployeePicker({
         />
       ) : (items?.length ?? 0) === 0 ? (
         <EmptyState
-          title="لا يوجد موظف مسجل حضورًا في الفرع الآن"
-          description="لا يمكن إسناد الفاتورة إلا لموظف مسجل حضوره، سجّل حضوره أولًا."
+          title={forAdminReassignment ? 'لا يوجد موظفون نشطون في هذا الفرع' : 'لا يوجد موظف مسجل حضورًا في الفرع الآن'}
+          description={forAdminReassignment ? 'أضف موظفًا نشطًا إلى الفرع أولًا.' : 'لا يمكن إسناد الفاتورة إلا لموظف مسجل حضوره، سجّل حضوره أولًا.'}
         />
       ) : (
         <Card className="scroll-thin max-h-72 overflow-y-auto shadow-card">

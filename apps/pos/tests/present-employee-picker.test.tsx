@@ -10,7 +10,7 @@ vi.mock('../src/features/employee-assignment/api/assignable-employees-api', asyn
   listAssignableEmployees: mocks.listAssignableEmployees,
 }));
 
-import { ApiError } from '../src/lib/api/client';
+import { api, ApiError } from '../src/lib/api/client';
 import {
   PresentEmployeePicker,
   type AssignableEmployee,
@@ -22,11 +22,12 @@ const heba: AssignableEmployee = { id: 8, employeeCode: 43, fullName: 'هبة ع
 function renderPicker(
   selected: AssignableEmployee | null = null,
   onSelect = vi.fn(),
+  forAdminReassignment = false,
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <PresentEmployeePicker selected={selected} onSelect={onSelect} />
+      <PresentEmployeePicker selected={selected} onSelect={onSelect} forAdminReassignment={forAdminReassignment} branchId={1} />
     </QueryClientProvider>,
   );
   return onSelect;
@@ -39,9 +40,23 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe('PresentEmployeePicker', () => {
+  test('offers all active branch employees across pages for admin service corrections', async () => {
+    mocks.listAssignableEmployees.mockResolvedValue([]);
+    vi.spyOn(api, 'getPage').mockImplementation(async (url: string) => ({
+      items: url.includes('page=1&') ? [nada] : [heba],
+      meta: { page: url.includes('page=1&') ? 1 : 2, pageSize: 100, total: 2, totalPages: 2 },
+    }) as never);
+    const onSelect = renderPicker(null, vi.fn(), true);
+    expect(await screen.findByRole('button', { name: /هبة علي/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /ندى سمير/ })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /هبة علي/ }));
+    expect(onSelect).toHaveBeenCalledWith(heba);
+  });
+
   test('announces employee loading', () => {
     mocks.listAssignableEmployees.mockReturnValue(new Promise(() => undefined));
     renderPicker();

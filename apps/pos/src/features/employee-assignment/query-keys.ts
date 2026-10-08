@@ -2,4 +2,5 @@
 export const employeeAssignmentQueryKeys = {
   all: ['employee-assignment'] as const,
   present: (branchId?: number) => ['employee-assignment', 'present', branchId ?? 'own'] as const,
+  reassignment: (branchId?: number) => ['employee-assignment', 'reassignment', branchId ?? 'own'] as const,
 };

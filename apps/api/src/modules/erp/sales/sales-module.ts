@@ -49,6 +49,7 @@ export const createSalesModule = (
     repository: saleRepository,
     resolveBranchContext: createErpBranchContextResolver(capabilities),
     assignment: capabilities.assignment,
+    employees: capabilities.employees,
     invoiceNumbers: createInvoiceNumberAllocator(createDrizzleInvoiceSequenceStore(database)),
     ...(capabilities.bookings ? { bookings: capabilities.bookings } : {}),
   });

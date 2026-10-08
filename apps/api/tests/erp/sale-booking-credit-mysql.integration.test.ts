@@ -18,6 +18,7 @@ const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>, options: { 
   const saleRepository = createDrizzleSaleRepository(database, audit);
   let counter = 0;
   const service = createSaleService({
+    employees: { findActiveById: async () => null },
     repository: saleRepository,
     resolveBranchContext: async () => ({
       accountId: data.accountId, accountRole: 'cashier' as const,

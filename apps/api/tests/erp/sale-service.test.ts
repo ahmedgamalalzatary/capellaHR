@@ -6,7 +6,8 @@ import {
   SaleError,
   type SaleRepository,
 } from '../../src/modules/erp/sales/sale-service.js';
-import { ErpAssignmentError } from '../../src/modules/erp/assignment/assignment-service.js';
+import { createEmployeeAssignmentService, ErpAssignmentError } from '../../src/modules/erp/assignment/assignment-service.js';
+import { createErpEmployeeCapability } from '../../src/modules/employees/erp-employee-capability.js';
 
 const actor = { role: 'cashier' as const, accountId: 3, branchId: 2 };
 const input: CompleteSaleInput = {
@@ -125,6 +126,7 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
     }),
   );
   const service = createSaleService({
+    employees: { findActiveById: async () => null },
     repository,
     resolveBranchContext: vi.fn().mockResolvedValue({
       accountId: 3, accountRole: 'cashier', branchId: 2, employeeId: 9,
@@ -146,10 +148,67 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
 };
 
 describe('ERP sale service', () => {
+  const absentEmployeeReassignment = (employee: {
+    id: number; employeeCode: number; fullName: string; branchId: number;
+    employmentStatus: 'active' | 'inactive'; deletedAt: Date | null;
+  } | null) => createSaleService({
+    repository: setup({
+      reassignQueue: async (operation) => {
+        await operation.assertEmployee({});
+        return invoice;
+      },
+    }).repository,
+    resolveBranchContext: async (value) => ({
+      accountId: value.accountId, accountRole: value.role, branchId: 2, employeeId: null,
+    }),
+    employees: createErpEmployeeCapability({ findActiveById: async () => employee }),
+    assignment: createEmployeeAssignmentService({
+      attendance: {
+        listPresentEmployees: async () => [], findPresentEmployee: async () => null,
+      },
+      resolveBranchContext: async (value) => ({
+        accountId: value.accountId, accountRole: value.role, branchId: 2, employeeId: null,
+      }),
+    }),
+    invoiceNumbers: { allocate: vi.fn() },
+  });
+  const reassignment = {
+    employeeId: 11, branchId: 2, reason: 'Correct performer',
+    operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633',
+  };
+  const absentEmployee = {
+    id: 11, employeeCode: 1011, fullName: 'Absent employee', branchId: 2,
+    employmentStatus: 'active' as const, deletedAt: null,
+  };
+
+  it('allows an admin to reassign a service to an employee who is not checked in', async () => {
+    await expect(absentEmployeeReassignment(absentEmployee).reassignQueue(
+      { role: 'admin', accountId: 1 }, 44, 71, reassignment,
+    )).resolves.toEqual(invoice);
+  });
+
+  it('still rejects a cashier reassignment to an employee who is not checked in', async () => {
+    await expect(absentEmployeeReassignment(absentEmployee).reassignQueue(
+      actor, 44, 71, reassignment,
+    )).rejects.toMatchObject({ code: 'EMPLOYEE_NOT_ASSIGNABLE' });
+  });
+
+  it.each([
+    ['another branch', { ...absentEmployee, branchId: 3 }],
+    ['inactive', { ...absentEmployee, employmentStatus: 'inactive' as const }],
+    ['deleted', { ...absentEmployee, deletedAt: new Date() }],
+    ['missing', null],
+  ])('rejects admin reassignment to an employee who is %s', async (_case, employee) => {
+    await expect(absentEmployeeReassignment(employee).reassignQueue(
+      { role: 'admin', accountId: 1 }, 44, 71, reassignment,
+    )).rejects.toMatchObject({ code: 'EMPLOYEE_NOT_ASSIGNABLE' });
+  });
+
   it('claims an arrived booking inside the sale transaction', async () => {
     const converted = vi.fn().mockResolvedValue(undefined);
     const setupResult = setup();
     const service = createSaleService({
+      employees: { findActiveById: async () => null },
       repository: setupResult.repository,
       resolveBranchContext: vi.fn().mockResolvedValue({ accountId: 3, branchId: 2 }),
       assignment: { assertAssignable: setupResult.assertAssignable },
@@ -220,6 +279,7 @@ describe('ERP sale service', () => {
       return invoice;
     });
     const failing = createSaleService({
+      employees: { findActiveById: async () => null },
       repository,
       resolveBranchContext: vi.fn().mockResolvedValue({ accountId: 3, branchId: 2 }),
       assignment: { assertAssignable: vi.fn().mockRejectedValue(
@@ -471,6 +531,7 @@ describe('ERP sale service', () => {
     const { repository } = setup({ complete: repositoryComplete });
     const assignmentFailure = new ErpAssignmentError('ERP_EMPLOYEE_NOT_PRESENT', 'not present');
     const failing = createSaleService({
+      employees: { findActiveById: async () => null },
       repository,
       resolveBranchContext: vi.fn().mockResolvedValue({
         accountId: 3, accountRole: 'cashier', branchId: 2, employeeId: 9,

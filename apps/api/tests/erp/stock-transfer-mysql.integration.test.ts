@@ -85,6 +85,7 @@ const service = () => {
     },
   };
   const sales = createSaleService({
+    employees: { findActiveById: async () => null },
     repository: createDrizzleSaleRepository(database, audit),
     resolveBranchContext: createErpBranchContextResolver({ branches: branchCapability }),
     assignment: { assertAssignable: async () => { throw new Error('not used'); } },

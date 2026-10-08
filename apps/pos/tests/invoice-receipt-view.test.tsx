@@ -14,11 +14,17 @@ const listConsumableServices = vi.hoisted(() => vi.fn());
 const updateServiceExecutionStatus = vi.hoisted(() => vi.fn());
 const getCurrentCashierSession = vi.hoisted(() => vi.fn());
 const listAssignableEmployees = vi.hoisted(() => vi.fn());
+const employeeDirectory = vi.hoisted(() => vi.fn());
 const reportExports = vi.hoisted(() => ({
   actor: { current: 'admin' as 'admin' | 'cashier' },
   create: vi.fn(), list: vi.fn(), get: vi.fn(), retry: vi.fn(), download: vi.fn(),
 }));
 const originalPrint = window.print;
+
+vi.mock('../src/lib/api/client', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/lib/api/client')>();
+  return { ...original, api: { ...original.api, getPage: employeeDirectory } };
+});
 
 vi.mock('../src/features/sales/api/sales-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -36,7 +42,8 @@ vi.mock('../src/features/consumables/api/consumables-api', () => ({
   listConsumableServices,
   updateServiceExecutionStatus,
 }));
-vi.mock('../src/features/employee-assignment/api/assignable-employees-api', () => ({
+vi.mock('../src/features/employee-assignment/api/assignable-employees-api', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   listAssignableEmployees,
 }));
 vi.mock('../src/features/auth', () => ({
@@ -95,6 +102,10 @@ describe('stored invoice receipt', () => {
     listAssignableEmployees.mockReset().mockResolvedValue([{
       id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2,
     }]);
+    employeeDirectory.mockReset().mockResolvedValue({
+      items: [{ id: 11, employeeCode: 1011, fullName: 'هدى محمود', branchId: 2 }],
+      meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
+    });
     reassignServiceQueueEntry.mockReset().mockResolvedValue(saleFixtures.completedInvoice);
     getCurrentCashierSession.mockReset().mockResolvedValue({ id: 14, branchId: 2 });
     recordInvoicePayment.mockReset();
@@ -198,7 +209,14 @@ describe('stored invoice receipt', () => {
     expect(getInvoice).toHaveBeenCalledWith(44, 2);
   });
 
-  it('reassigns one service queue ticket to a present employee', async () => {
+  it('lets an admin reassign a completed service when nobody is checked in', async () => {
+    listAssignableEmployees.mockResolvedValue([]);
+    const services = await listConsumableServices();
+    listConsumableServices.mockResolvedValue({
+      ...services, items: services.items.map((item: object) => ({
+        ...item, status: 'completed', completedAt: '2026-08-03T11:00:00.000Z',
+      })),
+    });
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
@@ -214,6 +232,7 @@ describe('stored invoice receipt', () => {
       branchId: 2, employeeId: 11,
       operationReference: expect.any(String), reason: 'Correct performer',
     }));
+    expect(employeeDirectory).toHaveBeenCalledWith('/employees?status=active&branchId=2&page=1&pageSize=100');
   });
 
   it('offers ticket reassignment while a service invoice is partially refunded', async () => {
@@ -565,6 +584,18 @@ describe('stored invoice receipt', () => {
       selection: { mode: 'selected', ids: [44] },
     }));
     await waitFor(() => expect(reportExports.get).toHaveBeenCalledWith(92));
+  });
+
+  it('keeps absent employees unavailable to cashiers during service reassignment', async () => {
+    reportExports.actor.current = 'cashier';
+    listAssignableEmployees.mockResolvedValue([]);
+    renderView();
+    await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
+    fireEvent.click(screen.getByRole('button', { name: 'حالة الخدمة' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'تغيير الموظف' }));
+    expect(await screen.findByText('لا يوجد موظف مسجل حضورًا في الفرع الآن')).toBeDefined();
+    expect(employeeDirectory).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'تأكيد التغيير' }).hasAttribute('disabled')).toBe(true);
   });
 
   it('recovers the newest usable invoice export from one newest-first history page', async () => {

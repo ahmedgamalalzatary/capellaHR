@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
   balances: vi.fn(), services: vi.fn(), status: vi.fn(), record: vi.fn(), session: vi.fn(),
@@ -43,9 +44,27 @@ beforeEach(() => {
   mocks.status.mockResolvedValue([]);
   mocks.record.mockResolvedValue([]);
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks(); });
 
 describe('ConsumablesView', () => {
+  it('offers the branch employee directory to admins correcting completed services', async () => {
+    mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'admin', accountId: 1 } } });
+    sessionStorage.setItem('capella:pos-admin-branch', '3');
+    mocks.services.mockResolvedValue(page([{
+      id: 11, invoiceId: 44, serviceId: 5, status: 'completed', consumptionRecorded: false,
+      queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1',
+      employeeId: 7, employeeName: 'Current employee',
+    }]));
+    vi.spyOn(api, 'getPage').mockResolvedValue(page([{
+      id: 8, employeeCode: 1008, fullName: 'Absent employee', branchId: 3,
+    }]));
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'تغيير الموظف' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Absent employee/ }));
+    fireEvent.change(screen.getByLabelText('سبب التغيير'), { target: { value: 'Correct performer' } });
+    expect(screen.getByRole('button', { name: 'تأكيد التغيير' }).hasAttribute('disabled')).toBe(false);
+  });
+
   it('marks a sold service done without asking for consumables', async () => {
     mount();
     fireEvent.click((await screen.findAllByRole('button', { name: 'تمت' }))[0]!);
