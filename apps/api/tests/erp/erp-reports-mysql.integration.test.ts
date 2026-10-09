@@ -514,7 +514,7 @@ describe('ERP reports MySQL reader', () => {
       snapshot: { rows: expect.arrayContaining([
         expect.objectContaining({
           productName: 'اسم منتج جديد', availableQuantity: expect.any(Number),
-          unitCost: '30.00', inventoryValue: expect.any(String),
+          unitCost: '30.00', sellingPrice: '50.00', inventoryValue: expect.any(String),
         }),
       ]) },
     });

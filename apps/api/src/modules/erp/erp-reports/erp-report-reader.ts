@@ -170,7 +170,7 @@ const metadata: Record<ErpReportType, { title: string; columns: ReportColumn[] }
     columns: [
       ['id', 'المعرف'], ['eventDate', 'آخر تحديث'], ['branchName', 'الفرع'],
       ['productName', 'المنتج'], ['availableQuantity', 'الكمية المتاحة'],
-      ['unitCost', 'تكلفة الوحدة'], ['inventoryValue', 'قيمة المخزون'],
+      ['unitCost', 'تكلفة الوحدة'], ['sellingPrice', 'سعر البيع'], ['inventoryValue', 'قيمة المخزون'],
     ].map(([key, label]) => ({ key: key!, label: label! })),
   },
   'erp-profit': {

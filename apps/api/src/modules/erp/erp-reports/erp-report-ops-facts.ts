@@ -81,6 +81,7 @@ export const stockFacts = (filters: ReportFilters) => sql`
   SELECT product.id id, stock.updated_at eventDate, branch.name branchName,
     product.name productName, stock.quantity availableQuantity,
     product.last_purchase_cost unitCost,
+    product.selling_price sellingPrice,
     stock.quantity * product.last_purchase_cost inventoryValue
   FROM erp_product_stocks stock
   INNER JOIN erp_products product

@@ -173,6 +173,7 @@ describe('ERP report reader', () => {
       kind: 'success', snapshot: { columns: expect.arrayContaining([
         { key: 'availableQuantity', label: 'الكمية المتاحة' },
         { key: 'unitCost', label: 'تكلفة الوحدة' },
+        { key: 'sellingPrice', label: 'سعر البيع' },
         { key: 'inventoryValue', label: 'قيمة المخزون' },
       ]) },
     });
