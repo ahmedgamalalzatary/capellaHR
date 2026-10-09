@@ -1,7 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Printer } from 'lucide-react';
+import { useCallback, useState } from 'react';
 
 import type { CommissionSummary } from '@capella/contracts';
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label, Modal, MonthPicker } from '@capella/ui';
@@ -15,6 +16,7 @@ import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { listAssignableEmployees } from '@/features/employee-assignment';
+import { PrintSheet, type PrintableReport } from '@/features/erp-reports';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -163,6 +165,52 @@ export function CommissionsView() {
     }),
     enabled: scopeReady && Boolean(month),
   });
+  const [sheet, setSheet] = useState<PrintableReport>();
+  const finishPrinting = useCallback(() => setSheet(undefined), []);
+  const print = useMutation({
+    mutationFn: async (employeeId: number): Promise<PrintableReport> => {
+      const detail = await getCommissionDetail(employeeId, month, branchId);
+      return {
+        title: `تفاصيل عمولة ${detail.summary.employeeName} — #${detail.summary.employeeCode}`,
+        subtitle: [month, branches.data?.find((branch) => branch.id === branchId)?.name].filter(Boolean).join(' — '),
+        columns: [
+          { key: 'type', label: 'النوع' },
+          { key: 'date', label: 'التاريخ' },
+          { key: 'invoice', label: 'الفاتورة' },
+          { key: 'service', label: 'الخدمة / السبب' },
+          { key: 'base', label: 'الأساس' },
+          { key: 'rate', label: 'النسبة' },
+          { key: 'amount', label: 'العمولة / المصروف' },
+          { key: 'reference', label: 'المرجع' },
+        ],
+        rows: [
+          ...detail.entries.map((entry) => ({
+            id: `entry:${entry.id}`,
+            type: entry.type === 'earned' ? 'عمولة مكتسبة' : 'عكس عمولة',
+            date: cairoDateTime(entry.occurredAt),
+            invoice: entry.invoiceNumber,
+            service: `${entry.serviceName} — بند #${entry.lineNumber}`,
+            base: money(entry.baseAmount), rate: `${entry.commissionRate}%`, amount: money(entry.amount),
+            reference: entry.reversalId === null ? null : `#${entry.reversalId}`,
+          })),
+          ...detail.payouts.map((payment) => ({
+            id: `payout:${payment.id}`, type: 'صرف عمولة', date: cairoDateTime(payment.createdAt),
+            invoice: null, service: payment.reason, base: null, rate: null,
+            amount: money(payment.amount), reference: `مصروف #${payment.expenseId}`,
+          })),
+        ],
+        summary: [
+          { label: 'مكتسبة', value: money(detail.summary.earnedAmount) },
+          { label: 'معكوسة', value: money(detail.summary.reversedAmount) },
+          { label: 'الصافي', value: money(detail.summary.netAmount) },
+          { label: 'مدفوع (كل الفروع)', value: money(detail.summary.paidAmount) },
+          { label: 'المتاح (كل الفروع)', value: money(detail.summary.availableAmount) },
+        ],
+      };
+    },
+    onSuccess: setSheet,
+    onError: (error: unknown) => notifyError(error, 'تعذر تجهيز الطباعة.'),
+  });
   const openPayout = (summary: CommissionSummary, fromDetails = false) => {
     setSelected(summary);
     setPayoutFromDetails(fromDetails);
@@ -302,6 +350,10 @@ export function CommissionsView() {
                             <TD>
                               <div className="flex flex-wrap gap-1">
                                 <Button size="sm" variant="ghost" onClick={() => setSelected(item)}>التفاصيل</Button>
+                                <Button size="sm" variant="ghost" disabled={print.isPending || Boolean(sheet)} onClick={() => print.mutate(item.employeeId)}>
+                                  <Printer className="size-4" aria-hidden />
+                                  طباعة
+                                </Button>
                                 <Button
                                   size="sm"
                                   disabled={item.availableAmount === '0.00'}
@@ -385,6 +437,7 @@ export function CommissionsView() {
           </div>
         </Modal>
       ) : null}
+      {sheet ? <PrintSheet report={sheet} onPrinted={finishPrinting} /> : null}
     </section>
   );
 }

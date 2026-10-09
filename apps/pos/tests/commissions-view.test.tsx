@@ -114,9 +114,39 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('CommissionsView', () => {
+  it('prints only the selected employee details and removes the sheet after printing', async () => {
+    vi.stubGlobal('print', vi.fn());
+    mocks.list.mockResolvedValue({
+      items: [summary, { ...summary, employeeId: 8, employeeCode: 1008, employeeName: 'منى علي' }],
+      meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+    });
+    mount();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    const row = (await screen.findByRole('cell', { name: 'سارة أحمد' })).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'طباعة' }));
+
+    await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1));
+    const sheet = document.querySelector<HTMLElement>('#print-root')!;
+    expect(sheet.textContent).toContain('سارة أحمد');
+    expect(sheet.textContent).not.toContain('منى علي');
+    expect(within(sheet).getAllByText('INV-2026.08.03-14.35-17')).toHaveLength(2);
+    expect(within(sheet).getByText('عكس عمولة')).toBeDefined();
+    expect(within(sheet).getByText('مصروف #9')).toBeDefined();
+    expect(within(sheet).getByText('250.00 ج.م')).toBeDefined();
+    expect(within(sheet).getByText('210.00 ج.م')).toBeDefined();
+    expect(within(sheet).queryByRole('button')).toBeNull();
+    expect(mocks.detail).toHaveBeenCalledWith(7, expect.any(String), 2);
+
+    fireEvent(window, new Event('afterprint'));
+    expect(document.querySelector('#print-root')).toBeNull();
+    expect(document.body.classList.contains('printing-report')).toBe(false);
+  });
+
   it('filters commissions by employee and resets to the first page', async () => {
     mount();
     await screen.findByRole('option', { name: 'الرئيسي' });
