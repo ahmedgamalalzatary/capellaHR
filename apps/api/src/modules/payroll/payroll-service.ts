@@ -1,4 +1,5 @@
 import type { ListPayrollMonthsQuery, UpdateBaseSalaryInput } from '@capella/contracts';
+import type { PayrollAttendanceSummary } from '@capella/database/schema';
 
 export type BaseSalaryRecord = {
   employeeId: number;
@@ -38,6 +39,7 @@ export type PayrollRecord = {
   requiredMinutes: number;
   overtimeMinutes: number;
   shortageMinutes: number;
+  attendanceSummary?: PayrollAttendanceSummary | null;
   finalizedAt: Date | null;
 };
 
@@ -47,6 +49,7 @@ type PayrollAttendanceFacts = {
   requiredMinutes: number;
   overtimeMinutes: number;
   shortageMinutes: number;
+  attendanceSummary?: PayrollAttendanceSummary;
 };
 export type PayrollTransactionContext = unknown;
 export interface PayrollAttendanceGateway {

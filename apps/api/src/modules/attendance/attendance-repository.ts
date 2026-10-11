@@ -51,6 +51,6 @@ export const createDrizzleAttendanceRepository = (
     ...createAttendanceSessionsRepository(database, writer, { now, timeZone, isFinanciallyLocked }),
     ...createAttendanceDeniedRepository(database, writer, { now, timeZone }),
     ...createAttendanceJobsRepository(database, writer, { now, timeZone, isFinanciallyLocked }),
-    ...createAttendancePayrollGateway({ now, timeZone }),
+    ...createAttendancePayrollGateway({ now, timeZone, readRequiredDuration, writer }),
   };
 };

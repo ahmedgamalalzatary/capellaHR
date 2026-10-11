@@ -34,6 +34,20 @@ export const employeeSalaryPeriods = mysqlTable('employee_salary_periods', {
   check('employee_salary_periods_month_first_day', sql`dayofmonth(${table.effectiveMonth}) = 1`),
 ]);
 
+export type PayrollAttendanceSummary = {
+  monthRequiredMinutes: number;
+  requiredMinutesThroughDate: number;
+  workedMinutes: number;
+  actualShortageMinutes: number;
+  actualOvertimeMinutes: number;
+  absenceDaysWithPermission: number;
+  absenceDaysWithoutPermission: number;
+  weeklyDayOffDays: number;
+  asOfDate: string;
+  provisional: boolean;
+  reconstructed?: boolean;
+};
+
 export const payrollMonths = mysqlTable('payroll_months', {
   id: int('id').autoincrement().primaryKey(),
   employeeId: int('employee_id').notNull().references(() => employees.id),
@@ -58,6 +72,7 @@ export const payrollMonths = mysqlTable('payroll_months', {
   requiredMinutes: int('required_minutes').notNull(),
   overtimeMinutes: int('overtime_minutes').notNull(),
   shortageMinutes: int('shortage_minutes').notNull(),
+  attendanceSummary: json('attendance_summary').$type<PayrollAttendanceSummary>(),
   finalizedAt: timestamp('finalized_at', { mode: 'date', fsp: 3 }).notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),

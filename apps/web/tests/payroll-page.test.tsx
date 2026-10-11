@@ -63,6 +63,14 @@ const payroll = {
   requiredMinutes: 12480,
   overtimeMinutes: 60,
   shortageMinutes: 20,
+  commissionPaidAmount: '0.00',
+  commissionCarryAmount: '0.00',
+  attendanceSummary: {
+    monthRequiredMinutes: 12480, requiredMinutesThroughDate: 4800,
+    workedMinutes: 4500, actualShortageMinutes: 300, actualOvertimeMinutes: 0,
+    absenceDaysWithPermission: 1, absenceDaysWithoutPermission: 2, weeklyDayOffDays: 4,
+    asOfDate: '2026-06-10', provisional: true,
+  },
   finalizedAt: null,
 };
 
@@ -208,6 +216,44 @@ describe('PayrollView', () => {
     expect(screen.getByText(/40\.00/)).toBeDefined();
     expect(screen.getByText(/500\.00/)).toBeDefined();
     expect(screen.getByText('الترحيل السالب السابق')).toBeDefined();
+  });
+
+  test('shows hours and separate day-off counts alongside the existing financial details', async () => {
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'التفاصيل' }));
+    const valueOf = (label: string) => screen.getByText(label).parentElement?.querySelector('dd')?.textContent;
+    expect(valueOf('ساعات الشهر المطلوبة')).toBe('208:00');
+    expect(valueOf('الساعات المطلوبة حتى تاريخ التقرير')).toBe('80:00');
+    expect(valueOf('ساعات الحضور الفعلية')).toBe('75:00');
+    expect(valueOf('عجز ساعات الحضور الفعلي')).toBe('5:00');
+    expect(valueOf('زيادة ساعات الحضور الفعلية')).toBe('0:00');
+    expect(valueOf('أيام الغياب بإذن')).toBe('1');
+    expect(valueOf('أيام الغياب بدون إذن')).toBe('2');
+    expect(valueOf('أيام الإجازة الأسبوعية')).toBe('4');
+    expect(valueOf('الحضور حتى تاريخ')).toBe('2026-06-10');
+    expect(screen.getByText(/مؤقت.*الانصراف/)).toBeDefined();
+    expect(screen.getByText('خصومات الحضور')).toBeDefined();
+  });
+
+  test('labels reconstructed older attendance summaries', async () => {
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([
+      { ...finalized, attendanceSummary: { ...payroll.attendanceSummary, provisional: false, reconstructed: true } },
+    ]));
+    renderView();
+    await screen.findByText('منى علي');
+    fireEvent.click(within(rowOf('منى علي')).getByRole('button', { name: 'التفاصيل' }));
+    expect(screen.getByText(/أعيد تكوين.*الحضور/)).toBeDefined();
+  });
+
+  test('keeps financial details available when an older attendance summary is unavailable', async () => {
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([{ ...finalized, attendanceSummary: null }]));
+    renderView();
+    await screen.findByText('منى علي');
+    fireEvent.click(within(rowOf('منى علي')).getByRole('button', { name: 'التفاصيل' }));
+    expect(screen.getByText(/ملخص ساعات الحضور والإجازات غير متاح/)).toBeDefined();
+    expect(screen.queryByText('ساعات الحضور الفعلية')).toBeNull();
+    expect(screen.getByText('خصومات الحضور')).toBeDefined();
   });
 
   test('expands only the clicked open row when previews share id 0', async () => {
@@ -437,7 +483,11 @@ describe('PayrollView', () => {
     expect(table).not.toBeNull();
     // Every body row carries a rule, so the lines are drawn rather than implied.
     const rows = table!.querySelectorAll('tbody tr');
-    expect(rows.length).toBe(17);
+    expect(rows.length).toBe(26);
+    expect(sheet!.textContent).toContain('ساعات الحضور الفعلية');
+    expect(sheet!.textContent).toContain('75:00');
+    expect(sheet!.textContent).toContain('أيام الغياب بدون إذن');
+    expect(sheet!.textContent).toContain('2026-06-10');
     for (const row of Array.from(rows)) {
       expect(row.className).toContain('border-b');
     }

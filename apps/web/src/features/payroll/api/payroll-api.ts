@@ -3,6 +3,20 @@ import type { UpdateBaseSalaryInput } from '@capella/contracts';
 import { api, type PageMeta } from '@/lib/api/client';
 
 /** One employee's payroll for one Cairo month: open preview or immutable snapshot. */
+export interface PayrollAttendanceSummary {
+  monthRequiredMinutes: number;
+  requiredMinutesThroughDate: number;
+  workedMinutes: number;
+  actualShortageMinutes: number;
+  actualOvertimeMinutes: number;
+  absenceDaysWithPermission: number;
+  absenceDaysWithoutPermission: number;
+  weeklyDayOffDays: number;
+  asOfDate: string;
+  provisional: boolean;
+  reconstructed?: boolean;
+}
+
 export interface PayrollRecord {
   state?: 'ready';
   id: number;
@@ -31,6 +45,7 @@ export interface PayrollRecord {
   requiredMinutes: number;
   overtimeMinutes: number;
   shortageMinutes: number;
+  attendanceSummary?: PayrollAttendanceSummary | null;
   finalizedAt: string | null;
 }
 

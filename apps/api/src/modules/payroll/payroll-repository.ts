@@ -71,6 +71,7 @@ const payrollFields = {
   netSalary: payrollMonths.netSalary, eligibleWorkdays: payrollMonths.eligibleWorkdays,
   fullMonthWorkdays: payrollMonths.fullMonthWorkdays, requiredMinutes: payrollMonths.requiredMinutes,
   overtimeMinutes: payrollMonths.overtimeMinutes, shortageMinutes: payrollMonths.shortageMinutes,
+  attendanceSummary: payrollMonths.attendanceSummary,
   finalizedAt: payrollMonths.finalizedAt,
 };
 const assignmentAtFinalization = (
@@ -224,6 +225,16 @@ const branchForMonth = async (
 type Computed =
   | { kind: 'success'; payroll: PayrollRecord }
   | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
+const withAttendanceSummary = async (
+  payroll: PayrollRecord,
+  attendance: PayrollAttendanceGateway,
+  transaction: Transaction,
+) => {
+  if (payroll.attendanceSummary) return payroll;
+  const result = await attendance.readPayrollFacts(payroll.employeeId, payroll.payrollMonth, transaction, 'preview');
+  const summary = result.kind === 'ready' ? result.facts.attendanceSummary : undefined;
+  return summary ? { ...payroll, attendanceSummary: { ...summary, reconstructed: true } } : payroll;
+};
 const compute = async (
   transaction: Transaction,
   employee: NonNullable<Awaited<ReturnType<typeof lockEmployee>>>,
@@ -234,7 +245,7 @@ const compute = async (
   startMonth?: string,
 ): Promise<Computed> => {
   const existing = exposeFinalized(await rawFinalized(transaction, employee.id, month, timeZone));
-  if (existing) return { kind: 'success', payroll: existing };
+  if (existing) return { kind: 'success', payroll: await withAttendanceSummary(existing, attendance, transaction) };
   const attendanceResult = await attendance.readPayrollFacts(employee.id, month, transaction, mode);
   if (attendanceResult.kind === 'blocked') return attendanceResult;
   const [
@@ -337,7 +348,8 @@ const insertFinalized = async (
     netSalary: payroll.netSalary,
     eligibleWorkdays: payroll.eligibleWorkdays, fullMonthWorkdays: payroll.fullMonthWorkdays,
     requiredMinutes: payroll.requiredMinutes, overtimeMinutes: payroll.overtimeMinutes,
-    shortageMinutes: payroll.shortageMinutes, finalizedAt: at, createdAt: at, updatedAt: at,
+    shortageMinutes: payroll.shortageMinutes, attendanceSummary: payroll.attendanceSummary ?? null,
+    finalizedAt: at, createdAt: at, updatedAt: at,
   });
   const id = Number(inserted[0].insertId);
   const stored = exposeFinalized(await rawFinalized(
@@ -562,7 +574,7 @@ export const createDrizzlePayrollRepository = (
           if (!await employeeEligibleForMonth(transaction, employee, month, timeZone, startMonth)) continue;
           const existing = exposeFinalized(await rawFinalized(transaction, row.id, month, timeZone));
           if (existing) {
-            existingPayrolls.push(existing);
+            existingPayrolls.push(await withAttendanceSummary(existing, attendance, transaction));
             continue;
           }
           if (!await chronological(transaction, employee, month, timeZone, startMonth)) {

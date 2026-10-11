@@ -827,6 +827,13 @@
       "when": 1791364080882,
       "tag": "0117_booking_service_status_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "5",
+      "when": 1791705644448,
+      "tag": "0118_payroll_attendance_summary",
+      "breakpoints": true
     }
   ]
 }

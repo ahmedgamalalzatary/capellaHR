@@ -1,0 +1,1 @@
+ALTER TABLE `payroll_months` ADD `attendance_summary` json;

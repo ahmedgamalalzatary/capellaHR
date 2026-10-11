@@ -55,37 +55,63 @@ function PayrollBreakdownSheet({ record, asTable = false }: { record: PayrollRec
     ['دقائق الوقت الإضافي', formatDuration(record.overtimeMinutes)],
     ['دقائق العجز', formatDuration(record.shortageMinutes)],
   ];
+  const attendance = record.attendanceSummary;
+  if (attendance) entries.push(
+    ['ساعات الشهر المطلوبة', formatDuration(attendance.monthRequiredMinutes)],
+    ['الساعات المطلوبة حتى تاريخ التقرير', formatDuration(attendance.requiredMinutesThroughDate)],
+    ['ساعات الحضور الفعلية', formatDuration(attendance.workedMinutes)],
+    ['عجز ساعات الحضور الفعلي', formatDuration(attendance.actualShortageMinutes)],
+    ['زيادة ساعات الحضور الفعلية', formatDuration(attendance.actualOvertimeMinutes)],
+    ['أيام الغياب بإذن', String(attendance.absenceDaysWithPermission)],
+    ['أيام الغياب بدون إذن', String(attendance.absenceDaysWithoutPermission)],
+    ['أيام الإجازة الأسبوعية', String(attendance.weeklyDayOffDays)],
+    ['الحضور حتى تاريخ', attendance.asOfDate],
+  );
+  const attendanceNotes = (
+    <div className="mt-3 space-y-1 text-[12px] text-muted">
+      {attendance ? <p>الساعات بصيغة ساعة:دقيقة. ساعات الشهر حسب مدة العمل وأيام الإجازة المسجلة.</p>
+        : <p>ملخص ساعات الحضور والإجازات غير متاح لهذا السجل.</p>}
+      {attendance?.provisional ? <p>الحضور مؤقت ويشمل الجلسة المفتوحة حتى وقت إعداد التقرير؛ يتأكد بعد تسجيل الانصراف.</p> : null}
+      {attendance?.reconstructed ? <p>أعيد تكوين ملخص الحضور من السجلات المتاحة؛ مبالغ الراتب المعتمد محفوظة كما هي.</p> : null}
+    </div>
+  );
 
   if (asTable) {
     return (
-      <table className="w-full border-collapse text-[13px]">
-        <thead>
-          <tr className="border-b-2 border-line">
-            <th scope="col" className="px-2 py-2 text-start font-medium text-muted">البيان</th>
-            <th scope="col" className="px-2 py-2 text-end font-medium text-muted">المبلغ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map(([label, value]) => (
-            <tr key={label} className="border-b border-line/60 last:border-b-0">
-              <td className="px-2 py-1.5">{label}</td>
-              <td className="tabular px-2 py-1.5 text-end">{value}</td>
+      <>
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr className="border-b-2 border-line">
+              <th scope="col" className="px-2 py-2 text-start font-medium text-muted">البيان</th>
+              <th scope="col" className="px-2 py-2 text-end font-medium text-muted">المبلغ</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map(([label, value]) => (
+              <tr key={label} className="border-b border-line/60 last:border-b-0">
+                <td className="px-2 py-1.5">{label}</td>
+                <td className="tabular px-2 py-1.5 text-end">{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {attendanceNotes}
+      </>
     );
   }
 
   return (
-    <dl className="grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
-      {entries.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between gap-4">
-          <dt className="text-muted">{label}</dt>
-          <dd className="tabular">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <>
+      <dl className="grid gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+        {entries.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between gap-4">
+            <dt className="text-muted">{label}</dt>
+            <dd className="tabular">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {attendanceNotes}
+    </>
   );
 }
 
