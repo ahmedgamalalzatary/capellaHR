@@ -116,6 +116,9 @@ export const api = {
   getWithMeta: <T>(path: string) => requestWithMeta<T>(path),
   /** Binary downloads (report PDFs) — errors still follow the JSON contract. */
   getBlob: async (path: string) => (await requestRaw(path)).blob(),
+  postBlob: async (path: string, body: unknown) => (await requestRaw(path, {
+    method: 'POST', body: JSON.stringify(body),
+  })).blob(),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? null : JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>

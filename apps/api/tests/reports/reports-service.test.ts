@@ -3,6 +3,7 @@ import type {
   ReportSnapshot,
 } from '@capella/contracts';
 import { PassThrough, Readable } from 'node:stream';
+import ExcelJS from 'exceljs';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -133,6 +134,68 @@ const createStore = (events: string[] = []): ReportFileStore => ({
 });
 
 describe('reports service', () => {
+  it('exports every batch to a real Excel workbook with Arabic headings and safe cell values', async () => {
+    const excelSnapshot: ReportSnapshot = {
+      ...snapshot,
+      columns: [
+        { key: 'name', label: 'الاسم' }, { key: 'code', label: 'الكود' },
+        { key: 'amount', label: 'المبلغ' }, { key: 'active', label: 'نشط' },
+      ],
+      rows: [{ name: 'أحمد', code: '00123', amount: 250, active: true }],
+      summary: { totalRecords: 2 },
+    };
+    const reader = createReader(excelSnapshot);
+    reader.readBatches = async (_type, _filters, _selection, _size, _date, append) => {
+      await append(excelSnapshot.rows);
+      await append([{ name: '=HYPERLINK("bad")', code: '01000000000', amount: null, active: false }]);
+      const { rows, ...header } = excelSnapshot;
+      return { kind: 'success', snapshot: header, total: rows.length + 1, rowCount: rows.length + 1 };
+    };
+    const service = createReportService(reader, createRepository(), createStore(), () => now);
+    const result = await service.downloadExcel({ reportType: 'employees', filters: {}, selection: { mode: 'all' } });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Uint8Array.from(result.buffer).buffer);
+    const sheet = workbook.worksheets[0]!;
+    expect(result.filename).toBe('employees-report.xlsx');
+    expect(workbook.title).toBe('تقرير الموظفين');
+    expect(sheet.getRow(1).values).toEqual([undefined, 'الاسم', 'الكود', 'المبلغ', 'نشط']);
+    expect(sheet.getRow(2).values).toEqual([undefined, 'أحمد', '00123', 250, true]);
+    expect(sheet.getCell('A3').value).toBe('=HYPERLINK("bad")');
+    expect(sheet.getCell('B3').value).toBe('01000000000');
+    expect(sheet.getCell('C3').value).toBeNull();
+    expect(sheet.getCell('D3').value).toBe(false);
+    expect(sheet.rowCount).toBe(3);
+    expect(workbook.getWorksheet('الملخص')?.getRow(2).values).toEqual([undefined, 'إجمالي السجلات', 2]);
+  });
+
+  it('preserves Excel filters and selection and disposes the snapshot spool', async () => {
+    const reader = createReader();
+    const read = vi.spyOn(reader, 'readBatches');
+    const store = createStore();
+    let disposed = false;
+    const original = store.createSpool.bind(store);
+    store.createSpool = async () => ({ ...await original(), dispose: async () => { disposed = true; } });
+    const service = createReportService(reader, createRepository(), store, () => now);
+    await service.downloadExcel({
+      reportType: 'erp-profit', filters: { branchId: 3 }, selection: { mode: 'selected', ids: ['sale-41', 'refund-9'] },
+    });
+    expect(read).toHaveBeenCalledWith(
+      'erp-profit', { branchId: 3 }, { mode: 'selected', ids: ['sale-41', 'refund-9'] }, 500, now, expect.any(Function),
+    );
+    expect(disposed).toBe(true);
+  });
+
+  it('disposes Excel temporary data when the report source is unavailable', async () => {
+    const store = createStore();
+    let disposed = false;
+    const original = store.createSpool.bind(store);
+    store.createSpool = async () => ({ ...await original(), dispose: async () => { disposed = true; } });
+    const service = createReportService(createReader('unavailable'), createRepository(), store, () => now);
+    await expect(service.downloadExcel({ reportType: 'attendance', filters: {}, selection: { mode: 'all' } }))
+      .rejects.toMatchObject({ code: 'REPORT_SOURCE_UNAVAILABLE' });
+    expect(disposed).toBe(true);
+  });
+
   it('fails explicitly when a deferred report source is unavailable', async () => {
     const service = createReportService(createReader('unavailable'), createRepository(), createStore(), () => now);
 

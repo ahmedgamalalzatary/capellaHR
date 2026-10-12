@@ -78,6 +78,7 @@ const service = (): ReportService => ({
     },
   })),
   createExport: vi.fn(async () => exportRecord),
+  downloadExcel: vi.fn(async () => ({ buffer: Buffer.from('PK-workbook'), filename: 'employees-report.xlsx' })),
   listExports: vi.fn(async () => ({ items: [exportRecord], total: 1 })),
   getExport: vi.fn(async () => exportRecord),
   retryExport: vi.fn(async () => ({ ...exportRecord, status: 'queued' as const, cycleAttemptCount: 0, retryCount: 1 })),
@@ -87,6 +88,49 @@ const service = (): ReportService => ({
 });
 
 describe('reports HTTP API', () => {
+  it('downloads Excel with the same validated filters and selection as PDF', async () => {
+    const reports = service();
+    const input = {
+      reportType: 'employees', filters: { branchId: 3 }, selection: { mode: 'selected', ids: [5, 7] },
+    };
+    const response = await request(createApp({ authService: auth(), reportService: reports }))
+      .post('/api/v1/reports/excel').set('Cookie', 'capella_session=x').send(input)
+      .buffer(true).parse((incoming, done) => {
+        const chunks: Buffer[] = [];
+        incoming.on('data', (chunk: Buffer) => chunks.push(chunk));
+        incoming.on('end', () => done(null, Buffer.concat(chunks)));
+        incoming.on('error', done);
+      });
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(response.headers['content-disposition']).toContain('employees-report.xlsx');
+    expect(Buffer.from(response.body).toString()).toBe('PK-workbook');
+    expect(reports.downloadExcel).toHaveBeenCalledWith(input);
+  });
+
+  it('rejects invalid Excel filters and selections before generating a workbook', async () => {
+    const reports = service();
+    const app = createApp({ authService: auth(), reportService: reports });
+    for (const input of [
+      { reportType: 'bonuses', filters: { deviceStatus: 'active' }, selection: { mode: 'all' } },
+      { reportType: 'employees', filters: {}, selection: { mode: 'selected', ids: [] } },
+    ]) {
+      const response = await request(app).post('/api/v1/reports/excel')
+        .set('Cookie', 'capella_session=x').send(input);
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    }
+    expect(reports.downloadExcel).not.toHaveBeenCalled();
+  });
+
+  it.each([null, 'employee', 'account'] as const)('rejects Excel downloads for actor %s', async (actor) => {
+    const response = await request(createApp({ authService: auth(actor), reportService: service() }))
+      .post('/api/v1/reports/excel').set('Cookie', 'capella_session=x').send({
+        reportType: 'erp-sales', filters: {}, selection: { mode: 'all' },
+      });
+    expect(response.status).toBe(actor === null ? 401 : 403);
+  });
+
   it('requires an authenticated admin for every report operation', async () => {
     const unauthenticated = createApp({ authService: auth(null), reportService: service() });
     const employee = createApp({ authService: auth('employee'), reportService: service() });

@@ -7,6 +7,7 @@ import { ApiError } from '../src/lib/api/client';
 const mocks = vi.hoisted(() => ({
   viewReport: vi.fn(),
   createReportExport: vi.fn(),
+  downloadReportExcel: vi.fn(),
   listReportExports: vi.fn(),
   retryReportExport: vi.fn(),
   deleteReportExportFile: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('../src/features/reports/api/reports-api', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   viewReport: mocks.viewReport,
   createReportExport: mocks.createReportExport,
+  downloadReportExcel: mocks.downloadReportExcel,
   listReportExports: mocks.listReportExports,
   retryReportExport: mocks.retryReportExport,
   deleteReportExportFile: mocks.deleteReportExportFile,
@@ -140,6 +142,46 @@ const exportRow = (id: number) =>
   screen.getByTestId(`export-${id}`);
 
 describe('ReportsView', () => {
+  test('downloads Excel with applied filters and selected rows', async () => {
+    mocks.downloadReportExcel.mockResolvedValue(new Blob(['xlsx']));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+    renderView();
+    await screen.findByText('فرع المعادى');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
+    await waitFor(() => expect(mocks.viewReport).toHaveBeenLastCalledWith(
+      'branches', expect.objectContaining({ branchId: 3 }),
+    ));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'تحديد الصف 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel المحدد (1)' }));
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    expect(mocks.downloadReportExcel).toHaveBeenCalledWith({
+      reportType: 'branches', filters: { branchId: 3 }, selection: { mode: 'selected', ids: [1] },
+    });
+    expect((click.mock.instances.at(-1) as unknown as HTMLAnchorElement).download).toBe('branches-report.xlsx');
+    expect(mocks.createReportExport).not.toHaveBeenCalled();
+  });
+
+  test('downloads all matching records as Excel without a row selection', async () => {
+    mocks.downloadReportExcel.mockResolvedValue(new Blob(['xlsx']));
+    renderView();
+    await screen.findByText('فرع المعادى');
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel' }));
+    await waitFor(() => expect(mocks.downloadReportExcel).toHaveBeenCalledWith({
+      reportType: 'branches', filters: {}, selection: { mode: 'all' },
+    }));
+  });
+
+  test('shows Excel download errors without triggering a file download', async () => {
+    mocks.downloadReportExcel.mockRejectedValue(new ApiError(409, {
+      code: 'REPORT_SOURCE_UNAVAILABLE', message: 'مصدر بيانات التقرير غير متاح حاليًا',
+    }));
+    renderView();
+    await screen.findByText('فرع المعادى');
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel' }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'مصدر بيانات التقرير غير متاح حاليًا');
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
   test('renders the branches report by default with dynamic columns, rows, and summary', async () => {
     renderView();
     expect(await screen.findByText('فرع المعادى')).toBeDefined();

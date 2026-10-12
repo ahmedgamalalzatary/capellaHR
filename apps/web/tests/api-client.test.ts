@@ -14,6 +14,18 @@ afterEach(() => {
 });
 
 describe('api client error contract', () => {
+  test('posts Excel filters with credentials and returns the binary workbook', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('xlsx'));
+    vi.stubGlobal('fetch', fetchMock);
+    const input = { reportType: 'employees', filters: {}, selection: { mode: 'all' } };
+    const result = await api.postBlob('/reports/excel', input);
+    expect(result.size).toBe(4);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/reports/excel', expect.objectContaining({
+      method: 'POST', credentials: 'include', body: JSON.stringify(input),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  });
+
   test('uses the current frontend origin for API requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { data: { status: 'ok' } }));
     vi.stubGlobal('fetch', fetchMock);

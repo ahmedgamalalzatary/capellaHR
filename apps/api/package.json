@@ -49,6 +49,7 @@
     "argon2": "^0.44.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "4.4.0",
     "express": "^5.1.0",
     "file-type": "^22.0.1",
     "helmet": "^8.1.0",

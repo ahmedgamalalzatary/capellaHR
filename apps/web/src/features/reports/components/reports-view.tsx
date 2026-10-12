@@ -17,7 +17,7 @@ import { notifyError, notifySuccess } from '@/lib/notify';
 
 import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
-import { createReportExport, viewReport } from '../api/reports-api';
+import { createReportExport, downloadReportExcel, viewReport } from '../api/reports-api';
 import { reportQueryKeys } from '../query-keys';
 import { ExportsHistory } from './exports-history';
 import {
@@ -98,6 +98,22 @@ export function ReportsView() {
     onError: (error: unknown) => notifyError(error, 'تعذر بدء التصدير.'),
   });
 
+  const exportExcel = useMutation({
+    mutationFn: (input: CreateReportExportInput) => downloadReportExcel(input),
+    onSuccess: (blob, input) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${input.reportType}-report.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      notifySuccess('تم تنزيل ملف Excel.');
+    },
+    onError: (error: unknown) => notifyError(error, 'تعذر تصدير Excel.'),
+  });
+
   const snapshot = reportQuery.data?.snapshot;
   const meta = reportQuery.data?.meta;
   const idKey = idKeyOf(reportType);
@@ -110,15 +126,14 @@ export function ReportsView() {
       return next;
     });
 
-  const startExport = () =>
-    exportReport.mutate({
-      reportType,
-      filters,
-      selection:
-        selectedIds.size > 0
-          ? { mode: 'selected', ids: [...selectedIds] }
-          : { mode: 'all' },
-    });
+  const exportInput: CreateReportExportInput = {
+    reportType,
+    filters,
+    selection: selectedIds.size > 0
+      ? { mode: 'selected', ids: [...selectedIds] }
+      : { mode: 'all' },
+  };
+  const startExport = () => exportReport.mutate(exportInput);
 
   return (
     <div className="space-y-5">
@@ -269,11 +284,21 @@ export function ReportsView() {
         <Button
           size="sm"
           className="ms-auto"
-          disabled={exportReport.isPending || reportQuery.isPending}
+          disabled={exportReport.isPending || exportExcel.isPending || reportQuery.isPending}
           onClick={startExport}
         >
           <FileDown className="size-4" aria-hidden />
           {selectedIds.size > 0 ? `تصدير المحدد (${selectedIds.size})` : 'تصدير PDF'}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={exportReport.isPending || exportExcel.isPending || reportQuery.isPending || reportQuery.isError}
+          onClick={() => exportExcel.mutate(exportInput)}
+        >
+          <FileDown className="size-4" aria-hidden />
+          {exportExcel.isPending ? 'جارٍ تجهيز Excel…'
+            : selectedIds.size ? `تصدير Excel المحدد (${selectedIds.size})` : 'تصدير Excel'}
         </Button>
       </div>
 
@@ -281,9 +306,9 @@ export function ReportsView() {
         يُنشأ ملف PDF واحد مجمّع في الخلفية لكل تصدير ويظل متاحًا في سجل التصديرات حتى حذفه.
       </p>
 
-      {exportReport.error ? (
+      {exportReport.error || exportExcel.error ? (
         <p role="alert" className="text-[13px] text-danger">
-          {serverErrorMessage(exportReport.error)}
+          {serverErrorMessage(exportReport.error ?? exportExcel.error)}
         </p>
       ) : null}
 

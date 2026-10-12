@@ -58,6 +58,10 @@ export const createErpReportExport = (input: CreateReportExportInput) => (
   api.post<ErpReportExport>('/reports/exports', input)
 );
 
+export const downloadErpReportExcel = (input: CreateReportExportInput) => (
+  api.postBlob('/reports/excel', input)
+);
+
 export function listErpReportExports(params: {
   reportType?: ReportType;
   status?: ReportExportStatus;

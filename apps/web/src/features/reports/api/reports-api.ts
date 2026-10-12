@@ -55,6 +55,10 @@ export function createReportExport(input: CreateReportExportInput): Promise<Repo
   return api.post<ReportExport>('/reports/exports', input);
 }
 
+export function downloadReportExcel(input: CreateReportExportInput): Promise<Blob> {
+  return api.postBlob('/reports/excel', input);
+}
+
 export interface ListReportExportsParams {
   reportType?: ReportType;
   status?: ReportExportStatus;

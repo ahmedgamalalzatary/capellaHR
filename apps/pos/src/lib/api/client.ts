@@ -46,12 +46,12 @@ const GENERIC_ERROR: ApiErrorBody = {
   message: 'حدث خطأ غير متوقع. حاول مرة أخرى.',
 };
 
-async function requestRaw(path: string, init?: RequestInit): Promise<Response> {
+async function requestRaw(path: string, init?: RequestInit, timeoutMs = API_REQUEST_TIMEOUT_MS): Promise<Response> {
   let response: Response;
   const controller = new AbortController();
   const timeout = setTimeout(() => {
     controller.abort(new DOMException('Request timeout', 'TimeoutError'));
-  }, API_REQUEST_TIMEOUT_MS);
+  }, timeoutMs);
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       credentials: 'include',
@@ -134,6 +134,9 @@ export const api = {
   getPage: <T>(path: string) => requestPage<T>(path),
   getWithMeta: <T>(path: string) => requestWithMeta<T>(path),
   getBlob: async (path: string) => (await requestRaw(path)).blob(),
+  postBlob: async (path: string, body: unknown) => (await requestRaw(path, {
+    method: 'POST', body: JSON.stringify(body),
+  }, 120_000)).blob(),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? null : JSON.stringify(body) }),
   put: <T>(path: string, body?: unknown) =>

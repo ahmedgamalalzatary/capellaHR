@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   view: vi.fn(), create: vi.fn(), listExports: vi.fn(), retry: vi.fn(),
   download: vi.fn(), deleteFile: vi.fn(), branches: vi.fn(),
+  excel: vi.fn(),
 }));
 vi.mock('../src/features/erp-reports/api/erp-reports-api', () => ({
   viewErpReport: mocks.view,
@@ -12,6 +13,7 @@ vi.mock('../src/features/erp-reports/api/erp-reports-api', () => ({
   listErpReportExports: mocks.listExports,
   retryErpReportExport: mocks.retry,
   downloadErpReportExport: mocks.download,
+  downloadErpReportExcel: mocks.excel,
   deleteErpReportExportFile: mocks.deleteFile,
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
@@ -111,6 +113,25 @@ afterEach(() => {
 });
 
 describe('ErpReportsView', () => {
+  it('downloads selected rows as Excel using applied filters rather than drafts', async () => {
+    mocks.excel.mockResolvedValue(new Blob(['xlsx']));
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:excel'), revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    mount();
+    await screen.findByText('عميل التقرير');
+    fireEvent.change(screen.getByLabelText('بحث'), { target: { value: 'unapplied draft' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 41' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير Excel المحدد (1)' }));
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    expect(mocks.excel).toHaveBeenCalledWith({
+      reportType: 'erp-sales', filters: { dateFrom: '2026-08-01', dateTo: '2026-08-09' },
+      selection: { mode: 'selected', ids: [41] },
+    });
+    expect((click.mock.instances.at(-1) as unknown as HTMLAnchorElement).download).toBe('erp-sales-report.xlsx');
+    expect(mocks.create).not.toHaveBeenCalled();
+    click.mockRestore();
+  });
+
   it('drops a branch stock filter when leaving expiry data for transfer reports', async () => {
     mount();
     await screen.findByText('عميل التقرير');

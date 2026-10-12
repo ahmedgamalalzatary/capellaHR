@@ -3,6 +3,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../src/lib/api/client';
 
 describe('POS API client hardening', () => {
+  it('allows Excel exports longer than normal requests while retaining a bounded timeout', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise(
+      (_resolve, reject) => {
+        signal = init?.signal ?? undefined;
+        signal?.addEventListener('abort', () => reject(signal?.reason));
+      },
+    )));
+    const pending = api.postBlob('/reports/excel', { reportType: 'erp-sales' });
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(105_000);
+    await rejection;
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();

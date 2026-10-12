@@ -56,6 +56,18 @@ export const createReportsRouter = (
   const auth = createAuthMiddleware(authService);
   router.use(auth.authenticate, auth.requireAdmin);
 
+  router.post('/excel', async (request, response) => {
+    try {
+      const input = createReportExportSchema.parse(request.body);
+      const result = await service.downloadExcel(input);
+      response.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      response.attachment(result.filename);
+      response.send(result.buffer);
+    } catch (error) {
+      handleError(error, response);
+    }
+  });
+
   router.post('/exports', async (request, response) => {
     try {
       const input = createReportExportSchema.parse(request.body);

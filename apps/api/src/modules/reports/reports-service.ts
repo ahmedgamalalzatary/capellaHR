@@ -9,10 +9,13 @@ import type {
   ReportType,
 } from '@capella/contracts';
 import {
+  createReportExportSchema,
   reportFilterCompatibilitySchema,
   reportSelectionCompatibilitySchema,
 } from '@capella/contracts';
 import type { Readable, Writable } from 'node:stream';
+
+import { renderReportExcel } from './report-excel.js';
 
 export type ReportExportRecord = {
   id: number;
@@ -159,6 +162,23 @@ export const createReportService = (
       throw new ReportError('REPORT_SOURCE_UNAVAILABLE');
     }
     return exports.create(input, now());
+  },
+
+  async downloadExcel(input: CreateReportExportInput) {
+    createReportExportSchema.parse(input);
+    const spool = await files.createSpool();
+    try {
+      const result = await reader.readBatches(
+        input.reportType, input.filters, input.selection, 500, now(), (rows) => spool.append(rows),
+      );
+      if (result.kind === 'unavailable') throw new ReportError('REPORT_SOURCE_UNAVAILABLE');
+      return {
+        buffer: await renderReportExcel({ snapshot: result.snapshot, rows: () => spool.rows() }),
+        filename: `${input.reportType}-report.xlsx`,
+      };
+    } finally {
+      await spool.dispose();
+    }
   },
 
   listExports(query: ListReportExportsQuery) {

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import {
   erpTabReportTypes,
+  type CreateReportExportInput,
   type ReportCell,
   type ReportFilters,
   type ReportType,
@@ -27,6 +28,7 @@ import {
   createErpReportExport,
   deleteErpReportExportFile,
   downloadErpReportExport,
+  downloadErpReportExcel,
   listErpReportExports,
   retryErpReportExport,
   viewErpReport,
@@ -369,18 +371,34 @@ export function ErpReportsView() {
     queryKey: erpReportQueryKeys.view(reportType, params),
     queryFn: () => viewErpReport(reportType, params),
   });
+  const exportInput: CreateReportExportInput = {
+    reportType, filters, selection: selectedIds.size
+      ? { mode: 'selected', ids: [...selectedIds] }
+      : { mode: 'all' },
+  };
   const createExport = useMutation({
-    mutationFn: () => createErpReportExport({
-      reportType, filters, selection: selectedIds.size
-        ? { mode: 'selected', ids: [...selectedIds] }
-        : { mode: 'all' },
-    }),
+    mutationFn: () => createErpReportExport(exportInput),
     onSuccess: async () => {
       setSelectedIds(new Set());
       await queryClient.invalidateQueries({ queryKey: erpReportQueryKeys.exports(reportType) });
       notifySuccess('بدأ تجهيز ملف التصدير.');
     },
     onError: (error: unknown) => notifyError(error, 'تعذر بدء التصدير.'),
+  });
+  const exportExcel = useMutation({
+    mutationFn: (input: CreateReportExportInput) => downloadErpReportExcel(input),
+    onSuccess: (blob, input) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${input.reportType}-report.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      notifySuccess('تم تنزيل ملف Excel.');
+    },
+    onError: (error: unknown) => notifyError(error, 'تعذر تصدير Excel.'),
   });
   const applyFilters = () => {
     if (dateFromInput && dateToInput && dateFromInput > dateToInput) return;
@@ -437,7 +455,7 @@ export function ErpReportsView() {
     <section className="space-y-6">
       <PageHeader
         title="التقارير والتصدير"
-        description="عرض التقارير المالية والتشغيلية وإدارة ملفات PDF."
+        description="عرض التقارير المالية والتشغيلية وتصدير PDF وExcel."
       />
 
       <div role="group" aria-label="أنواع تقارير ERP" className="space-y-3">
@@ -548,15 +566,28 @@ export function ErpReportsView() {
         <SectionHeading
           title={tabLabels[reportType]}
           actions={(
-            <Button size="sm" disabled={createExport.isPending} onClick={() => createExport.mutate()}>
-              <Download className="size-4" aria-hidden />
-              {createExport.isPending
-                ? 'جارٍ وضع التصدير في الانتظار…'
-                : selectedIds.size ? `تصدير المحدد (${selectedIds.size})` : 'تصدير PDF'}
-            </Button>
+            <>
+              <Button size="sm" disabled={createExport.isPending || exportExcel.isPending} onClick={() => createExport.mutate()}>
+                <Download className="size-4" aria-hidden />
+                {createExport.isPending
+                  ? 'جارٍ وضع التصدير في الانتظار…'
+                  : selectedIds.size ? `تصدير المحدد (${selectedIds.size})` : 'تصدير PDF'}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={createExport.isPending || exportExcel.isPending || report.isPending || report.isError}
+                onClick={() => exportExcel.mutate(exportInput)}
+              >
+                <Download className="size-4" aria-hidden />
+                {exportExcel.isPending ? 'جارٍ تجهيز Excel…'
+                  : selectedIds.size ? `تصدير Excel المحدد (${selectedIds.size})` : 'تصدير Excel'}
+              </Button>
+            </>
           )}
         />
         {createExport.isError ? <FieldError>{errorMessage(createExport.error)}</FieldError> : null}
+        {exportExcel.isError ? <FieldError>{errorMessage(exportExcel.error)}</FieldError> : null}
 
         <Card className="overflow-hidden shadow-card">
           {report.isPending ? <LoadingState label="جارٍ تحميل التقرير…" className="py-16" />
