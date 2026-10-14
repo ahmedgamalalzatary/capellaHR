@@ -3,6 +3,7 @@ import type { CreateBonusInput, UpdateBonusInput } from '@capella/contracts';
 import { api, type PageMeta } from '@/lib/api/client';
 
 import type {
+  AdjustmentLock,
   FinancialAdjustment,
   ListAdjustmentsParams,
 } from '../../financial-adjustments/types';
@@ -11,7 +12,7 @@ export type Bonus = FinancialAdjustment & { reason: string | null };
 
 export function listBonuses(
   params: ListAdjustmentsParams = {},
-): Promise<{ items: Bonus[]; meta: PageMeta }> {
+): Promise<{ items: Array<Bonus & AdjustmentLock>; meta: PageMeta }> {
   const query = new URLSearchParams();
   if (params.search) query.set('search', params.search);
   if (params.branchId !== undefined) query.set('branchId', String(params.branchId));
@@ -20,7 +21,7 @@ export function listBonuses(
   if (params.page !== undefined) query.set('page', String(params.page));
   if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
-  return api.getPage<Bonus>(`/bonuses${suffix}`);
+  return api.getPage<Bonus & AdjustmentLock>(`/bonuses${suffix}`);
 }
 
 export function createBonus(input: CreateBonusInput): Promise<Bonus> {

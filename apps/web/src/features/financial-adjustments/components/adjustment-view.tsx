@@ -37,6 +37,7 @@ import type {
   FinancialAdjustment,
 } from '../types';
 import { pricedFields } from '../types';
+import { LockBadge } from './lock-badge';
 
 type AdjustmentQueryKeys = {
   all: readonly string[];
@@ -614,8 +615,8 @@ export function AdjustmentView({
                       </td>
                     ) : null}
                     <td className="px-4 py-3">
-                      {record.employeeDeletedAt !== null ? (
-                        <Badge variant="neutral">موظف محذوف</Badge>
+                      {!record.editable ? (
+                        <LockBadge record={record} />
                       ) : (
                         <div className="flex items-center gap-1">
                           <Button

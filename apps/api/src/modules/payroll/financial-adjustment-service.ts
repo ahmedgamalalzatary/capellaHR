@@ -1,3 +1,4 @@
+import type { AdjustmentLockState } from './financial-repository-helpers.js';
 export type FinancialAdjustmentRecord = {
   id: number;
   employeeId: number;
@@ -28,7 +29,7 @@ type AdjustmentDeleteResult =
 export type AdjustmentRepository<Create, Update, Query, Record> = {
   create(input: Create): Promise<AdjustmentMutationResult<Record>>;
   findById(id: number): Promise<Record | null>;
-  list(query: Query): Promise<{ items: Record[]; total: number }>;
+  list(query: Query): Promise<{ items: Array<Record & AdjustmentLockState>; total: number }>;
   update(id: number, input: Update): Promise<AdjustmentMutationResult<Record>>;
   remove(id: number): Promise<AdjustmentDeleteResult>;
 };

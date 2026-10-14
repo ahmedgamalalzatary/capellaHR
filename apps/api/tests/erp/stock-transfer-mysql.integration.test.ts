@@ -438,6 +438,27 @@ describe('ERP stock transfer MySQL integration', () => {
       .toBe('branch_transfer');
   });
 
+  it('keeps the transfer invoice out of the refundable invoice list', async () => {
+    const data = await fixture();
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1 }],
+    });
+    const sales = createDrizzleSaleRepository(database, createErpAuditCapability());
+    const list = (refundable?: true) => sales.listInvoices(data.sourceBranchId, {
+      page: 1, pageSize: 20, orderBy: 'soldAt', orderDir: 'desc', ...(refundable ? { refundable } : {}),
+    });
+
+    await expect(list().then(({ items }) => items.map(({ id }) => id))).resolves.toEqual([transfer.invoiceId]);
+    await expect(list(true)).resolves.toEqual({ items: [], total: 0 });
+    // The invoice screen must not offer what the server refuses (TRANSFER_NOT_REVERSIBLE).
+    await expect(sales.findInvoiceById(data.sourceBranchId, transfer.invoiceId)).resolves.toMatchObject({
+      eligibility: { canVoid: false, canRefund: false },
+    });
+  });
+
   it('lists a transfer under either branch it touched', async () => {
     const data = await fixture();
     const transfer = await service().transfer(admin, {

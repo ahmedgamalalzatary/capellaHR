@@ -391,6 +391,9 @@ describe('MySQL-backed salary domain', () => {
 
     const bonus = await bonusModule.service.create({ employeeId, amount: '100.00', payrollMonth: '2026-07', reason: 'سبب' });
     const deduction = await deductionModule.service.create({ employeeId, amount: '25.00', payrollMonth: '2026-06', reason: 'Late arrival' });
+    await expect(deductionModule.service.list({ employeeId, page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: deduction.id, editable: true, lockReason: null }],
+    });
     await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-05', reason: 'سبب' }))
       .rejects.toMatchObject({ code: 'BONUS_MONTH_NOT_ELIGIBLE' });
     await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-08', reason: 'سبب' }))
@@ -400,9 +403,19 @@ describe('MySQL-backed salary domain', () => {
     await payroll.service.finalize(employeeId, '2026-06');
     await expect(deductionModule.service.update(deduction.id, { amount: '30.00', reason: 'Policy violation' }))
       .rejects.toMatchObject({ code: 'DEDUCTION_PAYROLL_FINALIZED' });
+    // Lists tell the page which rows it may still offer to edit or delete.
+    await expect(deductionModule.service.list({ employeeId, page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: deduction.id, editable: false, lockReason: 'payroll_finalized' }],
+    });
+    await expect(bonusModule.service.list({ employeeId, page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: bonus.id, editable: true, lockReason: null }],
+    });
 
     await database.update(employees).set({ deletedAt: fixedNow }).where(eq(employees.id, employeeId));
     await expect(bonusModule.service.get(bonus.id)).resolves.toMatchObject({ employeeDeletedAt: fixedNow });
+    await expect(bonusModule.service.list({ employeeId, page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: bonus.id, editable: false, lockReason: 'employee_inactive' }],
+    });
     await expect(bonusModule.service.update(bonus.id, { amount: '110.00', reason: 'سبب محدث' }))
       .rejects.toMatchObject({ code: 'BONUS_EMPLOYEE_DELETED' });
     await expect(bonusModule.service.create({ employeeId, amount: '1.00', payrollMonth: '2026-07', reason: 'سبب' }))
@@ -432,9 +445,15 @@ describe('MySQL-backed salary domain', () => {
       { payrollMonth: '2026-06', amount: '40.00' },
       { payrollMonth: '2026-07', amount: '40.00' },
     ]);
+    await expect(advanceModule.service.list({ employeeId, page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: created.id, editable: true, lockReason: null }],
+    });
 
     const payroll = createPayrollModule(database, { now: () => fixedNow, attendance });
     await payroll.service.finalize(employeeId, '2026-06');
+    await expect(advanceModule.service.list({ employeeId, page: 1, pageSize: 20 })).resolves.toMatchObject({
+      items: [{ id: created.id, editable: false, lockReason: 'payroll_finalized' }],
+    });
     await expect(advanceModule.service.update(created.id, { amount: '90.00' }))
       .rejects.toMatchObject({ code: 'ADVANCE_PAYROLL_FINALIZED' });
     await expect(advanceModule.service.remove(created.id))

@@ -3,6 +3,7 @@ import type { CreateDeductionInput, UpdateDeductionInput } from '@capella/contra
 import { api, type PageMeta } from '@/lib/api/client';
 
 import type {
+  AdjustmentLock,
   FinancialAdjustment,
   ListAdjustmentsParams,
 } from '../../financial-adjustments/types';
@@ -11,7 +12,7 @@ export type Deduction = FinancialAdjustment & { reason: string | null };
 
 export function listDeductions(
   params: ListAdjustmentsParams = {},
-): Promise<{ items: Deduction[]; meta: PageMeta }> {
+): Promise<{ items: Array<Deduction & AdjustmentLock>; meta: PageMeta }> {
   const query = new URLSearchParams();
   if (params.search) query.set('search', params.search);
   if (params.branchId !== undefined) query.set('branchId', String(params.branchId));
@@ -20,7 +21,7 @@ export function listDeductions(
   if (params.page !== undefined) query.set('page', String(params.page));
   if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
-  return api.getPage<Deduction>(`/deductions${suffix}`);
+  return api.getPage<Deduction & AdjustmentLock>(`/deductions${suffix}`);
 }
 
 export function createDeduction(input: CreateDeductionInput): Promise<Deduction> {

@@ -40,6 +40,8 @@ const deduction = {
   amount: '75.00',
   reason: 'Late arrival',
   employeeDeletedAt: null,
+  editable: true,
+  lockReason: null,
   createdAt: '2026-06-10T00:00:00.000Z',
   updatedAt: '2026-06-10T00:00:00.000Z',
 };

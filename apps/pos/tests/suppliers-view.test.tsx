@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ createSupplier: vi.fn(), updateSupplier: vi.fn(), postPurchase: vi.fn(), cancelPurchase: vi.fn(), listPurchases: vi.fn(), listSuppliers: vi.fn(), listAllSuppliers: vi.fn(), listProducts: vi.fn() }));
+const mocks = vi.hoisted(() => ({ branches: vi.fn(), createSupplier: vi.fn(), updateSupplier: vi.fn(), postPurchase: vi.fn(), cancelPurchase: vi.fn(), listPurchases: vi.fn(), listSuppliers: vi.fn(), listAllSuppliers: vi.fn(), listProducts: vi.fn() }));
 const supplier = { id: 3, branchId: 2, name: 'مورد النيل', phone: '0100', notes: null, isActive: true, createdAt: '2026-08-05T10:00:00Z', updatedAt: '2026-08-05T10:00:00Z' };
 const purchase = { id: 9, branchId: 2, supplierId: 3, supplierName: 'مورد النيل', status: 'posted', purchaseDate: '2026-08-05', total: '25.00', actingAccountId: 1, actingUsername: 'admin', cancelledAt: null, cancelledByAccountId: null, cancellationReason: null, correctsPurchaseId: null, correctedByPurchaseId: null, createdAt: '2026-08-05T10:00:00Z', lines: [{ id: 1, purchaseId: 9, branchId: 2, productId: 4, productNameSnapshot: 'شامبو', quantity: 2, unitCost: '12.50', previousUnitCost: '8.00', lineTotal: '25.00', postedBalanceAfter: 7, cancellationBalanceAfter: null }] };
 const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
@@ -12,7 +12,7 @@ vi.mock('../src/features/auth', () => ({
     data: { actor: actor.current === 'admin' ? { type: 'admin', accountId: 1 } : { type: 'cashier', accountId: 2 } },
   }),
 }));
-vi.mock('../src/features/catalog', () => ({ listCatalogBranches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }, { id: 5, name: 'الفرع الثاني' }] })) }));
+vi.mock('../src/features/catalog', () => ({ listCatalogBranches: mocks.branches }));
 vi.mock('../src/features/products/api/products-api', () => ({ listAllProducts: mocks.listProducts }));
 vi.mock('../src/features/suppliers/api/suppliers-api', () => ({
   listAllSuppliers: mocks.listAllSuppliers, listSuppliers: mocks.listSuppliers,
@@ -37,10 +37,19 @@ const pickInvoiceProduct = (name: string | RegExp) => {
 };
 
 beforeEach(() => vi.stubGlobal('scrollTo', vi.fn()));
-beforeEach(() => { sessionStorage.clear(); actor.current = 'admin'; mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listAllSuppliers.mockResolvedValue([supplier]); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
+beforeEach(() => { sessionStorage.clear(); actor.current = 'admin'; mocks.branches.mockResolvedValue({ items: [{ id: 2, name: 'الرئيسي' }, { id: 5, name: 'الفرع الثاني' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 } }); mocks.listSuppliers.mockResolvedValue({ items: [supplier], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } }); mocks.listAllSuppliers.mockResolvedValue([supplier]); mocks.listProducts.mockImplementation(async (params: { isActive?: boolean }) => ({ items: params.isActive ? [{ id: 4, name: 'شامبو', isActive: true }] : [{ id: 4, name: 'شامبو', isActive: true }, { id: 8, name: 'منتج قديم', isActive: false }] })); mocks.listPurchases.mockResolvedValue({ items: [purchase], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } }); mocks.createSupplier.mockResolvedValue(supplier); mocks.updateSupplier.mockResolvedValue(supplier); mocks.postPurchase.mockResolvedValue(purchase); mocks.cancelPurchase.mockResolvedValue({ ...purchase, status: 'cancelled' }); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('SuppliersPurchasesView', () => {
+  it('offers branches beyond the first page of the branch list', async () => {
+    mocks.branches.mockImplementation(async (page = 1) => (page === 1
+      ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
+      : { items: [{ id: 9, name: 'فرع الصفحة الثانية' }], meta: { page: 2, pageSize: 100, total: 2, totalPages: 2 } }));
+    renderView();
+
+    expect(await screen.findByRole('option', { name: 'فرع الصفحة الثانية' })).toBeDefined();
+  });
+
   it('requires purchase batch expiry and warns without blocking an expired batch', async () => {
     renderView();
     await screen.findByRole('option', { name: 'الرئيسي' });

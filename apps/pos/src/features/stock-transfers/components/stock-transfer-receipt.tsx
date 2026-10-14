@@ -8,6 +8,11 @@ import { PrintPageRule } from '@/lib/print/page-rule';
 
 import type { StockTransfer } from '../api/stock-transfers-api';
 
+/** When the transfer was recorded, as a Cairo date and time (screen and sheet alike). */
+export const formatTransferCreatedAt = (value: string) => new Intl.DateTimeFormat('ar-EG', {
+  timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short',
+}).format(new Date(value));
+
 export function StockTransferReceipt({ transfer, onPrinted, onPrintError }: {
   transfer: StockTransfer;
   onPrinted: () => void;
@@ -53,9 +58,7 @@ export function StockTransferReceipt({ transfer, onPrinted, onPrintError }: {
           <dt>من فرع</dt><dd>{transfer.sourceBranchName}</dd>
           <dt>إلى فرع</dt><dd>{transfer.destinationBranchName}</dd>
           <dt>تاريخ الإنشاء</dt>
-          <dd className="tabular"><time dateTime={transfer.createdAt}>{new Intl.DateTimeFormat('ar-EG', {
-            timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short',
-          }).format(new Date(transfer.createdAt))}</time></dd>
+          <dd className="tabular"><time dateTime={transfer.createdAt}>{formatTransferCreatedAt(transfer.createdAt)}</time></dd>
           <dt>الملاحظة</dt><dd>{transfer.note ?? '—'}</dd>
         </dl>
         <table className="mt-3 w-full border-collapse text-[10px]">

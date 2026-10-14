@@ -27,6 +27,8 @@ vi.mock('../src/features/products/api/products-api', async (importOriginal) => (
 import { ConsumablesView } from '../src/features/consumables/components/consumables-view';
 
 const page = (items: unknown[], currentPage = 1, totalPages = 1) => ({ items, meta: { page: currentPage, pageSize: 100, total: items.length, totalPages } });
+/** Ticking only builds the selection; the selection bar opens the recording dialog. */
+const openCompletion = () => fireEvent.click(screen.getByRole('button', { name: 'تسجيل مستهلكات المحدد' }));
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><ConsumablesView /></QueryClientProvider>);
 
 beforeEach(() => {
@@ -105,6 +107,7 @@ describe('ConsumablesView', () => {
     mount();
     fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    openCompletion();
     const completeButton = screen.getByRole('button', { name: 'حفظ المستهلكات' });
     expect(completeButton.hasAttribute('disabled')).toBe(true);
     fireEvent.click(screen.getByRole('checkbox', { name: 'لم تُستخدم مستهلكات' }));
@@ -125,6 +128,7 @@ describe('ConsumablesView', () => {
     const checks = await screen.findAllByRole('checkbox');
     fireEvent.click(checks[0]!);
     fireEvent.click(checks[1]!);
+    openCompletion();
     fireEvent.change(screen.getByLabelText('المستهلك 1'), { target: { value: '9' } });
     fireEvent.change(screen.getByLabelText('كمية المستهلك'), { target: { value: '15' } });
     fireEvent.click(screen.getByRole('button', { name: 'حفظ المستهلكات' }));
@@ -184,20 +188,74 @@ describe('ConsumablesView', () => {
     fireEvent.click(checks[0]!);
     fireEvent.click(checks[1]!);
     expect((checks[1] as HTMLInputElement).checked).toBe(false);
+    openCompletion();
     fireEvent.change(screen.getAllByRole('combobox').at(-1)!, { target: { value: '9' } });
     fireEvent.click(screen.getAllByRole('button').at(-1)!);
     await waitFor(() => expect(mocks.record).not.toHaveBeenCalled());
   });
 
-  it('opens the consumables completion panel in a dialog instead of inline', async () => {
+  it('builds a selection from several ticks before opening the recording dialog', async () => {
     mocks.services.mockResolvedValue(page([
       { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1' },
+      { id: 12, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 2, serviceName: 'قص شعر', invoiceNumber: 'INV-2' },
     ]));
     mount();
     fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
+    const checks = await screen.findAllByRole('checkbox');
+    fireEvent.click(checks[0]!);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('1 محددة')).toBeDefined();
+    fireEvent.click(checks[1]!);
+    expect(screen.getByText('2 محددة')).toBeDefined();
+
+    openCompletion();
+    expect(await screen.findByRole('dialog', { name: 'تسجيل مستهلكات 2 خدمة' })).toBeDefined();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'إلغاء' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByText('2 محددة')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء الاختيار' }));
+    expect(screen.queryByText(/محددة/)).toBeNull();
+    expect((checks[0] as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('shows a retryable error instead of an empty list when services fail to load', async () => {
+    mocks.services.mockRejectedValueOnce(new Error('network down'));
+    mount();
+
+    expect(await screen.findByText('تعذر تحميل خدمات العملاء.')).toBeDefined();
+    expect(screen.queryByText('لا توجد خدمات')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await screen.findAllByText('INV-1')).toHaveLength(2);
+  });
+
+  it('shows a retryable error when consumable balances fail to load', async () => {
+    mocks.balances.mockRejectedValueOnce(new Error('network down'));
+    mount();
+    fireEvent.click(screen.getByRole('tab', { name: 'مخزون المستهلكات' }));
+
+    expect(await screen.findByText('تعذر تحميل أرصدة المستهلكات.')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    expect(await screen.findAllByText('شامبو')).not.toHaveLength(0);
+  });
+
+  it('tells the cashier when the consumable options could not load', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1' },
+    ]));
+    mocks.balances.mockImplementation(async ({ pageSize }: { pageSize?: number }) => {
+      if (pageSize === 100) throw new Error('network down');
+      return page([]);
+    });
+    mount();
+    fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    openCompletion();
+
     const dialog = await screen.findByRole('dialog', { name: 'تسجيل مستهلكات 1 خدمة' });
-    expect(dialog).toBeDefined();
+    expect(await within(dialog).findByText('تعذر تحميل قائمة المستهلكات.')).toBeDefined();
+    expect(within(dialog).getByRole('button', { name: 'إعادة المحاولة' })).toBeDefined();
   });
 
   it('loads complete balance options separately from the paginated stock table', async () => {
@@ -212,6 +270,7 @@ describe('ConsumablesView', () => {
     fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     mocks.services.mockResolvedValue(page([{ id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'One', invoiceNumber: 'INV-1' }]));
     fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    openCompletion();
 
     const options = within(await screen.findByLabelText('المستهلك 1')).getAllByRole('option');
     expect(options.map((option) => option.textContent)).toEqual(expect.arrayContaining(['صفحة واحدة (1.000 ml)', 'صفحة ثانية (2.000 ml)']));
@@ -240,7 +299,7 @@ describe('ConsumablesView', () => {
     mount();
     fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
-    expect(screen.getByRole('dialog', { name: /تسجيل مستهلكات/ })).toBeDefined();
+    expect(screen.getByText('1 محددة')).toBeDefined();
 
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '4' } });
     await screen.findByText('INV-4');
@@ -248,7 +307,7 @@ describe('ConsumablesView', () => {
     fireEvent.click(nextBranchCheckbox);
 
     expect((nextBranchCheckbox as HTMLInputElement).checked).toBe(true);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText(/خدمة واحدة في كل مرة/)).toBeNull();
   });
 
   it('keeps a selected service scoped to one service across pages', async () => {
@@ -287,6 +346,7 @@ describe('ConsumablesView', () => {
     mount();
     fireEvent.click(await screen.findByRole('tab', { name: 'تسجيل المستهلكات' }));
     fireEvent.click((await screen.findAllByRole('checkbox'))[0]!);
+    openCompletion();
     fireEvent.click(screen.getByRole('checkbox', { name: 'لم تُستخدم مستهلكات' }));
     fireEvent.click(screen.getByRole('button', { name: 'حفظ المستهلكات' }));
     await waitFor(() => expect(mocks.record).toHaveBeenCalledTimes(1));

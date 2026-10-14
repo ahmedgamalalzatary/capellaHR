@@ -16,6 +16,7 @@ import { useDisplayFormatters } from '@/providers/runtime-config';
 import { listBranches } from '../../branches/api/branches-api';
 import { branchQueryKeys } from '../../branches/query-keys';
 import { listEmployees } from '../../employees/api/employees-api';
+import { LockBadge } from '../../financial-adjustments/components/lock-badge';
 import { employeeQueryKeys } from '../../employees/query-keys';
 import {
   createAdvance,
@@ -511,8 +512,8 @@ export function AdvancesView() {
                             <ListOrdered className="size-4" aria-hidden />
                             الأقساط
                           </Button>
-                          {advance.employeeDeletedAt !== null ? (
-                            <Badge variant="neutral">موظف محذوف</Badge>
+                          {!advance.editable ? (
+                            <LockBadge record={advance} />
                           ) : (
                             <>
                               <Button

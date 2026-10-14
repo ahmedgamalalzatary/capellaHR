@@ -12,6 +12,7 @@ import { Notice } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { useSession } from '@/features/auth';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { listCashierSessionBranches, listCashierSessions } from '../api/cashier-sessions-api';
 import { cashierSessionQueryKeys } from '../query-keys';
@@ -37,7 +38,7 @@ export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: numbe
 
   const branches = useQuery({
     queryKey: cashierSessionQueryKeys.branches,
-    queryFn: () => listCashierSessionBranches(1),
+    queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
     enabled: isAdmin && fixedBranchId === undefined,
   });
 
@@ -66,7 +67,7 @@ export function ShiftHistoryView({ branchId: fixedBranchId }: { branchId?: numbe
               }}
             >
               <option value="">اختر الفرع</option>
-              {branches.data?.items.map((branch) => (
+              {branches.data?.map((branch) => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
             </Select>

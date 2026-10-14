@@ -15,7 +15,9 @@ import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import {
+  adjustmentLockState,
   createFinancialContext,
+  employeeInactiveSql,
   type Database,
   type Executor,
   isFinalized,
@@ -278,7 +280,18 @@ export const createDrizzleAdvanceRepository = (
         sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`,
       )!);
       const where = filters.length ? and(...filters) : undefined;
-      const rows = await database.select({ id: advances.id }).from(advances)
+      const rows = await database.select({
+        id: advances.id,
+        employeeInactive: employeeInactiveSql,
+        // One finalized installment month locks the whole advance.
+        payrollFinalized: sql<number>`exists (
+          select 1 from ${advanceInstallments}
+          inner join ${payrollMonths}
+            on ${payrollMonths.employeeId} = ${advanceInstallments.employeeId}
+            and ${payrollMonths.payrollMonth} = ${advanceInstallments.payrollMonth}
+          where ${advanceInstallments.advanceId} = ${advances.id}
+        )`,
+      }).from(advances)
         .innerJoin(employees, eq(employees.id, advances.employeeId))
         .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where)
         .orderBy(asc(advances.startMonth), asc(advances.id))
@@ -286,8 +299,11 @@ export const createDrizzleAdvanceRepository = (
       const totals = await database.select({ value: count() }).from(advances)
         .innerJoin(employees, eq(employees.id, advances.employeeId))
         .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where);
-      const items = await Promise.all(rows.map(({ id }) => findRecord(database, id)));
-      return { items: items.filter((item): item is AdvanceRecord => item !== null), total: totals[0]?.value ?? 0 };
+      const items = await Promise.all(rows.map(async ({ id, ...flags }) => {
+        const record = await findRecord(database, id);
+        return record ? { ...record, ...adjustmentLockState(flags) } : null;
+      }));
+      return { items: items.filter((item) => item !== null), total: totals[0]?.value ?? 0 };
     },
     async update(id, input) {
       const owner = (await database.select({ employeeId: advances.employeeId }).from(advances).where(eq(advances.id, id)).limit(1))[0];

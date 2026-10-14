@@ -31,7 +31,7 @@ import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { createStockTransfer, listStockTransfers, type StockTransfer } from '../api/stock-transfers-api';
 import { stockTransferQueryKeys } from '../query-keys';
-import { StockTransferReceipt } from './stock-transfer-receipt';
+import { formatTransferCreatedAt, StockTransferReceipt } from './stock-transfer-receipt';
 
 const errorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -128,9 +128,21 @@ export function StockTransfersView() {
   });
   const historyProducts = useQuery({
     // Scoped exactly like `transfers` above: admins see every branch, a cashier theirs.
-    queryKey: ['erp-stock-transfers', 'history-products', cashierBranchId ?? null],
-    queryFn: () => listAllProducts(cashierBranchId === undefined ? {} : { branchId: cashierBranchId }),
-    enabled: actor?.type === 'admin' || cashierBranchId !== undefined,
+    // Product lists are per branch (the server refuses an admin list without one), and
+    // each branch has its own product ids, so an admin gets one option per branch.
+    queryKey: ['erp-stock-transfers', 'history-products', cashierBranchId ?? null, branches.data?.map(({ id }) => id) ?? null],
+    queryFn: async () => {
+      if (cashierBranchId !== undefined) {
+        return (await listAllProducts({ branchId: cashierBranchId })).items
+          .map((product) => ({ id: product.id, label: product.name }));
+      }
+      const perBranch = await Promise.all(branches.data!.map(async (branch) => (
+        (await listAllProducts({ branchId: branch.id })).items
+          .map((product) => ({ id: product.id, label: `${product.name} — ${branch.name}` }))
+      )));
+      return perBranch.flat();
+    },
+    enabled: cashierBranchId !== undefined || (actor?.type === 'admin' && branches.isSuccess),
   });
 
   const available = products.data?.items ?? [];
@@ -216,7 +228,7 @@ export function StockTransfersView() {
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
       {formOpen ? (
-        <Modal title="تحويل جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={() => setFormOpen(false)}>
+        <Modal title="تحويل جديد" className="max-h-[90dvh] max-w-xl overflow-y-auto" dismissOnBackdrop={!transfer.isPending} onClose={() => { if (!transfer.isPending) setFormOpen(false); }}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="transfer-source">الفرع المُرسِل</Label>
@@ -369,8 +381,8 @@ export function StockTransfersView() {
                 onChange={(event) => { setTransferProduct(event.target.value); setPage(1); }}
               >
                 <option value="">كل المنتجات</option>
-                {(historyProducts.data?.items ?? []).map((product) => (
-                  <option key={product.id} value={product.id}>{product.name}</option>
+                {(historyProducts.data ?? []).map((product) => (
+                  <option key={product.id} value={product.id}>{product.label}</option>
                 ))}
               </Select>
             </div>
@@ -503,7 +515,7 @@ export function StockTransfersView() {
               </div>
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-muted">تاريخ الإنشاء</dt>
-                <dd className="tabular text-muted">{selected.createdAt}</dd>
+                <dd className="tabular text-muted"><time dateTime={selected.createdAt}>{formatTransferCreatedAt(selected.createdAt)}</time></dd>
               </div>
             </dl>
           </div>

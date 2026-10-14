@@ -82,6 +82,18 @@ describe('ERP complete-sale contracts', () => {
     expect(invoiceHistoryQuerySchema.safeParse({ orderDir: 'sideways' }).success).toBe(false);
   });
 
+  it('narrows invoice history to refundable invoices only on request', () => {
+    expect(invoiceHistoryQuerySchema.parse({ refundable: 'true' })).toEqual({
+      page: 1, pageSize: 20, refundable: true, orderBy: 'soldAt', orderDir: 'desc',
+    });
+    expect(invoiceHistoryQuerySchema.parse({ refundable: 'true', status: 'partially_refunded' }))
+      .toMatchObject({ refundable: true, status: 'partially_refunded' });
+    expect(invoiceHistoryQuerySchema.safeParse({ refundable: 'false' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ refundable: 'yes' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ refundable: 'true', status: 'refunded' }).success).toBe(false);
+    expect(invoiceHistoryQuerySchema.safeParse({ refundable: 'true', status: 'voided' }).success).toBe(false);
+  });
+
   it('publishes receipt-safe stored invoice history summaries', () => {
     expect(invoiceHistoryItemSchema.safeParse({
       id: 44,

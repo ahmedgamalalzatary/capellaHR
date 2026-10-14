@@ -23,6 +23,7 @@ import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { useFormDraft } from '@/lib/form-draft';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import {
   adjustProductStock,
@@ -64,7 +65,7 @@ export function ProductStockView() {
   const isAdmin = session.data?.actor.type === 'admin';
   const branches = useQuery({
     queryKey: ['product-branches'],
-    queryFn: () => listCatalogBranches(),
+    queryFn: () => fetchAllPages((page) => listCatalogBranches(page)),
     enabled: isAdmin,
   });
   const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
@@ -256,7 +257,7 @@ export function ProductStockView() {
                   }}
                 >
                   <option value="">اختر الفرع</option>
-                  {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                  {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </Select>
               </div>
             )}

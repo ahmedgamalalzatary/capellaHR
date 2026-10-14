@@ -37,6 +37,9 @@ export default defineConfig({
           pool: 'forks',
           setupFiles: ['./tests/mysql-integration-suite-setup.ts'],
           globalSetup: ['./tests/mysql-integration-global-setup.ts'],
+          // Every file starts with a full test-database reset; on a busy MySQL server it
+          // can pass 10s, so hooks get the same headroom the files' own setup uses.
+          hookTimeout: 120_000,
         },
       },
     ],

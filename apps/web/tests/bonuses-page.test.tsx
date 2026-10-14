@@ -45,6 +45,8 @@ const bonus = {
   amount: '250.00',
   reason: 'أداء استثنائي',
   employeeDeletedAt: null,
+  editable: true,
+  lockReason: null,
   createdAt: '2026-06-10T00:00:00.000Z',
   updatedAt: '2026-06-10T00:00:00.000Z',
 };
@@ -57,6 +59,8 @@ const readOnly = {
   employeeName: 'منى علي',
   reason: null,
   employeeDeletedAt: '2026-06-15T00:00:00.000Z',
+  editable: false,
+  lockReason: 'employee_inactive',
 };
 
 const pageOf = (items: unknown[], meta: Partial<Record<string, number>> = {}) => ({
@@ -327,6 +331,29 @@ describe('BonusesView', () => {
     expect(within(row).queryByRole('button', { name: 'تعديل' })).toBeNull();
     expect(within(row).queryByRole('button', { name: 'حذف' })).toBeNull();
     expect(within(row).getByText('موظف محذوف')).toBeDefined();
+  });
+
+  test('a record in an approved payroll month is locked instead of offering edit and delete', async () => {
+    mocks.listBonuses.mockResolvedValue(pageOf([
+      { ...bonus, editable: false, lockReason: 'payroll_finalized' },
+    ]));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const row = rowOf('أحمد جمال');
+    expect(within(row).queryByRole('button', { name: 'تعديل' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: 'حذف' })).toBeNull();
+    expect(within(row).getByText('معتمد — مقفل')).toBeDefined();
+  });
+
+  test('a deactivated employee record is read-only', async () => {
+    mocks.listBonuses.mockResolvedValue(pageOf([
+      { ...bonus, editable: false, lockReason: 'employee_inactive' },
+    ]));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const row = rowOf('أحمد جمال');
+    expect(within(row).queryByRole('button', { name: 'تعديل' })).toBeNull();
+    expect(within(row).getByText('موظف غير نشط')).toBeDefined();
   });
 
   test('surfaces the Arabic server error when the month is finalized', async () => {

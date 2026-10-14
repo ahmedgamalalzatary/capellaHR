@@ -296,11 +296,11 @@ function AdvancesSection() {
 
 function PayrollSection() {
   const [monthInput, setMonthInput] = useState(currentCairoMonth);
-  const [month, setMonth] = useState('');
+  // The form opens on the current month, so the employee sees it without pressing show.
+  const [month, setMonth] = useState(monthInput);
   const query = useQuery({
     queryKey: ['self-service', 'payroll', month],
     queryFn: () => getSelfServicePayrollMonth(month),
-    enabled: Boolean(month),
     retry: false,
   });
   useExitOnUnauthorized(query.error);
@@ -315,8 +315,7 @@ function PayrollSection() {
           <Button type="submit">عرض الراتب</Button>
         </form>
       </Card>
-      {!month ? <Card><EmptyState title="اختر شهرًا لعرض تفاصيل الراتب" /></Card>
-        : query.isPending ? <Card><Loading /></Card>
+      {query.isPending ? <Card><Loading /></Card>
           : query.isError ? <p role="alert" className="rounded-card border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger">{errorMessage(query.error)}</p>
             : query.data ? (
               <Card className="p-5">
@@ -341,11 +340,11 @@ function PayrollSection() {
 
 function CommissionsSection() {
   const [monthInput, setMonthInput] = useState(currentCairoMonth);
-  const [month, setMonth] = useState('');
+  // The form opens on the current month, so the employee sees it without pressing show.
+  const [month, setMonth] = useState(monthInput);
   const query = useQuery({
     queryKey: ['self-service', 'commissions', month],
     queryFn: () => getSelfServiceCommissionMonth(month),
-    enabled: Boolean(month),
     retry: false,
   });
   useExitOnUnauthorized(query.error);
@@ -360,8 +359,7 @@ function CommissionsSection() {
           <Button type="submit">عرض العمولات</Button>
         </form>
       </Card>
-      {!month ? <Card><EmptyState title="اختر شهرًا لعرض إجمالي العمولة" /></Card>
-        : query.isPending ? <Card><Loading /></Card>
+      {query.isPending ? <Card><Loading /></Card>
           : query.isError ? <Card><QueryError error={query.error} retry={() => void query.refetch()} /></Card>
             : query.data?.available === false ? (
               <Card><EmptyState title="العمولات غير متاحة في هذه النسخة" /></Card>

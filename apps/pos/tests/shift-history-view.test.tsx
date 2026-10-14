@@ -108,6 +108,16 @@ describe('ShiftHistoryView', () => {
     ));
   });
 
+  test('offers branches beyond the first page of the branch list', async () => {
+    mocks.getSession.mockResolvedValue({ actor: { type: 'admin', accountId: 1 } });
+    mocks.listCashierSessionBranches.mockImplementation(async (page = 1) => (page === 1
+      ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
+      : { items: [{ id: 9, name: 'فرع الصفحة الثانية' }], meta: { page: 2, pageSize: 100, total: 2, totalPages: 2 } }));
+    renderView();
+
+    expect(await screen.findByRole('option', { name: 'فرع الصفحة الثانية' })).toBeDefined();
+  });
+
   test('lets an Admin retry when the branch list will not load', async () => {
     // Without the branch list no branch can be chosen, and without a branch the shifts
     // query never runs — so a silent failure leaves the screen permanently empty.

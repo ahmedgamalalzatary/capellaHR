@@ -2,6 +2,8 @@ import type { CreateAdvanceInput, UpdateAdvanceInput } from '@capella/contracts'
 
 import { api, type PageMeta } from '@/lib/api/client';
 
+import type { AdjustmentLock } from '../../financial-adjustments/types';
+
 interface AdvanceInstallment {
   id: number;
   ordinal: number;
@@ -38,7 +40,7 @@ export interface ListAdvancesParams {
 
 export function listAdvances(
   params: ListAdvancesParams = {},
-): Promise<{ items: Advance[]; meta: PageMeta }> {
+): Promise<{ items: Array<Advance & AdjustmentLock>; meta: PageMeta }> {
   const query = new URLSearchParams();
   if (params.search) query.set('search', params.search);
   if (params.branchId !== undefined) query.set('branchId', String(params.branchId));
@@ -47,7 +49,7 @@ export function listAdvances(
   if (params.page !== undefined) query.set('page', String(params.page));
   if (params.pageSize !== undefined) query.set('pageSize', String(params.pageSize));
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
-  return api.getPage<Advance>(`/advances${suffix}`);
+  return api.getPage<Advance & AdjustmentLock>(`/advances${suffix}`);
 }
 
 export function createAdvance(input: CreateAdvanceInput): Promise<Advance> {

@@ -25,6 +25,7 @@ import {
   InvoiceHistoryFilters,
 } from './invoice-history-filters';
 import { invoiceClientLabel } from '@/lib/client-label';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { formatCairoDateTime, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
@@ -59,6 +60,8 @@ function ReversalDialog({
   onClose(): void;
 }) {
   const queryClient = useQueryClient();
+  const [pending, setPending] = useState(false);
+  const close = () => { if (!pending) onClose(); };
   const invoice = useQuery({
     queryKey: salesQueryKeys.invoice(invoiceId, branchId),
     queryFn: () => getInvoice(invoiceId, branchId),
@@ -66,7 +69,7 @@ function ReversalDialog({
   });
 
   return (
-    <Modal title={`مرتجع الفاتورة ${invoiceNumber}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" onClose={onClose}>
+    <Modal title={`مرتجع الفاتورة ${invoiceNumber}`} className="max-h-[90dvh] max-w-xl overflow-y-auto" dismissOnBackdrop={!pending} onClose={close}>
       {invoice.isPending ? (
         <LoadingState label="جارٍ تحميل الفاتورة…" align="start" className="p-0" />
       ) : null}
@@ -95,6 +98,7 @@ function ReversalDialog({
           <InvoiceReversalControls
             invoice={invoice.data}
             embedForms
+            onPendingChange={setPending}
             {...(branchId === undefined ? {} : { branchId })}
             onUpdated={(updated) => {
               queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), updated);
@@ -104,15 +108,14 @@ function ReversalDialog({
         </>
       ) : null}
       <div className="flex justify-end">
-        <Button variant="ghost" onClick={onClose}>إغلاق</Button>
+        <Button variant="ghost" disabled={pending} onClick={close}>إغلاق</Button>
       </div>
     </Modal>
   );
 }
 
-const stillRefundable = (status: keyof typeof statusLabels) => (
-  status === 'completed' || status === 'partially_refunded'
-);
+/** The server lists refundable invoices only, so these are the statuses that can appear. */
+const refundableStatuses = ['completed', 'partially_refunded'] as const;
 
 export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   const actor = useSession().data?.actor;
@@ -141,11 +144,11 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
   });
   const branches = useQuery({
     queryKey: ['erp-sales', 'invoice-branches'],
-    queryFn: () => listCashierSessionBranches(1),
+    queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
     enabled: isAdmin,
   });
-  if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
-    setBranchId(branches.data.items[0]!.id);
+  if (isAdmin && branchId === undefined && branches.data?.length === 1) {
+    setBranchId(branches.data[0]!.id);
   }
   /** A ?branchId= link (receipt back-navigation) seeds the shared admin branch. */
   useEffect(() => {
@@ -161,6 +164,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
       ...(filters.fromDate ? { fromDate: filters.fromDate } : {}),
       ...(filters.toDate ? { toDate: filters.toDate } : {}),
       ...(filters.employeeId === undefined ? {} : { employeeId: filters.employeeId }),
+      refundable: true,
       orderBy: filters.orderBy,
       orderDir: filters.orderDir,
       page,
@@ -175,7 +179,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
     setSelectedInvoiceId(scanned.id);
     setScannedNumber(null);
   }
-  const refundableItems = (invoices.data?.items ?? []).filter((invoice) => stillRefundable(invoice.status));
+  const refundableItems = invoices.data?.items ?? [];
   const selectedInvoice = refundableItems.find((invoice) => invoice.id === selectedInvoiceId);
 
   return (
@@ -219,7 +223,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
                 }}
               >
                 <option value="">اختر الفرع</option>
-                {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </Select>
             </div>
           ) : null}
@@ -233,6 +237,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
             values={filters}
             onChange={(next) => { setFilters(next); setPage(1); setSelectedInvoiceId(undefined); }}
             branchId={branchId}
+            statuses={refundableStatuses}
           />
         </CardContent>
       </Card>
@@ -256,7 +261,7 @@ export function RefundsView({ initialBranchId }: { initialBranchId?: number }) {
           </Button>
         </Notice>
       ) : null}
-      {isAdmin && branchId === undefined && (branches.data?.items.length ?? 0) > 1 ? (
+      {isAdmin && branchId === undefined && (branches.data?.length ?? 0) > 1 ? (
         <Card className="shadow-card">
           <EmptyState title="اختر فرعًا لعرض فواتيره" />
         </Card>

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   update: vi.fn(), adjust: vi.fn(), create: vi.fn(), listProducts: vi.fn(), movements: vi.fn(),
-  generateBarcode: vi.fn(),
+  generateBarcode: vi.fn(), branches: vi.fn(),
 }));
 const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
 vi.mock('../src/features/auth', () => ({
@@ -25,7 +25,7 @@ const movement = {
   actingUsername: 'admin',
 };
 vi.mock('../src/features/catalog', () => ({
-  listCatalogBranches: vi.fn(async () => ({ items: [{ id: 2, name: 'الرئيسي' }, { id: 3, name: 'الفرع الثاني' }], totalPages: 1 })),
+  listCatalogBranches: mocks.branches,
 }));
 vi.mock('../src/features/products/api/products-api', () => ({
   listAllProducts: mocks.listProducts, listProducts: mocks.listProducts,
@@ -53,9 +53,23 @@ beforeEach(() => {
     items: [product], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 },
   });
   mocks.movements.mockResolvedValue({ items: [], totalPages: 1 });
+  mocks.branches.mockResolvedValue({
+    items: [{ id: 2, name: 'الرئيسي' }, { id: 3, name: 'الفرع الثاني' }],
+    meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+  });
 });
 
 describe('ProductStockView', () => {
+  it('offers branches beyond the first page of the branch list', async () => {
+    mocks.branches.mockImplementation(async (page = 1) => (page === 1
+      ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
+      : { items: [{ id: 9, name: 'فرع الصفحة الثانية' }], meta: { page: 2, pageSize: 100, total: 2, totalPages: 2 } }));
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+
+    expect(await screen.findByRole('option', { name: 'فرع الصفحة الثانية' })).toBeDefined();
+  });
+
+
   it('closes batch management when the selected branch changes', async () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });

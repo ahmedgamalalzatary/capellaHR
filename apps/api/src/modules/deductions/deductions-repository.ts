@@ -1,9 +1,11 @@
 import type { ListDeductionsQuery } from '@capella/contracts';
-import { branches, deductions, employeeBranchAssignments, employees } from '@capella/database/schema';
+import { branches, deductions, employeeBranchAssignments, employees, payrollMonths } from '@capella/database/schema';
 import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
 import {
+  adjustmentLockState,
   createFinancialContext,
+  employeeInactiveSql,
   type Database,
   type Executor,
   isFinalized,
@@ -77,7 +79,15 @@ export const createDrizzleDeductionRepository = (
         sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`,
       )!);
       const where = filters.length ? and(...filters) : undefined;
-      const rows = await database.select(fields).from(deductions)
+      const rows = await database.select({
+        ...fields,
+        employeeInactive: employeeInactiveSql,
+        payrollFinalized: sql<number>`exists (
+          select 1 from ${payrollMonths}
+          where ${payrollMonths.employeeId} = ${deductions.employeeId}
+            and ${payrollMonths.payrollMonth} = ${deductions.payrollMonth}
+        )`,
+      }).from(deductions)
         .innerJoin(employees, eq(employees.id, deductions.employeeId))
         .leftJoin(employeeBranchAssignments, assignmentAtCreation)
         .innerJoin(branches, eq(branches.id, branchIdAtCreation))
@@ -86,7 +96,12 @@ export const createDrizzleDeductionRepository = (
       const totals = await database.select({ value: count() }).from(deductions)
         .innerJoin(employees, eq(employees.id, deductions.employeeId))
         .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where);
-      return { items: rows.map((row) => expose(row)!), total: totals[0]?.value ?? 0 };
+      return {
+        items: rows.map(({ employeeInactive, payrollFinalized, ...row }) => ({
+          ...expose(row)!, ...adjustmentLockState({ employeeInactive, payrollFinalized }),
+        })),
+        total: totals[0]?.value ?? 0,
+      };
     },
     async update(id, input) {
       const owner = (await database.select({ employeeId: deductions.employeeId }).from(deductions).where(eq(deductions.id, id)).limit(1))[0];

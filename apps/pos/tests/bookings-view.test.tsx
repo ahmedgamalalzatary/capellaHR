@@ -95,6 +95,17 @@ describe('appointment book', () => {
     expect(mocks.list).toHaveBeenCalledWith({ date: '2026-08-25' });
   });
 
+  it('clears the last error once the next action succeeds', async () => {
+    mocks.updateStatus.mockRejectedValueOnce(new Error('network'));
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'وصل العميل' }));
+    expect(await screen.findByText('تعذر تحديث الحجز.')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'وصل العميل' }));
+    await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('تعذر تحديث الحجز.')).toBeNull());
+  });
+
   it('marks arrival in place and offers an explicit start-sale action', async () => {
     mocks.updateStatus.mockImplementation(async () => {
       mocks.list.mockResolvedValue([{ ...booking, status: 'arrived' }]);
@@ -148,6 +159,16 @@ describe('appointment book', () => {
     renderView();
 
     expect(await screen.findByLabelText('الفرع')).toHaveProperty('disabled', true);
+  });
+
+  it('offers branches beyond the first page of the branch list', async () => {
+    mocks.session = { data: { actor: { type: 'admin', accountId: 1 } }, isPending: false, isError: false, refetch: vi.fn() };
+    mocks.listBranches.mockImplementation(async (page = 1) => (page === 1
+      ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
+      : { items: [{ id: 9, name: 'فرع الصفحة الثانية' }], meta: { page: 2, pageSize: 100, total: 2, totalPages: 2 } }));
+    renderView();
+
+    expect(await screen.findByRole('option', { name: 'فرع الصفحة الثانية' })).toBeDefined();
   });
 
   it('retries branch loading when it fails', async () => {

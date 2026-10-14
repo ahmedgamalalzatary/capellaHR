@@ -36,7 +36,7 @@ export function QueueReassignmentDialog({ ticket, branchId, isAdmin, onClose, on
     onError: (error: unknown) => notifyError(error, 'تعذر تغيير موظف الخدمة.'),
   });
   const same = employee?.id === ticket.employeeId;
-  return <Modal title={`تغيير موظف الخدمة: ${ticket.serviceName} — الدور ${ticket.queueNumber}`} onClose={onClose}>
+  return <Modal title={`تغيير موظف الخدمة: ${ticket.serviceName} — الدور ${ticket.queueNumber}`} dismissOnBackdrop={!mutation.isPending} onClose={() => { if (!mutation.isPending) onClose(); }}>
     <p className="text-sm text-muted">الموظف الحالي: {ticket.employeeName}</p>
     <PresentEmployeePicker selected={employee} onSelect={setEmployee} forAdminReassignment={isAdmin} {...(branchId === undefined ? {} : { branchId })} />
     <label className="block space-y-1 text-sm">

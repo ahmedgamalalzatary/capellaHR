@@ -16,6 +16,9 @@ vi.mock('../src/features/erp-reports/api/erp-reports-api', () => ({
   downloadErpReportExcel: mocks.excel,
   deleteErpReportExportFile: mocks.deleteFile,
 }));
+vi.mock('../src/features/auth', () => ({
+  useSession: () => ({ data: { actor: { type: 'admin', accountId: 1 } } }),
+}));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.branches,
 }));
@@ -210,6 +213,30 @@ describe('ErpReportsView', () => {
     expect(within(salesRow).getByText('موظف أول, موظف ثان +2')).toBeDefined();
     expect(within(salesRow).queryByText('موظف ثالث')).toBeNull();
     expect(within(salesRow).queryByText('موظف رابع')).toBeNull();
+  });
+
+  it('opens on the branch the admin picked on another page', async () => {
+    sessionStorage.setItem('capella:pos-admin-branch', '3');
+    mount();
+
+    await waitFor(() => expect(mocks.view).toHaveBeenCalledWith('erp-sales', expect.objectContaining({ branchId: 3 })));
+    expect(mocks.view).not.toHaveBeenCalledWith('erp-sales', expect.not.objectContaining({ branchId: 3 }));
+    await screen.findByRole('option', { name: 'فرع المعادي' });
+    expect((screen.getByLabelText('الفرع') as HTMLSelectElement).value).toBe('3');
+  });
+
+  it('keeps the shared branch until the new branch is applied', async () => {
+    sessionStorage.setItem('capella:pos-admin-branch', '2');
+    mount();
+    await screen.findByText('عميل التقرير');
+    await screen.findByRole('option', { name: 'فرع المعادي' });
+
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
+    expect(sessionStorage.getItem('capella:pos-admin-branch')).toBe('2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق الفلاتر' }));
+    await waitFor(() => expect(sessionStorage.getItem('capella:pos-admin-branch')).toBe('3'));
+    expect(mocks.view).toHaveBeenLastCalledWith('erp-sales', expect.objectContaining({ branchId: 3 }));
   });
 
   it('applies date changes only after apply is clicked', async () => {

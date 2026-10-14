@@ -82,7 +82,7 @@ export function SuppliersPurchasesView() {
 
   const branches = useQuery({
     queryKey: ['supplier-branches'],
-    queryFn: () => listCatalogBranches(),
+    queryFn: () => fetchAllPages((page) => listCatalogBranches(page)),
     enabled: isAdmin,
   });
   const branchScope = branchId === undefined ? {} : { branchId };
@@ -301,7 +301,7 @@ export function SuppliersPurchasesView() {
                   onChange={(event) => changeBranch(event.target.value)}
                 >
                   <option value="">اختر الفرع</option>
-                  {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                  {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
                 </Select>
               </div>
             )}

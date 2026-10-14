@@ -7,7 +7,7 @@ import { BatchPicker } from '@/features/products';
 import type { PaymentMethod, PublicInvoiceDto, RefundQuote } from '@capella/contracts';
 import { useMutation } from '@tanstack/react-query';
 import { Printer } from 'lucide-react';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button, Input, Modal, cn } from '@capella/ui';
 
@@ -91,6 +91,7 @@ export function InvoiceReversalControls({
   onUpdated,
   showRefundAction = true,
   embedForms = false,
+  onPendingChange,
 }: {
   invoice: PublicInvoiceDto;
   branchId?: number;
@@ -98,6 +99,8 @@ export function InvoiceReversalControls({
   showRefundAction?: boolean;
   /** When already inside a till dialog, keep qty/reason in that same panel. */
   embedForms?: boolean;
+  /** Lets an outer dialog refuse to close while a refund or void is being saved. */
+  onPendingChange?(pending: boolean): void;
 }) {
   const [mode, setMode] = useState<'refund' | 'void' | null>(null);
   const [reason, setReason] = useState('');
@@ -249,6 +252,7 @@ export function InvoiceReversalControls({
     onError: (error: unknown) => notifyError(error, 'تعذر إلغاء الفاتورة.'),
   });
   const reversalPending = refund.isPending || voidMutation.isPending;
+  useEffect(() => { onPendingChange?.(reversalPending); }, [onPendingChange, reversalPending]);
   function close(requestSettled = false) {
     if (reversalPending && !requestSettled) return;
     // Closing the dialog is not abandoning the reversal: only a stored one, or an

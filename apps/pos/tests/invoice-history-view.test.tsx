@@ -151,6 +151,16 @@ describe('invoice history', () => {
     expect(link.textContent?.split(phone).length - 1).toBe(1);
   });
 
+  it('offers branches beyond the first page of the branch list', async () => {
+    mocks.actor.current = { type: 'admin' };
+    mocks.listBranches.mockImplementation(async (page = 1) => (page === 1
+      ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
+      : { items: [{ id: 9, name: 'فرع الصفحة الثانية' }], meta: { page: 2, pageSize: 100, total: 2, totalPages: 2 } }));
+    renderView();
+
+    expect(await screen.findByRole('option', { name: 'فرع الصفحة الثانية' })).toBeDefined();
+  });
+
   it('asks the admin to pick a branch before listing invoices', async () => {
     mocks.actor.current = { type: 'admin' };
     mocks.listBranches.mockResolvedValue({

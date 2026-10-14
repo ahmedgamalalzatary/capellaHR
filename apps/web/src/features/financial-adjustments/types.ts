@@ -1,3 +1,12 @@
+/**
+ * Set by the server on listed records: a record whose payroll month is approved, or
+ * whose employee is deleted or deactivated, can no longer be edited or deleted.
+ */
+export interface AdjustmentLock {
+  editable: boolean;
+  lockReason: 'payroll_finalized' | 'employee_inactive' | null;
+}
+
 /** Bonus and deduction records share a wire shape; only bonuses include a reason. */
 export interface FinancialAdjustment {
   id: number;
@@ -43,7 +52,7 @@ interface UpdateAdjustmentInput {
 
 export interface AdjustmentApi {
   list(params: ListAdjustmentsParams): Promise<{
-    items: FinancialAdjustment[];
+    items: Array<FinancialAdjustment & AdjustmentLock>;
     meta: { page: number; pageSize: number; total: number; totalPages: number };
   }>;
   create(input: CreateAdjustmentInput): Promise<FinancialAdjustment>;

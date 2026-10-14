@@ -66,12 +66,15 @@ export function InvoiceHistoryFilters({
   values,
   onChange,
   branchId,
+  statuses,
 }: {
   idPrefix: string;
   values: InvoiceHistoryFilterValues;
   onChange: (next: InvoiceHistoryFilterValues) => void;
   /** Employee options are branch-scoped; the control hides without a branch. */
   branchId: number | undefined;
+  /** Limits the status choices to those the page can show; all statuses when omitted. */
+  statuses?: readonly Exclude<InvoiceHistoryStatusFilter, ''>[];
 }) {
   const employees = useQuery({
     queryKey: ['erp-sales', 'invoice-employee-options', branchId],
@@ -103,7 +106,8 @@ export function InvoiceHistoryFilters({
           value={values.status}
           onChange={(event) => set({ status: event.target.value as InvoiceHistoryStatusFilter })}
         >
-          {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          {statusOptions.filter((option) => !statuses || option.value === '' || statuses.includes(option.value))
+            .map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </Select>
       </div>
       <div className="space-y-1.5">

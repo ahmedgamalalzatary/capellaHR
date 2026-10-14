@@ -1,4 +1,8 @@
+import type { Metadata } from 'next';
+
 import { InvoiceReceiptView } from '@/features/sales';
+
+export const metadata: Metadata = { title: 'تفاصيل الفاتورة' };
 
 export default async function InvoicePage({
   params,

@@ -8,7 +8,7 @@ const record = { id: 1, ...input, employeeCode: 9, employeeName: 'موظف', bra
 const repo = (): DeductionRepository => ({
   create: vi.fn(async () => ({ kind: 'success' as const, record })),
   findById: vi.fn(async () => record),
-  list: vi.fn(async () => ({ items: [record], total: 1 })),
+  list: vi.fn(async () => ({ items: [{ ...record, editable: true, lockReason: null }], total: 1 })),
   update: vi.fn(async () => ({ kind: 'success' as const, record })),
   remove: vi.fn(async () => ({ kind: 'success' as const })),
 });

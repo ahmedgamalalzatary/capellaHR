@@ -43,6 +43,8 @@ const advance = {
   installmentCount: 3,
   startMonth: '2026-07',
   employeeDeletedAt: null,
+  editable: true,
+  lockReason: null,
   installments: [
     { id: 41, ordinal: 1, payrollMonth: '2026-07', amount: '333.33' },
     { id: 42, ordinal: 2, payrollMonth: '2026-08', amount: '333.33' },
@@ -59,6 +61,8 @@ const readOnly = {
   employeeCode: 1002,
   employeeName: 'منى علي',
   employeeDeletedAt: '2026-07-05T00:00:00.000Z',
+  editable: false,
+  lockReason: 'employee_inactive',
 };
 
 const pageOf = (items: unknown[], meta: Partial<Record<string, number>> = {}) => ({
@@ -203,6 +207,19 @@ describe('AdvancesView', () => {
     expect(within(row).queryByRole('button', { name: 'تعديل' })).toBeNull();
     expect(within(row).queryByRole('button', { name: 'حذف' })).toBeNull();
     expect(within(row).getByText('موظف محذوف')).toBeDefined();
+  });
+
+  test('an advance with an approved installment is locked instead of offering edit and delete', async () => {
+    mocks.listAdvances.mockResolvedValue(pageOf([
+      { ...advance, editable: false, lockReason: 'payroll_finalized' },
+    ]));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    const row = rowOf('أحمد جمال');
+    expect(within(row).queryByRole('button', { name: 'تعديل' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: 'حذف' })).toBeNull();
+    expect(within(row).getByRole('button', { name: 'الأقساط' })).toBeDefined();
+    expect(within(row).getByText('معتمد — مقفل')).toBeDefined();
   });
 
   test('surfaces the Arabic server error when an installment is finalized', async () => {

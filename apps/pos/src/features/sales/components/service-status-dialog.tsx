@@ -50,7 +50,7 @@ export function ServiceStatusDialog({
     onError: (error: unknown) => notifyError(error, 'تعذر تحديث حالة الخدمة.'),
   });
 
-  return <Modal title="حالة خدمات الفاتورة" className="max-w-2xl" onClose={onClose}>
+  return <Modal title="حالة خدمات الفاتورة" className="max-w-2xl" dismissOnBackdrop={!mutation.isPending} onClose={() => { if (!mutation.isPending) onClose(); }}>
     {services.isPending ? <LoadingState label="جارٍ تحميل الخدمات…" /> : services.isError ? (
       <div className="space-y-3">
         <p role="alert" className="text-sm text-danger">{responseMessage(services.error, 'تعذر تحميل حالات الخدمات.')}</p>

@@ -24,6 +24,7 @@ import { ApiError } from '@/lib/api/client';
 import { invalidateErpCaches } from '@/lib/erp-cache';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { useTickingNow } from '@/lib/use-ticking-now';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import {
   cancelBookingServices,
@@ -99,7 +100,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const branchId = actor?.type === 'admin' ? adminBranchId : undefined;
   const branches = useQuery({
     queryKey: ['booking-branches'],
-    queryFn: () => listCashierSessionBranches(),
+    queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
     enabled: actor?.type === 'admin',
   });
   const diary = useQuery({
@@ -139,6 +140,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     onSuccess: async (_, { refund }) => {
       if (refund) await invalidateErpCaches(cache, 'booking-money');
       else await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      setError(undefined);
       notifySuccess('تم تحديث حالة الحجز.');
     },
     onError: failed('تعذر تحديث الحجز.'),
@@ -151,6 +153,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     }),
     onSuccess: async () => {
       await invalidateErpCaches(cache, 'booking-money');
+      setError(undefined);
       notifySuccess('تم إلغاء الخدمة.');
     },
     onError: failed('تعذر إلغاء الخدمة.'),
@@ -161,6 +164,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     }) => recordBookingPayment(id, { ...branchScope, cashierSessionId: cashierSessionId!, ...input }),
     onSuccess: async () => {
       await invalidateErpCaches(cache, 'booking-money');
+      setError(undefined);
       notifySuccess('تم تسجيل الدفع المقدم.');
     },
     onError: failed('تعذر تسجيل الدفع المقدم.'),
@@ -171,6 +175,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     ),
     onSuccess: async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      setError(undefined);
       notifySuccess('تم تغيير الموعد.');
     },
     onError: failed('تعذر تغيير الموعد.'),
@@ -182,7 +187,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       preferredEmployeeId: employeeId,
       ...(branchId === undefined ? {} : { branchId }),
     }),
-    onSuccess: async () => { await cache.invalidateQueries({ queryKey: bookingQueryKeys.all }); notifySuccess('تم حفظ الموظف المفضل.'); },
+    onSuccess: async () => { await cache.invalidateQueries({ queryKey: bookingQueryKeys.all }); setError(undefined); notifySuccess('تم حفظ الموظف المفضل.'); },
     onError: (cause: unknown) => {
       const message = cause instanceof ApiError ? cause.message : 'تعذر تغيير الموظف المفضل.';
       setError(message);
@@ -193,6 +198,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     mutationFn: (id: number) => deleteBooking(id, branchId),
     onSuccess: async () => {
       await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+      setError(undefined);
       notifySuccess('تم حذف الموعد.');
     },
     onError: (cause: unknown) => {
@@ -225,7 +231,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
       onChange={(event) => setAdminBranchId(event.target.value ? Number(event.target.value) : undefined)}
     >
       <option value="">اختر الفرع</option>
-      {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+      {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
     </Select> : null}
     {actor?.type === 'admin' && branches.isError ? (
       <Notice tone="danger" role="alert">

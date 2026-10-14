@@ -80,7 +80,7 @@ export function BookingForm({ branchId, onClose, onSaved }: {
   if (saved) return <Modal title="تذكرة الموعد" onClose={onClose}>
     <div className="space-y-4"><BookingTicket booking={saved} /><div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button onClick={() => window.print()}>طباعة التذكرة</Button></div></div>
   </Modal>;
-  return <Modal title="حجز موعد جديد" onClose={onClose} className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+  return <Modal title="حجز موعد جديد" dismissOnBackdrop={!save.isPending} onClose={() => { if (!save.isPending) onClose(); }} className="max-h-[90dvh] max-w-2xl overflow-y-auto">
     <div className="space-y-4">
       <ClientPicker selected={client} onSelect={setClient} {...(branchId === undefined ? {} : { branchId })} />
       <ServicePicker {...(branchId === undefined ? {} : { branchId })} onSelect={(service) => setServices((current) => current.some(({ id }) => id === service.id) ? current : [...current, service])} />
@@ -95,7 +95,7 @@ export function BookingForm({ branchId, onClose, onSaved }: {
       <div className="space-y-1.5"><Label htmlFor="booking-time">التاريخ والوقت</Label><Input id="booking-time" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} /></div>
       <div className="space-y-1.5"><Label htmlFor="booking-note">ملاحظة</Label><Input id="booking-note" value={note} onChange={(event) => setNote(event.target.value)} /></div>
       {save.isError ? <p role="alert" className="text-sm text-danger">{save.error instanceof ApiError ? save.error.message : save.error instanceof Error && save.error.message === 'Invalid Cairo local time' ? 'الوقت المحلي غير صالح.' : 'تعذر حفظ الحجز.'}</p> : null}
-      <div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose}>إغلاق</Button><Button disabled={!client || !scheduledAt || services.length === 0 || save.isPending} onClick={() => save.mutate()}>حفظ الحجز</Button></div>
+      <div className="flex justify-end gap-2"><Button variant="secondary" disabled={save.isPending} onClick={onClose}>إغلاق</Button><Button disabled={!client || !scheduledAt || services.length === 0 || save.isPending} onClick={() => save.mutate()}>حفظ الحجز</Button></div>
     </div>
   </Modal>;
 }

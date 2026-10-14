@@ -6,7 +6,7 @@ import {
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import {
@@ -82,6 +82,22 @@ export const resolveAdjustmentAmount = async (
     days,
     baseSalarySnapshot: baseSalary,
   };
+};
+
+export type AdjustmentLockReason = 'payroll_finalized' | 'employee_inactive';
+export type AdjustmentLockState = { editable: boolean; lockReason: AdjustmentLockReason | null };
+
+/** The employee can no longer receive payroll changes: deleted or deactivated. */
+export const employeeInactiveSql = sql<number>`(${employees.deletedAt} is not null or ${employees.employmentStatus} = 'inactive')`;
+
+/**
+ * Whether a listed record can still be edited or deleted, checked in the same order
+ * as its update and delete paths, so the list never offers an action the server refuses.
+ */
+export const adjustmentLockState = (flags: { employeeInactive: unknown; payrollFinalized: unknown }): AdjustmentLockState => {
+  const lockReason = Number(flags.employeeInactive) ? 'employee_inactive'
+    : Number(flags.payrollFinalized) ? 'payroll_finalized' : null;
+  return { editable: lockReason === null, lockReason };
 };
 
 export const isFinalized = async (

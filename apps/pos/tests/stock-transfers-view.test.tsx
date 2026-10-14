@@ -180,6 +180,18 @@ describe('StockTransfersView', () => {
     expect(mocks.create.mock.calls[0]![0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/u);
   });
 
+  it('cannot be closed while the transfer is being saved', async () => {
+    mocks.create.mockReturnValue(new Promise(() => undefined));
+    mount();
+    await fillTransfer();
+
+    fireEvent.click(screen.getByRole('button', { name: 'تنفيذ التحويل' }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.getByRole('dialog', { name: 'تحويل جديد' })).toBeDefined();
+  });
+
   it('shows the cost of what is being moved before it is sent', async () => {
     mount();
     await fillTransfer();
@@ -401,6 +413,12 @@ describe('StockTransfersView', () => {
     expect(dialog.textContent).toContain('فرع المعادي');
     expect(dialog.textContent).toContain('2026-08-17');
     expect(dialog.textContent).toContain('INV.2026.08.17.0001');
+    // The creation time reads as a Cairo date and time, never as a raw timestamp.
+    expect(dialog.textContent).not.toContain('2026-08-17T09:00:00.000Z');
+    expect(dialog.querySelector('time[datetime="2026-08-17T09:00:00.000Z"]')?.textContent).toBe(
+      new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' })
+        .format(new Date('2026-08-17T09:00:00.000Z')),
+    );
     expect(dialog.textContent).toContain('نقل مخزون');
     // Every moved product is listed inside the popup, even the truncated one.
     expect(dialog.textContent).toContain('منتج أول');
@@ -416,8 +434,10 @@ describe('StockTransfersView', () => {
       { id: 7, name: 'شامبو الأرغان', quantity: 10, lastPurchaseCost: '30.00', isActive: true },
       { id: 9, name: 'بلسم', quantity: 5, lastPurchaseCost: '12.00', isActive: true },
     ]));
+    mocks.branches.mockResolvedValue(page([{ id: 2, name: 'فرع مدينة نصر' }]));
     mount();
     await screen.findByText('INV.2026.08.17.0001');
+    await screen.findByRole('option', { name: 'بلسم — فرع مدينة نصر' });
 
     fireEvent.change(screen.getByLabelText('تصفية حسب المنتج'), { target: { value: '9' } });
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ page: 1, productId: 9 }));
@@ -429,19 +449,24 @@ describe('StockTransfersView', () => {
     await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ page: 1, productId: 9, from: '2026-08-01', to: '2026-08-31' }));
   });
 
-  it('scopes the history product filter like the transfers list, not the form source branch', async () => {
-    mount();
-    await sourceOptionsReady();
-    fireEvent.change(screen.getByLabelText('الفرع المُرسِل'), { target: { value: '2' } });
-    await waitFor(() => expect(mocks.products).toHaveBeenCalledWith(
-      { branchId: 2, isActive: true },
+  it('offers an admin the products of every branch in the history filter, never an unscoped list', async () => {
+    mocks.products.mockImplementation(async (params: { branchId?: number }) => page(
+      params.branchId === 2
+        ? [{ id: 7, name: 'شامبو الأرغان', quantity: 10, lastPurchaseCost: '30.00', isActive: true }]
+        : [{ id: 8, name: 'شامبو الأرغان', quantity: 2, lastPurchaseCost: '30.00', isActive: true }],
     ));
+    mount();
 
-    // The form's own product list stays branch-scoped; the history filter must not follow it.
-    const historyCalls = mocks.products.mock.calls
-      .map(([params]) => params as Record<string, unknown>)
-      .filter((params) => !('isActive' in params));
-    expect(historyCalls.at(-1)).toEqual({});
+    const filter = screen.getByLabelText('تصفية حسب المنتج');
+    await within(filter).findByRole('option', { name: 'شامبو الأرغان — فرع المعادي' });
+    expect(within(filter).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'كل المنتجات', 'شامبو الأرغان — فرع مدينة نصر', 'شامبو الأرغان — فرع المعادي',
+    ]);
+    // The server refuses an admin product list without a branch.
+    expect(mocks.products).not.toHaveBeenCalledWith({});
+
+    fireEvent.change(filter, { target: { value: '8' } });
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledWith({ page: 1, productId: 8 }));
   });
 
   it('prints the selected transfer with every product and its totals', async () => {

@@ -350,7 +350,10 @@ export function ErpReportsView() {
     storedReportTab,
     () => 'erp-sales' as ErpTabReportType,
   );
-  const { branchId: branchInput, setBranchId: setBranchInput } = useAdminBranch();
+  // The picker is a draft like every other filter: the shared admin branch (and the
+  // report) change together on apply, and the report opens on the shared branch.
+  const { branchId: sharedBranchId, setBranchId: setSharedBranchId } = useAdminBranch();
+  const [branchInput, setBranchInput] = useState(sharedBranchId);
   const [sourceBranchInput, setSourceBranchInput] = useState<number>();
   const [destinationBranchInput, setDestinationBranchInput] = useState<number>();
   const [dateFromInput, setDateFromInput] = useState(reportType === 'erp-expiry-data' ? '' : dates.dateFrom);
@@ -358,6 +361,7 @@ export function ErpReportsView() {
   const [expiryStatus, setExpiryStatus] = useState<NonNullable<ReportFilters['expiryStatus']> | ''>('');
   const [searchInput, setSearchInput] = useState('');
   const [filters, setFilters] = useState<ReportFilters>({
+    ...(reportType === 'erp-transfers' || sharedBranchId === undefined ? {} : { branchId: sharedBranchId }),
     ...(reportType === 'erp-expiry-data' ? {} : { dateFrom: dates.dateFrom, dateTo: dates.dateTo }),
   });
   const [page, setPage] = useState(1);
@@ -402,6 +406,7 @@ export function ErpReportsView() {
   });
   const applyFilters = () => {
     if (dateFromInput && dateToInput && dateFromInput > dateToInput) return;
+    if (reportType !== 'erp-transfers') setSharedBranchId(branchInput);
     setFilters({
       ...(reportType === 'erp-expiry-data' && expiryStatus ? { expiryStatus } : {}),
       ...(reportType === 'erp-transfers'

@@ -257,6 +257,20 @@ describe('SelfServiceView', () => {
     expect(screen.getByLabelText('انتقال إلى صفحة')).toBeDefined();
   });
 
+  it('loads the current month as soon as the payroll and commission tabs open', async () => {
+    const thisMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit' })
+      .format(new Date()).slice(0, 7);
+    renderView();
+    await screen.findByText('أحمد جمال');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'الراتب' }));
+    await waitFor(() => expect(mocks.getPayrollMonth).toHaveBeenCalledWith(thisMonth));
+    expect(screen.queryByText('اختر شهرًا لعرض تفاصيل الراتب')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'العمولات' }));
+    await waitFor(() => expect(mocks.getCommissionMonth).toHaveBeenCalledWith(thisMonth));
+  });
+
   it('loads a selected payroll month and explains unavailable open calculations', async () => {
     mocks.getPayrollMonth.mockRejectedValue(new ApiError(503, {
       code: 'PAYROLL_ATTENDANCE_UNAVAILABLE',
@@ -303,7 +317,7 @@ describe('SelfServiceView', () => {
   });
 
   it('marks commissions unavailable instead of reporting fabricated zero totals in HR-only mode', async () => {
-    mocks.getCommissionMonth.mockResolvedValueOnce({ available: false, payrollMonth: '2026-08' });
+    mocks.getCommissionMonth.mockResolvedValue({ available: false, payrollMonth: '2026-08' });
     renderView();
     await screen.findByText('أحمد جمال');
 

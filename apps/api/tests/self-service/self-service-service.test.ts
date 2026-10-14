@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AdvanceRecord } from '../../src/modules/advances/index.js';
+import type { AdjustmentLockState } from '../../src/modules/payroll/financial-repository-helpers.js';
 import { createSelfServiceService } from '../../src/modules/self-service/index.js';
 
 const employee = {
@@ -81,7 +82,7 @@ const makeDependencies = () => ({
   },
   bonuses: { list: vi.fn(async () => ({ items: [], total: 0 })) },
   deductions: { list: vi.fn(async () => ({ items: [], total: 0 })) },
-  advances: { list: vi.fn(async () => ({ items: [] as AdvanceRecord[], total: 0 })) },
+  advances: { list: vi.fn(async () => ({ items: [] as Array<AdvanceRecord & AdjustmentLockState>, total: 0 })) },
   commissions: { getMonthlySummary: vi.fn(async () => ({
     employeeId: 7, employeeCode: 42, employeeName: employee.fullName,
     payrollMonth: '2026-08', earnedAmount: '300.00', reversedAmount: '50.00',
@@ -165,7 +166,7 @@ describe('employee self-service service', () => {
       items: [{
         id: 3, employeeId: 7, employeeCode: 42, employeeName: 'Employee',
         branchId: 2, branchName: 'Branch', amount: '200.00', reason: 'Personal need',
-        installmentCount: 1, startMonth: '2026-07', employeeDeletedAt: null,
+        installmentCount: 1, startMonth: '2026-07', employeeDeletedAt: null, editable: true, lockReason: null,
         installments: [{ id: 31, ordinal: 1, payrollMonth: '2026-07', amount: '200.00' }],
         createdAt: new Date('2026-07-01T00:00:00.000Z'),
         updatedAt: new Date('2026-07-01T00:00:00.000Z'),

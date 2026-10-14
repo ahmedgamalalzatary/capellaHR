@@ -417,10 +417,18 @@ export const invoiceHistoryQuerySchema = z.object({
   fromDate: cairoDateSchema.optional(),
   toDate: cairoDateSchema.optional(),
   employeeId: coercedMysqlIntSchema.optional(),
+  /**
+   * Only sale invoices that can still be refunded (completed or partially refunded).
+   * Filtering on the server keeps the pager honest; the refunds page relies on it.
+   */
+  refundable: z.preprocess((value) => (value === 'true' ? true : value), z.literal(true)).optional(),
   orderBy: z.enum(['soldAt', 'total', 'balanceDue', 'invoiceNumber']).default('soldAt'),
   orderDir: z.enum(['asc', 'desc']).default('desc'),
 }).strict().refine((value) => !value.fromDate || !value.toDate || value.fromDate <= value.toDate, {
   path: ['toDate'], message: 'نهاية الفترة يجب ألا تسبق بدايتها',
+}).refine((value) => !value.refundable || value.status === undefined
+  || value.status === 'completed' || value.status === 'partially_refunded', {
+  path: ['status'], message: 'الحالة المختارة لا تقبل الاسترداد',
 });
 
 export const invoiceParamsSchema = z.object({

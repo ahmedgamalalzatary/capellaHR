@@ -1,4 +1,8 @@
+import type { Metadata } from 'next';
+
 import { RefundsView } from '@/features/sales';
+
+export const metadata: Metadata = { title: 'المرتجعات' };
 
 export default async function RefundsPage({
   searchParams,

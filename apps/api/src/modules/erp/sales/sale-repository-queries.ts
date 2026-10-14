@@ -3,7 +3,7 @@ import {
   clients, invoiceLines, invoices, serviceQueueEntries,
 } from '@capella/database/schema';
 import {
-  and, asc, count, desc, eq, exists, gte, like, lt, ne, or, sql,
+  and, asc, count, desc, eq, exists, gte, inArray, like, lt, ne, or, sql,
 } from 'drizzle-orm';
 import { nextDay, startOfCairoDate } from '../cairo-calendar.js';
 import { hydrateInvoice } from './sale-repository-read.js';
@@ -65,6 +65,12 @@ export const createSaleRepositoryQueries = (
         like(invoices.clientPhoneSnapshot, `%${escapedSearch}%`),
       ) : undefined,
       query.status === undefined ? undefined : eq(invoices.status, query.status),
+      // Mirrors the invoice eligibility: sales that are not fully reversed yet.
+      // Branch transfers are never refunded; a reverse transfer undoes them.
+      query.refundable ? and(
+        eq(invoices.kind, 'sale'),
+        inArray(invoices.status, ['completed', 'partially_refunded']),
+      ) : undefined,
       query.settlementStatus === undefined ? undefined : eq(invoices.settlementStatus, query.settlementStatus),
       query.fromDate === undefined ? undefined : gte(invoices.soldAt, startOfCairoDate(query.fromDate)),
       query.toDate === undefined ? undefined : lt(invoices.soldAt, startOfCairoDate(nextDay(query.toDate))),

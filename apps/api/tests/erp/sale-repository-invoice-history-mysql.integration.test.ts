@@ -180,5 +180,11 @@ describe('ERP sale repository MySQL integration', () => {
       .resolves.toEqual([voided.id, settled.id, open.id]);
     await expect(list({}).then((result) => ids(result.items)))
       .resolves.toEqual([voided.id, open.id, settled.id]);
+
+    // The refunds page pages through refundable invoices only, so the server
+    // filters them and the total matches the rows.
+    await expect(list({ refundable: true })).resolves.toMatchObject({ total: 2 });
+    await expect(list({ refundable: true }).then((result) => ids(result.items)))
+      .resolves.toEqual([open.id, settled.id]);
   });
 });

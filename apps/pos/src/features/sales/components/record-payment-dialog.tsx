@@ -75,7 +75,7 @@ export function RecordPaymentDialog({
     </div>
   </Modal>;
 
-  return <Modal title="تسجيل دفعة" onClose={onClose}>
+  return <Modal title="تسجيل دفعة" dismissOnBackdrop={!mutation.isPending} onClose={() => { if (!mutation.isPending) onClose(); }}>
     <p className="text-sm">الرصيد المستحق: {invoice.totals.balanceDue} ج.م</p>
     <label className="block space-y-1 text-sm">
       <span>طريقة الدفع</span>

@@ -22,7 +22,7 @@ const adjustment = {
 };
 const bonusService = (): BonusService => ({
   create: vi.fn(async () => adjustment), get: vi.fn(async () => adjustment),
-  list: vi.fn(async () => ({ items: [adjustment], total: 1 })),
+  list: vi.fn(async () => ({ items: [{ ...adjustment, editable: true, lockReason: null }], total: 1 })),
   update: vi.fn(async () => adjustment), remove: vi.fn(async () => undefined),
 });
 const deductionService = (): DeductionService => bonusService();
@@ -35,7 +35,7 @@ const advance = {
 };
 const advanceService = (): AdvanceService => ({
   create: vi.fn(async () => advance), get: vi.fn(async () => advance),
-  list: vi.fn(async () => ({ items: [advance], total: 1 })),
+  list: vi.fn(async () => ({ items: [{ ...advance, editable: true, lockReason: null }], total: 1 })),
   update: vi.fn(async () => advance), remove: vi.fn(async () => undefined),
   accelerateForDeletion: vi.fn(async () => undefined),
   deactivationImpact: vi.fn(async () => ({ unpaidInstallmentCount: 0, unpaidAdvanceAmount: '0.00', currentMonthAdvanceAmount: '0.00' })),

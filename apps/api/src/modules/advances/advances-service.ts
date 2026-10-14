@@ -1,6 +1,8 @@
 import type { CreateAdvanceInput, ListAdvancesQuery, UpdateAdvanceInput } from '@capella/contracts';
 import type { deactivationAdjustmentReasons } from '@capella/database/schema';
 
+import type { AdjustmentLockState } from '../payroll/financial-repository-helpers.js';
+
 export type DeactivationAdjustmentReason = (typeof deactivationAdjustmentReasons)[number];
 
 type AdvanceInstallmentRecord = { id: number; ordinal: number; payrollMonth: string; amount: string };
@@ -27,7 +29,7 @@ type DeleteResult = { kind: 'success' } | { kind: 'not_found' | 'employee_delete
 export interface AdvanceRepository {
   create(input: CreateAdvanceInput): Promise<MutationResult>;
   findById(id: number): Promise<AdvanceRecord | null>;
-  list(query: ListAdvancesQuery): Promise<{ items: AdvanceRecord[]; total: number }>;
+  list(query: ListAdvancesQuery): Promise<{ items: Array<AdvanceRecord & AdjustmentLockState>; total: number }>;
   update(id: number, input: UpdateAdvanceInput): Promise<MutationResult>;
   remove(id: number): Promise<DeleteResult>;
   accelerateForDeletion(employeeId: number, deletedAt: Date, context: unknown): Promise<void>;

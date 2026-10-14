@@ -1,9 +1,11 @@
 import type { ListBonusesQuery } from '@capella/contracts';
-import { bonuses, branches, employeeBranchAssignments, employees } from '@capella/database/schema';
+import { bonuses, branches, employeeBranchAssignments, employees, payrollMonths } from '@capella/database/schema';
 import { and, asc, count, eq, or, sql } from 'drizzle-orm';
 
 import {
+  adjustmentLockState,
   createFinancialContext,
+  employeeInactiveSql,
   type Database,
   type Executor,
   isFinalized,
@@ -77,7 +79,15 @@ export const createDrizzleBonusRepository = (
         sql`locate(${query.search}, cast(${employees.employeeCode} as char)) > 0`,
       )!);
       const where = filters.length ? and(...filters) : undefined;
-      const rows = await database.select(fields).from(bonuses)
+      const rows = await database.select({
+        ...fields,
+        employeeInactive: employeeInactiveSql,
+        payrollFinalized: sql<number>`exists (
+          select 1 from ${payrollMonths}
+          where ${payrollMonths.employeeId} = ${bonuses.employeeId}
+            and ${payrollMonths.payrollMonth} = ${bonuses.payrollMonth}
+        )`,
+      }).from(bonuses)
         .innerJoin(employees, eq(employees.id, bonuses.employeeId))
         .leftJoin(employeeBranchAssignments, assignmentAtCreation)
         .innerJoin(branches, eq(branches.id, branchIdAtCreation))
@@ -86,7 +96,12 @@ export const createDrizzleBonusRepository = (
       const totals = await database.select({ value: count() }).from(bonuses)
         .innerJoin(employees, eq(employees.id, bonuses.employeeId))
         .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where);
-      return { items: rows.map((row) => expose(row)!), total: totals[0]?.value ?? 0 };
+      return {
+        items: rows.map(({ employeeInactive, payrollFinalized, ...row }) => ({
+          ...expose(row)!, ...adjustmentLockState({ employeeInactive, payrollFinalized }),
+        })),
+        total: totals[0]?.value ?? 0,
+      };
     },
     async update(id, input) {
       const owner = (await database.select({ employeeId: bonuses.employeeId }).from(bonuses).where(eq(bonuses.id, id)).limit(1))[0];

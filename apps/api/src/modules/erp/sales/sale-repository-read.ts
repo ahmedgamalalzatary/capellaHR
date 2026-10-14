@@ -257,11 +257,14 @@ export const hydrateInvoice = async (executor: Executor, invoiceId: number) => {
       },
       createdAt: asIso(reversal.createdAt),
     })),
+    // A branch transfer is never voided or refunded; a reverse transfer undoes it.
     eligibility: {
-      canVoid: invoice.status === 'completed'
+      canVoid: invoice.kind === 'sale'
+        && invoice.status === 'completed'
         && (invoice.settlementStatus === 'settled' || invoice.amountPaid === '0.00')
         && cairoDate(invoice.soldAt) === cairoDate(new Date()),
-      canRefund: invoice.status === 'completed' || invoice.status === 'partially_refunded',
+      canRefund: invoice.kind === 'sale'
+        && (invoice.status === 'completed' || invoice.status === 'partially_refunded'),
     },
     soldAt: asIso(invoice.soldAt),
   };

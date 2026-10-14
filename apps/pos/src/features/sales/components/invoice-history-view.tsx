@@ -18,6 +18,7 @@ import { listCashierSessionBranches } from '@/features/cashier-sessions';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { useBarcodeScanner } from '@/lib/barcode/use-barcode-scanner';
 import { invoiceClientLabel } from '@/lib/client-label';
+import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import { listInvoices } from '../api/sales-api';
 import { salesQueryKeys } from '../query-keys';
@@ -70,11 +71,11 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
   const router = useRouter();
   const branches = useQuery({
     queryKey: ['erp-sales', 'invoice-branches'],
-    queryFn: () => listCashierSessionBranches(1),
+    queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
     enabled: isAdmin,
   });
-  if (isAdmin && branchId === undefined && branches.data?.items.length === 1) {
-    setBranchId(branches.data.items[0]!.id);
+  if (isAdmin && branchId === undefined && branches.data?.length === 1) {
+    setBranchId(branches.data[0]!.id);
   }
   /** A ?branchId= link (receipt back-navigation) seeds the shared admin branch. */
   useEffect(() => {
@@ -145,7 +146,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
                 onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); setPage(1); }}
               >
                 <option value="">اختر الفرع</option>
-                {branches.data?.items.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                {branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
               </Select>
             </div>
           ) : null}
@@ -172,7 +173,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
           </Button>
         </Notice>
       ) : null}
-      {isAdmin && branches.data?.items.length === 0 ? (
+      {isAdmin && branches.data?.length === 0 ? (
         <Card className="shadow-card">
           <EmptyState title="لا توجد فروع" description="أضف فرعًا قبل عرض الفواتير." />
         </Card>
@@ -188,7 +189,7 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
           </Button>
         </Notice>
       ) : null}
-      {isAdmin && branchId === undefined && (branches.data?.items.length ?? 0) > 1 ? (
+      {isAdmin && branchId === undefined && (branches.data?.length ?? 0) > 1 ? (
         <Card className="shadow-card">
           <EmptyState title="اختر فرعًا لعرض فواتيره" />
         </Card>

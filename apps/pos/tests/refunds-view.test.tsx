@@ -531,20 +531,24 @@ describe('refunds tab', () => {
     expect(screen.queryByRole('button', { name: 'بحث' })).toBeNull();
   });
 
-  it('lists only invoices that can still be refunded', async () => {
-    listInvoices.mockResolvedValue({
-      items: [
-        historyItem,
-        { ...historyItem, id: 99, invoiceNumber: 'INV-VOID', status: 'voided' },
-        { ...historyItem, id: 98, invoiceNumber: 'INV-DONE', status: 'refunded' },
-      ],
-      meta: { page: 1, pageSize: 20, total: 3, totalPages: 1 },
-    });
+  it('asks the server for refundable invoices only, so pages are never short', async () => {
     renderView();
 
     expect(await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` })).toBeDefined();
-    expect(screen.queryByText('INV-VOID')).toBeNull();
-    expect(screen.queryByText('INV-DONE')).toBeNull();
+    expect(listInvoices).toHaveBeenCalledWith(expect.objectContaining({ branchId: 2, refundable: true }));
+  });
+
+  it('offers only the statuses that can still be refunded', async () => {
+    renderView();
+    await screen.findByRole('button', { name: `فتح مرتجع ${invoiceNumber}` });
+
+    const status = screen.getByLabelText('الحالة') as HTMLSelectElement;
+    expect([...status.options].map((option) => option.textContent))
+      .toEqual(['كل الحالات', 'مكتملة', 'مستردة جزئيًا']);
+    fireEvent.change(status, { target: { value: 'partially_refunded' } });
+    await waitFor(() => expect(listInvoices).toHaveBeenCalledWith(
+      expect.objectContaining({ refundable: true, status: 'partially_refunded', page: 1 }),
+    ));
   });
 
   it('shows the client phone on the refundable invoice card', async () => {
@@ -554,15 +558,23 @@ describe('refunds tab', () => {
     expect(open.closest('li')?.textContent).toContain(saleFixtures.completedInvoice.client.phone);
   });
 
-  it('does not offer a fully refunded invoice in the till list', async () => {
+  it('says so when no invoice can be refunded', async () => {
     listInvoices.mockResolvedValue({
-      items: [{ ...historyItem, status: 'refunded' }],
-      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+      items: [],
+      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
     });
     renderView();
 
     expect(await screen.findByText('لا توجد فواتير قابلة للاسترداد')).toBeDefined();
-    expect(screen.queryByRole('button', { name: `فتح مرتجع ${invoiceNumber}` })).toBeNull();
+  });
+
+  it('offers branches beyond the first page of the branch list', async () => {
+    listBranches.mockImplementation(async (page = 1) => (page === 1
+      ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
+      : { items: [{ id: 9, name: 'فرع الصفحة الثانية' }], meta: { page: 2, pageSize: 100, total: 2, totalPages: 2 } }));
+    renderView();
+
+    expect(await screen.findByRole('option', { name: 'فرع الصفحة الثانية' })).toBeDefined();
   });
 
   it('serves a cashier the same panel without a branch filter', async () => {
@@ -641,6 +653,24 @@ describe('refunds tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
     await waitFor(() => expect(refundInvoice).toHaveBeenCalledTimes(2));
     expect(refundInvoice.mock.calls[1]![1].idempotencyKey).toBe(originalKey);
+  });
+
+  it('keeps the refund dialog open while a refund is being saved', async () => {
+    refundInvoice.mockReturnValueOnce(new Promise(() => undefined));
+    renderView();
+    await openInvoice();
+    fireEvent.click(await screen.findByRole('button', { name: 'استرداد' }));
+    fireEvent.change(screen.getByLabelText(
+      `كمية استرداد ${saleFixtures.completedInvoice.lines[0].name}`,
+    ), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'احسب الاسترداد' }));
+    fireEvent.change(await screen.findByLabelText('سبب الاسترداد'), { target: { value: 'عدم رضا العميل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاسترداد' }));
+    await waitFor(() => expect(refundInvoice).toHaveBeenCalledOnce());
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: `مرتجع الفاتورة ${invoiceNumber}` })).toBeDefined();
+    expect((screen.getByRole('button', { name: 'إغلاق' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('filters refundable invoices by settlement and employee, and sorts them', async () => {

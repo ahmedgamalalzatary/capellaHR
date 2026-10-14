@@ -1,7 +1,7 @@
 import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { cn } from '@capella/ui';
+import { Button, cn } from '@capella/ui';
 
 type NoticeTone = 'info' | 'success' | 'warning' | 'danger';
 
@@ -59,5 +59,19 @@ export function FieldError({ children, className }: { children: ReactNode; class
     <p role="alert" className={cn('text-[13px] text-danger', className)}>
       {children}
     </p>
+  );
+}
+
+/** A query that failed to load: says what is missing and offers to try again. */
+export function LoadError({ message, onRetry, className }: {
+  message: string;
+  onRetry: () => void;
+  className?: string;
+}) {
+  return (
+    <Notice tone="danger" role="alert" {...(className === undefined ? {} : { className })}>
+      <p>{message}</p>
+      <Button variant="secondary" size="sm" className="mt-2" onClick={onRetry}>إعادة المحاولة</Button>
+    </Notice>
   );
 }

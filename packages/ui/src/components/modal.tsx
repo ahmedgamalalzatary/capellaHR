@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { cn } from '../lib/cn';
@@ -35,6 +35,12 @@ export function Modal({
   className,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Escape reads the props of the last commit, not of the last effect run: a form that
+  // just started saving must refuse Escape at once, before passive effects catch up.
+  const closeProps = useRef({ onClose, dismissOnBackdrop });
+  useLayoutEffect(() => {
+    closeProps.current = { onClose, dismissOnBackdrop };
+  });
 
   useEffect(() => {
     // Focus moves in so the keyboard lands on the decision, and returns to whatever opened the
@@ -79,13 +85,13 @@ export function Modal({
       if (event.key === 'Escape') {
         if (event.defaultPrevented) return;
         event.stopPropagation();
-        if (dismissOnBackdrop) onClose();
+        if (closeProps.current.dismissOnBackdrop) closeProps.current.onClose();
       }
     };
 
     document.addEventListener('keydown', containKeyboardFocus);
     return () => document.removeEventListener('keydown', containKeyboardFocus);
-  }, [dismissOnBackdrop, onClose]);
+  }, []);
 
   const overlay = (
     <div
