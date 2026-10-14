@@ -1,0 +1,176 @@
+/*
+ * Capella design tokens — "Service Departure Board".
+ * One file for both apps (imported right after `tailwindcss` in each app's globals.css).
+ * Direction contract: apps/pos/.impeccable/surfaces/apps-pos.md.
+ *
+ * Two worlds:
+ * - The board: what is live now (queue, today's bookings, the open drawer). Espresso cells,
+ *   champagne figures, amber for late, brick for cancelled. Only changed cells flip.
+ * - The work surface: everything else. Ivory ground, white panels, warm hairlines.
+ *
+ * The original token names (ink, paper, surface, line, muted, success, warning, danger) are kept
+ * with warm values, so pages not yet migrated pick up the new palette without edits.
+ * Every text/background pair below was checked for WCAG AA (4.5:1) where it carries text.
+ */
+@theme {
+  /* Faces are injected by each app's root layout (next/font). Board and headings use the
+     condensed display face; body uses the regular face. */
+  --font-sans: var(--font-body-face), 'Noto Sans Arabic', system-ui, sans-serif;
+  --font-display: var(--font-display-face), var(--font-body-face), 'Noto Sans Arabic', system-ui, sans-serif;
+
+  /* Work surface */
+  --color-ink: #2a2321; /* espresso: strong text, dark fills (15.4:1 on white) */
+  --color-paper: #ffffff; /* panels */
+  --color-surface: #f6f1ea; /* ivory page ground */
+  --color-line: #e6ddd2; /* warm hairline */
+  --color-muted: #6f635a; /* secondary text (5.2:1 on ivory) */
+
+  /* Brand */
+  --color-brand: #a8704e; /* rose-gold: focus ring, active marks, large figures only (4.1:1 on white) */
+  --color-brand-strong: #8c5a3b; /* rose-gold for text and filled actions (5.8:1 with white) */
+  --color-brand-soft: #f3e7dc; /* selected rows and chips (brand-strong text: 4.7:1) */
+  --color-champagne: #e9d3b8;
+
+  /* Board */
+  --color-board: #2a2321;
+  --color-flap: #1e1a19;
+  --color-board-line: #3a312e;
+  --color-board-ink: #e9d3b8; /* champagne figures (11.9:1 on flap) */
+  --color-board-muted: #b8a898; /* labels on the board (7.5:1 on flap) */
+  --color-board-late: #d9a441; /* amber: late / overdue (7.7:1 on flap) */
+  --color-board-cancel: #e07a66; /* brick read on dark ground (5.9:1 on flap) */
+  --color-board-done: #7fb08a; /* muted green (7:1 on flap) */
+
+  /* Status — strictly for meaning */
+  --color-success: #2f6b45;
+  --color-success-soft: #eaf2ec;
+  --color-warning: #8a5f12;
+  --color-warning-soft: #fbf1dc;
+  --color-danger: #9e3a2e; /* brick */
+  --color-danger-soft: #f8e8e5;
+  --color-info: #3b6680;
+  --color-info-soft: #e8eff3;
+  --color-late: #d9a441; /* amber fill (marks, bars), never small text on white */
+
+  /* Shape — flat cells, no gradients, no glow */
+  --radius-cell: 0.25rem;
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+
+  --shadow-card: 0 1px 2px 0 rgb(42 35 33 / 0.05);
+  --shadow-raised: 0 1px 2px 0 rgb(42 35 33 / 0.06), 0 8px 20px -14px rgb(42 35 33 / 0.28);
+  --shadow-panel: 0 24px 48px -24px rgb(42 35 33 / 0.4);
+
+  /* Motion */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --animate-flap: flap 320ms var(--ease-out-quart);
+  --animate-sheet-in: sheet-in 220ms var(--ease-out-quart);
+  --animate-fade-in: fade-in 160ms ease-out;
+
+  @keyframes flap {
+    0% { transform: rotateX(90deg); opacity: 0.4; }
+    100% { transform: rotateX(0); opacity: 1; }
+  }
+  @keyframes sheet-in {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+/*
+ * Control height: 40px with a mouse, 44px on touch screens (owner on a phone, tablets at the till).
+ * Components size with `h-(--control-h)` so one rule covers every control.
+ */
+:root {
+  --control-h: 2.5rem;
+  --control-h-sm: 2.25rem;
+  --display-stretch: 100%;
+  /* Layers: sticky bars < drawer < sheet/modal < toast */
+  --z-sticky: 20;
+  --z-drawer: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --control-h: 2.75rem;
+    --control-h-sm: 2.75rem;
+  }
+}
+
+@layer base {
+  html {
+    direction: rtl;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-stretch: var(--display-stretch);
+  }
+
+  /* Codes, money, durations, phones always align */
+  .tabular {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /*
+   * A counter screen scrolls tables sideways all day; a heavy platform scrollbar
+   * eats a full row of height and hides the last column behind itself.
+   */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+
+  .scroll-thin::-webkit-scrollbar {
+    height: 0.5rem;
+    width: 0.5rem;
+  }
+
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background-color: var(--color-line);
+    border-radius: 999px;
+  }
+
+  .scroll-thin::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* The condensed board/heading face. */
+@utility type-display {
+  font-family: var(--font-display);
+  font-stretch: var(--display-stretch);
+}
+
+/* Bottom bars and sheets clear the phone's home indicator. */
+@utility pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}

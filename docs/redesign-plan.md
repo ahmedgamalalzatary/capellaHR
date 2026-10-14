@@ -1,6 +1,6 @@
 # Capella UI/UX Redesign — Plan
 
-Status: **Approved 2026-10-14 — in progress (Phase 0).** Decisions: all §9 [API] items approved (D3); weekly-day-off stays a separate page (D2).
+Status: **Approved 2026-10-14 — in progress (Phase 2 built; waiting for the owner's font pick and sign-off).** Decisions: all §9 [API] items approved (D3); weekly-day-off stays a separate page (D2).
 Scope: `packages/ui`, `apps/pos` (every route), `apps/web` (every route), plus the small API/contract changes the fixes need.
 Product truth: `PRODUCT.md`. Locked functional rules: `docs/hr-specs.md` (Global interface requirements) and `docs/erp-plan.md`.
 
@@ -74,6 +74,36 @@ Phase 5  Finish            responsive/a11y/print/e2e sweep, independent review, 
 ```
 
 Phase 1 doesn't depend on Phase 2 and can ship first. Phases 3 and 4 depend on Phase 2. Inside 3 and 4, slices are independent and ordered by daily use.
+
+### 4.1 Ownership and order (agreed with the owner, 2026-10-14)
+
+The owner trusts only Claude (this session's agent) with the base design and the reference pages. Everything else is delegated to other AI agents, which follow `docs/redesign-migration-guide.md`.
+
+**Claude owns:**
+- All of Phase 2 (design system).
+- Reference pages: 3.1 (cashier home + shifts), 3.4 (invoices + detail), 3.2 (sale screen: most used, handles money), 4.6 (bonuses/deductions/advances, web reference).
+- The migration guide for other AIs.
+- The data-shape spec for every [API] item that feeds a component (e.g. `meta.totals` for `TotalsBar`).
+- Review of every delegated slice before it counts as done; Phase 5 final review verdict + DESIGN.md.
+
+**Delegated:** 3.3, 3.5–3.18, 4.1–4.5, 4.7–4.12, all [API] items (can start now, in parallel), and the Phase 5 checks (responsive, a11y, print, e2e).
+
+**Order:**
+```
+1. Phase 2  design system -> owner picks fonts on /_design -> owner sign-off
+2. 3.1      cashier home + shifts   (board, AppShell, cashier bottom tabs)
+3. 3.4      invoices + detail       (canonical list page)
+4. Guide    v1                      -> delegates start POS list pages + [API] items
+5. 3.2      sale screen
+6. 4.6      adjustments             -> guide gets its web section -> delegates start web
+7. Ongoing  review delegated slices -> Phase 5 final review + DESIGN.md
+```
+[API] items aren't a phase: each is needed by a specific page in Phase 3 or 4.
+
+### 4.2 Migration guide outline (`docs/redesign-migration-guide.md`, written at step 4)
+- **Part A, rules for every slice:** read the matching reference page first (3.1 / 3.4 / 4.6); only `@capella/ui` components (a missing component is reported, not built ad hoc); list anatomy `PageHeader -> StatGrid (figures link to rows) -> FilterBar -> DataList -> TotalsBar -> Pagination`; 500 ms search, no search button, filters in URL via `useListState`; shared formatters only (no raw ISO); feedback rule (toast on success, inline form errors, page banner only when blocked); dialogs can't close while saving; keep accessible names stable; protect print layouts. **Done =** tests first and passing, lint/typecheck/build green, 390 + 1440 screenshots, e2e checked with the Playwright plugin, progress log updated, never commit.
+- **Part B, one instruction block per delegated slice:** the gaps from the §8 tables, plus: 3.3 and 3.7 render as live boards; 3.11 replaces the 683-option product filter (from 1.7) with a `Combobox`; 3.17 reuses the board from 3.1. Each [API] item states its exact response shape; contract change first, then API, test-first.
+- **Part C, reference:** component catalogue (with `/_design`), colour meanings (amber late, brick cancelled…), forbidden list, how to report a missing component.
 
 ---
 
@@ -210,7 +240,7 @@ Each slice = move the page onto the Phase 2 components + fix its gaps from the a
 | 3.10 | الموردون والمشتريات | Filter-aware empty states. Purchase history gets date range, search by number, labelled filters and totals. "نتائج المخزون" folded into each purchase row's detail. Supplier total purchases **[API]**. |
 | 3.11 | تحويل المنتجات | Admin from/to branch filters. Search by number. New lines append at the bottom. Formatted dates. |
 | 3.12 | المصروفات | Totals for the filter, reset, formatted dates. |
-| 3.13 | العمولات | Branch totals row. "Print all" for the month. |
+| 3.13 | العمولات | Branch totals row. "Print all" for the month. Fix: money figures use `text-foreground`, a colour that does not exist (they show grey instead of dark). |
 | 3.14 | التقارير | Live filters (Apply removed). Report picker becomes grouped tabs plus a searchable menu on phones. Reset. Select-all on page. |
 | 3.15 | الأصول الثابتة | Condition and location filters. Total value. |
 | 3.16 | حسابات الكاشير | Search, branch and status filters. Single error display. |
@@ -296,3 +326,8 @@ All items approved by the owner (2026-10-14).
 | 2026-10-14 | Phase 1 gate | Lint, typecheck, build, unit tests green (API suite green when run alone; one DB test clashes only under parallel turbo). E2E done live with the Playwright plugin (no CLI browser on this machine): refunds `refundable=true` + full pages, reports branch draft + opens on saved branch, consumables multi-select bar (bg fixed: `bg-panel` → `bg-paper`), transfer form blocks Escape/backdrop/cancel while saving, all branch pickers list every branch, tab titles present, lock flags present on bonus/deduction/advance rows. **Phase 1 complete.** |
 | 2026-10-14 | 1.7 + 1.8 | Found during the live check, confirmed on the online-data copy, fixed test-first. Also: local dev DB needed `db:migrate` (missing `erp_invoice_lines.requested_batches`). |
 | 2026-10-14 | Phase 1 final gate | Lint, typecheck, build green; unit tests green (ui, contracts, database, config, worker, web 50, POS 88, API 153 + runtime smoke). API database hooks given 120s (shared DB reset sometimes passed 10s on the loaded MySQL server). Verified live with the Playwright plugin, including locked rows on real finalized months. **Committed.** |
+| 2026-10-14 | 2.1 Tokens | One `packages/ui/src/styles/tokens.css` for both apps (per-app copies removed). Old token names kept with warm values so unmigrated pages re-skin at once; new brand, board and status tokens, all text pairs AA-checked. Controls 40px with a mouse, 44px on touch (`--control-h`). Fonts via `src/app/fonts.ts` in each app; default pair Noto Sans Arabic (condensed for board/headings) until the owner picks. |
+| 2026-10-14 | 2.2–2.6 Components | Added to `@capella/ui`: Button (loading, icon, board), IconButton, Select/Textarea (moved from POS; POS files re-export), Checkbox, Switch, Field hint, Badge tones + `StatusBadge`/`StatusMap`, Section, Tabs (RTL arrows), Modal as phone bottom sheet with sticky footer, ConfirmDialog, Notice/LoadError/FieldError, Spinner/LoadingState/Skeleton, DropdownMenu + `RowActions` (2 visible, rest in ⋯, destructive last and confirmed), PageHeader (primary action pinned on phones), Board/BoardFigure/BoardRow/`FlapText` (only changed cells flip), StatGrid/StatTile, TotalsBar, DataList (table ≥768px, cards on phones by column role, sort headers, totals footer), Pagination, formatters + Money/DateTime/DateOnly/Duration/Phone, SearchInput (500 ms), FilterBar (phone filter sheet, chips, reset count), ListEmptyState, FilterSelect/BranchSelect/DateRangeFilter (presets, from ≤ to)/MonthFilter, Combobox (Arabic-aware), `useListState` (URL), `useDebouncedValue`, `useMatchMedia`, sonner theme (`toasterProps`), `UiLinkProvider`. 74 ui tests. |
+| 2026-10-14 | 2.7 Shells | Shared `AppShell` (espresso sidebar ≥1024px, icon rail 768–1023px, drawer + optional bottom tabs on phones). POS `PosShell` and web `AdminShell` now render it (old sidebar/topbar files removed; their tests still pass). POS admin branch switcher in the top bar; `useAdminBranch` is now one shared value (it used to be a separate copy per component, so a top-bar control could not reach the page). `useBranchOptions()` added. Shift chip shows "منذ". `BrandScreen` ready for login/kiosk/pair slices. Bottom tabs are wired only in the preview until D4 is decided. |
+| 2026-10-14 | 2.8 Preview | `/_design` and `/_design/shell` in POS (dev only; "not found" in production). Font-pair switcher (3 pairs), live board, full list anatomy with URL filters, every component and state. Checked live at 1440, 820 and 390 with the Playwright plugin. |
+| 2026-10-14 | Phase 2 gate | Lint + typecheck (ui, pos, web) green; tests ui 74, pos 836, web 453 green; builds green. API/database untouched. **Waiting:** owner picks the font pair on `/_design`, decides D4, signs off. |

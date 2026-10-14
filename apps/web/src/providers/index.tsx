@@ -2,7 +2,10 @@
 
 import { useState, type ReactNode } from 'react';
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import Link from 'next/link';
 import { Toaster } from 'sonner';
+
+import { toasterProps, UiLinkProvider } from '@capella/ui';
 
 import { RuntimeConfigProvider } from './runtime-config';
 import { clearSessionState } from '@/features/auth';
@@ -33,8 +36,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <RuntimeConfigProvider>{children}</RuntimeConfigProvider>
-      <Toaster position="top-center" dir="rtl" richColors closeButton />
+      <RuntimeConfigProvider>
+        <UiLinkProvider component={Link}>{children}</UiLinkProvider>
+      </RuntimeConfigProvider>
+      <Toaster {...toasterProps} />
     </QueryClientProvider>
   );
 }

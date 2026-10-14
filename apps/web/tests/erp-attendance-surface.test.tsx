@@ -8,7 +8,7 @@ vi.mock('next/navigation', () => ({ redirect, usePathname: () => '/attendance' }
 import AdminLayout from '../src/app/(admin)/layout';
 import SelfServicePage from '../src/app/(employee)/self-service/page';
 import LoginPage from '../src/app/login/page';
-import { Sidebar } from '../src/components/shell/sidebar';
+import { visibleAdminNav } from '../src/components/shell/nav';
 
 beforeEach(() => {
   redirect.mockClear();
@@ -34,11 +34,11 @@ describe('ERP attendance-only web surface', () => {
   });
 
   it('shows only core and attendance-support navigation', () => {
-    render(<Sidebar />);
+    const labels = visibleAdminNav().flatMap((group) => group.items.map((item) => item.label));
 
-    expect(screen.getByRole('link', { name: 'الحضور والغياب' })).toBeDefined();
-    expect(screen.getByRole('link', { name: 'الموظفون' })).toBeDefined();
-    expect(screen.queryByRole('link', { name: 'الرواتب' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'التقارير' })).toBeNull();
+    expect(labels).toContain('الحضور والغياب');
+    expect(labels).toContain('الموظفون');
+    expect(labels).not.toContain('الرواتب');
+    expect(labels).not.toContain('التقارير');
   });
 });

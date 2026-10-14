@@ -46,6 +46,15 @@ describe('useAdminBranch', () => {
     expect(sessionStorage.getItem(ADMIN_BRANCH_STORAGE_KEY)).toBe('4');
   });
 
+  test('every admin view shares one branch: a change in the top bar reaches the page at once', () => {
+    const topBar = renderHook(() => useAdminBranch());
+    const page = renderHook(() => useAdminBranch());
+    act(() => topBar.result.current.setBranchId(9));
+    expect(page.result.current.branchId).toBe(9);
+    act(() => page.result.current.setBranchId(undefined));
+    expect(topBar.result.current.branchId).toBeUndefined();
+  });
+
   test('clearing the branch removes the stored key', () => {
     sessionStorage.setItem(ADMIN_BRANCH_STORAGE_KEY, '4');
     const { result } = renderHook(() => useAdminBranch());

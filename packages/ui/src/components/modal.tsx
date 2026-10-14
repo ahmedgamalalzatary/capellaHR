@@ -13,8 +13,19 @@ export interface ModalProps {
   onClose: () => void;
   /** Set false for a decision the user must answer explicitly: disables Escape and backdrop alike. */
   dismissOnBackdrop?: boolean;
+  /** Actions row. Stays pinned to the bottom of the sheet while the body scrolls. */
+  footer?: ReactNode;
+  /** Width on wider screens; on phones every dialog is a full-width bottom sheet. */
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }
+
+const sizeClassName = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-2xl',
+  xl: 'max-w-4xl',
+} as const;
 
 const focusableSelector = 'button, [href], input, select, textarea, [tabindex]';
 const isTabbable = (element: HTMLElement) => (
@@ -32,6 +43,8 @@ export function Modal({
   children,
   onClose,
   dismissOnBackdrop = true,
+  footer,
+  size = 'md',
   className,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -95,7 +108,10 @@ export function Modal({
 
   const overlay = (
     <div
-      className="fixed inset-0 z-50 m-0 flex items-center justify-center bg-black/40 p-4"
+      className={cn(
+        'fixed inset-0 z-(--z-modal) m-0 flex animate-fade-in items-end justify-center bg-ink/45',
+        'sm:items-center sm:p-4',
+      )}
       onClick={dismissOnBackdrop ? onClose : undefined}
     >
       <div
@@ -105,13 +121,24 @@ export function Modal({
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          'max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-card border border-line bg-paper p-4 shadow-lg outline-none',
+          // Phones: a bottom sheet, full width, thumb-reachable actions. Wider: a centred dialog.
+          'flex max-h-[92dvh] w-full animate-sheet-in flex-col rounded-t-card border border-line bg-paper shadow-panel outline-none',
+          'sm:max-h-[90dvh] sm:animate-fade-in sm:rounded-card',
+          sizeClassName[size],
           className,
         )}
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="text-sm font-medium">{title}</h2>
-        <div className="mt-3 space-y-3">{children}</div>
+        <div aria-hidden className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line sm:hidden" />
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          <h2 className="text-base font-semibold text-ink">{title}</h2>
+          <div className="mt-3 space-y-3">{children}</div>
+        </div>
+        {footer ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-paper px-4 pt-3 pb-safe sm:px-5 sm:pb-3">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );

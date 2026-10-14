@@ -33,21 +33,28 @@ export function ConfirmDialog({
   return (
     // While the confirmed action runs, cancelling is disabled everywhere else, so an outside
     // click must not be a back door into the same cancel.
-    <Modal title={title} dismissOnBackdrop={!pending} onClose={onCancel}>
-      {description ? <p className="text-[13px] text-muted">{description}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant={tone === 'danger' ? 'danger' : 'primary'}
-          disabled={pending}
-          onClick={onConfirm}
-        >
-          {confirmLabel}
-        </Button>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={onCancel}>
-          {cancelLabel}
-        </Button>
-      </div>
+    <Modal
+      title={title}
+      size="sm"
+      dismissOnBackdrop={!pending}
+      onClose={onCancel}
+      footer={(
+        <>
+          <Button
+            variant={tone === 'danger' ? 'danger' : 'primary'}
+            loading={pending}
+            className="flex-1 sm:flex-none"
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </Button>
+          <Button variant="secondary" disabled={pending} className="flex-1 sm:flex-none" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+        </>
+      )}
+    >
+      {description ? <div className="text-sm text-muted">{description}</div> : null}
     </Modal>
   );
 }

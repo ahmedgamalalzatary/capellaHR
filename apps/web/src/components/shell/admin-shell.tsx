@@ -1,77 +1,47 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { LogOut } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import type { ReactNode } from 'react';
 
-import { useMatchMedia } from '@/lib/use-match-media';
+import { AppShell, Button } from '@capella/ui';
 
-import { Sidebar } from './sidebar';
-import { Topbar } from './topbar';
+import { useLogout } from '@/features/auth';
+
+import { CairoClock } from './cairo-clock';
+import { visibleAdminNav } from './nav';
 
 export function AdminShell({ title, children }: { title?: string; children: ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const isDesktop = useMatchMedia('(min-width: 64rem)');
-  if (isDesktop && sidebarOpen) setSidebarOpen(false);
-
-  // The open state is only reachable through the lg:hidden toggle, so this
-  // effect manages the mobile drawer: move focus in, trap Tab, restore on close.
-  useEffect(() => {
-    if (!sidebarOpen) return;
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const sidebar = document.getElementById('admin-sidebar');
-    const focusables = () =>
-      Array.from(sidebar?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') ?? []);
-    focusables()[0]?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSidebarOpen(false);
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const items = focusables();
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (!first || !last) return;
-      const active = document.activeElement;
-      if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      } else if (sidebar && (active === null || !sidebar.contains(active))) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      if (trigger?.isConnected && !isDesktop) {
-        const style = window.getComputedStyle(trigger);
-        if (!trigger.hidden && style.display !== 'none' && style.visibility !== 'hidden') trigger.focus();
-      }
-    };
-  }, [isDesktop, sidebarOpen]);
+  const pathname = usePathname();
+  const router = useRouter();
+  const logout = useLogout();
 
   return (
-    <div className="min-h-dvh">
-      {sidebarOpen ? (
-        <div
-          data-testid="sidebar-backdrop"
-          aria-hidden
-          className="fixed inset-0 z-20 bg-ink/40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      ) : null}
-      <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
-      <div className="lg:ms-64">
-        <Topbar
-          title={title}
-          menuOpen={sidebarOpen}
-          onMenuToggle={() => setSidebarOpen((open) => !open)}
-        />
-        <main className="p-4 sm:p-6">{children}</main>
-      </div>
-    </div>
+    <AppShell
+      product={process.env.NEXT_PUBLIC_CAPELLA_EDITION === 'erp' ? 'الحضور' : 'الموارد البشرية'}
+      logoSrc="/brand/capella-mark.png"
+      navigation={visibleAdminNav()}
+      pathname={pathname}
+      topbarStart={title ? <h1 className="truncate text-base font-semibold">{title}</h1> : null}
+      topbarEnd={(
+        <>
+          <div className="hidden sm:block">
+            <CairoClock />
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={logout.isPending}
+            onClick={() => logout.mutate(undefined, { onSuccess: () => router.replace('/login') })}
+          >
+            <LogOut className="size-4" aria-hidden />
+            <span className="hidden sm:inline">تسجيل الخروج</span>
+            <span className="sr-only sm:hidden">تسجيل الخروج</span>
+          </Button>
+        </>
+      )}
+    >
+      {children}
+    </AppShell>
   );
 }
