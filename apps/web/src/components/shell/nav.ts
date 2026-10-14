@@ -63,14 +63,3 @@ export const ADMIN_NAV: NavGroup[] = [
     ],
   },
 ];
-
-/** Destinations the attendance-only ERP edition keeps on the web app. */
-const ERP_EDITION_HREFS = ['/employees', '/devices', '/attendance', '/branches', '/audit'];
-
-/** The navigation for the running edition. */
-export function visibleAdminNav(edition = process.env.NEXT_PUBLIC_CAPELLA_EDITION): NavGroup[] {
-  if (edition !== 'erp') return ADMIN_NAV;
-  return ADMIN_NAV
-    .map((group) => ({ ...group, items: group.items.filter((item) => ERP_EDITION_HREFS.includes(item.href)) }))
-    .filter((group) => group.items.length > 0);
-}

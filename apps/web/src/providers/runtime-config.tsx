@@ -3,8 +3,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
-import { defaultDisplaySettings, FormattersProvider } from '@capella/ui';
-
 import { api } from '@/lib/api/client';
 import {
   createDisplayFormatters,
@@ -27,8 +25,7 @@ export function RuntimeConfigProvider({ children }: { children: ReactNode }) {
 
   return (
     <DisplayFormattersContext.Provider value={formatters}>
-      {/* Shared components (Money, DateTime…) use the backend's settings once they arrive. */}
-      <FormattersProvider settings={settings.data ?? defaultDisplaySettings}>{children}</FormattersProvider>
+      {children}
     </DisplayFormattersContext.Provider>
   );
 }

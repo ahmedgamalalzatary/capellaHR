@@ -74,9 +74,11 @@ export function InvoiceHistoryView({ initialBranchId }: { initialBranchId?: numb
     queryFn: () => fetchAllPages((page) => listCashierSessionBranches(page)),
     enabled: isAdmin,
   });
-  if (isAdmin && branchId === undefined && branches.data?.length === 1) {
-    setBranchId(branches.data[0]!.id);
-  }
+  useEffect(() => {
+    if (isAdmin && branchId === undefined && branches.data?.length === 1) {
+      setBranchId(branches.data[0]!.id);
+    }
+  }, [isAdmin, branchId, branches.data, setBranchId]);
   /** A ?branchId= link (receipt back-navigation) seeds the shared admin branch. */
   useEffect(() => {
     if (initialBranchId !== undefined) setBranchId(initialBranchId);

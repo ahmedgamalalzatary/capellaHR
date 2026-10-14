@@ -27,9 +27,8 @@ function writeStoredBranchId(branchId: number | undefined) {
 }
 
 /**
- * Branch state shared by all POS pages and the top-bar branch switcher. For an admin, the stored
- * value is the single source of truth: every view reads it and is told when it changes, so the
- * switcher and the page under it never disagree.
+ * Branch state shared by all POS pages. For an admin, the stored value is the single source
+ * of truth: every mounted view reads it and is told when it changes.
  *
  * The value itself is role-independent (route deep-links like `?branchId=` and the ERP reports
  * filter apply for any role); role-gating lives at each call site (`isAdmin ? branchId : undefined`,

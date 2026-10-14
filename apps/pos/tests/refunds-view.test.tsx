@@ -1,6 +1,6 @@
 import { saleFixtures } from '@capella/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listInvoices = vi.hoisted(() => vi.fn());
@@ -35,6 +35,7 @@ vi.mock('../src/features/cashier-accounts/api/employee-options-api', () => ({
 }));
 
 import { RefundsView } from '../src/features/sales/components/refunds-view';
+import { useAdminBranch } from '../src/hooks/use-admin-branch';
 
 /** The QW2100 types a whole code in tens of milliseconds and presses Enter. */
 const scanCode = (code: string) => {
@@ -141,6 +142,18 @@ describe('refunds tab', () => {
   });
 
   afterEach(cleanup);
+
+  it('automatically selects the only branch without updating another view during render', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const observer = renderHook(() => useAdminBranch());
+      renderView(null);
+      await waitFor(() => expect(observer.result.current.branchId).toBe(2));
+      expect(errors.mock.calls.filter(([message]) => String(message).includes('Cannot update a component'))).toEqual([]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
 
   it('loads the chosen invoice into a dialog without leaving the tab', async () => {
     renderView();
