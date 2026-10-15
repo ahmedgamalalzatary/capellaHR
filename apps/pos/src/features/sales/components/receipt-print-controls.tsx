@@ -74,8 +74,11 @@ export function ReceiptPrintControls({ invoice, onPrint, inline = false }: {
   return <>
     {inline ? choices : <Button onClick={() => setOpen(true)}><Printer className="size-4" aria-hidden />طباعة الإيصال</Button>}
     {!inline && open ? <Modal title="طباعة الإيصال" dismissOnBackdrop={!preparing} onClose={() => { if (!preparing) setOpen(false); }}>{choices}</Modal> : null}
-    {printing ? createPortal(<div data-sale-print-root className="hidden print:block" dir="rtl">
-      <ReceiptBundle invoice={invoice} selected={printing} qrSvg={qrSvg} />
+    {printing ? createPortal(<div data-sale-print-root className="hidden px-3 print:block" dir="rtl">
+      {/* Preserve the original POS page gutters and invoice card's layout on paper. */}
+      <div className="mx-auto w-full max-w-[84mm] border border-transparent">
+        <ReceiptBundle invoice={invoice} selected={printing} qrSvg={qrSvg} />
+      </div>
     </div>, document.body) : null}
   </>;
 }
