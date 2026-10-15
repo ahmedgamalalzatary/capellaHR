@@ -498,31 +498,35 @@ describe('ERP service-sale view', () => {
     }
   });
 
-  it('prints the receipt automatically once the sale is saved, without asking', async () => {
+  it('lets the cashier choose receipts after saving before sending anything to the printer', async () => {
     const print = vi.fn();
     vi.stubGlobal('print', print);
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
 
+    await screen.findByText('تم حفظ الفاتورة');
+    expect(print).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة المحدد (2)' }));
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('dialog', { name: 'تأكيد البيع' })).toBeNull();
-    // The printed receipt is the same document the invoice page prints.
-    expect(document.querySelector('[data-receipt]')?.textContent).toContain(invoice.invoiceNumber);
+    expect(document.querySelector('[data-receipt-sheet]')).toBeNull();
     expect(screen.queryByRole('dialog', { name: 'طباعة الإيصال' })).toBeNull();
     expect(screen.getByText('تم حفظ الفاتورة')).toBeDefined();
   });
 
-  it('prints one copy per saved sale even as the saved-sale card re-renders', async () => {
+  it('reprints only on a deliberate click without submitting the sale again', async () => {
     const print = vi.fn();
     vi.stubGlobal('print', print);
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'طباعة المحدد (2)' }));
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     // Re-printing stays a deliberate click; a re-render must not send a second copy.
-    fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة المحدد (2)' }));
     await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
   });
 
@@ -532,21 +536,25 @@ describe('ERP service-sale view', () => {
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'طباعة المحدد (2)' }));
     expect((await screen.findByRole('alert')).textContent).toContain('الطباعة غير متاحة في هذا المتصفح');
     expect(screen.getByText('تم حفظ الفاتورة')).toBeDefined();
   });
 
-  it('prints one customer invoice without employee invoices', async () => {
-    vi.stubGlobal('print', vi.fn());
+  it('prints the customer invoice plus one slip for the saved service', async () => {
+    let paper: Element | null = null;
+    const print = vi.fn(() => { paper = document.querySelector('[data-receipt-sheet]')?.cloneNode(true) as Element; });
+    vi.stubGlobal('print', print);
     renderView();
     await buildDraft();
     fireEvent.click(screen.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }));
     await screen.findByText('تم حفظ الفاتورة');
 
-    expect(document.querySelector('[data-receipt-sheet]')).not.toBeNull();
-    expect(document.querySelector('[data-customer-receipt]')).not.toBeNull();
-    expect(document.querySelectorAll('[data-employee-receipt]')).toHaveLength(0);
-    expect(document.querySelectorAll('[data-customer-receipt]')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة المحدد (2)' }));
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    const printed = paper as Element | null;
+    expect(printed?.querySelectorAll('[data-customer-receipt]')).toHaveLength(1);
+    expect(printed?.querySelectorAll('[data-service-receipt]')).toHaveLength(1);
   });
 
   it('requires and submits an assigned employee on a product-only invoice', async () => {

@@ -16,7 +16,7 @@ const json = (route: Route, data: unknown) => route.fulfill({
   body: JSON.stringify({ data }),
 });
 
-test('Cashier searches invoices, partially refunds one, and fully voids another', async ({ page }) => {
+test('Admin searches invoices, partially refunds one, and fully voids another', async ({ page }) => {
   const baseInvoice = structuredClone(saleFixtures.completedInvoice);
   const refundInvoice = {
     ...baseInvoice,
@@ -113,7 +113,7 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
       return;
     }
     if (path === '/auth/session') {
-      await json(route, { actor: { type: 'cashier', accountId: 8 } });
+      await json(route, { actor: { type: 'admin', accountId: 8 } });
       return;
     }
     if (path === '/erp/cashier-sessions/current') {
@@ -187,7 +187,7 @@ test('Cashier searches invoices, partially refunds one, and fully voids another'
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
   });
 
-  await page.goto('/refunds');
+  await page.goto(`/refunds?branchId=${baseInvoice.branchId}`);
   await page.getByLabel('بحث برقم الفاتورة أو العميل').fill(`  ${refundInvoice.client.name}  `);
   await expect.poll(() => search).toBe(refundInvoice.client.name);
   await page.getByRole('button', { name: `فتح مرتجع ${refundInvoice.invoiceNumber}` }).click();

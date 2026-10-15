@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Printer, RotateCcw } from 'lucide-react';
+import { ArrowRight, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -24,6 +24,7 @@ import { salesQueryKeys } from '../query-keys';
 import { requestReference, responseMessage } from './invoice-format';
 import { InvoiceReversalControls } from './invoice-reversal-controls';
 import { ReceiptBundle } from './receipt';
+import { ReceiptPrintControls } from './receipt-print-controls';
 import { RecordPaymentDialog } from './record-payment-dialog';
 import { ServiceStatusDialog } from './service-status-dialog';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -179,7 +180,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
             {createExport.isPending ? 'جارٍ وضع الطلب…' : 'إنشاء PDF A4'}
           </Button>
         ) : null}
-        <Button onClick={print}><Printer className="size-4" aria-hidden />طباعة الإيصال</Button>
+        <ReceiptPrintControls key={query.data.id} invoice={query.data} onPrint={print} />
       </span>
     </div>
     {createExport.isError || exportQuery.isError || retryExport.isError || downloadExport.isError
@@ -237,10 +238,10 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         }}
       />
     )}
-    <InvoiceReversalControls invoice={query.data} showRefundAction {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
+    <InvoiceReversalControls invoice={query.data} showRefundAction={isAdmin} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
       void invalidateErpCaches(queryClient, 'reversal');
     }} />
-    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} /></CardContent></Card>
+    <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} selected={['customer']} /></CardContent></Card>
   </section>;
 }

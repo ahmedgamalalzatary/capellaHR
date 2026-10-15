@@ -14,9 +14,12 @@ import { formatCairoDateTime, storedPaymentLabels } from './invoice-format';
 const CAPELLA_INSTAGRAM_URL =
   'https://www.instagram.com/capellacare?igsh=aDllZTVycjc4ZjJw&utm_source=qr';
 
-function ReceiptQr() {
+export const loadReceiptQr = () => QRCode.toString(CAPELLA_INSTAGRAM_URL, { type: 'svg', margin: 1, width: 144 });
+
+function ReceiptQr({ markup }: { markup?: string | undefined }) {
   const [svg, setSvg] = useState('');
   useEffect(() => {
+    if (markup !== undefined) return;
     let cancelled = false;
     QRCode.toString(CAPELLA_INSTAGRAM_URL, { type: 'svg', margin: 1, width: 144 })
       .then((markup) => {
@@ -28,14 +31,14 @@ function ReceiptQr() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [markup]);
 
   return (
     <div
       data-testid="receipt-qr"
       className="w-14 shrink-0 [&_svg]:h-auto [&_svg]:w-full"
-      // qrcode emits a self-contained inline SVG built only from our own invoice number.
-      dangerouslySetInnerHTML={{ __html: svg }}
+      // qrcode emits a self-contained SVG from our fixed Instagram URL.
+      dangerouslySetInnerHTML={{ __html: markup ?? svg }}
     />
   );
 }
@@ -63,18 +66,21 @@ export function ReceiptFooter() {
 type PublicInvoiceLine = PublicInvoiceDto['lines'][number];
 type ReceiptEmployee = NonNullable<PublicInvoiceLine['employee']>;
 
-const receiptUnits = (invoice: PublicInvoiceDto): PublicInvoiceLine[] => invoice.lines.flatMap((line) => (
-  line.itemType === 'service' && line.queueAssignments?.length
-    ? line.queueAssignments.map((assignment) => ({
-      ...line,
-      id: assignment.id,
-      quantity: 1,
-      lineTotal: line.unitPrice,
-      employee: assignment.employee,
-      queueNumbers: [assignment.queueNumber],
-      queueAssignments: [assignment],
-    }))
-    : [line]
+export const receiptUnits = (invoice: PublicInvoiceDto) => invoice.lines.flatMap((line) => (
+  line.itemType === 'service'
+    ? Array.from({ length: line.quantity }, (_, index) => {
+      const assignment = line.queueAssignments?.[index];
+      return {
+        ...line,
+        receiptKey: `service:${line.id}:${index}`,
+        quantity: 1,
+        lineTotal: line.unitPrice,
+        employee: assignment?.employee ?? line.employee,
+        queueNumbers: assignment ? [assignment.queueNumber] : line.queueNumbers.slice(index, index + 1),
+        queueAssignments: assignment ? [assignment] : [],
+      };
+    })
+    : [{ ...line, receiptKey: `product:${line.id}` }]
 ));
 
 /**
@@ -181,71 +187,47 @@ export const invoiceEmployees = (invoice: PublicInvoiceDto): ReceiptEmployee[] =
   return [...seen.values()];
 };
 
-/**
- * One employee's share of the invoice. The discount and tax are split over the
- * employees in order by cumulative rounding, so the shares add up to the invoice
- * exactly, with no cent lost or invented.
- */
-const employeeShare = (invoice: PublicInvoiceDto, employeeId: number) => {
-  const employees = invoiceEmployees(invoice);
+/** Allocate each unit's discount/tax by cumulative rounding, preserving every cent. */
+function ServiceReceipt({ invoice, unitIndex, qrSvg }: { invoice: PublicInvoiceDto; unitIndex: number; qrSvg?: string | undefined }) {
   const units = receiptUnits(invoice);
-  const grossOf = (id: number) => units
-    .filter((line) => line.employee?.id === id)
-    .reduce((sum, line) => sum + toCents(line.lineTotal), ZERO);
+  const line = units[unitIndex]!;
+  const employee = line.employee;
+  const gross = toCents(line.lineTotal);
   const subtotal = toCents(invoice.totals.subtotal);
-  const index = employees.findIndex((employee) => employee.id === employeeId);
-  const prefix = employees.slice(0, index)
-    .reduce((sum, employee) => sum + grossOf(employee.id), ZERO);
-  const gross = grossOf(employeeId);
+  const prefix = units.slice(0, unitIndex).reduce((sum, unit) => sum + toCents(unit.lineTotal), ZERO);
   const allocate = (amount: string) => {
-    const total = toCents(amount);
     if (subtotal === ZERO) return ZERO;
+    const total = toCents(amount);
     const upTo = (value: bigint) => (total * value * TWO + subtotal) / (subtotal * TWO);
     return upTo(prefix + gross) - upTo(prefix);
   };
   const discount = allocate(invoice.totals.discountAmount);
   const tax = allocate(invoice.totals.taxAmount);
-  return {
-    lines: units.filter((line) => line.employee?.id === employeeId),
-    subtotal: money(gross),
-    discount: money(discount),
-    tax: money(tax),
+  const share = {
+    lines: [line], subtotal: money(gross), discount: money(discount), tax: money(tax),
     total: money(gross - discount + tax),
   };
-};
-
-/**
- * The copy each employee keeps: their own services and their own share of the
- * invoice, printed on its own page beside the customer's receipt.
- */
-export function EmployeeReceipt({
-  invoice,
-  employee,
-}: {
-  invoice: PublicInvoiceDto;
-  employee: ReceiptEmployee;
-}) {
-  const share = employeeShare(invoice, employee.id);
   return (
     <article
       data-receipt
-      data-employee-receipt
+      data-service-receipt
       className="mx-auto w-full max-w-[76mm] bg-paper p-4 text-sm font-semibold text-ink"
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
           <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
-          <h1 className="mt-1.5 text-end text-lg font-bold" dir="rtl">نسخة الموظف</h1>
+          <h1 className="mt-1.5 text-end text-lg font-bold" dir="rtl">إيصال خدمة</h1>
         </div>
-        <ReceiptQr />
+        <ReceiptQr markup={qrSvg} />
       </header>
       <ReceiptInvoiceBarcode value={invoice.invoiceNumber} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 border-b border-solid border-black py-2 text-[12px]">
         <dt>رقم الفاتورة</dt><dd className="font-mono text-xs">{invoice.invoiceNumber}</dd>
         <dt>التاريخ</dt>
         <dd><time dateTime={invoice.soldAt}>{formatCairoDateTime(invoice.soldAt)}</time></dd>
-        <dt>الموظف</dt><dd>{employee.name}</dd>
-        <dt>كود الموظف</dt><dd className="tabular">{employee.employeeCode}</dd>
+        <dt>العميل</dt><dd>{invoiceClientLabel(invoice.client)}</dd>
+        <dt>الموظف</dt><dd data-assigned-employee>{employee?.name ?? 'بدون موظف'}</dd>
+        <dt>كود الموظف</dt><dd className="tabular">{employee?.employeeCode ?? '—'}</dd>
       </dl>
       <table className="mt-2 w-full border-collapse text-[11px] [&_th]:border-black [&_td]:border-black">
         <thead>
@@ -298,7 +280,7 @@ export function EmployeeReceipt({
           </div>
         ) : null}
         <div data-grand-total className="flex justify-between">
-          <span>إجمالي الموظف</span>
+          <span>إجمالي الخدمة</span>
           <span className="tabular">{share.total} ج.م</span>
         </div>
       </div>
@@ -309,18 +291,22 @@ export function EmployeeReceipt({
 
 /**
  * What the counter prints for one sale: the customer's receipt, then one copy
- * for each employee who performed a service on it.
+ * for each individual service unit, including repeated quantities.
  */
-export function ReceiptBundle({ invoice }: { invoice: PublicInvoiceDto }) {
+export function ReceiptBundle({ invoice, selected, qrSvg }: { invoice: PublicInvoiceDto; selected?: string[]; qrSvg?: string | undefined }) {
+  const units = receiptUnits(invoice);
   return (
     <div data-receipt-sheet className="space-y-4">
       <PrintPageRule rule={RECEIPT_PAGE_RULE} />
-      <Receipt invoice={invoice} />
+      {!selected || selected.includes('customer') ? <Receipt invoice={invoice} qrSvg={qrSvg} /> : null}
+      {units.map((unit, index) => unit.itemType === 'service'
+        && (!selected || selected.includes(unit.receiptKey))
+        ? <ServiceReceipt key={unit.receiptKey} invoice={invoice} unitIndex={index} qrSvg={qrSvg} /> : null)}
     </div>
   );
 }
 
-export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
+export function Receipt({ invoice, qrSvg }: { invoice: PublicInvoiceDto; qrSvg?: string | undefined }) {
   const lines = receiptLines(invoice);
   const totalQuantity = invoice.lines.reduce((sum, line) => sum + line.quantity, 0);
   return (
@@ -333,7 +319,7 @@ export function Receipt({ invoice }: { invoice: PublicInvoiceDto }) {
         <div>
           <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
         </div>
-        <ReceiptQr />
+        <ReceiptQr markup={qrSvg} />
       </header>
       {/*
         * The QR opens Capella Care on Instagram. The QW2100 is a 1D scanner and

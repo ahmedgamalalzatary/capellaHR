@@ -6,6 +6,7 @@ import CatalogLayout from '../src/app/(protected)/catalog/layout';
 import CommissionsLayout from '../src/app/(protected)/commissions/layout';
 import ProductsLayout from '../src/app/(protected)/products/layout';
 import ReportsLayout from '../src/app/(protected)/reports/layout';
+import RefundsLayout from '../src/app/(protected)/refunds/layout';
 import SuppliersLayout from '../src/app/(protected)/suppliers/layout';
 
 const children = <p>محتوى</p>;
@@ -25,6 +26,7 @@ describe('ERP route guards per role', () => {
   it('keeps reports and cashier accounts admin-only', () => {
     expect(ReportsLayout({ children }).props.role).toBe('admin');
     expect(CashierAccountsLayout({ children }).props.role).toBe('admin');
+    expect(RefundsLayout({ children }).props.role).toBe('admin');
   });
 
   it('allows cashiers to read their own shift-ending reports', () => {

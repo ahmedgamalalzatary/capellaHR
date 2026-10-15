@@ -328,9 +328,9 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
   await page.getByRole('button', { name: 'مراجعة وإتمام البيع + طباعة' }).click();
 
   await expect(page.getByRole('heading', { name: 'تم حفظ الفاتورة' })).toBeVisible();
-  // Shown twice now: once in the confirmation and once on the printable receipt.
   await expect(page.getByText('INV-2026.08.04-12.35-17').first()).toBeVisible();
-  // The sale prints straight away with no prompt; the confirmation card stays put.
+  await expect(page.getByRole('checkbox')).toHaveCount(2);
+  await page.getByRole('button', { name: 'طباعة المحدد (2)' }).click();
   await page.getByRole('link', { name: 'عرض الإيصال' }).click();
   await expect(page.getByRole('button', { name: 'طباعة الإيصال' })).toBeVisible();
   expect(await page.evaluate(() => Array.from(document.styleSheets).some((sheet) => {
@@ -349,10 +349,12 @@ test('Cashier completes a mixed sale and sees a stable last-unit stock conflict'
     });
   });
   await page.getByRole('button', { name: 'طباعة الإيصال' }).click();
+  await page.getByRole('button', { name: 'طباعة المحدد (2)' }).click();
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('receipt-print-count'))).toBe('1');
   await page.getByRole('link', { name: 'العودة إلى الفواتير' }).click();
   await page.getByRole('link', { name: 'INV-2026.08.04-12.35-17' }).click();
   await page.getByRole('button', { name: 'طباعة الإيصال' }).click();
+  await page.getByRole('button', { name: 'طباعة المحدد (2)' }).click();
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem('receipt-print-count'))).toBe('2');
   expect(completedSaleRequests).toBe(1);
   expect(completedSale).toMatchObject({

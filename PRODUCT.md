@@ -8,7 +8,7 @@ web
 
 ## Users
 
-- **Reception / cashier** (primary by hours): works the front desk of one branch most of the day. Opens and closes the shift, sells services and products, manages the bookings diary, clients, refunds, consumables and stock of their own branch in the POS app (`apps/pos`).
+- **Reception / cashier** (primary by hours): works the front desk of one branch most of the day. Opens and closes the shift, sells services and products, manages the bookings diary, clients, consumables and stock of their own branch in the POS app (`apps/pos`). Invoice refunds and the refunds page are admin-only.
 - **Owner / single admin** (the paying client): oversees every branch, often **from a phone**. Uses the POS app in admin mode (all branches, reports, commissions, cashier accounts) and the HR web app (`apps/web`): employees, attendance, payroll, bonuses, deductions, advances, devices, reports, audit.
 - **Employees**: check in and out on the branch phone (kiosk) or their registered personal phone, and read their own attendance, payroll and commissions in self-service.
 

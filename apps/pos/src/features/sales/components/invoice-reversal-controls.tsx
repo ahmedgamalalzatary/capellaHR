@@ -273,7 +273,7 @@ export function InvoiceReversalControls({
     voidMutation.reset();
   }
   function openMode(nextMode: 'refund' | 'void') {
-    if (reversalPending) return;
+    if (reversalPending || (nextMode === 'refund' && !showRefundAction)) return;
     close();
     setRefunded(null);
     setPrintPrompt(false);
@@ -340,12 +340,12 @@ export function InvoiceReversalControls({
         ) : null}
       </div>
 
-      {draft.pending ? (
+      {draft.pending && (showRefundAction || draft.pending.mode === 'void') ? (
         <DraftNotice
           label="لديك مرتجع غير مكتمل لهذه الفاتورة."
           onRestore={() => {
             const stored = draft.restore();
-            if (!stored) return;
+            if (!stored || (stored.mode === 'refund' && !showRefundAction)) return;
             setMode(stored.mode);
             setQuantities(stored.quantities);
             setReason(stored.reason);
@@ -401,7 +401,7 @@ export function InvoiceReversalControls({
         </details>
       ) : null}
 
-      {mode === 'refund' ? (
+      {mode === 'refund' && showRefundAction ? (
         <ReversalFormShell
           title="استرداد جزئي أو كامل"
           embedded={embedForms}

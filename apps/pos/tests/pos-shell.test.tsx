@@ -177,7 +177,7 @@ describe('PosShell', () => {
     expect(link.getAttribute('href')).toBe('/sales');
   });
 
-  test('shows the refunds workflow link to every ERP account', async () => {
+  test('shows the refunds workflow link only to an admin', async () => {
     getSessionMock.mockResolvedValue({ actor: { type: 'admin' } });
     renderShell();
     expect((await screen.findByRole('link', { name: 'المرتجعات' })).getAttribute('href'))
@@ -186,8 +186,8 @@ describe('PosShell', () => {
     cleanup();
     getSessionMock.mockResolvedValue({ actor: { type: 'cashier', accountId: 1, employeeId: 7 } });
     renderShell();
-    expect((await screen.findByRole('link', { name: 'المرتجعات' })).getAttribute('href'))
-      .toBe('/refunds');
+    await screen.findByRole('link', { name: 'بيع جديد' });
+    expect(screen.queryByRole('link', { name: 'المرتجعات' })).toBeNull();
   });
 
   test('shows the expenses workflow link to every ERP account', async () => {

@@ -75,7 +75,7 @@ const handleError = (error: unknown, response: Response, next: NextFunction) => 
   if (error instanceof SaleError) {
     const status = error.code === 'CLIENT_NOT_FOUND' || error.code === 'INVOICE_NOT_FOUND'
       ? 404
-      : error.code === 'REASSIGN_ADMIN_REQUIRED'
+      : error.code === 'REASSIGN_ADMIN_REQUIRED' || error.code === 'REFUND_ADMIN_REQUIRED'
         ? 403
       : error.code === 'SALE_VALIDATION_FAILED'
         ? 400

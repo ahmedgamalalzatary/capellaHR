@@ -60,7 +60,7 @@
   }
 
   /*
-   * A sale prints the customer's receipt plus one copy per employee. They stack
+   * A sale prints the selected customer receipt and individual service slips. They stack
    * inside the sheet — each on its own page — instead of being stamped over one
    * another at the same absolute position.
    */
@@ -80,6 +80,11 @@
   [data-receipt-sheet] [data-receipt]:last-child {
     break-after: auto;
     page-break-after: auto;
+  }
+
+  /* Selected receipts live directly under body; remove the app's layout from paper. */
+  body:has(> [data-sale-print-root]) > :not([data-sale-print-root]) {
+    display: none !important;
   }
 
   /*

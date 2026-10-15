@@ -1,12 +1,12 @@
 'use client';
 
 import type { PublicInvoiceDto } from '@capella/contracts';
-import { CircleCheck, Printer, RotateCcw } from 'lucide-react';
+import { CircleCheck, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@capella/ui';
 
-import { ReceiptBundle } from './receipt';
+import { ReceiptPrintControls } from './receipt-print-controls';
 
 export function SaleCompletedCard({
   completed,
@@ -35,19 +35,15 @@ export function SaleCompletedCard({
           </div>
           {printError ? <p role="alert" className="text-[13px] text-danger">{printError}</p> : null}
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-            <Button onClick={onPrint}><Printer className="size-4" aria-hidden />طباعة الإيصال</Button>
             <Link className="inline-flex h-9 items-center justify-center gap-2 rounded-control border border-line px-4 text-sm font-medium text-ink transition-colors hover:bg-surface" href={`/invoices/${completed.id}${branchId ? `?branchId=${branchId}` : ''}`}>
               عرض الإيصال
             </Link>
             <Button variant="secondary" onClick={onReset}><RotateCcw className="size-4" aria-hidden />بيع جديد</Button>
           </div>
+          <ReceiptPrintControls key={completed.id} invoice={completed} onPrint={onPrint} inline />
         </CardContent>
       </Card>
 
-      {/* Only the receipt reaches the paper; the print stylesheet hides everything else. */}
-      <div className="hidden print:block">
-        <ReceiptBundle invoice={completed} />
-      </div>
     </>
   );
 }

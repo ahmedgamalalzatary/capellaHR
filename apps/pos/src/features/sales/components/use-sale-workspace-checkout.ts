@@ -124,8 +124,6 @@ export function useSaleWorkspaceCheckout({
   const [storageError, setStorageError] = useState(false);
   const [ambiguous, setAmbiguous] = useState(false);
   const [completed, setCompleted] = useState<PublicInvoiceDto | null>(null);
-  /** Printed once per saved sale, so a retry render never sends a second copy to the printer. */
-  const autoPrinted = useRef<number | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [replacesIdempotencyKey, setReplacesIdempotencyKey] = useState<string | null>(null);
   const [conflictRestored, setConflictRestored] = useState(false);
@@ -309,13 +307,6 @@ export function useSaleWorkspaceCheckout({
     }
   }, []);
 
-  /** Every saved sale prints straight away; the cashier never confirms the receipt. */
-  useEffect(() => {
-    if (!completed || autoPrinted.current === completed.id) return;
-    autoPrinted.current = completed.id;
-    printReceipt();
-  }, [completed, printReceipt]);
-
   const reset = () => {
     selectClient(null);
     setEmployee(null);
@@ -326,7 +317,6 @@ export function useSaleWorkspaceCheckout({
     setDiscountValue('');
     setTaxValue('');
     setCompleted(null);
-    autoPrinted.current = null;
     setPrintError(null);
     setDraftRestored(false);
     setDraftStorageError(false);

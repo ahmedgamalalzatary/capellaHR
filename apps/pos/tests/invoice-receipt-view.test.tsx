@@ -79,6 +79,21 @@ const customerReceipt = () => within(
 );
 
 describe('stored invoice receipt', () => {
+  it('does not offer refunds to a cashier even when the invoice is refundable', async () => {
+    reportExports.actor.current = 'cashier';
+    renderView();
+    await screen.findByRole('button', { name: 'طباعة الإيصال' });
+    expect(screen.queryByRole('button', { name: 'استرداد' })).toBeNull();
+  });
+  it('does not let a cashier reopen an unfinished refund from an earlier visit', async () => {
+    const key = `capella:form-draft:reversal:${saleFixtures.completedInvoice.id}`;
+    sessionStorage.setItem(key, JSON.stringify({ mode: 'refund', reason: 'Return', quantities: { 81: '1' } }));
+    reportExports.actor.current = 'cashier';
+    renderView();
+    await screen.findByRole('button', { name: 'طباعة الإيصال' });
+    expect(screen.queryByText('لديك مرتجع غير مكتمل لهذه الفاتورة.')).toBeNull();
+    sessionStorage.removeItem(key);
+  });
   beforeEach(() => {
     vi.restoreAllMocks();
     getInvoice.mockReset().mockResolvedValue(saleFixtures.completedInvoice);
@@ -204,7 +219,8 @@ describe('stored invoice receipt', () => {
     expect(screen.getByText(saleFixtures.completedInvoice.seller.name)).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
-    expect(print).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: /طباعة المحدد/ }));
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
     expect(getInvoice).toHaveBeenCalledTimes(1);
     expect(getInvoice).toHaveBeenCalledWith(44, 2);
   });
@@ -374,7 +390,7 @@ describe('stored invoice receipt', () => {
     expect(customerReceipt().getByText('شكرًا لزيارتكم')).toBeDefined();
   });
 
-  it('lets the cashier refund or void from the receipt', async () => {
+  it('lets the admin refund or void from the receipt', async () => {
     getInvoice.mockResolvedValueOnce({
       ...saleFixtures.completedInvoice,
       eligibility: { canVoid: true, canRefund: true },
@@ -751,7 +767,8 @@ describe('stored invoice receipt', () => {
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
     fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
-    expect(screen.getByRole('alert').textContent).toContain('الطباعة غير متاحة');
+    fireEvent.click(screen.getByRole('button', { name: /طباعة المحدد/ }));
+    expect((await screen.findByRole('alert')).textContent).toContain('الطباعة غير متاحة');
     expect(screen.getByText(saleFixtures.completedInvoice.client.name)).toBeDefined();
   });
 
@@ -760,7 +777,8 @@ describe('stored invoice receipt', () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
     fireEvent.click(screen.getByRole('button', { name: 'طباعة الإيصال' }));
-    expect(screen.getByRole('alert').textContent).toContain('تعذر فتح نافذة الطباعة');
+    fireEvent.click(screen.getByRole('button', { name: /طباعة المحدد/ }));
+    expect((await screen.findByRole('alert')).textContent).toContain('تعذر فتح نافذة الطباعة');
     expect(screen.getByRole('button', { name: 'طباعة الإيصال' })).toBeDefined();
   });
 

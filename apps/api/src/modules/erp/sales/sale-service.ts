@@ -155,6 +155,7 @@ type SaleErrorCode =
   | 'INVOICE_NOT_REVERSIBLE'
   | 'TRANSFER_NOT_REVERSIBLE'
   | 'VOID_DATE_EXPIRED'
+  | 'REFUND_ADMIN_REQUIRED'
   | 'REFUND_QUANTITY_EXCEEDED'
   | 'REFUND_PAYMENT_MISMATCH'
   | 'REASSIGN_PAYROLL_FINALIZED'
@@ -171,6 +172,7 @@ type SaleErrorCode =
   | 'BOOKING_REFUND_AMOUNT_MISMATCH';
 
 const messages: Record<SaleErrorCode, string> = {
+  REFUND_ADMIN_REQUIRED: 'يمكن للمسؤول فقط الوصول إلى المرتجعات وتنفيذ الاسترداد.',
   REASSIGN_ADMIN_REQUIRED: 'يمكن للمسؤول فقط تغيير موظف خدمة مكتملة.',
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
   CLIENT_NOT_FOUND: 'العميل غير موجود',
@@ -353,6 +355,7 @@ export const createSaleService = (dependencies: {
     },
 
     async refund(actor: ErpAccountIdentity, invoiceId: number, input: RefundInvoiceInput) {
+      if (actor.role !== 'admin') throw new SaleError('REFUND_ADMIN_REQUIRED');
       const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
       const invoice = await repository.reverse({
         type: 'refund', invoiceId, input: { ...input, branchId },
@@ -427,6 +430,7 @@ export const createSaleService = (dependencies: {
     },
 
     async quoteRefund(actor: ErpAccountIdentity, invoiceId: number, input: RefundQuoteInput) {
+      if (actor.role !== 'admin') throw new SaleError('REFUND_ADMIN_REQUIRED');
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       const invoice = await repository.findInvoiceById(branchId, invoiceId);
       if (!invoice) throw new SaleError('INVOICE_NOT_FOUND');
@@ -501,6 +505,7 @@ export const createSaleService = (dependencies: {
     },
 
     async listInvoices(actor: ErpAccountIdentity, query: InvoiceHistoryQuery) {
+      if (query.refundable && actor.role !== 'admin') throw new SaleError('REFUND_ADMIN_REQUIRED');
       const { branchId } = await resolveBranchContext(actor, query.branchId);
       return repository.listInvoices(branchId, query);
     },

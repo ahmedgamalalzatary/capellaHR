@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import { saleErrorSchema } from '@capella/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createErpSalesRouter } from '../../src/modules/erp/sales/sale-router.js';
@@ -48,6 +49,16 @@ const setup = (overrides: Partial<SaleService> = {}) => {
 };
 
 describe('ERP sales router', () => {
+  it('returns forbidden for a refund denied by the role policy', async () => {
+    const { app } = setup({ refund: async () => { throw new SaleError('REFUND_ADMIN_REQUIRED'); } });
+    const response = await request(app).post('/erp/sales/44/refunds').send({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1632', reason: 'Return',
+      lines: [{ invoiceLineId: 81, quantity: 1 }], payments: [{ method: 'cash', amount: '185.00' }],
+    });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('REFUND_ADMIN_REQUIRED');
+    expect(saleErrorSchema.safeParse({ code: response.body.error.code, message: response.body.error.message }).success).toBe(true);
+  });
   it('submits reassignment for one queue entry', async () => {
     const { app, reassignQueue } = setup();
     const response = await request(app).post('/erp/sales/invoices/44/queue/91/reassign').send({

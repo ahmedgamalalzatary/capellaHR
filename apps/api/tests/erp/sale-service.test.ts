@@ -10,6 +10,7 @@ import { createEmployeeAssignmentService, ErpAssignmentError } from '../../src/m
 import { createErpEmployeeCapability } from '../../src/modules/employees/erp-employee-capability.js';
 
 const actor = { role: 'cashier' as const, accountId: 3, branchId: 2 };
+const refundActor = { ...actor, role: 'admin' as const };
 const input: CompleteSaleInput = {
   clientId: 5,
   cashierSessionId: 13,
@@ -148,6 +149,25 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
 };
 
 describe('ERP sale service', () => {
+  it('refuses cashier refund commands, quotes, and refund-page queries before reading or changing invoices', async () => {
+    const reverse = vi.fn<SaleRepository['reverse']>();
+    const findInvoiceById = vi.fn<SaleRepository['findInvoiceById']>();
+    const listInvoices = vi.fn<SaleRepository['listInvoices']>();
+    const { service } = setup({ reverse, findInvoiceById, listInvoices });
+    await expect(service.refund(actor, 44, {
+      idempotencyKey: input.idempotencyKey, reason: 'Return',
+      lines: [{ invoiceLineId: 81, quantity: 1 }], payments: [{ method: 'cash', amount: '185.00' }],
+    })).rejects.toMatchObject({ code: 'REFUND_ADMIN_REQUIRED' });
+    await expect(service.quoteRefund(actor, 44, {
+      lines: [{ invoiceLineId: 81, quantity: 1 }],
+    })).rejects.toMatchObject({ code: 'REFUND_ADMIN_REQUIRED' });
+    await expect(service.listInvoices(actor, {
+      page: 1, pageSize: 20, refundable: true, orderBy: 'soldAt', orderDir: 'desc',
+    })).rejects.toMatchObject({ code: 'REFUND_ADMIN_REQUIRED' });
+    expect(reverse).not.toHaveBeenCalled();
+    expect(findInvoiceById).not.toHaveBeenCalled();
+    expect(listInvoices).not.toHaveBeenCalled();
+  });
   const absentEmployeeReassignment = (employee: {
     id: number; employeeCode: number; fullName: string; branchId: number;
     employmentStatus: 'active' | 'inactive'; deletedAt: Date | null;
@@ -297,10 +317,10 @@ describe('ERP sale service', () => {
   it('quotes an exact partial refund from stored invoice facts and remaining tenders', async () => {
     const { service } = setup();
     await expect((service as unknown as {
-      quoteRefund(actorValue: typeof actor, invoiceId: number, input: {
+      quoteRefund(actorValue: typeof refundActor, invoiceId: number, input: {
         lines: Array<{ invoiceLineId: number; quantity: number }>;
       }): Promise<unknown>;
-    }).quoteRefund(actor, 44, {
+    }).quoteRefund(refundActor, 44, {
       lines: [{ invoiceLineId: 81, quantity: 1 }],
     })).resolves.toEqual({
       lines: [{
@@ -334,7 +354,7 @@ describe('ERP sale service', () => {
       }],
     } satisfies InvoiceDto;
     const { service } = setup({ findInvoiceById: vi.fn().mockResolvedValue(openProductInvoice) });
-    const quoted = await service.quoteRefund(actor, 44, {
+    const quoted = await service.quoteRefund(refundActor, 44, {
       lines: [{ invoiceLineId: 81, quantity: 1 }],
     });
     expect(quoted.totals.total).toBe('185.00');
@@ -353,10 +373,10 @@ describe('ERP sale service', () => {
     });
 
     const quoted = await (service as unknown as {
-      quoteRefund(actorValue: typeof actor, invoiceId: number, input: {
+      quoteRefund(actorValue: typeof refundActor, invoiceId: number, input: {
         lines: Array<{ invoiceLineId: number; quantity: number }>;
       }): Promise<{ payments: unknown }>;
-    }).quoteRefund(actor, 44, { lines: [{ invoiceLineId: 81, quantity: 1 }] });
+    }).quoteRefund(refundActor, 44, { lines: [{ invoiceLineId: 81, quantity: 1 }] });
 
     expect(quoted.payments).toEqual([
       { method: 'cash', paidAmount: '0.00', refundableAmount: '0.00' },
@@ -376,7 +396,7 @@ describe('ERP sale service', () => {
         ],
       }),
     });
-    const quoted = await service.quoteRefund(actor, 44, {
+    const quoted = await service.quoteRefund(refundActor, 44, {
       lines: [{ invoiceLineId: 81, quantity: 1 }],
     });
     expect(quoted.payments[0]).toEqual({
@@ -395,16 +415,16 @@ describe('ERP sale service', () => {
     };
 
     await expect((service as unknown as {
-      refund(actorValue: typeof actor, invoiceId: number, input: typeof refund): Promise<unknown>;
-      void(actorValue: typeof actor, invoiceId: number, input: {
+      refund(actorValue: typeof refundActor, invoiceId: number, input: typeof refund): Promise<unknown>;
+      void(actorValue: typeof refundActor, invoiceId: number, input: {
         idempotencyKey: string; reason: string;
       }): Promise<unknown>;
-    }).refund(actor, 44, refund)).resolves.toEqual(invoice);
+    }).refund(refundActor, 44, refund)).resolves.toEqual(invoice);
     await (service as unknown as {
-      void(actorValue: typeof actor, invoiceId: number, input: {
+      void(actorValue: typeof refundActor, invoiceId: number, input: {
         idempotencyKey: string; reason: string;
       }): Promise<unknown>;
-    }).void(actor, 44, {
+    }).void(refundActor, 44, {
       idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633', reason: 'إدخال مكرر',
     });
 
