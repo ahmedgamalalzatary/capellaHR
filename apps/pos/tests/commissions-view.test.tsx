@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createPayout: vi.fn(),
   getSession: vi.fn(),
   employees: vi.fn(),
+  downloadExcel: vi.fn(),
 }));
 
 vi.mock('../src/features/auth/api/auth-api', async (importOriginal) => ({
@@ -20,6 +21,7 @@ vi.mock('../src/features/commissions/api/commissions-api', () => ({
   listCommissions: mocks.list,
   getCommissionDetail: mocks.detail,
   createCommissionPayout: mocks.createPayout,
+  downloadCommissionExcel: mocks.downloadExcel,
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.branches,
@@ -118,6 +120,39 @@ afterEach(() => {
 });
 
 describe('CommissionsView', () => {
+  it.each(['admin', 'cashier'])('downloads only the clicked employee monthly Excel for %s', async (type) => {
+    mocks.getSession.mockResolvedValue({ actor: { type, accountId: 8 } });
+    mocks.list.mockResolvedValue({
+      items: [summary, { ...summary, employeeId: 8, employeeCode: 1008, employeeName: 'منى علي' }],
+      meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+    });
+    mocks.downloadExcel.mockResolvedValue(new Blob(['workbook']));
+    const createUrl = vi.fn(() => 'blob:commissions');
+    vi.stubGlobal('URL', { createObjectURL: createUrl, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    mount();
+    if (type === 'admin') {
+      await screen.findByRole('option', { name: 'الرئيسي' });
+      expect(screen.queryByRole('button', { name: 'تنزيل Excel' })).toBeNull();
+      fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'شهر العمولة' }));
+    const year = within(screen.getByRole('dialog')).getByText(/^\d{4}$/).textContent!;
+    fireEvent.click(screen.getByRole('button', { name: 'أغسطس' }));
+    const row = (await screen.findByRole('cell', { name: 'منى علي' })).closest('tr')!;
+    expect(screen.getAllByRole('button', { name: 'تنزيل Excel' })).toHaveLength(2);
+    fireEvent.click(within(row).getByRole('button', { name: 'تنزيل Excel' }));
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(mocks.downloadExcel.mock.calls[0]![0]).toEqual({
+      month: `${year}-08`,
+      employeeId: 8,
+      ...(type === 'admin' ? { branchId: 2 } : {}),
+    });
+    expect(createUrl).toHaveBeenCalled();
+    expect(click.mock.instances[0]).toHaveProperty('download', expect.stringMatching(/^commissions-\d{4}-\d{2}\.xlsx$/));
+    click.mockRestore();
+  });
+
   it('prints only the selected employee details and removes the sheet after printing', async () => {
     vi.stubGlobal('print', vi.fn());
     mocks.list.mockResolvedValue({

@@ -28,6 +28,13 @@ export function getCommissionDetail(employeeId: number, month: string, branchId?
   );
 }
 
+export function downloadCommissionExcel(params: Pick<ListCommissionsParams, 'month' | 'branchId' | 'employeeId'>) {
+  const query = new URLSearchParams({ month: params.month });
+  if (params.branchId !== undefined) query.set('branchId', String(params.branchId));
+  if (params.employeeId !== undefined) query.set('employeeId', String(params.employeeId));
+  return api.getBlob(`/erp/commissions/excel?${query.toString()}`);
+}
+
 export function createCommissionPayout(
   employeeId: number,
   month: string,

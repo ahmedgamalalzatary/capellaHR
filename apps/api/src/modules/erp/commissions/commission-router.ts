@@ -9,6 +9,8 @@ import { ZodError } from 'zod';
 import { responseRequestId } from '../../../shared/http/index.js';
 import { ErpBranchContextError } from '../branch-context.js';
 import { erpActorFromLocals } from '../erp-actor.js';
+import type { ReportExcelRenderer } from '../hr-capabilities.js';
+import { renderCommissionExcel } from './commission-excel.js';
 import { CommissionError, type CommissionService } from './commission-service.js';
 
 const errorResponse = (response: Response, status: number, code: string, message: string) => (
@@ -46,7 +48,7 @@ const handle = (error: unknown, response: Response, next: NextFunction) => {
   next(error);
 };
 
-export const createCommissionRouter = (service: CommissionService) => {
+export const createCommissionRouter = (service: CommissionService, renderExcel: ReportExcelRenderer) => {
   const router = Router();
   const actor = (response: Response) => {
     const identity = erpActorFromLocals(response.locals.actor);
@@ -67,6 +69,17 @@ export const createCommissionRouter = (service: CommissionService) => {
           totalPages: Math.ceil(result.total / query.pageSize),
         },
       });
+    } catch (error) { handle(error, response, next); }
+  });
+
+  router.get('/excel', async (request, response, next) => {
+    try {
+      const query = commissionListQuerySchema.pick({ month: true, branchId: true, employeeId: true })
+        .parse(request.query);
+      const buffer = await renderCommissionExcel(service, actor(response), query, renderExcel);
+      response.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      response.attachment(`commissions-${query.month}.xlsx`);
+      response.send(buffer);
     } catch (error) { handle(error, response, next); }
   });
 

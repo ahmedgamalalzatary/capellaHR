@@ -303,7 +303,7 @@ describe('stored invoice receipt', () => {
       expect.objectContaining({ type: 'svg' }),
     ));
     expect(customerReceipt().getByTestId('receipt-qr').innerHTML).toContain('svg');
-    expect(customerReceipt().getByText('Capella Care')).toBeDefined();
+    expect(customerReceipt().getByText('Capella')).toBeDefined();
     expect(screen.queryByText('إيصال بيع')).toBeNull();
     expect(customerReceipt().getByText('رقم الفاتورة')).toBeDefined();
     expect(customerReceipt().getByText('التاريخ')).toBeDefined();
@@ -338,17 +338,17 @@ describe('stored invoice receipt', () => {
     expect(customerReceipt().queryByText('أرقام الدور: 5، 6، 7')).not.toBeNull();
   });
 
-  it('prints the counter contact details and the consumer-protection return policy', async () => {
+  it('omits the invoice footer', async () => {
     renderView();
     await screen.findAllByText(saleFixtures.completedInvoice.invoiceNumber);
 
-    expect(customerReceipt().getByText('Capella Care')).toBeDefined();
-    expect(customerReceipt().getByText(/01034660596/)).toBeDefined();
-    expect(customerReceipt().getByText('www.capellacares.com')).toBeDefined();
+    expect(customerReceipt().queryByRole('contentinfo')).toBeNull();
+    expect(customerReceipt().queryByText(/01034660596/)).toBeNull();
+    expect(customerReceipt().queryByText('www.capellacares.com')).toBeNull();
     expect(customerReceipt()
-      .getByText('سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك')).toBeDefined();
-    expect(customerReceipt().getByText(/خلال 14 يوم/)).toBeDefined();
-    expect(customerReceipt().getByText(/19588/)).toBeDefined();
+      .queryByText('سياسة الاستبدال والاسترجاع طبقًا لقانون حماية المستهلك')).toBeNull();
+    expect(customerReceipt().queryByText(/خلال 14 يوم/)).toBeNull();
+    expect(customerReceipt().queryByText(/19588/)).toBeNull();
   });
 
   it('summarizes item counts, discount and tax with an emphasized final total', async () => {
@@ -387,7 +387,7 @@ describe('stored invoice receipt', () => {
     expect(customerReceipt().getByText('نقدي')).toBeDefined();
     expect(customerReceipt().getAllByText('185.00 ج.م').length).toBeGreaterThan(0);
     expect(customerReceipt().queryByText('المدفوع')).toBeNull();
-    expect(customerReceipt().getByText('شكرًا لزيارتكم')).toBeDefined();
+    expect(customerReceipt().queryByText('شكرًا لزيارتكم')).toBeNull();
   });
 
   it('lets the admin refund or void from the receipt', async () => {

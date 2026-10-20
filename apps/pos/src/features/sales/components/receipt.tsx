@@ -215,7 +215,7 @@ function ServiceReceipt({ invoice, unitIndex, qrSvg }: { invoice: PublicInvoiceD
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
-          <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
+          <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella</p>
           <h1 className="mt-1.5 text-end text-lg font-bold" dir="rtl">إيصال خدمة</h1>
         </div>
         <ReceiptQr markup={qrSvg} />
@@ -284,7 +284,6 @@ function ServiceReceipt({ invoice, unitIndex, qrSvg }: { invoice: PublicInvoiceD
           <span className="tabular">{share.total} ج.م</span>
         </div>
       </div>
-      <ReceiptFooter />
     </article>
   );
 }
@@ -317,7 +316,7 @@ export function Receipt({ invoice, qrSvg }: { invoice: PublicInvoiceDto; qrSvg?:
     >
       <header dir="ltr" className="flex items-start justify-between gap-3 border-b border-solid border-black pb-3">
         <div>
-          <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella Care</p>
+          <p className="font-serif text-[26px] italic leading-none tracking-tight">Capella</p>
         </div>
         <ReceiptQr markup={qrSvg} />
       </header>
@@ -434,7 +433,6 @@ export function Receipt({ invoice, qrSvg }: { invoice: PublicInvoiceDto; qrSvg?:
           <span className="tabular">{invoice.totals.balanceDue} ج.م</span>
         </div>
       </div>
-      <ReceiptFooter />
     </article>
   );
 }

@@ -2,6 +2,8 @@ import type { ReportSnapshot } from '@capella/contracts';
 import ExcelJS from 'exceljs';
 import { Writable } from 'node:stream';
 
+export type ReportExcelRenderer = typeof renderReportExcel;
+
 const summaryLabels: Record<string, string> = {
   totalRecords: 'إجمالي السجلات', activeRecords: 'سجلات نشطة',
   deletedRecords: 'سجلات محذوفة', revokedRecords: 'سجلات ملغاة',

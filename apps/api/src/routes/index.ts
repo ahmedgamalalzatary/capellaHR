@@ -23,7 +23,7 @@ import { createPayrollRouter, type PayrollService } from '../modules/payroll/ind
 import { createBonusesRouter, type BonusService } from '../modules/bonuses/index.js';
 import { createDeductionsRouter, type DeductionService } from '../modules/deductions/index.js';
 import { createAdvancesRouter, type AdvanceService } from '../modules/advances/index.js';
-import { createReportsRouter, type ReportService } from '../modules/reports/index.js';
+import { createReportsRouter, renderReportExcel, type ReportService } from '../modules/reports/index.js';
 import { createSelfServiceRouter, type SelfServiceService } from '../modules/self-service/index.js';
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService, type FaceEnrollmentResult } from '../modules/attendance/index.js';
@@ -198,7 +198,7 @@ export const createApiRouter = (dependencies: {
         '/erp/commissions',
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
-        createCommissionRouter(dependencies.erpCommissionService),
+        createCommissionRouter(dependencies.erpCommissionService, renderReportExcel),
       );
     }
     if (dependencies.erpClientService) {

@@ -6,6 +6,8 @@ import type { ErpEmployeeCapability } from '../employees/index.js';
 import type { ErpPayrollCapability } from '../payroll/index.js';
 import type { ReportReader } from '../reports/index.js';
 
+export type { ReportExcelRenderer } from '../reports/index.js';
+
 export type ErpHrCapabilities = {
   auth: ErpAuthCapability;
   audit: ErpAuditCapability;

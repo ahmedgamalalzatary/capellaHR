@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Printer } from 'lucide-react';
+import { Download, Printer } from 'lucide-react';
 import { useCallback, useState } from 'react';
 
 import type { CommissionSummary } from '@capella/contracts';
@@ -23,7 +23,7 @@ import { invalidateErpCaches } from '@/lib/erp-cache';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { notifyError, notifySuccess } from '@/lib/notify';
 
-import { createCommissionPayout, getCommissionDetail, listCommissions } from '../api/commissions-api';
+import { createCommissionPayout, downloadCommissionExcel, getCommissionDetail, listCommissions } from '../api/commissions-api';
 import { commissionQueryKeys } from '../query-keys';
 
 const currentCairoMonth = () => {
@@ -166,6 +166,21 @@ export function CommissionsView() {
     enabled: scopeReady && Boolean(month),
   });
   const [sheet, setSheet] = useState<PrintableReport>();
+  const exportExcel = useMutation({
+    mutationFn: downloadCommissionExcel,
+    onSuccess: (blob, input) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `commissions-${input.month}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      notifySuccess('تم تنزيل ملف Excel.');
+    },
+    onError: (error: unknown) => notifyError(error, 'تعذر تصدير Excel.'),
+  });
   const finishPrinting = useCallback(() => setSheet(undefined), []);
   const print = useMutation({
     mutationFn: async (employeeId: number): Promise<PrintableReport> => {
@@ -353,6 +368,20 @@ export function CommissionsView() {
                                 <Button size="sm" variant="ghost" disabled={print.isPending || Boolean(sheet)} onClick={() => print.mutate(item.employeeId)}>
                                   <Printer className="size-4" aria-hidden />
                                   طباعة
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={exportExcel.isPending}
+                                  onClick={() => exportExcel.mutate({
+                                    month,
+                                    employeeId: item.employeeId,
+                                    ...(branchId === undefined ? {} : { branchId }),
+                                  })}
+                                >
+                                  <Download className="size-4" aria-hidden />
+                                  {exportExcel.isPending && exportExcel.variables.employeeId === item.employeeId
+                                    ? 'جارٍ تجهيز Excel…' : 'تنزيل Excel'}
                                 </Button>
                                 <Button
                                   size="sm"
