@@ -1,7 +1,7 @@
 {
   "name": "capella-hr",
   "private": true,
-  "packageManager": "pnpm@10.13.1",
+  "packageManager": "pnpm@12.4.1",
   "engines": {
     "node": ">=22"
   },

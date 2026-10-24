@@ -22,7 +22,7 @@ Domain-oriented monorepo for the Capella HR system and the beauty center ERP/POS
 
 ## Development
 
-Requires Node.js ≥ 22 and pnpm 10.
+Requires Node.js ≥ 22 and pnpm 12.
 
 ```bash
 pnpm install
