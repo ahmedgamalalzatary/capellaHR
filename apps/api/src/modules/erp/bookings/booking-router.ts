@@ -8,6 +8,8 @@ import {
   rescheduleBookingSchema,
   updateBookingStatusSchema,
   updateBookingServicePreferenceSchema,
+  updateBookingSchema,
+  bookingCancellationQuoteInputSchema,
 } from '@capella/contracts';
 import { Router, type Response } from 'express';
 import { ZodError } from 'zod';
@@ -58,6 +60,18 @@ const handle = (cause: unknown, response: Response) => {
 
 export const createErpBookingsRouter = (service: BookingService) => {
   const router = Router();
+  router.post('/:id/cancellation-quote', async (request, response) => {
+    try {
+      const { id } = bookingIdParamsSchema.parse(request.params);
+      response.json({ data: await service.quoteCancellation(actorFrom(response), id, bookingCancellationQuoteInputSchema.parse(request.body)) });
+    } catch (cause) { handle(cause, response); }
+  });
+  router.patch('/:id', async (request, response) => {
+    try {
+      const { id } = bookingIdParamsSchema.parse(request.params);
+      response.json({ data: await service.update(actorFrom(response), id, updateBookingSchema.parse(request.body)) });
+    } catch (cause) { handle(cause, response); }
+  });
   router.post('/', async (request, response) => {
     try {
       const input = createBookingSchema.parse(request.body);

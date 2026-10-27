@@ -79,6 +79,33 @@ const customerReceipt = () => within(
 );
 
 describe('stored invoice receipt', () => {
+  it('hides invoice cancellation from a cashier even when the invoice is eligible', async () => {
+    reportExports.actor.current = 'cashier';
+    getInvoice.mockResolvedValue({
+      ...saleFixtures.completedInvoice,
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    renderView();
+
+    await screen.findByRole('button', { name: 'طباعة الإيصال' });
+    expect(screen.queryByRole('button', { name: 'إلغاء الفاتورة' })).toBeNull();
+  });
+
+  it('does not let a cashier restore a saved invoice cancellation', async () => {
+    const key = `capella:form-draft:reversal:${saleFixtures.completedInvoice.id}`;
+    sessionStorage.setItem(key, JSON.stringify({ mode: 'void', reason: 'Duplicate invoice', quantities: {} }));
+    reportExports.actor.current = 'cashier';
+    getInvoice.mockResolvedValue({
+      ...saleFixtures.completedInvoice,
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    renderView();
+
+    await screen.findByRole('button', { name: 'طباعة الإيصال' });
+    expect(screen.queryByText('لديك مرتجع غير مكتمل لهذه الفاتورة.')).toBeNull();
+    sessionStorage.removeItem(key);
+  });
+
   it('does not offer refunds to a cashier even when the invoice is refundable', async () => {
     reportExports.actor.current = 'cashier';
     renderView();

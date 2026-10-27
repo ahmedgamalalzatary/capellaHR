@@ -49,6 +49,19 @@ const setup = (overrides: Partial<SaleService> = {}) => {
 };
 
 describe('ERP sales router', () => {
+  it('returns forbidden for invoice cancellation denied by the role policy', async () => {
+    const { app } = setup({ void: async () => { throw new SaleError('VOID_ADMIN_REQUIRED'); } });
+    const response = await request(app).post('/erp/sales/44/void').send({
+      idempotencyKey: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1633', reason: 'Duplicate invoice',
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('VOID_ADMIN_REQUIRED');
+    expect(saleErrorSchema.safeParse({
+      code: response.body.error.code, message: response.body.error.message,
+    }).success).toBe(true);
+  });
+
   it('returns forbidden for a refund denied by the role policy', async () => {
     const { app } = setup({ refund: async () => { throw new SaleError('REFUND_ADMIN_REQUIRED'); } });
     const response = await request(app).post('/erp/sales/44/refunds').send({

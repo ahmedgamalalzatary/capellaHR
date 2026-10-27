@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   recordPayment: vi.fn(),
   cancelServices: vi.fn(),
   reschedule: vi.fn(),
+  quoteCancel: vi.fn(),
   session: { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() } as any,
 }));
 
@@ -34,6 +35,7 @@ vi.mock('../src/features/bookings/api/bookings-api', () => ({
   recordBookingPayment: mocks.recordPayment,
   cancelBookingServices: mocks.cancelServices,
   rescheduleBooking: mocks.reschedule,
+  quoteBookingCancellation: mocks.quoteCancel,
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
 
@@ -71,6 +73,19 @@ const renderView = () => render(
 );
 
 describe('appointment book', () => {
+  it('offers cancellation for past invoiced but unfinished services while hiding edit and delete', async () => {
+    mocks.list.mockResolvedValue([{ ...booking, status: 'converted', services: [{ ...booking.services[0], status: 'sold', invoiceId: 44, invoiceNumber: '000044', queueStatus: 'pending' }] }]);
+    renderView();
+    expect(await screen.findByRole('button', { name: 'إلغاء' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'تعديل الحجز' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'حذف' })).toBeNull();
+  });
+
+  it('offers an editor only before the appointment time', async () => {
+    mocks.list.mockResolvedValue([{ ...booking, scheduledAt: '2099-11-25T08:30:00Z' }]);
+    renderView();
+    expect(await screen.findByRole('button', { name: 'تعديل الحجز' })).toBeDefined();
+  });
   afterEach(cleanup);
   beforeEach(() => {
     mocks.list.mockReset().mockResolvedValue([booking]);
@@ -84,6 +99,7 @@ describe('appointment book', () => {
     mocks.recordPayment.mockReset().mockResolvedValue(booking);
     mocks.cancelServices.mockReset().mockResolvedValue(booking);
     mocks.reschedule.mockReset().mockResolvedValue(booking);
+    mocks.quoteCancel.mockReset().mockImplementation(async (_id: number, input: { serviceIds?: number[] }) => ({ amount: '0.00', serviceIds: input.serviceIds ?? [3] }));
     mocks.session = { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() };
   });
 
@@ -125,7 +141,7 @@ describe('appointment book', () => {
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'إلغاء' }));
     expect(mocks.updateStatus).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'تأكيد الإلغاء' }));
     await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith(9, { status: 'cancelled' }));
   });
 
@@ -260,14 +276,15 @@ describe('appointment book', () => {
   });
 
   it('hands the held money back from the drawer when the booking is cancelled', async () => {
+    mocks.quoteCancel.mockResolvedValue({ amount: '300.00', serviceIds: [3, 4] });
     mocks.list.mockResolvedValue([paidBooking]);
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'إلغاء' }));
     expect(await screen.findByText(/سيتم رد 300.00 ج.م للعميل من الدرج/)).toBeDefined();
     fireEvent.change(screen.getByLabelText('رد نقدي'), { target: { value: '200' } });
-    expect(screen.getByRole('button', { name: 'تأكيد الإلغاء' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'نعم، أعدت المال — تأكيد الإلغاء' })).toHaveProperty('disabled', true);
     fireEvent.change(screen.getByLabelText('رد فيزا'), { target: { value: '100' } });
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإلغاء' }));
+    fireEvent.click(screen.getByRole('button', { name: 'نعم، أعدت المال — تأكيد الإلغاء' }));
     await waitFor(() => expect(mocks.updateStatus).toHaveBeenCalledWith(9, {
       status: 'cancelled',
       refund: {
@@ -279,11 +296,12 @@ describe('appointment book', () => {
   });
 
   it('cancels one waiting service and returns only what the rest no longer covers', async () => {
+    mocks.quoteCancel.mockResolvedValue({ amount: '150.00', serviceIds: [3] });
     mocks.list.mockResolvedValue([paidBooking]);
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'إلغاء خدمة صبغة شعر' }));
     expect(await screen.findByText(/سيتم رد 150.00 ج.م للعميل من الدرج/)).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إلغاء الخدمة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'نعم، أعدت المال — تأكيد إلغاء الخدمة' }));
     await waitFor(() => expect(mocks.cancelServices).toHaveBeenCalledWith(9, {
       serviceIds: [3],
       refund: {
@@ -297,11 +315,12 @@ describe('appointment book', () => {
   it('cancels a waiting service with nothing to return after a plain confirmation', async () => {
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'إلغاء خدمة صبغة شعر' }));
-    fireEvent.click(screen.getByRole('button', { name: 'تأكيد إلغاء الخدمة' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'تأكيد إلغاء الخدمة' }));
     await waitFor(() => expect(mocks.cancelServices).toHaveBeenCalledWith(9, { serviceIds: [3] }));
   });
 
   it('moves the appointment to a new date and time', async () => {
+    mocks.list.mockResolvedValue([{ ...booking, scheduledAt: '2099-08-25T07:30:00.000Z' }]);
     renderView();
     fireEvent.click(await screen.findByRole('button', { name: 'تغيير الموعد' }));
     fireEvent.change(screen.getByLabelText('الموعد الجديد'), { target: { value: '2026-08-30T14:00' } });

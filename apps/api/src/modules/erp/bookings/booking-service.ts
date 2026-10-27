@@ -8,6 +8,7 @@ import type {
   RescheduleBookingInput,
   UpdateBookingStatusInput,
   UpdateBookingServicePreferenceInput,
+  UpdateBookingInput,
 } from '@capella/contracts';
 
 import type { ErpBranchContextResolver } from '../branch-context.js';
@@ -38,6 +39,9 @@ export type BookingRecord = {
 };
 
 export type CreateBookingWrite = {
+  operationReference?: string | undefined;
+  initialPayment?: CreateBookingInput['initialPayment'];
+  actorRole?: 'admin' | 'cashier' | undefined;
   branchId: number;
   clientId: number;
   scheduledAt: Date;
@@ -48,10 +52,12 @@ export type CreateBookingWrite = {
 };
 
 export interface BookingRepository {
+  quoteCancellation(branchId: number, bookingId: number, serviceIds?: number[]): Promise<{ amount: string; serviceIds: number[] }>;
+  updateBooking(input: UpdateBookingWrite): Promise<BookingRecord>;
   create(input: CreateBookingWrite): Promise<BookingRecord>;
   findById(branchId: number, id: number): Promise<BookingRecord | null>;
   listDay(branchId: number, cairoDate: string): Promise<BookingRecord[]>;
-  remove(branchId: number, id: number): Promise<BookingRecord | null>;
+  remove(branchId: number, id: number, at?: Date): Promise<BookingRecord | null>;
   hasAny?(branchId: number): Promise<boolean>;
   transition(
     branchId: number,
@@ -87,6 +93,10 @@ export type BookingRefundWrite = {
   cashierSessionId: number;
   payments: Array<BookingRefundInput['payments'][number]>;
   operationReference: string;
+};
+
+export type UpdateBookingWrite = UpdateBookingInput & {
+  bookingId: number; branchId: number; actorAccountId: number; actorRole: 'admin' | 'cashier'; at: Date;
 };
 
 export type BookingLeftoverWrite = {
@@ -129,10 +139,15 @@ export type BookingErrorCode =
   | 'BOOKING_PAYMENT_EXCEEDS_CAP'
   | 'BOOKING_OPERATION_CONFLICT'
   | 'BOOKING_REFUND_REQUIRED'
-  | 'BOOKING_REFUND_AMOUNT_MISMATCH';
+  | 'BOOKING_REFUND_AMOUNT_MISMATCH'
+  | 'BOOKING_EDIT_NOT_ALLOWED'
+  | 'BOOKING_CHANGED';
+// Editing is distinct from cancellation: only future appointments can be edited.
 
 
 const messages: Record<BookingErrorCode, string> = {
+  BOOKING_EDIT_NOT_ALLOWED: 'يمكن تعديل الحجز المستقبلي فقط مع الحفاظ على الخدمات المباعة. تغيير العميل بعد إصدار فاتورة يتطلب حجزًا جديدًا.',
+  BOOKING_CHANGED: 'تغير الحجز أثناء التعديل؛ أعد تحميله وحاول مرة أخرى.',
   BOOKING_NOT_FOUND: 'الحجز غير موجود',
   BOOKING_ALREADY_HANDLED: 'هذا الحجز يتم التعامل معه بالفعل أو انتهى',
   BOOKING_CLIENT_NOT_FOUND: 'العميل غير موجود في هذا الفرع',
@@ -166,9 +181,19 @@ const allowedFrom: Record<UpdateBookingStatusInput['status'], BookingStatus[]> =
 export const createBookingService = (dependencies: {
   repository: BookingRepository;
   resolveBranchContext: ErpBranchContextResolver;
+  now?: () => Date;
 }) => {
   const { repository, resolveBranchContext } = dependencies;
+  const now = dependencies.now ?? (() => new Date());
   return {
+    async quoteCancellation(actor: ErpAccountIdentity, bookingId: number, input: { branchId?: number | undefined; serviceIds?: number[] | undefined }) {
+      const { branchId } = await resolveBranchContext(actor, input.branchId);
+      return repository.quoteCancellation(branchId, bookingId, input.serviceIds);
+    },
+    async update(actor: ErpAccountIdentity, bookingId: number, input: UpdateBookingInput) {
+      const { branchId } = await resolveBranchContext(actor, input.branchId);
+      return repository.updateBooking({ ...input, bookingId, branchId, actorAccountId: actor.accountId, actorRole: actor.role, at: now() });
+    },
     async create(actor: ErpAccountIdentity, input: CreateBookingInput) {
       const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
       const now = new Date();
@@ -179,6 +204,8 @@ export const createBookingService = (dependencies: {
         note: input.note ?? null,
         actingAccountId: accountId,
         services: input.services,
+        ...(input.operationReference ? { operationReference: input.operationReference } : {}),
+        ...(input.initialPayment ? { initialPayment: input.initialPayment, actorRole: actor.role } : {}),
         createdAt: now,
       });
     },
@@ -302,7 +329,7 @@ export const createBookingService = (dependencies: {
       if (!['booked', 'cancelled', 'no_show'].includes(existing.status)) {
         throw new BookingError('BOOKING_ALREADY_HANDLED');
       }
-      const deleted = await repository.remove(branchId, id);
+      const deleted = await repository.remove(branchId, id, now());
       if (!deleted) throw new BookingError('BOOKING_ALREADY_HANDLED');
       return deleted;
     },

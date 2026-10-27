@@ -9,6 +9,7 @@ export * from './sale-repository.js';
 export { signedMoney } from './sale-repository-money.js';
 export * from './sale-router.js';
 export * from './sale-service.js';
+export { hydrateInvoice } from './sale-repository-read.js';
 export * from './sales-module.js';
 export * from './services/index.js';
 export * from './services/sale-calculations.js';

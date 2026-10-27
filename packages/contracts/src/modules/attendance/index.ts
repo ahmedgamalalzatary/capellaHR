@@ -49,6 +49,15 @@ export const manualAttendanceEventSchema = z.object({
   occurredAt: explicitOffsetDateTimeSchema,
 }).strict();
 
+export const manualAttendanceSessionSchema = z.object({
+  employeeId: positiveMysqlIntSchema,
+  checkInAt: explicitOffsetDateTimeSchema,
+  checkOutAt: explicitOffsetDateTimeSchema,
+}).strict().refine((value) => value.checkOutAt > value.checkInAt
+  && value.checkOutAt.getTime() - value.checkInAt.getTime() <= 16 * 60 * 60_000,
+{ message: 'يجب أن يأتي الانصراف بعد الحضور، بمدة لا تتجاوز 16 ساعة', path: ['checkOutAt'] });
+export type ManualAttendanceSession = z.infer<typeof manualAttendanceSessionSchema>;
+
 export const reconcileAttendanceDaySchema = z.object({
   employeeId: positiveMysqlIntSchema,
   attendanceDate: cairoDateSchema,

@@ -18,10 +18,11 @@ test('arrived stays on the diary and cancel asks first', async ({ page }) => {
     scheduledAt: '2026-08-25T07:30:00.000Z',
     status: 'booked',
     note: null,
-    invoiceId: null,
+    money: { paid: '0.00', refunded: '0.00', applied: '0.00', held: '0.00', pendingValue: '200.00', maxPayable: '200.00', excess: '0.00' },
     services: [{
       serviceId: 3, serviceName: 'صبغة شعر', servicePrice: '200.00',
       preferredEmployee: { id: 7, name: 'سارة' },
+      status: 'pending', invoiceId: null, invoiceNumber: null, queueStatus: null,
     }],
     createdAt: '2026-08-24T08:00:00.000Z',
     updatedAt: '2026-08-24T08:00:00.000Z',
@@ -65,6 +66,10 @@ test('arrived stays on the diary and cancel asks first', async ({ page }) => {
       await fulfill({ ...booking, status: statusPayload.status });
       return;
     }
+    if (path === '/erp/bookings/9/cancellation-quote') {
+      await fulfill({ amount: '0.00', serviceIds: [3] });
+      return;
+    }
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
   });
 
@@ -75,7 +80,7 @@ test('arrived stays on the diary and cancel asks first', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'بدء البيع' })).toBeVisible();
   await expect(page).toHaveURL(/\/bookings/);
 
-  await page.getByRole('button', { name: 'إلغاء' }).click();
+  await page.getByRole('button', { name: 'إلغاء', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'إلغاء الموعد' })).toBeVisible();
   await page.getByRole('button', { name: 'تأكيد الإلغاء' }).click();
   await expect.poll(() => statusPayload?.status).toBe('cancelled');

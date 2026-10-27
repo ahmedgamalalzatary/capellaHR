@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { type createDatabase } from '@capella/database';
 import {
   cashierSessions,
   clients,
   employees,
   erpBookingPayments,
+  erpBookingOperations,
   erpBookingServices,
   erpBookings,
   erpServices,
@@ -13,6 +15,8 @@ import {
 } from '@capella/database/schema';
 import { and, asc, countDistinct, eq, gt, gte, inArray, like, lt, or, sql } from 'drizzle-orm';
 
+import type { ReverseInvoiceOperation } from '../sales/index.js';
+import { planBookingCancellation } from './booking-cancellation-plan.js';
 import { startOfCairoDate } from '../cairo-calendar.js';
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { CASHIER_SESSION_MAX_DURATION_MS, signedMoney, toCents } from '../sales/index.js';
@@ -23,8 +27,9 @@ import type {
   BookingRecord,
   BookingRefundWrite,
   BookingRepository,
+  UpdateBookingWrite,
 } from './booking-service.js';
-import { bookingRefundRowReference, buildBookingMoney, sumServicePrices } from './booking-money.js';
+import { bookingRefundRowReference, buildBookingMoney, sumServicePrices, snapshotBookingClient } from './booking-money.js';
 
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -80,6 +85,7 @@ const assertRefundReplayed = async (
   const stored = await transaction.select({
     method: erpBookingPayments.method,
     amount: erpBookingPayments.amount,
+    cashierSessionId: erpBookingPayments.cashierSessionId,
   }).from(erpBookingPayments).where(and(
     eq(erpBookingPayments.bookingId, bookingId),
     eq(erpBookingPayments.kind, 'refund'),
@@ -90,6 +96,7 @@ const assertRefundReplayed = async (
   )).orderBy(asc(erpBookingPayments.id));
   const same = stored.length === refund.payments.length
     && stored.every((row, index) => row.method === refund.payments[index]!.method
+      && row.cashierSessionId === refund.cashierSessionId
       && toCents(row.amount) === toCents(refund.payments[index]!.amount));
   if (!same) throw new BookingError('BOOKING_OPERATION_CONFLICT');
 };
@@ -107,7 +114,9 @@ const insertRefundRows = async (
 ) => {
   // One ledger row per payment method; the operation reference identifies the
   // command and the suffix keeps the per-row uniqueness intact.
+  const client = await snapshotBookingClient(transaction, input.bookingId);
   await transaction.insert(erpBookingPayments).values(input.refund.payments.map((payment, index) => ({
+    ...client,
     bookingId: input.bookingId,
     branchId: input.branchId,
     kind: 'refund' as const,
@@ -249,12 +258,214 @@ const hydrate = async (
   };
 };
 
+const recordPaymentInTransaction = async (transaction: Transaction, input: BookingPaymentWrite, audit: ErpAuditCapability): Promise<BookingRecord> => {
+      const findRecorded = (locking: boolean) => {
+        const query = transaction.select({
+          kind: erpBookingPayments.kind,
+          method: erpBookingPayments.method,
+          amount: erpBookingPayments.amount,
+          cashierSessionId: erpBookingPayments.cashierSessionId,
+        }).from(erpBookingPayments).where(and(
+          eq(erpBookingPayments.bookingId, input.bookingId),
+          eq(erpBookingPayments.operationReference, input.operationReference),
+        )).limit(1);
+        // A locking read refreshes what the transaction sees; a plain read keeps
+        // the stored snapshot and must stay on a path that writes nothing.
+        return (locking ? query.for('update') : query).then(([row]) => row ?? null);
+      };
+      const replay = async (locking: boolean) => {
+        const previous = await findRecorded(locking);
+        if (!previous) return null;
+        // The same reference is the same payment only inside the same drawer: a
+        // retry naming another cashier session is a different operation.
+        if (previous.kind === 'payment' && previous.method === input.method
+          && previous.cashierSessionId === input.cashierSessionId
+          && toCents(previous.amount) === toCents(input.amount)) {
+          return (await hydrate(transaction, input.branchId, input.bookingId))!;
+        }
+        throw new BookingError('BOOKING_OPERATION_CONFLICT');
+      };
+      // Same lock order as the sale transaction: session first, then booking.
+      const session = await lockShiftRow(transaction, input);
+      if (session) assertShiftOwnedBy(session, input);
+      // A retry after the shift closed replays from the ledger and writes
+      // nothing, so the pre-lock snapshot it reads is harmless there.
+      if (!session || !shiftStillTakesMoney(session, input.at)) {
+        const stored = await replay(false);
+        if (stored) return stored;
+        throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+      }
+      const booking = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId),
+        eq(erpBookings.branchId, input.branchId),
+      )).for('update').limit(1))[0];
+      if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
+      // The booking lock is held, so this locking read both recognizes a retry
+      // and refreshes the ledger the cap below is computed from.
+      const stored = await replay(true);
+      if (stored) return stored;
+      if (booking.status !== 'booked' && booking.status !== 'arrived') {
+        throw new BookingError('BOOKING_ALREADY_HANDLED');
+      }
+      // The cap must be computed from data locked above, so two concurrent
+      // cashiers can never push the held money past the pending services' value.
+      const services = await transaction.select({ price: erpServices.price })
+        .from(erpBookingServices)
+        .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
+        .where(and(
+          eq(erpBookingServices.bookingId, input.bookingId),
+          eq(erpBookingServices.status, 'pending'),
+        ));
+      const totals = (await bookingPaymentsTotals(transaction, input.branchId, [input.bookingId]))
+        .get(input.bookingId) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
+      const cap = buildBookingMoney({
+        ...totals,
+        pendingValueTotal: sumServicePrices(services.map((service) => service.price)),
+      });
+      if (toCents(input.amount) > toCents(cap.maxPayable)) {
+        throw new BookingError('BOOKING_PAYMENT_EXCEEDS_CAP');
+      }
+      const client = await snapshotBookingClient(transaction, input.bookingId);
+      await transaction.insert(erpBookingPayments).values({
+        ...client,
+        bookingId: input.bookingId,
+        branchId: input.branchId,
+        kind: 'payment',
+        method: input.method,
+        amount: input.amount,
+        cashierSessionId: input.cashierSessionId,
+        actingAccountId: input.actorAccountId,
+        operationReference: input.operationReference,
+        createdAt: input.at,
+      });
+      const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      await audit.record(transaction, {
+        module: AUDIT_MODULE,
+        action: 'record_payment',
+        entityType: 'booking',
+        entityId: input.bookingId,
+        afterState: record,
+        relatedIds: {
+          branchId: input.branchId,
+          cashierSessionId: input.cashierSessionId,
+          method: input.method,
+          amount: input.amount,
+        },
+        createdAt: input.at,
+      });
+      return record;
+};
+
+const cancelInvoicedServices = async (
+  database: Database, audit: ErpAuditCapability,
+  hydrateBooking: typeof hydrate,
+  input: import('./booking-service.js').BookingLeftoverWrite & { serviceIds?: number[] | undefined },
+  reverseInvoice: NonNullable<Parameters<typeof createDrizzleBookingRepository>[2]>['reverseInvoice'],
+) => database.transaction(async (transaction) => {
+  if (input.refund) {
+    const session = await lockShiftRow(transaction, { ...input.refund, branchId: input.branchId });
+    if (session) assertShiftOwnedBy(session, input);
+  }
+  const locked = (await transaction.select().from(erpBookings).where(and(eq(erpBookings.id, input.bookingId), eq(erpBookings.branchId, input.branchId))).for('update').limit(1))[0];
+  if (!locked) throw new BookingError('BOOKING_NOT_FOUND');
+  const reference = input.refund?.operationReference;
+  const fingerprint = createHash('sha256').update(JSON.stringify({ bookingId: input.bookingId, branchId: input.branchId,
+    actorAccountId: input.actorAccountId, serviceIds: input.serviceIds ?? null, refund: input.refund ?? null })).digest('hex');
+  if (reference) {
+    const previous = (await transaction.select().from(erpBookingOperations).where(eq(erpBookingOperations.operationReference, reference)).for('update').limit(1))[0];
+    if (previous) {
+      if (previous.bookingId !== input.bookingId || previous.fingerprint !== fingerprint) throw new BookingError('BOOKING_OPERATION_CONFLICT');
+      return (await hydrateBooking(transaction, input.branchId, input.bookingId))!;
+    }
+  }
+  const bookedServices = await transaction.select().from(erpBookingServices).where(eq(erpBookingServices.bookingId, input.bookingId)).for('update');
+  const invoiceIds = [...new Set(bookedServices.flatMap((line) => line.invoiceId === null ? [] : [line.invoiceId]))].sort((a, b) => a - b);
+  for (const id of invoiceIds) {
+    await transaction.select({ id: invoices.id }).from(invoices).where(eq(invoices.id, id)).for('update');
+  }
+  if (invoiceIds.length) await transaction.select({ id: serviceQueueEntries.id }).from(serviceQueueEntries)
+    .where(inArray(serviceQueueEntries.invoiceId, invoiceIds)).for('update');
+  const before = (await hydrateBooking(transaction, input.branchId, input.bookingId))!;
+  const plan = await planBookingCancellation(transaction, before, input.serviceIds);
+  const owed = toCents(plan.amount);
+  if (owed > 0n) {
+    if (!input.refund) throw new BookingError('BOOKING_REFUND_REQUIRED', undefined, { amount: plan.amount });
+    const session = await lockShiftRow(transaction, { ...input.refund, branchId: input.branchId });
+    if (!session || !shiftStillTakesMoney(session, input.at)) throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+    assertRefundCoversExcess(input.refund, owed);
+  } else if (input.refund) throw new BookingError('BOOKING_REFUND_AMOUNT_MISMATCH');
+  const tenders = (input.refund?.payments ?? []).map((payment) => ({ method: payment.method, cents: toCents(payment.amount) }));
+  const takePayments = (amount: bigint) => {
+    let remaining = amount;
+    const result = [];
+    for (const tender of tenders) {
+      const take = tender.cents < remaining ? tender.cents : remaining;
+      if (take > 0n) result.push({ method: tender.method, amount: signedMoney(take) });
+      remaining -= take;
+      tender.cents -= take;
+    }
+    if (remaining !== 0n) throw new BookingError('BOOKING_REFUND_AMOUNT_MISMATCH');
+    return result;
+  };
+  for (const invoice of plan.invoicePlans) {
+    const digest = createHash('sha256').update(`${reference ?? crypto.randomUUID()}:${invoice.invoiceId}`).digest('hex');
+    const key = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    await reverseInvoice(transaction, {
+      type: 'refund', invoiceId: invoice.invoiceId, actingAccountId: input.actorAccountId,
+      actingAccountRole: input.actorRole, reversedAt: input.at,
+      input: { branchId: input.branchId, idempotencyKey: key, reason: 'إلغاء خدمات حجز غير مكتملة', lines: invoice.lines, payments: takePayments(invoice.payout) },
+    });
+  }
+  if (plan.heldRefund > 0n && input.refund) await insertRefundRows(transaction, {
+    ...input, cause: 'booking_cancelled', refund: { ...input.refund, payments: takePayments(plan.heldRefund) },
+  });
+  if (plan.pendingIds.length) await transaction.update(erpBookingServices).set({ status: 'cancelled', changedAt: input.at })
+    .where(and(eq(erpBookingServices.bookingId, input.bookingId), inArray(erpBookingServices.serviceId, plan.pendingIds), eq(erpBookingServices.status, 'pending')));
+  const remainingServices = before.services.filter((line) => !plan.serviceIds.includes(line.serviceId)
+    && line.status !== 'cancelled' && line.queueStatus !== 'canceled');
+  await transaction.update(erpBookings).set({
+    status: remainingServices.some((line) => line.status === 'pending') ? locked.status
+      : remainingServices.some((line) => line.status === 'sold') ? 'converted' : 'cancelled',
+    updatedAt: input.at,
+  }).where(eq(erpBookings.id, input.bookingId));
+  if (reference) await transaction.insert(erpBookingOperations).values({ operationReference: reference, bookingId: input.bookingId, fingerprint, createdAt: input.at });
+  const after = (await hydrateBooking(transaction, input.branchId, input.bookingId))!;
+  await audit.record(transaction, { module: AUDIT_MODULE, action: 'cancel-services', entityType: 'booking', entityId: input.bookingId,
+    beforeState: before, afterState: after, relatedIds: { branchId: input.branchId, serviceIds: plan.serviceIds.join(',') }, createdAt: input.at });
+  return after;
+});
+
 export const createDrizzleBookingRepository = (
   database: Database,
   audit: ErpAuditCapability,
+  capabilities?: { reverseInvoice: (transaction: Transaction, operation: ReverseInvoiceOperation) => Promise<unknown> },
 ): BookingRepository => ({
   async create(input) {
-    return database.transaction(async (transaction) => {
+    const fingerprint = createHash('sha256').update(JSON.stringify({
+      branchId: input.branchId, clientId: input.clientId, actingAccountId: input.actingAccountId,
+      scheduledAt: input.scheduledAt.toISOString(), note: input.note,
+      services: input.services, initialPayment: input.initialPayment ?? null,
+    })).digest('hex');
+    const replay = async (executor: Executor) => {
+      if (!input.operationReference) return null;
+      const stored = (await executor.select().from(erpBookings)
+        .where(eq(erpBookings.creationReference, input.operationReference)).limit(1))[0];
+      if (!stored) return null;
+      if (stored.creationFingerprint !== fingerprint) throw new BookingError('BOOKING_OPERATION_CONFLICT');
+      return hydrate(executor, input.branchId, stored.id);
+    };
+    const existing = await replay(database);
+    if (existing) return existing;
+    try {
+    return await database.transaction(async (transaction) => {
+      if (input.initialPayment) {
+        if (!input.operationReference) throw new BookingError('BOOKING_OPERATION_CONFLICT');
+        const session = await lockShiftRow(transaction, { ...input.initialPayment, branchId: input.branchId });
+        if (!session || !shiftStillTakesMoney(session, input.createdAt)) throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+        assertShiftOwnedBy(session, { actorAccountId: input.actingAccountId, actorRole: input.actorRole ?? 'cashier' });
+        const stored = await replay(transaction);
+        if (stored) return stored;
+      }
       const client = (await transaction.select({ id: clients.id }).from(clients).where(and(
         eq(clients.id, input.clientId), eq(clients.branchId, input.branchId),
       )).limit(1))[0];
@@ -291,6 +502,8 @@ export const createDrizzleBookingRepository = (
         clientId: input.clientId,
         scheduledAt: input.scheduledAt,
         note: input.note,
+        creationReference: input.operationReference ?? null,
+        creationFingerprint: input.operationReference ? fingerprint : null,
         actingAccountId: input.actingAccountId,
         createdAt: input.createdAt,
         updatedAt: input.createdAt,
@@ -302,6 +515,13 @@ export const createDrizzleBookingRepository = (
         serviceId: service.serviceId,
         preferredEmployeeId: service.preferredEmployeeId ?? null,
       })));
+      if (input.initialPayment) {
+        await recordPaymentInTransaction(transaction, {
+          ...input.initialPayment, bookingId: id, branchId: input.branchId,
+          actorAccountId: input.actingAccountId, actorRole: input.actorRole ?? 'cashier',
+          operationReference: input.operationReference!, at: input.createdAt,
+        }, audit);
+      }
       const record = (await hydrate(transaction, input.branchId, id))!;
       await audit.record(transaction, {
         module: AUDIT_MODULE,
@@ -314,6 +534,99 @@ export const createDrizzleBookingRepository = (
       });
       return record;
     });
+    } catch (error) {
+      const cause: unknown = typeof error === 'object' && error !== null ? Reflect.get(error, 'cause') : undefined;
+      if ([error, cause].some((value) => typeof value === 'object' && value !== null && Reflect.get(value, 'code') === 'ER_DUP_ENTRY')) {
+        const stored = await replay(database);
+        if (stored) return stored;
+      }
+      throw error;
+    }
+  },
+
+  async updateBooking(input: UpdateBookingWrite) {
+    return database.transaction(async (transaction) => {
+      if (input.refund) {
+        const session = await lockShiftRow(transaction, { ...input.refund, branchId: input.branchId });
+        if (!session || !shiftStillTakesMoney(session, input.at)) throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
+        assertShiftOwnedBy(session, input);
+      }
+      const row = (await transaction.select().from(erpBookings).where(and(
+        eq(erpBookings.id, input.bookingId), eq(erpBookings.branchId, input.branchId),
+      )).for('update').limit(1))[0];
+      if (!row) throw new BookingError('BOOKING_NOT_FOUND');
+      if (row.scheduledAt <= input.at || new Date(input.scheduledAt) <= input.at
+        || !['booked', 'arrived'].includes(row.status)) throw new BookingError('BOOKING_EDIT_NOT_ALLOWED');
+      if (input.expectedUpdatedAt && new Date(input.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw new BookingError('BOOKING_CHANGED');
+      const before = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      const sold = before.services.filter((service) => service.status === 'sold');
+      if (sold.some((service) => !input.services.some((line) => line.serviceId === service.serviceId
+        && (line.preferredEmployeeId ?? null) === (service.preferredEmployee?.id ?? null)))
+        || (sold.length > 0 && row.clientId !== input.clientId)) throw new BookingError('BOOKING_EDIT_NOT_ALLOWED');
+      const client = (await transaction.select({ id: clients.id }).from(clients).where(and(
+        eq(clients.id, input.clientId), eq(clients.branchId, input.branchId),
+      )).limit(1))[0];
+      if (!client) throw new BookingError('BOOKING_CLIENT_NOT_FOUND');
+      const waiting = input.services.filter((line) => !sold.some((service) => service.serviceId === line.serviceId));
+      const catalog = waiting.length ? await transaction.select({ id: erpServices.id, price: erpServices.price }).from(erpServices)
+        .where(and(eq(erpServices.branchId, input.branchId), eq(erpServices.isActive, true), inArray(erpServices.id, waiting.map((line) => line.serviceId)))) : [];
+      if (catalog.length !== waiting.length) throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
+      for (const line of waiting) {
+        if (line.preferredEmployeeId === undefined) continue;
+        const employee = (await transaction.select({ id: employees.id }).from(employees).where(and(
+          eq(employees.id, line.preferredEmployeeId), eq(employees.branchId, input.branchId), eq(employees.employmentStatus, 'active'),
+        )).limit(1))[0];
+        if (!employee) throw new BookingError('BOOKING_EMPLOYEE_NOT_FOUND');
+      }
+      const held = toCents(before.money.held);
+      const value = sumServicePrices(catalog.map((line) => line.price));
+      const owed = row.clientId !== input.clientId ? held : held > value ? held - value : 0n;
+      if (owed > 0n) {
+        if (!input.refund) throw new BookingError('BOOKING_REFUND_REQUIRED', undefined, { amount: signedMoney(owed) });
+        assertRefundCoversExcess(input.refund, owed);
+        await insertRefundRows(transaction, { ...input, cause: 'service_cancelled', refund: input.refund });
+      } else if (input.refund) throw new BookingError('BOOKING_REFUND_AMOUNT_MISMATCH');
+      // Cancelled services are history. An edit replaces only the waiting rows;
+      // re-adding a cancelled service revives its row instead of deleting the
+      // cancellation record and inserting a duplicate.
+      const cancelledServiceIds = new Set(before.services
+        .filter((service) => service.status === 'cancelled')
+        .map((service) => service.serviceId));
+      await transaction.delete(erpBookingServices).where(and(
+        eq(erpBookingServices.bookingId, input.bookingId),
+        eq(erpBookingServices.status, 'pending'),
+      ));
+      const revived = waiting.filter((line) => cancelledServiceIds.has(line.serviceId));
+      for (const line of revived) {
+        await transaction.update(erpBookingServices).set({
+          status: 'pending',
+          preferredEmployeeId: line.preferredEmployeeId ?? null,
+          changedAt: null,
+        }).where(and(
+          eq(erpBookingServices.bookingId, input.bookingId),
+          eq(erpBookingServices.serviceId, line.serviceId),
+          eq(erpBookingServices.status, 'cancelled'),
+        ));
+      }
+      const fresh = waiting.filter((line) => !cancelledServiceIds.has(line.serviceId));
+      if (fresh.length) await transaction.insert(erpBookingServices).values(fresh.map((line) => ({
+        bookingId: input.bookingId, branchId: input.branchId, serviceId: line.serviceId,
+        preferredEmployeeId: line.preferredEmployeeId ?? null,
+      })));
+      await transaction.update(erpBookings).set({ clientId: input.clientId, scheduledAt: new Date(input.scheduledAt), note: input.note ?? null, updatedAt: input.at })
+        .where(eq(erpBookings.id, input.bookingId));
+      const after = (await hydrate(transaction, input.branchId, input.bookingId))!;
+      await audit.record(transaction, { module: AUDIT_MODULE, action: 'update', entityType: 'booking', entityId: input.bookingId,
+        beforeState: before, afterState: after, relatedIds: { branchId: input.branchId }, createdAt: input.at });
+      return after;
+    });
+  },
+
+  async quoteCancellation(branchId, bookingId, serviceIds) {
+    const booking = await hydrate(database, branchId, bookingId);
+    if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
+    const plan = await planBookingCancellation(database, booking, serviceIds);
+    return { amount: plan.amount, serviceIds: plan.serviceIds };
   },
 
   findById(branchId, id) {
@@ -529,12 +842,13 @@ export const createDrizzleBookingRepository = (
     });
   },
 
-  async remove(branchId, id) {
+  async remove(branchId, id, at = new Date()) {
     return database.transaction(async (transaction) => {
       const booking = (await transaction.select().from(erpBookings).where(and(
         eq(erpBookings.id, id),
         eq(erpBookings.branchId, branchId),
         inArray(erpBookings.status, ['booked', 'cancelled', 'no_show']),
+        gt(erpBookings.scheduledAt, at),
       )).for('update').limit(1))[0];
       if (!booking) return null;
       // A booking that ever held money or sold a service is part of the books.
@@ -575,6 +889,7 @@ export const createDrizzleBookingRepository = (
         eq(erpBookings.id, bookingId),
         eq(erpBookings.branchId, branchId),
         inArray(erpBookings.status, ['booked', 'arrived']),
+        gt(erpBookings.scheduledAt, changedAt),
       )).for('update').limit(1))[0];
       if (!booking) return null;
       if (employeeId !== null) {
@@ -592,6 +907,7 @@ export const createDrizzleBookingRepository = (
           eq(erpBookingServices.bookingId, bookingId),
           eq(erpBookingServices.branchId, branchId),
           eq(erpBookingServices.serviceId, serviceId),
+          eq(erpBookingServices.status, 'pending'),
         ));
       if (result[0].affectedRows !== 1) throw new BookingError('BOOKING_SERVICE_NOT_FOUND');
       await transaction.update(erpBookings).set({ updatedAt: changedAt })
@@ -612,104 +928,14 @@ export const createDrizzleBookingRepository = (
   },
 
   async recordPayment(input: BookingPaymentWrite) {
-    return database.transaction(async (transaction) => {
-      const findRecorded = (locking: boolean) => {
-        const query = transaction.select({
-          kind: erpBookingPayments.kind,
-          method: erpBookingPayments.method,
-          amount: erpBookingPayments.amount,
-          cashierSessionId: erpBookingPayments.cashierSessionId,
-        }).from(erpBookingPayments).where(and(
-          eq(erpBookingPayments.bookingId, input.bookingId),
-          eq(erpBookingPayments.operationReference, input.operationReference),
-        )).limit(1);
-        // A locking read refreshes what the transaction sees; a plain read keeps
-        // the stored snapshot and must stay on a path that writes nothing.
-        return (locking ? query.for('update') : query).then(([row]) => row ?? null);
-      };
-      const replay = async (locking: boolean) => {
-        const previous = await findRecorded(locking);
-        if (!previous) return null;
-        // The same reference is the same payment only inside the same drawer: a
-        // retry naming another cashier session is a different operation.
-        if (previous.kind === 'payment' && previous.method === input.method
-          && previous.cashierSessionId === input.cashierSessionId
-          && toCents(previous.amount) === toCents(input.amount)) {
-          return (await hydrate(transaction, input.branchId, input.bookingId))!;
-        }
-        throw new BookingError('BOOKING_OPERATION_CONFLICT');
-      };
-      // Same lock order as the sale transaction: session first, then booking.
-      const session = await lockShiftRow(transaction, input);
-      if (session) assertShiftOwnedBy(session, input);
-      // A retry after the shift closed replays from the ledger and writes
-      // nothing, so the pre-lock snapshot it reads is harmless there.
-      if (!session || !shiftStillTakesMoney(session, input.at)) {
-        const stored = await replay(false);
-        if (stored) return stored;
-        throw new BookingError('BOOKING_CASHIER_SESSION_NOT_OPEN');
-      }
-      const booking = (await transaction.select().from(erpBookings).where(and(
-        eq(erpBookings.id, input.bookingId),
-        eq(erpBookings.branchId, input.branchId),
-      )).for('update').limit(1))[0];
-      if (!booking) throw new BookingError('BOOKING_NOT_FOUND');
-      // The booking lock is held, so this locking read both recognizes a retry
-      // and refreshes the ledger the cap below is computed from.
-      const stored = await replay(true);
-      if (stored) return stored;
-      if (booking.status !== 'booked' && booking.status !== 'arrived') {
-        throw new BookingError('BOOKING_ALREADY_HANDLED');
-      }
-      // The cap must be computed from data locked above, so two concurrent
-      // cashiers can never push the held money past the pending services' value.
-      const services = await transaction.select({ price: erpServices.price })
-        .from(erpBookingServices)
-        .innerJoin(erpServices, eq(erpServices.id, erpBookingServices.serviceId))
-        .where(and(
-          eq(erpBookingServices.bookingId, input.bookingId),
-          eq(erpBookingServices.status, 'pending'),
-        ));
-      const totals = (await bookingPaymentsTotals(transaction, input.branchId, [input.bookingId]))
-        .get(input.bookingId) ?? { paymentsTotal: 0n, refundsTotal: 0n, appliedTotal: 0n };
-      const cap = buildBookingMoney({
-        ...totals,
-        pendingValueTotal: sumServicePrices(services.map((service) => service.price)),
-      });
-      if (toCents(input.amount) > toCents(cap.maxPayable)) {
-        throw new BookingError('BOOKING_PAYMENT_EXCEEDS_CAP');
-      }
-      await transaction.insert(erpBookingPayments).values({
-        bookingId: input.bookingId,
-        branchId: input.branchId,
-        kind: 'payment',
-        method: input.method,
-        amount: input.amount,
-        cashierSessionId: input.cashierSessionId,
-        actingAccountId: input.actorAccountId,
-        operationReference: input.operationReference,
-        createdAt: input.at,
-      });
-      const record = (await hydrate(transaction, input.branchId, input.bookingId))!;
-      await audit.record(transaction, {
-        module: AUDIT_MODULE,
-        action: 'record_payment',
-        entityType: 'booking',
-        entityId: input.bookingId,
-        afterState: record,
-        relatedIds: {
-          branchId: input.branchId,
-          cashierSessionId: input.cashierSessionId,
-          method: input.method,
-          amount: input.amount,
-        },
-        createdAt: input.at,
-      });
-      return record;
-    });
+    return database.transaction((transaction) => recordPaymentInTransaction(transaction, input, audit));
   },
 
   async cancelServices(input) {
+    const current = await hydrate(database, input.branchId, input.bookingId);
+    if (capabilities && current?.services.some((line) => line.status === 'sold' && input.serviceIds.includes(line.serviceId))) {
+      return cancelInvoicedServices(database, audit, hydrate, input, capabilities.reverseInvoice);
+    }
     return database.transaction(async (transaction) => {
       // Same lock order as payments: an open shift locks first when money moves.
       // The shift is read without its "still open" filter, because a retry of a
@@ -810,6 +1036,10 @@ export const createDrizzleBookingRepository = (
   },
 
   async finalizeCancellation(input) {
+    const current = await hydrate(database, input.branchId, input.bookingId);
+    if (input.status === 'cancelled' && capabilities && current?.services.some((line) => line.status === 'sold' && line.queueStatus !== null && line.queueStatus !== 'completed')) {
+      return cancelInvoicedServices(database, audit, hydrate, input, capabilities.reverseInvoice);
+    }
     return database.transaction(async (transaction) => {
       // Read without the "still open" filter so a retry of this cancel replays
       // even when the shift has since closed.
@@ -904,11 +1134,13 @@ export const createDrizzleBookingRepository = (
   },
 
   async reschedule(input) {
+    if (input.scheduledAt <= input.at) return null;
     return database.transaction(async (transaction) => {
       const booking = (await transaction.select().from(erpBookings).where(and(
         eq(erpBookings.id, input.bookingId),
         eq(erpBookings.branchId, input.branchId),
         inArray(erpBookings.status, ['booked', 'arrived']),
+        gt(erpBookings.scheduledAt, input.at),
       )).for('update').limit(1))[0];
       if (!booking) return null;
       await transaction.update(erpBookings).set({

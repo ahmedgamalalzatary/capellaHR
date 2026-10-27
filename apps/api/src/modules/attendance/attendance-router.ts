@@ -7,6 +7,7 @@ import {
   listAttendanceDeniedAttemptsQuerySchema,
   listAttendanceSessionsQuerySchema,
   manualAttendanceEventSchema,
+  manualAttendanceSessionSchema,
   reconcileAttendanceDaySchema,
 } from '@capella/contracts';
 import { Router, type NextFunction, type Request, type Response } from 'express';
@@ -197,6 +198,11 @@ export const createAttendanceRouter = (
     } catch (error) {
       handle(error, response, next);
     }
+  });
+  router.post('/manual/session', async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      response.status(201).json({ data: await service.manualSession(manualAttendanceSessionSchema.parse(request.body)) });
+    } catch (error) { handle(error, response, next); }
   });
   router.post('/manual/check-out', async (request: Request, response: Response, next: NextFunction) => {
     try {

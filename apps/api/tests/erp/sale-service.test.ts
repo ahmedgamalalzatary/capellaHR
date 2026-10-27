@@ -149,6 +149,16 @@ const setup = (overrides: Partial<SaleRepository> = {}) => {
 };
 
 describe('ERP sale service', () => {
+  it('refuses a cashier invoice cancellation before changing the invoice', async () => {
+    const reverse = vi.fn<SaleRepository['reverse']>().mockResolvedValue(invoice);
+    const { service } = setup({ reverse });
+
+    await expect(service.void(actor, 44, {
+      idempotencyKey: input.idempotencyKey, reason: 'Duplicate invoice',
+    })).rejects.toMatchObject({ code: 'VOID_ADMIN_REQUIRED' });
+    expect(reverse).not.toHaveBeenCalled();
+  });
+
   it('refuses cashier refund commands, quotes, and refund-page queries before reading or changing invoices', async () => {
     const reverse = vi.fn<SaleRepository['reverse']>();
     const findInvoiceById = vi.fn<SaleRepository['findInvoiceById']>();

@@ -99,6 +99,9 @@ export const manualAttendance = (
   input,
 );
 
+export const manualAttendanceSession = (input: { employeeId: number; checkInAt: string; checkOutAt: string }) =>
+  api.post<AttendanceSession>('/attendance/manual/session', input);
+
 export const reconcileAttendanceDay = (input: {
   employeeId: number;
   attendanceDate: string;

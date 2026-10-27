@@ -13,8 +13,10 @@ import { SectionHeading } from '@/components/layout/page-header';
 
 import { type Purchase, type Supplier } from '../api/suppliers-api';
 import { errorText } from './supplier-purchase-money';
+import { PurchaseHistoryPrint } from './purchase-history-print';
 
 export function PurchaseHistorySection({
+  printFilters,
   historySupplier,
   setHistorySupplier,
   historyProduct,
@@ -38,6 +40,7 @@ export function PurchaseHistorySection({
   cancel,
   closeCancellation,
 }: {
+  printFilters: NonNullable<Parameters<typeof import('../api/suppliers-api').listPurchases>[0]>;
   historySupplier: string;
   setHistorySupplier: (value: string) => void;
   historyProduct: string;
@@ -70,7 +73,11 @@ export function PurchaseHistorySection({
     <>
       <Card className="overflow-hidden shadow-card">
         <CardContent className="space-y-4 p-4 sm:p-5">
-          <SectionHeading title="سجل المشتريات" />
+          <SectionHeading title="سجل المشتريات" actions={<PurchaseHistoryPrint filters={printFilters} disabled={commandPending || !purchases.data?.items.length || purchases.isError || purchases.isPending} subtitle={[
+            allSuppliers.data?.find((supplier) => String(supplier.id) === historySupplier)?.name ?? 'كل الموردين',
+            historyProducts.data?.items.find((product) => String(product.id) === historyProduct)?.name ?? 'كل المنتجات',
+            status === 'posted' ? 'مُرحّلة' : status === 'cancelled' ? 'ملغاة' : 'كل الحالات',
+          ].join(' — ')} />} />
           <div className="grid gap-3 sm:grid-cols-3">
             <Select aria-label="تصفية حسب المورد" value={historySupplier} onChange={(event) => { setHistorySupplier(event.target.value); setPage(1); }}>
               <option value="">كل الموردين</option>

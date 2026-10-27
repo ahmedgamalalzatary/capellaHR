@@ -1,4 +1,4 @@
-import { accounts, cashierSessions, erpBookingPayments, erpBookingServices, erpBookings, erpCategories, erpServices, invoicePayments, invoiceReversalPayments } from '@capella/database/schema';
+import { accounts, cashierSessions, erpBookingPayments, erpBookingServices, erpBookings, erpCategories, erpServices, invoicePayments, invoiceReversalPayments, serviceQueueEntries } from '@capella/database/schema';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '../mysql-integration-database.js';
@@ -6,6 +6,7 @@ import { closeMysqlIntegrationDatabase, prepareMysqlIntegrationDatabase } from '
 import { createDrizzleBookingRepository } from '../../src/modules/erp/bookings/booking-repository.js';
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
+import { createDrizzleCashierSessionRepository } from '../../src/modules/erp/sales/cashier-sessions-repository.js';
 import { createSaleService } from '../../src/modules/erp/sales/sale-service.js';
 import { createSaleRepositoryMysqlFixtures } from './sale-repository-mysql-fixtures.js';
 
@@ -14,8 +15,8 @@ let invoiceSequence = 0;
 
 const buildSaleService = (data: Awaited<ReturnType<typeof fixture>>, options: { soldAt?: Date } = {}) => {
   const audit = createErpAuditCapability();
-  const bookingRepository = createDrizzleBookingRepository(database, audit);
   const saleRepository = createDrizzleSaleRepository(database, audit);
+  const bookingRepository = createDrizzleBookingRepository(database, audit, { reverseInvoice: (transaction, operation) => saleRepository.reverse({ ...operation, transaction }) });
   let counter = 0;
   const service = createSaleService({
     employees: { findActiveById: async () => null },
@@ -66,6 +67,52 @@ afterAll(async () => {
 }, 30_000);
 
 describe('ERP sale with booking credit MySQL integration', () => {
+  it('marks a fully cancelled invoiced booking as cancelled', async () => {
+    const data = await fixture();
+    const { service, bookingRepository } = buildSaleService(data);
+    const booking = await bookingRepository.create({ branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId, actorRole: 'cashier', scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }], createdAt: data.at, operationReference: crypto.randomUUID(), initialPayment: { cashierSessionId: data.cashierSessionId, method: 'cash', amount: '100.00' } });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    await service.complete({ role: 'cashier', accountId: data.accountId, branchId: data.branchId }, { clientId: data.clientId, cashierSessionId: data.cashierSessionId, bookingId: booking.id, bookingCredit: '100.00', idempotencyKey: crypto.randomUUID(), lines: [{ itemType: 'service', serviceId: data.serviceId, quantity: 1, unitPrice: '200.00', employeeId: data.employeeId }], payments: [{ method: 'cash', amount: '100.00' }] });
+    const cancelled = await bookingRepository.finalizeCancellation({ bookingId: booking.id, branchId: data.branchId, actorAccountId: data.accountId, actorRole: 'cashier', status: 'cancelled', at: data.at, refund: { cashierSessionId: data.cashierSessionId, operationReference: crypto.randomUUID(), payments: [{ method: 'cash', amount: '200.00' }] } });
+    expect(cancelled!.status).toBe('cancelled');
+  });
+  it('cancels only unfinished invoiced services after a confirmed split refund and replays safely', async () => {
+    const data = await fixture();
+    const { service, bookingRepository, saleRepository } = buildSaleService(data);
+    const secondId = Number((await database.insert(erpServices).values({
+      branchId: data.branchId, categoryId: (await database.select().from(erpCategories).where(eq(erpCategories.branchId, data.branchId)))[0]!.id,
+      name: `Cancel ${data.marker}`, nameNormalized: `cancel-${data.marker}`, price: '200.00', commissionPercent: '10.00', createdAt: data.at, updatedAt: data.at,
+    }))[0].insertId);
+    const booking = await bookingRepository.create({
+      branchId: data.branchId, clientId: data.clientId, actingAccountId: data.accountId, actorRole: 'cashier',
+      scheduledAt: data.at, note: null, services: [{ serviceId: data.serviceId }, { serviceId: secondId }], createdAt: data.at,
+      operationReference: crypto.randomUUID(), initialPayment: { cashierSessionId: data.cashierSessionId, method: 'cash', amount: '400.00' },
+    });
+    await bookingRepository.transition(data.branchId, booking.id, ['booked'], 'arrived', data.at);
+    const invoice = await service.complete({ role: 'cashier', accountId: data.accountId, branchId: data.branchId }, {
+      clientId: data.clientId, cashierSessionId: data.cashierSessionId, bookingId: booking.id, bookingCredit: '400.00', idempotencyKey: crypto.randomUUID(),
+      lines: [data.serviceId, secondId].map((serviceId) => ({ itemType: 'service' as const, serviceId, quantity: 1, unitPrice: '200.00', employeeId: data.employeeId })), payments: [],
+    });
+    await database.update(serviceQueueEntries).set({ status: 'completed', completedAt: data.at, completedByAccountId: data.accountId })
+      .where(and(eq(serviceQueueEntries.invoiceId, invoice.id), eq(serviceQueueEntries.serviceId, data.serviceId)));
+    const quote = await bookingRepository.quoteCancellation?.(data.branchId, booking.id);
+    expect(quote).toMatchObject({ amount: '200.00', serviceIds: [secondId] });
+    const cancel = { bookingId: booking.id, branchId: data.branchId, actorAccountId: data.accountId, actorRole: 'cashier' as const, status: 'cancelled' as const, at: new Date(data.at.getTime() + 60_000) };
+    await expect(bookingRepository.finalizeCancellation(cancel)).rejects.toMatchObject({ code: 'BOOKING_REFUND_REQUIRED' });
+    expect((await saleRepository.findInvoiceById(data.branchId, invoice.id))!.status).toBe('completed');
+    const paidCancel = { ...cancel, refund: { cashierSessionId: data.cashierSessionId, operationReference: crypto.randomUUID(), payments: [{ method: 'cash' as const, amount: '100.00' }, { method: 'visa' as const, amount: '100.00' }] } };
+    await bookingRepository.finalizeCancellation(paidCancel);
+    await bookingRepository.finalizeCancellation(paidCancel);
+    const queue = await database.select().from(serviceQueueEntries).where(eq(serviceQueueEntries.invoiceId, invoice.id));
+    expect(queue.map((row) => row.status)).toEqual(['completed', 'canceled']);
+    expect((await saleRepository.findInvoiceById(data.branchId, invoice.id))!.status).toBe('partially_refunded');
+    const shift = await createDrizzleCashierSessionRepository(database, createErpAuditCapability()).findMoneyById(data.cashierSessionId);
+    expect(shift).toMatchObject({ taken: { cash: '400.00' }, refunded: { cash: '100.00', visa: '100.00' }, net: '200.00' });
+    await expect(bookingRepository.finalizeCancellation({ ...paidCancel, refund: { ...paidCancel.refund, payments: [{ method: 'cash', amount: '200.00' }] } }))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+    await expect(bookingRepository.finalizeCancellation({ ...paidCancel, refund: { ...paidCancel.refund, operationReference: crypto.randomUUID() } }))
+      .rejects.toMatchObject({ code: 'BOOKING_ALREADY_HANDLED' });
+  });
   it('applies held up-front money first, marks sold services, and keeps the rest pending', async () => {
     const data = await fixture();
     const { service, bookingRepository } = buildSaleService(data);

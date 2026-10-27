@@ -40,6 +40,8 @@ const setup = () => {
   const finalizeCancellation = vi.fn().mockResolvedValue(booking);
   const reschedule = vi.fn().mockResolvedValue(booking);
   const repository: BookingRepository = {
+    quoteCancellation: vi.fn().mockResolvedValue({ amount: '0.00', serviceIds: [3] }),
+    updateBooking: vi.fn().mockResolvedValue(booking),
     create,
     findById,
     listDay,
@@ -56,6 +58,7 @@ const setup = () => {
   };
   const service = createBookingService({
     repository,
+    now: () => new Date('2026-08-24T08:00:00Z'),
     resolveBranchContext: vi.fn().mockResolvedValue({ branchId: 2, accountId: 3 }),
   });
   return { service, create, listDay, transition, listActiveEmployees, updatePreference, findById, remove, recordPayment, cancelServices, finalizeCancellation, reschedule };
@@ -130,7 +133,7 @@ describe('ERP booking service', () => {
   it('hard-deletes a booking without payment (no linked invoice)', async () => {
     const { service, remove } = setup();
     await expect(service.remove(actor, 9)).resolves.toMatchObject({ id: 9 });
-    expect(remove).toHaveBeenCalledWith(2, 9);
+    expect(remove).toHaveBeenCalledWith(2, 9, new Date('2026-08-24T08:00:00Z'));
   });
 
   it('reports a missing booking as not found', async () => {

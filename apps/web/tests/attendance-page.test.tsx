@@ -191,6 +191,17 @@ afterEach(() => {
 });
 
 describe('AttendancePage', () => {
+  it('records both times of a historical attendance session together', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'تسجيل يدوي' }));
+    await screen.findByRole('option', { name: '42 — أحمد سالم' });
+    fireEvent.change(screen.getByLabelText('الموظف'), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تسجيل جلسة سابقة مكتملة' }));
+    fireEvent.change(screen.getByLabelText('وقت الحدث بتوقيت القاهرة'), { target: { value: '2026-07-19T09:00' } });
+    fireEvent.change(screen.getByLabelText('وقت الانصراف بتوقيت القاهرة'), { target: { value: '2026-07-19T17:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'حفظ الجلسة السابقة' }));
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('/attendance/manual/session'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ employeeId: 7, checkInAt: '2026-07-19T09:00:00.000+03:00', checkOutAt: '2026-07-19T17:00:00.000+03:00' }) })));
+  });
   it('requires separate access before opening each protected attendance tab', async () => {
     sessionStorage.clear();
     renderPage();

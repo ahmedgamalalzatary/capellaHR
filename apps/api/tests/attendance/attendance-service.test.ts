@@ -48,6 +48,7 @@ const session = {
 };
 
 const makeRepository = (): AttendanceRepository => ({
+  manualSession: vi.fn(async () => ({ kind: 'success' as const, session })),
   findIdentityByCode: vi.fn(async () => identity),
   recordDeniedAttempt: vi.fn(async (attempt: DeniedAttendanceInput) => ({
     id: 5,

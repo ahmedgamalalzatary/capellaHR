@@ -13,6 +13,7 @@ import { Button, Input, Modal, cn } from '@capella/ui';
 
 import { DraftNotice } from '@/components/feedback/draft-notice';
 import { Textarea } from '@/components/form/textarea';
+import { useSession } from '@/features/auth';
 import { useFormDraft } from '@/lib/form-draft';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { createUuid } from '@/lib/uuid';
@@ -102,6 +103,7 @@ export function InvoiceReversalControls({
   /** Lets an outer dialog refuse to close while a refund or void is being saved. */
   onPendingChange?(pending: boolean): void;
 }) {
+  const isAdmin = useSession().data?.actor.type === 'admin';
   const [mode, setMode] = useState<'refund' | 'void' | null>(null);
   const [reason, setReason] = useState('');
   const [quantities, setQuantities] = useState<Record<number, string>>({});
@@ -273,7 +275,8 @@ export function InvoiceReversalControls({
     voidMutation.reset();
   }
   function openMode(nextMode: 'refund' | 'void') {
-    if (reversalPending || (nextMode === 'refund' && !showRefundAction)) return;
+    if (reversalPending || (nextMode === 'refund' && !showRefundAction)
+      || (nextMode === 'void' && !isAdmin)) return;
     close();
     setRefunded(null);
     setPrintPrompt(false);
@@ -333,19 +336,20 @@ export function InvoiceReversalControls({
             استرداد
           </Button>
         ) : null}
-        {invoice.eligibility.canVoid ? (
+        {invoice.eligibility.canVoid && isAdmin ? (
           <Button variant="danger" disabled={reversalPending} onClick={() => openMode('void')}>
             إلغاء الفاتورة
           </Button>
         ) : null}
       </div>
 
-      {draft.pending && (showRefundAction || draft.pending.mode === 'void') ? (
+      {draft.pending && (draft.pending.mode === 'void' ? isAdmin : showRefundAction) ? (
         <DraftNotice
           label="لديك مرتجع غير مكتمل لهذه الفاتورة."
           onRestore={() => {
             const stored = draft.restore();
-            if (!stored || (stored.mode === 'refund' && !showRefundAction)) return;
+            if (!stored || (stored.mode === 'refund' && !showRefundAction)
+              || (stored.mode === 'void' && !isAdmin)) return;
             setMode(stored.mode);
             setQuantities(stored.quantities);
             setReason(stored.reason);
@@ -519,7 +523,7 @@ export function InvoiceReversalControls({
         </ReversalFormShell>
       ) : null}
 
-      {mode === 'void' ? (
+      {mode === 'void' && isAdmin ? (
         <ReversalFormShell
           title="إلغاء الفاتورة بالكامل"
           embedded={embedForms}

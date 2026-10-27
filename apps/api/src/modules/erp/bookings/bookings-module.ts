@@ -7,9 +7,9 @@ import { createBookingService } from './booking-service.js';
 
 export const createErpBookingsModule = (
   database: ReturnType<typeof createDatabase>,
-  capabilities: { audit: ErpAuditCapability; branches: ErpBranchCapability },
+  capabilities: { audit: ErpAuditCapability; branches: ErpBranchCapability; reverseInvoice?: NonNullable<Parameters<typeof createDrizzleBookingRepository>[2]>['reverseInvoice'] },
 ) => {
-  const repository = createDrizzleBookingRepository(database, capabilities.audit);
+  const repository = createDrizzleBookingRepository(database, capabilities.audit, capabilities.reverseInvoice ? { reverseInvoice: capabilities.reverseInvoice } : undefined);
   return {
     repository,
     conversion: { applySale: repository.applySale.bind(repository) },

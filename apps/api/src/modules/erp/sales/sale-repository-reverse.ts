@@ -62,24 +62,25 @@ export const createSaleRepositoryReversals = (
   { projectCommission, existingReversal }: Support,
 ): Pick<SaleRepository, 'reverse'> => ({
     async reverse(operation: ReverseInvoiceOperation) {
-      const existing = await existingReversal(operation);
+      const executor = operation.transaction ?? database;
+      const existing = await existingReversal(operation, executor);
       if (existing) return existing;
       // Read outside the transaction: a completed invoice's lines never change,
       // and a read inside would either freeze this transaction's snapshot before
       // the payroll lock or add line locks that deadlock concurrent reversals.
-      const invoiceEmployeeIds = [...new Set((await database
+      const invoiceEmployeeIds = [...new Set((await executor
         .select({ employeeId: invoiceLines.employeeId }).from(invoiceLines)
         .where(and(
           eq(invoiceLines.invoiceId, operation.invoiceId),
           eq(invoiceLines.branchId, operation.input.branchId),
           isNotNull(invoiceLines.employeeId),
         ))).map(({ employeeId }) => employeeId!))];
-      const reassignedEmployeeIds = (await database.select({
+      const reassignedEmployeeIds = (await executor.select({
         employeeId: invoiceLineReassignments.toEmployeeId,
       }).from(invoiceLineReassignments).where(
         eq(invoiceLineReassignments.invoiceId, operation.invoiceId),
       )).map(({ employeeId }) => employeeId);
-      const queueReassignedEmployeeIds = (await database.select({
+      const queueReassignedEmployeeIds = (await executor.select({
         employeeId: serviceQueueReassignments.toEmployeeId,
       }).from(serviceQueueReassignments).innerJoin(serviceQueueEntries,
         eq(serviceQueueEntries.id, serviceQueueReassignments.serviceQueueEntryId))
@@ -89,7 +90,7 @@ export const createSaleRepositoryReversals = (
         ...invoiceEmployeeIds, ...reassignedEmployeeIds, ...queueReassignedEmployeeIds,
       ])].sort((left, right) => left - right);
       try {
-        return await database.transaction(async (transaction) => {
+        const reverseInTransaction = async (transaction: NonNullable<ReverseInvoiceOperation['transaction']>) => {
           const original = (await transaction.select().from(invoices).where(and(
             eq(invoices.id, operation.invoiceId),
             eq(invoices.branchId, operation.input.branchId),
@@ -540,8 +541,10 @@ const beforeState = await hydrateInvoice(transaction, original.id);
             createdAt: operation.reversedAt,
           });
           return afterState;
-        });
+        };
+        return operation.transaction ? await reverseInTransaction(operation.transaction) : await database.transaction(reverseInTransaction);
       } catch (error) {
+        if (operation.transaction) throw error;
         if (!isDuplicateEntryError(error)) throw error;
         const existingAfterRace = await existingReversal(operation);
         if (!existingAfterRace) throw new SaleError('IDEMPOTENCY_CONFLICT');

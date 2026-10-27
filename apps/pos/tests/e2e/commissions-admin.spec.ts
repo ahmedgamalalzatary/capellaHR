@@ -52,7 +52,8 @@ test('Admin traces monthly commission totals to invoice lines and reversals', as
   });
 
   await page.goto('/commissions');
-  await page.getByLabel('شهر العمولة').fill('2026-08');
+  await page.getByLabel('شهر العمولة').click();
+  await page.getByRole('dialog', { name: 'شهر العمولة' }).getByRole('button', { name: 'أغسطس' }).click();
   await page.getByLabel('الفرع').selectOption('2');
   await expect(page.getByText('سارة أحمد')).toBeVisible();
   await expect(page.getByText('250.00 ج.م')).toBeVisible();
@@ -62,7 +63,7 @@ test('Admin traces monthly commission totals to invoice lines and reversals', as
   await expect(page.getByText('#41')).toBeVisible();
 });
 
-test('Cashier cannot open commission reporting', async ({ page }) => {
+test('Cashier reads commissions for their own branch without the admin branch filter', async ({ page }) => {
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace('/api/v1', '');
@@ -71,10 +72,17 @@ test('Cashier cannot open commission reporting', async ({ page }) => {
       actor: { type: 'cashier', accountId: 8 },
     });
     if (path === '/erp/cashier-sessions/current') return json(route, null);
+    if (path === '/erp/assignable-employees') return json(route, []);
+    if (path === '/erp/commissions') return json(route, [], {
+      page: 1, pageSize: 20, total: 0, totalPages: 0,
+    });
     return route.fulfill({ status: 404, headers, body: '{}' });
   });
 
   await page.goto('/commissions');
-  await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'العمولات' })).toHaveCount(0);
+  // Commissions are visible to a cashier for their own branch; only the branch
+  // picker stays admin-only.
+  await expect(page.getByRole('heading', { name: 'العمولات' })).toBeVisible();
+  await expect(page.getByLabel('الفرع')).toHaveCount(0);
+  await expect(page.getByText('هذا القسم مخصص للمدير فقط.')).toHaveCount(0);
 });

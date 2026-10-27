@@ -66,6 +66,7 @@ export const createAttendanceSessionsRepository = (
   | 'checkIn'
   | 'checkOut'
   | 'manualCheckIn'
+  | 'manualSession'
   | 'manualCheckOut'
   | 'correctAutomaticTimeout'
   | 'correctSessionTimes'
@@ -248,6 +249,19 @@ export const createAttendanceSessionsRepository = (
           .for('update').limit(1))[0];
         if (!open) return { kind: 'no_open_session' };
         return writer.closeSession(transaction, open, input.occurredAt, verified.snapshot, false);
+      });
+    },
+
+    manualSession(input) {
+      return database.transaction(async (transaction) => {
+        const employee = await lockEmployee(transaction, input.employeeId);
+        if (!employee) return { kind: 'employee_not_found' };
+        return writer.createCheckIn(transaction, {
+          employeeId: input.employeeId, occurredAt: input.checkInAt, checkOutAt: input.checkOutAt,
+          snapshot: { source: 'admin_manual', deviceId: null, latitude: null, longitude: null,
+            gpsAccuracyMeters: null, distanceMeters: null, branchLatitude: employee.branchLatitude,
+            branchLongitude: employee.branchLongitude, branchRadiusMeters: employee.branchRadiusMeters, approvedDeniedAttemptId: null },
+        });
       });
     },
 

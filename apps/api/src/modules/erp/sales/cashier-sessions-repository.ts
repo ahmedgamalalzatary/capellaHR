@@ -258,9 +258,9 @@ const bookingMoneyFor = async (
     method: erpBookingPayments.method,
     amount: erpBookingPayments.amount,
     at: erpBookingPayments.createdAt,
-    clientId: clients.id,
-    clientName: clients.fullName,
-    clientPhone: clients.phone,
+    clientId: sql<number>`coalesce(${erpBookingPayments.clientIdSnapshot}, ${clients.id})`,
+    clientName: sql<string | null>`case when ${erpBookingPayments.clientIdSnapshot} is null then ${clients.fullName} else ${erpBookingPayments.clientNameSnapshot} end`,
+    clientPhone: sql<string | null>`case when ${erpBookingPayments.clientIdSnapshot} is null then ${clients.phone} else ${erpBookingPayments.clientPhoneSnapshot} end`,
   }).from(erpBookingPayments)
     .innerJoin(erpBookings, eq(erpBookings.id, erpBookingPayments.bookingId))
     .innerJoin(clients, eq(clients.id, erpBookings.clientId))

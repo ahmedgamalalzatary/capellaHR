@@ -7,6 +7,8 @@ import { BookingError } from '../../src/modules/erp/bookings/booking-service.js'
 
 const actor = { type: 'cashier', accountId: 2, branchId: 1 };
 const service = () => ({
+  quoteCancellation: vi.fn().mockResolvedValue({ amount: '0.00', serviceIds: [3] }),
+  update: vi.fn().mockResolvedValue({ id: 9 }),
   create: vi.fn().mockResolvedValue({ id: 9 }),
   get: vi.fn().mockResolvedValue({ id: 9 }),
   listDay: vi.fn().mockResolvedValue([{ id: 9 }]),
@@ -29,6 +31,12 @@ const app = (bookingService = service()) => {
 };
 
 describe('ERP booking HTTP API', () => {
+  it('quotes the server-computed cancellation refund before confirming', async () => {
+    const test = app();
+    const response = await request(test.app).post('/api/v1/erp/bookings/9/cancellation-quote').send({ serviceIds: [3] });
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({ amount: '0.00', serviceIds: [3] });
+  });
   it('creates and lists a diary day', async () => {
     const test = app();
     expect((await request(test.app).post('/api/v1/erp/bookings').send({

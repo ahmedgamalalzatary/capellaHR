@@ -1,5 +1,8 @@
 import type { BookingDto, PaymentMethod } from '@capella/contracts';
 
+export const canCancelBookingService = (service: Pick<BookingDto['services'][number], 'status' | 'queueStatus'>) => service.status === 'pending'
+  || (service.status === 'sold' && service.queueStatus !== null && !['completed', 'canceled'].includes(service.queueStatus));
+
 export const bookingPaymentMethods: Array<{ method: PaymentMethod; label: string }> = [
   { method: 'cash', label: 'نقدي' },
   { method: 'visa', label: 'فيزا' },

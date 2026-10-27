@@ -33,6 +33,7 @@ import {
   listAttendanceDeniedAttempts,
   listAttendanceSessions,
   manualAttendance,
+  manualAttendanceSession,
   type AttendanceDeniedAttempt,
   type AttendanceDeniedFilters,
   type AttendanceEventType,
@@ -318,10 +319,22 @@ function ManualSection() {
   const [eventType, setEventType] = useState<AttendanceEventType>('check_in');
   const [employeeId, setEmployeeId] = useState('');
   const [occurredAt, setOccurredAt] = useState('');
+  const [completeSession, setCompleteSession] = useState(false);
+  const [checkOutAt, setCheckOutAt] = useState('');
+  const historical = eventType === 'check_in' && completeSession;
   const [success, setSuccess] = useState<string | null>(null);
   const employees = useQuery({ queryKey: ['employees', 'attendance-manual-options'], queryFn: () => fetchAllPages((page) => listEmployees({ page })), retry: false });
   const mutation = useMutation({
-    mutationFn: () => { const iso = cairoLocalDateTimeToIso(occurredAt); if (!iso || !employeeId) throw new Error('FORM_INVALID'); return manualAttendance(eventType, { employeeId: Number(employeeId), occurredAt: iso }); },
+    mutationFn: () => {
+      const iso = cairoLocalDateTimeToIso(occurredAt);
+      if (!iso || !employeeId) throw new Error('FORM_INVALID');
+      if (historical) {
+        const end = cairoLocalDateTimeToIso(checkOutAt);
+        if (!end || Date.parse(end) <= Date.parse(iso) || Date.parse(end) - Date.parse(iso) > 16 * 60 * 60_000) throw new Error('FORM_INVALID');
+        return manualAttendanceSession({ employeeId: Number(employeeId), checkInAt: iso, checkOutAt: end });
+      }
+      return manualAttendance(eventType, { employeeId: Number(employeeId), occurredAt: iso });
+    },
     onSuccess: async (value) => {
       setSuccess(`${eventType === 'check_in' ? 'تم تسجيل الحضور' : 'تم تسجيل الانصراف'} للموظف ${value.employeeName}`);
       notifySuccess('تم التسجيل اليدوي.');
@@ -332,11 +345,18 @@ function ManualSection() {
   return <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
     <Card className="p-5"><div className="mb-5 flex gap-2" role="tablist" aria-label="نوع التسجيل اليدوي"><Button id="manual-tab-check-in" role="tab" aria-selected={eventType === 'check_in'} aria-controls="manual-event-form" tabIndex={eventType === 'check_in' ? 0 : -1} variant={eventType === 'check_in' ? 'primary' : 'secondary'} onKeyDown={(event) => handleRtlTabKey(event, 0, attendanceEventTypes, (next) => { setEventType(next); setSuccess(null); })} onClick={() => { setEventType('check_in'); setSuccess(null); }}><UserCheck className="size-4" aria-hidden />تسجيل حضور</Button><Button id="manual-tab-check-out" role="tab" aria-selected={eventType === 'check_out'} aria-controls="manual-event-form" tabIndex={eventType === 'check_out' ? 0 : -1} variant={eventType === 'check_out' ? 'primary' : 'secondary'} onKeyDown={(event) => handleRtlTabKey(event, 1, attendanceEventTypes, (next) => { setEventType(next); setSuccess(null); })} onClick={() => { setEventType('check_out'); setSuccess(null); }}><UserRoundX className="size-4" aria-hidden />تسجيل انصراف</Button></div>
       <form id="manual-event-form" role="tabpanel" aria-labelledby={eventType === 'check_in' ? 'manual-tab-check-in' : 'manual-tab-check-out'} className="space-y-4" onSubmit={(event) => { event.preventDefault(); setSuccess(null); mutation.mutate(); }}>
+        <fieldset disabled={mutation.isPending} className="space-y-4">
+        {eventType === 'check_in' ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={completeSession} onChange={(event) => setCompleteSession(event.target.checked)} />تسجيل جلسة سابقة مكتملة</label> : null}
         <Field label="الموظف" htmlFor="manual-employee" required>{employees.isError ? <div role="alert" className="text-[13px] text-danger">تعذر تحميل الموظفين. <button type="button" className="underline" onClick={() => void employees.refetch()}>إعادة المحاولة</button></div> : <select id="manual-employee" aria-label="الموظف" required value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} className="h-10 w-full rounded-control border border-line bg-paper px-3 text-sm"><option value="">اختر الموظف</option>{(employees.data ?? []).map((employee) => <option key={employee.id} value={employee.id}>{employee.employeeCode} — {employee.fullName}</option>)}</select>}</Field>
         <Field label="وقت الحدث بتوقيت القاهرة" htmlFor="manual-time" required><Input id="manual-time" aria-label="وقت الحدث بتوقيت القاهرة" type="datetime-local" required value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} /></Field>
+        {historical ? <>
+          <Field label="وقت الانصراف بتوقيت القاهرة" htmlFor="manual-session-end" required><Input id="manual-session-end" aria-label="وقت الانصراف بتوقيت القاهرة" type="datetime-local" required value={checkOutAt} onChange={(event) => setCheckOutAt(event.target.value)} /></Field>
+          <p className="text-sm text-muted">وقت الحدث هو وقت الحضور السابق. تُحفظ الجلسة مكتملة دون تغيير حضور الموظف المفتوح الآن.</p>
+        </> : null}
         {mutation.error ? <p role="alert" className="text-[13px] text-danger">{mutation.error instanceof ApiError ? mutation.error.message : 'اختر الموظف وأدخل وقتًا صالحًا بتوقيت القاهرة.'}</p> : null}
         {success ? <p role="status" className="rounded-control bg-success-soft px-3 py-2 text-sm text-success">{success}</p> : null}
-        <Button type="submit" disabled={!employeeId || !occurredAt || mutation.isPending}>{eventType === 'check_in' ? 'تسجيل حضور يدوي' : 'تسجيل انصراف يدوي'}</Button>
+        <Button type="submit" disabled={!employeeId || !occurredAt || (historical && !checkOutAt) || mutation.isPending}>{historical ? 'حفظ الجلسة السابقة' : eventType === 'check_in' ? 'تسجيل حضور يدوي' : 'تسجيل انصراف يدوي'}</Button>
+        </fieldset>
       </form>
     </Card>
     <aside className="rounded-card border border-line bg-ink p-5 text-paper"><Clock3 className="mb-5 size-6" aria-hidden /><h2 className="text-lg font-semibold">استثناء إداري موثّق</h2><p className="mt-2 text-sm leading-7 text-paper/70">التسجيل اليدوي يتجاوز تحقق الموظف والجهاز والموقع، لكنه يخضع لكل قواعد الجلسات والتوقيت ويُحفظ في سجل التدقيق.</p></aside>

@@ -12,6 +12,20 @@ import {
 } from '../../../../src/modules/erp/bookings/index.js';
 
 describe('booking contracts', () => {
+  it('accepts an initial payment with a creation reference', () => {
+    expect(createBookingSchema.safeParse({
+      clientId: 11, scheduledAt: '2026-11-25T10:30:00+02:00', services: [{ serviceId: 3 }],
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1700',
+      initialPayment: { cashierSessionId: 13, method: 'cash', amount: '100.00' },
+    }).success).toBe(true);
+  });
+
+  it('requires a creation reference when taking an initial payment', () => {
+    expect(createBookingSchema.safeParse({
+      clientId: 11, scheduledAt: '2026-11-25T10:30:00+02:00', services: [{ serviceId: 3 }],
+      initialPayment: { cashierSessionId: 13, method: 'cash', amount: '100.00' },
+    }).success).toBe(false);
+  });
   it('accepts a staff booking with several services and optional preferences', () => {
     expect(createBookingSchema.parse({
       branchId: 2,

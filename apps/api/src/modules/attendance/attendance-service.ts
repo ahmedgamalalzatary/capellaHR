@@ -1,4 +1,5 @@
 import type {
+  ManualAttendanceSession,
   AttendanceEventType,
   EmployeeAttendanceEvent,
   ListAttendanceDeniedAttemptsQuery,
@@ -133,6 +134,7 @@ export type DeniedAttendanceInput = Omit<AttendanceDeniedAttempt,
   'id' | 'approvedAt' | 'approvedSessionId' | 'dismissedAt' | 'createdAt'>;
 
 export interface AttendanceRepository {
+  manualSession(input: ManualAttendanceSession): Promise<AttendanceMutationResult>;
   findIdentityByCode(code: number): Promise<AttendanceIdentity | null>;
   recordDeniedAttempt(input: DeniedAttendanceInput): Promise<AttendanceDeniedAttempt>;
   checkIn(input: EmployeeAttendanceMutation): Promise<AttendanceMutationResult>;
@@ -423,6 +425,11 @@ export const createAttendanceService = (
   return {
     checkIn: (input: EmployeeAttendanceSubmission) => employeeEvent('check_in', input),
     checkOut: (input: EmployeeAttendanceSubmission) => employeeEvent('check_out', input),
+    async manualSession(input: ManualAttendanceSession) {
+      ensureNotFuture(input.checkInAt);
+      ensureNotFuture(input.checkOutAt);
+      return mutationValue(await repository.manualSession(input));
+    },
     async manualCheckIn(input: ManualAttendanceEvent) {
       ensureNotFuture(input.occurredAt);
       return mutationValue(await repository.manualCheckIn(input));

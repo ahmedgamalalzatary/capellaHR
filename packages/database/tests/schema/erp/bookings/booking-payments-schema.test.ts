@@ -7,7 +7,8 @@ describe('ERP booking payments schema', () => {
   it('is a booking money ledger with payments and cause-tagged refunds', () => {
     const config = getTableConfig(erpBookingPayments);
     expect(config.columns.map((column) => column.name)).toEqual([
-      'id', 'booking_id', 'branch_id', 'kind', 'method', 'amount', 'refund_cause',
+      'id', 'booking_id', 'client_id_snapshot', 'client_name_snapshot', 'client_phone_snapshot',
+      'branch_id', 'kind', 'method', 'amount', 'refund_cause',
       'cashier_session_id', 'acting_account_id', 'operation_reference', 'created_at',
     ]);
 

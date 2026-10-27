@@ -181,6 +181,37 @@ describe('MySQL-backed ERP booking payments', () => {
     return record!.money;
   };
 
+  it('creates a booking and initial payment together and replays the creation', async () => {
+    const input = {
+      branchId, clientId, actingAccountId: accountId, actorRole: 'admin' as const,
+      scheduledAt: new Date('2026-11-25T07:30:00Z'), note: null,
+      services: [{ serviceId }], createdAt: at,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1700',
+      initialPayment: { cashierSessionId: openSessionId, method: 'cash' as const, amount: '200.00' },
+    };
+    const first = await repository.create(input);
+    expect(first.money).toMatchObject({ paid: '200.00', held: '200.00', maxPayable: '0.00' });
+    expect((await repository.create(input)).id).toBe(first.id);
+    expect(await database.select().from(erpBookingPayments).where(eq(erpBookingPayments.bookingId, first.id))).toHaveLength(1);
+    await expect(repository.create({ ...input, initialPayment: { ...input.initialPayment, amount: '100.00' } }))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+  });
+
+  it('leaves no booking when its initial payment exceeds the value or its shift is closed', async () => {
+    const before = await database.select({ id: erpBookings.id }).from(erpBookings);
+    const input = {
+      branchId, clientId, actingAccountId: accountId, actorRole: 'admin' as const,
+      scheduledAt: new Date('2026-11-25T07:30:00Z'), note: null,
+      services: [{ serviceId }], createdAt: at,
+      operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1701',
+      initialPayment: { cashierSessionId: openSessionId, method: 'cash' as const, amount: '201.00' },
+    };
+    await expect(repository.create(input)).rejects.toMatchObject({ code: 'BOOKING_PAYMENT_EXCEEDS_CAP' });
+    await expect(repository.create({ ...input, initialPayment: { ...input.initialPayment, cashierSessionId: closedSessionId, amount: '100.00' } }))
+      .rejects.toMatchObject({ code: 'BOOKING_CASHIER_SESSION_NOT_OPEN' });
+    expect(await database.select({ id: erpBookings.id }).from(erpBookings)).toEqual(before);
+  });
+
   it('computes the money summary from the ledger and current prices, ignoring open-price services', async () => {
     const booking = await repository.create({
       branchId, clientId, actingAccountId: accountId,
@@ -323,6 +354,78 @@ describe('MySQL-backed ERP booking leftovers', () => {
     }
     return booking.id;
   };
+
+  it('edits every future booking field and refunds the original client before changing them', async () => {
+    const bookingId = await arrangeBooking([serviceId], '150.00', false);
+    const otherClientId = Number((await database.insert(clients).values({ branchId, fullName: 'Other client', phone: '01000000004', createdAt: at, updatedAt: at }))[0].insertId);
+    const updated = await repository.updateBooking?.({
+      bookingId, branchId, actorAccountId: accountId, actorRole: 'admin', at,
+      clientId: otherClientId, scheduledAt: '2026-09-02T08:00:00.000Z',
+      services: [{ serviceId: cheapServiceId, preferredEmployeeId: employeeId }], note: 'Updated note',
+      refund: { cashierSessionId: leftoverSessionId, payments: [{ method: 'cash', amount: '150.00' }], operationReference: crypto.randomUUID() },
+    });
+    expect(updated).toMatchObject({ client: { id: otherClientId }, note: 'Updated note', services: [{ serviceId: cheapServiceId }], money: { held: '0.00', refunded: '150.00' } });
+    const ledger = await database.select().from(erpBookingPayments).where(eq(erpBookingPayments.bookingId, bookingId));
+    expect(ledger.map((row) => row.clientIdSnapshot)).toEqual([clientId, clientId]);
+  });
+
+  it('keeps a cancelled service in the booking history after editing the waiting services', async () => {
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '0.00', false);
+    await repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    const updated = await repository.updateBooking?.({
+      bookingId, branchId, actorAccountId: accountId, actorRole: 'admin', at,
+      clientId, scheduledAt: '2026-09-02T08:00:00.000Z',
+      services: [{ serviceId: cheapServiceId }], note: 'Edited after a cancellation',
+    });
+    expect(updated.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({ serviceId, status: 'cancelled' }),
+      expect.objectContaining({ serviceId: cheapServiceId, status: 'pending' }),
+    ]));
+    const stored = await database.select().from(erpBookingServices)
+      .where(eq(erpBookingServices.bookingId, bookingId));
+    expect(stored.find((row) => row.serviceId === serviceId)?.status).toBe('cancelled');
+  });
+
+  it('revives a cancelled service when later editing the booking re-adds it', async () => {
+    const bookingId = await arrangeBooking([serviceId, cheapServiceId], '0.00', false);
+    await repository.cancelServices({
+      bookingId, branchId, serviceIds: [serviceId],
+      actorAccountId: accountId, actorRole: 'admin', at,
+    });
+    const updated = await repository.updateBooking?.({
+      bookingId, branchId, actorAccountId: accountId, actorRole: 'admin', at,
+      clientId, scheduledAt: '2026-09-02T08:00:00.000Z',
+      services: [{ serviceId, preferredEmployeeId: employeeId }, { serviceId: cheapServiceId }],
+      note: 'Re-added the cancelled service',
+    });
+    expect(updated.services).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serviceId, status: 'pending', preferredEmployee: expect.objectContaining({ id: employeeId }),
+      }),
+      expect.objectContaining({ serviceId: cheapServiceId, status: 'pending' }),
+    ]));
+  });
+
+  it('blocks removing past bookings and moving them to or from a past time', async () => {
+    const bookingId = await arrangeBooking([serviceId], '0.00', false);
+    const afterAppointment = new Date('2026-09-01T07:30:00.000Z');
+    await expect(repository.remove(branchId, bookingId, afterAppointment)).resolves.toBeNull();
+    await expect(repository.reschedule({ bookingId, branchId, scheduledAt: new Date('2026-09-03T08:00:00Z'), at: afterAppointment })).resolves.toBeNull();
+    const futureId = await arrangeBooking([serviceId], '0.00', false);
+    await expect(repository.reschedule({ bookingId: futureId, branchId, scheduledAt: new Date('2026-08-23T08:00:00Z'), at })).resolves.toBeNull();
+  });
+
+  it('rejects a cancellation retry naming a different refund shift', async () => {
+    const bookingId = await arrangeBooking([serviceId], '150.00', false);
+    const input = { bookingId, branchId, serviceIds: [serviceId], actorAccountId: accountId, actorRole: 'admin' as const, at,
+      refund: { cashierSessionId: leftoverSessionId, payments: [{ method: 'cash' as const, amount: '150.00' }], operationReference: crypto.randomUUID() } };
+    await repository.cancelServices(input);
+    await expect(repository.cancelServices({ ...input, refund: { ...input.refund, cashierSessionId: leftoverSessionId + 9999 } }))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+  });
 
   it('cancels pending services and refunds the exact server-computed excess', async () => {
     const bookingId = await arrangeBooking([serviceId, cheapServiceId], '150.00');
@@ -599,13 +702,13 @@ describe('MySQL-backed ERP booking leftovers', () => {
 
   it('refuses to delete a booking with money attached but allows a clean one', async () => {
     const withMoney = await arrangeBooking([serviceId], '50.00');
-    await expect(repository.remove(branchId, withMoney)).resolves.toBeNull();
+    await expect(repository.remove(branchId, withMoney, at)).resolves.toBeNull();
     const cleanId = await arrangeBooking([cheapServiceId], '0.00');
     await repository.cancelServices({
       bookingId: cleanId, branchId, serviceIds: [cheapServiceId],
       actorAccountId: accountId, actorRole: 'admin', at,
     });
-    await expect(repository.remove(branchId, cleanId)).resolves.toMatchObject({ id: cleanId });
+    await expect(repository.remove(branchId, cleanId, at)).resolves.toMatchObject({ id: cleanId });
   });
 
   it('splits a refund across two methods without overflowing the reference', async () => {

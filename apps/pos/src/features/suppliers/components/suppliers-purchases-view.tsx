@@ -377,6 +377,7 @@ export function SuppliersPurchasesView() {
           ) : null}
 
           <PurchaseHistorySection
+            printFilters={historyParams}
             historySupplier={historySupplier}
             setHistorySupplier={setHistorySupplier}
             historyProduct={historyProduct}

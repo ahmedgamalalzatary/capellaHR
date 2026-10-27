@@ -109,6 +109,8 @@ test('prints the Alpha Soft half layout with two labels and readable text', asyn
       expect(text.top, 'digits have visible clearance below the barcode bars').toBeGreaterThan(layout.barsBottom);
     }
     expect(text.top, `${text.value}: letters fit below the top of their row`).toBeGreaterThanOrEqual(text.rowTop - 0.25);
-    expect(text.bottom, `${text.value}: letters fit above the bottom of their row`).toBeLessThanOrEqual(text.rowBottom + 0.25);
+    // Chrome rounds glyph ascent/descent to fractional CSS pixels; allow half a
+    // pixel so sub-pixel descent does not read as overflowing the row.
+    expect(text.bottom, `${text.value}: letters fit above the bottom of their row`).toBeLessThanOrEqual(text.rowBottom + 0.5);
   }
 });

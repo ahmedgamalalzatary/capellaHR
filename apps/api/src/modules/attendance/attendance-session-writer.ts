@@ -5,7 +5,7 @@ import {
   devices,
   employeeEmploymentPeriods,
 } from '@capella/database/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt, gt, sql } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import { employmentDateAccruesAbsence, employmentDateIsActive } from '../employees/employment-period.js';
@@ -27,6 +27,7 @@ import {
 import { createAttendanceSessionCloser } from './attendance-session-close.js';
 import {
   calculateDistanceMeters,
+  calculateAttendanceMinutes,
   attendanceLocationIsWithinRange,
   type AttendanceMutationResult,
   type EmployeeAttendanceMutation,
@@ -75,6 +76,7 @@ export const createAttendanceSessionWriter = (options: {
     input: {
       employeeId: number;
       occurredAt: Date;
+      checkOutAt?: Date;
       expectedCredentialVersion?: number;
       verifiedDevice?: { id: number; assignmentType: 'employee' | 'branch'; assignmentId: number };
       snapshot: EventSnapshot;
@@ -91,6 +93,10 @@ export const createAttendanceSessionWriter = (options: {
       || (employee.deletedAt && input.occurredAt.getTime() > employee.deletedAt.getTime())) {
       return { kind: 'invalid_time' };
     }
+    if (input.checkOutAt && (input.snapshot.source !== 'admin_manual'
+      || input.checkOutAt <= input.occurredAt || input.checkOutAt > now()
+      || input.checkOutAt.getTime() - input.occurredAt.getTime() > 16 * 60 * 60_000
+      || (employee.deletedAt !== null && input.checkOutAt > employee.deletedAt))) return { kind: 'invalid_time' };
     if (input.verifiedDevice) {
       const assignmentFilter = input.verifiedDevice.assignmentType === 'employee'
         ? and(
@@ -161,7 +167,15 @@ export const createAttendanceSessionWriter = (options: {
     const open = (await transaction.select({ id: attendanceSessions.id })
       .from(attendanceSessions).where(eq(attendanceSessions.openEmployeeId, employee.id))
       .for('update').limit(1))[0];
-    if (open) return { kind: 'open_session_exists' };
+    if (open && !input.checkOutAt) return { kind: 'open_session_exists' };
+    if (input.checkOutAt) {
+      const overlap = await transaction.select({ id: attendanceSessions.id }).from(attendanceSessions).where(and(
+        eq(attendanceSessions.employeeId, employee.id),
+        lt(attendanceSessions.checkInAt, input.checkOutAt),
+        gt(sql`coalesce(${attendanceSessions.checkOutAt}, timestampadd(hour, 16, ${attendanceSessions.checkInAt}))`, input.occurredAt),
+      )).limit(1);
+      if (overlap.length) return { kind: 'overlap' };
+    }
 
     const createdAt = now();
     const requiredMinutes = daily?.status === 'absence'
@@ -173,10 +187,11 @@ export const createAttendanceSessionWriter = (options: {
       attendanceDate,
       requiredMinutes,
       checkInAt: input.occurredAt,
-      checkOutAt: null,
+      checkOutAt: input.checkOutAt ?? null,
       workedMinutes: null,
       overtimeMinutes: null,
       shortageMinutes: null,
+      ...(input.checkOutAt ? calculateAttendanceMinutes(input.occurredAt, input.checkOutAt, requiredMinutes) : {}),
       automaticTimeoutAt: null,
       automaticTimeoutCorrectedAt: null,
       flagged: false,
@@ -191,6 +206,7 @@ export const createAttendanceSessionWriter = (options: {
       eventType: 'check_in',
       occurredAt: input.occurredAt,
     });
+    if (input.checkOutAt) await insertEvent(transaction, { ...input.snapshot, sessionId, employeeId: employee.id, eventType: 'check_out', occurredAt: input.checkOutAt });
     if (daily?.status === 'absence') {
       await transaction.update(attendanceDailyRecords).set({
         status: 'attendance_replaced',
@@ -229,7 +245,7 @@ export const createAttendanceSessionWriter = (options: {
     await writeAudit(transaction, {
       ...(auditActor ? { actor: auditActor } : {}),
       module: 'attendance',
-      action: input.snapshot.source === 'admin_manual'
+      action: input.checkOutAt ? 'manual_session' : input.snapshot.source === 'admin_manual'
         ? 'manual_check_in' : input.snapshot.source === 'admin_approved_denied'
           ? 'approve_denied_check_in' : 'employee_check_in',
       entityType: 'attendance_session',
@@ -239,6 +255,7 @@ export const createAttendanceSessionWriter = (options: {
       createdAt,
     });
 
+    if (input.checkOutAt) return { kind: 'success', session: created };
     const timeoutAt = new Date(input.occurredAt.getTime() + 16 * 60 * 60_000);
     if (timeoutAt.getTime() <= now().getTime()) {
       const timeout = await closeSession(transaction, created, timeoutAt, {

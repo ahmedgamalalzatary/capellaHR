@@ -7,6 +7,7 @@ import type {
   RescheduleBookingInput,
   UpdateBookingStatusInput,
   UpdateBookingServicePreferenceInput,
+  UpdateBookingInput,
 } from '@capella/contracts';
 
 import { api } from '@/lib/api/client';
@@ -32,6 +33,8 @@ export const getBooking = (id: number, branchId?: number) => (
 export const createBooking = (input: CreateBookingInput) => (
   api.post<BookingDto>('/erp/bookings', input)
 );
+export const updateBooking = (id: number, input: UpdateBookingInput) => api.patch<BookingDto>(`/erp/bookings/${id}`, input);
+export const quoteBookingCancellation = (id: number, input: { branchId?: number; serviceIds?: number[] }) => api.post<{ amount: string; serviceIds: number[] }>(`/erp/bookings/${id}/cancellation-quote`, input);
 export const updateBookingStatus = (
   id: number,
   input: UpdateBookingStatusInput,

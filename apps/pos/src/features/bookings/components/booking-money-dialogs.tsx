@@ -22,10 +22,11 @@ const isOwed = (amount: string) => amount !== '0.00';
  * How the money owed back leaves the drawer: all cash by default, split across
  * methods when the cashier wants. It must add up exactly to the amount owed.
  */
-export function RefundSplitFields({ amount, split, onChange }: {
+export function RefundSplitFields({ amount, split, onChange, disabled = false }: {
   amount: string;
   split: RefundSplit;
   onChange: (next: RefundSplit) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="space-y-2 rounded-control border border-warning/30 bg-warning-soft p-3">
@@ -36,6 +37,7 @@ export function RefundSplitFields({ amount, split, onChange }: {
             <Label htmlFor={`refund-${method}`}>{label}</Label>
             <Input
               id={`refund-${method}`}
+              disabled={disabled}
               aria-label={`رد ${label}`}
               inputMode="decimal"
               className="text-start"
@@ -90,7 +92,8 @@ export function BookingRefundConfirm({
   return (
     <Modal title={title} dismissOnBackdrop={!pending} onClose={onCancel}>
       <p className="text-[13px] text-muted">{description}</p>
-      {owed ? <RefundSplitFields amount={amount} split={split} onChange={setSplit} /> : null}
+      {owed ? <p className="text-sm font-medium">هل أعدت المال للعميل بالفعل؟ لن يُحفظ الإلغاء أو التعديل قبل تأكيد الرد.</p> : null}
+      {owed ? <RefundSplitFields amount={amount} split={split} onChange={setSplit} disabled={pending} /> : null}
       {owed && cashierSessionId === null ? (
         <p role="alert" className="text-[13px] text-danger">افتح وردية أولًا لرد المال من الدرج.</p>
       ) : null}
@@ -103,9 +106,9 @@ export function BookingRefundConfirm({
             ? { cashierSessionId, payments, operationReference }
             : undefined)}
         >
-          {confirmLabel}
+          {owed ? `نعم، أعدت المال — ${confirmLabel}` : confirmLabel}
         </Button>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={onCancel}>رجوع</Button>
+        <Button variant="ghost" size="sm" disabled={pending} onClick={onCancel}>{owed ? 'لا، لم أعد المال' : 'رجوع'}</Button>
       </div>
     </Modal>
   );

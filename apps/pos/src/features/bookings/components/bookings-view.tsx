@@ -32,12 +32,13 @@ import {
   listBookingEmployeeOptions,
   listBookings,
   recordBookingPayment,
+  quoteBookingCancellation,
   rescheduleBooking,
   updateBookingServicePreference,
   updateBookingStatus,
   type BookingDto,
 } from '../api/bookings-api';
-import { excessAfterCancelling } from '../booking-money';
+import { canCancelBookingService, excessAfterCancelling } from '../booking-money';
 import { isOverdueBooked, orderBookingsForDiary } from '../order-bookings';
 import { bookingQueryKeys } from '../query-keys';
 import { BookingForm } from './booking-form';
@@ -90,6 +91,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const actor = session.data?.actor;
   const [date, setDate] = useState(initialDate);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<BookingDto | null>(null);
   const { branchId: adminBranchId, setBranchId: setAdminBranchId } = useAdminBranch();
   const [error, setError] = useState<string>();
   const [confirming, setConfirming] = useState<Cancelling | null>(null);
@@ -214,6 +216,13 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   // refused refund shows the server's current amount.
   const confirmingBooking = confirming ? diary.data?.find(({ id }) => id === confirming.bookingId) : undefined;
   const payingBooking = paying === null ? undefined : diary.data?.find(({ id }) => id === paying);
+  const cancellationQuote = useQuery({
+    queryKey: [...bookingQueryKeys.all, 'cancellation-quote', branchId, confirming?.bookingId, confirming?.kind, confirming?.kind === 'service' ? confirming.serviceId : null],
+    queryFn: () => quoteBookingCancellation(confirming!.bookingId, { ...branchScope, ...(confirming?.kind === 'service' ? { serviceIds: [confirming.serviceId] } : {}) }),
+    enabled: confirming !== null && confirming.kind !== 'no_show',
+    retry: false,
+    staleTime: 0,
+  });
 
   if (session.isPending) return <LoadingState label="جارٍ تحميل دفتر المواعيد…" />;
   if (session.isError) return <EmptyState title="تعذر التحقق من الجلسة" action={<Button onClick={() => void session.refetch()}>إعادة المحاولة</Button>} />;
@@ -315,7 +324,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                       </Badge>
                       {service.invoiceNumber ? <span className="font-mono text-[12px] text-muted">{service.invoiceNumber}</span> : null}
                     </div>
-                    {isOpenBooking(booking) && service.status === 'pending' ? (
+                    {isOpenBooking(booking) && new Date(booking.scheduledAt).getTime() > now && service.status === 'pending' ? (
                       <div className="flex items-center gap-2">
                         <Select className="sm:w-48" aria-label={`الموظف المفضل لخدمة ${service.serviceName}`} value={service.preferredEmployee?.id ?? ''} disabled={preference.isPending} onChange={(event) => preference.mutate({ bookingId: booking.id, serviceId: service.serviceId, employeeId: event.target.value ? Number(event.target.value) : null })}>
                           <option value="">بدون موظف مفضل</option>
@@ -326,9 +335,10 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                           <X className="size-4" />
                         </Button>
                       </div>
-                    ) : service.preferredEmployee ? (
-                      <span className="text-[13px] text-muted">مع {service.preferredEmployee.name}</span>
-                    ) : null}
+                    ) : <div className="flex items-center gap-2">
+                      {service.preferredEmployee ? <span className="text-[13px] text-muted">مع {service.preferredEmployee.name}</span> : null}
+                      {canCancelBookingService(service) ? <Button variant="ghost" size="sm" aria-label={`إلغاء خدمة ${service.serviceName}`} disabled={cancelService.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'service', serviceId: service.serviceId })}><X className="size-4" /></Button> : null}
+                    </div>}
                   </li>
                   );
                 })}
@@ -376,13 +386,14 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                   >
                     <Wallet className="size-4" />دفع مقدم
                   </Button>
-                  <Button variant="ghost" disabled={reschedule.isPending} onClick={() => setMoving(booking.id)}>
+                  {new Date(booking.scheduledAt).getTime() > now ? <Button variant="ghost" disabled={reschedule.isPending} onClick={() => setMoving(booking.id)}>
                     <CalendarClock className="size-4" />تغيير الموعد
-                  </Button>
-                  <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'cancelled' })}>إلغاء</Button>
+                  </Button> : null}
                 </> : null}
+                {isOpenBooking(booking) && new Date(booking.scheduledAt).getTime() > now ? <Button variant="secondary" onClick={() => setEditing(booking)}>تعديل الحجز</Button> : null}
+                {booking.services.some(canCancelBookingService) ? <Button variant="ghost" disabled={status.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'cancelled' })}>إلغاء</Button> : null}
                 {(booking.status === 'booked' || booking.status === 'cancelled' || booking.status === 'no_show')
-                  && booking.money.paid === '0.00' && booking.services.every((service) => service.status !== 'sold') ? (
+                  && new Date(booking.scheduledAt).getTime() > now && booking.money.paid === '0.00' && booking.services.every((service) => service.status !== 'sold') ? (
                   <Button variant="ghost" className="ms-auto text-danger hover:bg-danger/10 hover:text-danger" disabled={removal.isPending} onClick={() => setDeleting(booking)}>
                     <Trash2 className="size-4" />حذف
                   </Button>
@@ -391,18 +402,22 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
             </div>
           </CardContent>
         </Card></div>)}</div>}
-    {creating ? <BookingForm {...(branchId === undefined ? {} : { branchId })} onClose={() => setCreating(false)} onSaved={async () => {
-      await cache.invalidateQueries({ queryKey: bookingQueryKeys.all });
+    {creating ? <BookingForm cashierSessionId={cashierSessionId} {...(branchId === undefined ? {} : { branchId })} onClose={() => setCreating(false)} onSaved={async () => {
+      await invalidateErpCaches(cache, 'booking-money');
     }} /> : null}
+    {editing ? <BookingForm key={editing.id} booking={editing} cashierSessionId={cashierSessionId} {...branchScope} onClose={() => setEditing(null)} onSaved={async () => { await invalidateErpCaches(cache, 'booking-money'); }} /> : null}
     {confirmingBooking && confirming ? (() => {
+      if (confirming.kind !== 'no_show' && !cancellationQuote.data) return <div role="status">
+        {cancellationQuote.isError ? <Notice tone="danger">تعذر حساب مبلغ الرد. <Button onClick={() => void cancellationQuote.refetch()}>إعادة المحاولة</Button><Button onClick={() => setConfirming(null)}>رجوع</Button></Notice> : <LoadingState label="جارٍ حساب مبلغ الرد…" />}
+      </div>;
       const pendingIds = confirmingBooking.services
         .filter((service) => service.status === 'pending').map((service) => service.serviceId);
       const serviceName = confirming.kind === 'service'
         ? confirmingBooking.services.find((service) => service.serviceId === confirming.serviceId)?.serviceName
         : undefined;
-      const amount = excessAfterCancelling(
+      const amount = confirming.kind !== 'no_show' ? cancellationQuote.data!.amount : excessAfterCancelling(
         confirmingBooking,
-        confirming.kind === 'service' ? [confirming.serviceId] : pendingIds,
+        pendingIds,
       );
       const close = () => setConfirming(null);
       return (
@@ -413,7 +428,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
           description={confirming.kind === 'service'
             ? 'ستُلغى هذه الخدمة من الحجز وتبقى بقية الخدمات.'
             : confirming.kind === 'cancelled'
-              ? 'سيُلغى هذا الموعد ولن يظهر كحجز قائم.'
+              ? 'ستُلغى الخدمات غير المكتملة فقط، وتظل الخدمات المكتملة محفوظة.'
               : 'سيُسجَّل أن العميل لم يحضر.'}
           confirmLabel={confirming.kind === 'service' ? 'تأكيد إلغاء الخدمة'
             : confirming.kind === 'cancelled' ? 'تأكيد الإلغاء' : 'تأكيد عدم الحضور'}

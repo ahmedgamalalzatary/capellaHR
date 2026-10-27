@@ -33,6 +33,17 @@ const validDraft = {
 };
 
 describe('ERP complete-sale contracts', () => {
+  it('recognizes booking checkout errors returned by the sale API', () => {
+    for (const code of ['BOOKING_NOT_PENDING', 'BOOKING_CREDIT_MISMATCH', 'BOOKING_REFUND_REQUIRED', 'BOOKING_REFUND_AMOUNT_MISMATCH']) {
+      expect(saleErrorSchema.safeParse({ code, message: 'Booking checkout failed' }).success).toBe(true);
+    }
+  });
+  it('accepts the invoice cancellation authorization error returned to the POS', () => {
+    expect(saleErrorSchema.safeParse({
+      code: 'VOID_ADMIN_REQUIRED', message: 'Only an admin can cancel an invoice.',
+    }).success).toBe(true);
+  });
+
   it('accepts new numeric and historical invoice numbers', () => {
     for (const number of ['000001', '1000000', 'INV-2026.08.03-14.35-17']) {
       expect(invoiceSchema.safeParse({ ...saleFixtures.completedInvoice, invoiceNumber: number }).success).toBe(true);

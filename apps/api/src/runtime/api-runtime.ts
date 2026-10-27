@@ -66,7 +66,8 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
 
   const branchModule = createBranchesModule(database);
   const auditModule = createAuditModule(database, { timeZone });
-  const erpBookingsModule = enabled('erp-bookings') ? createErpBookingsModule(database, {
+  const erpBookingsModule: ReturnType<typeof createErpBookingsModule> | undefined = enabled('erp-bookings') ? createErpBookingsModule(database, {
+    reverseInvoice: (transaction, operation) => required(salesModule, 'erp-sales').saleRepository.reverse({ ...operation, transaction }),
     audit: auditModule.erp,
     branches: branchModule.erp,
   }) : undefined;

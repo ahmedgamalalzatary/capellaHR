@@ -39,6 +39,7 @@ const makeAuth = (actorType: 'admin' | 'employee' | null = 'admin') => ({
   }),
 }) as unknown as AuthService;
 const makeService = (): AttendanceService => ({
+  manualSession: vi.fn(async () => session),
   checkIn: vi.fn(async () => session),
   checkOut: vi.fn(async () => ({ ...session, checkOutAt: now })),
   manualCheckIn: vi.fn(async () => session),
@@ -58,6 +59,16 @@ const makeService = (): AttendanceService => ({
 });
 
 describe('attendance HTTP API', () => {
+  it('accepts a complete manual session only from an admin and validates both times', async () => {
+    const service = makeService();
+    const payload = { employeeId: 7, checkInAt: '2026-07-19T09:00:00+03:00', checkOutAt: '2026-07-19T17:00:00+03:00' };
+    const app = createApp({ attendanceService: service, authService: makeAuth() });
+    expect((await request(app).post('/api/v1/attendance/manual/session').send(payload)).status).toBe(201);
+    expect(service.manualSession).toHaveBeenCalledWith({ employeeId: 7, checkInAt: new Date('2026-07-19T06:00:00Z'), checkOutAt: new Date('2026-07-19T14:00:00Z') });
+    expect((await request(app).post('/api/v1/attendance/manual/session').send({ ...payload, checkOutAt: payload.checkInAt })).status).toBe(400);
+    const employeeApp = createApp({ attendanceService: service, authService: makeAuth('employee') });
+    expect((await request(employeeApp).post('/api/v1/attendance/manual/session').send(payload)).status).toBe(403);
+  });
   it('returns a location-specific error for invalid GPS payloads', async () => {
     const response = await request(createApp({ attendanceService: makeService(), authService: makeAuth() }))
       .post('/api/v1/attendance/check-in')

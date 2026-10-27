@@ -55,28 +55,31 @@ test('keeps every page-level branch selector narrow enough for RTL native menus'
     await route.fulfill({ status: 404, contentType: 'application/json', headers: corsHeaders, body: '{}' });
   });
 
-  const pageSelectors = [
-    ['/sales', '#sale-branch'],
-    ['/bookings', 'select[aria-label="الفرع"]'],
-    ['/invoices', '#invoice-branch'],
-    ['/refunds', '#refund-invoice-branch'],
-    ['/clients', '#clients-branch'],
-    ['/consumables', '#consumables-branch'],
-    ['/cashier-sessions', '#cashier-session-branch'],
-    ['/catalog', '#catalog-branch'],
-    ['/products', '#product-branch'],
-    ['/suppliers', '#supplier-branch'],
-    ['/expenses', '#expense-branch'],
-    ['/fixed-assets', '#asset-branch'],
-    ['/commissions', '#commissions-branch'],
-    ['/reports', '#report-branch'],
-  ] as const;
+  // [path, selector, max width]. 384px is the `max-w-sm` used by a normal
+  // page-level filter. Commissions lays its filters out as full-width grid
+  // cells, so it is allowed the wider cell but still bounded.
+  const pageSelectors: Array<readonly [string, string, number]> = [
+    ['/sales', '#sale-branch', 384],
+    ['/bookings', 'select[aria-label="الفرع"]', 384],
+    ['/invoices', '#invoice-branch', 384],
+    ['/refunds', '#refund-invoice-branch', 384],
+    ['/clients', '#clients-branch', 384],
+    ['/consumables', '#consumables-branch', 384],
+    ['/cashier-sessions', '#cashier-session-branch', 384],
+    ['/catalog', '#catalog-branch', 384],
+    ['/products', '#product-branch', 384],
+    ['/suppliers', '#supplier-branch', 384],
+    ['/expenses', '#expense-branch', 384],
+    ['/fixed-assets', '#asset-branch', 384],
+    ['/commissions', '#commissions-branch', 480],
+    ['/reports', '#report-branch', 384],
+  ];
 
-  for (const [path, selector] of pageSelectors) {
+  for (const [path, selector, maxWidth] of pageSelectors) {
     await page.goto(path);
     const branchSelect = page.locator(selector);
     await expect(branchSelect, `${path} branch selector`).toBeVisible();
     expect((await branchSelect.boundingBox())!.width, `${path} branch selector width`)
-      .toBeLessThanOrEqual(384);
+      .toBeLessThanOrEqual(maxWidth);
   }
 });

@@ -41,6 +41,31 @@ beforeEach(() => { sessionStorage.clear(); actor.current = 'admin'; mocks.branch
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 describe('SuppliersPurchasesView', () => {
+  it('prints every filtered purchase page and restores the screen afterward', async () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    mocks.listPurchases.mockImplementation(async (params: { page?: number; pageSize?: number }) => ({
+      items: params.page === 2 ? [{ ...purchase, id: 10, supplierName: 'مشتريات الصفحة الثانية', status: 'cancelled', cancellationReason: 'خطأ إدخال' }] : [purchase],
+      meta: { page: params.page ?? 1, pageSize: params.pageSize ?? 20, total: 2, totalPages: 2 },
+    }));
+    renderView();
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    await screen.findByRole('cell', { name: 'مورد النيل' });
+    fireEvent.change(screen.getByLabelText('تصفية حسب المورد'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('تصفية حسب المنتج'), { target: { value: '4' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'طباعة سجل المشتريات' })).toHaveProperty('disabled', false));
+    fireEvent.click(screen.getByRole('button', { name: 'طباعة سجل المشتريات' }));
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    expect(mocks.listPurchases).toHaveBeenCalledWith({ branchId: 2, supplierId: 3, productId: 4, page: 2, pageSize: 100 });
+    const sheet = document.querySelector('#print-root')!;
+    expect(sheet.textContent).toContain('مشتريات الصفحة الثانية');
+    expect(sheet.textContent).toContain('خطأ إدخال');
+    expect(sheet.textContent).toContain('شامبو');
+    expect(sheet.textContent).toContain('إجمالي المشتريات المُرحّلة');
+    fireEvent(window, new Event('afterprint'));
+    expect(document.querySelector('#print-root')).toBeNull();
+    expect(document.body.classList.contains('printing-report')).toBe(false);
+  });
   it('offers branches beyond the first page of the branch list', async () => {
     mocks.branches.mockImplementation(async (page = 1) => (page === 1
       ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }

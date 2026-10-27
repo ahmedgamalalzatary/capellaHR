@@ -74,6 +74,7 @@ export type CompleteSaleOperation = {
 };
 
 type ReverseInvoiceOperationBase = {
+  transaction?: SaleTransaction;
   invoiceId: number;
   actingAccountId: number;
   actingAccountRole: 'admin' | 'cashier';
@@ -155,6 +156,7 @@ type SaleErrorCode =
   | 'INVOICE_NOT_REVERSIBLE'
   | 'TRANSFER_NOT_REVERSIBLE'
   | 'VOID_DATE_EXPIRED'
+  | 'VOID_ADMIN_REQUIRED'
   | 'REFUND_ADMIN_REQUIRED'
   | 'REFUND_QUANTITY_EXCEEDED'
   | 'REFUND_PAYMENT_MISMATCH'
@@ -172,6 +174,7 @@ type SaleErrorCode =
   | 'BOOKING_REFUND_AMOUNT_MISMATCH';
 
 const messages: Record<SaleErrorCode, string> = {
+  VOID_ADMIN_REQUIRED: 'يمكن للمسؤول فقط إلغاء الفاتورة.',
   REFUND_ADMIN_REQUIRED: 'يمكن للمسؤول فقط الوصول إلى المرتجعات وتنفيذ الاسترداد.',
   REASSIGN_ADMIN_REQUIRED: 'يمكن للمسؤول فقط تغيير موظف خدمة مكتملة.',
   SALE_VALIDATION_FAILED: 'بيانات البيع غير صالحة',
@@ -487,6 +490,7 @@ export const createSaleService = (dependencies: {
     },
 
     async void(actor: ErpAccountIdentity, invoiceId: number, input: VoidInvoiceInput) {
+      if (actor.role !== 'admin') throw new SaleError('VOID_ADMIN_REQUIRED');
       const { branchId, accountId } = await resolveBranchContext(actor, input.branchId);
       const invoice = await repository.reverse({
         type: 'void', invoiceId, input: { ...input, branchId },

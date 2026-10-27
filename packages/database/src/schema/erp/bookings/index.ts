@@ -39,6 +39,8 @@ export const erpBookings = mysqlTable('erp_bookings', {
   scheduledAt: timestamp('scheduled_at', { mode: 'date', fsp: 3 }).notNull(),
   status: mysqlEnum('status', erpBookingStatuses).notNull().default('booked'),
   note: varchar('note', { length: 1000 }),
+  creationReference: varchar('creation_reference', { length: 36 }),
+  creationFingerprint: varchar('creation_fingerprint', { length: 64 }),
   actingAccountId: int('acting_account_id').notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -54,6 +56,7 @@ export const erpBookings = mysqlTable('erp_bookings', {
     foreignColumns: [accounts.id],
   }),
   uniqueIndex('erp_bookings_id_branch_unique').on(table.id, table.branchId),
+  uniqueIndex('erp_bookings_creation_reference_unique').on(table.creationReference),
   index('erp_bookings_branch_scheduled_idx').on(table.branchId, table.scheduledAt),
   index('erp_bookings_branch_status_scheduled_idx')
     .on(table.branchId, table.status, table.scheduledAt),
@@ -106,6 +109,9 @@ export const erpBookingServices = mysqlTable('erp_booking_services', {
 export const erpBookingPayments = mysqlTable('erp_booking_payments', {
   id: int('id').autoincrement().primaryKey(),
   bookingId: int('booking_id').notNull(),
+  clientIdSnapshot: int('client_id_snapshot'),
+  clientNameSnapshot: varchar('client_name_snapshot', { length: 255 }),
+  clientPhoneSnapshot: varchar('client_phone_snapshot', { length: 11 }),
   branchId: int('branch_id').notNull(),
   kind: mysqlEnum('kind', erpBookingPaymentKinds).notNull(),
   method: mysqlEnum('method', erpPaymentMethods).notNull(),
@@ -138,3 +144,10 @@ export const erpBookingPayments = mysqlTable('erp_booking_payments', {
   check('erp_booking_payments_amount_positive', sql`${table.amount} > 0`),
   check('erp_booking_payments_refund_cause', sql`(${table.kind} = 'refund') = (${table.refundCause} is not null)`),
 ]);
+
+export const erpBookingOperations = mysqlTable('erp_booking_operations', {
+  operationReference: varchar('operation_reference', { length: 36 }).primaryKey(),
+  bookingId: int('booking_id').notNull().references(() => erpBookings.id),
+  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+});

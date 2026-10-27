@@ -90,7 +90,7 @@ test('Admin creates, edits, and adjusts a branch product', async ({ page }) => {
   await expect.poll(() => updatedPayload?.sellingPrice).toBe('55');
 
   await page.getByRole('button', { name: 'تسوية' }).click();
-  await page.getByLabel('تغيير الكمية').fill('3');
+  await page.getByLabel('الكمية بعد الجرد').fill('3');
   await page.getByLabel('ملاحظة التسوية').fill('جرد افتتاحي');
   await page.getByRole('button', { name: 'حفظ' }).click();
   await expect.poll(() => adjustmentPayload).toMatchObject({

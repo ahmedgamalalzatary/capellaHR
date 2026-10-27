@@ -1,5 +1,5 @@
 import { type createDatabase } from '@capella/database';
-import { erpBookingPayments, erpBookingServices, erpServices, invoicePayments } from '@capella/database/schema';
+import { clients, erpBookings, erpBookingPayments, erpBookingServices, erpServices, invoicePayments } from '@capella/database/schema';
 import { and, asc, eq, like, or, sql } from 'drizzle-orm';
 
 import type { PaymentMethod } from '@capella/contracts';
@@ -57,6 +57,13 @@ export const sumServicePrices = (prices: Array<string | null>) => prices.reduce(
 type Database = ReturnType<typeof createDatabase>;
 type CreditExecutor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
 
+export const snapshotBookingClient = async (executor: CreditExecutor, bookingId: number) => {
+  const [client] = await executor.select({ clientIdSnapshot: clients.id, clientNameSnapshot: clients.fullName, clientPhoneSnapshot: clients.phone })
+    .from(erpBookings).innerJoin(clients, eq(clients.id, erpBookings.clientId)).where(eq(erpBookings.id, bookingId)).limit(1);
+  if (!client) throw new Error('Booking client is missing');
+  return client;
+};
+
 /**
  * One ledger row per payment method; the operation reference identifies the
  * command and the suffix keeps the per-row uniqueness intact.
@@ -84,7 +91,9 @@ export const recordBookingCheckoutExcessRefund = async (
     payments: Array<{ method: PaymentMethod; amount: string }>;
   },
 ) => {
+  const client = await snapshotBookingClient(executor, input.bookingId);
   await executor.insert(erpBookingPayments).values(input.payments.map((payment, index) => ({
+    ...client,
     bookingId: input.bookingId,
     branchId: input.branchId,
     kind: 'refund' as const,

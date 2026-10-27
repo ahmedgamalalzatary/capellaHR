@@ -599,6 +599,7 @@ describe('refunds tab', () => {
     expect(await screen.findByRole('button', { name: 'استرداد' })).toBeDefined();
     expect(getInvoice).toHaveBeenCalledWith(44, undefined);
     expect(listBranches).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'إلغاء الفاتورة' })).toBeNull();
   });
 
   it('locks refund quantities while an exact quote is pending', async () => {

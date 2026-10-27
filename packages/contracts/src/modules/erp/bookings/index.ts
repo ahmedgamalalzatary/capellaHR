@@ -26,7 +26,16 @@ export const createBookingSchema = z.object({
   scheduledAt: z.string().datetime({ offset: true }),
   note: z.string().trim().max(1000).nullable().optional(),
   services: z.array(bookingServiceInputSchema).min(1),
+  operationReference: z.string().uuid().optional(),
+  initialPayment: z.object({
+    cashierSessionId: positiveMysqlIntSchema,
+    method: paymentMethodSchema,
+    amount: positiveMoneySchema,
+  }).strict().optional(),
 }).strict().superRefine((value, context) => {
+  if (value.initialPayment && !value.operationReference) {
+    context.addIssue({ code: 'custom', path: ['operationReference'], message: 'مرجع العملية مطلوب عند الدفع' });
+  }
   const seen = new Set<number>();
   value.services.forEach((service, index) => {
     if (seen.has(service.serviceId)) {
@@ -51,6 +60,10 @@ export const listBookingsQuerySchema = z.object({
 }).strict();
 
 export const bookingIdParamsSchema = z.object({ id: coercedMysqlIntSchema }).strict();
+export const bookingCancellationQuoteInputSchema = z.object({
+  branchId: positiveMysqlIntSchema.optional(),
+  serviceIds: z.array(positiveMysqlIntSchema).min(1).refine((ids) => new Set(ids).size === ids.length).optional(),
+}).strict();
 export const bookingServiceParamsSchema = z.object({
   id: coercedMysqlIntSchema,
   serviceId: coercedMysqlIntSchema,
@@ -165,6 +178,16 @@ export const bookingDtoSchema = z.object({
 });
 
 export type BookingStatus = z.infer<typeof bookingStatusSchema>;
+export const updateBookingSchema = z.object({
+  branchId: positiveMysqlIntSchema.optional(),
+  clientId: positiveMysqlIntSchema,
+  scheduledAt: z.string().datetime({ offset: true }),
+  note: z.string().trim().max(1000).nullable().optional(),
+  services: z.array(bookingServiceInputSchema).min(1).refine((rows) => new Set(rows.map((row) => row.serviceId)).size === rows.length, 'لا يمكن تكرار الخدمة'),
+  refund: bookingRefundInputSchema.optional(),
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
+}).strict();
+export type UpdateBookingInput = z.infer<typeof updateBookingSchema>;
 export type BookingServiceStatus = z.infer<typeof bookingServiceStatusSchema>;
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 export type ListBookingsQuery = z.infer<typeof listBookingsQuerySchema>;

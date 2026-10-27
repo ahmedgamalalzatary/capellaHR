@@ -834,6 +834,27 @@
       "when": 1791705644448,
       "tag": "0118_payroll_attendance_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "5",
+      "when": 1793080979621,
+      "tag": "0119_booking_creation_reference",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "5",
+      "when": 1793081497141,
+      "tag": "0120_booking_payment_client_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "5",
+      "when": 1793081709110,
+      "tag": "0121_booking_cancellation_operations",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,33 @@ beforeEach(cleanDatabase);
 afterEach(cleanDatabase);
 
 describe('MySQL-backed attendance sessions', () => {
+  it('rejects historical overlaps and preserves day-off and payroll locks', async () => {
+    const { employeeId, branchId } = await createFixtures();
+    const repo = repository();
+    await repo.manualCheckIn({ employeeId, occurredAt: new Date('2026-07-19T19:00:00Z') });
+    await expect(repo.manualSession({ employeeId, checkInAt: new Date('2026-07-20T00:00:00Z'), checkOutAt: new Date('2026-07-20T05:00:00Z') })).resolves.toMatchObject({ kind: 'overlap' });
+    await database.insert(attendanceDailyRecords).values({ employeeId, branchId, attendanceDate: '2026-07-18', status: 'weekly_day_off', absenceRequiredMinutes: 480, dayOffConvertedAt: fixedNow, createdAt: fixedNow, updatedAt: fixedNow });
+    await expect(repo.manualSession({ employeeId, checkInAt: new Date('2026-07-18T05:00:00Z'), checkOutAt: new Date('2026-07-18T13:00:00Z') })).resolves.toMatchObject({ kind: 'weekly_day_off' });
+    const locked = createDrizzleAttendanceRepository(database, { now: () => fixedNow, isFinanciallyLocked: async () => true, readRequiredDuration: async () => 480 });
+    await expect(locked.manualSession({ employeeId, checkInAt: new Date('2026-07-17T05:00:00Z'), checkOutAt: new Date('2026-07-17T13:00:00Z') })).resolves.toMatchObject({ kind: 'financially_locked' });
+    expect(await database.select().from(attendanceSessions)).toHaveLength(1);
+  });
+  it('records a closed historical session while leaving the current shift, login, and deferred actions untouched', async () => {
+    const { employeeId } = await createFixtures();
+    const afterSessionClosed = vi.fn();
+    const repo = createDrizzleAttendanceRepository(database, { now: () => fixedNow, timeZone: 'Africa/Cairo', isFinanciallyLocked: async () => false, readRequiredDuration: async () => 480, afterSessionClosed });
+    const today = await repo.manualCheckIn({ employeeId, occurredAt: fixedNow });
+    expect(today.kind).toBe('success');
+    const sessionId = crypto.randomUUID();
+    await database.insert(authSessions).values({ id: sessionId, tokenHash: 'historical-session-test'.padEnd(64, '0'), actorType: 'employee', employeeId, createdAt: fixedNow, expiresAt: new Date(fixedNow.getTime() + 3_600_000), revokedAt: null });
+    const past = await repo.manualSession?.({ employeeId, checkInAt: new Date('2026-07-19T05:00:00Z'), checkOutAt: new Date('2026-07-19T13:30:00Z') });
+    expect(past).toMatchObject({ kind: 'success', session: { checkInAt: new Date('2026-07-19T05:00:00Z'), checkOutAt: new Date('2026-07-19T13:30:00Z'), workedMinutes: 510, overtimeMinutes: 30, flagged: false } });
+    expect((await database.select().from(attendanceSessions).where(and(eq(attendanceSessions.employeeId, employeeId), eq(attendanceSessions.attendanceDate, '2026-07-20'))))[0]!.checkOutAt).toBeNull();
+    expect((await database.select().from(authSessions).where(eq(authSessions.id, sessionId)))[0]!.revokedAt).toBeNull();
+    expect(afterSessionClosed).not.toHaveBeenCalled();
+    expect((await database.select().from(attendanceJobs)).filter((job) => job.status === 'scheduled')).toHaveLength(1);
+    expect((await database.select().from(attendanceEvents)).filter((event) => event.sessionId !== (today.kind === 'success' ? today.session.id : 0))).toHaveLength(2);
+  });
   it('lists only active, non-deleted employees with an open session in the branch', async () => {
     const { branchId, employeeId } = await createFixtures();
     const repo = repository();
