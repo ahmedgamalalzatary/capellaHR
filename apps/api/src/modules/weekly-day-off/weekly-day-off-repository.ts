@@ -217,18 +217,6 @@ export const createDrizzleWeeklyDayOffRepository = (
         transaction,
       )) return { kind: 'financially_locked' as const };
 
-      const conflicting = await transaction.select({ id: attendanceDailyRecords.id })
-        .from(attendanceDailyRecords)
-        .where(and(
-          eq(attendanceDailyRecords.employeeId, employeeId),
-          eq(attendanceDailyRecords.status, 'weekly_day_off'),
-          ne(attendanceDailyRecords.id, id),
-          sql`${attendanceDailyRecords.attendanceDate} between date_sub(${record.attendanceDate}, interval 6 day) and date_add(${record.attendanceDate}, interval 6 day)`,
-        ))
-        .for('update')
-        .limit(1);
-      if (conflicting[0]) return { kind: 'spacing_conflict' as const };
-
       const convertedAt = now();
       await transaction.update(attendanceDailyRecords).set({
         status: 'weekly_day_off',

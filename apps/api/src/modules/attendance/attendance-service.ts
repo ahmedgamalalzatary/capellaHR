@@ -477,9 +477,6 @@ export const createAttendanceService = (
         if (error.message === 'Attendance day is not missing') {
           throw new AttendanceError('ATTENDANCE_RECONCILIATION_NOT_MISSING', 'تم تسجيل حالة هذا اليوم بالفعل');
         }
-        if (error.message === 'Weekly day-off spacing conflict') {
-          throw new AttendanceError('WEEKLY_DAY_OFF_SPACING_CONFLICT', 'لا يمكن تسجيل أكثر من إجازة أسبوعية خلال سبعة أيام متتالية');
-        }
         if (error.message === 'Absence generation is financially locked') {
           throw new AttendanceError('ATTENDANCE_FINANCIALLY_LOCKED', 'تم اعتماد الفترة ماليًا ولا يمكن تعديلها');
         }

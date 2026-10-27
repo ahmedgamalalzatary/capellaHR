@@ -100,8 +100,8 @@ describe('weekly day-off HTTP API', () => {
   it('returns structured domain and validation errors', async () => {
     const service = makeService();
     vi.mocked(service.convert).mockRejectedValue(new WeeklyDayOffError(
-      'WEEKLY_DAY_OFF_SPACING_CONFLICT',
-      'يجب أن يفصل سبعة أيام على الأقل بين أيام الراحة',
+      'WEEKLY_DAY_OFF_INVALID_STATE',
+      'حالة السجل لا تسمح بهذه العملية',
     ));
     const app = createApp({ authService: makeAuth(), weeklyDayOffService: service });
 
@@ -112,8 +112,8 @@ describe('weekly day-off HTTP API', () => {
 
     expect(conflict.status).toBe(409);
     expect(conflict.body.error).toEqual({
-      code: 'WEEKLY_DAY_OFF_SPACING_CONFLICT',
-      message: 'يجب أن يفصل سبعة أيام على الأقل بين أيام الراحة',
+      code: 'WEEKLY_DAY_OFF_INVALID_STATE',
+      message: 'حالة السجل لا تسمح بهذه العملية',
       requestId: 'day-off-test',
     });
     expect(invalid.status).toBe(400);

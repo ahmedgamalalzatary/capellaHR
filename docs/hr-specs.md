@@ -348,11 +348,9 @@ Device registration is a separate post-creation workflow and is not an employee-
 - Only an absence with no attendance session can be converted.
 - The admin may convert any eligible past absence, with no historical time limit.
 
-### Rolling seven-day rule
+### Day-off spacing
 
-- Day-off dates for the same employee must be at least seven calendar days apart.
-- A selected day off plus the following six consecutive calendar days form the rolling seven-day cycle.
-- The cycle is anchored to the selected day off rather than a fixed calendar week or weekday.
+- There is no minimum spacing between a single employee's days off; consecutive and nearby days are allowed.
 - An employee may go longer than seven days without a recorded day off.
 - Working every day does not create an overdue-day-off warning.
 
@@ -930,7 +928,7 @@ Unused scaffold placeholders such as Benefits, Departments, Positions, Recruitme
 
 ### Domain and calculation tests
 
-- Unit tests cover salary proration, required-minute rates, overtime, attendance shortage, full absence deductions, weekly day-off spacing, creation/deletion-date eligibility, advance installments, rounding remainders, negative carry, and chronological payroll finalization.
+- Unit tests cover salary proration, required-minute rates, overtime, attendance shortage, full absence deductions, creation/deletion-date eligibility, advance installments, rounding remainders, negative carry, and chronological payroll finalization.
 - Shift-change tests prove each attendance date retains the correct required-duration snapshot.
 
 ### Database and integration tests
@@ -983,7 +981,7 @@ Unused scaffold placeholders such as Benefits, Departments, Positions, Recruitme
 ### REST error contract
 
 - REST errors use one consistent response shape containing a stable error code, Arabic user-facing message, field errors when relevant, and request/correlation ID.
-- Expected conflicts return specific Arabic errors, including duplicate phone, duplicate branch name, existing daily session, open session, finalized payroll, invalid day-off spacing, revoked device, invalid pairing request, and financial-lock violations.
+- Expected conflicts return specific Arabic errors, including duplicate phone, duplicate branch name, existing daily session, open session, finalized payroll, revoked device, invalid pairing request, and financial-lock violations.
 - Unexpected errors return a safe generic Arabic message.
 - Stack traces, SQL details, filesystem paths, hashes, credentials, face embeddings, and other secrets remain server-side. Raw camera frames are processed transiently and never stored.
 

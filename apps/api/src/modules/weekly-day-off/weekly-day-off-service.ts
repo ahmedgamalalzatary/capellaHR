@@ -29,7 +29,7 @@ export type WeeklyDayOffFinancialLockCheck = (
 
 type ConvertResult =
   | { kind: 'success'; record: WeeklyDayRecord }
-  | { kind: 'not_found' | 'not_past' | 'not_absence' | 'spacing_conflict' | 'financially_locked' };
+  | { kind: 'not_found' | 'not_past' | 'not_absence' | 'financially_locked' };
 type RevertResult =
   | { kind: 'success'; record: WeeklyDayRecord }
   | { kind: 'not_found' | 'not_day_off' | 'financially_locked' };
@@ -60,7 +60,6 @@ export type WeeklyDayOffErrorCode =
   | 'WEEKLY_DAY_RECORD_NOT_FOUND'
   | 'WEEKLY_DAY_OFF_DATE_NOT_PAST'
   | 'WEEKLY_DAY_OFF_INVALID_STATE'
-  | 'WEEKLY_DAY_OFF_SPACING_CONFLICT'
   | 'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED'
   | 'ABSENCE_WITHOUT_PERMISSION_INVALID_STATE'
   | 'ABSENCE_WITHOUT_PERMISSION_FINANCIALLY_LOCKED';
@@ -83,10 +82,6 @@ const errors = {
   invalidState: () => new WeeklyDayOffError(
     'WEEKLY_DAY_OFF_INVALID_STATE',
     'حالة السجل لا تسمح بهذه العملية',
-  ),
-  spacingConflict: () => new WeeklyDayOffError(
-    'WEEKLY_DAY_OFF_SPACING_CONFLICT',
-    'يجب أن يفصل سبعة أيام على الأقل بين أيام الراحة',
   ),
   financiallyLocked: () => new WeeklyDayOffError(
     'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED',
@@ -165,7 +160,6 @@ export const createWeeklyDayOffService = (
       if (result.kind === 'not_found') throw errors.notFound();
       if (result.kind === 'not_past') throw errors.notPast();
       if (result.kind === 'not_absence') throw errors.invalidState();
-      if (result.kind === 'spacing_conflict') throw errors.spacingConflict();
       throw errors.financiallyLocked();
     },
 

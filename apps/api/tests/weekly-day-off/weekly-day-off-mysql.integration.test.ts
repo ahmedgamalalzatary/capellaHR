@@ -219,35 +219,40 @@ describe('MySQL-backed weekly day off', () => {
     });
   });
 
-  it('requires seven calendar days in either direction and allows exactly seven', async () => {
+  it('allows consecutive and nearby days off for the same employee', async () => {
     const branchId = await createBranch('القاهرة');
     const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
     const first = await createAbsence(employeeId, '2026-07-01');
-    const sixDaysLater = await createAbsence(employeeId, '2026-07-07');
-    const sevenDaysLater = await createAbsence(employeeId, '2026-07-08');
-    const sixDaysEarlier = await createAbsence(employeeId, '2026-06-25');
+    const nextDay = await createAbsence(employeeId, '2026-07-02');
+    const thirdDay = await createAbsence(employeeId, '2026-07-03');
+    const earlierDay = await createAbsence(employeeId, '2026-06-25');
     const module = createWeeklyDayOffModule(database, {
       isFinanciallyLocked: isFinanciallyUnlocked,
       now: () => fixedNow,
     });
 
-    await module.service.convert(first);
-    await expect(module.service.convert(sixDaysLater)).rejects.toMatchObject({
-      code: 'WEEKLY_DAY_OFF_SPACING_CONFLICT',
-    });
-    await expect(module.service.convert(sixDaysEarlier)).rejects.toMatchObject({
-      code: 'WEEKLY_DAY_OFF_SPACING_CONFLICT',
-    });
-    await expect(module.service.convert(sevenDaysLater)).resolves.toMatchObject({
+    await expect(module.service.convert(first)).resolves.toMatchObject({
       status: 'weekly_day_off',
     });
+    await expect(module.service.convert(earlierDay)).resolves.toMatchObject({
+      status: 'weekly_day_off',
+    });
+    await expect(module.service.convert(nextDay)).resolves.toMatchObject({
+      status: 'weekly_day_off',
+    });
+    await expect(module.service.convert(thirdDay)).resolves.toMatchObject({
+      status: 'weekly_day_off',
+    });
+    await expect(module.service.list({
+      employeeId, status: 'weekly_day_off', page: 1, pageSize: 20,
+    })).resolves.toMatchObject({ total: 4 });
   });
 
-  it('serializes concurrent conversions so the spacing rule cannot be bypassed', async () => {
+  it('allows concurrent conversions of nearby absences', async () => {
     const branchId = await createBranch('القاهرة');
     const employeeId = await createEmployee(branchId, 1, 'أحمد علي');
     const first = await createAbsence(employeeId, '2026-07-01');
-    const second = await createAbsence(employeeId, '2026-07-04');
+    const second = await createAbsence(employeeId, '2026-07-02');
     const module = createWeeklyDayOffModule(database, {
       isFinanciallyLocked: isFinanciallyUnlocked,
       now: () => fixedNow,
@@ -258,11 +263,10 @@ describe('MySQL-backed weekly day off', () => {
       module.service.convert(second),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
     await expect(module.service.list({
       employeeId, status: 'weekly_day_off', page: 1, pageSize: 20,
-    })).resolves.toMatchObject({ total: 1 });
+    })).resolves.toMatchObject({ total: 2 });
   });
 
   it('rolls back transitions when payroll has financially locked the date', async () => {

@@ -83,7 +83,6 @@ describe('weekly day-off service', () => {
     ['not_found', 'WEEKLY_DAY_RECORD_NOT_FOUND'],
     ['not_past', 'WEEKLY_DAY_OFF_DATE_NOT_PAST'],
     ['not_absence', 'WEEKLY_DAY_OFF_INVALID_STATE'],
-    ['spacing_conflict', 'WEEKLY_DAY_OFF_SPACING_CONFLICT'],
     ['financially_locked', 'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED'],
   ] as const)('maps conversion result %s to %s', async (kind, code) => {
     const repository = makeRepository();

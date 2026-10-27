@@ -227,6 +227,26 @@ describe('MySQL-backed attendance jobs and absences', () => {
     ]));
   });
 
+  it('allows reconciling consecutive missing days as weekly days off', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+
+    for (const attendanceDate of ['2026-07-17', '2026-07-18', '2026-07-19']) {
+      await expect(repo.reconcileMissingDay({
+        employeeId,
+        attendanceDate,
+        resolution: 'weekly_day_off',
+      })).resolves.toMatchObject({ status: 'weekly_day_off' });
+    }
+
+    expect(await database.select().from(attendanceDailyRecords)).toHaveLength(3);
+    expect(await database.select().from(attendanceDailyRecords)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ attendanceDate: '2026-07-17', status: 'weekly_day_off' }),
+      expect.objectContaining({ attendanceDate: '2026-07-18', status: 'weekly_day_off' }),
+      expect.objectContaining({ attendanceDate: '2026-07-19', status: 'weekly_day_off' }),
+    ]));
+  });
+
   it('refuses to convert an existing absence to a weekly day off while financially locked', async () => {
     const { employeeId } = await createFixtures();
     await repository().reconcileMissingDay({

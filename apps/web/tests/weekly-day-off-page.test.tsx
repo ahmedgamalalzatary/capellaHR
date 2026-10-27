@@ -332,17 +332,17 @@ describe('WeeklyDayOffView', () => {
     );
   });
 
-  test('surfaces the Arabic server error when spacing rejects the conversion', async () => {
+  test('surfaces the Arabic server error when a conversion is rejected', async () => {
     mocks.convertWeeklyDayRecord.mockRejectedValue(new ApiError(409, {
-      code: 'WEEKLY_DAY_OFF_SPACING_CONFLICT',
-      message: 'يجب أن يفصل سبعة أيام على الأقل بين أيام الراحة',
+      code: 'WEEKLY_DAY_OFF_FINANCIALLY_LOCKED',
+      message: 'لا يمكن تعديل يوم الراحة بعد اعتماد الشهر ماليًا',
     }));
     renderView();
     await screen.findByText('أحمد جمال');
     fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'تعيين يوم راحة' }));
     expect(await screen.findByRole('alert')).toHaveProperty(
       'textContent',
-      'يجب أن يفصل سبعة أيام على الأقل بين أيام الراحة',
+      'لا يمكن تعديل يوم الراحة بعد اعتماد الشهر ماليًا',
     );
   });
 

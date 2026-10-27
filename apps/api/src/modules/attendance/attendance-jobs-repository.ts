@@ -1,6 +1,6 @@
 import type { ReconcileAttendanceDay } from '@capella/contracts';
 import { attendanceDailyRecords, attendanceJobs, attendanceSessions, employees } from '@capella/database/schema';
-import { and, asc, eq, gte, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
@@ -68,14 +68,6 @@ export const createAttendanceJobsRepository = (
             ? { ...record, status: 'absence' as const }
             : { ...record, status: 'weekly_day_off' as const };
         }
-        const conflicting = (await transaction.select({ id: attendanceDailyRecords.id })
-          .from(attendanceDailyRecords).where(and(
-            eq(attendanceDailyRecords.employeeId, input.employeeId),
-            eq(attendanceDailyRecords.status, 'weekly_day_off'),
-            ne(attendanceDailyRecords.id, record.id),
-            sql`${attendanceDailyRecords.attendanceDate} between date_sub(${input.attendanceDate}, interval 6 day) and date_add(${input.attendanceDate}, interval 6 day)`,
-          )).for('update').limit(1))[0];
-        if (conflicting) throw new Error('Weekly day-off spacing conflict');
         if (await isFinanciallyLocked(input.employeeId, input.attendanceDate, transaction)) {
           throw new Error('Absence generation is financially locked');
         }
