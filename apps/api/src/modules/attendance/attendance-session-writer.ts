@@ -132,10 +132,16 @@ export const createAttendanceSessionWriter = (options: {
     }
 
     const attendanceDate = calendarDateInTimeZone(input.occurredAt, timeZone);
+    const employmentPeriods = await readEmploymentPeriods(transaction, employee);
     // A rehired employee is active today but must not gain sessions inside the gap.
-    if (!employmentDateIsActive(
-      attendanceDate,
-      await readEmploymentPeriods(transaction, employee),
+    if (!employmentDateIsActive(attendanceDate, employmentPeriods, timeZone)) {
+      return { kind: 'employment_inactive' };
+    }
+    // A closed session can run past midnight; the check-out date must be an
+    // active date too. The 16-hour ceiling keeps the span to at most two dates.
+    if (input.checkOutAt && !employmentDateIsActive(
+      calendarDateInTimeZone(input.checkOutAt, timeZone),
+      employmentPeriods,
       timeZone,
     )) return { kind: 'employment_inactive' };
     if (await isFinanciallyLocked(employee.id, attendanceDate, transaction)) {

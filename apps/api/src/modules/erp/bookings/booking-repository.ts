@@ -555,6 +555,24 @@ export const createDrizzleBookingRepository = (
         eq(erpBookings.id, input.bookingId), eq(erpBookings.branchId, input.branchId),
       )).for('update').limit(1))[0];
       if (!row) throw new BookingError('BOOKING_NOT_FOUND');
+      const reference = input.refund?.operationReference;
+      const fingerprint = reference ? createHash('sha256').update(JSON.stringify({
+        bookingId: input.bookingId, branchId: input.branchId, actorAccountId: input.actorAccountId,
+        clientId: input.clientId, scheduledAt: input.scheduledAt, services: input.services,
+        note: input.note ?? null, refund: input.refund ?? null,
+      })).digest('hex') : null;
+      if (reference && fingerprint) {
+        const previous = (await transaction.select().from(erpBookingOperations)
+          .where(eq(erpBookingOperations.operationReference, reference)).for('update').limit(1))[0];
+        if (previous) {
+          if (previous.bookingId !== input.bookingId || previous.fingerprint !== fingerprint) {
+            throw new BookingError('BOOKING_OPERATION_CONFLICT');
+          }
+          // The edit and its refund already committed, so the lost response must
+          // replay the result instead of looking like a stale edit or paying twice.
+          return (await hydrate(transaction, input.branchId, input.bookingId))!;
+        }
+      }
       if (row.scheduledAt <= input.at || new Date(input.scheduledAt) <= input.at
         || !['booked', 'arrived'].includes(row.status)) throw new BookingError('BOOKING_EDIT_NOT_ALLOWED');
       if (input.expectedUpdatedAt && new Date(input.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw new BookingError('BOOKING_CHANGED');
@@ -615,6 +633,9 @@ export const createDrizzleBookingRepository = (
       })));
       await transaction.update(erpBookings).set({ clientId: input.clientId, scheduledAt: new Date(input.scheduledAt), note: input.note ?? null, updatedAt: input.at })
         .where(eq(erpBookings.id, input.bookingId));
+      if (reference && fingerprint) await transaction.insert(erpBookingOperations).values({
+        operationReference: reference, bookingId: input.bookingId, fingerprint, createdAt: input.at,
+      });
       const after = (await hydrate(transaction, input.branchId, input.bookingId))!;
       await audit.record(transaction, { module: AUDIT_MODULE, action: 'update', entityType: 'booking', entityId: input.bookingId,
         beforeState: before, afterState: after, relatedIds: { branchId: input.branchId }, createdAt: input.at });

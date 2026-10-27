@@ -545,6 +545,34 @@ describe('MySQL-backed attendance sessions', () => {
     })).resolves.toMatchObject({ kind: 'success' });
   });
 
+  it('refuses a manual session that ends inside an inactive rehire gap', async () => {
+    const { employeeId } = await createFixtures();
+    const repo = repository();
+    await database.insert(employeeEmploymentPeriods).values([
+      {
+        employeeId,
+        activeFrom: new Date('2026-07-01T09:00:00.000Z'),
+        activeTo: new Date('2026-07-05T09:00:00.000Z'),
+        createdAt: new Date('2026-07-01T09:00:00.000Z'),
+      },
+      {
+        employeeId,
+        activeFrom: new Date('2026-07-15T09:00:00.000Z'),
+        activeTo: null,
+        createdAt: new Date('2026-07-15T09:00:00.000Z'),
+      },
+    ]);
+
+    // The check-in date is the last active day, but the session runs past
+    // midnight into the gap before the rehire.
+    await expect(repo.manualSession({
+      employeeId,
+      checkInAt: new Date('2026-07-05T20:00:00.000Z'),
+      checkOutAt: new Date('2026-07-06T04:00:00.000Z'),
+    })).resolves.toEqual({ kind: 'employment_inactive' });
+    expect(await database.select().from(attendanceSessions)).toEqual([]);
+  });
+
   it('runs a deferred deactivation when the employee finally checks out', async () => {
     const { employeeId } = await createFixtures();
     const applied: { employeeId: number; at: Date }[] = [];

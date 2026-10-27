@@ -409,6 +409,35 @@ describe('MySQL-backed ERP booking leftovers', () => {
     ]));
   });
 
+  it('replays a committed refundable edit when the response is lost', async () => {
+    const bookingId = await arrangeBooking([serviceId], '150.00', false);
+    const editAt = new Date('2026-08-24T09:00:00.000Z');
+    const input = {
+      bookingId, branchId, actorAccountId: accountId, actorRole: 'admin' as const, at: editAt,
+      clientId, scheduledAt: '2026-09-02T08:00:00.000Z',
+      services: [{ serviceId: cheapServiceId }], note: 'Refundable edit',
+      expectedUpdatedAt: at.toISOString(),
+      refund: {
+        cashierSessionId: leftoverSessionId,
+        payments: [{ method: 'cash' as const, amount: '50.00' }],
+        operationReference: '018f47a6-7b2f-7c41-91e9-a5dd1d8e1750',
+      },
+    };
+    const first = await repository.updateBooking?.(input);
+    expect(first?.money).toMatchObject({ held: '100.00', refunded: '50.00' });
+    // The edit committed, but the client never saw the response. Retrying the
+    // same command must return the stored result instead of BOOKING_CHANGED.
+    const replay = await repository.updateBooking?.(input);
+    expect(replay).toMatchObject({ note: 'Refundable edit', client: { id: clientId } });
+    const refunds = await database.select().from(erpBookingPayments).where(and(
+      eq(erpBookingPayments.bookingId, bookingId),
+      eq(erpBookingPayments.kind, 'refund'),
+    ));
+    expect(refunds).toHaveLength(1);
+    await expect(repository.updateBooking?.({ ...input, note: 'Different body' }))
+      .rejects.toMatchObject({ code: 'BOOKING_OPERATION_CONFLICT' });
+  });
+
   it('blocks removing past bookings and moving them to or from a past time', async () => {
     const bookingId = await arrangeBooking([serviceId], '0.00', false);
     const afterAppointment = new Date('2026-09-01T07:30:00.000Z');
