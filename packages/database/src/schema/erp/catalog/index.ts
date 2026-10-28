@@ -115,6 +115,14 @@ export const erpProducts = mysqlTable('erp_products', {
   branchId: int('branch_id').notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   nameNormalized: varchar('name_normalized', { length: 64 }).notNull(),
+  /**
+   * The name as another branch compares it: sha256 over a form that folds case,
+   * spacing, Arabic diacritics and the alef/taa-marbuta/alef-maqsura variants.
+   * Stored because a transfer finds and locks the receiving row by it, and setup
+   * compares whole branches; non-unique because in-branch uniqueness keeps the
+   * stricter `name_normalized` rule, so two rows may share this key.
+   */
+  matchKey: varchar('match_key', { length: 64 }).notNull().default(''),
   description: varchar('description', { length: 1000 }),
   sellingPrice: decimal('selling_price', { precision: 12, scale: 2 }).notNull(),
   lastPurchaseCost: decimal('last_purchase_cost', { precision: 12, scale: 2 }).notNull().default('0.00'),
@@ -142,6 +150,10 @@ export const erpProducts = mysqlTable('erp_products', {
   // while a code that does exist can only point at one product in the branch.
   uniqueIndex('erp_products_branch_barcode_unique').on(table.branchId, table.barcode),
   index('erp_products_branch_active_idx').on(table.branchId, table.isActive),
+  // Deliberately non-unique: two rows in one branch may normalize to the same
+  // match key (in-branch uniqueness still uses `name_normalized`), and the
+  // transfer path treats two hits as "matches 2+".
+  index('erp_products_branch_match_key_idx').on(table.branchId, table.matchKey),
   check('erp_products_selling_price_positive', sql`${table.sellingPrice} > 0`),
   check('erp_products_purchase_cost_nonnegative', sql`${table.lastPurchaseCost} >= 0`),
   check('erp_products_commission_range', sql`${table.commissionPercent} between 0 and 100`),

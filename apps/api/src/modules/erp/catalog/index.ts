@@ -3,5 +3,6 @@ export * from './catalog-module.js';
 export * from './catalog-router.js';
 export * from './categories-repository.js';
 export * from './categories-service.js';
+export * from './product-match-key.js';
 export * from './services-repository.js';
 export * from './services-service.js';

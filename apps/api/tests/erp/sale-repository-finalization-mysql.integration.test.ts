@@ -442,6 +442,7 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => data.at);
     const product = await repository.create({
       branchId: data.branchId, name: `Stock ${data.marker}`, nameNormalized: `stock-${data.marker}`,
+      matchKey: `stock-key-${data.marker}`,
       description: null, sellingPrice: '100.00', lastPurchaseCost: '60.00',
       lowStockThreshold: 2, barcode: null, isActive: true, openingQuantity: 0,
     }, data.adminAccountId);

@@ -11,7 +11,7 @@ import type { ErpBranchContextResolver } from '../branch-context.js';
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 import { ErpBranchContextError } from '../branch-context.js';
 import type { StockBatch } from '@capella/contracts';
-import { normalizeCatalogName } from '../catalog/index.js';
+import { matchKeyFor, normalizeCatalogName } from '../catalog/index.js';
 
 export type ProductStockRecord = {
   batches?: StockBatch[];
@@ -31,10 +31,15 @@ export type ProductStockRecord = {
 };
 export type ProductStockWrite = Omit<ProductStockRecord, 'id' | 'quantity' | 'createdAt' | 'updatedAt'> & {
   nameNormalized: string;
+  /**
+   * The cross-branch comparison key. It is written with the row and never read
+   * back through the product API: only transfers and setup look it up.
+   */
+  matchKey: string;
   openingQuantity: number;
 };
 export type ProductStockChanges = Partial<Pick<ProductStockWrite,
-  'name' | 'nameNormalized' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'commissionPercent' | 'lowStockThreshold' | 'barcode' | 'isActive'>>;
+  'name' | 'nameNormalized' | 'matchKey' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'commissionPercent' | 'lowStockThreshold' | 'barcode' | 'isActive'>>;
 export type StockMovementRecord = {
   batches?: import('@capella/contracts').BatchAllocation[] | null;
   id: number; productId: number; branchId: number; reason: string; sourceType: string;
@@ -125,7 +130,8 @@ export const createProductStockService = (dependencies: {
       if (input.barcode) await rejectDuplicateBarcode(context.branchId, input.barcode);
       try {
         return await repository.create({
-          branchId: context.branchId, name, nameNormalized, description: input.description ?? null,
+          branchId: context.branchId, name, nameNormalized, matchKey: matchKeyFor(name),
+          description: input.description ?? null,
           sellingPrice: input.sellingPrice, lastPurchaseCost: input.lastPurchaseCost,
           commissionPercent: input.commissionPercent ?? '0.00',
           lowStockThreshold: input.lowStockThreshold, barcode: input.barcode ?? null,
@@ -162,6 +168,7 @@ export const createProductStockService = (dependencies: {
       if (input.name !== undefined) {
         changes.name = input.name.trim();
         changes.nameNormalized = normalizeCatalogName(changes.name);
+        changes.matchKey = matchKeyFor(changes.name);
         await rejectDuplicate(context.branchId, changes.nameNormalized, id);
       }
       if (input.description !== undefined) changes.description = input.description;

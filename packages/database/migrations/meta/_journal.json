@@ -855,6 +855,13 @@
       "when": 1793081709110,
       "tag": "0121_booking_cancellation_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "5",
+      "when": 1793187852832,
+      "tag": "0122_quick_human_robot",
+      "breakpoints": true
     }
   ]
 }

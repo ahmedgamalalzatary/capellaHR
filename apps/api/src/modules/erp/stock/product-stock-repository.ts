@@ -10,6 +10,7 @@ import { readStockBatches, createStockBatch, ensureLegacyBatch, takeBatchQuantit
 type Database = ReturnType<typeof createDatabase>;
 const productSelection = {
   id: erpProducts.id, branchId: erpProducts.branchId, name: erpProducts.name,
+  matchKey: erpProducts.matchKey,
   description: erpProducts.description, sellingPrice: erpProducts.sellingPrice,
   lastPurchaseCost: erpProducts.lastPurchaseCost, lowStockThreshold: erpProducts.lowStockThreshold,
   commissionPercent: erpProducts.commissionPercent,

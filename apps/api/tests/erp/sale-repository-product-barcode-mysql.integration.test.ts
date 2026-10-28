@@ -31,7 +31,8 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => data.at);
     const write = (suffix: string, barcode: string | null) => ({
       branchId: data.branchId, name: `Coded ${suffix} ${data.marker}`,
-      nameNormalized: `coded-${suffix}-${data.marker}`, description: null,
+      nameNormalized: `coded-${suffix}-${data.marker}`, matchKey: `key-${suffix}-${data.marker}`,
+      description: null,
       sellingPrice: '10.00', lastPurchaseCost: '0.00', lowStockThreshold: 0,
       barcode, isActive: true, openingQuantity: 0,
     });
@@ -55,6 +56,7 @@ describe('ERP sale repository MySQL integration', () => {
     const repository = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => data.at);
     await expect(repository.create({
       branchId: data.branchId, name: `Bad ${data.marker}`, nameNormalized: `bad-${data.marker}`,
+      matchKey: `bad-key-${data.marker}`,
       description: null, sellingPrice: '10.00', lastPurchaseCost: '0.00', lowStockThreshold: 0,
       barcode: 'ab', isActive: true, openingQuantity: 0,
     }, data.adminAccountId)).rejects.toBeDefined();

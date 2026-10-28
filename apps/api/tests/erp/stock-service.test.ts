@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createProductStockService, ProductStockError, type ProductStockRepository } from '../../src/modules/erp/stock/index.js';
+import { matchKeyFor } from '../../src/modules/erp/catalog/index.js';
 
 const admin = { role: 'admin' as const, accountId: 7 };
 const cashier = { role: 'cashier' as const, accountId: 8, branchId: 2 };
@@ -102,6 +103,32 @@ describe('ERP product stock service', () => {
     await expect(service(repo).adjust(cashier, 11, { quantityDelta: 1, reason: 'count_correction' }))
       .rejects.toMatchObject({ code: 'PRODUCT_ADJUSTMENT_ADMIN_REQUIRED' });
     expect(vi.mocked(Reflect.get(repo, 'adjust'))).not.toHaveBeenCalled();
+  });
+
+  it('stores the cross-branch match key on create and on rename', async () => {
+    // Transfers find and lock the receiving product by this key, so it has to be
+    // written with the row rather than recomputed from names at query time.
+    const repo = repository();
+    await service(repo).create(admin, {
+      branchId: 2, name: '  SHAMPOO  ', sellingPrice: '120.00', lastPurchaseCost: '70.00',
+      lowStockThreshold: 3, description: null,
+    });
+    expect(vi.mocked(Reflect.get(repo, 'create'))).toHaveBeenCalledWith(
+      expect.objectContaining({ matchKey: matchKeyFor('SHAMPOO') }), 7,
+    );
+
+    const update = vi.mocked(Reflect.get(repo, 'update'));
+    await service(repo).update(admin, 11, { name: 'شَامْبُو' });
+    expect(update).toHaveBeenCalledWith(
+      11, 2, expect.objectContaining({ matchKey: matchKeyFor('شَامْبُو') }), 7,
+    );
+  });
+
+  it('does not touch the match key when a rename is absent', async () => {
+    const repo = repository();
+    const update = vi.mocked(Reflect.get(repo, 'update'));
+    await service(repo).update(admin, 11, { sellingPrice: '130.00' });
+    expect(update).toHaveBeenCalledWith(11, 2, { sellingPrice: '130.00' }, 7);
   });
 
   it('rejects an adjustment that would make stock negative', async () => {
