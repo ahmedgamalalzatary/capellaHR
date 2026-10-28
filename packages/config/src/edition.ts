@@ -11,7 +11,7 @@ export const MODULE_NAMES = [
   'reports', 'self-service', 'dashboard',
   'erp-assignment', 'erp-catalog', 'erp-clients', 'erp-stock', 'erp-suppliers',
   'erp-expenses', 'erp-sales', 'erp-commissions', 'erp-reports', 'erp-transfers',
-  'erp-fixed-assets', 'erp-bookings',
+  'erp-fixed-assets', 'erp-bookings', 'erp-product-sync',
 ] as const;
 
 export type ModuleName = (typeof MODULE_NAMES)[number];
@@ -60,6 +60,9 @@ export const MODULE_REGISTRY = {
   'erp-sales': module('sellable', ['erp-assignment']),
   // Moving stock between branches is a sale from one branch to the other.
   'erp-transfers': module('sellable', ['erp-stock', 'erp-sales']),
+  // Keeping two branches' catalogs aligned needs the catalog and the transfers
+  // that carry the goods; it is a setup and monitoring layer, not a new plane.
+  'erp-product-sync': module('sellable', ['erp-stock', 'erp-transfers']),
   'erp-commissions': module('sellable', ['erp-sales']),
   'erp-reports': module('sellable', [
     'reports',
@@ -102,6 +105,7 @@ const ERP_MODULES: readonly ModuleName[] = [
   'erp-transfers',
   'erp-fixed-assets',
   'erp-bookings',
+  'erp-product-sync',
 ];
 
 const EDITION_ROOTS: Record<EditionName, readonly ModuleName[]> = {

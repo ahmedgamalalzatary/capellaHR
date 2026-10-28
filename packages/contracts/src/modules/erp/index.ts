@@ -7,6 +7,7 @@ export * from './consumables/index.ts';
 export * from './erp-reports/index.ts';
 export * from './expenses/index.ts';
 export * from './fixed-assets/index.ts';
+export * from './product-sync/index.ts';
 export * from './sales/index.ts';
 export * from './stock/index.ts';
 export * from './suppliers/index.ts';

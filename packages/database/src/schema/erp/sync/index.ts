@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { check, foreignKey, index, int, mysqlEnum, mysqlTable, timestamp, uniqueIndex } from 'drizzle-orm/mysql-core';
 
 import { erpProducts } from '../catalog/index.js';
+import { accounts } from '../../auth/index.js';
 import { branches } from '../../organization/index.js';
 
 export const erpBranchLinkStates = ['pending', 'active'] as const;
@@ -18,11 +19,13 @@ export const erpBranchLinks = mysqlTable('erp_branch_links', {
   senderBranchId: int('sender_branch_id').notNull(),
   receiverBranchId: int('receiver_branch_id').notNull(),
   state: mysqlEnum('state', erpBranchLinkStates).notNull().default('pending'),
+  createdByAccountId: int('created_by_account_id').notNull(),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
   foreignKey({ name: 'erp_branch_links_sender_fk', columns: [table.senderBranchId], foreignColumns: [branches.id] }),
   foreignKey({ name: 'erp_branch_links_receiver_fk', columns: [table.receiverBranchId], foreignColumns: [branches.id] }),
+  foreignKey({ name: 'erp_branch_links_created_by_fk', columns: [table.createdByAccountId], foreignColumns: [accounts.id] }),
   uniqueIndex('erp_branch_links_pair_unique').on(table.senderBranchId, table.receiverBranchId),
   check('erp_branch_links_distinct', sql`${table.senderBranchId} <> ${table.receiverBranchId}`),
 ]);

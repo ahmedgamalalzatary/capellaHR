@@ -28,7 +28,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService, type FaceEnrollmentResult } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createConsumablesRouter, createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ConsumablesService, type ExpenseService, type FixedAssetService, type ProductStockService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
+import { createConsumablesRouter, createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductSyncRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ConsumablesService, type ExpenseService, type FixedAssetService, type ProductStockService, type ProductSyncService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -75,6 +75,7 @@ export const createApiRouter = (dependencies: {
   erpConsumablesService?: ConsumablesService;
   erpSupplierPurchaseService?: SupplierPurchaseService;
   erpStockTransferService?: StockTransferService;
+  erpProductSyncService?: ProductSyncService;
   erpExpenseService?: ExpenseService;
   erpFixedAssetService?: FixedAssetService;
   erpAssignmentService?: EmployeeAssignmentService;
@@ -261,6 +262,17 @@ export const createApiRouter = (dependencies: {
         erpAuth.authenticate,
         erpAuth.requireErpAccount,
         createErpStockTransfersRouter(dependencies.erpStockTransferService),
+      );
+    }
+    if (dependencies.erpProductSyncService) {
+      const erpAuth = createAuthMiddleware(dependencies.authService);
+      // Deciding which branch feeds which, and settling what each product
+      // matches, is the Admin's call alone.
+      router.use(
+        '/erp/product-sync',
+        erpAuth.authenticate,
+        erpAuth.requireAdmin,
+        createErpProductSyncRouter(dependencies.erpProductSyncService),
       );
     }
     if (dependencies.erpExpenseService) {

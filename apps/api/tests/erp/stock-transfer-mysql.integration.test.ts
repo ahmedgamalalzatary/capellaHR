@@ -658,7 +658,7 @@ describe('ERP stock transfer MySQL integration', () => {
     const data = await fixture();
     await database.insert(erpBranchLinks).values({
       senderBranchId: data.sourceBranchId, receiverBranchId: data.destinationBranchId,
-      state: 'active', createdAt: at, updatedAt: at,
+      state: 'active', createdByAccountId: admin.accountId, createdAt: at, updatedAt: at,
     });
 
     const transfer = await service().transfer(admin, {
@@ -681,7 +681,7 @@ describe('ERP stock transfer MySQL integration', () => {
     const own = await receivingProduct(data, 'منتج خاص');
     await database.insert(erpBranchLinks).values({
       senderBranchId: data.sourceBranchId, receiverBranchId: data.destinationBranchId,
-      state: 'active', createdAt: at, updatedAt: at,
+      state: 'active', createdByAccountId: admin.accountId, createdAt: at, updatedAt: at,
     });
     await link(data, null, 'excluded', own);
 

@@ -18,6 +18,7 @@ import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 
 import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
+import { ProductSyncView } from '@/features/product-sync';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -667,6 +668,7 @@ export function ProductStockView() {
                   />
                 )}
           </Card>
+          {isAdmin ? <ProductSyncView /> : null}
         </>
       )}
     </section>

@@ -34,6 +34,7 @@ import {
   createErpSuppliersModule,
 } from '../modules/erp/index.js';
 import { createSalesModule } from '../modules/erp/sales/index.js';
+import { createErpProductSyncModule } from '../modules/erp/product-sync/index.js';
 import { createErpTransfersModule } from '../modules/erp/transfers/index.js';
 import { createPayrollModule } from '../modules/payroll/index.js';
 import { createReportsModule } from '../modules/reports/index.js';
@@ -281,6 +282,9 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
         sales: salesModule.sales,
       })
     : undefined;
+  const productSyncModule = enabled('erp-product-sync') ? createErpProductSyncModule(database, {
+    audit: auditModule.erp,
+  }) : undefined;
   const commissionModule = enabled('erp-commissions') ? createCommissionModule(database, {
     audit: auditModule.erp,
     branches: branchModule.erp,
@@ -364,6 +368,7 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     ...(consumablesModule ? { erpConsumablesService: consumablesModule.service } : {}),
     ...(erpSuppliersModule ? { erpSupplierPurchaseService: erpSuppliersModule.service } : {}),
     ...(erpTransfersModule ? { erpStockTransferService: erpTransfersModule.service } : {}),
+    ...(productSyncModule ? { erpProductSyncService: productSyncModule.service } : {}),
     ...(erpExpensesModule ? { erpExpenseService: erpExpensesModule.service } : {}),
     ...(erpFixedAssetsModule ? { erpFixedAssetService: erpFixedAssetsModule.service } : {}),
     ...(erpAssignmentModule ? { erpAssignmentService: erpAssignmentModule.service } : {}),

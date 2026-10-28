@@ -1,0 +1,2 @@
+ALTER TABLE `erp_branch_links` ADD `created_by_account_id` int NOT NULL;--> statement-breakpoint
+ALTER TABLE `erp_branch_links` ADD CONSTRAINT `erp_branch_links_created_by_fk` FOREIGN KEY (`created_by_account_id`) REFERENCES `accounts`(`id`) ON DELETE no action ON UPDATE no action;
