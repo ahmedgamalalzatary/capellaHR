@@ -270,6 +270,24 @@ describe('ERP service catalog service', () => {
     expect(created).toMatchObject({ name: 'صبغة' });
   });
 
+  it('refuses a cashier setting a commission percentage on a service', async () => {
+    // The counter hides the field, but the API is the door: a cashier who could
+    // set 100% would hand the whole line to the assigned employee.
+    const repository = serviceRepository();
+    const create = vi.mocked(Reflect.get(repository, 'create'));
+    await expect(services(repository)
+      .create(CASHIER, { name: 'صبغة', categoryId: 1, price: '150.00', commissionPercent: '25.00' }))
+      .rejects.toMatchObject({ code: 'SERVICE_COMMISSION_ADMIN_REQUIRED' });
+    await expect(services(repository).update(CASHIER, 1, { commissionPercent: '25.00' }))
+      .rejects.toMatchObject({ code: 'SERVICE_COMMISSION_ADMIN_REQUIRED' });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a cashier zeroing a commission percentage an admin set', async () => {
+    await expect(services(serviceRepository()).update(CASHIER, 1, { commissionPercent: '0.00' }))
+      .rejects.toMatchObject({ code: 'SERVICE_COMMISSION_ADMIN_REQUIRED' });
+  });
+
   it('rejects a category that belongs to another branch', async () => {
     const other = categoryRepository({ findById: vi.fn(async () => category({ branchId: 2 })) });
 

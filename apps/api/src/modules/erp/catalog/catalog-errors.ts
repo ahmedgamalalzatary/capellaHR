@@ -1,5 +1,6 @@
 export type CatalogErrorCode =
   | 'ERP_CATALOG_ADMIN_REQUIRED'
+  | 'SERVICE_COMMISSION_ADMIN_REQUIRED'
   | 'CATEGORY_NOT_FOUND'
   | 'CATEGORY_NAME_EXISTS'
   | 'CATEGORY_IN_USE'
@@ -28,6 +29,7 @@ export class CatalogError extends Error {
 
 export const CATALOG_MESSAGES = {
   ERP_CATALOG_ADMIN_REQUIRED: 'إدارة الكتالوج متاحة للمدير فقط',
+  SERVICE_COMMISSION_ADMIN_REQUIRED: 'نسبة عمولة الخدمة متاحة للمسؤول فقط',
   CATEGORY_NOT_FOUND: 'التصنيف غير موجود',
   CATEGORY_NAME_EXISTS: 'اسم التصنيف مستخدم بالفعل في هذا النوع',
   CATEGORY_IN_USE: 'لا يمكن حذف تصنيف مستخدم؛ يمكن إيقافه بدلًا من ذلك',

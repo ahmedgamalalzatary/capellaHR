@@ -153,6 +153,13 @@ export const createServiceCatalogService = (dependencies: {
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       await requireServiceCategory(branchId, input.categoryId);
 
+      // A commission percentage is pay data: only an Admin sets it. A Cashier
+      // may create the service, but the rate it carries must stay at zero.
+      if (actor.role !== 'admin' && input.commissionPercent !== undefined
+        && input.commissionPercent !== '0.00') {
+        throw catalogError('SERVICE_COMMISSION_ADMIN_REQUIRED');
+      }
+
       const name = input.name.trim();
       const nameNormalized = normalizeCatalogName(name);
       await rejectDuplicate(branchId, nameNormalized);
@@ -196,6 +203,12 @@ export const createServiceCatalogService = (dependencies: {
     ) {
       const { branchId } = await resolveBranchContext(actor, input.branchId);
       const current = await readInBranch(branchId, id);
+
+      // Any commission percentage a Cashier sends is refused, including zero:
+      // it would rewrite the rate the Admin set for the assigned employee.
+      if (actor.role !== 'admin' && input.commissionPercent !== undefined) {
+        throw catalogError('SERVICE_COMMISSION_ADMIN_REQUIRED');
+      }
 
       if (input.price !== undefined && input.price !== null && current.price !== null) {
         throw catalogError('SERVICE_PRICE_LOCKED');

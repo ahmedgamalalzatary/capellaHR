@@ -57,7 +57,8 @@ export interface ProductStockRepository {
 }
 
 export type ProductStockErrorCode =
-  | 'PRODUCT_NOT_FOUND' | 'PRODUCT_NAME_EXISTS' | 'PRODUCT_BARCODE_EXISTS' | 'INSUFFICIENT_STOCK';
+  | 'PRODUCT_NOT_FOUND' | 'PRODUCT_NAME_EXISTS' | 'PRODUCT_BARCODE_EXISTS' | 'INSUFFICIENT_STOCK'
+  | 'PRODUCT_COMMISSION_ADMIN_REQUIRED' | 'PRODUCT_ADJUSTMENT_ADMIN_REQUIRED';
 export class ProductStockError extends Error {
   constructor(public readonly code: ProductStockErrorCode, message: string, public readonly existingId?: number) {
     super(message);
@@ -69,6 +70,8 @@ const messages: Record<ProductStockErrorCode, string> = {
   PRODUCT_NAME_EXISTS: 'اسم المنتج مستخدم بالفعل',
   PRODUCT_BARCODE_EXISTS: 'الباركود مستخدم بالفعل لمنتج آخر',
   INSUFFICIENT_STOCK: 'الكمية المتاحة غير كافية',
+  PRODUCT_COMMISSION_ADMIN_REQUIRED: 'نسبة عمولة المنتج متاحة للمسؤول فقط',
+  PRODUCT_ADJUSTMENT_ADMIN_REQUIRED: 'تسوية مخزون المنتج متاحة للمسؤول فقط',
 };
 const error = (code: ProductStockErrorCode, existingId?: number) => new ProductStockError(code, messages[code], existingId);
 const isDuplicate = (value: unknown) => typeof value === 'object' && value !== null && (
@@ -112,6 +115,12 @@ export const createProductStockService = (dependencies: {
       const context = await resolveBranchContext(actor, input.branchId);
       const name = input.name.trim();
       const nameNormalized = normalizeCatalogName(name);
+      // A commission percentage is pay data: only an Admin sets it. A Cashier
+      // may create the product, but the rate it carries must stay at zero.
+      if (actor.role !== 'admin' && input.commissionPercent !== undefined
+        && input.commissionPercent !== '0.00') {
+        throw error('PRODUCT_COMMISSION_ADMIN_REQUIRED');
+      }
       await rejectDuplicate(context.branchId, nameNormalized);
       if (input.barcode) await rejectDuplicateBarcode(context.branchId, input.barcode);
       try {
@@ -144,6 +153,11 @@ export const createProductStockService = (dependencies: {
     async update(actor: ErpAccountIdentity, id: number, input: UpdateProductInput) {
       const context = await resolveBranchContext(actor, input.branchId);
       await inBranch(context.branchId, id);
+      // Any commission percentage a Cashier sends is refused, including zero:
+      // it would rewrite the rate the Admin set for the assigned employee.
+      if (actor.role !== 'admin' && input.commissionPercent !== undefined) {
+        throw error('PRODUCT_COMMISSION_ADMIN_REQUIRED');
+      }
       const changes: ProductStockChanges = {};
       if (input.name !== undefined) {
         changes.name = input.name.trim();
@@ -217,6 +231,9 @@ export const createProductStockService = (dependencies: {
       }
     },
     async adjust(actor: ErpAccountIdentity, id: number, input: AdjustProductStockInput) {
+      // Adjusting stock creates goods out of nothing, so it is an Admin's move:
+      // the screen hides it from a Cashier, and the server refuses it outright.
+      if (actor.role !== 'admin') throw error('PRODUCT_ADJUSTMENT_ADMIN_REQUIRED');
       const context = await resolveBranchContext(actor, input.branchId);
       await inBranch(context.branchId, id);
       return repository.adjust(id, context.branchId, input, context.accountId);

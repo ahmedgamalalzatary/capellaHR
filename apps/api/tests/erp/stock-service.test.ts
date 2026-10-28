@@ -52,10 +52,56 @@ describe('ERP product stock service', () => {
     expect(result.items[0]).toMatchObject({ lastPurchaseCost: '70.00', lowStockThreshold: 3 });
 
     await expect(service().update(cashier, 11, { name: 'X' })).resolves.toMatchObject({ id: 11 });
-    await expect(service().adjust(cashier, 11, { quantityDelta: 1, reason: 'count_correction' }))
-      .resolves.toMatchObject({ movementId: 44 });
     await expect(service().listMovements(cashier, { page: 1, pageSize: 20 }))
       .resolves.toMatchObject({ total: 0 });
+  });
+
+  it('refuses a Cashier setting a commission percentage on a product', async () => {
+    // The screen hides the field, but the API is the real door: a cashier who
+    // could set 100% would hand the whole line to the assigned employee.
+    const repo = repository();
+    await expect(service(repo).update(cashier, 11, { commissionPercent: '100.00' }))
+      .rejects.toMatchObject({ code: 'PRODUCT_COMMISSION_ADMIN_REQUIRED' });
+    await expect(service(repo).create(cashier, {
+      branchId: 2, name: 'Shampoo', sellingPrice: '120.00', lastPurchaseCost: '70.00',
+      lowStockThreshold: 3, description: null, commissionPercent: '25.00',
+    })).rejects.toMatchObject({ code: 'PRODUCT_COMMISSION_ADMIN_REQUIRED' });
+    expect(vi.mocked(Reflect.get(repo, 'create'))).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Cashier zeroing a commission percentage an Admin set', async () => {
+    // Zero is a rate too: on update it would quietly strip the assigned
+    // employee's earnings, so the field is refused whatever it carries.
+    await expect(service().update(cashier, 11, { commissionPercent: '0.00' }))
+      .rejects.toMatchObject({ code: 'PRODUCT_COMMISSION_ADMIN_REQUIRED' });
+  });
+
+  it('lets a Cashier create a product without touching the commission percentage', async () => {
+    const repo = repository();
+    await expect(service(repo).create(cashier, {
+      branchId: 2, name: 'Shampoo', sellingPrice: '120.00', lastPurchaseCost: '70.00',
+      lowStockThreshold: 3, description: null,
+    })).resolves.toMatchObject({ id: 11 });
+    expect(vi.mocked(Reflect.get(repo, 'create')))
+      .toHaveBeenCalledWith(expect.objectContaining({ commissionPercent: '0.00' }), 8);
+  });
+
+  it('lets a Cashier create a product with a zero commission percentage', async () => {
+    // The counter sends the field it holds, and a new product earns nothing
+    // until an Admin sets a rate — that is the only rate a Cashier may write.
+    const repo = repository();
+    await expect(service(repo).create(cashier, {
+      branchId: 2, name: 'Shampoo', sellingPrice: '120.00', lastPurchaseCost: '70.00',
+      lowStockThreshold: 3, description: null, commissionPercent: '0.00',
+    })).resolves.toMatchObject({ id: 11 });
+  });
+
+  it('refuses a Cashier adjusting stock', async () => {
+    // Stock adjustment is how a cashier would create goods out of nothing.
+    const repo = repository();
+    await expect(service(repo).adjust(cashier, 11, { quantityDelta: 1, reason: 'count_correction' }))
+      .rejects.toMatchObject({ code: 'PRODUCT_ADJUSTMENT_ADMIN_REQUIRED' });
+    expect(vi.mocked(Reflect.get(repo, 'adjust'))).not.toHaveBeenCalled();
   });
 
   it('rejects an adjustment that would make stock negative', async () => {
