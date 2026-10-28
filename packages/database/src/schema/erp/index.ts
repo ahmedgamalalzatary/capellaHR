@@ -8,4 +8,5 @@ export * from './fixed-assets/index.js';
 export * from './sales/index.js';
 export * from './stock/index.js';
 export * from './suppliers/index.js';
+export * from './sync/index.js';
 export * from './transfers/index.js';

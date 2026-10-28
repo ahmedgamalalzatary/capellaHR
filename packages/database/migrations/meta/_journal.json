@@ -862,6 +862,13 @@
       "when": 1793187852832,
       "tag": "0122_quick_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "5",
+      "when": 1793188982332,
+      "tag": "0123_smooth_dragon_man",
+      "breakpoints": true
     }
   ]
 }

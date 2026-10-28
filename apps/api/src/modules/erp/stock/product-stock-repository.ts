@@ -1,6 +1,7 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, erpProducts, erpProductStocks, erpStockMovements, erpStockBatches, erpStockBatchBalances } from '@capella/database/schema';
-import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
+import { accounts, branches, erpProducts, erpProductStocks, erpStockMovements, erpStockBatches, erpStockBatchBalances } from '@capella/database/schema';
+import { and, asc, count, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
+import type { StockBatch } from '@capella/contracts';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { ProductStockError, type ProductStockRecord, type ProductStockRepository } from './product-stock-service.js';
@@ -8,6 +9,35 @@ import { ProductStockError, type ProductStockRecord, type ProductStockRepository
 import { readStockBatches, createStockBatch, ensureLegacyBatch, takeBatchQuantities, addBatchQuantities, StockBatchError } from './stock-batches.js';
 
 type Database = ReturnType<typeof createDatabase>;
+type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * A transfer now gives the receiving branch its own batch, so a batch is shared
+ * only for rows written before that change. Naming those branches lets the
+ * screen say who else is looking at this expiry.
+ */
+const withSharedBranches = async (
+  executor: Executor, batches: StockBatch[], branchId: number,
+): Promise<StockBatch[]> => {
+  if (!batches.length) return batches;
+  const rows = await executor.select({
+    batchId: erpStockBatchBalances.batchId,
+    branchId: branches.id,
+    branchName: branches.name,
+  }).from(erpStockBatchBalances)
+    .innerJoin(branches, eq(branches.id, erpStockBatchBalances.branchId))
+    .where(and(
+      inArray(erpStockBatchBalances.batchId, batches.map((batch) => batch.batchId)),
+      ne(erpStockBatchBalances.branchId, branchId),
+      gt(erpStockBatchBalances.quantity, 0),
+    ));
+  const shared = new Map<number, Array<{ branchId: number; branchName: string }>>();
+  for (const row of rows) {
+    shared.set(row.batchId, [...(shared.get(row.batchId) ?? []), { branchId: row.branchId, branchName: row.branchName }]);
+  }
+  return batches.map((batch) => ({ ...batch, sharedWithBranches: shared.get(batch.batchId) ?? [] }));
+};
+
 const productSelection = {
   id: erpProducts.id, branchId: erpProducts.branchId, name: erpProducts.name,
   matchKey: erpProducts.matchKey,
@@ -24,7 +54,9 @@ export const createDrizzleProductStockRepository = (
   audit: ErpAuditCapability,
   now: () => Date = () => new Date(),
 ): ProductStockRepository => ({
-  listBatches(id, branchId) { return readStockBatches(database, id, branchId); },
+  async listBatches(id, branchId) {
+    return withSharedBranches(database, await readStockBatches(database, id, branchId), branchId);
+  },
   updateBatchExpiry(id, branchId, batchId, expiryDate, accountId) {
     return database.transaction(async (tx) => {
       const before = (await tx.select().from(erpStockBatches).innerJoin(erpStockBatchBalances, eq(erpStockBatchBalances.batchId, erpStockBatches.id))
@@ -33,7 +65,7 @@ export const createDrizzleProductStockRepository = (
       const at = now();
       await tx.update(erpStockBatches).set({ expiryDate, updatedAt: at }).where(eq(erpStockBatches.id, batchId));
       await audit.record(tx, { module: 'erp-stock', action: 'expiry_update', entityType: 'stock-batch', entityId: batchId, beforeState: before.erp_stock_batches, afterState: { expiryDate }, relatedIds: { branchId, productId: id, actingAccountId: accountId }, createdAt: at });
-      return readStockBatches(tx, id, branchId);
+      return withSharedBranches(tx, await readStockBatches(tx, id, branchId), branchId);
     });
   },
   async create(input, actingAccountId) {

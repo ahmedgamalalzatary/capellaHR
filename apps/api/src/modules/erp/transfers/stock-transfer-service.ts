@@ -79,6 +79,7 @@ export type StockTransferErrorCode =
   | 'TRANSFER_COST_REQUIRED'
   | 'TRANSFER_COST_CHANGED'
   | 'TRANSFER_DESTINATION_PRODUCT_INACTIVE'
+  | 'TRANSFER_DESTINATION_UNMATCHED'
   | 'TRANSFER_KEY_REUSED'
   | 'PRODUCT_NOT_FOUND'
   | 'INSUFFICIENT_STOCK';
@@ -90,6 +91,7 @@ const messages: Record<StockTransferErrorCode, string> = {
   TRANSFER_COST_REQUIRED: 'يجب تسجيل تكلفة شراء المنتج قبل تحويله',
   TRANSFER_COST_CHANGED: 'تغيرت تكلفة المنتج أثناء التحويل، أعد المحاولة',
   TRANSFER_DESTINATION_PRODUCT_INACTIVE: 'المنتج موقوف في الفرع المستلم، أعد تنشيطه أولاً',
+  TRANSFER_DESTINATION_UNMATCHED: 'لا يوجد منتج مقابل صالح في الفرع المستلم. افتح شاشة المزامنة لتحديد المنتج المطابق أو إنشاء منتج جديد قبل التحويل',
   TRANSFER_KEY_REUSED: 'مفتاح العملية مستخدم لتحويل مختلف',
   PRODUCT_NOT_FOUND: 'المنتج غير موجود',
   INSUFFICIENT_STOCK: 'الكمية المتاحة غير كافية',

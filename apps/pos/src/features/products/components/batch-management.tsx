@@ -22,10 +22,13 @@ export function BatchManagement({ product, branchId, isAdmin, onClose }: { produ
     }, onError: (error: unknown) => notifyError(error),
   });
   return <Modal title={`دفعات ${product.name}`} className="max-h-[90dvh] overflow-y-auto" onClose={() => { if (!save.isPending) onClose(); }}>
-    {isAdmin ? <p className="text-sm text-muted">تعديل الصلاحية يطبق على نفس الدفعة في كل الفروع والمستهلكات. الفواتير السابقة تحتفظ بالصلاحية المسجلة وقت الترحيل.</p> : null}
+    {isAdmin ? <p className="text-sm text-muted">كل فرع يحتفظ بنسخته من الدفعة، لذلك تعديل الصلاحية هنا لا يغيّر باقي الفروع. الفواتير السابقة تحتفظ بالصلاحية المسجلة وقت الترحيل.</p> : null}
     {query.isPending ? <p role="status">جارٍ تحميل الدفعات…</p> : query.isError ? <p role="alert">تعذر تحميل الدفعات.</p> : !query.data?.length ? <p>لا توجد دفعات مخزون.</p> : query.data.map((batch) => <div key={batch.batchId} className="space-y-2 rounded-control border border-line p-3">
       <p>دفعة #{batch.batchId} · عبوات {batch.quantity} · مستهلك {batch.consumableQuantity}</p>
       <p><BatchExpiry expiryDate={batch.expiryDate} /></p>
+      {batch.sharedWithBranches?.length ? <p role="alert" className="text-[13px] text-danger">
+        {`تحذير: هذه دفعة قديمة ما زالت مشتركة مع ${batch.sharedWithBranches.map((row) => row.branchName).join('، ')}. تعديل الصلاحية هنا لا يغيّر نسخهم.`}
+      </p> : null}
       {isAdmin ? <div className="flex flex-wrap gap-2"><Input type="date" aria-label={`صلاحية الدفعة ${batch.batchId}`} value={dates[batch.batchId] ?? batch.expiryDate ?? ''}
         onChange={(event) => setDates((current) => ({ ...current, [batch.batchId]: event.target.value }))} />
         <Button size="sm" disabled={save.isPending || dates[batch.batchId] === undefined} onClick={() => save.mutate({ batchId: batch.batchId, expiryDate: dates[batch.batchId] || null })}>حفظ الصلاحية</Button></div> : null}

@@ -7,7 +7,10 @@ import {
   commissionLedgerEntries,
   erpProducts,
   erpProductStocks,
+  erpBranchLinks,
+  erpProductLinks,
   erpStockBatchBalances,
+  erpStockBatches,
   erpStockMovements,
   erpStockTransferLines,
   erpStockTransfers,
@@ -19,10 +22,12 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createErpAuditCapability } from '../../src/modules/audit/index.js';
+import { matchKeyFor } from '../../src/modules/erp/catalog/index.js';
 import { createErpBranchContextResolver } from '../../src/modules/erp/branch-context.js';
 import { createDrizzleCashierSessionRepository } from '../../src/modules/erp/sales/cashier-sessions-repository.js';
 import { createDrizzleInvoiceSequenceStore } from '../../src/modules/erp/sales/invoice-sequence-store.js';
 import { createDrizzleSaleRepository } from '../../src/modules/erp/sales/sale-repository.js';
+import { createDrizzleProductStockRepository } from '../../src/modules/erp/stock/index.js';
 import { createSaleService } from '../../src/modules/erp/sales/sale-service.js';
 import { createInvoiceNumberAllocator } from '../../src/modules/erp/sales/services/invoice-number.js';
 import { createDrizzleStockTransferRepository } from '../../src/modules/erp/transfers/index.js';
@@ -62,6 +67,7 @@ const fixture = async (options: { cost?: string; quantity?: number } = {}) => {
   // Deliberately no employee and no roster: internal trade needs neither.
   const productId = Number((await database.insert(erpProducts).values({
     branchId: sourceBranchId, name: 'شامبو الأرغان', nameNormalized: `shampoo-${sequence}`,
+    matchKey: matchKeyFor('شامبو الأرغان'),
     description: 'زيت الأرغان', sellingPrice: '80.00',
     lastPurchaseCost: options.cost ?? '30.00', lowStockThreshold: 3,
     createdAt: at, updatedAt: at,
@@ -205,6 +211,7 @@ describe('ERP stock transfer MySQL integration', () => {
       branchId: data.destinationBranchId, name: 'شامبو الأرغان',
       nameNormalized: (await database.select({ hash: erpProducts.nameNormalized })
         .from(erpProducts).where(eq(erpProducts.id, data.productId)).limit(1))[0]!.hash,
+      matchKey: matchKeyFor('شامبو الأرغان'),
       sellingPrice: '95.00', lastPurchaseCost: '11.00', lowStockThreshold: 1,
       createdAt: at, updatedAt: at,
     }))[0].insertId);
@@ -335,6 +342,7 @@ describe('ERP stock transfer MySQL integration', () => {
       branchId: data.destinationBranchId, name: 'شامبو الأرغان',
       nameNormalized: (await database.select({ hash: erpProducts.nameNormalized })
         .from(erpProducts).where(eq(erpProducts.id, data.productId)).limit(1))[0]!.hash,
+      matchKey: matchKeyFor('شامبو الأرغان'),
       sellingPrice: '95.00', lastPurchaseCost: '11.00', lowStockThreshold: 1, isActive: false,
       createdAt: at, updatedAt: at,
     });
@@ -493,6 +501,199 @@ describe('ERP stock transfer MySQL integration', () => {
     };
     await service().transfer(admin, input);
     await expect(service().transfer(admin, { ...input, lines: [{ productId: data.productId, quantity: 1 }] })).rejects.toMatchObject({ code: 'TRANSFER_KEY_REUSED' });
+  });
+
+  const link = (
+    data: { sourceBranchId: number; destinationBranchId: number; productId: number },
+    receiverProductId: number | null,
+    state: 'linked' | 'excluded',
+    notSameAsProductId: number | null = null,
+  ) => database.insert(erpProductLinks).values({
+    senderBranchId: data.sourceBranchId, receiverBranchId: data.destinationBranchId,
+    senderProductId: data.productId, receiverProductId, state, notSameAsProductId,
+    createdAt: at, updatedAt: at,
+  });
+
+  const receivingProduct = async (data: { destinationBranchId: number }, name: string, extra: Partial<typeof erpProducts.$inferInsert> = {}) => Number((await database.insert(erpProducts).values({
+    branchId: data.destinationBranchId, name, nameNormalized: `dest-${name}-${Date.now()}`,
+    matchKey: matchKeyFor(name), sellingPrice: '95.00', lastPurchaseCost: '11.00', lowStockThreshold: 1,
+    createdAt: at, updatedAt: at, ...extra,
+  }))[0].insertId);
+
+  it('lands on the linked product even after the receiving branch renamed it', async () => {
+    const data = await fixture();
+    const renamed = await receivingProduct(data, 'شامبو أرغان فاخر');
+    await link(data, renamed, 'linked');
+
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 4 }],
+    });
+
+    expect(transfer.lines[0]).toMatchObject({ destinationProductId: renamed });
+    // Nothing new: the link decided where the goods go.
+    expect(await database.select().from(erpProducts)
+      .where(eq(erpProducts.branchId, data.destinationBranchId))).toHaveLength(1);
+  });
+
+  it('finds the receiving product by barcode when the names differ', async () => {
+    const data = await fixture();
+    const barcode = `9${String(Date.now()).slice(-12)}`;
+    await database.update(erpProducts).set({ barcode }).where(eq(erpProducts.id, data.productId));
+    const coded = await receivingProduct(data, 'Shampoo Argan', { barcode });
+
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 2 }],
+    });
+
+    expect(transfer.lines[0]).toMatchObject({ destinationProductId: coded });
+    expect(await database.select().from(erpProducts)
+      .where(eq(erpProducts.branchId, data.destinationBranchId))).toHaveLength(1);
+  });
+
+  it('copies the barcode and commission when it has to create the receiving product', async () => {
+    const data = await fixture();
+    const barcode = `8${String(Date.now()).slice(-12)}`;
+    await database.update(erpProducts)
+      .set({ barcode, commissionPercent: '7.50' })
+      .where(eq(erpProducts.id, data.productId));
+
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1 }],
+    });
+
+    expect((await database.select().from(erpProducts)
+      .where(eq(erpProducts.id, transfer.lines[0]!.destinationProductId)).limit(1))[0]).toMatchObject({
+      barcode, commissionPercent: '7.50', matchKey: matchKeyFor('شامبو الأرغان'),
+    });
+  });
+
+  it('refuses rather than landing on a product marked as not the same item', async () => {
+    const data = await fixture();
+    const clash = await receivingProduct(data, 'شامبو الأرغان');
+    await link(data, null, 'excluded', clash);
+
+    await expect(service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 2 }],
+    })).rejects.toMatchObject({ code: 'TRANSFER_DESTINATION_UNMATCHED' });
+
+    // Rolled back whole: no invoice, no stock moved, and no new product created
+    // around the exclusion.
+    expect(await database.select().from(invoices)
+      .where(eq(invoices.branchId, data.sourceBranchId))).toHaveLength(0);
+    expect((await database.select({ quantity: erpProductStocks.quantity })
+      .from(erpProductStocks).where(and(
+        eq(erpProductStocks.productId, data.productId),
+        eq(erpProductStocks.branchId, data.sourceBranchId),
+      )).limit(1))[0]?.quantity).toBe(10);
+    expect(await database.select().from(erpProducts)
+      .where(eq(erpProducts.branchId, data.destinationBranchId))).toHaveLength(1);
+  });
+
+  it('records a link when an unlinked product is sent along an active branch link', async () => {
+    const data = await fixture();
+    await database.insert(erpBranchLinks).values({
+      senderBranchId: data.sourceBranchId, receiverBranchId: data.destinationBranchId,
+      state: 'active', createdAt: at, updatedAt: at,
+    });
+
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1 }],
+    });
+
+    expect((await database.select().from(erpProductLinks).where(and(
+      eq(erpProductLinks.senderProductId, data.productId),
+      eq(erpProductLinks.receiverBranchId, data.destinationBranchId),
+    )).limit(1))[0]).toMatchObject({
+      state: 'linked', receiverProductId: transfer.lines[0]!.destinationProductId,
+    });
+  });
+
+  it('does not link a product that already has a settled row', async () => {
+    const data = await fixture();
+    const own = await receivingProduct(data, 'منتج خاص');
+    await database.insert(erpBranchLinks).values({
+      senderBranchId: data.sourceBranchId, receiverBranchId: data.destinationBranchId,
+      state: 'active', createdAt: at, updatedAt: at,
+    });
+    await link(data, null, 'excluded', own);
+
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1 }],
+    });
+
+    // The transfer created its own product, but the settled exclusion stands.
+    expect((await database.select().from(erpProductLinks).where(and(
+      eq(erpProductLinks.senderProductId, data.productId),
+      eq(erpProductLinks.receiverBranchId, data.destinationBranchId),
+    )).limit(1))[0]).toMatchObject({ state: 'excluded', receiverProductId: null });
+    expect(transfer.lines[0]!.destinationProductId).not.toBe(own);
+  });
+
+  it('gives each branch its own batch, so an expiry fix stays local', async () => {
+    const data = await fixture();
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 4 }],
+    });
+    const destinationProductId = transfer.lines[0]!.destinationProductId;
+    const sourceBatch = (await database.select().from(erpStockBatchBalances)
+      .where(eq(erpStockBatchBalances.branchId, data.sourceBranchId)))[0]!;
+    const destinationBatch = (await database.select().from(erpStockBatchBalances)
+      .where(eq(erpStockBatchBalances.branchId, data.destinationBranchId)))[0]!;
+
+    expect(destinationBatch.quantity).toBe(4);
+    expect(destinationBatch.batchId).not.toBe(sourceBatch.batchId);
+
+    const stock = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => at);
+    const after = await stock.updateBatchExpiry(
+      destinationProductId, data.destinationBranchId, destinationBatch.batchId, '2030-01-01', admin.accountId,
+    );
+
+    expect(after.find((batch) => batch.batchId === destinationBatch.batchId)?.expiryDate).toBe('2030-01-01');
+    // The sending branch's own lot never heard about it.
+    expect((await database.select().from(erpStockBatches)
+      .where(eq(erpStockBatches.id, sourceBatch.batchId)).limit(1))[0]?.expiryDate).toBeNull();
+  });
+
+  it('names the other branches still holding an old shared batch', async () => {
+    const data = await fixture();
+    const batchId = Number((await database.insert(erpStockBatches).values({
+      originProductId: data.productId, originBranchId: data.sourceBranchId,
+      expiryDate: null, createdAt: at, updatedAt: at,
+    }))[0].insertId);
+    const mirror = await receivingProduct(data, 'نسخة قديمة');
+    await database.insert(erpStockBatchBalances).values([
+      { batchId, productId: data.productId, branchId: data.sourceBranchId, quantity: 5, updatedAt: at },
+      { batchId, productId: mirror, branchId: data.destinationBranchId, quantity: 2, updatedAt: at },
+    ]);
+
+    const stock = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => at);
+    const after = await stock.updateBatchExpiry(
+      data.productId, data.sourceBranchId, batchId, '2031-02-02', admin.accountId,
+    );
+
+    expect(after[0]?.sharedWithBranches?.map((branch) => branch.branchId))
+      .toEqual([data.destinationBranchId]);
   });
 
 });

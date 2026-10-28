@@ -3,7 +3,9 @@ import {
   branches,
   clients,
   cashierSessions,
+  erpBranchLinks,
   erpProducts,
+  erpProductLinks,
   erpProductStocks,
   erpStockMovements,
   erpStockTransferLines,
@@ -11,6 +13,7 @@ import {
   invoices,
   invoiceLines,
 } from '@capella/database/schema';
+import type { BatchAllocation } from '@capella/contracts';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
@@ -25,7 +28,7 @@ import {
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Database | SaleTransaction;
 
-import { addBatchQuantities, ensureLegacyBatch } from '../stock/index.js';
+import { addBatchQuantities, createStockBatch, ensureLegacyBatch } from '../stock/index.js';
 
 const AUDIT_MODULE = 'erp-stock-transfers';
 const isDuplicateEntry = (error: unknown) => {
@@ -163,6 +166,8 @@ export const createDrizzleStockTransferRepository = (
       name: erpProducts.name,
       nameNormalized: erpProducts.nameNormalized,
       matchKey: erpProducts.matchKey,
+      barcode: erpProducts.barcode,
+      commissionPercent: erpProducts.commissionPercent,
       description: erpProducts.description,
       sellingPrice: erpProducts.sellingPrice,
       lowStockThreshold: erpProducts.lowStockThreshold,
@@ -171,40 +176,127 @@ export const createDrizzleStockTransferRepository = (
       inArray(erpProducts.id, input.lines.map(({ productId }) => productId)),
     ))).map((product) => [product.id, product]));
 
-    // Destination rows are located by normalized name, so locking in that order
-    // — not in source-id order — is what stops two transfers into the same
-    // branch from taking the same two rows in opposite orders and deadlocking.
-    const ordered = [...input.lines].sort((left, right) => (
-      sources.get(left.productId)!.nameNormalized
-        .localeCompare(sources.get(right.productId)!.nameNormalized)
+    const sourceIds = [...sources.keys()];
+    // Links are written in the branch link's direction (A product ⇒ B product),
+    // so a transfer the other way finds its own row through the receiver side.
+    const linkRows = await transaction.select({
+      senderBranchId: erpProductLinks.senderBranchId,
+      receiverBranchId: erpProductLinks.receiverBranchId,
+      senderProductId: erpProductLinks.senderProductId,
+      receiverProductId: erpProductLinks.receiverProductId,
+      state: erpProductLinks.state,
+      notSameAsProductId: erpProductLinks.notSameAsProductId,
+    }).from(erpProductLinks).where(or(
+      and(
+        eq(erpProductLinks.senderBranchId, input.sourceBranchId),
+        eq(erpProductLinks.receiverBranchId, input.destinationBranchId),
+        inArray(erpProductLinks.senderProductId, sourceIds),
+      ),
+      and(
+        eq(erpProductLinks.senderBranchId, input.destinationBranchId),
+        eq(erpProductLinks.receiverBranchId, input.sourceBranchId),
+        inArray(erpProductLinks.receiverProductId, sourceIds),
+      ),
     ));
+
+    const linkedTargets = new Map<number, number>();
+    const excludedTargets = new Map<number, Set<number>>();
+    for (const row of linkRows) {
+      const forward = row.senderBranchId === input.sourceBranchId;
+      const sourceProductId = forward ? row.senderProductId : row.receiverProductId;
+      if (sourceProductId === null) continue;
+      if (row.state === 'linked' && row.receiverProductId !== null) {
+        linkedTargets.set(sourceProductId, forward ? row.receiverProductId : row.senderProductId);
+      } else if (row.state === 'excluded' && row.notSameAsProductId !== null) {
+        const blocked = excludedTargets.get(sourceProductId) ?? new Set<number>();
+        blocked.add(row.notSameAsProductId);
+        excludedTargets.set(sourceProductId, blocked);
+      }
+    }
+
+    // Only an active link in the transfer's own direction may be recorded onto.
+    const activeLink = (await transaction.select({ id: erpBranchLinks.id })
+      .from(erpBranchLinks).where(and(
+        eq(erpBranchLinks.senderBranchId, input.sourceBranchId),
+        eq(erpBranchLinks.receiverBranchId, input.destinationBranchId),
+        eq(erpBranchLinks.state, 'active' as const),
+      )).limit(1))[0];
+
+    // Locking order: a linked target is locked by its id, everyone else by the
+    // key they will be looked up with. Deterministic, so two transfers into the
+    // same branch take rows in the same order instead of deadlocking.
+    const orderKey = (productId: number) => {
+      const target = linkedTargets.get(productId);
+      return target === undefined
+        ? `1:${sources.get(productId)!.matchKey || sources.get(productId)!.nameNormalized}`
+        : `0:${String(target).padStart(12, '0')}`;
+    };
+    const ordered = [...input.lines].sort((left, right) => (
+      orderKey(left.productId).localeCompare(orderKey(right.productId))
+    ));
+
+    const settledInThisTransfer = new Set(linkRows
+      .filter((row) => row.senderBranchId === input.sourceBranchId
+        && row.receiverBranchId === input.destinationBranchId)
+      .map((row) => row.senderProductId));
+
+    const lockDestination = async (where: Parameters<typeof and>[0]) => (await transaction.select({
+      id: erpProducts.id,
+      isActive: erpProducts.isActive,
+      lastPurchaseCost: erpProducts.lastPurchaseCost,
+    }).from(erpProducts).where(and(where, eq(erpProducts.branchId, input.destinationBranchId)))
+      .for('update').limit(4));
+
+    const settle = (row: { id: number; isActive: boolean; lastPurchaseCost: string } | undefined) => {
+      if (!row) return undefined;
+      if (!row.isActive) throw new StockTransferError('TRANSFER_DESTINATION_PRODUCT_INACTIVE');
+      return row;
+    };
 
     for (const line of ordered) {
       const source = sources.get(line.productId)!;
-      const scope = and(
-        eq(erpProducts.branchId, input.destinationBranchId),
-        eq(erpProducts.nameNormalized, source.nameNormalized),
-      );
-      let destination = (await transaction.select({
-        id: erpProducts.id,
-        isActive: erpProducts.isActive,
-        lastPurchaseCost: erpProducts.lastPurchaseCost,
-      }).from(erpProducts).where(scope).for('update').limit(1))[0];
+      const blocked = excludedTargets.get(source.id) ?? new Set<number>();
+      let destination: { id: number; isActive: boolean; lastPurchaseCost: string } | undefined;
 
-      if (destination && !destination.isActive) {
-        throw new StockTransferError('TRANSFER_DESTINATION_PRODUCT_INACTIVE');
+      const linkedId = linkedTargets.get(source.id);
+      if (linkedId !== undefined) {
+        // The link is the answer, even if the receiving branch renamed the
+        // product so nothing else would match.
+        destination = settle(await lockDestination(eq(erpProducts.id, linkedId)).then((rows) => rows[0]));
+        if (!destination) throw new StockTransferError('TRANSFER_DESTINATION_UNMATCHED');
+      } else {
+        // Barcode first: it is the strongest evidence two rows are one item, and
+        // it also means an auto-created row can never duplicate a code.
+        let matches = source.barcode
+          ? await lockDestination(eq(erpProducts.barcode, source.barcode))
+          : [];
+        if (!matches.length && source.matchKey) {
+          matches = await lockDestination(eq(erpProducts.matchKey, source.matchKey));
+        }
+        const valid = matches.filter((row) => !blocked.has(row.id));
+        if (valid.length > 1) {
+          // Two rows answer to the same name; picking one would be a guess.
+          throw new StockTransferError('TRANSFER_DESTINATION_UNMATCHED');
+        }
+        if (valid.length === 1) destination = settle(valid[0]);
+        else if (matches.length) {
+          // Every match was ruled out as "not the same item". Creating around
+          // the exclusion would resurrect the duplicate the admin refused.
+          throw new StockTransferError('TRANSFER_DESTINATION_UNMATCHED');
+        }
       }
+
       if (!destination) {
-        // The receiving branch keeps its own price later; it starts from ours.
-        // Locking a row that does not exist yet only holds a gap, so a
-        // simultaneous first transfer of the same name can win the insert: take
-        // its row rather than failing the whole sale on a duplicate key.
+        // A new row for the receiving branch. It keeps that branch's own price
+        // later; the barcode and commission travel with the goods.
         try {
           const created = await transaction.insert(erpProducts).values({
             branchId: input.destinationBranchId,
             name: source.name,
             nameNormalized: source.nameNormalized,
             matchKey: source.matchKey,
+            barcode: source.barcode,
+            commissionPercent: source.commissionPercent,
             description: source.description,
             sellingPrice: source.sellingPrice,
             lastPurchaseCost: line.unitCost,
@@ -217,13 +309,49 @@ export const createDrizzleStockTransferRepository = (
           };
         } catch (error) {
           if (!isDuplicateEntry(error)) throw error;
-          destination = (await transaction.select({
+          // Locking a row that does not exist yet only holds a gap, so a
+          // simultaneous first transfer of the same name can win the insert:
+          // take its row rather than failing the whole sale on a duplicate key.
+          const clash = (await transaction.select({
             id: erpProducts.id,
             isActive: erpProducts.isActive,
             lastPurchaseCost: erpProducts.lastPurchaseCost,
-          }).from(erpProducts).where(scope).for('update').limit(1))[0]!;
-          if (!destination.isActive) {
-            throw new StockTransferError('TRANSFER_DESTINATION_PRODUCT_INACTIVE');
+          }).from(erpProducts).where(and(
+            eq(erpProducts.branchId, input.destinationBranchId),
+            eq(erpProducts.nameNormalized, source.nameNormalized),
+          )).for('update').limit(1))[0];
+          if (!clash) throw error;
+          if (blocked.has(clash.id)) throw new StockTransferError('TRANSFER_DESTINATION_UNMATCHED');
+          destination = settle(clash)!;
+        }
+      }
+
+      if (!destination) throw new StockTransferError('TRANSFER_DESTINATION_UNMATCHED');
+
+      if (activeLink && !settledInThisTransfer.has(source.id)) {
+        const alreadyLinked = (await transaction.select({ id: erpProductLinks.id })
+          .from(erpProductLinks).where(and(
+            eq(erpProductLinks.senderBranchId, input.sourceBranchId),
+            eq(erpProductLinks.receiverBranchId, input.destinationBranchId),
+            eq(erpProductLinks.receiverProductId, destination.id),
+          )).limit(1))[0];
+        if (!alreadyLinked) {
+          try {
+            await transaction.insert(erpProductLinks).values({
+              senderBranchId: input.sourceBranchId,
+              receiverBranchId: input.destinationBranchId,
+              senderProductId: source.id,
+              receiverProductId: destination.id,
+              state: 'linked' as const,
+              notSameAsProductId: null,
+              createdAt: input.postedAt,
+              updatedAt: input.postedAt,
+            });
+            settledInThisTransfer.add(source.id);
+          } catch (error) {
+            // Another transfer settled the same pair first; its judgement is as
+            // good as ours, and the sale must not roll back over it.
+            if (!isDuplicateEntry(error)) throw error;
           }
         }
       }
@@ -248,7 +376,29 @@ export const createDrizzleStockTransferRepository = (
           updatedAt: input.postedAt,
         });
       }
-      await addBatchQuantities(transaction, destination.id, input.destinationBranchId, line.batches ?? [], 'quantity', input.postedAt);
+      // The receiving branch owns its own lots. Each sent allocation becomes a
+      // fresh batch row here with the same expiry, so a later expiry fix in one
+      // branch no longer changes the other.
+      const received: BatchAllocation[] = [];
+      for (const allocation of line.batches ?? []) {
+        received.push({
+          batchId: await createStockBatch(
+            transaction, destination.id, input.destinationBranchId, allocation.expiryDate, input.postedAt,
+          ),
+          expiryDate: allocation.expiryDate,
+          quantity: allocation.quantity,
+        });
+      }
+      if (!received.length) {
+        received.push({
+          batchId: await createStockBatch(
+            transaction, destination.id, input.destinationBranchId, null, input.postedAt,
+          ),
+          expiryDate: null,
+          quantity: `${line.quantity}.000`,
+        });
+      }
+      await addBatchQuantities(transaction, destination.id, input.destinationBranchId, received, 'quantity', input.postedAt);
       // The receiving branch's cost follows the goods; its price does not.
       await transaction.update(erpProducts)
         .set({ lastPurchaseCost: line.unitCost, updatedAt: input.postedAt })
@@ -268,7 +418,7 @@ export const createDrizzleStockTransferRepository = (
         lineTotal: fromCents(toCents(line.unitCost) * BigInt(line.quantity)),
       });
       await transaction.insert(erpStockMovements).values({
-        batches: line.batches ?? null,
+        batches: received,
         productId: destination.id,
         branchId: input.destinationBranchId,
         reason: 'transfer_in',

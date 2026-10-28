@@ -16,7 +16,15 @@ export const packageBatchSelectionsSchema = batchSelectionsSchema.refine(
 export const batchSnapshotSchema = batchSelectionSchema.extend({ expiryDate: expiryDateSchema.nullable() });
 export type BatchSelection = z.infer<typeof batchSelectionSchema>;
 export type BatchAllocation = z.infer<typeof batchSnapshotSchema>;
-export type StockBatch = { batchId: number; expiryDate: string | null; quantity: number; consumableQuantity: string };
+export type StockBatch = {
+  batchId: number; expiryDate: string | null; quantity: number; consumableQuantity: string;
+  /**
+   * Other branches still holding this same batch row. Only old data can answer
+   * here: a transfer now creates the receiving branch its own copy, so its
+   * expiry is its own.
+   */
+  sharedWithBranches?: Array<{ branchId: number; branchName: string }>;
+};
 export const updateBatchExpirySchema = z.object({
   expiryDate: expiryDateSchema.nullable(), branchId: positiveMysqlIntSchema.optional(),
 }).strict();
