@@ -1,5 +1,6 @@
 import {
   adjustProductStockSchema,
+  activateProductSchema,
   updateBatchExpirySchema,
   generateProductBarcodeSchema,
   createProductSchema,
@@ -42,6 +43,7 @@ const handle = (cause: unknown, response: Response) => {
     const status = cause.code === 'PRODUCT_NOT_FOUND'
       ? 404
       : cause.code === 'PRODUCT_COMMISSION_ADMIN_REQUIRED' || cause.code === 'PRODUCT_ADJUSTMENT_ADMIN_REQUIRED'
+        || cause.code === 'PRODUCT_ACTIVATION_ADMIN_REQUIRED'
         ? 403
         : 409;
     failure(response, status, cause.code, cause.message, cause.existingId === undefined ? undefined : { existingId: cause.existingId });
@@ -65,6 +67,17 @@ export const createErpProductsRouter = (service: ProductStockService) => {
   // a supplier's code may contain a slash, which a path segment cannot carry.
   router.get('/by-barcode', async (request, response) => { try { response.json({ data: await service.findByBarcode(actorFrom(response), productBarcodeLookupSchema.parse(request.query)) }); } catch (cause) { handle(cause, response); } });
   router.post('/:id/barcode', async (request, response) => { try { const { id } = productIdParamsSchema.parse(request.params); response.json({ data: await service.generateBarcode(actorFrom(response), id, generateProductBarcodeSchema.parse(request.body ?? {})) }); } catch (cause) { handle(cause, response); } });
+  // The activation dialog's starting price: what the sending branch sells it
+  // for, if the goods arrived by transfer. No transfer means an empty box.
+  router.get('/:id/activation', async (request, response) => { try {
+    const { id } = productIdParamsSchema.parse(request.params);
+    const query = listProductsQuerySchema.parse(request.query);
+    response.json({ data: { sellingPrice: await service.activationPrice(actorFrom(response), id, { branchId: query.branchId }) } });
+  } catch (cause) { handle(cause, response); } });
+  router.post('/:id/activation', async (request, response) => { try {
+    const { id } = productIdParamsSchema.parse(request.params);
+    response.json({ data: await service.activate(actorFrom(response), id, activateProductSchema.parse(request.body)) });
+  } catch (cause) { handle(cause, response); } });
   router.get('/:id/batches', async (request, response) => { try {
     const { id } = productIdParamsSchema.parse(request.params);
     const query = listProductsQuerySchema.parse(request.query);

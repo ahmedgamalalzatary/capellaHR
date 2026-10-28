@@ -491,6 +491,59 @@ describe('ERP stock transfer MySQL integration', () => {
       invoiceNumber: transfer.invoiceNumber,
     });
   });
+  it('delivers into a product that is still awaiting its first stock', async () => {
+    const data = await fixture();
+    const awaiting = await receivingProduct(data, 'شامبو الأرغان', {
+      isActive: false, awaitingFirstStock: true, sellingPrice: '0.00',
+    });
+
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 4 }],
+    });
+
+    expect(transfer.lines[0]).toMatchObject({ destinationProductId: awaiting });
+    // The goods arrived, but the product is still the Admin's to activate.
+    expect((await database.select().from(erpProducts).where(eq(erpProducts.id, awaiting)).limit(1))[0])
+      .toMatchObject({ isActive: false, awaitingFirstStock: true, sellingPrice: '0.00' });
+  });
+
+  it('still refuses to send a product that is only awaiting stock', async () => {
+    const data = await fixture();
+    await database.update(erpProducts)
+      .set({ isActive: false, awaitingFirstStock: true })
+      .where(eq(erpProducts.id, data.productId));
+
+    await expect(service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1 }],
+    })).rejects.toMatchObject({ code: 'PRODUCT_NOT_FOUND' });
+  });
+
+  it('suggests the sending branch price for the arrived product', async () => {
+    const data = await fixture();
+    const transfer = await service().transfer(admin, {
+      idempotencyKey: crypto.randomUUID(),
+      sourceBranchId: data.sourceBranchId,
+      destinationBranchId: data.destinationBranchId,
+      lines: [{ productId: data.productId, quantity: 1 }],
+    });
+    const destinationProductId = transfer.lines[0]!.destinationProductId;
+    const stock = createDrizzleProductStockRepository(database, createErpAuditCapability(), () => at);
+
+    await expect(stock.latestIncomingPrice(destinationProductId, data.destinationBranchId))
+      .resolves.toBe('80.00');
+    // The current price, not the one recorded at transfer time.
+    await database.update(erpProducts).set({ sellingPrice: '99.00' })
+      .where(eq(erpProducts.id, data.productId));
+    await expect(stock.latestIncomingPrice(destinationProductId, data.destinationBranchId))
+      .resolves.toBe('99.00');
+  });
+
   it('rejects a retry that drops the original manual batch selection', async () => {
     const data = await fixture();
     const stock = (await service().transfer(admin, { idempotencyKey: crypto.randomUUID(), sourceBranchId: data.sourceBranchId,

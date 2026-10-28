@@ -1,5 +1,5 @@
 import { type createDatabase } from '@capella/database';
-import { accounts, branches, erpProducts, erpProductStocks, erpStockMovements, erpStockBatches, erpStockBatchBalances } from '@capella/database/schema';
+import { accounts, branches, erpProducts, erpProductStocks, erpStockMovements, erpStockBatches, erpStockBatchBalances, erpStockTransferLines } from '@capella/database/schema';
 import { and, asc, count, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import type { StockBatch } from '@capella/contracts';
 
@@ -44,7 +44,9 @@ const productSelection = {
   description: erpProducts.description, sellingPrice: erpProducts.sellingPrice,
   lastPurchaseCost: erpProducts.lastPurchaseCost, lowStockThreshold: erpProducts.lowStockThreshold,
   commissionPercent: erpProducts.commissionPercent,
-  barcode: erpProducts.barcode, isActive: erpProducts.isActive, quantity: erpProductStocks.quantity,
+  barcode: erpProducts.barcode, isActive: erpProducts.isActive,
+  awaitingFirstStock: erpProducts.awaitingFirstStock,
+  quantity: erpProductStocks.quantity,
   createdAt: erpProducts.createdAt, updatedAt: erpProducts.updatedAt,
 };
 const scope = (id: number, branchId: number) => and(eq(erpProducts.id, id), eq(erpProducts.branchId, branchId));
@@ -101,6 +103,9 @@ export const createDrizzleProductStockRepository = (
   async list(branchId, query) {
     const filters = [eq(erpProducts.branchId, branchId)];
     if (query.isActive !== undefined) filters.push(eq(erpProducts.isActive, query.isActive));
+    if (query.awaitingFirstStock !== undefined) {
+      filters.push(eq(erpProducts.awaitingFirstStock, query.awaitingFirstStock));
+    }
     // A search box that a scanner can also be fired into: the typed name or the
     // exact code both find the product, so the admin never has to switch mode.
     if (query.search) {
@@ -130,6 +135,49 @@ export const createDrizzleProductStockRepository = (
       await audit.record(tx, { module: 'erp-stock', action: 'update', entityType: 'product', entityId: id, beforeState: before, afterState: after, relatedIds: { branchId, actingAccountId }, createdAt: at });
       return after;
     });
+  },
+  async activate(id, branchId, sellingPrice, actingAccountId) {
+    return database.transaction(async (tx) => {
+      const product = (await tx.select().from(erpProducts).where(scope(id, branchId)).for('update').limit(1))[0];
+      if (!product) throw new ProductStockError('PRODUCT_NOT_FOUND', 'المنتج غير موجود');
+      const stockScope = and(eq(erpProductStocks.productId, id), eq(erpProductStocks.branchId, branchId));
+      // Stock is checked under the same lock the sale takes, so an activation
+      // can never race the last unit out of the door.
+      const stock = (await tx.select({ quantity: erpProductStocks.quantity })
+        .from(erpProductStocks).where(stockScope).for('update').limit(1))[0];
+      if (!stock || stock.quantity <= 0) {
+        throw new ProductStockError('PRODUCT_ACTIVATION_NO_STOCK', 'لا يمكن تفعيل المنتج قبل وصول مخزون إليه');
+      }
+      const at = now();
+      await tx.update(erpProducts)
+        .set({ sellingPrice, isActive: true, awaitingFirstStock: false, updatedAt: at })
+        .where(scope(id, branchId));
+      const after = (await tx.select(productSelection).from(erpProducts).innerJoin(
+        erpProductStocks, and(eq(erpProductStocks.productId, erpProducts.id), eq(erpProductStocks.branchId, erpProducts.branchId)),
+      ).where(scope(id, branchId)).limit(1))[0] as ProductStockRecord;
+      await audit.record(tx, {
+        module: 'erp-stock', action: 'activate', entityType: 'product', entityId: id,
+        beforeState: { isActive: product.isActive, awaitingFirstStock: product.awaitingFirstStock, sellingPrice: product.sellingPrice },
+        afterState: { isActive: true, awaitingFirstStock: false, sellingPrice },
+        relatedIds: { branchId, actingAccountId }, createdAt: at,
+      });
+      return after;
+    });
+  },
+  async latestIncomingPrice(id, branchId) {
+    const line = (await database.select({ sourceProductId: erpStockTransferLines.sourceProductId })
+      .from(erpStockTransferLines)
+      .where(and(
+        eq(erpStockTransferLines.destinationProductId, id),
+        eq(erpStockTransferLines.destinationBranchId, branchId),
+      ))
+      .orderBy(desc(erpStockTransferLines.id)).limit(1))[0];
+    if (!line) return null;
+    // The sending branch's *current* price: the Admin is pricing this branch's
+    // shelf today, not what the goods cost when they moved.
+    const source = (await database.select({ sellingPrice: erpProducts.sellingPrice })
+      .from(erpProducts).where(eq(erpProducts.id, line.sourceProductId)).limit(1))[0];
+    return source?.sellingPrice ?? null;
   },
   async adjust(id, branchId, input, actingAccountId) {
     return database.transaction(async (tx) => {

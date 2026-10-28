@@ -34,7 +34,7 @@ describe('ERP sale repository MySQL integration', () => {
       nameNormalized: `coded-${suffix}-${data.marker}`, matchKey: `key-${suffix}-${data.marker}`,
       description: null,
       sellingPrice: '10.00', lastPurchaseCost: '0.00', lowStockThreshold: 0,
-      barcode, isActive: true, openingQuantity: 0,
+      barcode, isActive: true, awaitingFirstStock: false, openingQuantity: 0,
     });
 
     // Thirteen digits, unique to this run, so a rerun cannot clash with itself.
@@ -58,7 +58,7 @@ describe('ERP sale repository MySQL integration', () => {
       branchId: data.branchId, name: `Bad ${data.marker}`, nameNormalized: `bad-${data.marker}`,
       matchKey: `bad-key-${data.marker}`,
       description: null, sellingPrice: '10.00', lastPurchaseCost: '0.00', lowStockThreshold: 0,
-      barcode: 'ab', isActive: true, openingQuantity: 0,
+      barcode: 'ab', isActive: true, awaitingFirstStock: false, openingQuantity: 0,
     }, data.adminAccountId)).rejects.toBeDefined();
   });
 });

@@ -7,7 +7,10 @@ export interface Product {
   id: number; branchId: number; name: string; description: string | null;
   sellingPrice: string; lastPurchaseCost: string; commissionPercent?: string; lowStockThreshold: number;
   barcode: string | null;
-  isActive: boolean; quantity: number; createdAt: string; updatedAt: string;
+  isActive: boolean;
+  /** Created here by another branch's sync; sellable only after activation. */
+  awaitingFirstStock: boolean;
+  quantity: number; createdAt: string; updatedAt: string;
 }
 export type SellableProduct = Pick<Product, 'id' | 'branchId' | 'name' | 'description' | 'sellingPrice' | 'barcode' | 'isActive' | 'quantity'>;
 export interface ProductSaleItem extends SellableProduct { price: string; quantityAvailable: number }
@@ -26,7 +29,7 @@ const query = (params: Record<string, string | number | boolean | undefined>) =>
 };
 export const getProductBatches = (id: number, params: { branchId?: number } = {}) => api.get<StockBatch[]>(`/erp/products/${id}/batches${query(params)}`);
 export const updateProductBatchExpiry = (id: number, batchId: number, input: { expiryDate: string | null; branchId?: number }) => api.patch<StockBatch[]>(`/erp/products/${id}/batches/${batchId}`, input);
-export const listProducts = (params: { branchId?: number; search?: string; isActive?: boolean; lowStock?: boolean; page?: number; pageSize?: number } = {}) => api.getPage<Product>(`/erp/products${query(params)}`);
+export const listProducts = (params: { branchId?: number; search?: string; isActive?: boolean; awaitingFirstStock?: boolean; lowStock?: boolean; page?: number; pageSize?: number } = {}) => api.getPage<Product>(`/erp/products${query(params)}`);
 export const listAllProducts = async (params: { branchId?: number; search?: string; isActive?: boolean; lowStock?: boolean } = {}) => {
   const pageSize = 100;
   const first = await listProducts({ ...params, page: 1, pageSize });
@@ -41,6 +44,13 @@ export const listSellableProducts = (params: { branchId?: number; search?: strin
 export const createProduct = (input: CreateProductInput) => api.post<Product>('/erp/products', input);
 export const updateProduct = (id: number, input: UpdateProductInput) => api.patch<Product>(`/erp/products/${id}`, input);
 export const adjustProductStock = (id: number, input: AdjustProductStockInput) => api.post<{ product: Product; movementId: number }>(`/erp/products/${id}/adjustments`, input);
+/** The sending branch's current price, to pre-fill the activation dialog. */
+export const getProductActivationPrice = (id: number, params: { branchId?: number } = {}) => (
+  api.get<{ sellingPrice: string | null }>(`/erp/products/${id}/activation${query(params)}`)
+);
+export const activateProduct = (id: number, input: { sellingPrice: string; branchId?: number }) => (
+  api.post<Product>(`/erp/products/${id}/activation`, input)
+);
 /** The till scanned a code; the server does not care whose code it is. */
 export const lookupProductByBarcode = (code: string, params: { branchId?: number } = {}) => (
   api.get<Product>(`/erp/products/by-barcode${query({ ...params, code })}`)

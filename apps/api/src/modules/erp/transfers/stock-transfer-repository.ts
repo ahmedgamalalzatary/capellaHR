@@ -243,20 +243,25 @@ export const createDrizzleStockTransferRepository = (
     const lockDestination = async (where: Parameters<typeof and>[0]) => (await transaction.select({
       id: erpProducts.id,
       isActive: erpProducts.isActive,
+      awaitingFirstStock: erpProducts.awaitingFirstStock,
       lastPurchaseCost: erpProducts.lastPurchaseCost,
     }).from(erpProducts).where(and(where, eq(erpProducts.branchId, input.destinationBranchId)))
       .for('update').limit(4));
 
-    const settle = (row: { id: number; isActive: boolean; lastPurchaseCost: string } | undefined) => {
+    const settle = (row: { id: number; isActive: boolean; awaitingFirstStock: boolean; lastPurchaseCost: string } | undefined) => {
       if (!row) return undefined;
-      if (!row.isActive) throw new StockTransferError('TRANSFER_DESTINATION_PRODUCT_INACTIVE');
+      // Goods may land on a product waiting for its first stock; they may not
+      // land on one someone turned off.
+      if (!row.isActive && !row.awaitingFirstStock) {
+        throw new StockTransferError('TRANSFER_DESTINATION_PRODUCT_INACTIVE');
+      }
       return row;
     };
 
     for (const line of ordered) {
       const source = sources.get(line.productId)!;
       const blocked = excludedTargets.get(source.id) ?? new Set<number>();
-      let destination: { id: number; isActive: boolean; lastPurchaseCost: string } | undefined;
+      let destination: { id: number; isActive: boolean; awaitingFirstStock: boolean; lastPurchaseCost: string } | undefined;
 
       const linkedId = linkedTargets.get(source.id);
       if (linkedId !== undefined) {
@@ -305,7 +310,8 @@ export const createDrizzleStockTransferRepository = (
             updatedAt: input.postedAt,
           });
           destination = {
-            id: Number(created[0].insertId), isActive: true, lastPurchaseCost: line.unitCost,
+            id: Number(created[0].insertId), isActive: true, awaitingFirstStock: false,
+            lastPurchaseCost: line.unitCost,
           };
         } catch (error) {
           if (!isDuplicateEntry(error)) throw error;
@@ -315,6 +321,7 @@ export const createDrizzleStockTransferRepository = (
           const clash = (await transaction.select({
             id: erpProducts.id,
             isActive: erpProducts.isActive,
+            awaitingFirstStock: erpProducts.awaitingFirstStock,
             lastPurchaseCost: erpProducts.lastPurchaseCost,
           }).from(erpProducts).where(and(
             eq(erpProducts.branchId, input.destinationBranchId),

@@ -136,6 +136,14 @@ export const erpProducts = mysqlTable('erp_products', {
    */
   barcode: varchar('barcode', { length: 32 }),
   isActive: boolean('is_active').notNull().default(true),
+  /**
+   * A product another branch's sync created here, waiting for its first goods.
+   * It is deliberately a state of its own, not "inactive": a purchase or a
+   * transfer may land on it, but the till may not sell it. It is always
+   * `is_active = false` so every existing "sellable" check refuses it without
+   * knowing this column exists; activation is the Admin's explicit action.
+   */
+  awaitingFirstStock: boolean('awaiting_first_stock').notNull().default(false),
   createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
   updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
 }, (table) => [
@@ -154,7 +162,8 @@ export const erpProducts = mysqlTable('erp_products', {
   // match key (in-branch uniqueness still uses `name_normalized`), and the
   // transfer path treats two hits as "matches 2+".
   index('erp_products_branch_match_key_idx').on(table.branchId, table.matchKey),
-  check('erp_products_selling_price_positive', sql`${table.sellingPrice} > 0`),
+  check('erp_products_selling_price_positive', sql`${table.sellingPrice} > 0 or ${table.awaitingFirstStock} = true`),
+  check('erp_products_awaiting_is_inactive', sql`${table.awaitingFirstStock} = false or ${table.isActive} = false`),
   check('erp_products_purchase_cost_nonnegative', sql`${table.lastPurchaseCost} >= 0`),
   check('erp_products_commission_range', sql`${table.commissionPercent} between 0 and 100`),
   check('erp_products_low_stock_nonnegative', sql`${table.lowStockThreshold} >= 0`),

@@ -444,7 +444,7 @@ describe('ERP sale repository MySQL integration', () => {
       branchId: data.branchId, name: `Stock ${data.marker}`, nameNormalized: `stock-${data.marker}`,
       matchKey: `stock-key-${data.marker}`,
       description: null, sellingPrice: '100.00', lastPurchaseCost: '60.00',
-      lowStockThreshold: 2, barcode: null, isActive: true, openingQuantity: 0,
+      lowStockThreshold: 2, barcode: null, isActive: true, awaitingFirstStock: false, openingQuantity: 0,
     }, data.adminAccountId);
     const adjusted = await repository.adjust(product.id, data.branchId, {
       branchId: data.branchId, quantityDelta: 5, reason: 'count_correction', note: 'opening count',

@@ -119,9 +119,15 @@ export const productIdParamsSchema = z.object({ id: coercedMysqlIntSchema });
 export const listProductsQuerySchema = z.object({
   search: z.string().trim().min(1).max(255).optional(),
   isActive: queryBoolean.optional(),
+  awaitingFirstStock: queryBoolean.optional(),
   lowStock: queryBoolean.optional(),
   page: paginationPageSchema.default(1),
   pageSize: paginationPageSizeSchema.default(20),
+  ...branchScope,
+}).strict();
+/** The Admin's one manual step: price the product and let the till sell it. */
+export const activateProductSchema = z.object({
+  sellingPrice: money(true),
   ...branchScope,
 }).strict();
 export const stockAdjustmentReasonSchema = z.enum(['count_correction', 'wastage', 'damage']);
@@ -149,6 +155,7 @@ export const listStockMovementsQuerySchema = z.object({
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+export type ActivateProductInput = z.infer<typeof activateProductSchema>;
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
 export type ProductBarcodeLookup = z.infer<typeof productBarcodeLookupSchema>;
 export type AdjustProductStockInput = z.infer<typeof adjustProductStockSchema>;

@@ -25,6 +25,8 @@ export type ProductStockRecord = {
   lowStockThreshold: number;
   barcode: string | null;
   isActive: boolean;
+  /** Waiting for its first goods; never sellable until an Admin activates it. */
+  awaitingFirstStock: boolean;
   quantity: number;
   createdAt: Date;
   updatedAt: Date;
@@ -39,7 +41,7 @@ export type ProductStockWrite = Omit<ProductStockRecord, 'id' | 'quantity' | 'cr
   openingQuantity: number;
 };
 export type ProductStockChanges = Partial<Pick<ProductStockWrite,
-  'name' | 'nameNormalized' | 'matchKey' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'commissionPercent' | 'lowStockThreshold' | 'barcode' | 'isActive'>>;
+  'name' | 'nameNormalized' | 'matchKey' | 'description' | 'sellingPrice' | 'lastPurchaseCost' | 'commissionPercent' | 'lowStockThreshold' | 'barcode' | 'isActive' | 'awaitingFirstStock'>>;
 export type StockMovementRecord = {
   batches?: import('@capella/contracts').BatchAllocation[] | null;
   id: number; productId: number; branchId: number; reason: string; sourceType: string;
@@ -57,13 +59,17 @@ export interface ProductStockRepository {
   findByBarcode(branchId: number, barcode: string): Promise<ProductStockRecord | null>;
   list(branchId: number, query: ListProductsQuery): Promise<{ items: ProductStockRecord[]; total: number }>;
   update(id: number, branchId: number, changes: ProductStockChanges, actingAccountId: number): Promise<ProductStockRecord | null>;
+  activate(id: number, branchId: number, sellingPrice: string, actingAccountId: number): Promise<ProductStockRecord>;
+  /** The sending branch's current price on the latest transfer into this product. */
+  latestIncomingPrice(id: number, branchId: number): Promise<string | null>;
   adjust(id: number, branchId: number, input: AdjustProductStockInput, actingAccountId: number): Promise<{ product: ProductStockRecord; movementId: number }>;
   listMovements(branchId: number, query: ListStockMovementsQuery): Promise<{ items: StockMovementRecord[]; total: number }>;
 }
 
 export type ProductStockErrorCode =
   | 'PRODUCT_NOT_FOUND' | 'PRODUCT_NAME_EXISTS' | 'PRODUCT_BARCODE_EXISTS' | 'INSUFFICIENT_STOCK'
-  | 'PRODUCT_COMMISSION_ADMIN_REQUIRED' | 'PRODUCT_ADJUSTMENT_ADMIN_REQUIRED';
+  | 'PRODUCT_COMMISSION_ADMIN_REQUIRED' | 'PRODUCT_ADJUSTMENT_ADMIN_REQUIRED'
+  | 'PRODUCT_ACTIVATION_ADMIN_REQUIRED' | 'PRODUCT_ACTIVATION_NO_STOCK';
 export class ProductStockError extends Error {
   constructor(public readonly code: ProductStockErrorCode, message: string, public readonly existingId?: number) {
     super(message);
@@ -77,6 +83,8 @@ const messages: Record<ProductStockErrorCode, string> = {
   INSUFFICIENT_STOCK: 'الكمية المتاحة غير كافية',
   PRODUCT_COMMISSION_ADMIN_REQUIRED: 'نسبة عمولة المنتج متاحة للمسؤول فقط',
   PRODUCT_ADJUSTMENT_ADMIN_REQUIRED: 'تسوية مخزون المنتج متاحة للمسؤول فقط',
+  PRODUCT_ACTIVATION_ADMIN_REQUIRED: 'تفعيل المنتج متاح للمسؤول فقط',
+  PRODUCT_ACTIVATION_NO_STOCK: 'لا يمكن تفعيل المنتج قبل وصول مخزون إليه',
 };
 const error = (code: ProductStockErrorCode, existingId?: number) => new ProductStockError(code, messages[code], existingId);
 const isDuplicate = (value: unknown) => typeof value === 'object' && value !== null && (
@@ -135,7 +143,7 @@ export const createProductStockService = (dependencies: {
           sellingPrice: input.sellingPrice, lastPurchaseCost: input.lastPurchaseCost,
           commissionPercent: input.commissionPercent ?? '0.00',
           lowStockThreshold: input.lowStockThreshold, barcode: input.barcode ?? null,
-          isActive: true, openingQuantity: 0,
+          isActive: true, awaitingFirstStock: false, openingQuantity: 0,
         }, context.accountId);
       } catch (cause) {
         if (!isDuplicate(cause)) throw cause;
@@ -180,7 +188,12 @@ export const createProductStockService = (dependencies: {
         changes.barcode = input.barcode;
         if (input.barcode) await rejectDuplicateBarcode(context.branchId, input.barcode, id);
       }
-      if (input.isActive !== undefined) changes.isActive = input.isActive;
+      if (input.isActive !== undefined) {
+        changes.isActive = input.isActive;
+        // Turning off a product that was waiting for stock makes it plainly
+        // inactive; it must not keep offering an activation nobody asked for.
+        if (!input.isActive) changes.awaitingFirstStock = false;
+      }
       try {
         const result = await repository.update(id, context.branchId, changes, context.accountId);
         if (!result) throw error('PRODUCT_NOT_FOUND');
@@ -236,6 +249,23 @@ export const createProductStockService = (dependencies: {
         if (!clash) throw cause;
         throw error('PRODUCT_BARCODE_EXISTS', clash.id);
       }
+    },
+    /**
+     * A product copied in by another branch waits for its first goods, then an
+     * Admin prices it. Activation is never automatic: a purchase or transfer
+     * only makes it possible.
+     */
+    async activate(actor: ErpAccountIdentity, id: number, input: { branchId?: number | undefined; sellingPrice: string }) {
+      if (actor.role !== 'admin') throw error('PRODUCT_ACTIVATION_ADMIN_REQUIRED');
+      const context = await resolveBranchContext(actor, input.branchId);
+      await inBranch(context.branchId, id);
+      return repository.activate(id, context.branchId, input.sellingPrice, context.accountId);
+    },
+    /** Pre-fills the activation dialog with what the sending branch sells it for. */
+    async activationPrice(actor: ErpAccountIdentity, id: number, input: { branchId?: number | undefined }) {
+      const context = await resolveBranchContext(actor, input.branchId);
+      await inBranch(context.branchId, id);
+      return repository.latestIncomingPrice(id, context.branchId);
     },
     async adjust(actor: ErpAccountIdentity, id: number, input: AdjustProductStockInput) {
       // Adjusting stock creates goods out of nothing, so it is an Admin's move:

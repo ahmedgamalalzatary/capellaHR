@@ -26,9 +26,11 @@ import { useFormDraft } from '@/lib/form-draft';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 
 import {
+  activateProduct,
   adjustProductStock,
   createProduct,
   generateProductBarcode,
+  getProductActivationPrice,
   listAllProducts,
   listProducts,
   listStockMovements,
@@ -91,6 +93,9 @@ export function ProductStockView() {
   const labelCount = Number(labelCopies);
   const validLabelCount = Number.isInteger(labelCount) && labelCount >= 1 && labelCount <= 1000;
   const [managingBatches, setManagingBatches] = useState<Product | null>(null);
+  const [activating, setActivating] = useState<Product | null>(null);
+  /** Null until the Admin types; until then the sender's price shows through. */
+  const [activationPrice, setActivationPrice] = useState<string | null>(null);
   const [adjustmentBatches, setAdjustmentBatches] = useState<BatchSelection[] | undefined>();
   const [adjustmentExpiry, setAdjustmentExpiry] = useState('');
   const [adjusting, setAdjusting] = useState<Product | null>(null);
@@ -106,7 +111,8 @@ export function ProductStockView() {
     ...(branchId === undefined ? {} : { branchId }),
     ...(search.trim() ? { search: search.trim() } : {}),
     ...(lowStock ? { lowStock: true } : {}),
-    ...(productStatus ? { isActive: productStatus === 'active' } : {}),
+    ...(productStatus === 'awaiting' ? { awaitingFirstStock: true }
+      : productStatus ? { isActive: productStatus === 'active' } : {}),
     page: productPage,
     pageSize: 20,
   };
@@ -210,7 +216,26 @@ export function ProductStockView() {
     onSuccess: async () => { setSuccessMessage('تم توليد الباركود.'); notifySuccess('تم توليد الباركود.'); await refresh(); },
     onError: (error: unknown) => notifyError(error),
   });
-  const commandPending = save.isPending || toggle.isPending || adjust.isPending || generate.isPending;
+  /**
+   * A product another branch copied here has no price of its own yet. The
+   * sending branch's current price is the natural starting point, but the Admin
+   * still types the price this branch will sell at.
+   */
+  const activationSuggestion = useQuery({
+    queryKey: ['product-activation-price', branchId, activating?.id],
+    queryFn: () => getProductActivationPrice(activating!.id, branchId === undefined ? {} : { branchId }),
+    enabled: activating !== null,
+  });
+  const activationPriceValue = activationPrice ?? activationSuggestion.data?.sellingPrice ?? '';
+  const activationPriceValid = Number(activationPriceValue) > 0;
+  const activate = useMutation({
+    mutationFn: () => activateProduct(activating!.id, {
+      ...(branchId === undefined ? {} : { branchId }), sellingPrice: activationPriceValue,
+    }),
+    onSuccess: async () => { setActivating(null); setSuccessMessage('تم تفعيل المنتج.'); notifySuccess('تم تفعيل المنتج.'); await refresh(); },
+    onError: (error: unknown) => notifyError(error),
+  });
+  const commandPending = save.isPending || toggle.isPending || adjust.isPending || generate.isPending || activate.isPending;
 
   return (
     <section className="space-y-6">
@@ -379,6 +404,33 @@ export function ProductStockView() {
             </Modal>
           ) : null}
 
+          {activating ? (
+            <Modal
+              title={`تفعيل ${activating.name}`}
+              className="max-w-md"
+              onClose={() => { if (!activate.isPending) setActivating(null); }}
+            >
+              <div className="space-y-4">
+                <p className="text-[13px] text-muted">
+                  هذا المنتج وصل من فرع آخر وما زال بانتظار أول مخزون. أدخل سعر البيع ليصبح متاحًا للبيع. الرصيد الحالي {activating.quantity}.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="activation-price">سعر البيع</Label>
+                  <Input id="activation-price" aria-label="سعر البيع" className="text-start" disabled={activate.isPending}
+                    value={activationPriceValue} onChange={(event) => setActivationPrice(event.target.value)} />
+                </div>
+                {activationSuggestion.data?.sellingPrice
+                  ? <p className="text-[13px] text-muted">السعر الحالي في الفرع المُرسِل: {activationSuggestion.data.sellingPrice}</p>
+                  : null}
+                <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
+                  <Button disabled={!activationPriceValid || activate.isPending} onClick={() => activate.mutate()}>تفعيل المنتج</Button>
+                  <Button variant="ghost" disabled={activate.isPending} onClick={() => setActivating(null)}>إلغاء</Button>
+                </div>
+                {activate.isError ? <FieldError>{errorText(activate.error)}</FieldError> : null}
+              </div>
+            </Modal>
+          ) : null}
+
           <Card className="overflow-hidden shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
               <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -395,6 +447,7 @@ export function ProductStockView() {
                   <option value="">كل الحالات</option>
                   <option value="active">نشط</option>
                   <option value="inactive">موقوف</option>
+                  <option value="awaiting">بانتظار أول مخزون</option>
                 </Select>
               </div>
               <Button
@@ -447,6 +500,9 @@ export function ProductStockView() {
                             <TD>
                               <span className="flex flex-wrap items-center gap-2">
                                 <span className="font-medium">{product.name}</span>
+                                {product.awaitingFirstStock ? (
+                                  <Badge variant="warning">بانتظار أول مخزون</Badge>
+                                ) : null}
                                 {product.quantity <= product.lowStockThreshold ? (
                                   <Badge variant="danger">منخفض</Badge>
                                 ) : null}
@@ -466,9 +522,17 @@ export function ProductStockView() {
                                   : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}
                                 <Button variant="ghost" size="sm" onClick={() => setManagingBatches(product)}>دفعات الصلاحية</Button>
                                 <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => beginEdit(product)}>تعديل</Button>
-                                <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => product.isActive ? setConfirmingToggle(product) : toggle.mutate(product)}>
-                                  {product.isActive ? 'إيقاف' : 'تفعيل'}
-                                </Button>
+                                {product.awaitingFirstStock ? (isAdmin ? (
+                                  // Activation needs a price, so it opens a dialog
+                                  // instead of toggling the state directly.
+                                  <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => { setActivationPrice(null); setActivating(product); }}>
+                                    تفعيل
+                                  </Button>
+                                ) : null) : (
+                                  <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => product.isActive ? setConfirmingToggle(product) : toggle.mutate(product)}>
+                                    {product.isActive ? 'إيقاف' : 'تفعيل'}
+                                  </Button>
+                                )}
                               </RowActions>
                             </TD>
                           </TR>

@@ -7,7 +7,8 @@ const admin = { role: 'admin' as const, accountId: 7 };
 const cashier = { role: 'cashier' as const, accountId: 8, branchId: 2 };
 const product = {
   id: 11, branchId: 2, name: 'Shampoo', description: null, sellingPrice: '120.00',
-  lastPurchaseCost: '70.00', lowStockThreshold: 3, isActive: true, quantity: 5, barcode: null,
+  lastPurchaseCost: '70.00', lowStockThreshold: 3, isActive: true, awaitingFirstStock: false,
+  quantity: 5, barcode: null,
   createdAt: new Date('2026-08-01T00:00:00Z'), updatedAt: new Date('2026-08-01T00:00:00Z'),
 };
 
@@ -20,6 +21,8 @@ const repository = (): ProductStockRepository => ({
   findByBarcode: vi.fn(async () => null),
   list: vi.fn(async () => ({ items: [product], total: 1 })),
   update: vi.fn(async () => product),
+  activate: vi.fn(async () => ({ ...product, isActive: true, awaitingFirstStock: false })),
+  latestIncomingPrice: vi.fn(async () => null),
   adjust: vi.fn(async (_id, _branch, input) => ({ product: { ...product, quantity: product.quantity + input.quantityDelta }, movementId: 44 })),
   listMovements: vi.fn(async () => ({ items: [], total: 0 })),
 });
@@ -129,6 +132,38 @@ describe('ERP product stock service', () => {
     const update = vi.mocked(Reflect.get(repo, 'update'));
     await service(repo).update(admin, 11, { sellingPrice: '130.00' });
     expect(update).toHaveBeenCalledWith(11, 2, { sellingPrice: '130.00' }, 7);
+  });
+
+  it('refuses a Cashier activating a product', async () => {
+    // Activation sets the price the branch will sell at; that is an Admin's move.
+    const repo = repository();
+    await expect(service(repo).activate(cashier, 11, { sellingPrice: '120.00' }))
+      .rejects.toMatchObject({ code: 'PRODUCT_ACTIVATION_ADMIN_REQUIRED' });
+    expect(vi.mocked(Reflect.get(repo, 'activate'))).not.toHaveBeenCalled();
+  });
+
+  it('activates an awaiting product with the price the Admin typed', async () => {
+    const repo = repository();
+    await service(repo).activate(admin, 11, { sellingPrice: '150.00' });
+    expect(vi.mocked(Reflect.get(repo, 'activate'))).toHaveBeenCalledWith(11, 2, '150.00', 7);
+  });
+
+  it('clears the awaiting flag when an awaiting product is deactivated', async () => {
+    // Otherwise the row would stay "awaiting" and the list would keep offering
+    // an activation that the Admin never asked for.
+    const repo = repository();
+    await service(repo).update(admin, 11, { isActive: false });
+    expect(vi.mocked(Reflect.get(repo, 'update'))).toHaveBeenCalledWith(
+      11, 2, { isActive: false, awaitingFirstStock: false }, 7,
+    );
+  });
+
+  it('suggests the price the sending branch sells the product at', async () => {
+    const repo = repository();
+    vi.mocked(Reflect.get(repo, 'latestIncomingPrice')).mockResolvedValue('88.00');
+    await expect(service(repo).activationPrice(admin, 11, {}))
+      .resolves.toBe('88.00');
+    expect(vi.mocked(Reflect.get(repo, 'latestIncomingPrice'))).toHaveBeenCalledWith(11, 2);
   });
 
   it('rejects an adjustment that would make stock negative', async () => {
