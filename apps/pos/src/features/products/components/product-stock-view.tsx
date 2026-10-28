@@ -18,7 +18,7 @@ import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 
 import { useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
-import { ProductSyncView } from '@/features/product-sync';
+import { ProductSyncView, listLinkedProductIds } from '@/features/product-sync';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
@@ -130,6 +130,13 @@ export function ProductStockView() {
     enabled: scopeReady,
   });
   const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady });
+  /** Which products are tied to another branch; the badge is the Admin's view. */
+  const linkedProducts = useQuery({
+    queryKey: ['sync-linked', branchId],
+    queryFn: () => listLinkedProductIds(branchId!),
+    enabled: isAdmin && branchId !== undefined,
+  });
+  const linkedIds = new Set(linkedProducts.data ?? []);
   const refresh = () => invalidateErpCaches(queryClient, 'product');
   const clearProductForm = () => {
     setEditing(null);
@@ -503,6 +510,9 @@ export function ProductStockView() {
                                 <span className="font-medium">{product.name}</span>
                                 {product.awaitingFirstStock ? (
                                   <Badge variant="warning">بانتظار أول مخزون</Badge>
+                                ) : null}
+                                {linkedIds.has(product.id) ? (
+                                  <Badge variant="neutral">مرتبط</Badge>
                                 ) : null}
                                 {product.quantity <= product.lowStockThreshold ? (
                                   <Badge variant="danger">منخفض</Badge>

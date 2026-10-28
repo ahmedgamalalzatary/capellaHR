@@ -1,8 +1,11 @@
 import {
   branchLinkParamsSchema,
   createBranchLinkSchema,
+  linkedProductsQuerySchema,
   settleProductLinkSchema,
+  settleSyncIssueSchema,
   setupRowParamsSchema,
+  syncIssueParamsSchema,
 } from '@capella/contracts';
 import { Router, type Response } from 'express';
 import { ZodError } from 'zod';
@@ -31,6 +34,7 @@ const statuses: Record<ProductSyncErrorCode, number> = {
   SYNC_LINK_NOT_FOUND: 404,
   SYNC_BRANCH_NOT_FOUND: 404,
   SYNC_PRODUCT_NOT_FOUND: 404,
+  SYNC_ISSUE_NOT_FOUND: 404,
   SYNC_SAME_BRANCH: 409,
   SYNC_SENDER_IS_RECEIVER: 409,
   SYNC_RECEIVER_IS_SENDER: 409,
@@ -69,6 +73,24 @@ export const createErpProductSyncRouter = (service: ProductSyncService) => {
   router.post('/', async (request, response) => {
     try {
       response.status(201).json({ data: await service.create(actorFrom(response), createBranchLinkSchema.parse(request.body)) });
+    } catch (cause) { handle(cause, response); }
+  });
+  // The "needs attention" list: products a sending branch created that the
+  // receiving branch could not take.
+  router.get('/issues', async (request, response) => {
+    try { response.json({ data: await service.issues(actorFrom(response)) }); } catch (cause) { handle(cause, response); }
+  });
+  router.put('/issues/:issueId', async (request, response) => {
+    try {
+      const { issueId } = syncIssueParamsSchema.parse(request.params);
+      await service.settleIssue(actorFrom(response), issueId, settleSyncIssueSchema.parse(request.body));
+      response.json({ data: await service.issues(actorFrom(response)) });
+    } catch (cause) { handle(cause, response); }
+  });
+  router.get('/linked', async (request, response) => {
+    try {
+      const { branchId } = linkedProductsQuerySchema.parse(request.query);
+      response.json({ data: await service.linkedProducts(actorFrom(response), branchId) });
     } catch (cause) { handle(cause, response); }
   });
   router.get('/:id/setup', async (request, response) => {

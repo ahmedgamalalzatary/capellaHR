@@ -7,6 +7,7 @@ import { branches } from '../../organization/index.js';
 
 export const erpBranchLinkStates = ['pending', 'active'] as const;
 export const erpProductLinkStates = ['linked', 'excluded'] as const;
+export const erpProductSyncIssueReasons = ['name_clash', 'copy_failed'] as const;
 
 /**
  * One branch feeding another: products flow sender ⇒ receiver only. The row is
@@ -57,4 +58,29 @@ export const erpProductLinks = mysqlTable('erp_product_links', {
   uniqueIndex('erp_product_links_receiver_unique').on(table.senderBranchId, table.receiverBranchId, table.receiverProductId),
   index('erp_product_links_sender_product_idx').on(table.senderProductId),
   index('erp_product_links_receiver_product_idx').on(table.receiverProductId),
+]);
+
+/**
+ * A product A created that B could not take: the name was already B's, or the
+ * copy itself failed. A's product exists either way; this row is what keeps the
+ * gap visible until an Admin decides. One row per product per receiver, so a
+ * retry that fails again updates the reason instead of piling up duplicates.
+ */
+export const erpProductSyncIssues = mysqlTable('erp_product_sync_issues', {
+  id: int('id').autoincrement().primaryKey(),
+  senderBranchId: int('sender_branch_id').notNull(),
+  receiverBranchId: int('receiver_branch_id').notNull(),
+  senderProductId: int('sender_product_id').notNull(),
+  reason: mysqlEnum('reason', erpProductSyncIssueReasons).notNull(),
+  settledByAccountId: int('settled_by_account_id'),
+  settledAt: timestamp('settled_at', { mode: 'date', fsp: 3 }),
+  createdAt: timestamp('created_at', { mode: 'date', fsp: 3 }).notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (table) => [
+  foreignKey({ name: 'erp_product_sync_issues_sender_fk', columns: [table.senderBranchId], foreignColumns: [branches.id] }),
+  foreignKey({ name: 'erp_product_sync_issues_receiver_fk', columns: [table.receiverBranchId], foreignColumns: [branches.id] }),
+  foreignKey({ name: 'erp_product_sync_issues_product_fk', columns: [table.senderProductId], foreignColumns: [erpProducts.id] }),
+  foreignKey({ name: 'erp_product_sync_issues_settled_by_fk', columns: [table.settledByAccountId], foreignColumns: [accounts.id] }),
+  uniqueIndex('erp_product_sync_issues_unique').on(table.senderBranchId, table.receiverBranchId, table.senderProductId),
+  index('erp_product_sync_issues_settled_idx').on(table.settledAt),
 ]);

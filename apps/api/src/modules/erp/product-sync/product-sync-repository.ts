@@ -1,16 +1,18 @@
 import { type createDatabase } from '@capella/database';
-import { branches, erpBranchLinks, erpProducts, erpProductLinks, erpProductStocks } from '@capella/database/schema';
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { branches, erpBranchLinks, erpProductLinks, erpProducts, erpProductStocks, erpProductSyncIssues } from '@capella/database/schema';
+import { and, asc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import type { CreateBranchLinkInput, SettleProductLinkInput } from '@capella/contracts';
 
 import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { matchKeyFor, normalizeCatalogName } from '../catalog/index.js';
+import type { ProductCopyInput, SyncCopyExecutor, SyncCopyRunner } from './product-copy-contract.js';
 import {
   syncError,
   type BranchLinkRecord,
   type ProductSyncRepository,
   type SyncCandidate,
   type SyncExcludedRow,
+  type SyncIssue,
   type SyncSetupRow,
 } from './product-sync-service.js';
 
@@ -21,6 +23,20 @@ type Executor = Database | Tx;
 const isDuplicateEntry = (error: unknown) => typeof error === 'object' && error !== null && (
   Reflect.get(error, 'code') === 'ER_DUP_ENTRY'
   || Reflect.get(Reflect.get(error, 'cause') ?? {}, 'code') === 'ER_DUP_ENTRY'
+);
+
+/** Raised inside a copy's savepoint so only that receiver is rolled back. */
+class ProductCopyIssue extends Error {
+  constructor(public readonly reason: 'name_clash') {
+    super(reason);
+    this.name = 'ProductCopyIssue';
+  }
+}
+
+const copyReason = (error: unknown): 'name_clash' | 'copy_failed' => (
+  error instanceof ProductCopyIssue ? error.reason
+    : isDuplicateEntry(error) ? 'name_clash'
+      : 'copy_failed'
 );
 
 const pairOf = (link: Pick<BranchLinkRecord, 'senderBranchId' | 'receiverBranchId'>) => and(
@@ -139,7 +155,7 @@ export const createDrizzleProductSyncRepository = (
   database: Database,
   audit: ErpAuditCapability,
   now: () => Date = () => new Date(),
-): ProductSyncRepository => {
+): ProductSyncRepository & { copyOnCreate: SyncCopyRunner } => {
   const hydrate = async (executor: Executor, rows: Array<Omit<BranchLinkRecord, 'senderBranchName' | 'receiverBranchName'>>): Promise<BranchLinkRecord[]> => {
     const names = await branchNames(executor, [...new Set(rows.flatMap((row) => [row.senderBranchId, row.receiverBranchId]))]);
     return rows.map((row) => ({
@@ -161,6 +177,142 @@ export const createDrizzleProductSyncRepository = (
       module: 'erp-product-sync', action: 'settle', entityType: 'product-link', entityId: senderProductId,
       afterState, relatedIds: { branchId: link.receiverBranchId, actingAccountId }, createdAt: at,
     });
+  };
+
+  /**
+   * A's product as B's copy: name and description only, priced at zero and
+   * waiting for its first stock. Runs in the caller's transaction (inside a
+   * savepoint when called for a create) so a failure undoes only this receiver.
+   */
+  const copyOne = async (
+    executor: SyncCopyExecutor,
+    product: ProductCopyInput,
+    receiverBranchId: number,
+    actingAccountId: number,
+  ) => {
+    const at = now();
+    // Lock by the key an identical name would have, so two copies of the same
+    // name cannot both decide the receiving shelf is free.
+    const matches = await executor.select({ id: erpProducts.id }).from(erpProducts).where(and(
+      eq(erpProducts.branchId, receiverBranchId),
+      eq(erpProducts.matchKey, product.matchKey),
+    )).for('update').limit(2);
+    if (matches.length) throw new ProductCopyIssue('name_clash');
+
+    const created = await executor.insert(erpProducts).values({
+      branchId: receiverBranchId,
+      name: product.name,
+      nameNormalized: normalizeCatalogName(product.name),
+      matchKey: product.matchKey,
+      description: product.description,
+      sellingPrice: '0.00',
+      lastPurchaseCost: '0.00',
+      commissionPercent: '0.00',
+      lowStockThreshold: 0,
+      barcode: null,
+      isActive: false,
+      awaitingFirstStock: true,
+      createdAt: at,
+      updatedAt: at,
+    });
+    const copyId = Number(created[0].insertId);
+    await executor.insert(erpProductStocks).values({
+      productId: copyId, branchId: receiverBranchId, quantity: 0, updatedAt: at,
+    });
+    await executor.insert(erpProductLinks).values({
+      senderBranchId: product.branchId,
+      receiverBranchId,
+      senderProductId: product.productId,
+      receiverProductId: copyId,
+      state: 'linked',
+      notSameAsProductId: null,
+      createdAt: at,
+      updatedAt: at,
+    });
+    // Both branches get their own entry; B's says where the product came from.
+    await audit.record(executor, {
+      module: 'erp-stock', action: 'create', entityType: 'product', entityId: copyId,
+      afterState: {
+        id: copyId, branchId: receiverBranchId, name: product.name,
+        isActive: false, awaitingFirstStock: true, sellingPrice: '0.00',
+        syncSourceBranchId: product.branchId,
+      },
+      relatedIds: { branchId: receiverBranchId, actingAccountId, syncSourceBranchId: product.branchId },
+      createdAt: at,
+    });
+  };
+
+  const copyOnCreate: SyncCopyRunner = async (tx, product, actingAccountId) => {
+    const links = await tx.select({ receiverBranchId: erpBranchLinks.receiverBranchId })
+      .from(erpBranchLinks)
+      .where(and(
+        eq(erpBranchLinks.senderBranchId, product.branchId),
+        eq(erpBranchLinks.state, 'active' as const),
+      ))
+      .orderBy(asc(erpBranchLinks.receiverBranchId));
+
+    for (const link of links) {
+      try {
+        // One savepoint per receiver: a branch's failure undoes only that copy.
+        await tx.transaction(async (savepoint) => {
+          await copyOne(savepoint, product, link.receiverBranchId, actingAccountId);
+        });
+      } catch (error) {
+        const at = now();
+        const reason = copyReason(error);
+        // A's product still commits; the gap is visible instead of silent.
+        await tx.insert(erpProductSyncIssues).values({
+          senderBranchId: product.branchId,
+          receiverBranchId: link.receiverBranchId,
+          senderProductId: product.productId,
+          reason,
+          createdAt: at,
+          updatedAt: at,
+        }).onDuplicateKeyUpdate({ set: { reason, updatedAt: at } });
+      }
+    }
+  };
+
+  const hydrateIssues = async (rows: Array<{
+    id: number; senderBranchId: number; receiverBranchId: number;
+    senderProductId: number; reason: 'name_clash' | 'copy_failed'; createdAt: Date;
+  }>): Promise<SyncIssue[]> => {
+    if (!rows.length) return [];
+    const branchIds = [...new Set(rows.flatMap((row) => [row.senderBranchId, row.receiverBranchId]))];
+    const names = await branchNames(database, branchIds);
+    const products = await database.select({ id: erpProducts.id, name: erpProducts.name })
+      .from(erpProducts).where(inArray(erpProducts.id, [...new Set(rows.map((row) => row.senderProductId))]));
+    const productNames = new Map(products.map((product) => [product.id, product.name]));
+    const links = await database.select({
+      id: erpBranchLinks.id,
+      senderBranchId: erpBranchLinks.senderBranchId,
+      receiverBranchId: erpBranchLinks.receiverBranchId,
+    }).from(erpBranchLinks).where(or(
+      inArray(erpBranchLinks.senderBranchId, branchIds),
+      inArray(erpBranchLinks.receiverBranchId, branchIds),
+    ));
+    const linkIds = new Map(links.map((link) => [`${link.senderBranchId}:${link.receiverBranchId}`, link.id]));
+    return rows.map((row) => ({
+      id: row.id,
+      linkId: linkIds.get(`${row.senderBranchId}:${row.receiverBranchId}`) ?? null,
+      senderBranchId: row.senderBranchId,
+      senderBranchName: names.get(row.senderBranchId) ?? '',
+      receiverBranchId: row.receiverBranchId,
+      receiverBranchName: names.get(row.receiverBranchId) ?? '',
+      senderProductId: row.senderProductId,
+      productName: productNames.get(row.senderProductId) ?? '',
+      reason: row.reason,
+      createdAt: row.createdAt,
+    }));
+  };
+
+  const issueSelection = {
+    id: erpProductSyncIssues.id,
+    senderBranchId: erpProductSyncIssues.senderBranchId,
+    receiverBranchId: erpProductSyncIssues.receiverBranchId,
+    senderProductId: erpProductSyncIssues.senderProductId,
+    reason: erpProductSyncIssues.reason,
+    createdAt: erpProductSyncIssues.createdAt,
   };
 
   return {
@@ -383,6 +535,77 @@ export const createDrizzleProductSyncRepository = (
         };
       });
     },
+
+    async issues() {
+      const rows = await database.select(issueSelection).from(erpProductSyncIssues)
+        .where(isNull(erpProductSyncIssues.settledAt))
+        .orderBy(asc(erpProductSyncIssues.createdAt), asc(erpProductSyncIssues.id));
+      return hydrateIssues(rows);
+    },
+
+    async findIssue(id) {
+      const rows = await database.select(issueSelection).from(erpProductSyncIssues)
+        .where(and(eq(erpProductSyncIssues.id, id), isNull(erpProductSyncIssues.settledAt)))
+        .limit(1);
+      return (await hydrateIssues(rows))[0] ?? null;
+    },
+
+    async markIssueSettled(id, actingAccountId) {
+      const at = now();
+      await database.update(erpProductSyncIssues)
+        .set({ settledByAccountId: actingAccountId, settledAt: at, updatedAt: at })
+        .where(eq(erpProductSyncIssues.id, id));
+    },
+
+    async retryIssue(issue, actingAccountId) {
+      await database.transaction(async (tx) => {
+        const product = (await tx.select({
+          id: erpProducts.id,
+          branchId: erpProducts.branchId,
+          name: erpProducts.name,
+          description: erpProducts.description,
+          matchKey: erpProducts.matchKey,
+        }).from(erpProducts).where(eq(erpProducts.id, issue.senderProductId)).for('update').limit(1))[0];
+        if (!product) throw syncError('SYNC_PRODUCT_NOT_FOUND');
+
+        const at = now();
+        try {
+          await tx.transaction(async (savepoint) => {
+            await copyOne(savepoint, {
+              branchId: product.branchId,
+              productId: product.id,
+              name: product.name,
+              description: product.description,
+              matchKey: product.matchKey,
+            }, issue.receiverBranchId, actingAccountId);
+          });
+          await tx.update(erpProductSyncIssues)
+            .set({ settledByAccountId: actingAccountId, settledAt: at, updatedAt: at })
+            .where(eq(erpProductSyncIssues.id, issue.id));
+        } catch (error) {
+          // Still blocked: the row stays, carrying the reason this attempt found.
+          await tx.update(erpProductSyncIssues)
+            .set({ reason: copyReason(error), updatedAt: at })
+            .where(eq(erpProductSyncIssues.id, issue.id));
+        }
+      });
+    },
+
+    async linkedProductIds(branchId) {
+      const sent = await database.select({ id: erpProductLinks.senderProductId })
+        .from(erpProductLinks).where(eq(erpProductLinks.senderBranchId, branchId));
+      const received = await database.select({ id: erpProductLinks.receiverProductId })
+        .from(erpProductLinks).where(and(
+          eq(erpProductLinks.receiverBranchId, branchId),
+          isNotNull(erpProductLinks.receiverProductId),
+        ));
+      return [...new Set([
+        ...sent.map((row) => row.id),
+        ...received.flatMap((row) => (row.id === null ? [] : [row.id])),
+      ])];
+    },
+
+    copyOnCreate,
   };
 };
 

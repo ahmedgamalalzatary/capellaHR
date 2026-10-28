@@ -6,9 +6,13 @@ import { createProductSyncService } from './product-sync-service.js';
 
 export const createErpProductSyncModule = (
   database: ReturnType<typeof createDatabase>,
-  capabilities: { audit: ErpAuditCapability },
+  capabilities: {
+    audit: ErpAuditCapability;
+    /** Built before the stock module so its create can call `copyOnCreate`. */
+    repository?: ReturnType<typeof createDrizzleProductSyncRepository>;
+  },
 ) => {
-  const repository = createDrizzleProductSyncRepository(database, capabilities.audit);
+  const repository = capabilities.repository ?? createDrizzleProductSyncRepository(database, capabilities.audit);
   return {
     repository,
     service: createProductSyncService({ repository }),

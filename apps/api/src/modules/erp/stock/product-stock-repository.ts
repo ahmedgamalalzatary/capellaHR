@@ -7,6 +7,8 @@ import type { ErpAuditCapability } from '../hr-capabilities.js';
 import { ProductStockError, type ProductStockRecord, type ProductStockRepository } from './product-stock-service.js';
 
 import { readStockBatches, createStockBatch, ensureLegacyBatch, takeBatchQuantities, addBatchQuantities, StockBatchError } from './stock-batches.js';
+import { withDeadlockRetry } from './deadlock-retry.js';
+import type { SyncCopyRunner } from '../product-sync/product-copy-contract.js';
 
 type Database = ReturnType<typeof createDatabase>;
 type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -55,6 +57,8 @@ export const createDrizzleProductStockRepository = (
   database: Database,
   audit: ErpAuditCapability,
   now: () => Date = () => new Date(),
+  /** Present when the product-sync module is enabled for this edition. */
+  syncCopy?: SyncCopyRunner,
 ): ProductStockRepository => ({
   async listBatches(id, branchId) {
     return withSharedBranches(database, await readStockBatches(database, id, branchId), branchId);
@@ -71,7 +75,9 @@ export const createDrizzleProductStockRepository = (
     });
   },
   async create(input, actingAccountId) {
-    return database.transaction(async (tx) => {
+    // A deadlock rolls back the whole transaction, so the create is replayed
+    // once: the second attempt is the only one left taking these locks.
+    return withDeadlockRetry(() => database.transaction(async (tx) => {
       const at = now();
       const { openingQuantity, ...values } = input;
       const inserted = await tx.insert(erpProducts).values({ ...values, createdAt: at, updatedAt: at });
@@ -81,8 +87,18 @@ export const createDrizzleProductStockRepository = (
         erpProductStocks, and(eq(erpProductStocks.productId, erpProducts.id), eq(erpProductStocks.branchId, erpProducts.branchId)),
       ).where(eq(erpProducts.id, id)).limit(1))[0]!;
       await audit.record(tx, { module: 'erp-stock', action: 'create', entityType: 'product', entityId: id, afterState: record, relatedIds: { branchId: input.branchId, actingAccountId }, createdAt: at });
+      if (syncCopy) {
+        // Same transaction as A's insert; each receiver is a savepoint inside it.
+        await syncCopy(tx, {
+          branchId: input.branchId,
+          productId: id,
+          name: input.name,
+          description: input.description,
+          matchKey: input.matchKey,
+        }, actingAccountId);
+      }
       return record;
-    });
+    }));
   },
   async findById(id) {
     const row = (await database.select(productSelection).from(erpProducts).innerJoin(

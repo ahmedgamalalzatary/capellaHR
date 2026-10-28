@@ -46,15 +46,41 @@ export type SyncExcludedRow = {
   notSameAs: SyncCandidate | null;
 };
 
+/** A product A created that B could not take, waiting for the Admin. */
+export type SyncIssue = {
+  id: number;
+  linkId: number | null;
+  senderBranchId: number;
+  senderBranchName: string;
+  receiverBranchId: number;
+  receiverBranchName: string;
+  senderProductId: number;
+  productName: string;
+  reason: 'name_clash' | 'copy_failed';
+  createdAt: Date;
+};
+
+export type SettleIssueInput = SettleProductLinkInput | { action: 'retry' };
+
 export interface ProductSyncRepository {
   listLinks(): Promise<BranchLinkRecord[]>;
   findLink(id: number): Promise<BranchLinkRecord | null>;
   createLink(input: CreateBranchLinkInput, actingAccountId: number): Promise<BranchLinkRecord>;
   deleteLink(id: number): Promise<void>;
   setup(link: BranchLinkRecord): Promise<{ rows: SyncSetupRow[]; receiverProducts: SyncCandidate[] }>;
-  settle(link: BranchLinkRecord, senderProductId: number, input: SettleProductLinkInput, actingAccountId: number): Promise<void>;
+  settle(
+    link: Pick<BranchLinkRecord, 'senderBranchId' | 'receiverBranchId'>,
+    senderProductId: number,
+    input: SettleProductLinkInput,
+    actingAccountId: number,
+  ): Promise<void>;
   activate(link: BranchLinkRecord, actingAccountId: number): Promise<void>;
   excluded(link: BranchLinkRecord): Promise<SyncExcludedRow[]>;
+  issues(): Promise<SyncIssue[]>;
+  findIssue(id: number): Promise<SyncIssue | null>;
+  markIssueSettled(id: number, actingAccountId: number): Promise<void>;
+  retryIssue(issue: SyncIssue, actingAccountId: number): Promise<void>;
+  linkedProductIds(branchId: number): Promise<number[]>;
 }
 
 export type ProductSyncErrorCode =
@@ -68,7 +94,8 @@ export type ProductSyncErrorCode =
   | 'SYNC_SETUP_INCOMPLETE'
   | 'SYNC_PRODUCT_NOT_FOUND'
   | 'SYNC_RECEIVER_TAKEN_BY_OTHER'
-  | 'SYNC_NAME_TAKEN';
+  | 'SYNC_NAME_TAKEN'
+  | 'SYNC_ISSUE_NOT_FOUND';
 
 export class ProductSyncError extends Error {
   constructor(public readonly code: ProductSyncErrorCode, message: string) {
@@ -89,6 +116,7 @@ const messages: Record<ProductSyncErrorCode, string> = {
   SYNC_PRODUCT_NOT_FOUND: 'المنتج غير موجود في هذا الفرع',
   SYNC_RECEIVER_TAKEN_BY_OTHER: 'هذا المنتج مرتبط بمنتج آخر من الفرع المرسل',
   SYNC_NAME_TAKEN: 'الاسم مستخدم في الفرع المستلم',
+  SYNC_ISSUE_NOT_FOUND: 'عنصر المزامنة غير موجود',
 };
 
 export const syncError = (code: ProductSyncErrorCode) => new ProductSyncError(code, messages[code]);
@@ -149,6 +177,36 @@ export const createProductSyncService = (dependencies: {
     async excluded(actor: ErpAccountIdentity, id: number) {
       requireAdmin(actor);
       return repository.excluded(await requireLink(id));
+    },
+    /**
+     * The "needs attention" list: products A created that B could not take.
+     * They are never silently dropped — either the copy exists or one of these
+     * rows does.
+     */
+    async issues(actor: ErpAccountIdentity) {
+      requireAdmin(actor);
+      return repository.issues();
+    },
+    async settleIssue(actor: ErpAccountIdentity, issueId: number, input: SettleIssueInput) {
+      requireAdmin(actor);
+      const issue = await repository.findIssue(issueId);
+      if (!issue) throw syncError('SYNC_ISSUE_NOT_FOUND');
+      if (input.action === 'retry') {
+        await repository.retryIssue(issue, actor.accountId);
+        return;
+      }
+      // The three answers are the same ones setup offers, so they write the same
+      // product-link row; the issue is then closed.
+      await repository.settle(
+        { senderBranchId: issue.senderBranchId, receiverBranchId: issue.receiverBranchId },
+        issue.senderProductId, input, actor.accountId,
+      );
+      await repository.markIssueSettled(issueId, actor.accountId);
+    },
+    /** Ids to badge in the products list: linked on either side of the link. */
+    async linkedProducts(actor: ErpAccountIdentity, branchId: number) {
+      requireAdmin(actor);
+      return repository.linkedProductIds(branchId);
     },
     async remove(actor: ErpAccountIdentity, id: number) {
       requireAdmin(actor);

@@ -34,7 +34,7 @@ import {
   createErpSuppliersModule,
 } from '../modules/erp/index.js';
 import { createSalesModule } from '../modules/erp/sales/index.js';
-import { createErpProductSyncModule } from '../modules/erp/product-sync/index.js';
+import { createDrizzleProductSyncRepository, createErpProductSyncModule } from '../modules/erp/product-sync/index.js';
 import { createErpTransfersModule } from '../modules/erp/transfers/index.js';
 import { createPayrollModule } from '../modules/payroll/index.js';
 import { createReportsModule } from '../modules/reports/index.js';
@@ -244,10 +244,16 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
     branches: branchModule.erp,
     employees: employeeModule.erp,
   }) : undefined;
+  // Built before the stock module: a product create in a sending branch calls
+  // its copy runner, so A's row and every B copy commit in one transaction.
+  const productSyncRepository = enabled('erp-product-sync')
+    ? createDrizzleProductSyncRepository(database, auditModule.erp)
+    : undefined;
   const erpStockModule = enabled('erp-stock') ? createErpStockModule(database, {
     audit: auditModule.erp,
     branches: branchModule.erp,
     employees: employeeModule.erp,
+    ...(productSyncRepository ? { syncCopy: productSyncRepository.copyOnCreate } : {}),
   }) : undefined;
   const consumablesModule = enabled('erp-stock') && enabled('erp-sales') ? createConsumablesModule(database, {
     audit: auditModule.erp,
@@ -282,8 +288,9 @@ export const createApiRuntime = (options: ApiRuntimeOptions) => {
         sales: salesModule.sales,
       })
     : undefined;
-  const productSyncModule = enabled('erp-product-sync') ? createErpProductSyncModule(database, {
+  const productSyncModule = productSyncRepository ? createErpProductSyncModule(database, {
     audit: auditModule.erp,
+    repository: productSyncRepository,
   }) : undefined;
   const commissionModule = enabled('erp-commissions') ? createCommissionModule(database, {
     audit: auditModule.erp,

@@ -43,3 +43,28 @@ export const settleProductLinkSchema = z.discriminatedUnion('action', [
 
 export type CreateBranchLinkInput = z.infer<typeof createBranchLinkSchema>;
 export type SettleProductLinkInput = z.infer<typeof settleProductLinkSchema>;
+
+export const syncIssueParamsSchema = z.object({ issueId: coercedMysqlIntSchema });
+export const linkedProductsQuerySchema = z.object({ branchId: coercedMysqlIntSchema }).strict();
+
+/**
+ * The "needs attention" answers: the same three a setup row offers, plus a
+ * retry for a copy that failed for a reason a retry can clear.
+ */
+export const settleSyncIssueSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('link'),
+    receiverProductId: coercedMysqlIntSchema,
+  }).strict(),
+  z.object({
+    action: z.literal('exclude'),
+    notSameAsProductId: coercedMysqlIntSchema.nullable().default(null),
+  }).strict(),
+  z.object({
+    action: z.literal('create'),
+    name: productName,
+  }).strict(),
+  z.object({ action: z.literal('retry') }).strict(),
+]);
+
+export type SettleSyncIssueInput = z.infer<typeof settleSyncIssueSchema>;

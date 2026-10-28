@@ -19,10 +19,14 @@ import {
   getSyncSetup,
   listBranchLinks,
   listExcludedProducts,
+  listSyncIssues,
+  settleSyncIssue,
   settleSyncRow,
   type BranchLink,
+  type SettleIssueInput,
   type SettleSyncInput,
   type SyncCandidate,
+  type SyncIssue,
   type SyncSetupRow,
 } from '../api/product-sync-api';
 
@@ -100,6 +104,72 @@ function SetupRow({
           onClick={() => onSettle({ action: 'exclude', notSameAsProductId: selected ?? null })}>
           عدم النسخ
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function IssueCard({ issue, onSettled }: { issue: SyncIssue; onSettled(): Promise<void> }) {
+  const setup = useQuery({
+    queryKey: ['sync-setup', issue.linkId],
+    queryFn: () => getSyncSetup(issue.linkId!),
+    enabled: issue.linkId !== null,
+  });
+  const [receiverId, setReceiverId] = useState('');
+  const [newName, setNewName] = useState(issue.productName);
+  const settle = useMutation({
+    mutationFn: (input: SettleIssueInput) => settleSyncIssue(issue.id, input),
+    onSuccess: async () => { notifySuccess('تمت تسوية المنتج.'); await onSettled(); },
+    onError: (error: unknown) => notifyError(error),
+  });
+  const selected = receiverId === '' ? undefined : Number(receiverId);
+
+  return (
+    <div className="space-y-2 rounded-control border border-warning/40 bg-warning-soft/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">{issue.productName}</span>
+        <Badge variant="warning">
+          {issue.reason === 'name_clash' ? 'الاسم مستخدم في الفرع المستلم' : 'فشل إنشاء النسخة'}
+        </Badge>
+      </div>
+      <p className="text-[13px] text-muted">{issue.senderBranchName} ← {issue.receiverBranchName}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Select
+          aria-label={`المنتج المقابل لـ ${issue.productName}`}
+          disabled={settle.isPending || issue.linkId === null}
+          value={receiverId}
+          onChange={(event) => setReceiverId(event.target.value)}
+        >
+          <option value="">— بدون —</option>
+          {(setup.data?.receiverProducts ?? []).map((product) => (
+            <option key={product.id} value={product.id}>{product.name}</option>
+          ))}
+        </Select>
+        <Input
+          aria-label={`اسم نسخة ${issue.productName}`}
+          disabled={settle.isPending}
+          value={newName}
+          onChange={(event) => setNewName(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={settle.isPending || selected === undefined}
+          onClick={() => { if (selected !== undefined) settle.mutate({ action: 'link', receiverProductId: selected }); }}>
+          ربط بمنتج موجود
+        </Button>
+        <Button size="sm" variant="secondary" disabled={settle.isPending || !newName.trim()}
+          onClick={() => settle.mutate({ action: 'create', name: newName.trim() })}>
+          نسخ باسم جديد
+        </Button>
+        <Button size="sm" variant="ghost" disabled={settle.isPending}
+          onClick={() => settle.mutate({ action: 'exclude', notSameAsProductId: null })}>
+          عدم النسخ
+        </Button>
+        {issue.reason === 'copy_failed' ? (
+          <Button size="sm" variant="ghost" disabled={settle.isPending} onClick={() => settle.mutate({ action: 'retry' })}>
+            إعادة المحاولة
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -192,6 +262,7 @@ export function ProductSyncView() {
   const [deleting, setDeleting] = useState<BranchLink | null>(null);
 
   const links = useQuery({ queryKey: ['branch-links'], queryFn: listBranchLinks });
+  const issues = useQuery({ queryKey: ['sync-issues'], queryFn: listSyncIssues });
   const branches = useQuery({
     queryKey: ['product-branches'],
     queryFn: () => fetchAllPages((page) => listCatalogBranches(page)),
@@ -283,6 +354,22 @@ export function ProductSyncView() {
                   ))}
                 </div>
               )}
+
+        {issues.data?.length ? (
+          <div className="space-y-2 border-t border-line/70 pt-3">
+            <p className="text-sm font-medium">منتجات تحتاج انتباهًا</p>
+            <p className="text-[13px] text-muted">
+              هذه منتجات أُنشئت في الفرع المرسل ولم تُنسخ بعد. اختر المنتج المقابل، أو انسخها باسم جديد، أو استبعدها.
+            </p>
+            {issues.data.map((issue) => (
+              <IssueCard
+                key={issue.id}
+                issue={issue}
+                onSettled={() => queryClient.invalidateQueries({ queryKey: ['sync-issues'] })}
+              />
+            ))}
+          </div>
+        ) : null}
 
         {setupLink ? <SetupDialog link={setupLink} onClose={() => setSetupLink(null)} /> : null}
 

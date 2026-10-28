@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   createLink: vi.fn(),
   removeLink: vi.fn(),
   excluded: vi.fn(),
+  issues: vi.fn(),
+  settleIssue: vi.fn(),
 }));
 
 vi.mock('../src/features/catalog', () => ({ listCatalogBranches: mocks.branches }));
@@ -24,7 +26,10 @@ vi.mock('../src/features/product-sync/api/product-sync-api', () => ({
   createBranchLink: mocks.createLink,
   deleteBranchLink: mocks.removeLink,
   listExcludedProducts: mocks.excluded,
+  listSyncIssues: mocks.issues,
+  settleSyncIssue: mocks.settleIssue,
 }));
+mocks.issues.mockResolvedValue([]);
 
 import { ProductSyncView } from '../src/features/product-sync';
 
@@ -107,6 +112,28 @@ describe('ProductSyncView', () => {
     await waitFor(() => expect(mocks.settle).toHaveBeenCalledWith(1, 5, { action: 'exclude', notSameAsProductId: null }));
     // The refreshed setup now unlocks activation.
     await waitFor(() => expect((screen.getByRole('button', { name: 'تفعيل الرابط' }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('shows products that need attention and settles one', async () => {
+    mocks.branches.mockResolvedValue({ items: [{ id: 2, name: 'الرئيسي' }], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } });
+    mocks.links.mockResolvedValue([]);
+    mocks.setup.mockResolvedValue(setupWith());
+    mocks.issues.mockResolvedValue([{
+      id: 7, linkId: 1, senderBranchId: 2, senderBranchName: 'الرئيسي',
+      receiverBranchId: 3, receiverBranchName: 'الفرع الثاني',
+      senderProductId: 5, productName: 'مرطب', reason: 'name_clash',
+      createdAt: '2026-10-02T00:00:00Z',
+    }]);
+    mocks.settleIssue.mockResolvedValue([]);
+    renderView();
+
+    expect(await screen.findByText('مرطب')).toBeDefined();
+    expect(screen.getByText('منتجات تحتاج انتباهًا')).toBeDefined();
+    expect(screen.getByText('الاسم مستخدم في الفرع المستلم')).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'عدم النسخ' }));
+    await waitFor(() => expect(mocks.settleIssue)
+      .toHaveBeenCalledWith(7, { action: 'exclude', notSameAsProductId: null }));
   });
 
   it('activates the link once the setup is complete', async () => {

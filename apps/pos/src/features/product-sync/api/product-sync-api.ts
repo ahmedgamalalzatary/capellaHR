@@ -38,6 +38,20 @@ export type SettleSyncInput =
   | { action: 'exclude'; notSameAsProductId: number | null }
   | { action: 'create'; name: string };
 
+export interface SyncIssue {
+  id: number;
+  linkId: number | null;
+  senderBranchId: number;
+  senderBranchName: string;
+  receiverBranchId: number;
+  receiverBranchName: string;
+  senderProductId: number;
+  productName: string;
+  reason: 'name_clash' | 'copy_failed';
+  createdAt: string;
+}
+export type SettleIssueInput = SettleSyncInput | { action: 'retry' };
+
 export const listBranchLinks = () => api.get<BranchLink[]>('/erp/product-sync');
 export const createBranchLink = (input: { senderBranchId: number; receiverBranchId: number }) => (
   api.post<BranchLink>('/erp/product-sync', input)
@@ -49,3 +63,12 @@ export const settleSyncRow = (id: number, productId: number, input: SettleSyncIn
 export const activateBranchLink = (id: number) => api.post<SyncSetup>(`/erp/product-sync/${id}/activation`);
 export const listExcludedProducts = (id: number) => api.get<SyncExcludedRow[]>(`/erp/product-sync/${id}/excluded`);
 export const deleteBranchLink = (id: number) => api.delete<void>(`/erp/product-sync/${id}`);
+/** The "needs attention" list: products a sending branch could not place. */
+export const listSyncIssues = () => api.get<SyncIssue[]>('/erp/product-sync/issues');
+export const settleSyncIssue = (issueId: number, input: SettleIssueInput) => (
+  api.put<SyncIssue[]>(`/erp/product-sync/issues/${issueId}`, input)
+);
+/** Products linked to another branch, to badge them in the products list. */
+export const listLinkedProductIds = (branchId: number) => (
+  api.get<number[]>(`/erp/product-sync/linked?branchId=${branchId}`)
+);

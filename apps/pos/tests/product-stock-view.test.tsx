@@ -29,7 +29,10 @@ vi.mock('../src/features/catalog', () => ({
 }));
 // The sync section is its own screen area with its own tests; here it would only
 // add a second branch picker and its own loading state.
-vi.mock('../src/features/product-sync', () => ({ ProductSyncView: () => null }));
+vi.mock('../src/features/product-sync', () => ({
+  ProductSyncView: () => null,
+  listLinkedProductIds: async () => [],
+}));
 vi.mock('../src/features/products/api/products-api', () => ({
   listAllProducts: mocks.listProducts, listProducts: mocks.listProducts,
   listStockMovements: mocks.movements,
