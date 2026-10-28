@@ -52,6 +52,47 @@ const freshPair = async () => {
 };
 
 describe('ERP product sync setup', () => {
+  it('confirms draft choices and activation together, creating only the final copy', async () => {
+    await freshPair();
+    const a = await product(senderBranchId, 'Draft serum', { description: 'Source description' });
+    const created = await service().create(admin, { senderBranchId, receiverBranchId });
+    const activated = await service().activate(admin, created.id, { decisions: [
+      { senderProductId: a, decision: { action: 'create', name: 'Final serum' } },
+    ] });
+    expect(activated.link.state).toBe('active');
+    expect(activated.allGreen).toBe(true);
+    expect(await database.select().from(erpProducts).where(eq(erpProducts.branchId, receiverBranchId)))
+      .toEqual([expect.objectContaining({ name: 'Final serum', description: 'Source description', awaitingFirstStock: true })]);
+  });
+
+  it('rolls back earlier choices when a later draft fails validation', async () => {
+    await freshPair();
+    const a = await product(senderBranchId, 'Draft first');
+    const second = await product(senderBranchId, 'Draft second');
+    await product(receiverBranchId, 'Taken name');
+    const created = await service().create(admin, { senderBranchId, receiverBranchId });
+    await expect(service().activate(admin, created.id, { decisions: [
+      { senderProductId: a, decision: { action: 'create', name: 'Would be created' } },
+      { senderProductId: second, decision: { action: 'create', name: 'Taken name' } },
+    ] })).rejects.toMatchObject({ code: 'SYNC_NAME_TAKEN' });
+    expect(await database.select().from(erpProducts).where(eq(erpProducts.branchId, receiverBranchId)))
+      .toEqual([expect.objectContaining({ name: 'Taken name' })]);
+    expect(await database.select().from(erpProductLinks).where(and(
+      eq(erpProductLinks.senderBranchId, senderBranchId), eq(erpProductLinks.receiverBranchId, receiverBranchId),
+    ))).toHaveLength(0);
+    expect((await service().setup(admin, created.id)).link.state).toBe('pending');
+  });
+
+  it('does not confirm a partial draft when a new sender conflict remains', async () => {
+    await freshPair();
+    const a = await product(senderBranchId, 'Draft known');
+    const created = await service().create(admin, { senderBranchId, receiverBranchId });
+    await product(senderBranchId, 'Created while setup was open');
+    await expect(service().activate(admin, created.id, { decisions: [
+      { senderProductId: a, decision: { action: 'create', name: 'Known copy' } },
+    ] })).rejects.toMatchObject({ code: 'SYNC_SETUP_INCOMPLETE' });
+    expect(await database.select().from(erpProducts).where(eq(erpProducts.branchId, receiverBranchId))).toHaveLength(0);
+  });
   it('refuses a Cashier before touching anything', async () => {
     await expect(service().list({ role: 'cashier', accountId: adminId, branchId: 1 }))
       .rejects.toMatchObject({ code: 'SYNC_ADMIN_REQUIRED' });

@@ -315,6 +315,96 @@ export const createDrizzleProductSyncRepository = (
     createdAt: erpProductSyncIssues.createdAt,
   };
 
+  const settleInTransaction = async (
+    tx: Tx,
+    link: Pick<BranchLinkRecord, 'senderBranchId' | 'receiverBranchId'>,
+    senderProductId: number,
+    input: SettleProductLinkInput,
+    actingAccountId: number,
+  ) => {
+    const sender = (await tx.select({ id: erpProducts.id, name: erpProducts.name, description: erpProducts.description })
+      .from(erpProducts)
+      .where(and(eq(erpProducts.id, senderProductId), eq(erpProducts.branchId, link.senderBranchId)))
+      .limit(1))[0];
+    if (!sender) throw syncError('SYNC_PRODUCT_NOT_FOUND');
+    const at = now();
+
+    if (input.action === 'create') {
+      const name = input.name.trim();
+      const nameNormalized = normalizeCatalogName(name);
+      const matchKey = matchKeyFor(name);
+      // Free under both rules: the branch still enforces its own name rule,
+      // and the cross-branch key decides what the next setup would match.
+      const clash = (await tx.select({ id: erpProducts.id }).from(erpProducts).where(and(
+        eq(erpProducts.branchId, link.receiverBranchId),
+        or(eq(erpProducts.nameNormalized, nameNormalized), eq(erpProducts.matchKey, matchKey)),
+      )).limit(1))[0];
+      if (clash) throw syncError('SYNC_NAME_TAKEN');
+
+      const created = await tx.insert(erpProducts).values({
+        branchId: link.receiverBranchId,
+        name,
+        nameNormalized,
+        matchKey,
+        // Only these two come from A. B prices it at activation and owns
+        // everything else.
+        description: sender.description,
+        sellingPrice: '0.00',
+        lastPurchaseCost: '0.00',
+        commissionPercent: '0.00',
+        lowStockThreshold: 0,
+        barcode: null,
+        isActive: false,
+        awaitingFirstStock: true,
+        createdAt: at,
+        updatedAt: at,
+      });
+      const receiverProductId = Number(created[0].insertId);
+      await tx.insert(erpProductStocks).values({
+        productId: receiverProductId, branchId: link.receiverBranchId, quantity: 0, updatedAt: at,
+      });
+      await upsertAnswer(tx, link, senderProductId, {
+        receiverProductId, state: 'linked', notSameAsProductId: null, at,
+      });
+      await auditAnswer(tx, link, senderProductId, { action: 'create', receiverProductId, name }, actingAccountId, at);
+      return;
+    }
+
+    if (input.action === 'link') {
+      const receiver = (await tx.select({ id: erpProducts.id }).from(erpProducts).where(and(
+        eq(erpProducts.id, input.receiverProductId),
+        eq(erpProducts.branchId, link.receiverBranchId),
+      )).limit(1))[0];
+      if (!receiver) throw syncError('SYNC_PRODUCT_NOT_FOUND');
+      const taken = (await tx.select({ id: erpProductLinks.id }).from(erpProductLinks).where(and(
+        pairOf(link),
+        eq(erpProductLinks.receiverProductId, receiver.id),
+      )).limit(1))[0];
+      if (taken) throw syncError('SYNC_RECEIVER_TAKEN_BY_OTHER');
+      await upsertAnswer(tx, link, senderProductId, {
+        receiverProductId: receiver.id, state: 'linked', notSameAsProductId: null, at,
+      });
+      await auditAnswer(tx, link, senderProductId, { action: 'link', receiverProductId: receiver.id }, actingAccountId, at);
+      return;
+    }
+
+    if (input.notSameAsProductId !== null) {
+      const compared = (await tx.select({ id: erpProducts.id }).from(erpProducts).where(and(
+        eq(erpProducts.id, input.notSameAsProductId),
+        eq(erpProducts.branchId, link.receiverBranchId),
+      )).limit(1))[0];
+      if (!compared) throw syncError('SYNC_PRODUCT_NOT_FOUND');
+    }
+    // A settled "don't copy": recorded so it is never asked again, and so a
+    // transfer never lands on the product it was compared with.
+    await upsertAnswer(tx, link, senderProductId, {
+      receiverProductId: null, state: 'excluded', notSameAsProductId: input.notSameAsProductId, at,
+    });
+    await auditAnswer(tx, link, senderProductId, {
+      action: 'exclude', notSameAsProductId: input.notSameAsProductId,
+    }, actingAccountId, at);
+  };
+
   return {
     async listLinks() {
       const rows = await database.select(linkSelection).from(erpBranchLinks)
@@ -383,98 +473,21 @@ export const createDrizzleProductSyncRepository = (
       return computeSetup(database, link);
     },
 
-    async settle(link, senderProductId, input: SettleProductLinkInput, actingAccountId) {
-      await database.transaction(async (tx) => {
-        const sender = (await tx.select({ id: erpProducts.id, name: erpProducts.name, description: erpProducts.description })
-          .from(erpProducts)
-          .where(and(eq(erpProducts.id, senderProductId), eq(erpProducts.branchId, link.senderBranchId)))
-          .limit(1))[0];
-        if (!sender) throw syncError('SYNC_PRODUCT_NOT_FOUND');
-        const at = now();
-
-        if (input.action === 'create') {
-          const name = input.name.trim();
-          const nameNormalized = normalizeCatalogName(name);
-          const matchKey = matchKeyFor(name);
-          // Free under both rules: the branch still enforces its own name rule,
-          // and the cross-branch key decides what the next setup would match.
-          const clash = (await tx.select({ id: erpProducts.id }).from(erpProducts).where(and(
-            eq(erpProducts.branchId, link.receiverBranchId),
-            or(eq(erpProducts.nameNormalized, nameNormalized), eq(erpProducts.matchKey, matchKey)),
-          )).limit(1))[0];
-          if (clash) throw syncError('SYNC_NAME_TAKEN');
-
-          const created = await tx.insert(erpProducts).values({
-            branchId: link.receiverBranchId,
-            name,
-            nameNormalized,
-            matchKey,
-            // Only these two come from A. B prices it at activation and owns
-            // everything else.
-            description: sender.description,
-            sellingPrice: '0.00',
-            lastPurchaseCost: '0.00',
-            commissionPercent: '0.00',
-            lowStockThreshold: 0,
-            barcode: null,
-            isActive: false,
-            awaitingFirstStock: true,
-            createdAt: at,
-            updatedAt: at,
-          });
-          const receiverProductId = Number(created[0].insertId);
-          await tx.insert(erpProductStocks).values({
-            productId: receiverProductId, branchId: link.receiverBranchId, quantity: 0, updatedAt: at,
-          });
-          await upsertAnswer(tx, link, senderProductId, {
-            receiverProductId, state: 'linked', notSameAsProductId: null, at,
-          });
-          await auditAnswer(tx, link, senderProductId, { action: 'create', receiverProductId, name }, actingAccountId, at);
-          return;
-        }
-
-        if (input.action === 'link') {
-          const receiver = (await tx.select({ id: erpProducts.id }).from(erpProducts).where(and(
-            eq(erpProducts.id, input.receiverProductId),
-            eq(erpProducts.branchId, link.receiverBranchId),
-          )).limit(1))[0];
-          if (!receiver) throw syncError('SYNC_PRODUCT_NOT_FOUND');
-          const taken = (await tx.select({ id: erpProductLinks.id }).from(erpProductLinks).where(and(
-            pairOf(link),
-            eq(erpProductLinks.receiverProductId, receiver.id),
-          )).limit(1))[0];
-          if (taken) throw syncError('SYNC_RECEIVER_TAKEN_BY_OTHER');
-          await upsertAnswer(tx, link, senderProductId, {
-            receiverProductId: receiver.id, state: 'linked', notSameAsProductId: null, at,
-          });
-          await auditAnswer(tx, link, senderProductId, { action: 'link', receiverProductId: receiver.id }, actingAccountId, at);
-          return;
-        }
-
-        if (input.notSameAsProductId !== null) {
-          const compared = (await tx.select({ id: erpProducts.id }).from(erpProducts).where(and(
-            eq(erpProducts.id, input.notSameAsProductId),
-            eq(erpProducts.branchId, link.receiverBranchId),
-          )).limit(1))[0];
-          if (!compared) throw syncError('SYNC_PRODUCT_NOT_FOUND');
-        }
-        // A settled "don't copy": recorded so it is never asked again, and so a
-        // transfer never lands on the product it was compared with.
-        await upsertAnswer(tx, link, senderProductId, {
-          receiverProductId: null, state: 'excluded', notSameAsProductId: input.notSameAsProductId, at,
-        });
-        await auditAnswer(tx, link, senderProductId, {
-          action: 'exclude', notSameAsProductId: input.notSameAsProductId,
-        }, actingAccountId, at);
-      });
+    async settle(link, senderProductId, input, actingAccountId) {
+      await database.transaction((tx) => settleInTransaction(tx, link, senderProductId, input, actingAccountId));
     },
 
-    async activate(link, actingAccountId) {
+    async activate(link, actingAccountId, decisions = []) {
       await database.transaction(async (tx) => {
         const current = (await tx.select(linkSelection).from(erpBranchLinks)
           .where(eq(erpBranchLinks.id, link.id)).for('update').limit(1))[0];
         if (!current) throw syncError('SYNC_LINK_NOT_FOUND');
         if (current.state === 'active') return;
+
+        // Choices and created copies commit only with the final activation.
+        for (const entry of [...decisions].sort((left, right) => left.senderProductId - right.senderProductId)) {
+          await settleInTransaction(tx, current, entry.senderProductId, entry.decision, actingAccountId);
+        }
 
         const rows = (await computeSetup(tx, link)).rows;
         if (rows.some((row) => row.state === 'conflict')) throw syncError('SYNC_SETUP_INCOMPLETE');

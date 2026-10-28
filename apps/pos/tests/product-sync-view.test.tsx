@@ -94,24 +94,105 @@ describe('ProductSyncView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'إعداد' }));
     expect(await screen.findByText('سيروم')).toBeDefined();
     expect(screen.getByText('يحتاج قرارًا')).toBeDefined();
-    expect((screen.getByRole('button', { name: 'تفعيل الرابط' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'تأكيد الإعداد وتفعيل الرابط' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('settles a row as "don\'t copy" from the conflict controls', async () => {
+  it('shows only unresolved conflicts in the setup popup', async () => {
+    mocks.branches.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 } });
+    mocks.links.mockResolvedValue([link]);
+    const conflict = setupWith().rows[0]!;
+    mocks.setup.mockResolvedValue(setupWith({ rows: [
+      conflict,
+      { ...conflict, senderProductId: 6, name: 'مطابق تلقائيًا', state: 'green', kind: 'auto', receiverProductId: 10 },
+      { ...conflict, senderProductId: 7, name: 'منتج مربوط', state: 'green', kind: 'linked', receiverProductId: 11 },
+      { ...conflict, senderProductId: 8, name: 'منتج مستبعد', state: 'green', kind: 'excluded' },
+    ] }));
+    mocks.excluded.mockResolvedValue([{ senderProductId: 8, name: 'منتج مستبعد', notSameAs: null }]);
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'إعداد' }));
+    expect(await screen.findByText('سيروم')).toBeDefined();
+    expect(screen.queryByText('مطابق تلقائيًا')).toBeNull();
+    expect(screen.queryByText('منتج مربوط')).toBeNull();
+    expect(screen.queryByText('منتج مستبعد')).toBeNull();
+    expect(screen.queryByText('مستبعدة من المزامنة')).toBeNull();
+    expect((screen.getByRole('button', { name: 'تأكيد الإعداد وتفعيل الرابط' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps a decision editable as a draft until final confirmation', async () => {
     mocks.branches.mockResolvedValue({ items: [{ id: 2, name: 'الرئيسي' }], meta: { page: 1, pageSize: 100, total: 1, totalPages: 1 } });
     mocks.links.mockResolvedValue([link]);
     mocks.setup.mockResolvedValue(setupWith());
     mocks.excluded.mockResolvedValue([]);
-    mocks.settle.mockResolvedValue(setupWith({ allGreen: true }));
+    mocks.settle.mockResolvedValue(setupWith({ allGreen: true, rows: [
+      { ...setupWith().rows[0]!, state: 'green', kind: 'excluded' },
+    ] }));
     renderView();
 
     fireEvent.click(await screen.findByRole('button', { name: 'إعداد' }));
     await screen.findByText('سيروم');
     fireEvent.click(screen.getByRole('button', { name: 'عدم النسخ' }));
 
-    await waitFor(() => expect(mocks.settle).toHaveBeenCalledWith(1, 5, { action: 'exclude', notSameAsProductId: null }));
-    // The refreshed setup now unlocks activation.
-    await waitFor(() => expect((screen.getByRole('button', { name: 'تفعيل الرابط' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(mocks.settle).not.toHaveBeenCalled();
+    expect(screen.getByText('سيروم')).toBeDefined();
+    expect(screen.getByText('قرار مؤقت: عدم النسخ')).toBeDefined();
+    const confirm = screen.getByRole('button', { name: 'تأكيد الإعداد وتفعيل الرابط' }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'تراجع عن قرار سيروم' }));
+    expect(confirm.disabled).toBe(true);
+    expect(screen.queryByText('قرار مؤقت: عدم النسخ')).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: 'المنتج المقابل لـ سيروم' }));
+    fireEvent.click(screen.getByRole('option', { name: 'شامبو' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ربط بالمنتج' }));
+    expect(screen.getByText('قرار مؤقت: ربط بـ «شامبو»')).toBeDefined();
+    mocks.activate.mockResolvedValue(setupWith({ allGreen: true, link: { ...link, state: 'active' }, rows: [] }));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.activate).toHaveBeenCalledWith(1, {
+      decisions: [{ senderProductId: 5, decision: { action: 'link', receiverProductId: 10 } }],
+    }));
+  });
+
+  it('discards an unconfirmed create choice when setup closes', async () => {
+    mocks.branches.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 } });
+    mocks.links.mockResolvedValue([link]);
+    mocks.setup.mockResolvedValue(setupWith());
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إعداد' }));
+    await screen.findByText('سيروم');
+    fireEvent.click(screen.getByRole('button', { name: 'نسخ باسم جديد' }));
+    expect(screen.getByText('قرار مؤقت: إنشاء «سيروم»')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'إغلاق' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إعداد' }));
+    await screen.findByText('سيروم');
+    expect(screen.queryByText('قرار مؤقت: إنشاء «سيروم»')).toBeNull();
+    expect((screen.getByRole('button', { name: 'تأكيد الإعداد وتفعيل الرابط' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocks.settle).not.toHaveBeenCalled();
+    expect(mocks.activate).not.toHaveBeenCalled();
+  });
+
+  it('searches receiver products by name or barcode before choosing a draft link', async () => {
+    mocks.branches.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 } });
+    mocks.links.mockResolvedValue([link]);
+    mocks.setup.mockResolvedValue(setupWith({ receiverProducts: [
+      { id: 10, name: 'Acne serum', barcode: 'SERUM123' },
+      { id: 11, name: 'Almond oil', barcode: 'OIL456' },
+    ] }));
+    renderView();
+    fireEvent.click(await screen.findByRole('button', { name: 'إعداد' }));
+    const picker = await screen.findByRole('combobox', { name: 'المنتج المقابل لـ سيروم' });
+    fireEvent.click(picker);
+    const search = screen.getByRole('searchbox', { name: 'بحث عن المنتج المقابل لـ سيروم' });
+    fireEvent.change(search, { target: { value: 'serum' } });
+    expect(screen.getByRole('option', { name: 'Acne serum' })).toBeDefined();
+    expect(screen.queryByRole('option', { name: 'Almond oil' })).toBeNull();
+    fireEvent.change(search, { target: { value: 'OIL456' } });
+    fireEvent.click(screen.getByRole('option', { name: 'Almond oil' }));
+    expect(picker.textContent).toContain('Almond oil');
+    fireEvent.click(screen.getByRole('button', { name: 'ربط بالمنتج' }));
+    expect(screen.getByText('قرار مؤقت: ربط بـ «Almond oil»')).toBeDefined();
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole('option', { name: 'بدون منتج مقابل' }));
+    expect((screen.getByRole('button', { name: 'ربط بالمنتج' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('shows products that need attention and settles one', async () => {
@@ -151,10 +232,12 @@ describe('ProductSyncView', () => {
     renderView();
 
     fireEvent.click(await screen.findByRole('button', { name: 'إعداد' }));
-    const activate = await screen.findByRole('button', { name: 'تفعيل الرابط' });
+    const activate = await screen.findByRole('button', { name: 'تأكيد الإعداد وتفعيل الرابط' });
+    expect(screen.queryByText('سيروم')).toBeNull();
+    expect(screen.getByText('لا توجد تعارضات في الإعداد.')).toBeDefined();
     expect((activate as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(activate);
 
-    await waitFor(() => expect(mocks.activate).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(mocks.activate).toHaveBeenCalledWith(1, { decisions: [] }));
   });
 });

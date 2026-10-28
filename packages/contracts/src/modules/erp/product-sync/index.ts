@@ -44,6 +44,23 @@ export const settleProductLinkSchema = z.discriminatedUnion('action', [
 export type CreateBranchLinkInput = z.infer<typeof createBranchLinkSchema>;
 export type SettleProductLinkInput = z.infer<typeof settleProductLinkSchema>;
 
+/** Setup choices are submitted once, when the administrator confirms activation. */
+export const confirmBranchLinkSchema = z.object({
+  decisions: z.array(z.object({
+    senderProductId: coercedMysqlIntSchema,
+    decision: settleProductLinkSchema,
+  }).strict()).default([]),
+}).strict().superRefine((input, context) => {
+  const seen = new Set<number>();
+  input.decisions.forEach((entry, index) => {
+    if (seen.has(entry.senderProductId)) {
+      context.addIssue({ code: 'custom', path: ['decisions', index, 'senderProductId'], message: 'اختر قرارًا واحدًا لكل منتج' });
+    }
+    seen.add(entry.senderProductId);
+  });
+});
+export type ConfirmBranchLinkInput = z.infer<typeof confirmBranchLinkSchema>;
+
 export const syncIssueParamsSchema = z.object({ issueId: coercedMysqlIntSchema });
 export const linkedProductsQuerySchema = z.object({ branchId: coercedMysqlIntSchema }).strict();
 

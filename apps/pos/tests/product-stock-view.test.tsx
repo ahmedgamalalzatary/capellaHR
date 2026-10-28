@@ -66,6 +66,19 @@ beforeEach(() => {
 });
 
 describe('ProductStockView', () => {
+  it('separates products, stock history, and branch linking into tabs', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+    await screen.findByRole('option', { name: 'الرئيسي' });
+    fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    expect(screen.getByRole('tab', { name: 'المنتجات' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByLabelText('تصفية الحركات حسب السبب')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'سجل المخزون' }));
+    expect(await screen.findByLabelText('تصفية الحركات حسب السبب')).toBeDefined();
+    expect(screen.queryByLabelText('بحث في المنتجات')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'ربط الفروع' }));
+    expect(screen.queryByLabelText('تصفية الحركات حسب السبب')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'منتج جديد' })).toBeNull();
+  });
   it('offers branches beyond the first page of the branch list', async () => {
     mocks.branches.mockImplementation(async (page = 1) => (page === 1
       ? { items: [{ id: 2, name: 'الفرع الرئيسي' }], meta: { page: 1, pageSize: 100, total: 2, totalPages: 2 } }
@@ -90,6 +103,7 @@ describe('ProductStockView', () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'سجل المخزون' }));
     expect(await screen.findByText(/دفعة #12.*2027-01-01/)).toBeDefined();
   });
   it('paginates the main products table', async () => {
@@ -151,6 +165,7 @@ describe('ProductStockView', () => {
     render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
     await screen.findAllByText('شامبو');
 
+    expect(screen.queryByRole('tab', { name: 'ربط الفروع' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'تسوية' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'منتج جديد' }));
@@ -201,6 +216,7 @@ describe('ProductStockView', () => {
 
     // The reason label also appears as an option in the movements reason filter,
     // so wait for the movement row before scoping every lookup to its table.
+    fireEvent.click(screen.getByRole('tab', { name: 'سجل المخزون' }));
     await screen.findByText(/٢٠٢٦/);
     const table = screen.getAllByRole('table')
       .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'الوقت' }))!;
@@ -220,8 +236,10 @@ describe('ProductStockView', () => {
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 
-    expect(screen.getAllByRole('status')).toHaveLength(2);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status', { name: 'جارٍ تحميل المنتجات…' })).toBeDefined();
+    fireEvent.click(screen.getByRole('tab', { name: 'سجل المخزون' }));
+    expect(screen.queryByRole('status', { name: 'جارٍ تحميل المنتجات…' })).toBeNull();
     expect(screen.getByRole('status', { name: 'جارٍ تحميل حركات المخزون…' })).toBeDefined();
   });
 
@@ -406,15 +424,17 @@ describe('ProductStockView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'تعديل' }));
     fireEvent.click(screen.getByRole('button', { name: 'تسوية' }));
+    fireEvent.change(screen.getByLabelText('تصفية حسب حالة المنتج'), { target: { value: 'inactive' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'سجل المخزون' }));
     fireEvent.change(screen.getByLabelText('تصفية الحركات حسب المنتج'), { target: { value: '4' } });
     fireEvent.change(screen.getByLabelText('تصفية الحركات حسب السبب'), { target: { value: 'sale' } });
-    fireEvent.change(screen.getByLabelText('تصفية حسب حالة المنتج'), { target: { value: 'inactive' } });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '3' } });
 
     expect(screen.queryByRole('button', { name: 'حفظ التعديل' })).toBeNull();
     expect(screen.queryByLabelText('الكمية بعد الجرد')).toBeNull();
     expect((screen.getByLabelText('تصفية الحركات حسب المنتج') as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText('تصفية الحركات حسب السبب') as HTMLSelectElement).value).toBe('');
+    fireEvent.click(screen.getByRole('tab', { name: 'المنتجات' }));
     expect((screen.getByLabelText('تصفية حسب حالة المنتج') as HTMLSelectElement).value).toBe('');
   });
 
@@ -443,6 +463,7 @@ describe('ProductStockView', () => {
     await screen.findByRole('option', { name: 'الرئيسي' });
     fireEvent.change(screen.getByLabelText('الفرع'), { target: { value: '2' } });
 
+    fireEvent.click(screen.getByRole('tab', { name: 'سجل المخزون' }));
     fireEvent.click(await screen.findByRole('button', { name: 'الصفحة 2' }));
     await waitFor(() => expect(mocks.movements)
       .toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })));

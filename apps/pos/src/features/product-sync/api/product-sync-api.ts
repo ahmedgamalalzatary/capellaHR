@@ -1,4 +1,5 @@
 import { api } from '@/lib/api/client';
+import type { ConfirmBranchLinkInput } from '@capella/contracts';
 
 export interface BranchLink {
   id: number;
@@ -60,7 +61,9 @@ export const getSyncSetup = (id: number) => api.get<SyncSetup>(`/erp/product-syn
 export const settleSyncRow = (id: number, productId: number, input: SettleSyncInput) => (
   api.put<SyncSetup>(`/erp/product-sync/${id}/rows/${productId}`, input)
 );
-export const activateBranchLink = (id: number) => api.post<SyncSetup>(`/erp/product-sync/${id}/activation`);
+export const activateBranchLink = (id: number, input: ConfirmBranchLinkInput = { decisions: [] }) => (
+  api.post<SyncSetup>(`/erp/product-sync/${id}/activation`, input)
+);
 export const listExcludedProducts = (id: number) => api.get<SyncExcludedRow[]>(`/erp/product-sync/${id}/excluded`);
 export const deleteBranchLink = (id: number) => api.delete<void>(`/erp/product-sync/${id}`);
 /** The "needs attention" list: products a sending branch could not place. */

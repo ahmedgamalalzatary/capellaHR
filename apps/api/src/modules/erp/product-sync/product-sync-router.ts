@@ -1,6 +1,7 @@
 import {
   branchLinkParamsSchema,
   createBranchLinkSchema,
+  confirmBranchLinkSchema,
   linkedProductsQuerySchema,
   settleProductLinkSchema,
   settleSyncIssueSchema,
@@ -108,7 +109,7 @@ export const createErpProductSyncRouter = (service: ProductSyncService) => {
   router.post('/:id/activation', async (request, response) => {
     try {
       const { id } = branchLinkParamsSchema.parse(request.params);
-      response.json({ data: await service.activate(actorFrom(response), id) });
+      response.json({ data: await service.activate(actorFrom(response), id, confirmBranchLinkSchema.parse(request.body ?? {})) });
     } catch (cause) { handle(cause, response); }
   });
   router.get('/:id/excluded', async (request, response) => {

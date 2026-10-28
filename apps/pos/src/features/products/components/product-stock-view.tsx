@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search } from 'lucide-react';
+import { History, Link2, Package, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -66,6 +66,13 @@ export function ProductStockView() {
    */
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
+  const [selectedTab, setSelectedTab] = useState<'products' | 'history' | 'links'>('products');
+  const tab = !isAdmin && selectedTab === 'links' ? 'products' : selectedTab;
+  const tabs = [
+    { id: 'products' as const, label: 'المنتجات', icon: Package },
+    { id: 'history' as const, label: 'سجل المخزون', icon: History },
+    ...(isAdmin ? [{ id: 'links' as const, label: 'ربط الفروع', icon: Link2 }] : []),
+  ];
   const branches = useQuery({
     queryKey: ['product-branches'],
     queryFn: () => fetchAllPages((page) => listCatalogBranches(page)),
@@ -123,18 +130,18 @@ export function ProductStockView() {
     ...(movementReason ? { reason: movementReason } : {}),
     page: movementPage, pageSize: 20,
   };
-  const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listProducts(productParams), enabled: scopeReady });
+  const products = useQuery({ queryKey: productQueryKeys.list(productParams), queryFn: () => listProducts(productParams), enabled: scopeReady && tab === 'products' });
   const catalogProducts = useQuery({
     queryKey: productQueryKeys.list({ ...(branchId === undefined ? {} : { branchId }), catalog: true }),
     queryFn: () => listAllProducts(branchId === undefined ? {} : { branchId }),
-    enabled: scopeReady,
+    enabled: scopeReady && tab === 'history',
   });
-  const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady });
+  const movements = useQuery({ queryKey: productQueryKeys.movements(movementParams), queryFn: () => listStockMovements(movementParams), enabled: scopeReady && tab === 'history' });
   /** Which products are tied to another branch; the badge is the Admin's view. */
   const linkedProducts = useQuery({
     queryKey: ['sync-linked', branchId],
     queryFn: () => listLinkedProductIds(branchId!),
-    enabled: isAdmin && branchId !== undefined,
+    enabled: isAdmin && branchId !== undefined && tab === 'products',
   });
   const linkedIds = new Set(linkedProducts.data ?? []);
   const refresh = () => invalidateErpCaches(queryClient, 'product');
@@ -250,7 +257,7 @@ export function ProductStockView() {
       <PageHeader
         title="المنتجات والمخزون"
         description="إدارة الأسعار والأرصدة وحركات المخزون لكل فرع."
-        actions={scopeReady ? (
+        actions={scopeReady && tab === 'products' ? (
           <Button
             disabled={commandPending}
             onClick={() => { setAdjusting(null); setEditing(null); setCreateOpen(true); }}
@@ -262,7 +269,31 @@ export function ProductStockView() {
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
 
-      {isAdmin ? (
+      <div role="tablist" aria-label="المنتجات والمخزون" className="flex gap-1 overflow-x-auto border-b border-line">
+        {tabs.map((item, index) => (
+          <button key={item.id} id={`stock-tab-${item.id}`} type="button" role="tab"
+            aria-selected={tab === item.id} aria-controls={`stock-panel-${item.id}`} tabIndex={tab === item.id ? 0 : -1}
+            disabled={commandPending}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-medium disabled:opacity-50 ${tab === item.id ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink'}`}
+            onClick={() => {
+              clearProductForm(); setConfirmingToggle(null); setAdjusting(null); setManagingBatches(null); setLabelling(null); setActivating(null);
+              setSelectedTab(item.id);
+            }}
+            onKeyDown={(event) => {
+              const nextIndex = event.key === 'ArrowLeft' ? (index + 1) % tabs.length
+                : event.key === 'ArrowRight' ? (index - 1 + tabs.length) % tabs.length
+                  : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : undefined;
+              if (nextIndex === undefined) return;
+              event.preventDefault();
+              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.click();
+              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
+            }}>
+            <item.icon className="size-4" aria-hidden />{item.label}
+          </button>
+        ))}
+      </div>
+
+      {isAdmin && tab !== 'links' ? (
         <Card className="shadow-card">
           <CardContent className="p-4 sm:p-5">
             {branches.isError ? (
@@ -298,7 +329,11 @@ export function ProductStockView() {
         </Card>
       ) : null}
 
-      {!scopeReady ? (
+      {isAdmin ? <div role="tabpanel" id="stock-panel-links" aria-labelledby="stock-tab-links" hidden={tab !== 'links'}>
+        {tab === 'links' ? <ProductSyncView /> : null}
+      </div> : null}
+
+      {tab === 'links' ? null : !scopeReady ? (
         <Card className="shadow-card">
           {isAdmin
             ? <EmptyState title="اختر فرعًا لإدارة مخزونه" />
@@ -306,6 +341,8 @@ export function ProductStockView() {
         </Card>
       ) : (
         <>
+          <div role="tabpanel" id="stock-panel-products" aria-labelledby="stock-tab-products" hidden={tab !== 'products'}>
+          {tab === 'products' ? <>
           {formOpen ? (
             <Modal
               title={editing ? `تعديل ${editing.name}` : 'إضافة منتج'}
@@ -596,7 +633,11 @@ export function ProductStockView() {
             }}
           /> : null}
 
-          <Card className="overflow-hidden shadow-card">
+          </> : null}
+          </div>
+
+          <div role="tabpanel" id="stock-panel-history" aria-labelledby="stock-tab-history" hidden={tab !== 'history'}>
+          {tab === 'history' ? <Card className="overflow-hidden shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 p-3 sm:p-4">
               <SectionHeading title="سجل حركات المخزون" />
               <div className="flex flex-wrap items-center gap-2">
@@ -677,8 +718,8 @@ export function ProductStockView() {
                     title={movementProductId !== undefined || movementReason ? 'لا توجد حركات مطابقة' : 'لا توجد حركات بعد'}
                   />
                 )}
-          </Card>
-          {isAdmin ? <ProductSyncView /> : null}
+          </Card> : null}
+          </div>
         </>
       )}
     </section>

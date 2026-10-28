@@ -1,4 +1,4 @@
-import type { CreateBranchLinkInput, SettleProductLinkInput } from '@capella/contracts';
+import type { ConfirmBranchLinkInput, CreateBranchLinkInput, SettleProductLinkInput } from '@capella/contracts';
 
 import type { ErpAccountIdentity } from '../hr-capabilities.js';
 
@@ -74,7 +74,7 @@ export interface ProductSyncRepository {
     input: SettleProductLinkInput,
     actingAccountId: number,
   ): Promise<void>;
-  activate(link: BranchLinkRecord, actingAccountId: number): Promise<void>;
+  activate(link: BranchLinkRecord, actingAccountId: number, decisions?: ConfirmBranchLinkInput['decisions']): Promise<void>;
   excluded(link: BranchLinkRecord): Promise<SyncExcludedRow[]>;
   issues(): Promise<SyncIssue[]>;
   findIssue(id: number): Promise<SyncIssue | null>;
@@ -167,10 +167,10 @@ export const createProductSyncService = (dependencies: {
       await repository.settle(link, senderProductId, input, actor.accountId);
       return withSetup(link, await repository.setup(link));
     },
-    async activate(actor: ErpAccountIdentity, id: number): Promise<SyncSetup> {
+    async activate(actor: ErpAccountIdentity, id: number, input: ConfirmBranchLinkInput = { decisions: [] }): Promise<SyncSetup> {
       requireAdmin(actor);
       const link = await requireLink(id);
-      await repository.activate(link, actor.accountId);
+      await repository.activate(link, actor.accountId, input.decisions);
       const updated = await requireLink(id);
       return withSetup(updated, await repository.setup(updated));
     },

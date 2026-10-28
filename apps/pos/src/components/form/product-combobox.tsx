@@ -18,6 +18,7 @@ interface ProductComboboxProps {
   products: ProductComboboxItem[];
   value: string;
   disabled?: boolean | undefined;
+  emptyOptionLabel?: string;
   onChange: (productId: string) => void;
 }
 
@@ -26,7 +27,7 @@ interface ProductComboboxProps {
  * opening it reveals a search field that filters by name or barcode.
  * Shared by stock transfers and supplier invoices so both pick products one way.
  */
-export function ProductCombobox({ id, label, products, value, disabled, onChange }: ProductComboboxProps) {
+export function ProductCombobox({ id, label, products, value, disabled, emptyOptionLabel, onChange }: ProductComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const root = useRef<HTMLDivElement>(null);
@@ -80,6 +81,9 @@ export function ProductCombobox({ id, label, products, value, disabled, onChange
             />
           </div>
           <ul id={`${id}-options`} role="listbox" className="scroll-thin mt-2 max-h-56 overflow-y-auto">
+            {emptyOptionLabel ? <li><button type="button" role="option" aria-selected={value === ''}
+              className="min-h-11 w-full rounded-control px-2 py-2 text-start text-sm text-muted hover:bg-surface"
+              onClick={() => { onChange(''); setOpen(false); setSearch(''); }}>{emptyOptionLabel}</button></li> : null}
             {matches.map((product) => (
               <li key={product.id}>
                 <button

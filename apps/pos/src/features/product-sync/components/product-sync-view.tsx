@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Badge, Button, Card, CardContent, ConfirmDialog, EmptyState, Input, Label, Modal } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
+import { ProductCombobox } from '@/components/form/product-combobox';
 import { Select } from '@/components/form/select';
 import { SectionHeading } from '@/components/layout/page-header';
 import { listCatalogBranches } from '@/features/catalog';
@@ -18,10 +19,8 @@ import {
   deleteBranchLink,
   getSyncSetup,
   listBranchLinks,
-  listExcludedProducts,
   listSyncIssues,
   settleSyncIssue,
-  settleSyncRow,
   type BranchLink,
   type SettleIssueInput,
   type SettleSyncInput,
@@ -41,12 +40,14 @@ const rowHint: Record<SyncSetupRow['kind'], string> = {
 };
 
 function SetupRow({
-  row, products, disabled, onSettle,
+  row, products, disabled, draft, onSettle, onUndo,
 }: {
   row: SyncSetupRow;
   products: SyncCandidate[];
   disabled: boolean;
+  draft: SettleSyncInput | undefined;
   onSettle(input: SettleSyncInput): void;
+  onUndo(): void;
 }) {
   const initial = row.receiverProductId ?? row.candidates[0]?.id;
   const [receiverId, setReceiverId] = useState(initial === undefined ? '' : String(initial));
@@ -54,30 +55,32 @@ function SetupRow({
   const selected = receiverId === '' ? undefined : Number(receiverId);
 
   return (
-    <div className={`space-y-2 rounded-control border p-3 ${row.state === 'green' ? 'border-line' : 'border-warning/40 bg-warning-soft/40'}`}>
+    <div className={`space-y-2 rounded-control border p-3 ${draft ? 'border-line' : 'border-warning/40 bg-warning-soft/40'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">{row.name}</span>
-        <Badge variant={row.state === 'green' ? 'success' : 'warning'}>
-          {row.state === 'green' ? 'جاهز' : 'يحتاج قرارًا'}
+        <Badge variant={draft ? 'success' : 'warning'}>
+          {draft ? 'جاهز للتأكيد' : 'يحتاج قرارًا'}
         </Badge>
       </div>
       <p className="text-[13px] text-muted">{rowHint[row.kind]}</p>
+      {draft ? <p role="status" className="text-sm font-medium">
+        {draft.action === 'exclude' ? 'قرار مؤقت: عدم النسخ'
+          : draft.action === 'create' ? `قرار مؤقت: إنشاء «${draft.name}»`
+            : `قرار مؤقت: ربط بـ «${products.find((product) => product.id === draft.receiverProductId)?.name ?? draft.receiverProductId}»`}
+      </p> : null}
 
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor={`row-product-${row.senderProductId}`}>المنتج في الفرع المستلم</Label>
-          <Select
+          <ProductCombobox
             id={`row-product-${row.senderProductId}`}
-            aria-label={`المنتج المقابل لـ ${row.name}`}
+            label={`المنتج المقابل لـ ${row.name}`}
+            products={products}
+            emptyOptionLabel="بدون منتج مقابل"
             disabled={disabled}
             value={receiverId}
-            onChange={(event) => setReceiverId(event.target.value)}
-          >
-            <option value="">— بدون —</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>{product.name}</option>
-            ))}
-          </Select>
+            onChange={setReceiverId}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor={`row-name-${row.senderProductId}`}>اسم النسخة الجديدة</Label>
@@ -104,6 +107,7 @@ function SetupRow({
           onClick={() => onSettle({ action: 'exclude', notSameAsProductId: selected ?? null })}>
           عدم النسخ
         </Button>
+        {draft ? <Button size="sm" variant="ghost" disabled={disabled} aria-label={`تراجع عن قرار ${row.name}`} onClick={onUndo}>تراجع</Button> : null}
       </div>
     </div>
   );
@@ -134,17 +138,15 @@ function IssueCard({ issue, onSettled }: { issue: SyncIssue; onSettled(): Promis
       </div>
       <p className="text-[13px] text-muted">{issue.senderBranchName} ← {issue.receiverBranchName}</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <Select
-          aria-label={`المنتج المقابل لـ ${issue.productName}`}
+        <ProductCombobox
+          id={`issue-product-${issue.id}`}
+          label={`المنتج المقابل لـ ${issue.productName}`}
+          products={setup.data?.receiverProducts ?? []}
+          emptyOptionLabel="بدون منتج مقابل"
           disabled={settle.isPending || issue.linkId === null}
           value={receiverId}
-          onChange={(event) => setReceiverId(event.target.value)}
-        >
-          <option value="">— بدون —</option>
-          {(setup.data?.receiverProducts ?? []).map((product) => (
-            <option key={product.id} value={product.id}>{product.name}</option>
-          ))}
-        </Select>
+          onChange={setReceiverId}
+        />
         <Input
           aria-label={`اسم نسخة ${issue.productName}`}
           disabled={settle.isPending}
@@ -178,27 +180,29 @@ function IssueCard({ issue, onSettled }: { issue: SyncIssue; onSettled(): Promis
 function SetupDialog({ link, onClose }: { link: BranchLink; onClose(): void }) {
   const queryClient = useQueryClient();
   const setup = useQuery({ queryKey: ['sync-setup', link.id], queryFn: () => getSyncSetup(link.id) });
-  const excluded = useQuery({ queryKey: ['sync-excluded', link.id], queryFn: () => listExcludedProducts(link.id) });
-
-  const settle = useMutation({
-    mutationFn: ({ productId, input }: { productId: number; input: SettleSyncInput }) => settleSyncRow(link.id, productId, input),
-    onSuccess: async (data) => {
-      queryClient.setQueryData(['sync-setup', link.id], data);
-      await queryClient.invalidateQueries({ queryKey: ['sync-excluded', link.id] });
-    },
-    onError: (error: unknown) => notifyError(error),
-  });
+  const [decisions, setDecisions] = useState<Record<number, SettleSyncInput>>({});
   const activate = useMutation({
-    mutationFn: () => activateBranchLink(link.id),
+    mutationFn: () => activateBranchLink(link.id, {
+      decisions: (setup.data?.rows ?? []).filter((row) => row.state === 'conflict' && decisions[row.senderProductId])
+        .map((row) => ({ senderProductId: row.senderProductId, decision: decisions[row.senderProductId]! })),
+    }),
     onSuccess: async (data) => {
       queryClient.setQueryData(['sync-setup', link.id], data);
+      setDecisions({});
       notifySuccess('تم تفعيل الرابط. المنتجات المطابقة صارت مرتبطة، والنسخ تنتظر أول مخزون.');
-      await queryClient.invalidateQueries({ queryKey: ['branch-links'] });
+      await Promise.all(['branch-links', 'sync-linked', 'sync-excluded', 'sync-issues', 'erp-products'].map((key) => (
+        queryClient.invalidateQueries({ queryKey: [key] })
+      )));
     },
-    onError: (error: unknown) => notifyError(error),
+    onError: async (error: unknown) => {
+      notifyError(error);
+      await queryClient.invalidateQueries({ queryKey: ['sync-setup', link.id] });
+    },
   });
-  const pending = settle.isPending || activate.isPending;
-  const conflicts = setup.data?.rows.filter((row) => row.state === 'conflict').length ?? 0;
+  const pending = activate.isPending;
+  const conflicts = setup.data?.rows.filter((row) => row.state === 'conflict') ?? [];
+  const remaining = conflicts.filter((row) => !decisions[row.senderProductId]).length;
+  const active = setup.data?.link.state === 'active';
 
   return (
     <Modal
@@ -211,41 +215,36 @@ function SetupDialog({ link, onClose }: { link: BranchLink; onClose(): void }) {
           : (
             <div className="space-y-4">
               <p className="text-[13px] text-muted">
-                كل صف يحتاج قرارًا. المنتجات المطابقة تُربط، والباقي تختار له: الربط بمنتج موجود، نسخ باسم جديد، أو عدم النسخ.
-                لا يتم تفعيل المزامنة قبل أن تصبح كل الصفوف جاهزة.
+                تظهر هنا التعارضات فقط. اختياراتك مؤقتة ويمكن تعديلها أو التراجع عنها حتى تأكيد الإعداد.
+                إغلاق النافذة يلغي الاختيارات غير المؤكدة. تُحفظ القرارات وتُنشأ النسخ عند التأكيد وتفعيل الرابط فقط.
               </p>
 
               <div className="space-y-2">
-                {setup.data.rows.length === 0 ? <p className="text-sm text-muted">لا توجد منتجات في الفرع المرسل بعد.</p> : null}
-                {setup.data.rows.map((row) => (
+                {conflicts.length === 0 ? <p role="status" className="text-sm text-muted">لا توجد تعارضات في الإعداد.</p> : null}
+                {conflicts.map((row) => (
                   <SetupRow
                     key={row.senderProductId}
                     row={row}
                     products={setup.data.receiverProducts}
-                    disabled={pending}
-                    onSettle={(input) => settle.mutate({ productId: row.senderProductId, input })}
+                    disabled={pending || active}
+                    draft={decisions[row.senderProductId]}
+                    onSettle={(input) => setDecisions((current) => ({ ...current, [row.senderProductId]: input }))}
+                    onUndo={() => setDecisions((current) => {
+                      const next = { ...current };
+                      delete next[row.senderProductId];
+                      return next;
+                    })}
                   />
                 ))}
               </div>
 
-              {excluded.data?.length ? (
-                <div className="space-y-2 border-t border-line/70 pt-3">
-                  <p className="text-sm font-medium">مستبعدة من المزامنة</p>
-                  {excluded.data.map((row) => (
-                    <p key={row.senderProductId} className="text-[13px] text-muted">
-                      {row.name}{row.notSameAs ? ` — ليس نفس «${row.notSameAs.name}»` : ''}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
-
               <div className="flex flex-wrap items-center gap-2 border-t border-line/70 pt-4">
-                <Button disabled={pending || !setup.data.allGreen} onClick={() => activate.mutate()}>
-                  {link.state === 'active' ? 'مفعّل' : 'تفعيل الرابط'}
+                <Button disabled={pending || active || remaining > 0} onClick={() => activate.mutate()}>
+                  {active ? 'مفعّل' : 'تأكيد الإعداد وتفعيل الرابط'}
                 </Button>
                 <Button variant="ghost" disabled={pending} onClick={onClose}>إغلاق</Button>
                 <span className="text-[13px] text-muted">
-                  {conflicts === 0 ? 'كل الصفوف جاهزة' : `بقي ${conflicts} صفًا يحتاج قرارًا`}
+                  {remaining === 0 ? 'كل القرارات جاهزة للتأكيد' : `بقي ${remaining} تعارضًا يحتاج قرارًا`}
                 </span>
               </div>
             </div>
