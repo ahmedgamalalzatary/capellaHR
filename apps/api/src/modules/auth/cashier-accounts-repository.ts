@@ -1,9 +1,9 @@
 import { type createDatabase } from '@capella/database';
 import { accounts, authSessions, branches } from '@capella/database/schema';
-import { and, count, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, count, eq, isNull, ne, or } from 'drizzle-orm';
 
 import { writeAudit } from '../audit/index.js';
-import type { CashierAccountRepository } from './cashier-accounts-service.js';
+import type { CashierAccountRepository, PublicCashierAccount } from './cashier-accounts-service.js';
 
 type Database = ReturnType<typeof createDatabase>;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -19,11 +19,12 @@ const errorCode = (error: unknown): string | undefined => {
   return undefined;
 };
 
-// Branch logins only; legacy employee-linked cashier rows stay hidden history.
-// A retired login is history too: it keeps its row for the invoices and shifts
-// that reference it, but never appears among the branch logins again.
+// Branch logins only (cashier or reception); legacy employee-linked cashier
+// rows stay hidden history. A retired login is history too: it keeps its row
+// for the invoices and shifts that reference it, but never appears among the
+// branch logins again.
 const branchCashier = and(
-  eq(accounts.role, 'cashier'),
+  or(eq(accounts.role, 'cashier'), eq(accounts.role, 'reception')),
   isNull(accounts.employeeId),
   isNull(accounts.archivedAt),
 );
@@ -43,9 +44,10 @@ const toPublic = (row: {
   branchId: number | null;
   branchName: string;
   active: boolean;
-}) => row.role === 'cashier' && row.branchId !== null
-  ? { ...row, role: 'cashier' as const, branchId: row.branchId }
-  : null;
+}): PublicCashierAccount | null => {
+  const role = row.role === 'cashier' || row.role === 'reception' ? row.role : null;
+  return role && row.branchId !== null ? { ...row, role, branchId: row.branchId } : null;
+};
 
 const selectPublic = async (executor: Executor, accountId: number) => {
   const row = (await executor.select({
@@ -75,8 +77,12 @@ export const createDrizzleCashierAccountRepository = (
         id: accounts.id,
         username: accounts.username,
         active: accounts.active,
-      }).from(accounts).where(and(branchCashier, eq(accounts.branchId, input.branchId)))
-        .for('update').limit(1))[0];
+      // Each branch holds one login of each kind.
+      }).from(accounts).where(and(
+        branchCashier,
+        eq(accounts.branchId, input.branchId),
+        eq(accounts.role, input.role),
+      )).for('update').limit(1))[0];
 
       if (input.management?.mode === 'create' && current) return { kind: 'branch_has_account' as const };
       if (input.management?.mode === 'edit' && current?.id !== input.management.accountId) {
@@ -143,7 +149,7 @@ export const createDrizzleCashierAccountRepository = (
           id: accounts.id, username: accounts.username, role: accounts.role,
           branchId: accounts.branchId, branchName: branches.name, active: accounts.active,
         }).from(accounts).innerJoin(branches, eq(branches.id, accounts.branchId))
-          .where(branchCashier).orderBy(accounts.branchId)
+          .where(branchCashier).orderBy(asc(accounts.branchId), asc(accounts.role))
           .limit(query.pageSize).offset((query.page - 1) * query.pageSize),
         database.select({ total: count() }).from(accounts).where(branchCashier),
       ]);

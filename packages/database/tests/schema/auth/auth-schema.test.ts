@@ -1,5 +1,5 @@
 import { getTableName } from 'drizzle-orm';
-import { getTableConfig } from 'drizzle-orm/mysql-core';
+import { MySqlDialect, getTableConfig } from 'drizzle-orm/mysql-core';
 import { describe, expect, it } from 'vitest';
 
 import * as authSchema from '../../../src/schema/auth/index.js';
@@ -43,6 +43,17 @@ describe('authentication database schema', () => {
     ]));
     expect(config.foreignKeys.map((item) => item.getName())).toContain('accounts_branch_fk');
     expect(config.checks.map((item) => item.name)).toContain('accounts_role_scope_consistency');
+  });
+
+  it('defines branch-scoped read-only reception accounts with one active login per branch', () => {
+    const accounts = Reflect.get(authSchema, 'accounts');
+
+    expect(accounts.role.enumValues).toEqual(['admin', 'cashier', 'reception']);
+    expect(accounts.activeReceptionBranch).toBeDefined();
+    const config = getTableConfig(accounts);
+    expect(config.indexes.map((item) => item.config.name)).toContain('accounts_active_reception_branch_unique');
+    const scope = config.checks.find((item) => item.name === 'accounts_role_scope_consistency');
+    expect(new MySqlDialect().sqlToQuery(scope!.value).sql).toContain("'reception'");
   });
 
   it('frees the username of an archived account while keeping the row readable', () => {

@@ -32,8 +32,8 @@ async function edit() {
   return dialog;
 }
 async function create() {
-  fireEvent.click(screen.getByRole('button', { name: 'إضافة حساب كاشير' }));
-  const dialog = screen.getByRole('dialog', { name: 'إضافة حساب كاشير' });
+  fireEvent.click(screen.getByRole('button', { name: 'إضافة حساب' }));
+  const dialog = screen.getByRole('dialog', { name: 'إضافة حساب' });
   const branch = within(dialog).getByLabelText(/^الفرع/) as HTMLSelectElement;
   await waitFor(() => expect(branch.options.length).toBeGreaterThan(1));
   fireEvent.change(branch, { target: { value: '5' } });
@@ -61,7 +61,7 @@ describe('unified cashier account management', () => {
     expect(within(dialog).queryByRole('button', { name: /الموظفون المسموح لهم بالبيع/ })).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
     await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({
-      mode: 'edit', accountId: 1, branchId: 3, username: 'nasr',
+      mode: 'edit', role: 'cashier', accountId: 1, branchId: 3, username: 'nasr',
     }));
   });
   test('shows account loading, list failures and an empty-state creation action', async () => {
@@ -72,7 +72,7 @@ describe('unified cashier account management', () => {
     mocks.listCashierAccounts.mockResolvedValue(pageOf([]));
     fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
     expect(await screen.findByText('لا توجد حسابات فروع بعد')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'إضافة حساب كاشير' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'إضافة حساب' })).toBeDefined();
   });
   test('edits username without employee selection while keeping a blank password', async () => {
     renderView();
@@ -81,7 +81,7 @@ describe('unified cashier account management', () => {
     expect((within(dialog).getByLabelText(/^الفرع/) as HTMLInputElement).disabled).toBe(true);
     fireEvent.change(within(dialog).getByLabelText(/^اسم المستخدم/), { target: { value: ' New.Name ' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'new.name' }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', role: 'cashier', accountId: 1, branchId: 3, username: 'new.name' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
   test('creates credentials without employee selection', async () => {
@@ -92,7 +92,43 @@ describe('unified cashier account management', () => {
     expect(within(branch).queryByRole('option', { name: disabled.branchName })).toBeNull();
     fireEvent.change(within(dialog).getByLabelText(/^كلمة المرور/), { target: { value: 'secret' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ الحساب' }));
-    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'create', branchId: 5, username: 'new.cashier', password: 'secret' }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'create', role: 'cashier', branchId: 5, username: 'new.cashier', password: 'secret' }));
+  });
+  test('shows whether each branch login is a cashier or a reception desk', async () => {
+    mocks.listCashierAccounts.mockResolvedValue(pageOf([
+      account, { ...account, id: 8, username: 'desk', role: 'reception' as const },
+    ]));
+    renderView();
+    const desk = (await screen.findByText('desk')).closest('tr')!;
+    expect(within(desk).getByText('استقبال (عرض فقط)')).toBeDefined();
+    expect(within(screen.getByText('nasr').closest('tr')!).getByText('كاشير')).toBeDefined();
+  });
+  test('creates a read-only reception login for a branch that already has a cashier', async () => {
+    renderView();
+    await screen.findByText('nasr');
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة حساب' }));
+    const dialog = screen.getByRole('dialog', { name: 'إضافة حساب' });
+    fireEvent.change(within(dialog).getByLabelText(/^نوع الحساب/), { target: { value: 'reception' } });
+    const branch = within(dialog).getByLabelText(/^الفرع/) as HTMLSelectElement;
+    await waitFor(() => expect(within(branch).queryByRole('option', { name: account.branchName })).not.toBeNull());
+    fireEvent.change(branch, { target: { value: '3' } });
+    fireEvent.change(within(dialog).getByLabelText(/^اسم المستخدم/), { target: { value: 'Desk' } });
+    fireEvent.change(within(dialog).getByLabelText(/^كلمة المرور/), { target: { value: 'secret' } });
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'حفظ الحساب' }).hasAttribute('disabled')).toBe(false));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ الحساب' }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({
+      mode: 'create', role: 'reception', branchId: 3, username: 'desk', password: 'secret',
+    }));
+  });
+  test('keeps the kind of an existing login fixed while editing it', async () => {
+    mocks.listCashierAccounts.mockResolvedValue(pageOf([{ ...account, username: 'desk', role: 'reception' as const }]));
+    renderView();
+    const row = (await screen.findByText('desk')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'تعديل' }));
+    const dialog = screen.getByRole('dialog', { name: 'تعديل حساب الاستقبال' });
+    expect((within(dialog).getByLabelText(/^نوع الحساب/) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
+    await waitFor(() => expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toMatchObject({ mode: 'edit', role: 'reception' }));
   });
   test('requires a password on creation', async () => {
     renderView();
@@ -104,7 +140,7 @@ describe('unified cashier account management', () => {
   test('shows branch load errors with retry before allowing creation', async () => {
     mocks.listCashierSessionBranches.mockRejectedValue(new ApiError(500, { code: 'ERROR', message: 'تعذر تحميل الفروع' }));
     renderView();
-    fireEvent.click(screen.getByRole('button', { name: 'إضافة حساب كاشير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إضافة حساب' }));
     const dialog = screen.getByRole('dialog');
     expect(await within(dialog).findByText('تعذر تحميل الفروع')).toBeDefined();
     expect(within(dialog).getByRole('button', { name: 'حفظ الحساب' }).hasAttribute('disabled')).toBe(true);
@@ -117,7 +153,7 @@ describe('unified cashier account management', () => {
     fireEvent.change(within(dialog).getByLabelText(/^كلمة المرور/), { target: { value: 'replacement' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'حفظ التغييرات' }));
     expect(await within(dialog).findByText('اسم المستخدم مستخدم بالفعل')).toBeDefined();
-    expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', accountId: 1, branchId: 3, username: 'nasr', password: 'replacement' });
+    expect(mocks.saveCashierAccount.mock.calls[0]?.[0]).toEqual({ mode: 'edit', role: 'cashier', accountId: 1, branchId: 3, username: 'nasr', password: 'replacement' });
     expect((within(dialog).getByLabelText(/^كلمة المرور/) as HTMLInputElement).value).toBe('replacement');
   });
   test('shows server field errors in the form', async () => {

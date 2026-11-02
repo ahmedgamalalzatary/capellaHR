@@ -15,7 +15,7 @@ import { Button, Card, CardContent } from '@capella/ui';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { PageHeader } from '@/components/layout/page-header';
 import { useSession } from '@/features/auth';
-import { CashierSessionView } from '@/features/cashier-sessions';
+import { CashierSessionView, ReceptionShiftStatus } from '@/features/cashier-sessions';
 
 const adminGroups: ReadonlyArray<{
   title: string;
@@ -87,6 +87,7 @@ export function ErpHomeView() {
     );
   }
 
+  if (actor?.type === 'reception') return <ReceptionShiftStatus />;
   if (actor && actor.type !== 'admin') return <CashierSessionView />;
   if (!actor) return <LoadingState label="جارٍ التحقق من الجلسة…" />;
 

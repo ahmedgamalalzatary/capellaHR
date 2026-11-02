@@ -13,7 +13,7 @@ import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { deleteCashierAccount, listCashierAccounts, setCashierAccountStatus, type CashierAccount } from '../api/cashier-accounts-api';
 import { cashierAccountQueryKeys } from '../query-keys';
-import { CashierAccountDialog } from './cashier-account-dialog';
+import { CashierAccountDialog, branchAccountRoleLabels } from './cashier-account-dialog';
 
 const serverErrorMessage = (error: unknown): string | null => {
   if (!error) return null;
@@ -22,6 +22,7 @@ const serverErrorMessage = (error: unknown): string | null => {
 
 const columns = [
   { key: 'username', label: 'اسم المستخدم' },
+  { key: 'role', label: 'نوع الحساب' },
   { key: 'branch', label: 'الفرع' },
   { key: 'status', label: 'الحالة' },
   { key: 'actions', label: 'إجراءات' },
@@ -70,8 +71,8 @@ export function CashierAccountsView() {
     <section className="space-y-6">
       <PageHeader
         title="حسابات كاشير الفروع"
-        description="إدارة حساب كل فرع وبيانات الدخول الخاصة به."
-        actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة حساب كاشير</Button>}
+        description="لكل فرع حساب كاشير، ويمكن إضافة حساب استقبال للعرض فقط."
+        actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة حساب</Button>}
       />
 
       {setStatus.error ? (
@@ -94,7 +95,7 @@ export function CashierAccountsView() {
         ) : items.length === 0 ? (
           <EmptyState
             title="لا توجد حسابات فروع بعد"
-            description="أضف حساب كاشير للفرع."
+            description="أضف حساب كاشير أو استقبال للفرع."
             action={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة أول حساب</Button>}
           />
         ) : (
@@ -106,6 +107,7 @@ export function CashierAccountsView() {
               {items.map((account) => (
                 <TR key={account.id}>
                   <TD className="font-medium">{account.username}</TD>
+                  <TD>{branchAccountRoleLabels[account.role]}</TD>
                   <TD className="text-muted">{account.branchName}</TD>
                   <TD>
                     {account.active ? (
@@ -183,7 +185,7 @@ export function CashierAccountsView() {
 
       {confirmDelete ? (
         <ConfirmDialog
-          title="حذف حساب الكاشير"
+          title={confirmDelete.role === 'reception' ? 'حذف حساب الاستقبال' : 'حذف حساب الكاشير'}
           description={remove.isError
             ? serverErrorMessage(remove.error)
             : `سيتوقف دخول ${confirmDelete.username} نهائيًا وتُلغى جلساته، ويصبح اسم المستخدم متاحًا من جديد. تبقى الفواتير والورديات المسجلة باسمه كما هي.`}
@@ -197,7 +199,7 @@ export function CashierAccountsView() {
 
       {confirmDisable ? (
         <ConfirmDialog
-          title="تعطيل حساب الكاشير"
+          title={confirmDisable.role === 'reception' ? 'تعطيل حساب الاستقبال' : 'تعطيل حساب الكاشير'}
           description={setStatus.isError
             ? serverErrorMessage(setStatus.error)
             : `سيُمنع ${confirmDisable.username} من تسجيل الدخول وتُلغى جلساته الحالية.`}

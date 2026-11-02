@@ -19,6 +19,9 @@ const makeApp = () => {
       return { token: 'employee-token', actor: { type: 'employee' as const, employeeId: 7 } };
     },
     async loginCashier(username: string, password: string) {
+      if (username.toLowerCase() === 'reception.one' && password === 'correct') {
+        return { token: 'reception-token', actor: { type: 'reception' as const, accountId: 22 } };
+      }
       if (username.toLowerCase() !== 'cashier.one' || password !== 'correct') {
         throw new auth.AuthError('INVALID_CREDENTIALS', 'بيانات تسجيل الدخول غير صحيحة');
       }
@@ -30,6 +33,11 @@ const makeApp = () => {
     async beginEmployeeDeviceAuthentication() { return { challengeId: 'challenge', options: {} }; },
     async logout(token: string) { return token === 'admin-token'; },
     async authenticate(token: string) {
+      if (token === 'reception-token') return {
+        id: 'reception-session', tokenHash: 'hash', actorType: 'account' as const,
+        accountRole: 'reception' as const, accountId: 22, branchId: 3, employeeId: null,
+        expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
+      };
       if (token === 'cashier-token') return {
         id: 'cashier-session', tokenHash: 'hash', actorType: 'account' as const,
         accountRole: 'cashier' as const, accountId: 21, branchId: 3, employeeId: null,
@@ -83,10 +91,12 @@ const makeApp = () => {
 
 describe('authentication HTTP API', () => {
   it('saves the complete account through the admin-only endpoint without an edit password', async () => {
-    const payload = { mode: 'edit', accountId: 21, branchId: 3, username: ' New.Name ' };
+    const payload = { mode: 'edit', role: 'cashier', accountId: 21, branchId: 3, username: ' New.Name ' };
     expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts').send(payload)).status).toBe(401);
     expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts')
       .set('Cookie', 'capella_session=cashier-token').send(payload)).status).toBe(403);
+    expect((await request(makeApp()).put('/api/v1/auth/cashier-accounts')
+      .set('Cookie', 'capella_session=reception-token').send(payload)).status).toBe(403);
     const response = await request(makeApp()).put('/api/v1/auth/cashier-accounts')
       .set('Cookie', 'capella_session=admin-token').send(payload);
     expect(response.status).toBe(200);
@@ -155,6 +165,21 @@ describe('authentication HTTP API', () => {
     });
     expect(response.headers['set-cookie']?.[0]).toContain('capella_session=cashier-token');
     expect(response.body).not.toHaveProperty('data.token');
+  });
+
+  it('signs in a reception login and reports it as reception on later requests', async () => {
+    const login = await request(makeApp())
+      .post('/api/v1/auth/cashier/login')
+      .send({ username: 'Reception.One', password: 'correct' });
+    expect(login.status).toBe(200);
+    expect(login.body).toEqual({ data: { actor: { type: 'reception', accountId: 22 } } });
+    expect(login.headers['set-cookie']?.[0]).toContain('Max-Age=86400');
+
+    const session = await request(makeApp())
+      .get('/api/v1/auth/session')
+      .set('Cookie', 'capella_session=reception-token');
+    expect(session.status).toBe(200);
+    expect(session.body).toEqual({ data: { actor: { type: 'reception', accountId: 22 } } });
   });
 
   it('returns the current actor from the session cookie', async () => {

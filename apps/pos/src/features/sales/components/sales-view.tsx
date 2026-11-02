@@ -98,7 +98,8 @@ export function SalesView({ bookingId }: { bookingId?: number }) {
   if (auth.isPending) {
     return shell(<Card className="shadow-card"><LoadingState label="جارٍ تحميل وردية الكاشير…" className="py-10" /></Card>);
   }
-  if (!actor || actor.type === 'employee') {
+  // Reception reads the front desk only and never sells.
+  if (!actor || actor.type === 'employee' || actor.type === 'reception') {
     return shell(<Card className="shadow-card"><EmptyState title="هذا الحساب غير مخول لاستخدام نقطة البيع" /></Card>);
   }
   if (session.isPending) {

@@ -12,7 +12,7 @@ import { Notice } from '@/components/feedback/notice';
 import { PageHeader } from '@/components/layout/page-header';
 import type { BookingRefundInput, PaymentMethod } from '@capella/contracts';
 
-import { useSession } from '@/features/auth';
+import { useCanEdit, useSession } from '@/features/auth';
 import {
   cashierSessionQueryKeys,
   getCurrentCashierSession,
@@ -89,6 +89,9 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const cache = useQueryClient();
   const session = useSession();
   const actor = session.data?.actor;
+  // Cashier and Reception both work in their own branch; Reception only reads.
+  const ownBranch = actor?.type === 'cashier' || actor?.type === 'reception';
+  const canEdit = useCanEdit();
   const [date, setDate] = useState(initialDate);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<BookingDto | null>(null);
@@ -108,19 +111,19 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
   const diary = useQuery({
     queryKey: bookingQueryKeys.day(date, branchId),
     queryFn: () => listBookings({ date, ...(branchId === undefined ? {} : { branchId }) }),
-    enabled: actor?.type === 'cashier' || branchId !== undefined,
+    enabled: ownBranch || branchId !== undefined,
   });
   const employees = useQuery({
     queryKey: ['erp-bookings', 'employee-options', branchId ?? 'own'],
     queryFn: () => listBookingEmployeeOptions(branchId),
-    enabled: actor?.type === 'cashier' || branchId !== undefined,
+    enabled: canEdit && (ownBranch || branchId !== undefined),
   });
   // Money moves through the open shift's drawer; without one, paying and
   // refunding are unavailable.
   const shift = useQuery({
     queryKey: cashierSessionQueryKeys.current(branchId),
     queryFn: () => getCurrentCashierSession(branchId),
-    enabled: actor?.type === 'cashier' || branchId !== undefined,
+    enabled: canEdit && (ownBranch || branchId !== undefined),
   });
   const cashierSessionId = shift.data?.id ?? null;
   const branchScope = branchId === undefined ? {} : { branchId };
@@ -230,7 +233,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
     <PageHeader
       title="دفتر المواعيد"
       description="مواعيد الفرع يومًا بيوم."
-      actions={<Button disabled={actor?.type === 'admin' && branchId === undefined} onClick={() => setCreating(true)}><CalendarPlus className="size-4" />حجز جديد</Button>}
+      {...(canEdit ? { actions: <Button disabled={actor?.type === 'admin' && branchId === undefined} onClick={() => setCreating(true)}><CalendarPlus className="size-4" />حجز جديد</Button> } : {})}
     />
     {actor?.type === 'admin' ? <Select
       aria-label="الفرع"
@@ -324,7 +327,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                       </Badge>
                       {service.invoiceNumber ? <span className="font-mono text-[12px] text-muted">{service.invoiceNumber}</span> : null}
                     </div>
-                    {isOpenBooking(booking) && new Date(booking.scheduledAt).getTime() > now && service.status === 'pending' ? (
+                    {canEdit && isOpenBooking(booking) && new Date(booking.scheduledAt).getTime() > now && service.status === 'pending' ? (
                       <div className="flex items-center gap-2">
                         <Select className="sm:w-48" aria-label={`الموظف المفضل لخدمة ${service.serviceName}`} value={service.preferredEmployee?.id ?? ''} disabled={preference.isPending} onChange={(event) => preference.mutate({ bookingId: booking.id, serviceId: service.serviceId, employeeId: event.target.value ? Number(event.target.value) : null })}>
                           <option value="">بدون موظف مفضل</option>
@@ -337,7 +340,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                       </div>
                     ) : <div className="flex items-center gap-2">
                       {service.preferredEmployee ? <span className="text-[13px] text-muted">مع {service.preferredEmployee.name}</span> : null}
-                      {canCancelBookingService(service) ? <Button variant="ghost" size="sm" aria-label={`إلغاء خدمة ${service.serviceName}`} disabled={cancelService.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'service', serviceId: service.serviceId })}><X className="size-4" /></Button> : null}
+                      {canEdit && canCancelBookingService(service) ? <Button variant="ghost" size="sm" aria-label={`إلغاء خدمة ${service.serviceName}`} disabled={cancelService.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'service', serviceId: service.serviceId })}><X className="size-4" /></Button> : null}
                     </div>}
                   </li>
                   );
@@ -363,7 +366,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                   </li>
                 ))}
               </ul>
-              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+              {canEdit ? <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
                 {booking.status === 'booked' ? <>
                   <Button disabled={status.isPending} onClick={() => status.mutate({ id: booking.id, next: 'arrived' })}>وصل العميل</Button>
                   {new Date(booking.scheduledAt).getTime() < now ? <Button variant="secondary" disabled={status.isPending} onClick={() => setConfirming({ bookingId: booking.id, kind: 'no_show' })}>لم يحضر</Button> : null}
@@ -398,7 +401,7 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                     <Trash2 className="size-4" />حذف
                   </Button>
                 ) : null}
-              </div>
+              </div> : null}
             </div>
           </CardContent>
         </Card></div>)}</div>}

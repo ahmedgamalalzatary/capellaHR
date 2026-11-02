@@ -6,7 +6,7 @@ type ErpSessionReader = {
   authenticate(token: string): Promise<{
     actorType: 'admin' | 'employee' | 'account';
     accountId?: number | null;
-    accountRole?: 'admin' | 'cashier' | null;
+    accountRole?: 'admin' | 'cashier' | 'reception' | null;
     employeeId: number | null;
     branchId?: number | null;
   } | null>;

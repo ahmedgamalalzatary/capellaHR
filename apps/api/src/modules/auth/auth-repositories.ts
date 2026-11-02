@@ -62,11 +62,11 @@ export const createDrizzleAuthRepositories = (
       // A username can be reused after retirement, so only the live row can log in.
       }).from(accounts).where(and(
         eq(accounts.username, username),
-        eq(accounts.role, 'cashier'),
+        inArray(accounts.role, ['cashier', 'reception']),
         isNull(accounts.archivedAt),
       )).limit(1))[0];
-      return row?.role === 'cashier'
-        ? { ...row, role: 'cashier' as const }
+      return row?.role === 'cashier' || row?.role === 'reception'
+        ? { ...row, role: row.role }
         : null;
     },
   },
@@ -182,6 +182,7 @@ export const createDrizzleAuthRepositories = (
         eq(accounts.active, true),
         or(
           eq(accounts.role, 'admin'),
+          and(eq(accounts.role, 'reception'), isNull(accounts.employeeId)),
           and(
             eq(accounts.role, 'cashier'),
             or(
@@ -220,7 +221,7 @@ export const createDrizzleAuthRepositories = (
       return {
         ...row,
         employeeId: null,
-        branchId: account.role === 'cashier' ? account.branchId : null,
+        branchId: account.role === 'admin' ? null : account.branchId,
         accountRole: account.role,
       };
     },

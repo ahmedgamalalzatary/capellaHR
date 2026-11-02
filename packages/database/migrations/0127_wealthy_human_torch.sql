@@ -1,0 +1,5 @@
+ALTER TABLE `accounts` DROP CONSTRAINT `accounts_role_scope_consistency`;--> statement-breakpoint
+ALTER TABLE `accounts` MODIFY COLUMN `role` enum('admin','cashier','reception') NOT NULL;--> statement-breakpoint
+ALTER TABLE `accounts` ADD `active_reception_branch` int GENERATED ALWAYS AS (case when role = 'reception' and active then branch_id else null end) STORED;--> statement-breakpoint
+ALTER TABLE `accounts` ADD CONSTRAINT `accounts_active_reception_branch_unique` UNIQUE(`active_reception_branch`);--> statement-breakpoint
+ALTER TABLE `accounts` ADD CONSTRAINT `accounts_role_scope_consistency` CHECK ((`accounts`.`role` = 'admin' and `accounts`.`employee_id` is null and `accounts`.`branch_id` is null) or (`accounts`.`role` = 'cashier' and ((`accounts`.`employee_id` is not null and `accounts`.`branch_id` is null) or (`accounts`.`employee_id` is null and `accounts`.`branch_id` is not null))) or (`accounts`.`role` = 'reception' and `accounts`.`employee_id` is null and `accounts`.`branch_id` is not null));

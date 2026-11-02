@@ -71,9 +71,9 @@ describe('branch cashier accounts', () => {
     const { service, upserts } = setup('updated');
     const save = Reflect.get(service, 'save');
     expect(save).toBeTypeOf('function');
-    await save({ mode: 'edit', accountId: 11, branchId: 3, username: ' Nasr ' });
+    await save({ mode: 'edit', role: 'cashier', accountId: 11, branchId: 3, username: ' Nasr ' });
     expect(upserts).toEqual([expect.objectContaining({
-      username: 'nasr', branchId: 3,
+      username: 'nasr', branchId: 3, role: 'cashier',
       management: { mode: 'edit', accountId: 11 },
     })]);
     expect(upserts[0]).not.toHaveProperty('passwordHash');
@@ -83,12 +83,29 @@ describe('branch cashier accounts', () => {
     const { service, upserts } = setup();
     const save = Reflect.get(service, 'save');
     expect(save).toBeTypeOf('function');
-    await expect(save({ mode: 'create', branchId: 3, username: 'nasr' } as never))
+    await expect(save({ mode: 'create', role: 'cashier', branchId: 3, username: 'nasr' } as never))
       .rejects.toThrow();
     expect(upserts).toHaveLength(0);
-    await save({ mode: 'create', branchId: 3, username: 'nasr', password: 'secret' });
+    await save({ mode: 'create', role: 'cashier', branchId: 3, username: 'nasr', password: 'secret' });
     expect(upserts[0]).toMatchObject({ passwordHash: 'hash:secret', management: { mode: 'create' } });
   });
+  it('creates a read-only reception login for a branch', async () => {
+    const { service, upserts } = setup();
+
+    await service.save({ mode: 'create', role: 'reception', branchId: 3, username: 'desk', password: 'secret' });
+
+    expect(upserts).toEqual([expect.objectContaining({
+      role: 'reception', branchId: 3, username: 'desk', employeeId: null,
+    })]);
+  });
+
+  it('names the kind of login in the one-per-branch error', async () => {
+    const { service } = setup('branch_has_account' as never);
+
+    await expect(service.save({ mode: 'create', role: 'reception', branchId: 3, username: 'desk', password: 'secret' }))
+      .rejects.toMatchObject({ code: 'BRANCH_HAS_ACCOUNT', message: expect.stringContaining('استقبال') });
+  });
+
   it('creates the single branch login with normalized credentials', async () => {
     const { service, upserts } = setup();
 

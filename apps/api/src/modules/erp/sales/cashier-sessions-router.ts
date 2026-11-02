@@ -41,7 +41,8 @@ const actorFrom = (response: Response): ErpAccountIdentity => {
   if (actor?.type === 'admin' && actor.accountId) {
     return { role: 'admin', accountId: actor.accountId };
   }
-  if (actor?.type === 'cashier' && actor.accountId && actor.branchId) {
+  // Reception reaches only `GET /current`; it reads its branch's shared shift.
+  if ((actor?.type === 'cashier' || actor?.type === 'reception') && actor.accountId && actor.branchId) {
     return {
       role: 'cashier',
       accountId: actor.accountId,

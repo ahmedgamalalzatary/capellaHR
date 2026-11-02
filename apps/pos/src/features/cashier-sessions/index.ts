@@ -1,5 +1,6 @@
 export * from './api/cashier-sessions-api';
 export * from './components/cashier-session-view';
+export * from './components/reception-shift-status';
 export * from './components/shift-detail-view';
 export * from './components/shift-history-view';
 export * from './components/shift-ending-report';

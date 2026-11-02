@@ -1,10 +1,14 @@
-import { saveCashierAccountSchema, type SaveCashierAccountInput } from '@capella/contracts';
+import {
+  saveCashierAccountSchema,
+  type BranchAccountRole,
+  type SaveCashierAccountInput,
+} from '@capella/contracts';
 
 export type CashierAccountInput = {
   username: string;
   passwordHash?: string;
   management?: { mode: 'create' } | { mode: 'edit'; accountId: number };
-  role: 'cashier';
+  role: BranchAccountRole;
   branchId: number;
   employeeId: null;
   createdAt: Date;
@@ -14,7 +18,7 @@ export type CashierAccountInput = {
 export type PublicCashierAccount = {
   id: number;
   username: string;
-  role: 'cashier';
+  role: BranchAccountRole;
   branchId: number;
   branchName: string;
   active: boolean;
@@ -89,7 +93,10 @@ export const createCashierAccountsService = (dependencies: {
       throw new CashierAccountError('USERNAME_TAKEN', 'اسم المستخدم مستخدم بالفعل');
     }
     if (result.kind === 'branch_has_account') {
-      throw new CashierAccountError('BRANCH_HAS_ACCOUNT', 'يوجد حساب كاشير لهذا الفرع بالفعل. يمكنك تعديله من الجدول.');
+      throw new CashierAccountError(
+        'BRANCH_HAS_ACCOUNT',
+        `يوجد حساب ${input.role === 'reception' ? 'استقبال' : 'كاشير'} لهذا الفرع بالفعل. يمكنك تعديله من الجدول.`,
+      );
     }
     if (result.kind === 'not_found') {
       throw new CashierAccountError('ACCOUNT_NOT_FOUND', 'حساب الكاشير غير موجود في هذا الفرع. أعد تحميل الحسابات.');
@@ -104,7 +111,7 @@ export const createCashierAccountsService = (dependencies: {
       return saveAccount({
         username: input.username,
         ...(input.password === undefined ? {} : { passwordHash: await dependencies.hashPassword(input.password) }),
-        role: 'cashier', branchId: input.branchId, employeeId: null,
+        role: input.role, branchId: input.branchId, employeeId: null,
         management: input.mode === 'edit' ? { mode: 'edit', accountId: input.accountId } : { mode: 'create' },
         createdAt: timestamp, updatedAt: timestamp,
       });

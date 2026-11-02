@@ -6,12 +6,13 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(), adjust: vi.fn(), create: vi.fn(), listProducts: vi.fn(), movements: vi.fn(),
   generateBarcode: vi.fn(), branches: vi.fn(),
 }));
-const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' }));
+const actor = vi.hoisted(() => ({ current: 'admin' as 'admin' | 'cashier' | 'reception' }));
 vi.mock('../src/features/auth', () => ({
   useSession: () => ({
     isSuccess: true,
-    data: { actor: actor.current === 'admin' ? { type: 'admin', accountId: 1 } : { type: 'cashier', accountId: 2 } },
+    data: { actor: actor.current === 'admin' ? { type: 'admin', accountId: 1 } : { type: actor.current, accountId: 2 } },
   }),
+  useCanEdit: () => actor.current !== 'reception',
 }));
 const product = {
   id: 4, branchId: 2, name: 'شامبو', description: 'للشعر', sellingPrice: '100.00',
@@ -539,5 +540,36 @@ describe('ProductStockView', () => {
     } finally {
       print.mockRestore();
     }
+  });
+});
+
+describe('ProductStockView for reception', () => {
+  it('browses stock, batches and history and prints labels, but changes nothing', async () => {
+    actor.current = 'reception';
+    mocks.listProducts.mockResolvedValue({
+      items: [product, { ...product, id: 5, name: 'بلسم', barcode: '2000000000058' }],
+      meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 },
+    });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+
+    expect(await screen.findByText('شامبو')).toBeDefined();
+    for (const name of ['منتج جديد', 'تعديل', 'إيقاف', 'تفعيل', 'توليد باركود', 'تسوية']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('columnheader', { name: 'عمولة البائع %' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'طباعة ملصق' })).toBeDefined();
+    fireEvent.click(screen.getAllByRole('button', { name: 'دفعات الصلاحية' })[0]!);
+    expect(await screen.findByText('لا توجد دفعات مخزون.')).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'سجل المخزون' })).toBeDefined();
+    expect(mocks.branches).not.toHaveBeenCalled();
+  });
+
+  it('offers reception no way to add the first product', async () => {
+    actor.current = 'reception';
+    mocks.listProducts.mockResolvedValue({ items: [], meta: { page: 1, pageSize: 100, total: 0, totalPages: 0 } });
+    render(<QueryClientProvider client={new QueryClient()}><ProductStockView /></QueryClientProvider>);
+
+    expect(await screen.findByText('لا توجد منتجات')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'إضافة أول منتج' })).toBeNull();
   });
 });

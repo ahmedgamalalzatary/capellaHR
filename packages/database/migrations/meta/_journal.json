@@ -890,6 +890,13 @@
       "when": 1793191781649,
       "tag": "0126_needy_human_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "5",
+      "when": 1793628476011,
+      "tag": "0127_wealthy_human_torch",
+      "breakpoints": true
     }
   ]
 }

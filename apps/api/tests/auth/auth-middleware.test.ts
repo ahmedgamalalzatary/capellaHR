@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 import * as auth from '../../src/modules/auth/index.js';
 
-const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
+const makeApp = (
+  actorType: 'admin' | 'employee' | 'account' | null,
+  accountRole: 'cashier' | 'reception' = 'cashier',
+) => {
   const createAuthMiddleware = Reflect.get(auth, 'createAuthMiddleware');
   expect(createAuthMiddleware).toBeTypeOf('function');
 
@@ -16,7 +19,7 @@ const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
         employeeId: actorType === 'employee' ? 7 : null,
         expiresAt: new Date('2030-01-01T00:00:00.000Z'), revokedAt: null,
         accountId: actorType === 'account' ? 21 : null,
-        accountRole: actorType === 'account' ? 'cashier' as const : null,
+        accountRole: actorType === 'account' ? accountRole : null,
         ...(actorType === 'account' ? { branchId: 3 } : {}),
       };
     },
@@ -30,6 +33,12 @@ const makeApp = (actorType: 'admin' | 'employee' | 'account' | null) => {
     response.json({ actor: response.locals.actor });
   });
   app.get('/erp', middleware.authenticate, middleware.requireErpAccount, (_request: express.Request, response: express.Response) => {
+    response.json({ actor: response.locals.actor });
+  });
+  app.get('/read', middleware.authenticate, middleware.requireErpReader, (_request: express.Request, response: express.Response) => {
+    response.json({ actor: response.locals.actor });
+  });
+  app.post('/read', middleware.authenticate, middleware.requireErpReader, (_request: express.Request, response: express.Response) => {
     response.json({ actor: response.locals.actor });
   });
   return app;
@@ -81,5 +90,29 @@ describe('authorization middleware', () => {
       branchId: 3,
     });
     expect(admin.status).toBe(403);
+  });
+
+  it('lets a reception login read front-desk areas but refuses every change and every other ERP area', async () => {
+    const app = makeApp('account', 'reception');
+    const cookie = 'capella_session=valid-token';
+    const read = await request(app).get('/read').set('Cookie', cookie);
+    const write = await request(app).post('/read').set('Cookie', cookie);
+    const erp = await request(app).get('/erp').set('Cookie', cookie);
+    const admin = await request(app).get('/admin').set('Cookie', cookie);
+
+    expect(read.status).toBe(200);
+    expect(read.body.actor).toEqual({ type: 'reception', accountId: 21, branchId: 3 });
+    expect(write.status).toBe(403);
+    expect(write.body.error.code).toBe('FORBIDDEN');
+    expect(erp.status).toBe(403);
+    expect(admin.status).toBe(403);
+  });
+
+  it('keeps full read and write access through the reader boundary for a cashier', async () => {
+    const app = makeApp('account');
+    const cookie = 'capella_session=valid-token';
+
+    expect((await request(app).get('/read').set('Cookie', cookie)).status).toBe(200);
+    expect((await request(app).post('/read').set('Cookie', cookie)).status).toBe(200);
   });
 });

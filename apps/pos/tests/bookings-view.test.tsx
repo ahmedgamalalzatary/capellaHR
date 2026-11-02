@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/features/auth', () => ({
   useSession: () => mocks.session,
+  useCanEdit: () => mocks.session.data?.actor.type !== 'reception',
 }));
 vi.mock('../src/features/cashier-sessions', () => ({
   listCashierSessionBranches: mocks.listBranches,
@@ -101,6 +102,29 @@ describe('appointment book', () => {
     mocks.reschedule.mockReset().mockResolvedValue(booking);
     mocks.quoteCancel.mockReset().mockImplementation(async (_id: number, input: { serviceIds?: number[] }) => ({ amount: '0.00', serviceIds: input.serviceIds ?? [3] }));
     mocks.session = { data: { actor: { type: 'cashier', accountId: 3, branchId: 2 } }, isPending: false, isError: false, refetch: vi.fn() };
+  });
+
+  it('lets reception read the day without any way to change a booking', async () => {
+    mocks.session = { data: { actor: { type: 'reception', accountId: 4 } }, isPending: false, isError: false, refetch: vi.fn() };
+    mocks.list.mockResolvedValue([
+      { ...booking, scheduledAt: '2099-11-25T08:30:00Z' },
+      { ...booking, id: 10, status: 'arrived', scheduledAt: '2099-11-25T09:30:00Z' },
+    ]);
+    renderView();
+
+    expect((await screen.findAllByText('منى أحمد')).length).toBe(2);
+    expect(screen.getAllByText(/سارة/).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('list', { name: 'أموال الحجز' }).length).toBe(2);
+    for (const name of [
+      'حجز جديد', 'وصل العميل', 'لم يحضر', 'إرجاع إلى محجوز', 'دفع مقدم', 'تغيير الموعد',
+      'تعديل الحجز', 'إلغاء', 'حذف', 'إلغاء خدمة صبغة شعر',
+    ]) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('link', { name: 'بدء البيع' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /الموظف المفضل/ })).toBeNull();
+    // Day navigation is reading, so it stays.
+    expect(screen.getByRole('button', { name: 'اليوم التالي' })).toBeDefined();
   });
 
   it('shows one day in time order with services and preferred employee', async () => {

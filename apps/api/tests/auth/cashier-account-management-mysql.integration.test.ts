@@ -21,19 +21,33 @@ it('persists the complete account, preserves omitted credentials, and rolls back
     monthlyBaseSalary: '5000', createdAt: now, updatedAt: now,
   }))[0].insertId);
   const service = createCashierAccountsService({ accounts: createDrizzleCashierAccountRepository(database), hashPassword: async (value) => `hash:${value}` });
-  const created = await service.save({ mode: 'create', branchId, username: 'Till', password: 'secret' });
+  const created = await service.save({ mode: 'create', role: 'cashier', branchId, username: 'Till', password: 'secret' });
   expect(created.username).toBe('till');
   expect(created).not.toHaveProperty('employees');
   expect(await database.select({ employeeId: branchCashierRoster.employeeId }).from(branchCashierRoster).where(eq(branchCashierRoster.branchId, branchId)))
     .toEqual([]);
   await service.setActive(created.id, false);
-  const edit = { mode: 'edit' as const, accountId: created.id, branchId, username: 'till' };
+  const edit = { mode: 'edit' as const, role: 'cashier' as const, accountId: created.id, branchId, username: 'till' };
   await service.save(edit);
   const readAccount = async () => (await database.select({ username: accounts.username, passwordHash: accounts.passwordHash, active: accounts.active }).from(accounts).where(eq(accounts.id, created.id)))[0];
   expect(await readAccount()).toEqual({ username: 'till', passwordHash: 'hash:secret', active: false });
   expect(await database.select().from(branchCashierRoster).where(eq(branchCashierRoster.branchId, branchId))).toEqual([]);
-  await expect(service.save({ mode: 'create', branchId, username: 'replacement', password: 'secret' }))
+  await expect(service.save({ mode: 'create', role: 'cashier', branchId, username: 'replacement', password: 'secret' }))
     .rejects.toMatchObject({ code: 'BRANCH_HAS_ACCOUNT' });
+  // A branch holds one cashier and one reception login side by side.
+  const desk = await service.save({ mode: 'create', role: 'reception', branchId, username: 'Desk', password: 'secret' });
+  expect(desk).toMatchObject({ role: 'reception', branchId, username: 'desk', active: true });
+  await expect(service.save({ mode: 'create', role: 'reception', branchId, username: 'desk-two', password: 'secret' }))
+    .rejects.toMatchObject({ code: 'BRANCH_HAS_ACCOUNT' });
+  await service.save({ mode: 'edit', role: 'reception', accountId: desk.id, branchId, username: 'front-desk' });
+  // Editing a login never crosses into the other kind of login.
+  await expect(service.save({ mode: 'edit', role: 'cashier', accountId: desk.id, branchId, username: 'x' }))
+    .rejects.toMatchObject({ code: 'ACCOUNT_NOT_FOUND' });
+  const listed = await service.list({ page: 1, pageSize: 100 });
+  expect(listed.items.filter((item) => item.branchId === branchId).map((item) => [item.role, item.username]))
+    .toEqual([['cashier', 'till'], ['reception', 'front-desk']]);
+  await expect(service.setActive(desk.id, false)).resolves.toMatchObject({ role: 'reception', active: false });
+  await expect(service.archive(desk.id)).resolves.toMatchObject({ role: 'reception' });
   // Fault injection in the isolated test database: fail after the credential update.
   await database.$client.promise().query("CREATE TRIGGER cashier_audit_failure BEFORE INSERT ON audit_events FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit write failure'");
   try {

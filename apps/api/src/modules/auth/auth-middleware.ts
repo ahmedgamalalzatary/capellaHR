@@ -21,9 +21,10 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
       ? { type: 'admin' as const, ...(session.accountId ? { accountId: session.accountId } : {}) }
       : session.actorType === 'employee'
         ? { type: 'employee' as const, employeeId: session.employeeId }
-        : session.accountRole === 'cashier' && session.accountId && typeof branchId === 'number'
+        : (session.accountRole === 'cashier' || session.accountRole === 'reception')
+          && session.accountId && typeof branchId === 'number'
           ? {
-              type: 'cashier' as const,
+              type: session.accountRole,
               accountId: session.accountId,
               branchId,
             }
@@ -67,5 +68,19 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
     next();
   };
 
-  return { authenticate, requireAdmin, requireEmployee, requireErpAccount };
+  /**
+   * Front-desk areas: Admin and Cashier keep full access, while a Reception
+   * login may only read. Any other ERP area stays behind `requireErpAccount`,
+   * which never admits Reception.
+   */
+  const requireErpReader: RequestHandler = (request, response, next) => {
+    const actor = response.locals.actor as { type?: string } | undefined;
+    if (actor?.type === 'reception' && (request.method === 'GET' || request.method === 'HEAD')) {
+      next();
+      return;
+    }
+    requireErpAccount(request, response, next);
+  };
+
+  return { authenticate, requireAdmin, requireEmployee, requireErpAccount, requireErpReader };
 };

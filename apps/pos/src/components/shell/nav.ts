@@ -102,6 +102,25 @@ export const cashierNavigation: NavGroup[] = [
   },
 ];
 
+/**
+ * Reception looks at the front desk without changing anything. It shares the
+ * branch shift the cashier opens, so its home is that shift's status.
+ */
+export const receptionNavigation: NavGroup[] = [
+  {
+    label: 'الاستقبال',
+    items: [
+      { href: '/', label: 'الوردية', icon: Clock3 },
+      { href: '/invoices', label: 'الفواتير', icon: ReceiptText },
+      { href: '/bookings', label: 'دفتر المواعيد', icon: CalendarDays },
+      { href: '/clients', label: 'العملاء', icon: Users },
+      { href: '/catalog', label: 'الكتالوج', icon: LayoutList },
+      { href: '/products', label: 'المنتجات والمخزون', icon: Package },
+      { href: '/consumables', label: 'خدمات العملاء والمستهلكات', icon: PackageOpen },
+    ],
+  },
+];
+
 /** The root destination must not stay highlighted on every nested route. */
 export const isActiveNavItem = (href: string, pathname: string) => (
   href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`)

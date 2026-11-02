@@ -123,6 +123,9 @@ const makeService = (overrides: { deviceActive?: boolean; deviceCurrent?: boolea
             : null;
         },
         async findCashierByUsername(username: string) {
+          if (username === 'reception.one') {
+            return { id: 22, username, passwordHash: adminHash, role: 'reception' as const, active: true };
+          }
           return username === 'cashier.one'
             ? {
                 id: 21,
@@ -186,6 +189,17 @@ describe('authentication service', () => {
         identifier: 'cashier.one',
         succeeded: true,
       }),
+    ]);
+  });
+
+  it('signs a reception login in through the branch login with a reception actor', async () => {
+    const { service, sessions } = makeService();
+
+    const result = await service.loginCashier('reception.one', 'correct horse battery staple');
+
+    expect(result.actor).toEqual({ type: 'reception', accountId: 22 });
+    expect(sessions.rows).toEqual([
+      expect.objectContaining({ actorType: 'account', accountId: 22, employeeId: null }),
     ]);
   });
 

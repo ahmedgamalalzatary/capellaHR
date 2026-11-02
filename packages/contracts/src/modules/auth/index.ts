@@ -34,13 +34,22 @@ export const upsertBranchCashierSchema = z.object({
   password: z.string().min(1).max(1024),
 }).strict();
 
-/** A single atomic save for branch cashier credentials. */
+/**
+ * A branch login is either a full cashier or a read-only reception desk.
+ * Each branch may hold one active login of each kind.
+ */
+export const branchAccountRoleSchema = z.enum(['cashier', 'reception']);
+export type BranchAccountRole = z.infer<typeof branchAccountRoleSchema>;
+
+/** A single atomic save for branch login credentials. */
 export const saveCashierAccountSchema = z.discriminatedUnion('mode', [
   upsertBranchCashierSchema.extend({
     mode: z.literal('create'),
+    role: branchAccountRoleSchema,
   }),
   upsertBranchCashierSchema.extend({
     mode: z.literal('edit'),
+    role: branchAccountRoleSchema,
     accountId: positiveMysqlIntSchema,
     password: z.string().min(1).max(1024).optional(),
   }),
@@ -69,7 +78,7 @@ export const publicCashierAccountEmployeeSchema = z.object({
 export const publicCashierAccountSchema = z.object({
   id: positiveMysqlIntSchema,
   username: cashierUsernameSchema,
-  role: z.literal('cashier'),
+  role: branchAccountRoleSchema,
   branchId: positiveMysqlIntSchema,
   branchName: z.string().min(1).max(255),
   active: z.boolean(),
@@ -79,6 +88,10 @@ export const accountSessionActorSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('admin') }).strict(),
   z.object({
     type: z.literal('cashier'),
+    accountId: positiveMysqlIntSchema,
+  }).strict(),
+  z.object({
+    type: z.literal('reception'),
     accountId: positiveMysqlIntSchema,
   }).strict(),
 ]);

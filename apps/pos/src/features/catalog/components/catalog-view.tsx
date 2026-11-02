@@ -26,7 +26,7 @@ import { FieldError } from '@/components/feedback/notice';
 import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
-import { useSession } from '@/features/auth';
+import { useCanEdit, useSession } from '@/features/auth';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { invalidateErpCaches } from '@/lib/erp-cache';
@@ -65,6 +65,8 @@ export function CatalogView() {
   const session = useSession();
   const commandPending = useIsMutating() > 0;
   const isAdmin = session.data?.actor.type === 'admin';
+  // Reception browses only: no changes, and no commission figures.
+  const canEdit = useCanEdit();
 
   const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [tab, setTab] = useState<Tab>('categories');
@@ -172,7 +174,7 @@ export function CatalogView() {
     <section className="space-y-6">
       <PageHeader
         title="إدارة الكتالوج"
-        description="إدارة تصنيفات الخدمات والأسعار ونسب العمولات."
+        description={canEdit ? 'إدارة تصنيفات الخدمات والأسعار ونسب العمولات.' : 'تصنيفات الخدمات وأسعارها.'}
       />
       {successMessage ? <SuccessState message={successMessage} /> : null}
       {isAdmin ? (
@@ -281,18 +283,20 @@ export function CatalogView() {
                       onChange={(event) => { setCategorySearch(event.target.value); setCategoryPage(1); }}
                     />
                   </div>
-                  <Button
-                    size="sm"
-                    disabled={commandPending}
-                    onClick={() => {
-                      if (commandPending) return;
-                      setCreatingCategory(true);
-                      setEditingCategory(null);
-                    }}
-                  >
-                    <Plus className="size-4" aria-hidden />
-                    إضافة تصنيف
-                  </Button>
+                  {canEdit ? (
+                    <Button
+                      size="sm"
+                      disabled={commandPending}
+                      onClick={() => {
+                        if (commandPending) return;
+                        setCreatingCategory(true);
+                        setEditingCategory(null);
+                      }}
+                    >
+                      <Plus className="size-4" aria-hidden />
+                      إضافة تصنيف
+                    </Button>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-3 border-b border-line/70 p-3 sm:p-4">
                   <div className="w-full max-w-56 space-y-1.5">
@@ -345,10 +349,10 @@ export function CatalogView() {
                     description={
                       trimmedCategorySearch ? 'جرب اسمًا آخر.'
                         : categoryFiltered ? 'جرّب تصفية أخرى.'
-                          : 'ابدأ بإضافة أول تصنيف.'
+                          : canEdit ? 'ابدأ بإضافة أول تصنيف.' : undefined
                     }
                     action={
-                      categoryFiltered ? undefined : (
+                      categoryFiltered || !canEdit ? undefined : (
                         <Button size="sm" disabled={commandPending} onClick={() => { setCreatingCategory(true); setEditingCategory(null); }}>
                           <Plus className="size-4" aria-hidden />
                           إضافة أول تصنيف
@@ -362,7 +366,7 @@ export function CatalogView() {
                       <TH>اسم التصنيف</TH>
                       <TH>النوع</TH>
                       <TH>الحالة</TH>
-                      <TH>إجراءات</TH>
+                      {canEdit ? <TH>إجراءات</TH> : null}
                     </THead>
                     <tbody>
                       {categories.map((category) => (
@@ -374,7 +378,7 @@ export function CatalogView() {
                               {category.isActive ? 'نشط' : 'موقوف'}
                             </Badge>
                           </TD>
-                          <TD>
+                          {canEdit ? <TD>
                             <RowActions>
                               <Button
                                 variant="ghost"
@@ -410,7 +414,7 @@ export function CatalogView() {
                                 حذف
                               </Button>
                             </RowActions>
-                          </TD>
+                          </TD> : null}
                         </TR>
                       ))}
                     </tbody>
@@ -500,18 +504,20 @@ export function CatalogView() {
                       onChange={(event) => { setServiceSearch(event.target.value); setServicePage(1); }}
                     />
                   </div>
-                  <Button
-                    size="sm"
-                    disabled={commandPending}
-                    onClick={() => {
-                      if (commandPending) return;
-                      setCreatingService(true);
-                      setEditingService(null);
-                    }}
-                  >
-                    <Plus className="size-4" aria-hidden />
-                    إضافة خدمة
-                  </Button>
+                  {canEdit ? (
+                    <Button
+                      size="sm"
+                      disabled={commandPending}
+                      onClick={() => {
+                        if (commandPending) return;
+                        setCreatingService(true);
+                        setEditingService(null);
+                      }}
+                    >
+                      <Plus className="size-4" aria-hidden />
+                      إضافة خدمة
+                    </Button>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-3 border-b border-line/70 p-3 sm:p-4">
                   <div className="w-full max-w-56 space-y-1.5">
@@ -562,12 +568,14 @@ export function CatalogView() {
                       serviceFiltered
                         ? trimmedServiceSearch ? 'جرب اسمًا آخر.' : 'جرّب تصفية أخرى.'
                         // The category filters belong to the other tab; the prerequisite is the real list.
-                        : categoryOptions.length === 0
-                          ? 'أضف تصنيفًا قبل إضافة خدمة.'
-                          : 'ابدأ بإضافة أول خدمة.'
+                        : !canEdit
+                          ? undefined
+                          : categoryOptions.length === 0
+                            ? 'أضف تصنيفًا قبل إضافة خدمة.'
+                            : 'ابدأ بإضافة أول خدمة.'
                     }
                     action={
-                      serviceFiltered ? undefined : categoryOptions.length === 0 ? (
+                      serviceFiltered || !canEdit ? undefined : categoryOptions.length === 0 ? (
                         <Button size="sm" onClick={() => setTab('categories')}>أضف تصنيفًا أولًا</Button>
                       ) : (
                         <Button size="sm" disabled={commandPending} onClick={() => { setCreatingService(true); setEditingService(null); }}>
@@ -583,9 +591,9 @@ export function CatalogView() {
                       <TH>اسم الخدمة</TH>
                       <TH>التصنيف</TH>
                       <TH numeric>السعر (ج.م)</TH>
-                      <TH numeric>العمولة</TH>
+                      {canEdit ? <TH numeric>العمولة</TH> : null}
                       <TH>الحالة</TH>
-                      <TH>إجراءات</TH>
+                      {canEdit ? <TH>إجراءات</TH> : null}
                     </THead>
                     <tbody>
                       {services.map((service) => (
@@ -593,9 +601,11 @@ export function CatalogView() {
                           <TD className="font-medium">{service.name}</TD>
                           <TD className="text-muted">{service.categoryName}</TD>
                           <TD numeric>{service.price ?? 'عند البيع'}</TD>
-                          <TD numeric className="text-muted">
-                            {`${service.commissionPercent}%`}
-                          </TD>
+                          {canEdit ? (
+                            <TD numeric className="text-muted">
+                              {`${service.commissionPercent}%`}
+                            </TD>
+                          ) : null}
                           <TD>
                             <Badge
                               variant={
@@ -615,7 +625,7 @@ export function CatalogView() {
                           </TD>
                           {/* No delete: an invoice line snapshots the service and
                               points back at it, so the row is never removed. */}
-                          <TD>
+                          {canEdit ? <TD>
                             <RowActions>
                               <Button
                                 variant="ghost"
@@ -655,7 +665,7 @@ export function CatalogView() {
                                 </Button>
                               ) : null}
                             </RowActions>
-                          </TD>
+                          </TD> : null}
                         </TR>
                       ))}
                     </tbody>

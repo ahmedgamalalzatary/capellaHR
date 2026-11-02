@@ -9,7 +9,8 @@ import { CashierLoginForm } from './cashier-login-form';
 type LoginRole = 'cashier' | 'admin';
 
 const tabs: { role: LoginRole; label: string }[] = [
-  { role: 'cashier', label: 'كاشير' },
+  // Cashier and Reception both sign in with their branch login.
+  { role: 'cashier', label: 'كاشير / استقبال' },
   { role: 'admin', label: 'مدير' },
 ];
 

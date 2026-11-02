@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { Button, Card, CardContent, EmptyState } from '@capella/ui';
 
 import { LoadingState } from '@/components/feedback/loading-state';
-import { useSession } from '@/features/auth';
+import { useCanEdit, useSession } from '@/features/auth';
 import { getCurrentCashierSession } from '@/features/cashier-sessions';
 import {
   createErpReportExport,
@@ -38,6 +38,8 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   const queryClient = useQueryClient();
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
+  // Reception reads and prints only.
+  const canEdit = useCanEdit();
   const validBranch = branchId === undefined || (Number.isInteger(branchId) && branchId > 0);
   const query = useQuery({
     queryKey: salesQueryKeys.invoice(invoiceId, branchId),
@@ -48,7 +50,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   const currentCashierSession = useQuery({
     queryKey: ['erp-sales', 'cashier-session', branchId ?? null],
     queryFn: () => getCurrentCashierSession(branchId),
-    enabled: validBranch,
+    enabled: validBranch && canEdit,
   });
   const existingExport = useQuery({
     queryKey: ['erp-reports', 'invoice-export', invoiceId],
@@ -193,20 +195,22 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
           <div>
             <p className="text-sm font-medium">رصيد مستحق على العميل</p>
             <p className="text-xl font-semibold tabular">{query.data.totals.balanceDue} ج.م</p>
-            {!currentCashierSession.data ? (
+            {canEdit && !currentCashierSession.data ? (
               <p className="mt-1 text-[13px] text-warning">افتح وردية لتسجيل دفعة</p>
             ) : null}
           </div>
-          <Button
-            disabled={!currentCashierSession.data}
-            onClick={() => setRecordingPayment(true)}
-          >
-            تسجيل دفعة
-          </Button>
+          {canEdit ? (
+            <Button
+              disabled={!currentCashierSession.data}
+              onClick={() => setRecordingPayment(true)}
+            >
+              تسجيل دفعة
+            </Button>
+          ) : null}
         </CardContent>
       </Card>
     ) : null}
-    {(query.data.status === 'completed' || query.data.status === 'partially_refunded')
+    {canEdit && (query.data.status === 'completed' || query.data.status === 'partially_refunded')
       && query.data.lines.some((line) => line.itemType === 'service') ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
         <CardContent className="space-y-2 p-4">
@@ -238,10 +242,10 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         }}
       />
     )}
-    <InvoiceReversalControls invoice={query.data} showRefundAction={isAdmin} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
+    {canEdit ? <InvoiceReversalControls invoice={query.data} showRefundAction={isAdmin} {...(branchId === undefined ? {} : { branchId })} onUpdated={(invoice) => {
       queryClient.setQueryData(salesQueryKeys.invoice(invoiceId, branchId), invoice);
       void invalidateErpCaches(queryClient, 'reversal');
-    }} />
+    }} /> : null}
     <Card className="mx-auto max-w-[84mm] shadow-raised"><CardContent className="p-0"><ReceiptBundle invoice={query.data} selected={['customer']} /></CardContent></Card>
   </section>;
 }

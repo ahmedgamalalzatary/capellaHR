@@ -764,3 +764,39 @@ describe('CatalogView employee commission overrides', () => {
     expect(await screen.findByText('الموظف غير موجود في هذا الفرع')).toBeDefined();
   });
 });
+
+describe('CatalogView for reception', () => {
+  test('browses categories and services without any way to change them or see commissions', async () => {
+    mocks.getSession.mockResolvedValue({ actor: { type: 'reception', accountId: 4 } });
+    renderView();
+
+    expect(await screen.findByText(hairCategory.name)).toBeDefined();
+    for (const name of ['إضافة تصنيف', 'تعديل', 'إيقاف', 'تفعيل', 'حذف']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('columnheader', { name: 'إجراءات' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'الخدمات' }));
+    expect(await screen.findByText(colouring.name)).toBeDefined();
+    for (const name of ['إضافة خدمة', 'تعديل', 'إيقاف', 'تفعيل', 'العمولات']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('columnheader', { name: 'العمولة' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'إجراءات' })).toBeNull();
+    expect(mocks.listCatalogBranches).not.toHaveBeenCalled();
+  });
+
+  test('offers reception no way to add the first category or service', async () => {
+    mocks.getSession.mockResolvedValue({ actor: { type: 'reception', accountId: 4 } });
+    mocks.listCategories.mockResolvedValue(pageOf([]));
+    mocks.listServices.mockResolvedValue(pageOf([]));
+    renderView();
+
+    expect(await screen.findByText('لا توجد تصنيفات بعد')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'إضافة أول تصنيف' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'الخدمات' }));
+    expect(await screen.findByText('لا توجد خدمات بعد')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'إضافة أول خدمة' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'أضف تصنيفًا أولًا' })).toBeNull();
+  });
+});

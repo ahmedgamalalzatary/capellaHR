@@ -27,8 +27,8 @@ const CASHIER_SESSION_MAX_AGE_MS = 24 * 60 * 60_000;
 const publicActor = (
   actor:
     | { type: 'admin' | 'employee' }
-    | { type: 'cashier'; accountId: number },
-) => actor.type === 'cashier'
+    | { type: 'cashier' | 'reception'; accountId: number },
+) => 'accountId' in actor
   ? { type: actor.type, accountId: actor.accountId }
   : { type: actor.type };
 
@@ -156,7 +156,7 @@ export const createAuthRouter = (
     const disabledActor = (
       (session.actorType === 'employee' && !employeeAuthenticationEnabled)
       || (session.actorType === 'account'
-        && session.accountRole === 'cashier'
+        && (session.accountRole === 'cashier' || session.accountRole === 'reception')
         && !options.cashierAccounts)
     );
     if (disabledActor) {
@@ -168,7 +168,7 @@ export const createAuthRouter = (
       ? session.accountRole === 'admin'
         ? publicActor({ type: 'admin' })
         : publicActor({
-            type: 'cashier',
+            type: session.accountRole === 'reception' ? 'reception' : 'cashier',
             accountId: session.accountId!,
           })
       : publicActor({ type: session.actorType });

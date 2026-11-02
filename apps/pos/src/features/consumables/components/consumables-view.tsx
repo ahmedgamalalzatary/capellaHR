@@ -15,7 +15,7 @@ import { LoadingState } from '@/components/feedback/loading-state';
 import { FieldError, LoadError, Notice } from '@/components/feedback/notice';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
-import { useSession } from '@/features/auth';
+import { useCanEdit, useSession } from '@/features/auth';
 import { QueueReassignmentDialog } from '@/features/sales';
 import { listCatalogBranches } from '@/features/catalog';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
@@ -39,7 +39,12 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return <button type="button" role="tab" aria-selected={active} onClick={onClick} className={`inline-flex min-h-10 items-center gap-2 border-b-2 px-3 text-sm font-medium ${active ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink'}`}>{children}</button>;
 }
 
-function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPending, page, totalPages, onPage, isAdmin, onReassign }: {
+/** What Reception sees in place of the status buttons. */
+const serviceStatusLabel: Record<ConsumableServiceExecution['status'], string> = {
+  pending: 'لم تبدأ', in_progress: 'قيد التنفيذ', completed: 'تمت', overdue: 'متأخرة', canceled: 'ملغاة',
+};
+
+function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPending, page, totalPages, onPage, isAdmin, canEdit, onReassign }: {
   items: ConsumableServiceExecution[]; mode: 'status' | 'consumables'; selected: number[];
   onToggle: (item: ConsumableServiceExecution) => void;
   onStatus: (item: ConsumableServiceExecution, status: 'pending' | 'in_progress' | 'completed') => void;
@@ -48,16 +53,20 @@ function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPendin
   totalPages: number;
   onPage: (page: number) => void;
   isAdmin: boolean;
+  /** Reception reads only: plain status labels, no selection. */
+  canEdit: boolean;
   onReassign: (item: ConsumableServiceExecution) => void;
 }) {
+  const selectable = mode === 'consumables' && canEdit;
   if (!items.length) return <EmptyState title={mode === 'status' ? 'لا توجد خدمات' : 'لا توجد خدمات مكتملة'} />;
-  return <><DataTable><THead>{mode === 'consumables' ? <TH>اختيار</TH> : null}<TH>الخدمة</TH><TH>الدور</TH><TH>العميل</TH><TH>الموظف</TH><TH>الفاتورة</TH><TH>الحالة</TH></THead><tbody>{items.map((item) => <TR key={item.id}>
-    {mode === 'consumables' ? <TD>{item.consumptionRecorded ? null : <input type="checkbox" aria-label={`اختيار الخدمة ${item.queueNumber}`} checked={selected.includes(item.id)} onChange={() => onToggle(item)} />}</TD> : null}
+  return <><DataTable><THead>{selectable ? <TH>اختيار</TH> : null}<TH>الخدمة</TH><TH>الدور</TH><TH>العميل</TH><TH>الموظف</TH><TH>الفاتورة</TH><TH>الحالة</TH></THead><tbody>{items.map((item) => <TR key={item.id}>
+    {selectable ? <TD>{item.consumptionRecorded ? null : <input type="checkbox" aria-label={`اختيار الخدمة ${item.queueNumber}`} checked={selected.includes(item.id)} onChange={() => onToggle(item)} />}</TD> : null}
     <TD className="font-medium">{item.serviceName}</TD>
     <TD><Badge variant={item.status === 'overdue' ? 'warning' : 'neutral'}>{item.queueNumber}</Badge></TD>
     <TD>{item.clientName ?? item.clientPhone ?? '—'}</TD><TD>{item.employeeName ?? '—'}</TD><TD>{item.invoiceNumber}</TD>
     <TD>
       {mode === 'consumables' ? <Badge variant={item.consumptionRecorded ? 'success' : 'warning'}>{item.consumptionRecorded ? 'مسجلة' : 'لم تسجل'}</Badge>
+        : !canEdit ? <Badge variant={item.status === 'completed' ? 'success' : item.status === 'overdue' ? 'warning' : 'neutral'}>{serviceStatusLabel[item.status]}</Badge>
         : item.status === 'completed' ? <div className="flex flex-wrap items-center gap-1"><Badge variant="success">تمت</Badge>{isAdmin ? <Button size="sm" variant="ghost" className="status-action-quiet" onClick={() => onReassign(item)}>تغيير الموظف</Button> : null}</div>
           : <div className="flex flex-wrap items-center gap-1">
             <Button size="sm" aria-pressed={item.status === 'pending'} className="status-action-pending" disabled={statusPending} onClick={() => onStatus(item, 'pending')}>لم تبدأ</Button>
@@ -177,6 +186,8 @@ function StockPanel({ branchId, balances, allBalances, meta, onPage, refresh, is
 
 export function ConsumablesView() {
   const cache = useQueryClient(); const session = useSession(); const { branchId, setBranchId, isAdmin } = useAdminBranch();
+  // Reception follows client services and stock without changing them.
+  const canEdit = useCanEdit();
   const search = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search);
   // Deep links (e.g. product label → ?productId=&branchId=) adopt their branch once, then shared state takes over.
   useEffect(() => {
@@ -227,18 +238,18 @@ export function ConsumablesView() {
     setSelectedServiceId(item.serviceId);
     return [...current, item.id];
   });
-  return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description="تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة." />
+  return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description={canEdit ? 'تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة.' : 'تابع خدمات العملاء ورصيد المنتجات المستخدمة.'} />
     {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" className="max-w-sm" disabled={branches.isPending || branches.isError} value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); clearSelection(); setStatusPage(1); setConsumablesPage(1); setStockPage(1); }}><option value="">اختر الفرع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select>{branches.isError ? <FieldError>تعذر تحميل الفروع. <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></FieldError> : null}</CardContent></Card> : null}
     <div role="tablist" aria-label="خدمات العملاء والمستهلكات" className="flex gap-1 overflow-x-auto border-b border-line"><TabButton active={tab === 'status'} onClick={() => changeTab('status')}><Clock3 className="size-4" />حالة الخدمات</TabButton><TabButton active={tab === 'consumables'} onClick={() => changeTab('consumables')}><CheckCircle2 className="size-4" />تسجيل المستهلكات</TabButton><TabButton active={tab === 'stock'} onClick={() => changeTab('stock')}><PackageOpen className="size-4" />مخزون المستهلكات</TabButton></div>
-    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : balances.isError ? <LoadError message="تعذر تحميل أرصدة المستهلكات." onRetry={() => void balances.refetch()} /> : <StockPanel branchId={branchId} balances={balances.data?.items ?? []} allBalances={balanceOptions.data ?? []} meta={{ page: balances.data?.meta.page ?? stockPage, totalPages: balances.data?.meta.totalPages ?? 1 }} onPage={setStockPage} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : services.isError ? <LoadError className="m-4" message="تعذر تحميل خدمات العملاء." onRetry={() => void services.refetch()} /> : <ServicesTable items={services.data?.items ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} page={services.data?.meta.page ?? (tab === 'consumables' ? consumablesPage : statusPage)} totalPages={services.data?.meta.totalPages ?? 1} onPage={tab === 'consumables' ? setConsumablesPage : setStatusPage} onStatus={(item, status) => statusMutation.mutate({ item, status })} isAdmin={isAdmin} onReassign={setReassigning} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
-    {tab === 'consumables' && selected.length && ready ? (
+    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : balances.isError ? <LoadError message="تعذر تحميل أرصدة المستهلكات." onRetry={() => void balances.refetch()} /> : <StockPanel branchId={branchId} balances={balances.data?.items ?? []} allBalances={balanceOptions.data ?? []} meta={{ page: balances.data?.meta.page ?? stockPage, totalPages: balances.data?.meta.totalPages ?? 1 }} onPage={setStockPage} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : services.isError ? <LoadError className="m-4" message="تعذر تحميل خدمات العملاء." onRetry={() => void services.refetch()} /> : <ServicesTable items={services.data?.items ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} page={services.data?.meta.page ?? (tab === 'consumables' ? consumablesPage : statusPage)} totalPages={services.data?.meta.totalPages ?? 1} onPage={tab === 'consumables' ? setConsumablesPage : setStatusPage} onStatus={(item, status) => statusMutation.mutate({ item, status })} isAdmin={isAdmin} canEdit={canEdit} onReassign={setReassigning} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
+    {canEdit && tab === 'consumables' && selected.length && ready ? (
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-card border border-line bg-paper p-3 shadow-raised pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <span role="status" className="tabular me-auto text-sm font-medium text-ink">{`${selected.length} محددة`}</span>
         <Button variant="ghost" onClick={clearSelection}>إلغاء الاختيار</Button>
         <Button aria-label="تسجيل مستهلكات المحدد" onClick={() => setCompletionOpen(true)}>تسجيل المستهلكات</Button>
       </div>
     ) : null}
-    {tab === 'consumables' && selected.length && ready && completionOpen ? <CompletionPanel selected={selected} balances={balanceOptions.data ?? []} balancesError={balanceOptions.isError} onRetryBalances={() => void balanceOptions.refetch()} branchId={branchId} onCompleted={async () => { clearSelection(); await refresh(); }} onClose={() => setCompletionOpen(false)} /> : null}
-    {reassigning ? <QueueReassignmentDialog ticket={reassigning} isAdmin={isAdmin} {...(branchId === undefined ? {} : { branchId })} onClose={() => setReassigning(null)} onUpdated={() => { void refresh(); void cache.invalidateQueries({ queryKey: ['erp-sales'] }); void cache.invalidateQueries({ queryKey: ['erp-commissions'] }); void cache.invalidateQueries({ queryKey: ['erp-reports'] }); }} /> : null}
+    {canEdit && tab === 'consumables' && selected.length && ready && completionOpen ? <CompletionPanel selected={selected} balances={balanceOptions.data ?? []} balancesError={balanceOptions.isError} onRetryBalances={() => void balanceOptions.refetch()} branchId={branchId} onCompleted={async () => { clearSelection(); await refresh(); }} onClose={() => setCompletionOpen(false)} /> : null}
+    {canEdit && reassigning ? <QueueReassignmentDialog ticket={reassigning} isAdmin={isAdmin} {...(branchId === undefined ? {} : { branchId })} onClose={() => setReassigning(null)} onUpdated={() => { void refresh(); void cache.invalidateQueries({ queryKey: ['erp-sales'] }); void cache.invalidateQueries({ queryKey: ['erp-commissions'] }); void cache.invalidateQueries({ queryKey: ['erp-reports'] }); }} /> : null}
   </section>;
 }

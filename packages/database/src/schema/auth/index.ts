@@ -19,7 +19,8 @@ export const accounts = mysqlTable('accounts', {
   id: int('id').autoincrement().primaryKey(),
   username: varchar('username', { length: 255 }).notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  role: mysqlEnum('role', ['admin', 'cashier']).notNull(),
+  // Reception is a branch login that may only read the front-desk pages.
+  role: mysqlEnum('role', ['admin', 'cashier', 'reception']).notNull(),
   // Legacy cashier logins are employee-linked; branch logins carry the branch instead.
   employeeId: int('employee_id').references(() => employees.id),
   branchId: int('branch_id'),
@@ -27,6 +28,8 @@ export const accounts = mysqlTable('accounts', {
     .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'admin' then 1 else null end`, { mode: 'stored' }),
   activeCashierBranch: int('active_cashier_branch')
     .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'cashier' and ${sql.raw('employee_id')} is null and active then branch_id else null end`, { mode: 'stored' }),
+  activeReceptionBranch: int('active_reception_branch')
+    .generatedAlwaysAs(sql`case when ${sql.raw('role')} = 'reception' and active then branch_id else null end`, { mode: 'stored' }),
   /**
    * An archived login is retired without deleting it: invoices, shifts and the
    * audit trail keep pointing at a readable row, while the name it used goes
@@ -43,10 +46,11 @@ export const accounts = mysqlTable('accounts', {
   uniqueIndex('accounts_employee_unique').on(table.employeeId),
   uniqueIndex('accounts_admin_singleton_unique').on(table.adminSingleton),
   uniqueIndex('accounts_active_cashier_branch_unique').on(table.activeCashierBranch),
+  uniqueIndex('accounts_active_reception_branch_unique').on(table.activeReceptionBranch),
   foreignKey({ name: 'accounts_branch_fk', columns: [table.branchId], foreignColumns: [branches.id] }),
   check(
     'accounts_role_scope_consistency',
-    sql`(${table.role} = 'admin' and ${table.employeeId} is null and ${table.branchId} is null) or (${table.role} = 'cashier' and ((${table.employeeId} is not null and ${table.branchId} is null) or (${table.employeeId} is null and ${table.branchId} is not null)))`,
+    sql`(${table.role} = 'admin' and ${table.employeeId} is null and ${table.branchId} is null) or (${table.role} = 'cashier' and ((${table.employeeId} is not null and ${table.branchId} is null) or (${table.employeeId} is null and ${table.branchId} is not null))) or (${table.role} = 'reception' and ${table.employeeId} is null and ${table.branchId} is not null)`,
   ),
 ]);
 

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Button, Field, Input, Modal } from '@capella/ui';
-import type { SaveCashierAccountInput } from '@capella/contracts';
+import type { BranchAccountRole, SaveCashierAccountInput } from '@capella/contracts';
 import { Select } from '@/components/form/select';
 import { FieldError } from '@/components/feedback/notice';
 import { listCashierSessionBranches } from '@/features/cashier-sessions';
@@ -14,10 +14,17 @@ import { listCashierAccounts, saveCashierAccount, type CashierAccount } from '..
 import { cashierAccountQueryKeys } from '../query-keys';
 import { branchCashierCredentialsFormSchema, editCashierCredentialsFormSchema } from '../schemas/cashier-account-schemas';
 
+/** Each branch holds one login of each kind. */
+export const branchAccountRoleLabels: Record<BranchAccountRole, string> = {
+  cashier: 'كاشير',
+  reception: 'استقبال (عرض فقط)',
+};
+
 const message = (error: unknown) => error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
 
 export function CashierAccountDialog({ account, onClose }: { account: CashierAccount | null; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const [role, setRole] = useState<BranchAccountRole>(account?.role ?? 'cashier');
   const [branchId, setBranchId] = useState(account?.branchId ?? 0);
   const [username, setUsername] = useState(account?.username ?? '');
   const [password, setPassword] = useState('');
@@ -33,7 +40,9 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
     queryFn: () => fetchAllPages((page) => listCashierAccounts({ page })),
     enabled: !account,
   });
-  const usedBranches = new Set((accounts.data ?? []).map(({ branchId }) => branchId));
+  const usedBranches = new Set((accounts.data ?? [])
+    .filter((existing) => existing.role === role)
+    .map(({ branchId }) => branchId));
   const availableBranches = (branches.data ?? []).filter(({ id }) => !usedBranches.has(id));
   const ready = branchId > 0
     && (account !== null || (branches.isSuccess && accounts.isSuccess && !usedBranches.has(branchId)));
@@ -42,7 +51,7 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
     mutationFn: saveCashierAccount,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: cashierAccountQueryKeys.all });
-      notifySuccess(account ? 'تم حفظ حساب الكاشير.' : 'تم إنشاء حساب الكاشير.');
+      notifySuccess(account ? 'تم حفظ الحساب.' : 'تم إنشاء الحساب.');
       onClose();
     },
     onError: (error: unknown) => {
@@ -61,7 +70,7 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
       branchId, username, password: account && password === '' ? undefined : password,
     });
     if (!parsed.success) { setErrors(parsed.error.flatten().fieldErrors); return; }
-    const values = { branchId, username: parsed.data.username };
+    const values = { role, branchId, username: parsed.data.username };
     const input: SaveCashierAccountInput = account
       ? { ...values, mode: 'edit', accountId: account.id, ...(password === '' ? {} : { password }) }
       : { ...values, mode: 'create', password };
@@ -77,9 +86,23 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
   };
 
   return (
-    <Modal title={account ? 'تعديل حساب الكاشير' : 'إضافة حساب كاشير'} onClose={onClose}
+    <Modal
+      title={account ? (account.role === 'reception' ? 'تعديل حساب الاستقبال' : 'تعديل حساب الكاشير') : 'إضافة حساب'}
+      onClose={onClose}
       dismissOnBackdrop={!save.isPending} className="max-h-[90dvh] max-w-lg overflow-y-auto">
       <form noValidate className="space-y-4" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+        <Field label="نوع الحساب" htmlFor="cashier-role" required>
+          {account ? <Input id="cashier-role" value={branchAccountRoleLabels[account.role]} disabled /> : (
+            <Select id="cashier-role" value={role} disabled={save.isPending}
+              onChange={(event) => { setRole(event.target.value as BranchAccountRole); setBranchId(0); setErrors({}); }}>
+              <option value="cashier">{branchAccountRoleLabels.cashier}</option>
+              <option value="reception">{branchAccountRoleLabels.reception}</option>
+            </Select>
+          )}
+          {!account && role === 'reception'
+            ? <p className="text-xs text-muted">يرى الفواتير والمواعيد والعملاء والكتالوج والمنتجات والمستهلكات دون أي تعديل، ويعمل فقط أثناء وردية الكاشير المفتوحة.</p>
+            : null}
+        </Field>
         <Field label="الفرع" htmlFor="cashier-branch" required>
           {account ? <Input id="cashier-branch" value={account.branchName} disabled /> : (
             <Select id="cashier-branch" value={branchId || ''}
@@ -91,7 +114,7 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
           )}
         </Field>
         {!account && branches.isSuccess && accounts.isSuccess && availableBranches.length === 0
-          ? <p className="text-sm text-muted">كل الفروع لديها حساب كاشير. يمكنك تعديل الحساب من الجدول.</p> : null}
+          ? <p className="text-sm text-muted">{`كل الفروع لديها حساب ${role === 'reception' ? 'استقبال' : 'كاشير'}. يمكنك تعديل الحساب من الجدول.`}</p> : null}
         <Field label="اسم المستخدم" htmlFor="cashier-username" required>
           <Input id="cashier-username" autoComplete="off" value={username} disabled={save.isPending}
             aria-invalid={!!errors.username} onChange={(event) => setUsername(event.target.value)} />

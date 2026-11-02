@@ -39,7 +39,7 @@ describe('LoginView', () => {
   test('switches back to the cashier login form when the cashier button is selected', () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
-    fireEvent.click(screen.getByRole('button', { name: 'كاشير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'كاشير / استقبال' }));
     expect(screen.getByLabelText(/اسم المستخدم/)).toBeDefined();
   });
 
@@ -47,7 +47,7 @@ describe('LoginView', () => {
     renderView();
     fireEvent.change(screen.getByLabelText(/اسم المستخدم/), { target: { value: 'cashier.one' } });
     fireEvent.click(screen.getByRole('button', { name: 'مدير' }));
-    fireEvent.click(screen.getByRole('button', { name: 'كاشير' }));
+    fireEvent.click(screen.getByRole('button', { name: 'كاشير / استقبال' }));
     expect((screen.getByLabelText(/اسم المستخدم/) as HTMLInputElement).value).toBe('cashier.one');
   });
 });

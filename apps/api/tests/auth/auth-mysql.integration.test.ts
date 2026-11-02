@@ -243,6 +243,41 @@ describe('MySQL-backed authentication', () => {
       .where(eq(auditEvents.actorType, 'account'))).length).toBeGreaterThan(0);
   });
 
+  it('signs in a branch reception login and keeps its branch-scoped reception session', async () => {
+    const now = new Date('2026-07-29T12:00:00.000Z');
+    const branchId = Number((await database.insert(branches).values({
+      name: 'Cashier integration branch', nameNormalized: 'cashier-auth-integration', location: 'Cairo',
+      latitude: 30, longitude: 31, gpsAccuracyMeters: 5, attendanceRadiusMeters: 100,
+      hasEverBeenReferenced: true, createdAt: now, updatedAt: now,
+    }))[0].insertId);
+    const module = auth.createAuthModule({ database });
+    const desk = await module.cashierAccounts.save({
+      mode: 'create', role: 'reception', branchId, username: 'Desk.Integration', password: 'desk-password',
+    });
+    const app = createApp({
+      authService: module.service,
+      cashierAccountsService: module.cashierAccounts,
+      secureCookies: false,
+    });
+
+    const login = await request(app)
+      .post('/api/v1/auth/cashier/login')
+      .send({ username: 'desk.integration', password: 'desk-password' });
+    const cookie = login.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
+    const session = await request(app).get('/api/v1/auth/session').set('Cookie', cookie);
+    const token = decodeURIComponent(cookie.split('=')[1] ?? '');
+
+    expect(login.status).toBe(200);
+    expect(login.body.data.actor).toEqual({ type: 'reception', accountId: desk.id });
+    expect(session.body.data.actor).toEqual({ type: 'reception', accountId: desk.id });
+    await expect(module.service.authenticate(token)).resolves.toMatchObject({
+      accountRole: 'reception', accountId: desk.id, branchId,
+    });
+
+    await module.cashierAccounts.setActive(desk.id, false);
+    expect((await request(app).get('/api/v1/auth/session').set('Cookie', cookie)).status).toBe(401);
+  });
+
   it('revokes Cashier sessions on disable and password reset', async () => {
     const createAuthModule = Reflect.get(auth, 'createAuthModule');
     const module = createAuthModule({ database });

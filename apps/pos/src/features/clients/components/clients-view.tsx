@@ -10,7 +10,7 @@ import { Pagination } from '@/components/data/pagination';
 import { LoadingState } from '@/components/feedback/loading-state';
 import { Select } from '@/components/form/select';
 import { PageHeader } from '@/components/layout/page-header';
-import { useSession } from '@/features/auth';
+import { useCanEdit, useSession } from '@/features/auth';
 import { ApiError } from '@/lib/api/client';
 import { fetchAllPages } from '@/lib/api/fetch-all';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
@@ -89,6 +89,8 @@ export function ClientsView() {
   const cache = useQueryClient();
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
+  // Reception reads only.
+  const canEdit = useCanEdit();
   const { branchId: selectedBranchId, setBranchId: setSelectedBranchId } = useAdminBranch();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -144,17 +146,19 @@ export function ClientsView() {
     <section className="space-y-6">
       <PageHeader
         title="إدارة العملاء"
-        description="إضافة بيانات العملاء والبحث فيها وتحديثها."
-        actions={(
-          <Button
-            size="sm"
-            disabled={!scopeReady || formPending}
-            onClick={openCreate}
-          >
-            <Plus className="size-4" aria-hidden />
-            إضافة عميل
-          </Button>
-        )}
+        description={canEdit ? 'إضافة بيانات العملاء والبحث فيها وتحديثها.' : 'البحث في بيانات العملاء.'}
+        {...(canEdit ? {
+          actions: (
+            <Button
+              size="sm"
+              disabled={!scopeReady || formPending}
+              onClick={openCreate}
+            >
+              <Plus className="size-4" aria-hidden />
+              إضافة عميل
+            </Button>
+          ),
+        } : {})}
       />
 
       {isAdmin ? (
@@ -273,9 +277,9 @@ export function ClientsView() {
         ) : items.length === 0 ? (
           <EmptyState
             title={trimmedSearch || debtStatus ? 'لا يوجد عميل مطابق' : 'لا يوجد عملاء بعد'}
-            description={trimmedSearch || debtStatus ? 'غيّر البحث أو حالة المديونية.' : 'ابدأ بإضافة أول عميل.'}
+            description={trimmedSearch || debtStatus ? 'غيّر البحث أو حالة المديونية.' : canEdit ? 'ابدأ بإضافة أول عميل.' : undefined}
             action={
-              trimmedSearch || debtStatus ? undefined : (
+              trimmedSearch || debtStatus || !canEdit ? undefined : (
                 <Button size="sm" disabled={formPending} onClick={openCreate}>
                   <Plus className="size-4" aria-hidden />
                   إضافة أول عميل
@@ -305,7 +309,7 @@ export function ClientsView() {
                     <Badge variant="neutral" className="mt-1.5 tabular">مستحق {client.balanceDue} ج.م</Badge>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                {canEdit ? <div className="flex flex-wrap gap-2">
                   <Button
                     variant="secondary"
                     disabled={formPending}
@@ -323,7 +327,7 @@ export function ClientsView() {
                     <Trash2 className="size-4" aria-hidden />
                     حذف
                   </Button>
-                </div>
+                </div> : null}
               </li>
             ))}
           </ul>

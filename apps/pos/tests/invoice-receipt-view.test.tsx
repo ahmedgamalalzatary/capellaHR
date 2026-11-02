@@ -16,7 +16,7 @@ const getCurrentCashierSession = vi.hoisted(() => vi.fn());
 const listAssignableEmployees = vi.hoisted(() => vi.fn());
 const employeeDirectory = vi.hoisted(() => vi.fn());
 const reportExports = vi.hoisted(() => ({
-  actor: { current: 'admin' as 'admin' | 'cashier' },
+  actor: { current: 'admin' as 'admin' | 'cashier' | 'reception' },
   create: vi.fn(), list: vi.fn(), get: vi.fn(), retry: vi.fn(), download: vi.fn(),
 }));
 const originalPrint = window.print;
@@ -50,8 +50,11 @@ vi.mock('../src/features/auth', () => ({
   useSession: () => ({
     data: { actor: reportExports.actor.current === 'admin'
       ? { type: 'admin', accountId: 1 }
-      : { type: 'cashier', accountId: 2, employeeId: 3 } },
+      : reportExports.actor.current === 'reception'
+        ? { type: 'reception', accountId: 4 }
+        : { type: 'cashier', accountId: 2, employeeId: 3 } },
   }),
+  useCanEdit: () => reportExports.actor.current !== 'reception',
 }));
 vi.mock('../src/features/erp-reports', () => ({
   createErpReportExport: reportExports.create,
@@ -222,6 +225,26 @@ describe('stored invoice receipt', () => {
     Reflect.deleteProperty(URL, 'createObjectURL');
     Reflect.deleteProperty(URL, 'revokeObjectURL');
     Object.defineProperty(window, 'print', { configurable: true, value: originalPrint });
+  });
+
+  it('lets reception read and print an invoice without any way to change it', async () => {
+    reportExports.actor.current = 'reception';
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    getInvoice.mockResolvedValue({
+      ...saleFixtures.completedInvoice,
+      totals: { ...saleFixtures.completedInvoice.totals, balanceDue: '35.00', settlementStatus: 'open' as const },
+      eligibility: { canVoid: true, canRefund: true },
+    });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'طباعة الإيصال' }));
+    fireEvent.click(screen.getByRole('button', { name: /طباعة المحدد/ }));
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    expect(screen.getByText('رصيد مستحق على العميل')).toBeDefined();
+    for (const name of ['تسجيل دفعة', 'حالة الخدمة', 'إلغاء الفاتورة', 'استرداد', 'إنشاء PDF A4']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByText('افتح وردية لتسجيل دفعة')).toBeNull();
   });
 
   it('announces the invoice loading state accessibly', () => {

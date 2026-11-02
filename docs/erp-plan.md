@@ -1,6 +1,6 @@
 # Beauty Center ERP — Decisions, Reasoning, and Plan
 
-Status: **ERP 1–22 software slices delivered, subject to the explicitly deferred validation listed below; production deployment remains.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP22 multi-frontend production security; §12 (product sync between branches — decided, not implemented) added 2026-10-27.
+Status: **ERP 1–22 software slices delivered, subject to the explicitly deferred validation listed below; production deployment remains.** This document records every decision made so far, the reasoning behind it, and what remains open. It is the source of truth for why the ERP is built the way it is. Written 2026-07-29; last revised 2026-08-09 for ERP22 multi-frontend production security; §12 (product sync between branches — decided, not implemented) added 2026-10-27 and rewritten 2026-10-28.
 
 ---
 
@@ -326,13 +326,13 @@ The remaining work is:
 
 ## 12. Product sync between branches — decided, not implemented
 
-Status: **all decisions below were made by the owner on 2026-10-27 in a question-and-answer session. Nothing here is implemented yet.** This section keeps the whole trail — the code facts, the problems found, every question, the answers (including answers that changed during the discussion) and the edge cases with real examples — so none of it has to be rediscovered.
+Status: **decided by the owner on 2026-10-27 and revised on 2026-10-28 (the 2026-10-28 answers replaced every conflicting earlier decision). Nothing here is implemented yet.** The feature must work for **any** branches; no rule depends on specific branches or on sample data.
 
 ### 12.1 Goal
 
-Two branches that sell the same products shouldn't have to create and maintain each product by hand twice. The admin links two branches; creating or renaming a product in the **source** branch (A) is carried to the **target** branch (B). The feature must work for **any two branches**; no rule depends on specific branches or on sample data. (A sample export, `products-1-3.tsv`, was used only to see which situations can happen. Its counts are not requirements.)
+A sender branch (A) shouldn't need its products created by hand again in the branches it supplies (B). The admin links A ⇒ B; from then on, **every product A creates is created once in B with the same name and description**. After that one-time copy, B's product is B's own. Linked products also let transfers find the right product in the other branch.
 
-### 12.2 How products work today (verified in code on 2026-10-27)
+### 12.2 How products work today (verified in code on 2026-10-27 and 2026-10-28)
 
 ```
 Branch A ── own product rows ──┐
@@ -342,11 +342,14 @@ Only meeting point: a transfer ┘  finds the receiving-branch product by NAME,
                                    or creates a copy if none exists
 ```
 
-- `erp_products` is branch-scoped: name, description, selling price, last purchase cost, commission %, low-stock alert, barcode, active. Name and barcode are unique **per branch** (`erp_products_branch_name_unique`, `erp_products_branch_barcode_unique`).
+- `erp_products` is branch-scoped: name, description, selling price (required, `not null`), last purchase cost, commission %, low-stock alert, barcode, active. Name and barcode are unique **per branch** (`erp_products_branch_name_unique`, `erp_products_branch_barcode_unique`).
 - Stock (`erp_product_stocks`), movements, consumable settings/balances and batch balances are per branch.
 - A **batch** (`erp_stock_batches`) has no branch column. After a transfer, both branches point at the **same** batch record, so an expiry edit in one branch changes the other (decided below to change).
 - Name matching uses `normalizeCatalogName` = sha256 of the trimmed, lower-cased name (`apps/api/src/modules/erp/catalog/categories-service.ts:47`).
 - In-store barcode = `200` + product ID + EAN-13 check digit (`packages/contracts/src/modules/erp/stock/index.ts:69`). Product IDs are global, so the same item gets a different in-store code in each branch.
+- **Selling price is only ever typed by hand** (product create/edit). A purchase updates only `lastPurchaseCost` (`suppliers/suppliers-repository.ts:61`); purchase lines carry `unit_cost`, never a selling price. A transfer copies A's price only when it *creates* B's product, and never changes an existing product's price.
+- **Inactive products are blocked everywhere**: purchases reject them (`PURCHASE_PRODUCT_INACTIVE`, `suppliers-repository.ts:57`), transfers reject an inactive receiving product (`TRANSFER_DESTINATION_PRODUCT_INACTIVE`, `stock-transfer-repository.ts:193`), and the till quotes only active products (`sales/sale-repository-read.ts:414`).
+- Products are never deleted, only deactivated.
 
 #### Every action that changes a product, or is driven by one
 
@@ -377,123 +380,179 @@ Bookings, commission payouts, expenses and fixed assets don't touch products. Tr
 | # | Problem | Decision |
 |---|---|---|
 | P1 | A transfer that auto-creates the product in the receiving branch copies name, description, price, cost and alert only — **no barcode and 0% commission** (`stock-transfer-repository.ts:202-209`) | **Fix.** The auto-created product also copies barcode and commission % |
-| P2 | Transfers match the receiving product **by exact name only** (`:186-191`); a rename in one branch makes the next transfer create a duplicate | **Fix.** Linked branches: use the link. Unlinked branches: barcode first, then smart name match, then create (§12.7) |
-| P3 | In-store barcodes differ per branch for the same item | **Dropped.** Barcodes are no longer synced (§12.5), so each branch owning its own barcode is intended |
+| P2 | Transfers match the receiving product **by exact name only** (`:186-191`); a rename in either branch, or a hand-made link between differently named products, makes the next transfer create a duplicate | **Fix.** Linked products: transfers use the link. Otherwise: barcode first, then smart name match, then create (§12.8) |
+| P3 | In-store barcodes differ per branch for the same item | **Intended.** Barcodes are never synced (§12.5); each branch owns its own |
 | P4 | **Money risk.** The server doesn't block a cashier from setting commission % on products **or services**, or from stock adjustments; only the screens hide them. A cashier calling the API directly could set e.g. 100% commission, sell the item, and the employee assigned to the line earns the whole line (audited, but not blocked). Products: `product-stock-service.ts` `create`/`update`/`adjust`. Services: `catalog/services-service.ts` `create`/`update` (only per-employee overrides call `assertCatalogAdmin`) | **Fix first, on its own, before the sync work.** Server rejects commission % from cashiers (create and update, products and services) and rejects cashier stock adjustments, matching the screens |
-| P5 | Name matching ignores only case and outer spaces; double spaces, أ/إ/آ vs ا, ة vs ه, ى vs ي, and تشكيل make the same item look different | **Fix, between branches only** (§12.6) |
+| P5 | Name matching ignores only case and outer spaces; double spaces, أ/إ/آ vs ا, ة vs ه, ى vs ي, and تشكيل make the same item look different | **Fix, between branches only** (§12.7) |
+| P6 | A synced product in B starts inactive with no stock, but inactive products can't receive a purchase or transfer, so it could never be activated | **Fix.** New product state **"awaiting first stock"**, separate from "inactive" (§12.9) |
 
-### 12.4 Scope decisions
+### 12.4 Link rules (which branches can be linked)
 
-| Topic | Decision |
-|---|---|
-| Which branches | The admin picks two branches. Stored as a linked group so more branches could be added later without redesign (more than two is **not** in scope now) |
-| Direction | **One way: source A → target B** |
-| Granularity | Per product. The admin can unlink a single product; both copies stay and become independent |
-| What is synced | Products only — not services, not categories |
-| Who sets it up | Admin only: choose the pair, run first link, resolve conflicts, unlink |
-| Where | A new admin-only section inside "المنتجات والمخزون" |
+```
+Allowed:                 Not allowed:
+  A ⇒ B                    B ⇒ A   while A ⇒ B exists   (reverse / two-way)
+  A ⇒ C                    A ⇒ B ⇒ C                    (chain: a receiver can't send)
+  (one sender, many        A ⇒ B  and  D ⇒ B            (two senders for one receiver)
+   receivers)
+```
 
-### 12.5 Field-by-field
+- **One way.** A link has a sender (A) and a receiver (B). Products only flow A ⇒ B.
+- **A sender can have many receivers.**
+- **A receiver has exactly one sender.**
+- **No chains.** A branch is either a sender, a receiver, or neither — never both.
+- Admin only: create a link, run setup, settle conflicts, unlink.
+- Where: a new admin-only section inside "المنتجات والمخزون".
+- Products only — not services, not categories.
 
-| Field | Synced A → B? | Notes |
+### 12.5 What is copied
+
+When A creates a product, B's copy is created **once** with:
+
+| Field | B's copy | Notes |
 |---|---|---|
-| Name | **Yes** | Locked in B for everyone, including the admin |
-| Description | **Yes** | Locked in B for everyone, including the admin |
-| Barcode | **No** | First decided "sync", then changed: **barcode is not synced at all.** Each branch manages its own barcodes. Barcodes are still used **to find matches** (first link, transfers) and are never changed by sync |
-| Selling price | No | A new copy in B starts with A's price once (§12.8) |
-| Last purchase cost | No | Each branch's own purchases/transfers |
-| Commission % | No | A new copy starts with A's value once |
-| Low-stock alert | No | A new copy starts with A's value once |
-| Active / inactive | **No** | Deactivating in A doesn't touch B |
-| Stock quantity | **No** | Never. Moving goods is a transfer |
-| Batches / expiry | **No** | Each branch controls its own expiry (§12.9) |
-| Consumable settings | **No** | Only name and description sync |
+| Name | A's name | Once. B can rename it later; nothing follows from A |
+| Description | A's description | Once. Same as name |
+| Selling price | **0** | Set by B's admin at activation (§12.9) |
+| Last purchase cost | 0 | Comes from B's own purchases/transfers |
+| Stock | **0** | Never synced. Moving goods is a transfer |
+| State | **Awaiting first stock** | Not sellable (§12.9) |
+| Barcode | Empty | Never synced. Each branch manages its own |
+| Commission %, low-stock alert | Defaults | B sets its own |
+| Batches / expiry, consumable settings | None | B's own (§12.10) |
 
-The owner's principle: syncing exists to avoid creating the same product by hand in both branches; it does **not** mean product X in A (expiry n) is the same stock as product X in B (expiry y).
+After the copy, **nothing syncs again**: A's renames, description edits, price changes, deactivation and barcode changes never touch B, and B can change anything on its copy. The link between the two products stays, for transfers.
 
-### 12.6 Smarter name matching (P5)
+### 12.6 First link (setup, one time per A ⇒ B, admin only)
 
-- Comparison ignores repeated spaces and Arabic diacritics (تشكيل), treats أ/إ/آ as ا, ة as ه, ى as ي, plus the existing trim + lower-case.
-- Used **only between branches**: first link, auto-linking on create, rename-clash detection in B, and transfers.
-- The duplicate-name check **inside** one branch stays exactly as today (not changed for products, services or categories), so no existing names need renaming.
-
-### 12.7 Transfers
-
-- **Between linked branches** (either direction): the receiving product is found **through the link**. Renames no longer create duplicates.
-- **Between unlinked branches**: find the receiving product by **same barcode first**, then **smart name match**, and only if neither finds one, create it, copying barcode and commission % too (P1).
-  - Example (owner's answer: "C's existing oil"): both branches sell the same oil with the same box barcode, but each typed a different name. A sends 5 boxes to C → they're added to C's existing oil, not to a new product.
-  - Because barcode is matched first, a newly created product can't collide with an existing barcode in the receiving branch.
-- The receiving branch gets **its own batch copies** (§12.9).
-- Everything else stays as today: at cost, zero commission, generated invoice, not reversible.
-
-### 12.8 Behavior once linked
-
-| Event | Behavior |
-|---|---|
-| A creates a product | The system looks for a match in B (smart name match). **Match found** → link to it; B's product takes A's name and description; B keeps its own price, barcode and everything else. **No match** → create the copy in B: stock 0, cost 0 until its first purchase or transfer, A's price, commission % and low-stock alert copied **once** |
-| A renames or edits the description of a linked product | Applied to B in the same transaction; audit entry in both branches |
-| A renames to a name B already uses on a **different** product (e.g. A's "Oil" linked to B's "Oil"; B also has its own unlinked "Hair Oil"; A renames to "Hair Oil") | **Rename refused** in A with a message naming B's product. The admin merges or renames B's product first |
-| A changes its barcode | Nothing happens in B (barcode isn't synced). This also removes the "day-12 clash": B adds its own product with box code 6221111 on day 10, A puts 6221111 on its linked product on day 12 → no conflict, because barcode never crosses |
-| A deactivates / reactivates | Nothing happens in B |
-| B creates a product | Stays in B only, not linked (one way) |
-| B edits a linked product | Name and description are locked. Price, cost, commission, alert, barcode, active state are B's own |
-| Cashier in A creates or edits | Allowed as today; their name/description changes sync to B (subject to P4: no commission % from cashiers) |
-| Purchases, sales, refunds, voids, adjustments, consumable reserve/return/usage | Never synced; own branch only |
-| Edit form in A for a linked product | Shows a short note, e.g. "سيتم تطبيق التعديل على فرع X أيضاً"; no extra confirmation click |
-| Products list | A "linked" badge on linked products |
-| Audit | Each branch gets its own audit entry, marked as synced from branch A by account Y |
-
-### 12.9 Batches and expiry
-
-- Today a transfer makes B's boxes point at A's batch record, so an expiry fix in either branch changes both.
-- **Decided: change it.** After a transfer, the receiving branch gets **its own batch copy**, starting with the sent expiry date. From then on each branch edits its own expiry; nothing goes A → B or B → A. Each branch's expiry comes from its own purchase (supplier) or the transfer that brought the goods.
-- Example: A buys 20 boxes (expiry 1 Jan) and sends 5 to B. B finds the real date on its 5 boxes is 1 Feb and edits it. A's 15 boxes stay 1 Jan.
-- Implementation note: today's shared-lot model (`erp_stock_batches` has no branch; `stock-batches.ts` `addBatchQuantities` reuses the sender's batch ID on transfer-in) must change. Batches already shared by past transfers need a decision (open point O6).
-
-### 12.10 First link (one time, admin only)
+The link is **pending** until setup is finished. Nothing syncs while it is pending.
 
 ```
 Automatic (no popup):
   same barcode in A and B                 → linked
   else exactly one smart name match       → linked
-  → B's name + description replaced by A's; barcodes are never changed
+  B's name, description and everything else stay B's own
 
-Conflict popup (one row each, with options):
-  1. one product matches 2+ products (either side) → pick the right one | not the same item
-  2. same name, but each has a DIFFERENT barcode    → same item | not the same item
-     (different codes may mean different items, e.g. sizes; barcodes unchanged either way)
-  3. product only in A  → create it in B (stock 0) | skip
-  4. product only in B  → link to an A product by hand | leave alone
+Conflict popup (the admin must settle every row):
+  1. one product matches 2+ products (either side) → pick the right one
+  2. same name, but each has a DIFFERENT barcode    → same item (link) | not the same item
+  3. a link the system made is wrong                → change it to the right product
+  4. product only in A                              → create it in B (as in §12.5) | don't copy to B
+  5. product only in B                              → left alone; it is B's own (no row to settle)
+
+"Not the same item" (row 2, or a create clash in §12.11) — B can't hold a
+second product with the same name, so the admin chooses:
+  → create B's copy under a NEW name the admin types (linked, as in §12.5)
+  → don't copy to B
 ```
 
-- For pairs that already exist in B, **B keeps its own price** (and every other per-branch field). Only a copy **created** in B takes A's price, commission % and alert, once.
-- Automatic matching happens **only** at first link; afterwards, matching happens per event (§12.8).
-- Superseded during the discussion (kept for the record): "B takes A's barcode", "A's barcode overwrites B's", and "show B a reprint-labels list" were agreed before barcode sync was dropped. With barcode not synced, none of them apply.
+- **All rows must be green before sync starts.** If the admin closes the popup halfway, the link stays pending and nothing is half-synced.
+- The setup screen is calculated live: a product A creates while setup is open appears as one more row.
+- Product links are **one-to-one per A ⇒ B**: a B product can be linked to only one A product, and the other way round.
+- **"Don't copy to B"** is a settled (green) answer, stored as an **excluded** entry for that A product (and, for "not the same item", the B product it was compared with). It is never asked again automatically. The sync screen lists excluded products, so the admin can later link or create them by hand.
+- Data shape: one `erp_product_links` row per settled A product per A ⇒ B: `sender_branch_id, receiver_branch_id, sender_product_id, receiver_product_id (null when excluded), state linked | excluded, not_same_as_product_id (null unless "not the same item")`. Unique on `(sender_branch_id, receiver_branch_id, sender_product_id)` and on `(sender_branch_id, receiver_branch_id, receiver_product_id)`; MySQL allows many nulls, so excluded rows don't collide. Branch links live in `erp_branch_links` (`sender_branch_id, receiver_branch_id, state pending | active`).
 
-### 12.11 Rights summary
+### 12.7 Smarter name matching (P5)
+
+- Comparison ignores repeated spaces and Arabic diacritics (تشكيل), treats أ/إ/آ as ا, ة as ه, ى as ي, plus the existing trim + lower-case.
+- Used **only between branches**: first link, the clash check when A creates a product, and transfers.
+- The duplicate-name check **inside** one branch stays exactly as today (not changed for products, services or categories), so no existing names need renaming.
+- **Stored, not computed on the fly:** a new `erp_products.match_key` column (sha256 of the smart-normalized name), backfilled by migration and updated on every create and rename, with a **non-unique** index on `(branch_id, match_key)`. It has to be stored because transfers find and **lock** the receiving row by it, and setup compares whole branches. It is non-unique because in-branch uniqueness still uses the old rule, so one branch can hold "Hair Oil" and "Hair  Oil"; two hits = "matches 2+" (§12.6 row 1).
+
+### 12.8 Transfers
+
+- **Linked products**: the receiving product is found **through the link**, in either direction (a transfer B → A of a linked product also uses it). Renames and hand-made links no longer create duplicates. Product links stay after the branch link is removed (§12.11), so they keep working here.
+- **Not linked**: find the receiving product by **same barcode first**, then **smart name match**, and only if neither finds one, create it, copying barcode and commission % too (P1).
+  - Example: both branches sell the same oil with the same box barcode, but each typed a different name. A sends 5 boxes to C → they're added to C's existing oil, not to a new product.
+  - Because barcode is matched first, a newly created product can't collide with an existing barcode in the receiving branch.
+- **Auto-link on transfer:** when the transfer goes **along an active link** (A ⇒ B direction), the A product has no entry yet for that link, and the receiving product found (or created) isn't linked to another A product, the transfer also records the product link. Otherwise nothing is linked automatically.
+- **Excluded / "not the same item":** a transfer never lands on a B product that was marked "not the same item" for this A product, and never creates around an exclusion. If that leaves no valid receiving product (e.g. the only free name is taken), the transfer is **refused** with an Arabic message pointing the admin to the sync screen to link or create the product first.
+- A transfer into an **awaiting first stock** product is allowed (§12.9). An awaiting product can't be **sent** (it was never activated); today's sender check already refuses non-active products (`stock-transfer-service.ts:222`), so that stays.
+- The receiving branch gets **its own batch copies** (§12.10).
+- Lock order: the current deadlock-safe sort by `nameNormalized` becomes a sort by the receiving product's lookup key (link target id first, then `match_key`), kept deterministic.
+- Everything else stays as today: at cost, zero commission, generated invoice, not reversible.
+
+### 12.9 Awaiting first stock and activation
+
+```
+A creates X ──► B: X created  (price 0, stock 0, AWAITING FIRST STOCK — not sellable)
+                     │
+     purchase or transfer arrives (stock > 0) — product still not sellable
+                     │
+     B's admin presses "Activate" → types the selling price (> 0) → ACTIVE
+```
+
+- **"Awaiting first stock" is its own state**, not "inactive":
+  - purchases and transfers into it are **allowed**;
+  - the till **can't sell it** (same as inactive);
+  - "inactive" (turned off by someone) keeps refusing purchases and transfers exactly as today.
+- **Activation is always a manual button for B's admin**, never automatic — after a purchase *and* after a transfer, so both work the same way.
+- **Activate requires stock > 0 and a selling price > 0.**
+- **Where the price comes from:** a purchase has no selling price (§12.2), so the admin types it. After a transfer, the price box is pre-filled with the sending branch's selling price; the admin can keep or change it.
+  - Pre-fill source: the **current** selling price of the source product on the **latest transfer line into this product** (`erp_stock_transfer_lines.destination_product_id` → `source_product_id`). No new column. No transfer → empty box.
+- The same state is used for products created in B by setup row 4 and by the "new name" choice (§12.6).
+- **Column shape:** keep `is_active` and add `awaiting_first_stock boolean not null default false`, with a check that `awaiting_first_stock = true` implies `is_active = false`. Reason: the till and every "sellable" check already filter on `is_active = true`, so they refuse awaiting products with **no change**. Only the purchase check (`suppliers-repository.ts:57`) and the receiving-side transfer checks (`stock-transfer-repository.ts:193`, `:223`) change, to `is_active or awaiting_first_stock`. Existing rows migrate as `false` (no behavior change).
+- Activate sets `is_active = true`, `awaiting_first_stock = false`, `selling_price = <typed>`, in one transaction with the stock row locked (stock > 0 checked under the lock). Deactivating an awaiting product makes it plain inactive (`awaiting_first_stock = false`).
+- Product list: shows three states (active / inactive / awaiting) with an awaiting filter.
+- `selling_price` stays `not null` (0 until activation). Empty price on a **service** keeps its existing, different meaning ("the seller types the price at sale time"); products don't use that rule.
+
+### 12.10 Batches and expiry
+
+- Today a transfer makes B's boxes point at A's batch record, so an expiry fix in either branch changes both.
+- **Decided: change it.** After a transfer, the receiving branch gets **its own batch copy**, starting with the sent expiry date. From then on each branch edits its own expiry; nothing goes A → B or B → A. Each branch's expiry comes from its own purchase (supplier) or the transfer that brought the goods.
+- Example: A buys 20 boxes (expiry 1 Jan) and sends 5 to B. B finds the real date on its 5 boxes is 1 Feb and edits it. A's 15 boxes stay 1 Jan.
+- Implementation note: today's shared-lot model (`stock-batches.ts` `addBatchQuantities` reuses the sender's batch ID on transfer-in) must change: on transfer-in, create a new `erp_stock_batches` row (`origin_product_id`/`origin_branch_id` = the receiving product/branch, same expiry) and put the received quantity on it.
+- **Batches already shared by past transfers: not migrated; only new transfers split.** Reason: sale, refund, void and purchase-cancellation snapshots store batch IDs (`batches` JSON on movements and lines), and reversals put stock back into those exact IDs (`sale-repository-reverse.ts:182`). Rewriting IDs in historical snapshots risks corrupting refunds and reports. Old shared batches run out as stock is sold. Until then, editing the expiry of a batch that another branch also holds shows a warning naming that branch before saving.
+
+### 12.11 Behavior once linked (setup all green)
+
+| Event | Behavior |
+|---|---|
+| A creates a product (admin or cashier) | Created in B as in §12.5, and the two are linked |
+| A creates "X", B already has its own "X" (smart name match) | **Conflict for the admin.** Only that product waits in a "needs attention" list; every other new product keeps syncing. Settle by: **same item → link to B's "X"** (if it isn't already linked to another A product) · **not the same item → create under a new name** · **don't copy to B** (§12.6) |
+| Creating the copy in B fails for any reason | **A's product is still created.** The failure goes to the same "needs attention" list (settle: retry, or the same choices as above) |
+| A edits, renames, reprices, deactivates or changes the barcode of a product | Nothing happens in B |
+| B edits its copy (anything) | Allowed. Nothing happens in A |
+| B creates a product | Stays in B only, not linked (one way) |
+| Purchases, sales, refunds, voids, adjustments, consumable reserve/return/usage | Never synced; own branch only |
+| Products list | A "linked" badge on linked products |
+| Audit | Each branch gets its own audit entry; B's says it was created by sync from branch A by account Y |
+
+**Unlink** removes the A ⇒ B branch link only:
+- No more products are copied from A to B.
+- Everything stays as it is: products in both branches, and the product links between them (so transfers keep using them).
+- B can then be linked to a different sender. Linking A ⇒ B again later reuses the existing product links, so setup only shows the new differences.
+
+**How "A is created even if B fails" is guaranteed (no crash gap, no worker):** A's product insert and all of its B copies run in **one database transaction**; each B copy runs inside its own **savepoint** (a nested Drizzle transaction). If a copy fails, only its savepoint is rolled back and a "needs attention" row is written in the same outer transaction, then A's product commits. A crash can't leave "A created, copy silently lost": either everything commits (product + copies + needs-attention rows) or nothing does. Locks are taken A first, then each receiver in branch-id order. One exception: a MySQL **deadlock** rolls back the whole transaction, so product create retries once on a deadlock error before failing. No outbox or worker job is needed (`apps/worker` today only runs attendance and reports).
+
+### 12.12 Rights summary
 
 | Who | Can |
 |---|---|
-| Admin | Choose the pair, run first link, resolve conflicts, unlink; everything a cashier can |
-| Cashier in A | Create and edit products as today (no commission %, no stock adjustments — P4); name/description changes sync to B |
-| Anyone in B | Can't edit name/description of linked products; edits everything else on B's own products; B-created products stay local |
+| Admin | Create a link, run setup, settle conflicts and the "needs attention" list, unlink, activate awaiting products; everything a cashier can |
+| Cashier in A | Create and edit products as today (no commission %, no stock adjustments — P4); a product they create is copied to B |
+| Cashier in B | Edit B's products as today; can't activate an awaiting product |
 
-### 12.12 Open points (not asked yet — confirm before or during the plan)
+### 12.13 Former open points — answered 2026-10-28
 
-| # | Question |
-|---|---|
-| O1 | When A creates a product, should a **barcode** match in B also count as "match found" (like first link and transfers), or only the smart name match? |
-| O2 | A transfer A → B of an A product that is **not linked** (e.g. skipped at first link): after matching or creating in B, should the pair become linked automatically? |
-| O3 | Unlink then re-link the same product later: allowed by hand, or only through first link again? |
-| O4 | Can the admin change the pair later (e.g. A↔B becomes A↔C)? What happens to existing links? |
-| O5 | A renames to a name that only **looks like** a B product under smart matching (e.g. B has "Hair  Oil" with a double space): refuse like an exact clash, or allow? |
-| O6 | Batches already shared between branches by past transfers: split them into per-branch copies in a migration, or only split new transfers? |
-| O7 | Can a branch be in more than one pair? (Only relevant if more pairs are ever allowed) |
+The owner asked Claude to answer these on their behalf; the answers are written into the sections above.
 
-### 12.13 Suggested order of work
+| # | Question | Answer |
+|---|---|---|
+| O1 | "X" in A is **not the same item** as B's "X", and B can't hold a second "X" | Admin chooses: create B's copy under a **new name** they type, or **don't copy to B** (§12.6) |
+| O2 | Batches already shared by past transfers | **Not migrated**; only new transfers split. Expiry edit on a still-shared old batch warns first (§12.10) |
+| O3 | Transfer of a not-yet-linked A product along an active link | **Auto-link** when both sides are free; never across an exclusion (§12.8) |
+| O4 | How a "needs attention" clash is settled | Link to B's "X" · new name · don't copy (§12.11) |
+| — | Store the smart match key or compute it? | **Stored** `match_key` column, non-unique index (§12.7) |
+| — | Product state shape | Keep `is_active` + add `awaiting_first_stock` (§12.9) |
+| — | Can an awaiting product be sent? | **No** (§12.8) |
+| — | Activation price pre-fill source | Latest transfer line's source product, current price (§12.9) |
+| — | Guaranteeing A's create when B's copy fails | One transaction + a savepoint per copy; retry once on deadlock (§12.11) |
+
+### 12.14 Suggested order of work
 
 1. **P4 money fix** (products + services, server-side), on its own.
 2. Smart name matching helper (P5), used only between branches.
-3. Transfers: link-aware matching, barcode-first for unlinked, P1 copy fields, per-branch batch copies.
-4. Link model + admin setup + first-link review with conflict popup.
-5. Sync on create/rename/description, B-side locks, edit-form note, linked badge, audit in both branches.
+3. Transfers: link-aware matching, barcode-first when not linked, P1 copy fields, per-branch batch copies.
+4. "Awaiting first stock" state + activation (stock > 0, price > 0), with purchases, transfers and the till updated.
+5. Link model (rules in §12.4) + admin setup + conflict popup; new `erp-product-sync` module in the edition registry (on in `erp` and `full`).
+6. Copy-on-create A ⇒ B, "needs attention" list, linked badge, audit in both branches, unlink.

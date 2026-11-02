@@ -26,6 +26,15 @@ export function useSession() {
   });
 }
 
+/**
+ * A Reception login only looks: every create, edit, delete, payment or status
+ * button hides for it. Printing is reading, so print buttons stay.
+ */
+export function useCanEdit() {
+  const actorType = useSession().data?.actor.type;
+  return actorType === 'admin' || actorType === 'cashier';
+}
+
 export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({

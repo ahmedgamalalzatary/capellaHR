@@ -17,7 +17,7 @@ import { clearAllSaleDrafts } from '@/features/sales';
 
 import { useMatchMedia } from '@/lib/use-match-media';
 
-import { adminNavigation, cashierNavigation } from './nav';
+import { adminNavigation, cashierNavigation, receptionNavigation } from './nav';
 import { Sidebar, SIDEBAR_ID } from './sidebar';
 import { Topbar } from './topbar';
 
@@ -28,12 +28,16 @@ export function PosShell({ children }: { children: ReactNode }) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const isAdmin = session.data?.actor.type === 'admin';
   const isCashier = session.data?.actor.type === 'cashier';
+  const isReception = session.data?.actor.type === 'reception';
+  // Cashier and Reception share their branch's one shift.
   const cashierSession = useQuery({
     queryKey: cashierSessionQueryKeys.current(),
     queryFn: () => getCurrentCashierSession(),
-    enabled: isCashier,
+    enabled: isCashier || isReception,
   });
-  const visibleNavigation = isAdmin ? adminNavigation : cashierNavigation;
+  const visibleNavigation = isAdmin
+    ? adminNavigation
+    : isReception ? receptionNavigation : cashierNavigation;
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isWide = useMatchMedia('(min-width: 48rem)');
@@ -82,7 +86,7 @@ export function PosShell({ children }: { children: ReactNode }) {
     };
   }, [isWide, sidebarOpen]);
 
-  const shiftStatus = isCashier ? (
+  const shiftStatus = isCashier || isReception ? (
     <div
       className="flex min-w-0 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-xs"
       aria-live="polite"
@@ -104,22 +108,25 @@ export function PosShell({ children }: { children: ReactNode }) {
         <span className="flex items-center gap-1.5 text-muted">
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-muted" />
           <span className="whitespace-nowrap">لا توجد وردية مفتوحة</span>
-          <Link href="/" className="whitespace-nowrap font-medium text-ink underline">
-            فتح الوردية
-          </Link>
+          {/* Only the cashier opens the shift; Reception waits for it. */}
+          {isCashier ? (
+            <Link href="/" className="whitespace-nowrap font-medium text-ink underline">
+              فتح الوردية
+            </Link>
+          ) : null}
         </span>
       )}
     </div>
   ) : null;
 
-  const accountFooter = isAdmin || isCashier ? (
+  const accountFooter = isAdmin || isCashier || isReception ? (
     <p className="flex items-center gap-2 rounded-control bg-surface px-2.5 py-2 text-[12px] text-muted">
       {isAdmin ? (
         <ShieldCheck className="size-4 shrink-0" aria-hidden />
       ) : (
         <UserRound className="size-4 shrink-0" aria-hidden />
       )}
-      {isAdmin ? 'حساب المدير' : 'حساب كاشير'}
+      {isAdmin ? 'حساب المدير' : isReception ? 'حساب استقبال' : 'حساب كاشير'}
     </p>
   ) : null;
 

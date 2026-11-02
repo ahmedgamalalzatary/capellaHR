@@ -16,7 +16,7 @@ import { SuccessState } from '@/components/feedback/success-state';
 import { Select } from '@/components/form/select';
 import { PageHeader, SectionHeading } from '@/components/layout/page-header';
 
-import { useSession } from '@/features/auth';
+import { useCanEdit, useSession } from '@/features/auth';
 import { listCatalogBranches } from '@/features/catalog';
 import { ProductSyncView, listLinkedProductIds } from '@/features/product-sync';
 import { useAdminBranch } from '@/hooks/use-admin-branch';
@@ -66,6 +66,8 @@ export function ProductStockView() {
    */
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
+  // Reception browses and prints labels only.
+  const canEdit = useCanEdit();
   const [selectedTab, setSelectedTab] = useState<'products' | 'history' | 'links'>('products');
   const tab = !isAdmin && selectedTab === 'links' ? 'products' : selectedTab;
   const tabs = [
@@ -257,7 +259,7 @@ export function ProductStockView() {
       <PageHeader
         title="المنتجات والمخزون"
         description="إدارة الأسعار والأرصدة وحركات المخزون لكل فرع."
-        actions={scopeReady && tab === 'products' ? (
+        actions={canEdit && scopeReady && tab === 'products' ? (
           <Button
             disabled={commandPending}
             onClick={() => { setAdjusting(null); setEditing(null); setCreateOpen(true); }}
@@ -515,10 +517,10 @@ export function ProductStockView() {
                       lowStock ? 'لا يوجد منتج تحت حد المخزون المنخفض.'
                         : search.trim() ? 'جرّب بحثًا آخر.'
                           : productStatus ? 'جرّب تصفية أخرى.'
-                            : 'أضف أول منتج لهذا الفرع.'
+                            : canEdit ? 'أضف أول منتج لهذا الفرع.' : undefined
                     }
                     action={
-                      !lowStock && !search.trim() && !productStatus ? (
+                      canEdit && !lowStock && !search.trim() && !productStatus ? (
                         <Button size="sm" disabled={commandPending} onClick={() => setCreateOpen(true)}>
                           <Plus className="size-4" aria-hidden />
                           إضافة أول منتج
@@ -535,7 +537,7 @@ export function ProductStockView() {
                         <TH>الباركود</TH>
                         <TH numeric>السعر</TH>
                         <TH numeric>التكلفة</TH>
-                        <TH numeric>عمولة البائع %</TH>
+                        {canEdit ? <TH numeric>عمولة البائع %</TH> : null}
                         <TH numeric>الرصيد</TH>
                         <TH pinned>الإجراءات</TH>
                       </THead>
@@ -559,7 +561,7 @@ export function ProductStockView() {
                             <TD className="tabular text-muted">{product.barcode ?? '—'}</TD>
                             <TD numeric>{product.sellingPrice}</TD>
                             <TD numeric className="text-muted">{product.lastPurchaseCost}</TD>
-                            <TD numeric className="text-muted">{product.commissionPercent ?? '0.00'}%</TD>
+                            {canEdit ? <TD numeric className="text-muted">{product.commissionPercent ?? '0.00'}%</TD> : null}
                             <TD numeric className="font-medium">{product.quantity}</TD>
                             <TD pinned>
                               <RowActions>
@@ -567,10 +569,10 @@ export function ProductStockView() {
                                 {isAdmin ? <Button size="sm" disabled={commandPending} onClick={() => { setCreateOpen(false); setEditing(null); setAdjustmentBatches(undefined); setAdjustmentExpiry(''); setAdjusting(product); }}>تسوية</Button> : null}
                                 {product.barcode
                                   ? <Button variant="ghost" size="sm" disabled={commandPending || labelJob !== null} onClick={() => { setLabelCopies('1'); setLabelling(product); }}>طباعة ملصق</Button>
-                                  : <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button>}
+                                  : canEdit ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => generate.mutate(product)}>توليد باركود</Button> : null}
                                 <Button variant="ghost" size="sm" onClick={() => setManagingBatches(product)}>دفعات الصلاحية</Button>
-                                <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => beginEdit(product)}>تعديل</Button>
-                                {product.awaitingFirstStock ? (isAdmin ? (
+                                {canEdit ? <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => beginEdit(product)}>تعديل</Button> : null}
+                                {!canEdit ? null : product.awaitingFirstStock ? (isAdmin ? (
                                   // Activation needs a price, so it opens a dialog
                                   // instead of toggling the state directly.
                                   <Button variant="ghost" size="sm" disabled={commandPending} onClick={() => { setActivationPrice(null); setActivating(product); }}>

@@ -6,11 +6,14 @@ describe('authentication contracts', () => {
   it('requires create credentials but permits keeping the edit password', () => {
     const schema = Reflect.get(contracts, 'saveCashierAccountSchema');
     expect(schema).toBeDefined();
-    const create = { mode: 'create', branchId: 3, username: ' Nasr ', password: 'secret' };
+    const create = { mode: 'create', role: 'cashier', branchId: 3, username: ' Nasr ', password: 'secret' };
     expect(schema.parse(create)).toEqual({ ...create, username: 'nasr' });
+    expect(schema.parse({ ...create, role: 'reception' }).role).toBe('reception');
+    expect(schema.safeParse({ ...create, role: undefined }).success).toBe(false);
+    expect(schema.safeParse({ ...create, role: 'admin' }).success).toBe(false);
     expect(schema.safeParse({ ...create, password: undefined }).success).toBe(false);
     expect(schema.safeParse({ ...create, employeeIds: Array.from({ length: 101 }, (_, index) => index + 1) }).success).toBe(false);
-    const edit = { mode: 'edit', accountId: 5, branchId: 3, username: 'nasr' };
+    const edit = { mode: 'edit', role: 'reception', accountId: 5, branchId: 3, username: 'nasr' };
     expect(schema.parse(edit)).toEqual(edit);
     expect(schema.safeParse({ ...edit, password: '' }).success).toBe(false);
     expect(schema.safeParse({ ...edit, active: true }).success).toBe(false);
@@ -77,6 +80,8 @@ describe('authentication contracts', () => {
     };
 
     expect(contracts.publicCashierAccountSchema.parse(account)).toEqual(account);
+    expect(contracts.publicCashierAccountSchema.parse({ ...account, role: 'reception' }).role).toBe('reception');
+    expect(contracts.publicCashierAccountSchema.safeParse({ ...account, role: 'admin' }).success).toBe(false);
     expect(contracts.publicCashierAccountSchema.safeParse({
       ...account,
       passwordHash: 'must-not-leak',
@@ -93,6 +98,9 @@ describe('authentication contracts', () => {
     expect(contracts.accountSessionDataSchema.parse({
       actor: { type: 'cashier', accountId: 3 },
     })).toEqual({ actor: { type: 'cashier', accountId: 3 } });
+    expect(contracts.accountSessionDataSchema.parse({
+      actor: { type: 'reception', accountId: 4 },
+    })).toEqual({ actor: { type: 'reception', accountId: 4 } });
     expect(contracts.accountSessionDataSchema.safeParse({
       actor: { type: 'cashier', accountId: 3, employeeId: 7 },
     }).success).toBe(false);

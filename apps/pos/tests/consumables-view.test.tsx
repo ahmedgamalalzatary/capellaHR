@@ -14,7 +14,10 @@ vi.mock('../src/features/consumables/api/consumables-api', () => ({
   recordServiceConsumptions: mocks.record,
   configureConsumable: vi.fn(), transferConsumableStock: vi.fn(), correctServiceExecution: vi.fn(),
 }));
-vi.mock('../src/features/auth', () => ({ useSession: mocks.session }));
+vi.mock('../src/features/auth', () => ({
+  useSession: mocks.session,
+  useCanEdit: () => mocks.session().data?.actor.type !== 'reception',
+}));
 vi.mock('../src/features/catalog', () => ({ listCatalogBranches: mocks.branches }));
 vi.mock('../src/features/products', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/features/products')>(), listAllProducts: mocks.products,
@@ -353,5 +356,47 @@ describe('ConsumablesView', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.getByRole('dialog', { name: 'تسجيل مستهلكات 1 خدمة' })).toBeDefined();
+  });
+});
+
+describe('ConsumablesView for reception', () => {
+  beforeEach(() => {
+    mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'reception', accountId: 4 } } });
+  });
+
+  it('shows where each client service stands without any way to change it', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, status: 'pending', queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1', clientName: 'عميل', employeeName: 'موظف' },
+      { id: 12, status: 'in_progress', queueNumber: 2, serviceName: 'صبغة', invoiceNumber: 'INV-2', clientName: 'عميلة', employeeName: 'موظفة' },
+      { id: 13, status: 'completed', queueNumber: 3, serviceName: 'تنظيف', invoiceNumber: 'INV-3', clientName: 'عميل', employeeName: 'موظف' },
+    ]));
+    mount();
+
+    expect(await screen.findByText('صبغة')).toBeDefined();
+    expect(screen.getByText('لم تبدأ')).toBeDefined();
+    expect(screen.getByText('قيد التنفيذ')).toBeDefined();
+    expect(screen.getByText('تمت')).toBeDefined();
+    expect(screen.queryAllByRole('button', { name: /لم تبدأ|قيد التنفيذ|تمت|تغيير الموظف/ })).toEqual([]);
+  });
+
+  it('shows whether consumption was recorded without letting reception record it', async () => {
+    mocks.services.mockResolvedValue(page([
+      { id: 11, serviceId: 5, status: 'completed', consumptionRecorded: false, queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1' },
+    ]));
+    mount();
+
+    fireEvent.click(screen.getByRole('tab', { name: /تسجيل المستهلكات/ }));
+    expect(await screen.findByText('لم تسجل')).toBeDefined();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'اختيار' })).toBeNull();
+  });
+
+  it('shows consumable stock without setup or transfer controls', async () => {
+    mount();
+
+    fireEvent.click(screen.getByRole('tab', { name: /مخزون المستهلكات/ }));
+    expect(await screen.findByText('شامبو')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'إعداد منتج كمستهلك' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'تحويل عبوات كاملة' })).toBeNull();
   });
 });

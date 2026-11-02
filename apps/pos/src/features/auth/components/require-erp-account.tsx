@@ -21,10 +21,13 @@ import { useSession } from '../hooks/use-session';
 export function RequireErpAccount({
   children,
   role,
+  reception = false,
 }: {
   children: ReactNode;
   /** Restrict further to a single ERP role, e.g. admin-only pages like cashier-account management. */
   role?: 'admin';
+  /** Also admit the read-only Reception login (front-desk pages only). */
+  reception?: boolean;
 }) {
   const router = useRouter();
   const session = useSession();
@@ -32,8 +35,9 @@ export function RequireErpAccount({
   const actorType = session.data?.actor.type;
   const isAdmin = actorType === 'admin';
   const isCashier = actorType === 'cashier';
-  const isErpAccount = isAdmin || isCashier;
-  const meetsRole = role === 'admin' ? isAdmin : isErpAccount;
+  const isReception = actorType === 'reception';
+  const isErpAccount = isAdmin || isCashier || isReception;
+  const meetsRole = role === 'admin' ? isAdmin : isAdmin || isCashier || (reception && isReception);
   const isUnauthorizedRole = actorType === 'employee' || (isErpAccount && !meetsRole);
   // Redirect only on a resolved "not signed in at all" answer; network/server
   // failures get a retry state, and an employee/wrong-role session gets its own message.
@@ -75,7 +79,11 @@ export function RequireErpAccount({
               <ShieldAlert className="size-5" aria-hidden />
             </span>
             <p className="text-sm text-danger">
-              {isErpAccount ? 'هذا القسم مخصص للمدير فقط.' : 'هذا الحساب غير مخوّل بالدخول إلى نقطة البيع.'}
+              {!isErpAccount
+                ? 'هذا الحساب غير مخوّل بالدخول إلى نقطة البيع.'
+                : isReception && role !== 'admin'
+                  ? 'هذه الصفحة غير متاحة لحساب الاستقبال.'
+                  : 'هذا القسم مخصص للمدير فقط.'}
             </p>
           </CardContent>
         </Card>
@@ -83,7 +91,7 @@ export function RequireErpAccount({
     );
   }
 
-  if (!isErpAccount) return null;
+  if (!isErpAccount || !meetsRole) return null;
 
   return <>{children}</>;
 }

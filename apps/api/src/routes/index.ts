@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 
 import {
   createAuthMiddleware,
@@ -14,6 +14,7 @@ import {
   type CashierSessionService,
   type SaleService,
 } from '../modules/erp/sales/index.js';
+import { responseRequestId } from '../shared/http/index.js';
 import { createBranchesRouter, type BranchService } from '../modules/branches/index.js';
 import { createEmployeesRouter, type EmployeeService, type EmployeeUploadStore } from '../modules/employees/index.js';
 import { createDevicesRouter, type DeviceService } from '../modules/devices/index.js';
@@ -28,7 +29,7 @@ import { createSelfServiceRouter, type SelfServiceService } from '../modules/sel
 import { createAuditRouter, type AuditService } from '../modules/audit/index.js';
 import { createAttendanceRouter, type AttendanceService, type FaceEnrollmentResult } from '../modules/attendance/index.js';
 import { createDashboardRouter, type DashboardService } from '../modules/dashboard/index.js';
-import { createConsumablesRouter, createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductSyncRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ConsumablesService, type ExpenseService, type FixedAssetService, type ProductStockService, type ProductSyncService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
+import { erpActorFromLocals, createConsumablesRouter, createErpBookingsRouter, createErpClientsRouter, createErpExpensesRouter, createErpFixedAssetsRouter, createErpProductSyncRouter, createErpProductsRouter, createErpStockTransfersRouter, createErpSuppliersRouter, type BookingService, type ClientService, type ConsumablesService, type ExpenseService, type FixedAssetService, type ProductStockService, type ProductSyncService, type StockTransferService, type SupplierPurchaseService } from '../modules/erp/index.js';
 import {
   createErpCategoriesRouter,
   createErpServicesRouter,
@@ -43,6 +44,37 @@ import {
   createCommissionRouter,
   type CommissionService,
 } from '../modules/erp/commissions/index.js';
+
+/**
+ * Reception works inside the branch shift the cashier opened: with no open
+ * shift it is held out of every front-desk area. Other accounts pass through.
+ * Without a shift service there is no way to prove a shift is open, so
+ * Reception stays out.
+ */
+const receptionNeedsOpenShift = (shifts: CashierSessionService | undefined): RequestHandler => (
+  async (_request, response, next) => {
+    if ((response.locals.actor as { type?: string } | undefined)?.type !== 'reception') {
+      next();
+      return;
+    }
+    try {
+      const identity = erpActorFromLocals(response.locals.actor);
+      if (shifts && identity && await shifts.current(identity)) {
+        next();
+        return;
+      }
+      response.status(409).json({
+        error: {
+          code: 'ERP_RECEPTION_SHIFT_CLOSED',
+          message: 'لا توجد وردية مفتوحة. اطلب من الكاشير فتح الوردية.',
+          requestId: responseRequestId(response),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export const createApiRouter = (dependencies: {
   authService?: AuthService;
@@ -166,12 +198,19 @@ export const createApiRouter = (dependencies: {
     }
     // ERP modules may not import the HR auth middleware, so the composition
     // root authenticates and each ERP router consumes only the resolved actor.
+    // `requireErpReader` marks the front-desk areas a read-only Reception login
+    // may look at; every other area stays behind `requireErpAccount`.
+    const openShift = receptionNeedsOpenShift(dependencies.cashierSessionService);
     if (dependencies.cashierSessionService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
       router.use(
         '/erp/cashier-sessions',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        // Reception shares the cashier's shift: it may see whether one is open,
+        // never open, close, list or report on one.
+        (request, response, next) => (request.method === 'GET' && request.path === '/current'
+          ? erpAuth.requireErpReader
+          : erpAuth.requireErpAccount)(request, response, next),
         createCashierSessionsRouter(dependencies.cashierSessionService),
       );
     }
@@ -189,7 +228,8 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/sales',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        erpAuth.requireErpReader,
+        openShift,
         createErpSalesRouter(dependencies.erpSaleService),
       );
     }
@@ -207,7 +247,8 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/clients',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        erpAuth.requireErpReader,
+        openShift,
         createErpClientsRouter(dependencies.erpClientService),
       );
     }
@@ -216,7 +257,8 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/bookings',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        erpAuth.requireErpReader,
+        openShift,
         createErpBookingsRouter(dependencies.erpBookingService),
       );
     }
@@ -225,16 +267,24 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/categories',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        erpAuth.requireErpReader,
+        openShift,
         createErpCategoriesRouter(dependencies.erpCategoryService),
       );
     }
     if (dependencies.erpServiceCatalogService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
+      // Per-employee commission rates are pay data, not catalog browsing.
+      router.use(
+        '/erp/services/:id/commission-overrides',
+        erpAuth.authenticate,
+        erpAuth.requireErpAccount,
+      );
       router.use(
         '/erp/services',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        erpAuth.requireErpReader,
+        openShift,
         createErpServicesRouter(dependencies.erpServiceCatalogService),
       );
     }
@@ -243,13 +293,14 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/products',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        erpAuth.requireErpReader,
+        openShift,
         createErpProductsRouter(dependencies.erpProductStockService),
       );
     }
     if (dependencies.erpConsumablesService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
-      router.use('/erp/consumables', erpAuth.authenticate, erpAuth.requireErpAccount, createConsumablesRouter(dependencies.erpConsumablesService));
+      router.use('/erp/consumables', erpAuth.authenticate, erpAuth.requireErpReader, openShift, createConsumablesRouter(dependencies.erpConsumablesService));
     }
     if (dependencies.erpSupplierPurchaseService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);

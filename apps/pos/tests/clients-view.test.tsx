@@ -6,7 +6,9 @@ import { ApiError } from '../src/lib/api/client';
 
 const mocks = vi.hoisted(() => ({
   actor: { current: { type: 'cashier', accountId: 3, employeeId: 9 } as
-    { type: 'cashier'; accountId: number; employeeId: number } | { type: 'admin'; accountId: number } },
+    { type: 'cashier'; accountId: number; employeeId: number }
+    | { type: 'admin'; accountId: number }
+    | { type: 'reception'; accountId: number } },
   listClients: vi.fn(),
   listClientBranches: vi.fn(),
   createClient: vi.fn(),
@@ -17,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../src/features/auth', () => ({
   useSession: () => ({ isSuccess: true, data: { actor: mocks.actor.current } }),
+  useCanEdit: () => mocks.actor.current.type !== 'reception',
 }));
 
 vi.mock('../src/features/clients/api/clients-api', async (importOriginal) => ({
@@ -308,4 +311,26 @@ describe('ClientsView', () => {
       expect(mocks.listClients.mock.calls.at(-1)?.[0]).toMatchObject({ page: 2 });
     });
   });
+});
+
+test('lets reception search clients and open their unpaid invoices without changing anyone', async () => {
+  mocks.actor.current = { type: 'reception', accountId: 4 };
+  renderView();
+
+  expect(await screen.findByText('ندى سمير')).toBeDefined();
+  for (const name of ['إضافة عميل', 'تعديل', 'حذف']) {
+    expect(screen.queryByRole('button', { name })).toBeNull();
+  }
+  fireEvent.change(screen.getByLabelText('بحث بالاسم أو رقم الهاتف'), { target: { value: 'ندى' } });
+  fireEvent.click(await screen.findByRole('button', { name: /عرض الفواتير غير المسددة/ }));
+  expect(await screen.findByText('INV-2026.09.15-12.00-1')).toBeDefined();
+});
+
+test('offers reception no way to add the first client to an empty list', async () => {
+  mocks.actor.current = { type: 'reception', accountId: 4 };
+  mocks.listClients.mockResolvedValue(pageOf([]));
+  renderView();
+
+  expect(await screen.findByText('لا يوجد عملاء بعد')).toBeDefined();
+  expect(screen.queryByRole('button', { name: 'إضافة أول عميل' })).toBeNull();
 });
