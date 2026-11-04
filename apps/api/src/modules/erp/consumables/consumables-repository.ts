@@ -1,5 +1,6 @@
 import { type createDatabase } from '@capella/database';
 import {
+  accounts,
   cashierSessions,
   erpConsumableBalances,
   erpConsumableConfigurations,
@@ -214,7 +215,15 @@ export const createDrizzleConsumablesRepository = (
     if (query.employeeId) filters.push(eq(serviceQueueEntries.employeeId, query.employeeId));
     if (query.consumptionStatus === 'recorded') filters.push(consumptionRecorded);
     if (query.consumptionStatus === 'unrecorded') filters.push(sql`not ${consumptionRecorded}`);
-    if (openedByAccountId !== undefined) filters.push(eq(cashierSessions.openedByAccountId, openedByAccountId));
+    if (openedByAccountId !== undefined) {
+      // Reception never opens a shift: it works inside the branch shift the
+      // cashier opened, so it sees the branch's services rather than its own.
+      const viewer = (await database.select({ role: accounts.role, branchId: accounts.branchId })
+        .from(accounts).where(eq(accounts.id, openedByAccountId)).limit(1))[0];
+      if (viewer?.role !== 'reception' || viewer.branchId !== branchId) {
+        filters.push(eq(cashierSessions.openedByAccountId, openedByAccountId));
+      }
+    }
     if (query.search) filters.push(or(like(invoices.invoiceNumber, `%${query.search}%`), like(invoices.clientNameSnapshot, `%${query.search}%`))!);
     const where = and(...filters);
     const rows = await database.select({

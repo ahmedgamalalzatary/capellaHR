@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ErpHomeView } from '../src/components/shell/erp-home-view';
 import { PosShell } from '../src/components/shell/pos-shell';
 import { ReceptionGate } from '../src/components/shell/reception-gate';
+import SuppliersLayout from '../src/app/(protected)/suppliers/layout';
 import { RequireErpAccount, useCanEdit } from '../src/features/auth';
 
 const { replaceMock, getSessionMock, getCurrentSessionMock, pathname } = vi.hoisted(() => ({
@@ -70,14 +71,14 @@ beforeEach(() => {
 });
 
 describe('reception login', () => {
-  test('gets only the shift and the six front-desk pages in its menu', async () => {
+  test('gets only the shift, the front-desk pages and suppliers in its menu', async () => {
     renderWithQuery(<PosShell><p>المحتوى</p></PosShell>);
 
     await screen.findByText('حساب استقبال');
     const hrefs = screen.getAllByRole('link')
       .map((link) => new URL((link as HTMLAnchorElement).href).pathname);
     expect(new Set(hrefs)).toEqual(new Set([
-      '/', '/invoices', '/bookings', '/clients', '/catalog', '/products', '/consumables',
+      '/', '/invoices', '/bookings', '/clients', '/catalog', '/products', '/consumables', '/suppliers',
     ]));
     expect(screen.queryByRole('link', { name: 'العمولات' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'بيع جديد' })).toBeNull();
@@ -103,7 +104,7 @@ describe('reception login', () => {
     },
   );
 
-  test.each(['/invoices', '/invoices/12', '/bookings', '/clients', '/catalog', '/products', '/consumables'])(
+  test.each(['/invoices', '/invoices/12', '/bookings', '/clients', '/catalog', '/products', '/consumables', '/suppliers'])(
     'works on %s while the shared shift is open',
     async (path) => {
       pathname.current = path;
@@ -113,8 +114,8 @@ describe('reception login', () => {
     },
   );
 
-  test('is held on the front-desk pages until the cashier opens the shift', async () => {
-    pathname.current = '/clients';
+  test.each(['/clients', '/suppliers'])('is held on %s until the cashier opens the shift', async (path) => {
+    pathname.current = path;
     getCurrentSessionMock.mockResolvedValue(null);
     renderWithQuery(<ReceptionGate><p>صفحة الاستقبال</p></ReceptionGate>);
 
@@ -159,6 +160,12 @@ describe('reception login', () => {
     expect(await screen.findByText('مسموح')).toBeDefined();
     expect(screen.queryByText('ممنوع')).toBeNull();
     await waitFor(() => expect(replaceMock).not.toHaveBeenCalled());
+  });
+
+  test('is let onto the suppliers page', async () => {
+    renderWithQuery(<SuppliersLayout><p>الموردون</p></SuppliersLayout>);
+
+    expect(await screen.findByText('الموردون')).toBeDefined();
   });
 
   test('is read-only while cashier and admin can still edit', async () => {

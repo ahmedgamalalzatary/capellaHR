@@ -38,8 +38,9 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
   const queryClient = useQueryClient();
   const session = useSession();
   const isAdmin = session.data?.actor.type === 'admin';
-  // Reception reads and prints only.
+  // Reception reads and prints; its one change is moving an unfinished service to another employee.
   const canEdit = useCanEdit();
+  const isReception = session.data?.actor.type === 'reception';
   const validBranch = branchId === undefined || (Number.isInteger(branchId) && branchId > 0);
   const query = useQuery({
     queryKey: salesQueryKeys.invoice(invoiceId, branchId),
@@ -210,7 +211,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
         </CardContent>
       </Card>
     ) : null}
-    {canEdit && (query.data.status === 'completed' || query.data.status === 'partially_refunded')
+    {(canEdit || isReception) && (query.data.status === 'completed' || query.data.status === 'partially_refunded')
       && query.data.lines.some((line) => line.itemType === 'service') ? (
       <Card data-print-controls className="mx-auto max-w-2xl">
         <CardContent className="space-y-2 p-4">
@@ -225,6 +226,7 @@ export function InvoiceReceiptView({ invoiceId, branchId }: { invoiceId: number;
       <ServiceStatusDialog
         invoiceId={query.data.id}
         isAdmin={isAdmin}
+        statusEditable={canEdit}
         {...(branchId === undefined ? {} : { branchId })}
         onClose={() => setServiceStatusOpen(false)}
       />

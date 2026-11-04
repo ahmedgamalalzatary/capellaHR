@@ -21,8 +21,9 @@ export const erpActorFromLocals = (actor: unknown): ErpAccountIdentity | null =>
   if (typeof accountId !== 'number') return null;
 
   if (type === 'admin') return { role: 'admin', accountId };
-  // Reception reads with the same own-branch scope as the branch cashier. The
-  // composition root only lets it through on read requests (`requireErpReader`).
+  // Reception works with the same own-branch scope as the branch cashier. The
+  // composition root decides what it may do (`requireErpReader` reads only,
+  // `requireErpFrontDesk` also changes) and holds it to the cashier's open shift.
   if ((type === 'cashier' || type === 'reception') && typeof branchId === 'number') {
     return { role: 'cashier', accountId, branchId };
   }

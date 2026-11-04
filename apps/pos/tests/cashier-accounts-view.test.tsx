@@ -100,7 +100,7 @@ describe('unified cashier account management', () => {
     ]));
     renderView();
     const desk = (await screen.findByText('desk')).closest('tr')!;
-    expect(within(desk).getByText('استقبال (عرض فقط)')).toBeDefined();
+    expect(within(desk).getByText('استقبال')).toBeDefined();
     expect(within(screen.getByText('nasr').closest('tr')!).getByText('كاشير')).toBeDefined();
   });
   test('creates a read-only reception login for a branch that already has a cashier', async () => {

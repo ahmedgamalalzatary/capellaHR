@@ -241,10 +241,26 @@ describe('stored invoice receipt', () => {
     fireEvent.click(screen.getByRole('button', { name: /طباعة المحدد/ }));
     await waitFor(() => expect(print).toHaveBeenCalledOnce());
     expect(screen.getByText('رصيد مستحق على العميل')).toBeDefined();
-    for (const name of ['تسجيل دفعة', 'حالة الخدمة', 'إلغاء الفاتورة', 'استرداد', 'إنشاء PDF A4']) {
+    for (const name of ['تسجيل دفعة', 'إلغاء الفاتورة', 'استرداد', 'إنشاء PDF A4']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
     expect(screen.queryByText('افتح وردية لتسجيل دفعة')).toBeNull();
+  });
+
+  it('lets reception change the employee of an unfinished service but not its status', async () => {
+    reportExports.actor.current = 'reception';
+    listConsumableServices.mockResolvedValue({ items: [
+      { id: 31, invoiceId: 1, status: 'pending', queueNumber: 1, serviceName: 'قص شعر', employeeName: 'موظف', employeeId: 2 },
+      { id: 32, invoiceId: 1, status: 'completed', queueNumber: 2, serviceName: 'صبغة', employeeName: 'موظفة', employeeId: 3 },
+    ], meta: { page: 1, pageSize: 100, total: 2, totalPages: 1 } });
+    renderView();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'حالة الخدمة' }));
+    const dialog = await screen.findByRole('dialog', { name: 'حالة خدمات الفاتورة' });
+    expect(await within(dialog).findByText('قص شعر')).toBeDefined();
+    expect(within(dialog).getAllByRole('button', { name: 'تغيير الموظف' })).toHaveLength(1);
+    expect(within(dialog).queryAllByRole('button', { name: /لم تبدأ|قيد التنفيذ|^تمت$/ })).toEqual([]);
+    expect(within(dialog).getByText('لم تبدأ')).toBeDefined();
   });
 
   it('announces the invoice loading state accessibly', () => {

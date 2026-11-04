@@ -198,8 +198,9 @@ export const createApiRouter = (dependencies: {
     }
     // ERP modules may not import the HR auth middleware, so the composition
     // root authenticates and each ERP router consumes only the resolved actor.
-    // `requireErpReader` marks the front-desk areas a read-only Reception login
-    // may look at; every other area stays behind `requireErpAccount`.
+    // `requireErpReader` marks the front-desk areas a Reception login may look
+    // at, `requireErpFrontDesk` those it may also change; every other area stays
+    // behind `requireErpAccount`.
     const openShift = receptionNeedsOpenShift(dependencies.cashierSessionService);
     if (dependencies.cashierSessionService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
@@ -228,7 +229,12 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/sales',
         erpAuth.authenticate,
-        erpAuth.requireErpReader,
+        // Reception reads invoices; the one change it may make is moving an
+        // unfinished service to another employee (the repository refuses done ones).
+        (request, response, next) => (request.method === 'POST'
+          && /^\/invoices\/[^/]+\/queue\/[^/]+\/reassign$/.test(request.path)
+          ? erpAuth.requireErpFrontDesk
+          : erpAuth.requireErpReader)(request, response, next),
         openShift,
         createErpSalesRouter(dependencies.erpSaleService),
       );
@@ -304,7 +310,7 @@ export const createApiRouter = (dependencies: {
     }
     if (dependencies.erpSupplierPurchaseService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
-      router.use('/erp/suppliers', erpAuth.authenticate, erpAuth.requireErpAccount, createErpSuppliersRouter(dependencies.erpSupplierPurchaseService));
+      router.use('/erp/suppliers', erpAuth.authenticate, erpAuth.requireErpFrontDesk, openShift, createErpSuppliersRouter(dependencies.erpSupplierPurchaseService));
     }
     if (dependencies.erpStockTransferService) {
       const erpAuth = createAuthMiddleware(dependencies.authService);
@@ -341,7 +347,9 @@ export const createApiRouter = (dependencies: {
       router.use(
         '/erp/assignable-employees',
         erpAuth.authenticate,
-        erpAuth.requireErpAccount,
+        // Reception picks the new employee when it moves a service.
+        erpAuth.requireErpReader,
+        openShift,
         createErpAssignmentRouter(dependencies.erpAssignmentService),
       );
     }

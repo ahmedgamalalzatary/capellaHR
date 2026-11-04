@@ -235,13 +235,18 @@ export const createSaleRepositoryReassignments = (
         const account = (await transaction.select().from(accounts).where(
           eq(accounts.id, operation.actingAccountId),
         ).limit(1))[0];
-        if (!account || !account.active || account.role !== operation.actingAccountRole) {
+        // Reception acts with the branch cashier's identity, inside the shift the
+        // cashier opened (it never opens one of its own).
+        const isReception = operation.actingAccountRole === 'cashier'
+          && account?.role === 'reception' && account.branchId === ticket.branchId;
+        if (!account || !account.active
+          || (account.role !== operation.actingAccountRole && !isReception)) {
           throw new SaleError('INVOICE_NOT_REASSIGNABLE');
         }
         if (operation.actingAccountRole === 'cashier') {
           const session = (await transaction.select().from(cashierSessions).where(and(
             eq(cashierSessions.branchId, ticket.branchId),
-            eq(cashierSessions.openedByAccountId, operation.actingAccountId),
+            ...(isReception ? [] : [eq(cashierSessions.openedByAccountId, operation.actingAccountId)]),
             isNull(cashierSessions.closedAt),
             lte(cashierSessions.openedAt, operation.reassignedAt),
             gt(cashierSessions.openedAt,

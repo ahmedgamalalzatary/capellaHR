@@ -82,5 +82,19 @@ export const createAuthMiddleware = (service: Pick<AuthService, 'authenticate'>)
     requireErpAccount(request, response, next);
   };
 
-  return { authenticate, requireAdmin, requireEmployee, requireErpAccount, requireErpReader };
+  /**
+   * Areas where a Reception login works like the cashier (read and change).
+   * The composition root still holds it to the shift the cashier opened.
+   */
+  const requireErpFrontDesk: RequestHandler = (request, response, next) => {
+    if ((response.locals.actor as { type?: string } | undefined)?.type === 'reception') {
+      next();
+      return;
+    }
+    requireErpAccount(request, response, next);
+  };
+
+  return {
+    authenticate, requireAdmin, requireEmployee, requireErpAccount, requireErpReader, requireErpFrontDesk,
+  };
 };

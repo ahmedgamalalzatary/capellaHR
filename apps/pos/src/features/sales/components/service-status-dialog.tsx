@@ -24,11 +24,14 @@ export function ServiceStatusDialog({
   invoiceId,
   branchId,
   isAdmin,
+  statusEditable = true,
   onClose,
 }: {
   invoiceId: number;
   branchId?: number;
   isAdmin: boolean;
+  /** Reception sees where each service stands and may only change its employee. */
+  statusEditable?: boolean;
   onClose(): void;
 }) {
   const [reassigning, setReassigning] = useState<ConsumableServiceExecution | null>(null);
@@ -66,7 +69,8 @@ export function ServiceStatusDialog({
           {(item.status !== 'canceled' && (item.status !== 'completed' || isAdmin)) ? <Button size="sm" variant="secondary" onClick={() => setReassigning(item)}>تغيير الموظف</Button> : null}
           {item.status === 'completed' ? <Badge variant="success">تمت</Badge> : item.status === 'canceled' ? (
             <Badge variant="danger">ملغاة</Badge>
-          ) : <div className="flex flex-wrap gap-1">
+          ) : !statusEditable ? <Badge variant={item.status === 'overdue' ? 'warning' : 'neutral'}>{item.status === 'in_progress' ? 'قيد التنفيذ' : item.status === 'overdue' ? 'متأخرة' : 'لم تبدأ'}</Badge>
+          : <div className="flex flex-wrap gap-1">
             <Button size="sm" variant={item.status === 'pending' ? 'secondary' : 'ghost'} disabled={mutation.isPending} onClick={() => mutation.mutate({ item, status: 'pending' })}>لم تبدأ</Button>
             <Button size="sm" variant={item.status === 'in_progress' ? 'secondary' : 'ghost'} disabled={mutation.isPending} onClick={() => mutation.mutate({ item, status: 'in_progress' })}>قيد التنفيذ</Button>
             <Button size="sm" disabled={mutation.isPending} onClick={() => mutation.mutate({ item, status: 'completed' })}>تمت</Button>

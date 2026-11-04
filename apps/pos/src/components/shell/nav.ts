@@ -117,6 +117,7 @@ export const receptionNavigation: NavGroup[] = [
       { href: '/catalog', label: 'الكتالوج', icon: LayoutList },
       { href: '/products', label: 'المنتجات والمخزون', icon: Package },
       { href: '/consumables', label: 'خدمات العملاء والمستهلكات', icon: PackageOpen },
+      { href: '/suppliers', label: 'الموردون والمشتريات', icon: Truck },
     ],
   },
 ];

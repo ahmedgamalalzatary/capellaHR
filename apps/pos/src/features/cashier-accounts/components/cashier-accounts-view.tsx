@@ -71,7 +71,7 @@ export function CashierAccountsView() {
     <section className="space-y-6">
       <PageHeader
         title="حسابات كاشير الفروع"
-        description="لكل فرع حساب كاشير، ويمكن إضافة حساب استقبال للعرض فقط."
+        description="لكل فرع حساب كاشير، ويمكن إضافة حساب استقبال."
         actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden />إضافة حساب</Button>}
       />
 

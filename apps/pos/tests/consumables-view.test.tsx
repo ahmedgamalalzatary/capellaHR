@@ -364,7 +364,7 @@ describe('ConsumablesView for reception', () => {
     mocks.session.mockReturnValue({ isSuccess: true, data: { actor: { type: 'reception', accountId: 4 } } });
   });
 
-  it('shows where each client service stands without any way to change it', async () => {
+  it('shows where each client service stands without letting reception change its status', async () => {
     mocks.services.mockResolvedValue(page([
       { id: 11, status: 'pending', queueNumber: 1, serviceName: 'قص شعر', invoiceNumber: 'INV-1', clientName: 'عميل', employeeName: 'موظف' },
       { id: 12, status: 'in_progress', queueNumber: 2, serviceName: 'صبغة', invoiceNumber: 'INV-2', clientName: 'عميلة', employeeName: 'موظفة' },
@@ -376,7 +376,9 @@ describe('ConsumablesView for reception', () => {
     expect(screen.getByText('لم تبدأ')).toBeDefined();
     expect(screen.getByText('قيد التنفيذ')).toBeDefined();
     expect(screen.getByText('تمت')).toBeDefined();
-    expect(screen.queryAllByRole('button', { name: /لم تبدأ|قيد التنفيذ|تمت|تغيير الموظف/ })).toEqual([]);
+    expect(screen.queryAllByRole('button', { name: /لم تبدأ|قيد التنفيذ|تمت/ })).toEqual([]);
+    // Reception may move a service to another employee only before it is done.
+    expect(screen.getAllByRole('button', { name: 'تغيير الموظف' })).toHaveLength(2);
   });
 
   it('shows whether consumption was recorded without letting reception record it', async () => {

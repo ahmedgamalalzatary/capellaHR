@@ -44,7 +44,7 @@ const serviceStatusLabel: Record<ConsumableServiceExecution['status'], string> =
   pending: 'لم تبدأ', in_progress: 'قيد التنفيذ', completed: 'تمت', overdue: 'متأخرة', canceled: 'ملغاة',
 };
 
-function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPending, page, totalPages, onPage, isAdmin, canEdit, onReassign }: {
+function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPending, page, totalPages, onPage, isAdmin, canEdit, canReassign, onReassign }: {
   items: ConsumableServiceExecution[]; mode: 'status' | 'consumables'; selected: number[];
   onToggle: (item: ConsumableServiceExecution) => void;
   onStatus: (item: ConsumableServiceExecution, status: 'pending' | 'in_progress' | 'completed') => void;
@@ -53,8 +53,10 @@ function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPendin
   totalPages: number;
   onPage: (page: number) => void;
   isAdmin: boolean;
-  /** Reception reads only: plain status labels, no selection. */
+  /** Reception: plain status labels, no selection. */
   canEdit: boolean;
+  /** Reception may still move an unfinished service to another employee. */
+  canReassign: boolean;
   onReassign: (item: ConsumableServiceExecution) => void;
 }) {
   const selectable = mode === 'consumables' && canEdit;
@@ -66,7 +68,7 @@ function ServicesTable({ items, mode, selected, onToggle, onStatus, statusPendin
     <TD>{item.clientName ?? item.clientPhone ?? '—'}</TD><TD>{item.employeeName ?? '—'}</TD><TD>{item.invoiceNumber}</TD>
     <TD>
       {mode === 'consumables' ? <Badge variant={item.consumptionRecorded ? 'success' : 'warning'}>{item.consumptionRecorded ? 'مسجلة' : 'لم تسجل'}</Badge>
-        : !canEdit ? <Badge variant={item.status === 'completed' ? 'success' : item.status === 'overdue' ? 'warning' : 'neutral'}>{serviceStatusLabel[item.status]}</Badge>
+        : !canEdit ? <div className="flex flex-wrap items-center gap-1"><Badge variant={item.status === 'completed' ? 'success' : item.status === 'overdue' ? 'warning' : 'neutral'}>{serviceStatusLabel[item.status]}</Badge>{canReassign && item.status !== 'completed' && item.status !== 'canceled' ? <Button size="sm" variant="ghost" className="status-action-quiet" onClick={() => onReassign(item)}>تغيير الموظف</Button> : null}</div>
         : item.status === 'completed' ? <div className="flex flex-wrap items-center gap-1"><Badge variant="success">تمت</Badge>{isAdmin ? <Button size="sm" variant="ghost" className="status-action-quiet" onClick={() => onReassign(item)}>تغيير الموظف</Button> : null}</div>
           : <div className="flex flex-wrap items-center gap-1">
             <Button size="sm" aria-pressed={item.status === 'pending'} className="status-action-pending" disabled={statusPending} onClick={() => onStatus(item, 'pending')}>لم تبدأ</Button>
@@ -186,8 +188,9 @@ function StockPanel({ branchId, balances, allBalances, meta, onPage, refresh, is
 
 export function ConsumablesView() {
   const cache = useQueryClient(); const session = useSession(); const { branchId, setBranchId, isAdmin } = useAdminBranch();
-  // Reception follows client services and stock without changing them.
+  // Reception follows client services and stock; its one change is moving an unfinished service to another employee.
   const canEdit = useCanEdit();
+  const isReception = session.data?.actor.type === 'reception';
   const search = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search);
   // Deep links (e.g. product label → ?productId=&branchId=) adopt their branch once, then shared state takes over.
   useEffect(() => {
@@ -241,7 +244,7 @@ export function ConsumablesView() {
   return <section className="space-y-6"><PageHeader title="خدمات العملاء والمستهلكات" description={canEdit ? 'تابع خدمات العملاء، سجّل استهلاكها، وأدر رصيد المنتجات المستخدمة.' : 'تابع خدمات العملاء ورصيد المنتجات المستخدمة.'} />
     {isAdmin ? <Card><CardContent className="space-y-1.5 p-4"><Label htmlFor="consumables-branch">الفرع</Label><Select id="consumables-branch" className="max-w-sm" disabled={branches.isPending || branches.isError} value={branchId ?? ''} onChange={(event) => { setBranchId(event.target.value ? Number(event.target.value) : undefined); clearSelection(); setStatusPage(1); setConsumablesPage(1); setStockPage(1); }}><option value="">اختر الفرع</option>{branches.data?.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select>{branches.isError ? <FieldError>تعذر تحميل الفروع. <Button variant="secondary" size="sm" className="mt-2" onClick={() => void branches.refetch()}>إعادة المحاولة</Button></FieldError> : null}</CardContent></Card> : null}
     <div role="tablist" aria-label="خدمات العملاء والمستهلكات" className="flex gap-1 overflow-x-auto border-b border-line"><TabButton active={tab === 'status'} onClick={() => changeTab('status')}><Clock3 className="size-4" />حالة الخدمات</TabButton><TabButton active={tab === 'consumables'} onClick={() => changeTab('consumables')}><CheckCircle2 className="size-4" />تسجيل المستهلكات</TabButton><TabButton active={tab === 'stock'} onClick={() => changeTab('stock')}><PackageOpen className="size-4" />مخزون المستهلكات</TabButton></div>
-    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : balances.isError ? <LoadError message="تعذر تحميل أرصدة المستهلكات." onRetry={() => void balances.refetch()} /> : <StockPanel branchId={branchId} balances={balances.data?.items ?? []} allBalances={balanceOptions.data ?? []} meta={{ page: balances.data?.meta.page ?? stockPage, totalPages: balances.data?.meta.totalPages ?? 1 }} onPage={setStockPage} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : services.isError ? <LoadError className="m-4" message="تعذر تحميل خدمات العملاء." onRetry={() => void services.refetch()} /> : <ServicesTable items={services.data?.items ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} page={services.data?.meta.page ?? (tab === 'consumables' ? consumablesPage : statusPage)} totalPages={services.data?.meta.totalPages ?? 1} onPage={tab === 'consumables' ? setConsumablesPage : setStatusPage} onStatus={(item, status) => statusMutation.mutate({ item, status })} isAdmin={isAdmin} canEdit={canEdit} onReassign={setReassigning} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
+    {!session.isSuccess ? <LoadingState label="جارٍ التحقق من الجلسة…" /> : !ready ? <EmptyState title="اختر فرعاً للمتابعة" /> : tab === 'stock' ? (balances.isPending ? <LoadingState label="جارٍ تحميل المستهلكات…" /> : balances.isError ? <LoadError message="تعذر تحميل أرصدة المستهلكات." onRetry={() => void balances.refetch()} /> : <StockPanel branchId={branchId} balances={balances.data?.items ?? []} allBalances={balanceOptions.data ?? []} meta={{ page: balances.data?.meta.page ?? stockPage, totalPages: balances.data?.meta.totalPages ?? 1 }} onPage={setStockPage} refresh={refresh} isAdmin={isAdmin} {...(productId === undefined ? {} : { initialProductId: productId })} />) : <Card><CardContent className="p-0">{selectionHint ? <p role="status" className="border-b border-line px-4 py-2 text-[13px] text-warning">{selectionHint}</p> : null}{services.isPending ? <LoadingState label="جارٍ تحميل خدمات العملاء…" /> : services.isError ? <LoadError className="m-4" message="تعذر تحميل خدمات العملاء." onRetry={() => void services.refetch()} /> : <ServicesTable items={services.data?.items ?? []} mode={tab} selected={selected} onToggle={toggle} statusPending={statusMutation.isPending} page={services.data?.meta.page ?? (tab === 'consumables' ? consumablesPage : statusPage)} totalPages={services.data?.meta.totalPages ?? 1} onPage={tab === 'consumables' ? setConsumablesPage : setStatusPage} onStatus={(item, status) => statusMutation.mutate({ item, status })} isAdmin={isAdmin} canEdit={canEdit} canReassign={canEdit || isReception} onReassign={setReassigning} />}{statusMutation.isError ? <FieldError>{errorText(statusMutation.error)}</FieldError> : null}</CardContent></Card>}
     {canEdit && tab === 'consumables' && selected.length && ready ? (
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-card border border-line bg-paper p-3 shadow-raised pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <span role="status" className="tabular me-auto text-sm font-medium text-ink">{`${selected.length} محددة`}</span>

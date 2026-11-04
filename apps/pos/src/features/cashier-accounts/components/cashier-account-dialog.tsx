@@ -17,7 +17,7 @@ import { branchCashierCredentialsFormSchema, editCashierCredentialsFormSchema } 
 /** Each branch holds one login of each kind. */
 export const branchAccountRoleLabels: Record<BranchAccountRole, string> = {
   cashier: 'كاشير',
-  reception: 'استقبال (عرض فقط)',
+  reception: 'استقبال',
 };
 
 const message = (error: unknown) => error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع. حاول مرة أخرى.';
@@ -100,7 +100,7 @@ export function CashierAccountDialog({ account, onClose }: { account: CashierAcc
             </Select>
           )}
           {!account && role === 'reception'
-            ? <p className="text-xs text-muted">يرى الفواتير والمواعيد والعملاء والكتالوج والمنتجات والمستهلكات دون أي تعديل، ويعمل فقط أثناء وردية الكاشير المفتوحة.</p>
+            ? <p className="text-xs text-muted">يرى الفواتير والمواعيد والعملاء والكتالوج والمنتجات والمستهلكات، ويغيّر موظف الخدمة قبل انتهائها، ويدير الموردين والمشتريات. يعمل فقط أثناء وردية الكاشير المفتوحة.</p>
             : null}
         </Field>
         <Field label="الفرع" htmlFor="cashier-branch" required>

@@ -102,6 +102,11 @@ describe('consumables MySQL inventory integration', () => {
     expect(assigned.map((item) => (item as { id: number }).id)).toEqual([queueIds[1]]);
     expect(assigned[0]).toMatchObject({ employeeId: reassignedEmployeeId, employeeName: 'Reassigned Employee' });
     expect((await repository.listServices(data.branchId, { status: 'unfinished', page: 1, pageSize: 20 })).total).toBe(3);
+    // Reception never opens a shift; it sees the services of the shift it shares with the cashier.
+    const receptionId = Number((await database.insert(accounts).values({ username: `reception-${Date.now()}`, passwordHash: 'unused', role: 'reception', branchId: data.branchId, createdAt: at, updatedAt: at }))[0].insertId);
+    expect((await repository.listServices(data.branchId, { status: 'unfinished', page: 1, pageSize: 20 }, receptionId)).total).toBe(3);
+    const otherCashierId = Number((await database.insert(accounts).values({ username: `other-cashier-${Date.now()}`, passwordHash: 'unused', role: 'cashier', branchId: data.branchId, active: false, createdAt: at, updatedAt: at }))[0].insertId);
+    expect((await repository.listServices(data.branchId, { status: 'unfinished', page: 1, pageSize: 20 }, otherCashierId)).total).toBe(0);
 
     await expect(repository.correct({ branchId: data.branchId, accountId, accountRole: 'admin', serviceQueueEntryId: queueIds[0]!, reason: 'Too early', usages: [] }))
       .rejects.toMatchObject({ code: 'CONSUMABLE_SERVICE_NOT_COMPLETED' });

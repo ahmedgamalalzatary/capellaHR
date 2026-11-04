@@ -83,14 +83,12 @@ const readableAreas = [
 const closedAreas = [
   '/erp/commissions',
   '/erp/expenses',
-  '/erp/suppliers',
   '/erp/stock-transfers',
   '/erp/cashier-sessions',
   '/erp/cashier-sessions/9',
   '/erp/cashier-sessions/9/report',
   '/erp/cashier-sessions/9/invoices',
   '/erp/branch-cashier-roster',
-  '/erp/assignable-employees',
   '/erp/fixed-assets',
   '/erp/product-sync/links',
 ];
@@ -162,6 +160,70 @@ describe('reception login access', () => {
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('ERP_RECEPTION_SHIFT_CLOSED');
     expect(calls).toEqual([]);
+  });
+
+  describe('front-desk work it may do inside the shared shift', () => {
+    const reassignBody = {
+      employeeId: 7, reason: 'الموظف الصحيح', operationReference: crypto.randomUUID(),
+    };
+    /** Each command reception may run, with a body the route accepts. */
+    const commands: Array<[string, string, string, Record<string, unknown>]> = [
+      ['changes the employee of a service', 'post', '/erp/sales/invoices/4/queue/8/reassign', reassignBody],
+      ['adds a supplier', 'post', '/erp/suppliers', { name: 'مورد جديد' }],
+      ['edits a supplier', 'patch', '/erp/suppliers/5', { phone: '01000000000' }],
+      ['cancels a purchase', 'post', '/erp/suppliers/purchases/6/cancel', { reason: 'خطأ في الكمية' }],
+    ];
+
+    it.each(commands)('%s scoped to its own branch', async (_label, method, path, body) => {
+      const { app, calls } = makeApp('reception');
+
+      const response = await (request(app) as unknown as Record<string, (url: string) => request.Test>)[method]!(`/api/v1${path}`)
+        .set('Cookie', cookie).send(body);
+
+      expect(response.status).toBeLessThan(300);
+      expect(calls[0]!.args[0]).toEqual({ role: 'cashier', accountId: 22, branchId: 3 });
+    });
+
+    it.each(commands)('cannot do it (%s) while no shift is open', async (_label, method, path, body) => {
+      const { app, calls } = makeApp('reception', { shiftOpen: false });
+
+      const response = await (request(app) as unknown as Record<string, (url: string) => request.Test>)[method]!(`/api/v1${path}`)
+        .set('Cookie', cookie).send(body);
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe('ERP_RECEPTION_SHIFT_CLOSED');
+      expect(calls).toEqual([]);
+    });
+
+    it.each(['/erp/suppliers', '/erp/suppliers/purchases', '/erp/assignable-employees'])(
+      'reads %s inside the shift and is held out of it without one',
+      async (path) => {
+        const open = makeApp('reception');
+        const read = await request(open.app).get(`/api/v1${path}`).set('Cookie', cookie);
+        expect(read.status).toBe(200);
+        expect(open.calls[0]!.args[0]).toEqual({ role: 'cashier', accountId: 22, branchId: 3 });
+
+        const closed = makeApp('reception', { shiftOpen: false });
+        const held = await request(closed.app).get(`/api/v1${path}`).set('Cookie', cookie);
+        expect(held.status).toBe(409);
+        expect(closed.calls).toEqual([]);
+      },
+    );
+
+    it.each([
+      '/erp/sales/4/refunds',
+      '/erp/sales/4/refunds/quote',
+      '/erp/sales/4/void',
+      '/erp/sales/invoices/4/payments',
+      '/erp/sales/quote',
+    ])('still cannot change money on an invoice through %s', async (path) => {
+      const { app, calls } = makeApp('reception');
+
+      const response = await request(app).post(`/api/v1${path}`).set('Cookie', cookie).send({});
+
+      expect(response.status).toBe(403);
+      expect(calls).toEqual([]);
+    });
   });
 
   it('lets a cashier read without an open shift as before', async () => {

@@ -60,6 +60,64 @@ describe('ERP sale repository MySQL integration', () => {
     expect(changed!.employeeId).toBe(data.sellerEmployeeId);
   });
 
+  describe('reception login', () => {
+    const receptionOf = async (branchId: number, marker: string) => Number((await database
+      .insert(accounts).values({
+        username: `${marker}-reception`, passwordHash: 'unused', role: 'reception', branchId,
+        createdAt: new Date(), updatedAt: new Date(),
+      }))[0].insertId);
+    const setup = async () => {
+      const data = await fixture();
+      const repository = createDrizzleSaleRepository(database, createErpAuditCapability());
+      const invoice = await repository.complete(operation(data, crypto.randomUUID()));
+      const [ticket] = await database.select().from(serviceQueueEntries)
+        .where(eq(serviceQueueEntries.invoiceId, invoice.id));
+      const receptionId = await receptionOf(data.branchId, data.marker);
+      // Reception acts with the branch cashier's identity shape (see erp-actor).
+      const change = {
+        invoiceId: invoice.id, serviceQueueEntryId: ticket!.id,
+        input: { branchId: data.branchId, employeeId: data.sellerEmployeeId,
+          reason: 'Correct performer', operationReference: crypto.randomUUID() },
+        actingAccountId: receptionId, actingAccountRole: 'cashier' as const,
+        reassignedAt: data.at,
+        assertEmployee: async () => ({ id: data.sellerEmployeeId,
+          employeeCode: data.employeeCode + 1, fullName: `Seller ${data.marker}`,
+          branchId: data.branchId }),
+      };
+      return { data, repository, ticket: ticket!, change };
+    };
+
+    it('changes the employee of an unfinished service during the cashier\'s open shift', async () => {
+      const { data, repository, ticket, change } = await setup();
+
+      await repository.reassignQueue(change);
+
+      const [changed] = await database.select().from(serviceQueueEntries)
+        .where(eq(serviceQueueEntries.id, ticket.id));
+      expect(changed!.employeeId).toBe(data.sellerEmployeeId);
+    });
+
+    it('cannot change the employee once the service is done', async () => {
+      const { data, repository, ticket, change } = await setup();
+      await database.update(serviceQueueEntries).set({
+        status: 'completed', completedAt: data.at, completedByAccountId: data.accountId,
+      }).where(eq(serviceQueueEntries.id, ticket.id));
+
+      await expect(repository.reassignQueue(change))
+        .rejects.toMatchObject({ code: 'REASSIGN_ADMIN_REQUIRED' });
+    });
+
+    it('cannot change the employee while no shift is open', async () => {
+      const { data, repository, change } = await setup();
+      await database.update(cashierSessions).set({ closedAt: data.at,
+        closedByAccountId: data.accountId }).where(eq(cashierSessions.id, data.cashierSessionId));
+
+      await expect(repository.reassignQueue({
+        ...change, reassignedAt: new Date(data.at.getTime() + 1000),
+      })).rejects.toMatchObject({ code: 'INVOICE_NOT_REASSIGNABLE' });
+    });
+  });
+
   it('allows a service ticket with zero commission to change employee', async () => {
     const data = await fixture();
     await database.update(erpServiceCommissionOverrides)
