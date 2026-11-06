@@ -353,16 +353,20 @@ export function BookingsView({ initialDate }: { initialDate: string }) {
                   : null}
               </p>
               {booking.note ? <p className="rounded-control bg-surface px-3 py-2 text-sm">{booking.note}</p> : null}
-              <ul aria-label="أموال الحجز" className="grid grid-cols-2 gap-2 text-[13px] sm:grid-cols-4">
+              <ul aria-label="أموال الحجز" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {([
-                  ['مدفوع مقدم', booking.money.paid],
-                  ['مستخدم', booking.money.applied],
-                  ['مسترد', booking.money.refunded],
-                  ['المتبقي لدينا', booking.money.held],
-                ] as const).map(([label, value]) => (
-                  <li key={label} className="rounded-control border border-line px-3 py-2">
-                    <span className="block text-muted">{label}</span>
-                    <span className="tabular font-semibold">{value} ج</span>
+                  { key: 'paid', label: 'إجمالي المقدم المدفوع', description: 'كل ما دفعه العميل مقدمًا لهذا الحجز' },
+                  { key: 'applied', label: 'المستخدم في الفواتير', description: 'من المقدم لسداد فواتير الحجز' },
+                  { key: 'refunded', label: 'المُعاد من المقدم', description: 'من المقدم وأُعيد بالفعل للعميل' },
+                  { key: 'held', label: 'المتبقي من المقدم', description: 'رصيد للعميل لدينا لم يُستخدم أو يُرد' },
+                ] as const).map(({ key, label, description }) => (
+                  <li key={key} className={`min-w-0 rounded-control border p-3 sm:p-4 ${key === 'held' ? 'border-ink/25 bg-surface' : 'border-line'}`}>
+                    <span className="block text-sm font-medium">{label}</span>
+                    <span className="mt-2 flex flex-wrap items-baseline gap-x-1">
+                      <bdi dir="ltr" className="tabular text-xl font-bold sm:text-2xl">{booking.money[key]}</bdi>
+                      <span className="text-xs text-muted">ج.م</span>
+                    </span>
+                    <span className="mt-1.5 block text-xs leading-relaxed text-muted">{description}</span>
                   </li>
                 ))}
               </ul>

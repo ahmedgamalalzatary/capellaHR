@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -249,7 +249,7 @@ describe('appointment book', () => {
   it('shows each service state and the booking money', async () => {
     mocks.list.mockResolvedValue([{
       ...paidBooking,
-      money: { ...paidBooking.money, applied: '200.00', held: '100.00', pendingValue: '0.00' },
+      money: { ...paidBooking.money, applied: '200.00', refunded: '40.00', held: '60.00', pendingValue: '0.00' },
       services: [
         { ...paidBooking.services[0]!, status: 'sold', invoiceId: 40, invoiceNumber: 'INV-40', queueStatus: 'in_progress' },
         { ...paidBooking.services[1]!, status: 'cancelled' },
@@ -260,10 +260,18 @@ describe('appointment book', () => {
     expect(screen.getByText('ملغاة')).toBeDefined();
     expect(screen.getByText(/INV-40/)).toBeDefined();
     const strip = screen.getByRole('list', { name: 'أموال الحجز' });
-    expect(strip.textContent).toContain('مدفوع مقدم');
-    expect(strip.textContent).toContain('300.00');
-    expect(strip.textContent).toContain('المتبقي لدينا');
-    expect(strip.textContent).toContain('100.00');
+    const tiles = within(strip).getAllByRole('listitem');
+    expect(tiles).toHaveLength(4);
+    for (const [label, amount] of [
+      ['إجمالي المقدم المدفوع', '300.00'],
+      ['المستخدم في الفواتير', '200.00'],
+      ['المُعاد من المقدم', '40.00'],
+      ['المتبقي من المقدم', '60.00'],
+    ] as const) {
+      const tile = tiles.find((item) => within(item).queryByText(label));
+      expect(tile, label).toBeDefined();
+      expect(within(tile!).getByText(amount)).toBeDefined();
+    }
   });
 
   it('takes an up-front payment into the open shift, never above the limit', async () => {
