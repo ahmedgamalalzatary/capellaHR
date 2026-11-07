@@ -27,6 +27,7 @@ import { expenseQueryKeys } from '../query-keys';
 
 const errorText = (error: unknown) => error instanceof ApiError ? error.message : 'تعذر تنفيذ العملية. حاول مرة أخرى.';
 const todayInCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+const recordingTime = new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', timeStyle: 'short' });
 const expenseNameLabel = (name: string) => name === 'advance' ? 'سلفة' : name;
 const kindLabel = (expense: Expense) => expense.kind === 'reversal' ? 'قيد عكسي' : expense.status === 'corrected' ? 'تم تصحيحه' : expense.supersedesId ? 'بديل تصحيح' : 'مصروف';
 const kindTone = (expense: Expense) => expense.kind === 'reversal'
@@ -250,6 +251,7 @@ export function ExpensesView() {
                       <DataTable>
                         <THead>
                           <TH>التاريخ</TH>
+                          <TH>وقت التسجيل</TH>
                           <TH>المصروف</TH>
                           <TH>الوصف</TH>
                           <TH numeric>المبلغ</TH>
@@ -260,6 +262,9 @@ export function ExpensesView() {
                           {expenses.data.items.map((expense) => (
                             <TR key={expense.id}>
                               <TD className="tabular whitespace-nowrap text-muted">{expense.expenseDate}</TD>
+                              <TD className="tabular whitespace-nowrap text-muted">
+                                <time dateTime={expense.createdAt}>{recordingTime.format(new Date(expense.createdAt))}</time>
+                              </TD>
                               <TD className="font-medium">{expenseNameLabel(expense.name)}</TD>
                               <TD>
                                 {expense.description}

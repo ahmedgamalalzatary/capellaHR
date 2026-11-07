@@ -33,6 +33,31 @@ const mount = () => {
 };
 
 describe('ExpensesView', () => {
+  it.each([
+    { createdAt: '2026-08-05T10:00:00Z', expectedTime: '١:٠٠ م' },
+    { createdAt: '2026-01-05T10:00:00Z', expectedTime: '١٢:٠٠ م' },
+  ])('shows Cairo recording time for every row at $createdAt', async ({ createdAt, expectedTime }) => {
+    actor.current = 'cashier';
+    mocks.list.mockResolvedValue({
+      items: [
+        { ...expense, createdAt, status: 'corrected' },
+        { ...expense, createdAt, id: 11, kind: 'reversal', reversalOfId: 10 },
+        { ...expense, createdAt, id: 12, supersedesId: 10 },
+      ],
+      meta: { page: 1, pageSize: 20, total: 3, totalPages: 1 },
+    });
+    mount();
+
+    await screen.findByRole('columnheader', { name: 'وقت التسجيل' });
+    const rows = screen.getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(within(row).getByRole('cell', { name: expense.expenseDate })).toBeDefined();
+      const time = within(row).getByRole('cell', { name: expectedTime }).querySelector('time');
+      expect(time?.getAttribute('dateTime')).toBe(createdAt);
+    }
+  });
+
   it('places the add button next to the page header', async () => {
     mocks.list.mockResolvedValue({ items: [expense], meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 } });
     actor.current = 'cashier';
