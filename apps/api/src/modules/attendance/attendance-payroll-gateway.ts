@@ -32,6 +32,7 @@ export const createAttendancePayrollGateway = (
       const employee = (await executor.select({
         createdAt: employees.createdAt,
         deletedAt: employees.deletedAt,
+        shiftDurationMinutes: employees.shiftDurationMinutes,
       }).from(employees).where(eq(employees.id, employeeId)).limit(1))[0];
       if (!employee) return { kind: 'blocked', reasons: ['ATTENDANCE_EMPLOYEE_NOT_FOUND'] };
       const storedEmploymentPeriods = await executor.select({
@@ -114,7 +115,10 @@ export const createAttendancePayrollGateway = (
       }
       if (reasons.length) return { kind: 'blocked', reasons };
 
-      const defaultRequiredMinutes = await readRequiredDuration(employeeId, executor, employee.deletedAt !== null);
+      // Report previews run in read-only snapshots; only approval needs the shift lock.
+      const defaultRequiredMinutes = mode === 'finalize'
+        ? await readRequiredDuration(employeeId, executor, employee.deletedAt !== null)
+        : employee.shiftDurationMinutes;
       // Previews infer ordinary absences without writing. Approval records them in the
       // same transaction as payroll, using the existing audited attendance writer.
       for (const attendanceDate of missingDates) {

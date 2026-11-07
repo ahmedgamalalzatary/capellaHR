@@ -21,6 +21,7 @@ import {
 } from '../../src/modules/reports/index.js';
 import { createDrizzleAttendanceRepository } from '../../src/modules/attendance/index.js';
 import { createPayrollModule } from '../../src/modules/payroll/index.js';
+import { createShiftsModule } from '../../src/modules/shifts/index.js';
 import {
   database,
   now,
@@ -30,6 +31,7 @@ import {
 
 beforeEach(clear);
 afterAll(clear);
+const shifts = createShiftsModule(database);
 
 describe('MySQL-backed reports reading', () => {
   it('keeps historical report rows and branch filters under the original branch', async () => {
@@ -84,7 +86,9 @@ describe('MySQL-backed reports reading', () => {
       now: () => now,
       timeZone: 'Africa/Cairo',
       isFinanciallyLocked: () => Promise.resolve(false),
-      readRequiredDuration: () => Promise.resolve(600),
+      readRequiredDuration: (employeeId, context, includeDeleted) => (
+        shifts.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
+      ),
     });
     const payroll = createPayrollModule(database, { now: () => now, attendance });
     const reader = createDrizzleReportReader(database, {
@@ -270,7 +274,9 @@ describe('MySQL-backed reports reading', () => {
       now: () => now,
       timeZone: 'Africa/Cairo',
       isFinanciallyLocked: () => Promise.resolve(false),
-      readRequiredDuration: () => Promise.resolve(600),
+      readRequiredDuration: (employeeId, context, includeDeleted) => (
+        shifts.service.readRequiredDurationForCheckIn(employeeId, context, includeDeleted)
+      ),
     });
     const payroll = createPayrollModule(database, { now: () => now, attendance });
     let payrollPreviewCount = 0;
