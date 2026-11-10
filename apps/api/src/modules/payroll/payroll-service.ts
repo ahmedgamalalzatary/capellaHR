@@ -1,4 +1,4 @@
-import type { ListPayrollMonthsQuery, UpdateBaseSalaryInput } from '@capella/contracts';
+import type { ListPayrollMonthsQuery, PayrollFinalizationIssue, UpdateBaseSalaryInput } from '@capella/contracts';
 import type { PayrollAttendanceSummary } from '@capella/database/schema';
 
 export type BaseSalaryRecord = {
@@ -57,10 +57,10 @@ export interface PayrollAttendanceGateway {
     employeeId: number,
     payrollMonth: string,
     context: PayrollTransactionContext,
-    mode: 'preview' | 'finalize',
+    mode: 'preview' | 'inspect' | 'finalize',
   ): Promise<
-    | { kind: 'ready'; facts: PayrollAttendanceFacts }
-    | { kind: 'blocked'; reasons: string[]; missingDates?: string[] }
+    | { kind: 'ready'; facts: PayrollAttendanceFacts; issues?: PayrollFinalizationIssue[] }
+    | { kind: 'blocked'; reasons: string[]; missingDates?: string[]; issues?: PayrollFinalizationIssue[] }
   >;
 }
 
@@ -74,21 +74,22 @@ export type BlockedPayrollRecord = {
   payrollMonth: string;
   blockers: string[];
   missingAttendanceDates: string[];
+  issues?: PayrollFinalizationIssue[];
 };
 export type PayrollListItem = (PayrollRecord & { state: 'ready' }) | BlockedPayrollRecord;
 
 export type PayrollResult =
   | { kind: 'success'; payroll: PayrollRecord }
-  | { kind: 'employee_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
-  | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
+  | { kind: 'employee_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict'; issues?: PayrollFinalizationIssue[] }
+  | { kind: 'blocked'; reasons: string[]; missingDates?: string[]; issues?: PayrollFinalizationIssue[] };
 type PayrollListResult =
   | { kind: 'success'; items: PayrollListItem[]; total: number }
   | { kind: 'month_not_ended' }
   | { kind: 'blocked'; reasons: string[] };
 type BranchPayrollResult =
   | { kind: 'success'; payrolls: PayrollRecord[] }
-  | { kind: 'branch_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict' }
-  | { kind: 'blocked'; reasons: string[]; missingDates?: string[] };
+  | { kind: 'branch_not_found' | 'month_not_eligible' | 'month_not_ended' | 'already_finalized' | 'chronology_conflict'; issues?: PayrollFinalizationIssue[] }
+  | { kind: 'blocked'; reasons: string[]; missingDates?: string[]; issues?: PayrollFinalizationIssue[] };
 
 export interface PayrollRepository {
   getBaseSalary(employeeId: number): Promise<BaseSalaryRecord | null>;
@@ -120,12 +121,12 @@ export type PayrollErrorCode =
   | 'PAYROLL_BLOCKED'
   | 'PAYROLL_BRANCH_NOT_FOUND';
 export class PayrollError extends Error {
-  constructor(public readonly code: PayrollErrorCode, message: string, public readonly reasons?: string[]) {
+  constructor(public readonly code: PayrollErrorCode, message: string, public readonly reasons?: string[], public readonly issues?: PayrollFinalizationIssue[]) {
     super(message);
   }
 }
 
-const error = (code: PayrollErrorCode, reasons?: string[]) => new PayrollError(code, ({
+const error = (code: PayrollErrorCode, reasons?: string[], issues?: PayrollFinalizationIssue[]) => new PayrollError(code, ({
   PAYROLL_EMPLOYEE_NOT_FOUND: 'الموظف غير موجود',
   PAYROLL_EMPLOYEE_DELETED: 'لا يمكن تعديل راتب موظف محذوف',
   PAYROLL_ATTENDANCE_UNAVAILABLE: 'تعذر التحقق من بيانات الحضور للراتب',
@@ -135,16 +136,16 @@ const error = (code: PayrollErrorCode, reasons?: string[]) => new PayrollError(c
   PAYROLL_CHRONOLOGY_CONFLICT: 'يجب اعتماد الشهور الأقدم أولًا',
   PAYROLL_BLOCKED: 'تعذر اعتماد الراتب لوجود عوائق',
   PAYROLL_BRANCH_NOT_FOUND: 'الفرع غير موجود',
-})[code], reasons);
+})[code], reasons, issues);
 
 const unwrap = (result: PayrollResult) => {
   if (result.kind === 'success') return result.payroll;
-  if (result.kind === 'employee_not_found') throw error('PAYROLL_EMPLOYEE_NOT_FOUND');
-  if (result.kind === 'month_not_eligible') throw error('PAYROLL_MONTH_NOT_ELIGIBLE');
-  if (result.kind === 'month_not_ended') throw error('PAYROLL_MONTH_NOT_ENDED');
-  if (result.kind === 'already_finalized') throw error('PAYROLL_ALREADY_FINALIZED');
-  if (result.kind === 'chronology_conflict') throw error('PAYROLL_CHRONOLOGY_CONFLICT');
-  if (result.kind === 'blocked') throw error('PAYROLL_BLOCKED', result.reasons);
+  if (result.kind === 'employee_not_found') throw error('PAYROLL_EMPLOYEE_NOT_FOUND', undefined, result.issues);
+  if (result.kind === 'month_not_eligible') throw error('PAYROLL_MONTH_NOT_ELIGIBLE', undefined, result.issues);
+  if (result.kind === 'month_not_ended') throw error('PAYROLL_MONTH_NOT_ENDED', undefined, result.issues);
+  if (result.kind === 'already_finalized') throw error('PAYROLL_ALREADY_FINALIZED', undefined, result.issues);
+  if (result.kind === 'chronology_conflict') throw error('PAYROLL_CHRONOLOGY_CONFLICT', undefined, result.issues);
+  if (result.kind === 'blocked') throw error('PAYROLL_BLOCKED', result.reasons, result.issues);
   throw error('PAYROLL_BLOCKED');
 };
 
@@ -187,12 +188,12 @@ export const createPayrollService = (
     async finalizeBranch(branchId: number, month: string) {
       const result = await repository.finalizeBranch(branchId, month, requireAttendance());
       if (result.kind === 'success') return result.payrolls;
-      if (result.kind === 'branch_not_found') throw error('PAYROLL_BRANCH_NOT_FOUND');
-      if (result.kind === 'month_not_eligible') throw error('PAYROLL_MONTH_NOT_ELIGIBLE');
-      if (result.kind === 'month_not_ended') throw error('PAYROLL_MONTH_NOT_ENDED');
-      if (result.kind === 'already_finalized') throw error('PAYROLL_ALREADY_FINALIZED');
-      if (result.kind === 'chronology_conflict') throw error('PAYROLL_CHRONOLOGY_CONFLICT');
-      if (result.kind === 'blocked') throw error('PAYROLL_BLOCKED', result.reasons);
+      if (result.kind === 'branch_not_found') throw error('PAYROLL_BRANCH_NOT_FOUND', undefined, result.issues);
+      if (result.kind === 'month_not_eligible') throw error('PAYROLL_MONTH_NOT_ELIGIBLE', undefined, result.issues);
+      if (result.kind === 'month_not_ended') throw error('PAYROLL_MONTH_NOT_ENDED', undefined, result.issues);
+      if (result.kind === 'already_finalized') throw error('PAYROLL_ALREADY_FINALIZED', undefined, result.issues);
+      if (result.kind === 'chronology_conflict') throw error('PAYROLL_CHRONOLOGY_CONFLICT', undefined, result.issues);
+      if (result.kind === 'blocked') throw error('PAYROLL_BLOCKED', result.reasons, result.issues);
       throw error('PAYROLL_BLOCKED');
     },
     isFinanciallyLocked(employeeId: number, attendanceDate: string, context?: PayrollTransactionContext) {

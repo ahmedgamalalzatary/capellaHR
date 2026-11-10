@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { Button, Card, ConfirmDialog, EmptyState, Input, Label, MonthPicker, SmartPagination } from '@capella/ui';
 
 import { fetchAllPages } from '@/lib/api/fetch-all';
+import { ApiError } from '@/lib/api/client';
 import { notifyError, notifySuccess } from '@/lib/notify';
 import { formatDuration } from '@/lib/utils/format';
 import { useDisplayFormatters } from '@/providers/runtime-config';
@@ -26,6 +27,8 @@ import {
 } from '../api/payroll-api';
 import { payrollQueryKeys } from '../query-keys';
 import { currentCairoMonth, serverErrorMessage } from './payroll-helpers';
+import { PayrollFinalizationDialog, type FinalizationFailureContext } from './payroll-finalization-dialog';
+import { payrollFinalizationFailure } from './payroll-finalization-errors';
 
 /**
  * The line items, kept in one place so the expanded row and the printed sheet
@@ -147,17 +150,17 @@ function BlockedAttendanceRows({
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <p>{record.missingAttendanceDates.length
             ? 'اختر ما حدث في كل يوم ناقص. لا يمكن حساب الراتب قبل استكمال هذه الأيام.'
-            : 'راجع عائق الحضور قبل اعتماد الراتب.'}</p>
+            : 'راجع أسباب التعذر قبل اعتماد الراتب.'}</p>
         </div>
         {record.missingAttendanceDates.length === 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-line bg-paper px-3 py-3">
             <p className="text-[13px] text-muted">
               {record.blockers.map((blocker) => blockerLabels[blocker] ?? blocker).join('، ')}
             </p>
-            <Link href="/attendance" className="inline-flex h-8 items-center justify-center gap-2 rounded-control px-3 text-[13px] font-medium text-ink hover:bg-ink/5">
+            {record.blockers.some((code) => ['OPEN_SESSION', 'DENIED_ATTEMPT', 'ATTENDANCE_RECONCILIATION_PENDING'].includes(code)) ? <Link href="/attendance" className="inline-flex h-8 items-center justify-center gap-2 rounded-control px-3 text-[13px] font-medium text-ink hover:bg-ink/5">
               <UserCheck className="size-4" aria-hidden />
               فتح الحضور والغياب
-            </Link>
+            </Link> : null}
           </div>
         ) : <ul className="grid gap-2">
           {record.missingAttendanceDates.map((attendanceDate) => (
@@ -209,6 +212,8 @@ export function MonthlyPayrollSection() {
   const [printEmployeeId, setPrintEmployeeId] = useState<number | null>(null);
   const [confirmFinalizeEmployeeId, setConfirmFinalizeEmployeeId] = useState<number | null>(null);
   const [confirmBranchFinalize, setConfirmBranchFinalize] = useState(false);
+  const [finalizationFailure, setFinalizationFailure] = useState<FinalizationFailureContext | null>(null);
+  const [showFinalizationFailure, setShowFinalizationFailure] = useState(false);
   const [pendingResolution, setPendingResolution] = useState<{
     employeeId: number;
     employeeName: string;
@@ -239,14 +244,27 @@ export function MonthlyPayrollSection() {
     mutationFn: (record: PayrollRecord) =>
       finalizePayroll(record.employeeId, record.payrollMonth),
     onSettled: () => setConfirmFinalizeEmployeeId(null),
+    onMutate: () => { setFinalizationFailure(null); setShowFinalizationFailure(false); },
     onSuccess: async () => { await invalidate(); notifySuccess('تم اعتماد الراتب.'); },
-    onError: (error: unknown) => notifyError(error, 'تعذر اعتماد الراتب.'),
+    onError: (error: unknown, record) => {
+      const failure = payrollFinalizationFailure(error);
+      setFinalizationFailure({ ...failure, title: `تعذر اعتماد راتب ${record.employeeName}`,
+        subject: `${record.employeeName} · كود ${record.employeeCode}`, month: record.payrollMonth });
+      setShowFinalizationFailure(true);
+      notifyError(new Error(failure.summary));
+    },
   });
   const finalizeBranch = useMutation({
-    mutationFn: (branchId: number) => finalizeBranchPayroll(branchId, month),
+    mutationFn: (target: { branchId: number; month: string; name: string }) => finalizeBranchPayroll(target.branchId, target.month),
+    onMutate: () => { setFinalizationFailure(null); setShowFinalizationFailure(false); },
     onSettled: () => setConfirmBranchFinalize(false),
     onSuccess: async () => { await invalidate(); notifySuccess('تم اعتماد رواتب الفرع.'); },
-    onError: (error: unknown) => notifyError(error, 'تعذر اعتماد رواتب الفرع.'),
+    onError: (error: unknown, target) => {
+      const failure = payrollFinalizationFailure(error);
+      setFinalizationFailure({ ...failure, title: `تعذر اعتماد رواتب ${target.name}`, subject: target.name, month: target.month });
+      setShowFinalizationFailure(true);
+      notifyError(new Error(failure.summary));
+    },
   });
   const reconcileDay = useMutation({
     mutationFn: (input: Parameters<typeof reconcileAttendanceDay>[0]) => reconcileAttendanceDay(input),
@@ -258,7 +276,6 @@ export function MonthlyPayrollSection() {
     onError: (error: unknown) => notifyError(error, 'تعذر استكمال يوم الحضور.'),
   });
 
-  const mutationError = finalizeOne.error ?? finalizeBranch.error;
   const items = payrollQuery.data?.items ?? [];
   const meta = payrollQuery.data?.meta;
   const finalizeTarget = items.find((record): record is PayrollRecord => (
@@ -325,6 +342,8 @@ export function MonthlyPayrollSection() {
             setPage(1);
             setExpandedEmployeeId(null);
             setConfirmBranchFinalize(false);
+            setFinalizationFailure(null);
+            setShowFinalizationFailure(false);
             setBranchFilter(event.target.value === '' ? null : Number(event.target.value));
           }}
         >
@@ -348,7 +367,7 @@ export function MonthlyPayrollSection() {
               confirmLabel="تأكيد اعتماد الفرع"
               tone="danger"
               pending={finalizeBranch.isPending}
-              onConfirm={() => finalizeBranch.mutate(branchFilter)}
+              onConfirm={() => finalizeBranch.mutate({ branchId: branchFilter, month, name: selectedBranch?.name ?? 'الفرع المحدد' })}
               onCancel={() => setConfirmBranchFinalize(false)}
             />
           ) : (
@@ -373,6 +392,8 @@ export function MonthlyPayrollSection() {
               setPage(1);
               setExpandedEmployeeId(null);
               setConfirmBranchFinalize(false);
+              setFinalizationFailure(null);
+              setShowFinalizationFailure(false);
               setMonth(next);
             }}
           />
@@ -384,10 +405,25 @@ export function MonthlyPayrollSection() {
         الأقدم إلى الأحدث.
       </p>
 
-      {mutationError ? (
-        <p role="alert" className="text-[13px] text-danger">
-          {serverErrorMessage(mutationError)}
-        </p>
+      {finalizationFailure ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-danger/30 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium">{finalizationFailure.subject} · <bdi className="tabular">{finalizationFailure.month}</bdi></p>
+            <p role="alert" className="mt-1 text-sm text-danger">{finalizationFailure.summary}</p>
+          </div>
+          <Button variant="secondary" className="min-h-11" onClick={() => setShowFinalizationFailure(true)}>عرض أسباب التعذر</Button>
+        </div>
+      ) : null}
+
+      {showFinalizationFailure && finalizationFailure ? (
+        <PayrollFinalizationDialog failure={finalizationFailure} onClose={() => setShowFinalizationFailure(false)}
+          onSelectMonth={(next, employeeCode) => {
+            setMonth(next); setPage(1); setExpandedEmployeeId(null); setConfirmFinalizeEmployeeId(null);
+            setBranchFilter(null);
+            setSearch(employeeCode === undefined ? '' : String(employeeCode));
+            setSearchInput(employeeCode === undefined ? '' : String(employeeCode));
+            setConfirmBranchFinalize(false); setFinalizationFailure(null); setShowFinalizationFailure(false);
+          }} />
       ) : null}
 
       {finalizeTarget ? (
@@ -488,12 +524,23 @@ export function MonthlyPayrollSection() {
                           }
                         >
                           {record.state === 'blocked'
-                            ? 'يحتاج مراجعة الحضور'
+                            ? record.blockers.every((code) => ['OPEN_SESSION', 'DENIED_ATTEMPT', 'ATTENDANCE_RECONCILIATION_PENDING'].includes(code)) ? 'يحتاج مراجعة الحضور' : 'يتعذر اعتماد الراتب'
                             : record.status === 'finalized' ? 'معتمد نهائيًا' : 'مفتوح'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <span className="flex items-center gap-1">
+                          {record.state === 'blocked' ? (
+                            <Button variant="ghost" size="sm" onClick={() => {
+                              const failure = payrollFinalizationFailure(new ApiError(409, {
+                                code: 'PAYROLL_BLOCKED', message: 'تعذر اعتماد الراتب',
+                                details: { blockers: record.blockers, issues: record.issues },
+                              }));
+                              setFinalizationFailure({ ...failure, title: `تعذر اعتماد راتب ${record.employeeName}`,
+                                subject: `${record.employeeName} · كود ${record.employeeCode}`, month: record.payrollMonth });
+                              setShowFinalizationFailure(true);
+                            }}>عرض أسباب التعذر</Button>
+                          ) : null}
                           <Button
                             variant="ghost"
                             size="sm"

@@ -4,11 +4,13 @@ import {
   attendanceSessions,
   auditEvents,
   employeeEmploymentPeriods,
+  employeeBranchAssignments,
   employees,
   financialAuditEvents,
   payrollMonths,
 } from '@capella/database/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/mysql2';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPayrollModule } from '../../src/modules/payroll/index.js';
@@ -27,6 +29,148 @@ afterEach(async () => {
 });
 
 describe('MySQL-backed attendance payroll facts', () => {
+  it('keeps blocker evidence in UTC when MySQL returns timestamps in a non-UTC session', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    const epoch = (value: string) => new Date(value).getTime() / 1000;
+    await database.update(employees).set({ createdAt: sql`FROM_UNIXTIME(${epoch('2026-06-01T06:00:00Z')})` })
+      .where(eq(employees.id, employeeId));
+    await database.insert(attendanceSessions).values({
+      employeeId, branchId, attendanceDate: '2026-06-30', requiredMinutes: 480,
+      checkInAt: sql`FROM_UNIXTIME(${epoch('2026-06-30T06:00:00Z')})`, createdAt: fixedNow, updatedAt: fixedNow,
+    });
+    await database.insert(attendanceDeniedAttempts).values({
+      employeeId, claimedEmployeeCode: 42, eventType: 'check_in', source: 'branch_device',
+      occurredAt: sql`FROM_UNIXTIME(${epoch('2026-06-25T09:55:08.159Z')})`,
+      failureReason: 'FACE_MISMATCH', suspicious: true, createdAt: fixedNow,
+    });
+    const connection = await database.$client.promise().getConnection();
+    const [settings] = await connection.query('SELECT @@session.time_zone AS zone');
+    const originalZone = (settings as Array<{ zone: string }>)[0]!.zone;
+    try {
+      await connection.query("SET time_zone = '+03:00'");
+      const zonedDatabase = drizzle(connection) as unknown as typeof database;
+      const payroll = createPayrollModule(zonedDatabase, { now: () => fixedNow, attendance: repository() });
+      await expect(payroll.service.finalize(employeeId, '2026-06')).rejects.toMatchObject({ issues: [
+        { code: 'OPEN_SESSION', checkInAt: '2026-06-30T06:00:00.000Z' },
+        { code: 'DENIED_ATTEMPT', occurredAt: '2026-06-25T09:55:08.159Z', attendanceDate: '2026-06-25' },
+      ] });
+      await expect(payroll.service.finalize(employeeId, '2026-05')).rejects.toMatchObject({ issues: [{
+        employmentPeriods: [{ activeFrom: '2026-06-01T06:00:00.000Z', activeTo: null }],
+      }] });
+      await database.update(attendanceSessions).set({
+        checkOutAt: sql`FROM_UNIXTIME(${epoch('2026-06-30T14:00:00Z')})`, workedMinutes: 480, overtimeMinutes: 0, shortageMinutes: 0,
+      }).where(eq(attendanceSessions.employeeId, employeeId));
+      await database.update(attendanceDeniedAttempts).set({ dismissedAt: fixedNow }).where(eq(attendanceDeniedAttempts.employeeId, employeeId));
+      const normal = createPayrollModule(database, { now: () => fixedNow, attendance: repository() });
+      await normal.service.finalize(employeeId, '2026-06');
+      await database.update(payrollMonths).set({ finalizedAt: sql`FROM_UNIXTIME(${epoch('2026-07-20T09:00:00Z')})` })
+        .where(eq(payrollMonths.employeeId, employeeId));
+      await expect(payroll.service.finalize(employeeId, '2026-06')).rejects.toMatchObject({ issues: [{
+        code: 'PAYROLL_ALREADY_FINALIZED', finalizedAt: '2026-07-20T09:00:00.000Z',
+      }] });
+    } finally {
+      await connection.query('SET time_zone = ?', [originalZone]);
+      connection.release();
+    }
+  });
+
+  it('explains ineligible months with employment dates and reports current-month attendance blockers together', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    await database.update(employees).set({ createdAt: sql`FROM_UNIXTIME(${new Date('2026-07-01T09:00:00Z').getTime() / 1000})` })
+      .where(eq(employees.id, employeeId));
+    const payroll = createPayrollModule(database, { now: () => fixedNow, attendance: repository() });
+    await expect(payroll.service.finalize(employeeId, '2026-06')).rejects.toMatchObject({
+      code: 'PAYROLL_MONTH_NOT_ELIGIBLE', issues: [{
+        code: 'PAYROLL_MONTH_NOT_ELIGIBLE', payrollMonth: '2026-06',
+        employmentPeriods: [{ activeFrom: '2026-07-01T09:00:00.000Z', activeTo: null }],
+      }],
+    });
+    await database.insert(attendanceSessions).values({
+      employeeId, branchId, attendanceDate: '2026-07-20', requiredMinutes: 480,
+      checkInAt: new Date('2026-07-20T06:00:00Z'), createdAt: fixedNow, updatedAt: fixedNow,
+    });
+    await database.insert(attendanceDeniedAttempts).values({
+      employeeId, claimedEmployeeCode: 42, eventType: 'check_in', source: 'branch_device',
+      occurredAt: new Date('2026-07-18T09:00:00Z'), failureReason: 'FACE_MISMATCH',
+      suspicious: true, createdAt: fixedNow,
+    });
+    await expect(payroll.service.finalize(employeeId, '2026-07')).rejects.toMatchObject({
+      code: 'PAYROLL_MONTH_NOT_ENDED', issues: [
+        { code: 'PAYROLL_MONTH_NOT_ENDED', currentMonth: '2026-07' },
+        { code: 'OPEN_SESSION', attendanceDate: '2026-07-20' },
+        { code: 'DENIED_ATTEMPT', attendanceDate: '2026-07-18' },
+      ],
+    });
+    await expect(payroll.service.finalizeBranch(branchId, '2026-07')).rejects.toMatchObject({
+      code: 'PAYROLL_MONTH_NOT_ENDED', issues: [
+        { code: 'PAYROLL_MONTH_NOT_ENDED', employeeId, currentMonth: '2026-07' },
+        { code: 'OPEN_SESSION', employeeId, attendanceDate: '2026-07-20' },
+        { code: 'DENIED_ATTEMPT', employeeId, attendanceDate: '2026-07-18' },
+      ],
+    });
+    expect(await database.select().from(attendanceDailyRecords)).toHaveLength(0);
+  });
+
+  it('reports every older month, open session and actionable denied attempt without writing attendance', async () => {
+    const { branchId, employeeId } = await createFixtures();
+    await database.update(employees).set({ createdAt: new Date('2026-04-01T06:00:00Z') })
+      .where(eq(employees.id, employeeId));
+    await database.update(employeeBranchAssignments).set({ effectiveFrom: new Date('2026-04-01T06:00:00Z') })
+      .where(eq(employeeBranchAssignments.employeeId, employeeId));
+    const inserted = await database.insert(attendanceSessions).values({
+      employeeId, branchId, attendanceDate: '2026-06-30', requiredMinutes: 480,
+      checkInAt: sql`FROM_UNIXTIME(${new Date('2026-06-30T06:00:00Z').getTime() / 1000})`, createdAt: fixedNow, updatedAt: fixedNow,
+    });
+    const attempts = await database.insert(attendanceDeniedAttempts).values([
+      {
+        employeeId, claimedEmployeeCode: 42, eventType: 'check_in', source: 'branch_device',
+        occurredAt: sql`FROM_UNIXTIME(${new Date('2026-06-25T09:55:08Z').getTime() / 1000})`, failureReason: 'FACE_MISMATCH',
+        suspicious: true, createdAt: fixedNow,
+      },
+      {
+        employeeId, claimedEmployeeCode: 42, eventType: 'check_out', source: 'branch_device',
+        occurredAt: new Date('2026-06-30T14:00:00Z'), failureReason: 'OUT_OF_RANGE',
+        suspicious: false, createdAt: fixedNow,
+      },
+      {
+        // A rejected retry on a day that already has attendance is not a blocker.
+        employeeId, claimedEmployeeCode: 42, eventType: 'check_in', source: 'branch_device',
+        occurredAt: new Date('2026-06-30T06:01:00Z'), failureReason: 'SESSION_EXISTS',
+        suspicious: false, createdAt: fixedNow,
+      },
+    ]);
+    const payroll = createPayrollModule(database, { now: () => fixedNow, attendance: repository() });
+    const failure = await payroll.service.finalize(employeeId, '2026-06').catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: 'PAYROLL_CHRONOLOGY_CONFLICT',
+      issues: [
+        { code: 'PAYROLL_CHRONOLOGY_CONFLICT', months: ['2026-04', '2026-05'] },
+        {
+          code: 'OPEN_SESSION', attendanceDate: '2026-06-30',
+          sessionId: Number(inserted[0].insertId), checkInAt: '2026-06-30T06:00:00.000Z',
+        },
+        {
+          code: 'DENIED_ATTEMPT', attendanceDate: '2026-06-25', attemptId: Number(attempts[0].insertId),
+          occurredAt: '2026-06-25T09:55:08.000Z', failureReason: 'FACE_MISMATCH', eventType: 'check_in',
+        },
+        { code: 'DENIED_ATTEMPT', attendanceDate: '2026-06-30', eventType: 'check_out', failureReason: 'OUT_OF_RANGE' },
+      ],
+    });
+    expect(await database.select().from(attendanceDailyRecords)).toHaveLength(0);
+    expect(await database.select().from(payrollMonths)).toHaveLength(0);
+    expect(await database.select().from(financialAuditEvents)).toHaveLength(0);
+
+    const branchFailure = await payroll.service.finalizeBranch(branchId, '2026-06').catch((error: unknown) => error);
+    expect(branchFailure).toMatchObject({
+      code: 'PAYROLL_BLOCKED',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'OPEN_SESSION', employeeId, employeeCode: 42, employeeName: 'موظف الحضور' }),
+        expect.objectContaining({ code: 'PAYROLL_CHRONOLOGY_CONFLICT', months: ['2026-04', '2026-05'] }),
+      ]),
+    });
+    expect(await database.select().from(attendanceDailyRecords)).toHaveLength(0);
+  });
+
   it('supplies transaction-aware monthly facts and blockers to Payroll', async () => {
     const { branchId, employeeId } = await createFixtures();
     await database.update(employees).set({
@@ -100,7 +244,7 @@ describe('MySQL-backed attendance payroll facts', () => {
     });
     await expect(database.transaction((transaction) => (
       repo.readPayrollFacts(employeeId, '2026-06', transaction, 'finalize')
-    ))).resolves.toEqual({ kind: 'blocked', reasons: ['DENIED_ATTEMPT'] });
+    ))).resolves.toMatchObject({ kind: 'blocked', reasons: ['DENIED_ATTEMPT'] });
 
     await expect(payroll.service.preview(employeeId, '2026-06')).resolves.toMatchObject({
       status: 'open', requiredMinutes: 12_000,

@@ -24,8 +24,8 @@ export const createPayrollRouter = (
     if (!(error instanceof PayrollError)) throw error;
     const status = error.code === 'PAYROLL_ATTENDANCE_UNAVAILABLE' ? 503
       : error.code.endsWith('NOT_FOUND') ? 404 : 409;
-    financialFail(response, status, error.code, error.message, error.reasons
-      ? { details: { blockers: error.reasons } } : {});
+    financialFail(response, status, error.code, error.message, error.reasons || error.issues
+      ? { details: { blockers: error.reasons, issues: error.issues } } : {});
   };
   router.get('/', async (request: Request, response: Response) => {
     try {

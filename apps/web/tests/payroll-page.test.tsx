@@ -388,6 +388,108 @@ describe('PayrollView', () => {
     );
   });
 
+  test('opens a detailed finalization failure popup with all blockers and can reopen it after closing', async () => {
+    mocks.finalizePayroll.mockRejectedValue(new ApiError(409, {
+      code: 'PAYROLL_BLOCKED', message: 'تعذر اعتماد الراتب لوجود عوائق', requestId: 'payroll-request-24',
+      details: { blockers: ['OPEN_SESSION', 'DENIED_ATTEMPT', 'PAYROLL_CHRONOLOGY_CONFLICT'], issues: [
+        { code: 'OPEN_SESSION', sessionId: 871, attendanceDate: '2026-06-30', checkInAt: '2026-06-30T06:00:00.000Z' },
+        { code: 'DENIED_ATTEMPT', attemptId: 1034, attendanceDate: '2026-06-25', occurredAt: '2026-06-25T09:55:08.000Z', eventType: 'check_in', failureReason: 'FACE_MISMATCH', dailyStatus: 'absence' },
+        { code: 'PAYROLL_CHRONOLOGY_CONFLICT', months: ['2026-04', '2026-05'] },
+      ] },
+    }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاعتماد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعذر اعتماد راتب أحمد جمال' });
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'إغلاق' }));
+    for (const detail of ['2026-06', '2026-06-30', '871', '1034', '2026-06-25', '2026-04', '2026-05']) {
+      expect(dialog.textContent).toContain(detail);
+    }
+    expect(within(dialog).getByText('الصورة لا تطابق صورة الموظف')).toBeDefined();
+    expect(dialog.textContent).toContain('غياب');
+    expect(within(dialog).getByRole('link', { name: 'فتح الحضور والغياب' }).getAttribute('href')).toBe('/attendance');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'إغلاق' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('جلسة حضور مفتوحة');
+    fireEvent.click(screen.getByRole('button', { name: 'عرض أسباب التعذر' }));
+    expect(screen.getByRole('dialog', { name: 'تعذر اعتماد راتب أحمد جمال' })).toBeDefined();
+  });
+
+  test.each([
+    [0, 'NETWORK_ERROR', 'تعذر الاتصال بالخادم'],
+    [401, 'UNAUTHORIZED', 'تسجيل الدخول'],
+    [403, 'FORBIDDEN', 'صلاحية'],
+    [403, 'INVALID_ORIGIN', 'عنوان الموقع'],
+    [404, 'NOT_FOUND', 'مسار خدمة اعتماد الرواتب'],
+    [413, 'PAYLOAD_TOO_LARGE', 'حجم طلب الاعتماد'],
+    [500, 'INTERNAL_ERROR', 'الخادم'],
+  ])('explains operational finalization failures (%s) without claiming payroll was unchanged', async (status, code, text) => {
+    mocks.finalizePayroll.mockRejectedValue(new ApiError(status, { code, message: 'تعذر تنفيذ العملية' }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاعتماد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعذر اعتماد راتب أحمد جمال' });
+    expect(dialog.textContent).toContain(text);
+    expect(dialog.textContent).not.toContain('لم يتم اعتماد');
+  });
+
+  test('identifies branch employees and opens the oldest missing month from its failure popup', async () => {
+    mocks.finalizeBranchPayroll.mockRejectedValue(new ApiError(409, {
+      code: 'PAYROLL_BLOCKED', message: 'تعذر الاعتماد', details: { issues: [
+        { code: 'PAYROLL_CHRONOLOGY_CONFLICT', employeeId: 1, employeeCode: 1001, employeeName: 'أحمد جمال', months: ['2026-04', '2026-05'] },
+        { code: 'DENIED_ATTEMPT', employeeId: 2, employeeCode: 1002, employeeName: 'منى علي', attendanceDate: '2026-06-25', attemptId: 1035, failureReason: 'FACE_SPOOF_DETECTED' },
+      ] },
+    }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    await pickMonth('يونيو');
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'اعتماد رواتب الفرع' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد اعتماد الفرع' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعذر اعتماد رواتب فرع القاهرة' });
+    expect(dialog.textContent).toContain('أحمد جمال');
+    expect(dialog.textContent).toContain('1002');
+    expect(dialog.textContent).toContain('تم اكتشاف محاولة تزييف');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'فتح شهر 2026-04' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(mocks.listPayrollMonths).toHaveBeenLastCalledWith({ month: '2026-04', search: '1001', page: 1 }));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('shows known legacy blockers and handles unexpected or malformed details without crashing', async () => {
+    mocks.finalizePayroll.mockRejectedValue(new ApiError(409, {
+      code: 'PAYROLL_BLOCKED', message: 'تعذر الاعتماد',
+      details: { issues: [{ code: 42 }, null], blockers: ['24:OPEN_SESSION', 'NEW_SERVER_BLOCKER'] },
+    }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاعتماد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعذر اعتماد راتب أحمد جمال' });
+    expect(dialog.textContent).toContain('جلسة حضور مفتوحة');
+    expect(dialog.textContent).toContain('24');
+    expect(dialog.textContent).toContain('سبب إضافي لتعذر الاعتماد');
+  });
+
+  test('retains a legacy reason when only part of the detailed evidence is valid', async () => {
+    mocks.finalizePayroll.mockRejectedValue(new ApiError(409, {
+      code: 'PAYROLL_BLOCKED', message: 'تعذر الاعتماد', details: {
+        issues: [{ code: 'OPEN_SESSION', sessionId: 871 }, { code: null }],
+        blockers: ['OPEN_SESSION', 'DENIED_ATTEMPT', 'constructor'],
+      },
+    }));
+    renderView();
+    await screen.findByText('أحمد جمال');
+    fireEvent.click(within(rowOf('أحمد جمال')).getByRole('button', { name: 'اعتماد' }));
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الاعتماد' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعذر اعتماد راتب أحمد جمال' });
+    expect(within(dialog).getAllByRole('heading', { name: 'جلسة حضور مفتوحة' })).toHaveLength(1);
+    expect(within(dialog).getByRole('heading', { name: 'محاولة حضور أو انصراف تحتاج مراجعة' })).toBeDefined();
+    expect(within(dialog).getByRole('heading', { name: 'سبب إضافي لتعذر الاعتماد' })).toBeDefined();
+  });
+
   test('shows an empty state when the month has no payrolls', async () => {
     mocks.listPayrollMonths.mockResolvedValue(pageOf([]));
     renderView();
@@ -619,5 +721,21 @@ describe('PayrollView', () => {
     await screen.findByText('سارة محمد');
     // There is no payroll to print until the blocking days are resolved.
     expect(within(rowOf('سارة محمد')).queryByRole('button', { name: 'طباعة' })).toBeNull();
+  });
+
+  test('explains financial blockers from the list without sending the admin to attendance', async () => {
+    mocks.listPayrollMonths.mockResolvedValue(pageOf([{
+      ...blocked, blockers: ['PAYROLL_AMOUNT_OUT_OF_RANGE'], missingAttendanceDates: [],
+      issues: [{ code: 'PAYROLL_AMOUNT_OUT_OF_RANGE', field: 'bonusAmount', amount: '1009999999998.99', limit: '999999999999.99' }],
+    }]));
+    renderView();
+    await screen.findByText('سارة محمد');
+    fireEvent.click(within(rowOf('سارة محمد')).getByRole('button', { name: 'عرض أسباب التعذر' }));
+    const dialog = await screen.findByRole('dialog', { name: 'تعذر اعتماد راتب سارة محمد' });
+    expect(dialog.textContent).toContain('المكافآت');
+    expect(dialog.textContent).toContain('1009999999998.99');
+    expect(dialog.textContent).toContain('999999999999.99');
+    expect(within(dialog).queryByRole('link', { name: 'فتح الحضور والغياب' })).toBeNull();
+    expect(mocks.finalizePayroll).not.toHaveBeenCalled();
   });
 });

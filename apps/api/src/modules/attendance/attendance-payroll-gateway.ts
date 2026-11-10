@@ -1,3 +1,4 @@
+import type { PayrollFinalizationIssue } from '@capella/contracts';
 import {
   attendanceDailyRecords,
   attendanceDeniedAttempts,
@@ -5,10 +6,11 @@ import {
   employeeEmploymentPeriods,
   employees,
 } from '@capella/database/schema';
-import { and, eq, gte, isNull, lte } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 
 import { employmentDateAccruesAbsence } from '../employees/employment-period.js';
 import type { PayrollAttendanceGateway } from '../payroll/index.js';
+import { payrollEvidenceTimestamp } from '../payroll/payroll-domain.js';
 import { calendarDateInTimeZone } from '../weekly-day-off/index.js';
 import { endOfDate, startOfDate } from './attendance-calendar.js';
 import type { AttendanceRequiredDurationReader, Transaction } from './attendance-repository-support.js';
@@ -48,9 +50,11 @@ export const createAttendancePayrollGateway = (
       const monthStart = `${payrollMonth}-01`;
       const monthEnd = `${payrollMonth}-${String(daysInMonth).padStart(2, '0')}`;
       const sessions = await executor.select({
+        id: attendanceSessions.id,
         attendanceDate: attendanceSessions.attendanceDate,
         requiredMinutes: attendanceSessions.requiredMinutes,
         checkInAt: attendanceSessions.checkInAt,
+        checkInEpoch: sql<string>`UNIX_TIMESTAMP(${attendanceSessions.checkInAt})`,
         checkOutAt: attendanceSessions.checkOutAt,
         workedMinutes: attendanceSessions.workedMinutes,
         overtimeMinutes: attendanceSessions.overtimeMinutes,
@@ -71,8 +75,11 @@ export const createAttendancePayrollGateway = (
         lte(attendanceDailyRecords.attendanceDate, monthEnd),
       ));
       const pendingDenied = await executor.select({
+        id: attendanceDeniedAttempts.id,
         eventType: attendanceDeniedAttempts.eventType,
         occurredAt: attendanceDeniedAttempts.occurredAt,
+        occurredEpoch: sql<string>`UNIX_TIMESTAMP(${attendanceDeniedAttempts.occurredAt})`,
+        failureReason: attendanceDeniedAttempts.failureReason,
       })
         .from(attendanceDeniedAttempts).where(and(
           eq(attendanceDeniedAttempts.employeeId, employeeId),
@@ -83,18 +90,25 @@ export const createAttendancePayrollGateway = (
         ));
 
       const reasons: string[] = [];
+      const issues: PayrollFinalizationIssue[] = [];
       const missingDates: string[] = [];
       const sessionByDate = new Map(sessions.map((session) => [session.attendanceDate, session]));
       const dailyByDate = new Map(dailyRecords.map((record) => [record.attendanceDate, record]));
-      if (mode === 'finalize') {
-        if (sessions.some(({ checkOutAt }) => checkOutAt === null)) reasons.push('OPEN_SESSION');
+      if (mode !== 'preview') {
+        for (const session of sessions.filter(({ checkOutAt }) => checkOutAt === null)) {
+          issues.push({
+            code: 'OPEN_SESSION', sessionId: session.id, attendanceDate: session.attendanceDate,
+            checkInAt: payrollEvidenceTimestamp(session.checkInEpoch) ?? undefined,
+          });
+        }
+        if (issues.length) reasons.push('OPEN_SESSION');
         const hasDeniedCheckout = pendingDenied.some(({ eventType }) => eventType === 'check_out');
         const openSession = hasDeniedCheckout
           ? (await executor.select({ checkInAt: attendanceSessions.checkInAt })
               .from(attendanceSessions)
               .where(eq(attendanceSessions.openEmployeeId, employeeId)).limit(1))[0]
           : undefined;
-        const actionableDenied = pendingDenied.some((attempt) => {
+        const actionableDenied = pendingDenied.filter((attempt) => {
           if (attempt.eventType === 'check_out') {
             return openSession !== undefined
               && attempt.occurredAt.getTime() > openSession.checkInAt.getTime();
@@ -103,7 +117,17 @@ export const createAttendancePayrollGateway = (
           return !sessionByDate.has(attendanceDate)
             && dailyByDate.get(attendanceDate)?.status !== 'weekly_day_off';
         });
-        if (actionableDenied) reasons.push('DENIED_ATTEMPT');
+        actionableDenied.sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime() || left.id - right.id);
+        for (const attempt of actionableDenied) {
+          const occurredAt = payrollEvidenceTimestamp(attempt.occurredEpoch);
+          const attendanceDate = calendarDateInTimeZone(occurredAt ? new Date(occurredAt) : attempt.occurredAt, timeZone);
+          issues.push({
+            code: 'DENIED_ATTEMPT', attemptId: attempt.id, attendanceDate,
+            occurredAt: occurredAt ?? undefined, eventType: attempt.eventType,
+            failureReason: attempt.failureReason, dailyStatus: dailyByDate.get(attendanceDate)?.status,
+          });
+        }
+        if (actionableDenied.length) reasons.push('DENIED_ATTEMPT');
       }
       for (let day = 1; day <= daysInMonth; day += 1) {
         const attendanceDate = `${payrollMonth}-${String(day).padStart(2, '0')}`;
@@ -113,7 +137,7 @@ export const createAttendancePayrollGateway = (
           missingDates.push(attendanceDate);
         }
       }
-      if (reasons.length) return { kind: 'blocked', reasons };
+      if (mode === 'finalize' && reasons.length) return { kind: 'blocked', reasons, issues };
 
       // Report previews run in read-only snapshots; only approval needs the shift lock.
       const defaultRequiredMinutes = mode === 'finalize'
@@ -188,6 +212,7 @@ export const createAttendancePayrollGateway = (
       }
       return {
         kind: 'ready',
+        ...(issues.length ? { issues } : {}),
         facts: {
           fullMonthWorkdays: daysInMonth - weeklyDays.size,
           eligibleWorkdays,

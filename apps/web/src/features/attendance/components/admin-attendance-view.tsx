@@ -41,7 +41,7 @@ import {
   type AttendanceSessionFilters,
 } from '../api/attendance-api';
 import { cairoLocalDateTimeToIso, isoToCairoDateTimeLocal } from '../lib/cairo-time';
-import { FACE_FAILURE_LABELS } from '../lib/failure-labels';
+import { ATTENDANCE_FAILURE_LABELS } from '../lib/failure-labels';
 import { invalidateAttendanceDependents } from '../lib/invalidate-attendance';
 import { handleRtlTabKey } from '../lib/tab-keyboard';
 import { attendanceQueryKeys } from '../query-keys';
@@ -269,15 +269,7 @@ function SessionSection() {
   );
 }
 
-const failureLabels: Record<string, string> = {
-  ...FACE_FAILURE_LABELS,
-  EMPLOYEE_NOT_FOUND: 'الموظف غير موجود',
-  INVALID_CREDENTIALS: 'بيانات الموظف غير صحيحة', DEVICE_INVALID: 'الجهاز غير مسجل أو ملغى',
-  OUT_OF_RANGE: 'خارج نطاق الفرع', WEEKLY_DAY_OFF: 'يوم راحة أسبوعي',
-  SESSION_EXISTS: 'يوجد سجل لهذا اليوم', OPEN_SESSION_EXISTS: 'توجد جلسة مفتوحة',
-  NO_OPEN_SESSION: 'لا توجد جلسة مفتوحة', INVALID_TIME: 'وقت غير صالح',
-  FINANCIALLY_LOCKED: 'الفترة معتمدة ماليًا ولا يمكن تعديلها',
-};
+const failureLabels = ATTENDANCE_FAILURE_LABELS;
 
 function DeniedSection() {
   const queryClient = useQueryClient();

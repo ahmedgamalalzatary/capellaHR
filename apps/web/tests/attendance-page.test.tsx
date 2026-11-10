@@ -325,6 +325,22 @@ describe('AttendancePage', () => {
     expect(queryClient.getQueryState(['weekly-day-off', 'list'])?.isInvalidated).toBe(true);
   });
 
+  it.each([
+    ['FACE_SPOOF_DETECTED', 'تم اكتشاف محاولة تزييف في فحص الوجه'],
+    ['EMPLOYEE_INACTIVE', 'تم إيقاف الموظف'],
+    ['EMPLOYMENT_INACTIVE', 'الموظف غير معيّن في تاريخ المحاولة'],
+    ['LOCATION_UNRELIABLE', 'دقة الموقع غير كافية للتحقق من الحضور'],
+  ])('explains the %s denial on the attendance review screen', async (failureReason, label) => {
+    const normalFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => String(input).includes('/attendance/denied-attempts') && !init?.method
+      ? response(page([{ ...attempt, failureReason }]))
+      : normalFetch(input, init));
+    renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'المحاولات المرفوضة' }));
+    const row = (await screen.findByText(label)).closest('tr')!;
+    expect(within(row).getByRole('button', { name: 'رفض نهائي' })).toBeDefined();
+  });
+
   it('offers only dismissal when a denied attempt has no known employee', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('tab', { name: 'المحاولات المرفوضة' }));

@@ -50,6 +50,19 @@ const payrollService = (): PayrollService => ({
 });
 
 describe('financial HTTP APIs', () => {
+  it('returns detailed payroll evidence to the admin without dropping the request ID', async () => {
+    const service = payrollService();
+    vi.mocked(service.finalize).mockRejectedValue(new PayrollError('PAYROLL_BLOCKED', 'تعذر الاعتماد', ['DENIED_ATTEMPT'], [
+      { code: 'DENIED_ATTEMPT', employeeId: 7, attemptId: 1034, attendanceDate: '2026-06-25', failureReason: 'FACE_MISMATCH' },
+    ]));
+    const response = await request(createApp({ authService: makeAuth(), payrollService: service }))
+      .post('/api/v1/payroll/employees/7/months/2026-06/finalize').set('Cookie', 'capella_session=x');
+    expect(response.status).toBe(409);
+    expect(response.body.error.details).toEqual({ blockers: ['DENIED_ATTEMPT'], issues: [
+      { code: 'DENIED_ATTEMPT', employeeId: 7, attemptId: 1034, attendanceDate: '2026-06-25', failureReason: 'FACE_MISMATCH' },
+    ] });
+    expect(response.body.error.requestId).toEqual(expect.any(String));
+  });
   it('requires an authenticated admin for all financial modules', async () => {
     const app = createApp({ authService: makeAuth('employee'), bonusService: bonusService() });
     expect((await request(app).get('/api/v1/bonuses').set('Cookie', 'capella_session=x')).status).toBe(403);

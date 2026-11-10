@@ -66,3 +66,29 @@ export const listPayrollMonthsQuerySchema = z.object({
 export type PayrollMonth = z.infer<typeof payrollMonthSchema>;
 export type UpdateBaseSalaryInput = z.infer<typeof updateBaseSalarySchema>;
 export type ListPayrollMonthsQuery = z.infer<typeof listPayrollMonthsQuerySchema>;
+
+/** Admin-facing evidence for a payroll approval failure; timestamps are UTC ISO strings. */
+export const payrollFinalizationIssueSchema = z.object({
+  code: z.string(),
+  employeeId: z.number().optional(),
+  employeeCode: z.number().optional(),
+  employeeName: z.string().optional(),
+  payrollMonth: z.string().optional(),
+  attendanceDate: z.string().optional(),
+  sessionId: z.number().optional(),
+  checkInAt: z.string().optional(),
+  attemptId: z.number().optional(),
+  occurredAt: z.string().optional(),
+  eventType: z.enum(['check_in', 'check_out']).optional(),
+  failureReason: z.string().optional(),
+  dailyStatus: z.string().optional(),
+  months: z.array(z.string()).optional(),
+  field: z.string().optional(),
+  amount: z.string().optional(),
+  limit: z.string().optional(),
+  currentMonth: z.string().optional(),
+  startMonth: z.string().optional(),
+  finalizedAt: z.string().optional(),
+  employmentPeriods: z.array(z.object({ activeFrom: z.string(), activeTo: z.string().nullable() })).optional(),
+});
+export type PayrollFinalizationIssue = z.infer<typeof payrollFinalizationIssueSchema>;

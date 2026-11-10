@@ -24,6 +24,15 @@ const repository = (): PayrollRepository => ({
 });
 
 describe('payroll service', () => {
+  it('retains all finalization evidence when turning a repository failure into a domain error', async () => {
+    const repo = repository();
+    const issues = [{ code: 'OPEN_SESSION', sessionId: 871, attendanceDate: '2026-06-30' }];
+    vi.mocked(repo.finalize).mockResolvedValue({ kind: 'blocked', reasons: ['OPEN_SESSION'], issues });
+    const attendance = { readPayrollFacts: vi.fn(async () => ({ kind: 'ready' as const, facts: {} as never })) };
+    await expect(createPayrollService(repo, attendance).finalize(7, '2026-06')).rejects.toMatchObject({
+      code: 'PAYROLL_BLOCKED', reasons: ['OPEN_SESSION'], issues,
+    });
+  });
   it('reads and updates the active employee base salary', async () => {
     const repo = repository();
     const service = createPayrollService(repo);

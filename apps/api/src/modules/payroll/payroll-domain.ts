@@ -15,6 +15,10 @@ export type PayrollCalculationInput = {
   deactivationAdjustment?: string;
 };
 
+/** Evidence must use the database's absolute instant, independent of its session time zone. */
+export const payrollEvidenceTimestamp = (epochSeconds: string | null) => epochSeconds === null
+  ? null : new Date(Math.round(Number(epochSeconds) * 1000)).toISOString();
+
 const toCents = (amount: string) => {
   const negative = amount.startsWith('-');
   const unsigned = negative ? amount.slice(1) : amount;

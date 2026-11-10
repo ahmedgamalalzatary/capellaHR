@@ -17,6 +17,7 @@ export interface ApiErrorBody {
   message: string;
   fieldErrors?: ApiFieldErrors;
   requestId?: string;
+  details?: unknown;
 }
 
 export class ApiError extends Error {
@@ -24,6 +25,7 @@ export class ApiError extends Error {
   readonly code: string;
   readonly fieldErrors: ApiFieldErrors;
   readonly requestId: string | undefined;
+  readonly details: unknown;
 
   constructor(status: number, body: ApiErrorBody) {
     super(body.message);
@@ -32,6 +34,7 @@ export class ApiError extends Error {
     this.code = body.code;
     this.fieldErrors = body.fieldErrors ?? {};
     this.requestId = body.requestId;
+    this.details = body.details;
   }
 }
 

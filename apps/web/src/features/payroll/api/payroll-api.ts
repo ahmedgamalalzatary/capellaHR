@@ -1,4 +1,4 @@
-import type { UpdateBaseSalaryInput } from '@capella/contracts';
+import type { PayrollFinalizationIssue, UpdateBaseSalaryInput } from '@capella/contracts';
 
 import { api, type PageMeta } from '@/lib/api/client';
 
@@ -59,6 +59,7 @@ export interface BlockedPayrollRecord {
   payrollMonth: string;
   blockers: string[];
   missingAttendanceDates: string[];
+  issues?: PayrollFinalizationIssue[];
 }
 
 export type PayrollListItem = PayrollRecord | BlockedPayrollRecord;

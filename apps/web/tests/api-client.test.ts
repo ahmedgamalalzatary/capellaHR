@@ -14,6 +14,17 @@ afterEach(() => {
 });
 
 describe('api client error contract', () => {
+  test('preserves structured payroll blockers from the actual HTTP response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(409, {
+      error: {
+        code: 'PAYROLL_BLOCKED', message: 'تعذر اعتماد الراتب لوجود عوائق',
+        details: { blockers: ['DENIED_ATTEMPT'], issues: [{ code: 'DENIED_ATTEMPT', attemptId: 1034 }] },
+      },
+    })));
+    await expect(api.post('/payroll/employees/24/months/2026-10/finalize')).rejects.toMatchObject({
+      details: { blockers: ['DENIED_ATTEMPT'], issues: [{ code: 'DENIED_ATTEMPT', attemptId: 1034 }] },
+    });
+  });
   test('posts Excel filters with credentials and returns the binary workbook', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('xlsx'));
     vi.stubGlobal('fetch', fetchMock);
