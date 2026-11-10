@@ -235,4 +235,6 @@ export type ReportSnapshot = {
   columns: ReportColumn[];
   rows: Array<Record<string, ReportCell>>;
   summary: Record<string, ReportCell>;
+  /** Column sums over every matching record, before pagination. IDs and descriptive fields are excluded. */
+  totals?: Record<string, ReportCell>;
 };

@@ -34,6 +34,29 @@ afterAll(clear);
 const shifts = createShiftsModule(database);
 
 describe('MySQL-backed reports reading', () => {
+  it('totals all filtered records across pages and narrows them to selected employees', async () => {
+    const { branchId, employeeId } = await seed();
+    const reader = createDrizzleReportReader(database);
+    for (const [reportType, totals] of [
+      ['employees', { monthlyBaseSalary: '11000.00', shiftDurationMinutes: 1080 }],
+      ['shifts', { durationMinutes: 1080 }],
+      ['weekly-day-off', { requiredMinutes: 480 }],
+      ['attendance', { requiredMinutes: 1080, workedMinutes: 0, overtimeMinutes: 0, shortageMinutes: 0 }],
+      ['bonuses', { amount: '100.00' }],
+      ['deductions', { amount: '25.00' }],
+      ['advances', { amount: '80.00', installmentCount: 2 }],
+    ] as const) {
+      const result = await reader.read(reportType, { branchId }, { mode: 'all' }, { page: 1, pageSize: 1 }, now);
+      expect(result.kind).toBe('success');
+      if (result.kind === 'success') expect(result.snapshot.totals).toEqual(totals);
+    }
+    await expect(reader.read('employees', { branchId }, { mode: 'selected', ids: [employeeId] }, { page: 1, pageSize: 1 }, now))
+      .resolves.toMatchObject({ kind: 'success', total: 1, snapshot: { totals: { monthlyBaseSalary: '6000.00', shiftDurationMinutes: 600 } } });
+    await expect(reader.read('employees', { branchId, search: 'محذوف' }, { mode: 'all' }, { page: 1, pageSize: 1 }, now))
+      .resolves.toMatchObject({ kind: 'success', total: 1, snapshot: { totals: { monthlyBaseSalary: '5000.00', shiftDurationMinutes: 480 } } });
+    await expect(reader.read('employees', { branchId, search: 'محذوف' }, { mode: 'selected', ids: [employeeId] }, null, now))
+      .resolves.toMatchObject({ kind: 'success', total: 0, snapshot: { totals: { monthlyBaseSalary: '0.00', shiftDurationMinutes: 0 } } });
+  });
   it('keeps historical report rows and branch filters under the original branch', async () => {
     const { branchId, employeeId, deletedEmployeeId } = await seed();
     const newBranchId = Number((await database.insert(branches).values({
@@ -118,6 +141,7 @@ describe('MySQL-backed reports reading', () => {
     expect(exported).toEqual(interactive.snapshot.rows);
     if (batched.kind !== 'success') return;
     expect(batched.snapshot.summary).toEqual(interactive.snapshot.summary);
+    expect(batched.snapshot.totals).toEqual(interactive.snapshot.totals);
 
     // The August branch must claim the same rows once the month moves with the assignment.
     await expect(reader.readBatches(
@@ -317,6 +341,7 @@ describe('MySQL-backed reports reading', () => {
           expect.objectContaining({ employeeId: deletedEmployeeId, payrollMonth: '2026-07', status: 'open' }),
         ]),
         summary: { finalizedRecords: 1, openRecords: 1, totalNetSalary: '6065.00' },
+        totals: { baseSalary: '11000.00', commissionAmount: '30.00', netSalary: '6065.00' },
       },
     });
 

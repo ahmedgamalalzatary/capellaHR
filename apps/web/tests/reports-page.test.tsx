@@ -123,6 +123,7 @@ function renderView() {
 }
 
 beforeEach(() => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   mocks.viewReport.mockResolvedValue({ snapshot: branchesSnapshot, meta });
   mocks.listReportExports.mockResolvedValue(
     pageOf([completedExport, failedExport, deletedFileExport]),
@@ -142,6 +143,81 @@ const exportRow = (id: number) =>
   screen.getByTestId(`export-${id}`);
 
 describe('ReportsView', () => {
+  test('updates the totals row for selected employees across pages and resets it with filters', async () => {
+    mocks.viewReport.mockImplementation(async (_type: string, params: { page?: number; selectedIds?: number[]; search?: string; branchId?: number }) => {
+      const allRows = [
+        { id: 41, fullName: 'أحمد', monthlyBaseSalary: '5000.10' },
+        { id: 42, fullName: 'سارة', monthlyBaseSalary: '6000.20' },
+        { id: 43, fullName: 'منى', monthlyBaseSalary: '7000.30' },
+      ];
+      const filtered = params.search ? allRows.slice(1, 2) : params.branchId ? allRows.slice(0, 2) : allRows;
+      const selected = params.selectedIds ? filtered.filter((row) => params.selectedIds!.includes(row.id)) : filtered;
+      const totalCents = selected.reduce((sum, row) => sum + Math.round(Number(row.monthlyBaseSalary) * 100), 0);
+      return {
+        snapshot: {
+          ...branchesSnapshot, reportType: 'employees',
+          columns: [{ key: 'id', label: 'الرقم' }, { key: 'fullName', label: 'الاسم' }, { key: 'monthlyBaseSalary', label: 'الراتب الأساسي' }],
+          rows: selected.slice(((params.page ?? 1) - 1) * 2, (params.page ?? 1) * 2),
+          totals: { monthlyBaseSalary: (totalCents / 100).toFixed(2) },
+          summary: { totalRecords: selected.length },
+        },
+        meta: { page: params.page ?? 1, pageSize: 2, total: selected.length, totalPages: Math.ceil(selected.length / 2) },
+      };
+    });
+    renderView();
+    fireEvent.click(screen.getByRole('tab', { name: 'الموظفون' }));
+    const totalsRow = () => screen.getByRole('row', { name: /الإجمالي/ });
+    await waitFor(() => expect(totalsRow().textContent).toContain('18000.60'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 41' }));
+    await waitFor(() => expect(totalsRow().textContent).toContain('5000.10'));
+    // Selection totals must not remove the other employees from the table.
+    expect(screen.getByText('سارة')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'التالي' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'تحديد الصف 43' }));
+    await waitFor(() => expect(totalsRow().textContent).toContain('12000.40'));
+    fireEvent.change(screen.getByLabelText('تصفية حسب الفرع'), { target: { value: '3' } });
+    await waitFor(() => expect(totalsRow().textContent).toContain('11000.30'));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'سارة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'بحث' }));
+    await waitFor(() => expect(totalsRow().textContent).toContain('6000.20'));
+    mocks.createReportExport.mockResolvedValue({ ...completedExport, status: 'queued' });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 42' }));
+    await waitFor(() => expect(totalsRow().textContent).toContain('6000.20'));
+    fireEvent.click(screen.getByRole('button', { name: 'تصدير المحدد (1)' }));
+    await waitFor(() => expect(mocks.createReportExport).toHaveBeenCalledWith({
+      reportType: 'employees', filters: { branchId: 3, search: 'سارة' }, selection: { mode: 'selected', ids: [42] },
+    }));
+    await waitFor(() => expect(mocks.createReportExport).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole('checkbox', { name: 'تحديد الصف 42' }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  test('shows zero totals with an empty filtered report', async () => {
+    mocks.viewReport.mockResolvedValue({
+      snapshot: { ...bonusesSnapshot, rows: [], summary: { totalRecords: 0 }, totals: { amount: '0.00' } },
+      meta: { ...meta, total: 0 },
+    });
+    renderView();
+    await screen.findByText('لا توجد سجلات مطابقة');
+    expect(screen.getByRole('row', { name: /الإجمالي/ }).textContent).toContain('0.00');
+  });
+
+  test('does not show the all-results total when selected totals fail and can retry', async () => {
+    const snapshot = { ...branchesSnapshot, totals: { amount: '999.00' } };
+    mocks.viewReport.mockImplementation(async (_type, params) => {
+      if (params.selection === 'selected') throw new Error('Unavailable');
+      return { snapshot, meta };
+    });
+    renderView();
+    await screen.findByText('فرع المعادى');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'تحديد الصف 1' }));
+    await screen.findByText('تعذر حساب الإجمالي.');
+    expect(screen.queryByText('إجمالي السجلات')).toBeNull();
+    mocks.viewReport.mockResolvedValue({ snapshot: { ...snapshot, summary: { totalRecords: 1 } }, meta });
+    fireEvent.click(screen.getByRole('button', { name: 'إعادة المحاولة' }));
+    await screen.findByText('إجمالي السجلات');
+    expect(screen.queryByText('تعذر حساب الإجمالي.')).toBeNull();
+  });
+
   test('downloads Excel with applied filters and selected rows', async () => {
     mocks.downloadReportExcel.mockResolvedValue(new Blob(['xlsx']));
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');

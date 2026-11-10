@@ -82,6 +82,19 @@ export function ReportsView() {
     queryFn: () => viewReport(reportType, { ...filters, page }),
   });
 
+  const selectionParams = {
+    ...filters,
+    selection: 'selected' as const,
+    selectedIds: [...selectedIds].sort((left, right) => left - right),
+    pageSize: 1,
+  };
+  // The server aggregates the entire selection, including records on other pages.
+  const selectionQuery = useQuery({
+    queryKey: reportQueryKeys.view(reportType, selectionParams),
+    queryFn: () => viewReport(reportType, selectionParams),
+    enabled: selectedIds.size > 0,
+  });
+
   const branchesQuery = useQuery({
     queryKey: branchQueryKeys.options(),
     queryFn: () => fetchAllPages((optionsPage) => listBranches({ page: optionsPage })),
@@ -91,7 +104,6 @@ export function ReportsView() {
   const exportReport = useMutation({
     mutationFn: (input: CreateReportExportInput) => createReportExport(input),
     onSuccess: async () => {
-      setSelectedIds(new Set());
       await queryClient.invalidateQueries({ queryKey: reportQueryKeys.exports() });
       notifySuccess('بدأ تجهيز ملف التصدير.');
     },
@@ -115,6 +127,7 @@ export function ReportsView() {
   });
 
   const snapshot = reportQuery.data?.snapshot;
+  const totalsSnapshot = selectedIds.size > 0 ? selectionQuery.data?.snapshot : snapshot;
   const meta = reportQuery.data?.meta;
   const idKey = idKeyOf(reportType);
 
@@ -325,7 +338,7 @@ export function ReportsView() {
               </Button>
             }
           />
-        ) : !snapshot || snapshot.rows.length === 0 ? (
+        ) : !snapshot ? (
           <EmptyState
             title="لا توجد سجلات مطابقة"
             description="عدّل الفلاتر أو الفترة للحصول على نتائج."
@@ -344,6 +357,11 @@ export function ReportsView() {
                 </tr>
               </thead>
               <tbody>
+                {snapshot.rows.length === 0 ? (
+                  <tr><td colSpan={snapshot.columns.length + 1}>
+                    <EmptyState title="لا توجد سجلات مطابقة" description="عدّل الفلاتر أو الفترة للحصول على نتائج." />
+                  </td></tr>
+                ) : null}
                 {snapshot.rows.map((row, index) => {
                   const rowId = typeof row[idKey] === 'number' ? (row[idKey] as number) : null;
                   return (
@@ -367,15 +385,39 @@ export function ReportsView() {
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-line bg-surface font-semibold" aria-busy={selectedIds.size > 0 && selectionQuery.isFetching}>
+                  <th scope="row" className="whitespace-nowrap px-3 py-3 text-start">
+                    الإجمالي
+                    <span className="mt-1 block text-xs font-normal text-muted">
+                      {selectedIds.size > 0 ? `المحدد (${selectedIds.size})` : 'كل النتائج المطابقة'}
+                    </span>
+                  </th>
+                  {selectedIds.size > 0 && (selectionQuery.isPending || selectionQuery.isError) ? (
+                    <td colSpan={snapshot.columns.length} className="px-4 py-3">
+                      {selectionQuery.isError ? (
+                        <span role="alert" className="flex flex-wrap items-center gap-2 text-danger">
+                          تعذر حساب الإجمالي.
+                          <Button size="sm" variant="secondary" onClick={() => void selectionQuery.refetch()}>إعادة المحاولة</Button>
+                        </span>
+                      ) : <span role="status" className="text-muted">جارٍ حساب الإجمالي…</span>}
+                    </td>
+                  ) : snapshot.columns.map((column) => (
+                    <td key={column.key} className="px-4 py-3">
+                      <span className="tabular">{cellText(totalsSnapshot?.totals?.[column.key] ?? null)}</span>
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
       </Card>
 
-      {snapshot && snapshot.rows.length > 0 ? (
+      {totalsSnapshot && snapshot && snapshot.rows.length > 0 ? (
         <Card>
           <dl className="grid gap-x-8 gap-y-2 p-4 text-[13px] sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(snapshot.summary).map(([key, value]) => (
+            {Object.entries(totalsSnapshot.summary).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between gap-4">
                 <dt className="text-muted">{SUMMARY_LABELS[key] ?? key}</dt>
                 <dd className="tabular">{cellText(value)}</dd>

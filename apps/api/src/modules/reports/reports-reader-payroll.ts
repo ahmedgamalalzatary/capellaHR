@@ -10,6 +10,7 @@ import { calendarMonthInTimeZone, type PayrollResult } from '../payroll/index.js
 import type { ReportReader } from './reports-service.js';
 import {
   columns,
+  createPayrollReportTotals,
   employeeFilters,
   moneyCents,
   moneyFromCents,
@@ -74,6 +75,7 @@ export const readPayrollReport = async (
   let openRecords = 0;
   let finalizedRecords = 0;
   let totalNetSalaryCents = 0n;
+  const totals = createPayrollReportTotals();
   for (const month of reportMonths) {
     for (const employee of employeeRows) {
       const result = await payroll.preview(employee.id, month, executor);
@@ -87,6 +89,7 @@ export const readPayrollReport = async (
       if (result.payroll.status === 'open') openRecords += 1;
       else finalizedRecords += 1;
       totalNetSalaryCents += moneyCents(result.payroll.netSalary);
+      totals.add(result.payroll);
     }
   }
   const rows: Row[] = selectedRows.map(({ payroll: row, isEmployeeDeleted }) => (
@@ -112,5 +115,5 @@ export const readPayrollReport = async (
     openRecords,
     finalizedRecords,
     totalNetSalary: moneyFromCents(totalNetSalaryCents),
-  }, generatedAt) };
+  }, generatedAt, totals.values()) };
 };

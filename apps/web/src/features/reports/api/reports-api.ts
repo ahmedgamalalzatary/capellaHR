@@ -35,6 +35,9 @@ export interface ReportExport {
 
 export interface ViewReportParams extends ReportFilters {
   page?: number;
+  pageSize?: number;
+  selection?: 'selected';
+  selectedIds?: number[];
 }
 
 export function viewReport(

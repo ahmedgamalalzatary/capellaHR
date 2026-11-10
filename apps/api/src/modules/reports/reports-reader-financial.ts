@@ -95,7 +95,8 @@ export const readBonusesOrDeductionsReport = async (
     ['reason', reportType === 'bonuses' ? 'سبب المكافأة' : 'سبب الخصم'],
     ['isEmployeeDeleted', 'موظف محذوف'],
     ['createdAt', 'تاريخ الإنشاء'], ['updatedAt', 'آخر تحديث'],
-  ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt) };
+  ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt,
+  { amount: aggregate[0]?.amount ?? '0.00' }) };
 };
 
 export const readAdvancesReport = async (
@@ -147,7 +148,7 @@ export const readAdvancesReport = async (
     .where(where).orderBy(asc(advances.startMonth), asc(advances.id));
   const [records, aggregate] = await Promise.all([
     paginate(query, pagination),
-    executor.select({ value: count(), amount: sum(advances.amount) }).from(advances)
+    executor.select({ value: count(), amount: sum(advances.amount), installmentCount: sum(advances.installmentCount) }).from(advances)
       .innerJoin(employees, eq(employees.id, advances.employeeId))
       .leftJoin(employeeBranchAssignments, assignmentAtCreation).where(where),
   ]);
@@ -183,5 +184,6 @@ export const readAdvancesReport = async (
     ['installmentCount', 'عدد الأقساط'], ['startMonth', 'شهر البداية'],
     ['installmentSchedule', 'جدول الأقساط'], ['isEmployeeDeleted', 'موظف محذوف'],
     ['createdAt', 'تاريخ الإنشاء'], ['updatedAt', 'آخر تحديث'],
-  ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt) };
+  ), rows, { totalRecords: total, totalAmount: aggregate[0]?.amount ?? '0.00' }, generatedAt,
+  { amount: aggregate[0]?.amount ?? '0.00', installmentCount: Number(aggregate[0]?.installmentCount ?? 0) }) };
 };

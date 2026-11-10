@@ -106,7 +106,8 @@ export const readEmployeesOrShiftsReport = async (
     .where(where).orderBy(asc(employees.employeeCode));
   const [records, totals] = await Promise.all([
     paginate(query, pagination),
-    executor.select({ value: count() }).from(employees).where(where),
+    executor.select({ value: count(), salary: sum(employees.monthlyBaseSalary), minutes: sum(employees.shiftDurationMinutes) })
+      .from(employees).where(where),
   ]);
   const total = totals[0]?.value ?? 0;
   if (reportType === 'shifts') {
@@ -126,7 +127,8 @@ export const readEmployeesOrShiftsReport = async (
       ['employeeId', 'رقم الموظف'], ['employeeCode', 'كود الموظف'], ['employeeName', 'اسم الموظف'],
       ['branchId', 'رقم الفرع'], ['branchName', 'اسم الفرع'], ['durationMinutes', 'مدة الوردية بالدقائق'],
       ['isDeleted', 'موظف محذوف'], ['updatedAt', 'آخر تحديث'],
-    ), rows, { totalRecords: total, averageDurationMinutes: aggregate?.average ?? 0 }, generatedAt) };
+    ), rows, { totalRecords: total, averageDurationMinutes: aggregate?.average ?? 0 }, generatedAt,
+    { durationMinutes: Number(totals[0]?.minutes ?? 0) }) };
   }
   const rows = records.map((row) => ({
     id: row.id,
@@ -154,7 +156,8 @@ export const readEmployeesOrShiftsReport = async (
     ['shiftDurationMinutes', 'مدة الوردية بالدقائق'], ['monthlyBaseSalary', 'الراتب الأساسي'],
     ['isDeleted', 'موظف محذوف'], ['deletedAt', 'تاريخ الحذف'], ['createdAt', 'تاريخ الإنشاء'],
     ['updatedAt', 'آخر تحديث'],
-  ), rows, { totalRecords: total, activeRecords: total - deleted, deletedRecords: deleted }, generatedAt) };
+  ), rows, { totalRecords: total, activeRecords: total - deleted, deletedRecords: deleted }, generatedAt,
+  { monthlyBaseSalary: totals[0]?.salary ?? '0.00', shiftDurationMinutes: Number(totals[0]?.minutes ?? 0) }) };
 };
 
 export const readDevicesReport = async (
@@ -279,5 +282,6 @@ export const readWeeklyDayOffReport = async (
     ['employeeName', 'اسم الموظف'], ['branchId', 'رقم الفرع'], ['branchName', 'اسم الفرع'],
     ['attendanceDate', 'تاريخ يوم الراحة'], ['requiredMinutes', 'دقائق العمل المعفاة'],
     ['convertedAt', 'تاريخ التحويل'], ['isEmployeeDeleted', 'موظف محذوف'],
-  ), rows, { totalRecords: total, totalRequiredMinutes: Number(aggregate[0]?.minutes ?? 0) }, generatedAt) };
+  ), rows, { totalRecords: total, totalRequiredMinutes: Number(aggregate[0]?.minutes ?? 0) }, generatedAt,
+  { requiredMinutes: Number(aggregate[0]?.minutes ?? 0) }) };
 };

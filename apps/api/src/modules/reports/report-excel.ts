@@ -70,6 +70,17 @@ export const renderReportExcel = async (source: {
       rowCount += 1;
     }
   }
+  if (source.snapshot.totals && source.snapshot.columns.length) {
+    if (rowCount === 1_048_576) {
+      sheet.commit();
+      sheet = addSheet();
+    }
+    const totalRow = sheet.addRow(source.snapshot.columns.map(({ key }, index) => (
+      index === 0 ? 'الإجمالي' : source.snapshot.totals![key] ?? null
+    )));
+    totalRow.font = { bold: true };
+    totalRow.commit();
+  }
   sheet.commit();
   const summary = workbook.addWorksheet('الملخص', { views: [{ rightToLeft: true }] });
   summary.columns = [{ header: 'البند', width: 40 }, { header: 'القيمة', width: 24 }];

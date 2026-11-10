@@ -90,6 +90,21 @@ const paintedOrder = (pdf: Buffer): string[] => {
 };
 
 describe('Arabic report PDF renderer', () => {
+  it('prints column totals underneath the rows, including totals in later column bands', async () => {
+    const pdf = await renderReportPdf({
+      ...snapshot,
+      columns: [
+        { key: 'id', label: 'الرقم' }, { key: 'name', label: 'الاسم' },
+        ...Array.from({ length: 7 }, (_, index) => ({ key: `text${index}`, label: `بيانات ${index}` })),
+        { key: 'monthlyBaseSalary', label: 'الراتب الأساسي' },
+      ],
+      rows: [{ id: 41, name: 'أحمد', monthlyBaseSalary: '5000.10' }, { id: 42, name: 'سارة', monthlyBaseSalary: '6000.20' }],
+      summary: {},
+      ...{ totals: { monthlyBaseSalary: '11000.30' } },
+    });
+    expect(paintedOrder(pdf).some((text) => text.includes('11000.30'))).toBe(true);
+  });
+
   it('paints Arabic words right to left instead of in logical order', async () => {
     const pdf = await renderReportPdf({
       ...snapshot,

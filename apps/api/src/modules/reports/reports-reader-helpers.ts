@@ -86,6 +86,7 @@ export const snapshot = (
   rows: Row[],
   summary: Record<string, ReportCell>,
   generatedAt: Date,
+  totals: Record<string, ReportCell> = {},
 ): ReportSnapshot => ({
   reportType,
   title: titles[reportType] ?? reportType,
@@ -93,6 +94,7 @@ export const snapshot = (
   columns: reportColumns,
   rows,
   summary,
+  totals,
 });
 
 export interface ReportsPayrollGateway {
@@ -128,6 +130,33 @@ export const moneyFromCents = (value: bigint) => {
   return negative ? `-${formatted}` : formatted;
 };
 export type SuccessfulPayroll = Extract<PayrollResult, { kind: 'success' }>['payroll'];
+const payrollMoneyKeys = [
+  'baseSalary', 'proratedBase', 'overtimeAmount', 'bonusAmount', 'commissionAmount',
+  'commissionPaidAmount', 'commissionCarryAmount', 'attendanceDeductionAmount',
+  'manualDeductionAmount', 'commissionDeductionAmount', 'advanceAmount', 'priorNegativeCarry', 'netSalary',
+] as const;
+const payrollCountKeys = [
+  'eligibleWorkdays', 'fullMonthWorkdays', 'requiredMinutes', 'overtimeMinutes', 'shortageMinutes',
+] as const;
+
+/** Keep previews and streamed exports on the same exact-cent aggregation. */
+export const createPayrollReportTotals = () => {
+  const money = new Map(payrollMoneyKeys.map((key) => [key, 0n]));
+  const counts = new Map(payrollCountKeys.map((key) => [key, 0]));
+  return {
+    add(row: SuccessfulPayroll) {
+      for (const key of payrollMoneyKeys) money.set(key, money.get(key)! + moneyCents(row[key]));
+      for (const key of payrollCountKeys) counts.set(key, counts.get(key)! + row[key]);
+    },
+    values: (): Record<string, ReportCell> => {
+      const totals: Record<string, ReportCell> = {};
+      for (const [key, value] of money) totals[key] = moneyFromCents(value);
+      for (const [key, value] of counts) totals[key] = value;
+      return totals;
+    },
+  };
+};
+
 export const payrollReportRow = (row: SuccessfulPayroll, isEmployeeDeleted: boolean): Row => ({
   id: row.id || null,
   employeeId: row.employeeId,

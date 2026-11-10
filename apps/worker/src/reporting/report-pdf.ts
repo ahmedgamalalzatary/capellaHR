@@ -32,6 +32,15 @@ const HEADER_FONT_SIZE = 7.5;
 const HEADER_LINE_HEIGHT = 10;
 
 const summaryLabels: Record<string, string> = {
+  attendanceRecords: 'سجلات الحضور',
+  absenceRecords: 'سجلات الغياب',
+  weeklyDayOffRecords: 'أيام الراحة الأسبوعية',
+  totalWorkedMinutes: 'إجمالي دقائق العمل',
+  totalOvertimeMinutes: 'إجمالي الدقائق الإضافية',
+  totalShortageMinutes: 'إجمالي دقائق النقص',
+  openRecords: 'رواتب مفتوحة',
+  finalizedRecords: 'رواتب معتمدة',
+  totalNetSalary: 'إجمالي صافي الرواتب (ج.م)',
   totalRecords: '\u0625\u062c\u0645\u0627\u0644\u064a \u0627\u0644\u0633\u062c\u0644\u0627\u062a',
   activeRecords: '\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0646\u0634\u0637\u0629',
   deletedRecords: '\u0627\u0644\u0633\u062c\u0644\u0627\u062a \u0627\u0644\u0645\u062d\u0630\u0648\u0641\u0629',
@@ -300,9 +309,9 @@ const renderBand = (
   const columnWidth = tableWidth / visualColumns.length;
   let rowIndex = 0;
   let hasRows = false;
-  const drawRow = (row: ReportSnapshot['rows'][number]) => {
+  const drawRow = (row: ReportSnapshot['rows'][number], isTotal = false) => {
     hasRows = true;
-    document.font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
+    document.font(isTotal ? 'NotoSansArabic-Bold' : 'NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
     const lines = visualColumns.map((column) => wrapText(
       document,
       display(row[column.key] ?? null),
@@ -325,9 +334,9 @@ const renderBand = (
 
       visualColumns.forEach((_, columnIndex) => {
         const x = PAGE_MARGIN + columnIndex * columnWidth;
-        if (rowIndex % 2) document.save().fillColor('#f9fafb').rect(x, y, columnWidth, height).fill().restore();
+        if (isTotal || rowIndex % 2) document.save().fillColor(isTotal ? '#e5e7eb' : '#f9fafb').rect(x, y, columnWidth, height).fill().restore();
         document.save().strokeColor('#9ca3af').lineWidth(0.5).rect(x, y, columnWidth, height).stroke().restore();
-        document.fillColor('#111827').font('NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
+        document.fillColor('#111827').font(isTotal ? 'NotoSansArabic-Bold' : 'NotoSansArabic-Regular').fontSize(BODY_FONT_SIZE);
         drawCellLines(
           document,
           (lines[columnIndex] ?? []).slice(lineOffset, lineOffset + segmentLineCount),
@@ -343,13 +352,16 @@ const renderBand = (
     rowIndex += 1;
   };
   return (async () => {
-    for await (const batch of rows()) batch.forEach(drawRow);
+    for await (const batch of rows()) batch.forEach((row) => drawRow(row));
     if (!hasRows) {
       const height = 34;
       document.save().strokeColor('#9ca3af').lineWidth(0.5).rect(PAGE_MARGIN, y, tableWidth, height).stroke().restore();
       document.fillColor('#6b7280').font('NotoSansArabic-Regular').fontSize(8);
       drawText(document, '\u0644\u0627 \u062a\u0648\u062c\u062f \u0633\u062c\u0644\u0627\u062a \u0645\u0637\u0627\u0628\u0642\u0629', PAGE_MARGIN, y + 11, tableWidth, 'center');
       y += height;
+    }
+    if (snapshot.totals && columns.length) {
+      drawRow({ ...snapshot.totals, [columns[0]!.key]: 'الإجمالي' }, true);
     }
     if (bandNumber !== 1) return;
     const summaryRowHeight = 22;

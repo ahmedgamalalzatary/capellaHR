@@ -134,6 +134,21 @@ const createStore = (events: string[] = []): ReportFileStore => ({
 });
 
 describe('reports service', () => {
+  it('writes the filtered totals as the final Excel table row', async () => {
+    const service = createReportService(createReader({
+      ...snapshot,
+      columns: [{ key: 'employeeCode', label: 'الكود' }, { key: 'monthlyBaseSalary', label: 'الراتب الأساسي' }],
+      rows: [{ employeeCode: 41, monthlyBaseSalary: '5000.10' }, { employeeCode: 42, monthlyBaseSalary: '6000.20' }],
+      ...{ totals: { monthlyBaseSalary: '11000.30' } },
+    }), createRepository(), createStore(), () => now);
+    const result = await service.downloadExcel({ reportType: 'employees', filters: {}, selection: { mode: 'all' } });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Uint8Array.from(result.buffer).buffer);
+    const sheet = workbook.worksheets[0]!;
+    expect(sheet.getRow(sheet.rowCount).values).toEqual([undefined, 'الإجمالي', '11000.30']);
+    expect(sheet.getRow(sheet.rowCount).font.bold).toBe(true);
+  });
+
   it('exports every batch to a real Excel workbook with Arabic headings and safe cell values', async () => {
     const excelSnapshot: ReportSnapshot = {
       ...snapshot,

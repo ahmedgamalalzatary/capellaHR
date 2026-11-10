@@ -84,6 +84,7 @@ export const readAttendanceReport = async (
   const [sessionAggregate, dailyAggregate] = await Promise.all([
     executor.select({
       value: count(),
+      requiredMinutes: sum(attendanceSessions.requiredMinutes),
       workedMinutes: sum(attendanceSessions.workedMinutes),
       overtimeMinutes: sum(attendanceSessions.overtimeMinutes),
       shortageMinutes: sum(attendanceSessions.shortageMinutes),
@@ -92,6 +93,7 @@ export const readAttendanceReport = async (
       .where(sessionWhere),
     executor.select({
       value: count(),
+      requiredMinutes: sum(attendanceDailyRecords.absenceRequiredMinutes),
       absenceRecords: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'absence' then 1 else 0 end)`,
       weeklyDayOffRecords: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'weekly_day_off' then 1 else 0 end)`,
       shortageMinutes: sql<number>`sum(case when ${attendanceDailyRecords.status} = 'absence' then ${attendanceDailyRecords.absenceRequiredMinutes} * (case when ${attendanceDailyRecords.withoutPermissionAt} is null then 1 else 2 end) else 0 end)`,
@@ -155,5 +157,10 @@ export const readAttendanceReport = async (
     totalOvertimeMinutes: Number(sessionAggregate[0]?.overtimeMinutes ?? 0),
     totalShortageMinutes: Number(sessionAggregate[0]?.shortageMinutes ?? 0)
       + Number(dailyAggregate[0]?.shortageMinutes ?? 0),
-  }, generatedAt) };
+  }, generatedAt, {
+    requiredMinutes: Number(sessionAggregate[0]?.requiredMinutes ?? 0) + Number(dailyAggregate[0]?.requiredMinutes ?? 0),
+    workedMinutes: Number(sessionAggregate[0]?.workedMinutes ?? 0),
+    overtimeMinutes: Number(sessionAggregate[0]?.overtimeMinutes ?? 0),
+    shortageMinutes: Number(sessionAggregate[0]?.shortageMinutes ?? 0) + Number(dailyAggregate[0]?.shortageMinutes ?? 0),
+  }) };
 };

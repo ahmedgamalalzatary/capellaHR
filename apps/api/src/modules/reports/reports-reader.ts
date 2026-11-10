@@ -11,6 +11,7 @@ import {
 } from './reports-reader-financial.js';
 import {
   employeeFilters,
+  createPayrollReportTotals,
   moneyCents,
   moneyFromCents,
   monthsBetween,
@@ -143,6 +144,7 @@ export const createDrizzleReportReader = (
           let openRecords = 0;
           let finalizedRecords = 0;
           let totalNetSalaryCents = 0n;
+          const totals = createPayrollReportTotals();
           for (const month of monthsBetween(monthFrom, monthTo)) {
             let employeeOffset = 0;
             while (true) {
@@ -162,6 +164,7 @@ export const createDrizzleReportReader = (
                 if (result.payroll.status === 'open') openRecords += 1;
                 else finalizedRecords += 1;
                 totalNetSalaryCents += moneyCents(result.payroll.netSalary);
+                totals.add(result.payroll);
                 if (batch.length === batchSize) {
                   await onBatch(batch);
                   batch = [];
@@ -175,6 +178,7 @@ export const createDrizzleReportReader = (
             kind: 'success' as const,
             snapshot: {
               ...header,
+              totals: totals.values(),
               summary: {
                 totalRecords: rowCount,
                 openRecords,
